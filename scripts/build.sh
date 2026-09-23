@@ -13,44 +13,6 @@ export GIT_PAGER=cat
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# --- Local environment overrides (.env) ---
-# Load KEY=VALUE pairs from a local, git-ignored .env file (repo root by
-# default; override with OFFSIDER_ENV_FILE). This is where per-machine constants
-# such as the code-signing identity live. Values already present in the
-# environment win over the file, so `OFFSIDER_CODESIGN_IDENTITY=... ./build.sh`
-# still works. See .env.example for the supported keys.
-ENV_FILE="${OFFSIDER_ENV_FILE:-${REPO_ROOT}/.env}"
-
-function load_env_file() {
-  local file="$1"
-  [[ -f "$file" ]] || return 0
-  local line key value
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    # Trim leading whitespace and an optional `export ` prefix.
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line#export }"
-    # Skip blank lines and comments.
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    # Require a KEY=VALUE shape.
-    [[ "$line" == *=* ]] || continue
-    key="${line%%=*}"
-    value="${line#*=}"
-    # Normalise the key and strip one optional pair of surrounding quotes.
-    key="${key//[[:space:]]/}"
-    [[ -z "$key" ]] && continue
-    if [[ "$value" == \"*\" || "$value" == \'*\' ]]; then
-      value="${value:1:${#value}-2}"
-    fi
-    # Only fill values that are not already set in the environment.
-    if [[ -z "${!key+x}" ]]; then
-      export "${key}=${value}"
-    fi
-  done < "$file"
-  return 0
-}
-
-load_env_file "${ENV_FILE}"
-
 # Environment and Configuration
 DEFAULT_IDB_CHECKOUT_DIR="${REPO_ROOT}/idb_checkout"
 IDB_CHECKOUT_DIR="${IDB_CHECKOUT_DIR:-${DEFAULT_IDB_CHECKOUT_DIR}}"
@@ -63,37 +25,11 @@ BUILD_OUTPUT_DIR="${BUILD_OUTPUT_DIR:-./build_products}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-./build_derived_data}"
 BUILD_XCFRAMEWORK_DIR="${BUILD_XCFRAMEWORK_DIR:-${BUILD_OUTPUT_DIR}/XCFrameworks}"
 FBSIMCONTROL_PROJECT="${IDB_CHECKOUT_DIR}/FBSimulatorControl.xcodeproj"
-TEMP_DIR="${TEMP_DIR:-$(mktemp -d)}"
 IDB_REPLACEMENT_ROOT=""
-
-# Shared payload helper
-# shellcheck source=./release-payload.sh
-source "${SCRIPT_DIR}/release-payload.sh"
 
 FRAMEWORK_SDK="macosx"
 FRAMEWORK_CONFIGURATION="Release"
-
-# Codesigning configuration.
-# Provided via OFFSIDER_CODESIGN_IDENTITY (from .env locally, or the environment / CI
-# secrets) — there is intentionally no baked-in default. Must be a
-# "Developer ID Application" identity for notarizable release builds; an
-# "Apple Development" identity is fine for local `dev` builds only.
-CODESIGN_IDENTITY="${OFFSIDER_CODESIGN_IDENTITY:-}"
-
-# Notarization configuration (provided via the environment / .env / CI secrets).
-NOTARIZATION_API_KEY_PATH="${NOTARIZATION_API_KEY_PATH:-}"
-NOTARIZATION_KEY_ID="${NOTARIZATION_KEY_ID:-}"
-NOTARIZATION_ISSUER_ID="${NOTARIZATION_ISSUER_ID:-}"
-
-# Fail fast with an actionable message when a required value is missing, rather
-# than letting codesign/notarytool fail obscurely later.
-function require_config() {
-  local name="$1" value="$2"
-  if [[ -z "${value}" ]]; then
-    echo "❌ Error: ${name} is not set. Set it in ${ENV_FILE} (copy .env.example) or export it in the environment." >&2
-    exit 1
-  fi
-}
+ARCHS="arm64"
 
 # --- Helper Functions ---
 
@@ -177,23 +113,23 @@ function cleanup_stale_idb_replacements() {
 
 trap cleanup_current_idb_replacement EXIT
 
-function codesign_with_retry() {
-  local max_attempts=5
-  local delay=10
-  local attempt=1
-  while [ $attempt -le $max_attempts ]; do
-    if codesign "$@" 2>&1; then
+function resolve_framework_binary() {
+  local framework_path="$1"
+  local framework_name="$2"
+  local candidates=(
+    "$framework_path/Versions/A/$framework_name"
+    "$framework_path/Versions/Current/$framework_name"
+    "$framework_path/$framework_name"
+  )
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      echo "$candidate"
       return 0
     fi
-    local exit_code=$?
-    if [ $attempt -lt $max_attempts ]; then
-      print_warning "codesign failed (attempt $attempt/$max_attempts), retrying in ${delay}s..."
-      sleep $delay
-      delay=$((delay * 2))
-    fi
-    attempt=$((attempt + 1))
   done
-  echo "❌ Error: codesign failed after $max_attempts attempts"
+
   return 1
 }
 
@@ -245,12 +181,10 @@ function verify_fbsimulatorcontrol_fork_features() {
   framework_contents=$(dirname "$binary_path")
   local public_module_artifacts=(
     "${framework_contents}/Modules/FBSimulatorControl.swiftmodule/arm64-apple-macos.swiftinterface"
-    "${framework_contents}/Modules/FBSimulatorControl.swiftmodule/x86_64-apple-macos.swiftinterface"
     "${framework_contents}/Headers/FBSimulatorControl-Swift.h"
   )
   local compiled_swift_modules=(
     "${framework_contents}/Modules/FBSimulatorControl.swiftmodule/arm64-apple-macos.swiftmodule"
-    "${framework_contents}/Modules/FBSimulatorControl.swiftmodule/x86_64-apple-macos.swiftmodule"
   )
   local compiled_swift_module
   for compiled_swift_module in "${compiled_swift_modules[@]}"; do
@@ -312,20 +246,10 @@ function copy_resource_bundle() {
   local output_base_dir="$1"
   local bundle_name="Offsider_Offsider.bundle"
   local bundle_dest="${output_base_dir}/${bundle_name}"
-  local bundle_source=""
-  local candidate_dir=""
+  local bundle_source
+  bundle_source="$(swift_build_bin_path "release" "arm64")/${bundle_name}"
 
-  for candidate_dir in \
-    "$(swift_build_bin_path "release" "arm64")" \
-    "$(swift_build_bin_path "release" "x86_64")"
-  do
-    if [[ -d "${candidate_dir}/${bundle_name}" ]]; then
-      bundle_source="${candidate_dir}/${bundle_name}"
-      break
-    fi
-  done
-
-  if [[ -z "$bundle_source" ]]; then
+  if [[ ! -d "$bundle_source" ]]; then
     echo "❌ Error: Offsider resource bundle not found in Swift build outputs"
     exit 1
   fi
@@ -524,7 +448,7 @@ function framework_build() {
     build \
     SKIP_INSTALL=NO \
     ONLY_ACTIVE_ARCH=NO \
-    ARCHS="arm64 x86_64" \
+    ARCHS="${ARCHS}" \
     BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
     GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS=NO \
     CLANG_WARN_DOCUMENTATION_COMMENTS=NO \
@@ -625,121 +549,6 @@ function strip_framework() {
   fi
 }
 
-# Function to resign a framework with Developer ID
-# $1: Base output directory
-# $2: Framework name (e.g., "FBSimulatorControl.framework")
-function resign_framework() {
-  local output_base_dir="$1"
-  local framework_name="$2"
-  local framework_path="${output_base_dir}/Frameworks/${framework_name}"
-
-  if [ -d "$framework_path" ]; then
-    print_info "Resigning framework: ${framework_name}"
-
-    # First, sign all dynamic libraries and binaries inside the framework
-    print_info "Signing embedded binaries in ${framework_name}..."
-
-    # Find and sign all .dylib files recursively
-    find "$framework_path" -name "*.dylib" -type f | while read -r dylib_path; do
-      print_info "  Signing dylib: $(basename "$dylib_path")"
-      codesign_with_retry --force \
-        --sign "${CODESIGN_IDENTITY}" \
-        --options runtime \
-        --timestamp \
-        --verbose \
-        "$dylib_path"
-
-      if [ $? -ne 0 ]; then
-        echo "❌ Error: Failed to sign dylib: $dylib_path"
-        exit 1
-      fi
-    done
-
-    # Remove any existing signature from the main framework binary first
-    print_info "Removing existing signature from ${framework_name}..."
-    codesign --remove-signature "$framework_path" 2>/dev/null || true
-
-    # Sign the main framework bundle with specific notarization-compatible options
-    print_info "Signing main framework bundle: ${framework_name}"
-    codesign_with_retry --force \
-      --sign "${CODESIGN_IDENTITY}" \
-      --options runtime \
-      --entitlements entitlements.plist \
-      --timestamp \
-      --verbose \
-      "$framework_path"
-
-    if [ $? -eq 0 ]; then
-      print_success "Framework ${framework_name} resigned successfully"
-
-      # Verify the signature with strictest verification
-      print_info "Performing strict verification for ${framework_name}..."
-      codesign -vvv --strict "$framework_path"
-
-      if [ $? -eq 0 ]; then
-        print_success "Signature verification passed for ${framework_name}"
-
-        # Display signature details
-        print_info "Signature details for ${framework_name}:"
-        codesign -dv "$framework_path" 2>&1 | grep -E "(Identifier|TeamIdentifier|Authority|Timestamp)" || true
-      else
-        echo "❌ Error: Signature verification failed for ${framework_name}"
-        exit 1
-      fi
-    else
-      echo "❌ Error: Failed to resign framework ${framework_name}"
-      exit 1
-    fi
-  else
-    print_warning "Framework not found: $framework_path"
-  fi
-}
-
-# Function to resign an XCFramework with Developer ID
-# $1: Base output directory
-# $2: XCFramework name (e.g., "FBSimulatorControl.xcframework")
-function resign_xcframework() {
-  local output_base_dir="$1"
-  local xcframework_name="$2"
-  local xcframework_path="${output_base_dir}/XCFrameworks/${xcframework_name}"
-
-  if [ -d "$xcframework_path" ]; then
-    print_info "Resigning XCFramework: ${xcframework_name}"
-
-    # Sign XCFramework with Developer ID and runtime hardening
-    codesign_with_retry --force \
-      --sign "${CODESIGN_IDENTITY}" \
-      --options runtime \
-      --deep \
-      --timestamp \
-      "$xcframework_path"
-
-    if [ $? -eq 0 ]; then
-      print_success "XCFramework ${xcframework_name} resigned successfully"
-
-      # Verify the signature with strictest verification and deep checking
-      print_info "Performing strict verification for XCFramework ${xcframework_name}..."
-      codesign -vvv --deep "$xcframework_path"
-
-      if [ $? -eq 0 ]; then
-        print_success "XCFramework signature verification passed for ${xcframework_name}"
-
-        # Display signature details
-        print_info "XCFramework signature details for ${xcframework_name}:"
-        codesign -dv --deep "$xcframework_path" 2>&1 | grep -E "(Identifier|TeamIdentifier|Authority)" || true
-      else
-        echo "❌ Error: XCFramework signature verification failed for ${xcframework_name}"
-        exit 1
-      fi
-    else
-      echo "❌ Error: Failed to resign XCFramework ${xcframework_name}"
-      exit 1
-    fi
-  else
-    print_warning "XCFramework not found: $xcframework_path"
-  fi
-}
-
 function remove_xcode_rpaths() {
   local target="$1"
   if [[ ! -f "$target" ]]; then
@@ -755,37 +564,13 @@ function remove_xcode_rpaths() {
   fi
 }
 
-function sanitize_framework_rpaths() {
-  local frameworks_dir="$1"
-  if [[ ! -d "$frameworks_dir" ]]; then
-    print_warning "Frameworks directory not found: $frameworks_dir"
-    return
-  fi
-
-  print_info "Removing Xcode toolchain rpaths from framework binaries..."
-  local found=false
-  while IFS= read -r -d '' file; do
-    if file "$file" | grep -q "Mach-O"; then
-      found=true
-      remove_xcode_rpaths "$file"
-    fi
-  done < <(find "$frameworks_dir" -type f -print0)
-
-  if [[ "$found" == "false" ]]; then
-    print_warning "No Mach-O files found under ${frameworks_dir}"
-  fi
-}
-
 # Function to build the Offsider executable using Swift Package Manager
 # $1: Base output directory
 function build_offsider_executable() {
   local output_base_dir="$1"
   local build_config="release"
   local executable_dest="${output_base_dir}/offsider"
-  local arm64_executable="${output_base_dir}/offsider-arm64"
-  local x64_executable="${output_base_dir}/offsider-x86_64"
-  local arm64_bin_path
-  local x64_bin_path
+  local bin_path
 
   print_subsection "⚡" "Building Offsider executable"
   print_info "Using Swift Package Manager to build Offsider..."
@@ -796,30 +581,16 @@ function build_offsider_executable() {
 
   print_info "Building arm64 executable..."
   swift build --configuration "${build_config}" --arch arm64
-  arm64_bin_path="$(swift_build_bin_path "$build_config" "arm64")/offsider"
-  if [[ ! -f "${arm64_bin_path}" ]]; then
-    echo "❌ Error: arm64 Offsider executable not found at ${arm64_bin_path}"
+  bin_path="$(swift_build_bin_path "$build_config" "arm64")/offsider"
+  if [[ ! -f "${bin_path}" ]]; then
+    echo "❌ Error: arm64 Offsider executable not found at ${bin_path}"
     exit 1
   fi
-  cp "${arm64_bin_path}" "${arm64_executable}"
-
-  print_info "Building x86_64 executable..."
-  swift build --configuration "${build_config}" --arch x86_64
-  x64_bin_path="$(swift_build_bin_path "$build_config" "x86_64")/offsider"
-  if [[ ! -f "${x64_bin_path}" ]]; then
-    echo "❌ Error: x86_64 Offsider executable not found at ${x64_bin_path}"
-    exit 1
-  fi
-  cp "${x64_bin_path}" "${x64_executable}"
-
-  print_info "Creating universal executable with lipo..."
-  lipo -create -output "${executable_dest}" "${arm64_executable}" "${x64_executable}"
-  rm -f "${arm64_executable}" "${x64_executable}"
+  cp "${bin_path}" "${executable_dest}"
 
   copy_resource_bundle "${output_base_dir}"
 
   verify_macho_has_arch "${executable_dest}" "arm64"
-  verify_macho_has_arch "${executable_dest}" "x86_64"
   print_success "Offsider executable installed to ${executable_dest}"
 
   # Configure rpath for organized framework loading
@@ -880,13 +651,12 @@ function verify_xcframework_inputs() {
       exit 1
     fi
     verify_macho_has_arch "${framework_binary}" "arm64"
-    verify_macho_has_arch "${framework_binary}" "x86_64"
     if [[ "${framework_name}" == "FBSimulatorControl" ]]; then
       verify_fbsimulatorcontrol_fork_features "${framework_binary}"
     fi
   done
 
-  print_success "XCFramework inputs include arm64 and x86_64 slices"
+  print_success "XCFramework inputs include the arm64 slice"
 }
 
 function verify_release_architectures() {
@@ -897,7 +667,6 @@ function verify_release_architectures() {
 
   print_subsection "🧪" "Validating release artifact architectures"
   verify_macho_has_arch "${executable_path}" "arm64"
-  verify_macho_has_arch "${executable_path}" "x86_64"
 
   if [[ ! -d "${frameworks_dir}" ]]; then
     echo "❌ Error: Frameworks directory not found under ${output_base_dir}"
@@ -917,275 +686,19 @@ function verify_release_architectures() {
       exit 1
     fi
     verify_macho_has_arch "${framework_binary}" "arm64"
-    verify_macho_has_arch "${framework_binary}" "x86_64"
     if [[ "${framework_name}" == "FBSimulatorControl" ]]; then
       verify_fbsimulatorcontrol_fork_features "${framework_binary}"
     fi
   done
 
-  print_success "Release artifacts include arm64 and x86_64 slices"
-}
-
-# Function to sign the Offsider executable with Developer ID
-# $1: Base output directory
-function sign_offsider_executable() {
-  local output_base_dir="$1"
-  local executable_path="${output_base_dir}/offsider"
-
-  if [ -f "$executable_path" ]; then
-    print_info "Signing Offsider executable: ${executable_path}"
-
-    # Sign with Developer ID and runtime hardening
-    codesign_with_retry --force \
-      --sign "${CODESIGN_IDENTITY}" \
-      --options runtime \
-      --entitlements entitlements.plist \
-      --timestamp \
-      "$executable_path"
-
-    if [ $? -eq 0 ]; then
-      print_success "Offsider executable signed successfully"
-
-      # Verify the signature with strictest verification
-      print_info "Performing strict verification for Offsider executable..."
-      codesign -vvv "$executable_path"
-
-      if [ $? -eq 0 ]; then
-        print_success "Offsider executable signature verification passed"
-
-        # Display signature details
-        print_info "Offsider executable signature details:"
-        codesign -dv "$executable_path" 2>&1 | grep -E "(Identifier|TeamIdentifier|Authority)" || true
-      else
-        echo "❌ Error: Offsider executable signature verification failed"
-        exit 1
-      fi
-    else
-      echo "❌ Error: Failed to sign Offsider executable"
-      exit 1
-    fi
-  else
-    print_warning "Offsider executable not found: $executable_path"
-  fi
-}
-
-# Function to create a package for notarization
-# $1: Base output directory
-function package_for_notarization() {
-  local output_base_dir="$1"
-  local package_name="Offsider-$(date +%Y%m%d-%H%M%S)"
-  local package_dir="${output_base_dir}/${package_name}"
-  local package_zip="${output_base_dir}/${package_name}.zip"
-
-  print_subsection "📦" "Creating notarization package" >&2
-  print_info "Package name: ${package_name}" >&2
-
-  # Create temporary package directory
-  rm -rf "${package_dir}" "${package_zip}"
-  mkdir -p "${package_dir}"
-
-  print_info "Copying staged release payload to package..." >&2
-  copy_release_payload "${output_base_dir}" "${package_dir}"
-
-  # Create zip package preserving framework symlinks but excluding AppleDouble
-  # metadata, which breaks framework bundle seals when extracted
-  print_info "Creating zip package: ${package_zip}" >&2
-  ditto -c -k --norsrc --noextattr --noqtn --keepParent "${package_dir}" "${package_zip}" >&2
-
-  # Clean up temporary directory
-  rm -rf "${package_dir}"
-
-  if [ -f "${package_zip}" ]; then
-    print_success "Notarization package created: ${package_zip}" >&2
-    # Store the clean absolute path
-    local clean_path="$(cd "$(dirname "${package_zip}")" && pwd)/$(basename "${package_zip}")"
-    # Only echo the path to stdout for capture
-    echo "${clean_path}"
-  else
-    echo "❌ Error: Failed to create notarization package" >&2
-    exit 1
-  fi
-}
-
-# Function to submit package for notarization
-# $1: Package zip path
-function notarize_package() {
-  local package_zip="$1"
-
-  print_subsection "🍎" "Submitting for Apple notarization"
-
-  # Ensure the notarization credentials are configured
-  require_config "NOTARIZATION_API_KEY_PATH" "${NOTARIZATION_API_KEY_PATH}"
-  require_config "NOTARIZATION_KEY_ID" "${NOTARIZATION_KEY_ID}"
-  require_config "NOTARIZATION_ISSUER_ID" "${NOTARIZATION_ISSUER_ID}"
-
-  # Check if API key exists
-  if [ ! -f "${NOTARIZATION_API_KEY_PATH}" ]; then
-    echo "❌ Error: Notarization API key not found at ${NOTARIZATION_API_KEY_PATH}"
-    print_info "Please ensure the API key file exists or set NOTARIZATION_API_KEY_PATH environment variable"
-    exit 1
-  fi
-
-  print_info "API Key: ${NOTARIZATION_API_KEY_PATH}"
-  print_info "Key ID: ${NOTARIZATION_KEY_ID}"
-  print_info "Issuer ID: ${NOTARIZATION_ISSUER_ID}"
-  print_info "Package: ${package_zip}"
-  print_info "Temporary directory: ${TEMP_DIR}"
-
-  # Submit for notarization
-  print_info "Submitting package for notarization..."
-  local submit_output=$(xcrun notarytool submit "${package_zip}" \
-    --key "${NOTARIZATION_API_KEY_PATH}" \
-    --key-id "${NOTARIZATION_KEY_ID}" \
-    --issuer "${NOTARIZATION_ISSUER_ID}" \
-    --wait 2>&1)
-  local submit_exit_code=$?
-
-  echo "${submit_output}"
-
-  if [ $submit_exit_code -eq 0 ] && echo "${submit_output}" | grep -q "status: Accepted"; then
-    # Extract submission ID from output
-    local submission_id=$(echo "${submit_output}" | grep "id:" | head -1 | awk '{print $2}')
-    print_success "Notarization completed successfully!"
-    print_info "Submission ID: ${submission_id}"
-
-    # Extract notarized package and replace original distribution payload
-    print_info "Extracting notarized package to replace original distribution payload..."
-    local temp_extract_dir="${BUILD_OUTPUT_DIR}/temp_notarized"
-    rm -rf "${temp_extract_dir}"
-    mkdir -p "${temp_extract_dir}"
-
-    # Extract the notarized package while preserving framework structure
-    ditto -x -k "${package_zip}" "${temp_extract_dir}"
-
-    local extracted_package_dir
-    extracted_package_dir="$(find "${temp_extract_dir}" -mindepth 1 -maxdepth 1 -type d | head -1)"
-
-    if [ -n "${extracted_package_dir}" ] && [ -f "${extracted_package_dir}/offsider" ]; then
-      cp "${extracted_package_dir}/offsider" "${BUILD_OUTPUT_DIR}/offsider"
-      print_success "Original executable replaced with notarized version"
-
-      rm -rf "${BUILD_OUTPUT_DIR}/Frameworks"
-      if [ -d "${extracted_package_dir}/Frameworks" ]; then
-        cp -R "${extracted_package_dir}/Frameworks" "${BUILD_OUTPUT_DIR}/"
-        print_success "Original Frameworks directory replaced with notarized version"
-      else
-        echo "❌ Error: Notarized package missing Frameworks directory"
-        exit 1
-      fi
-
-      rm -rf "${BUILD_OUTPUT_DIR}/Offsider_Offsider.bundle"
-      if [ -d "${extracted_package_dir}/Offsider_Offsider.bundle" ]; then
-        cp -R "${extracted_package_dir}/Offsider_Offsider.bundle" "${BUILD_OUTPUT_DIR}/"
-        print_success "Original Offsider resource bundle replaced with notarized version"
-      else
-        echo "❌ Error: Notarized package missing Offsider resource bundle"
-        exit 1
-      fi
-
-      # Verify notarization status using spctl
-      print_info "Verifying notarization with spctl assessment..."
-      spctl -a -v "${BUILD_OUTPUT_DIR}/offsider" 2>&1 | grep -q "accepted" || {
-        print_info "Note: spctl shows 'not an app' for command-line tools - this is expected"
-        print_info "Notarized command-line tools are validated differently by macOS"
-      }
-
-      # Check if the executable has the notarization signature
-      print_info "Checking code signature details..."
-      local sig_info=$(codesign -dv "${BUILD_OUTPUT_DIR}/offsider" 2>&1)
-      if echo "$sig_info" | grep -q "runtime"; then
-        print_success "Executable has runtime hardening enabled (required for notarization)"
-      else
-        print_warning "Runtime hardening not detected in signature"
-      fi
-
-      print_success "Notarized executable is ready for distribution"
-
-      # Create final deployment package in temporary directory
-      print_info "Creating final deployment package..."
-      local final_package_name="Offsider-Final-$(date +%Y%m%d-%H%M%S)"
-      local final_package_dir="${TEMP_DIR}/${final_package_name}"
-      local final_package_zip="${TEMP_DIR}/${final_package_name}.zip"
-
-      # Create final package directory
-      mkdir -p "${final_package_dir}"
-
-      # Copy notarized executable, resource bundle, and frameworks to final package
-      copy_release_payload "${BUILD_OUTPUT_DIR}" "${final_package_dir}"
-      print_info "Included staged Offsider payload in final package"
-
-      # Create final zip package while preserving framework symlinks and metadata
-      print_info "Creating final package: ${final_package_zip}"
-      ditto -c -k --keepParent "${final_package_dir}" "${final_package_zip}"
-
-      # Clean up temporary package directory
-      rm -rf "${final_package_dir}"
-
-      if [ -f "${final_package_zip}" ]; then
-        print_success "Final deployment package created: ${final_package_zip}"
-
-        # Clean up build artifacts (offsider executable and Frameworks, keep XCFrameworks)
-        print_info "Cleaning up build artifacts..."
-        rm -f "${BUILD_OUTPUT_DIR}/offsider"
-        rm -rf "${BUILD_OUTPUT_DIR}/Offsider_Offsider.bundle"
-        rm -rf "${BUILD_OUTPUT_DIR}/Frameworks"
-        print_success "Cleaned up offsider executable, resource bundle, and Frameworks directory"
-        print_info "Preserved XCFrameworks directory for Swift package builds"
-
-        # Output the final package path
-        echo ""
-        echo "📦 Final Package Location:"
-        echo "${final_package_zip}"
-        echo ""
-
-        # Update the global PACKAGE_ZIP variable
-        PACKAGE_ZIP="${final_package_zip}"
-      else
-        echo "❌ Error: Failed to create final deployment package"
-        exit 1
-      fi
-
-      # Clean up temporary extraction directory and original notarization package
-      rm -rf "${temp_extract_dir}"
-      rm -f "${package_zip}"
-      print_info "Cleaned up temporary notarization files"
-    else
-      echo "❌ Error: Could not find notarized executable in package"
-      exit 1
-    fi
-  else
-    echo "❌ Error: Notarization failed"
-
-    # Extract submission ID for log fetching
-    local submission_id=$(echo "${submit_output}" | grep "id:" | head -1 | awk '{print $2}')
-
-    if [ -n "${submission_id}" ]; then
-      print_info "Submission ID: ${submission_id}"
-      print_info "Fetching notarization log for detailed error information..."
-
-      # Fetch the notary log using notarytool
-      echo ""
-      echo "📋 Notarization Log:"
-      echo "$(printf '·%.0s' {1..60})"
-      xcrun notarytool log \
-        --key "${NOTARIZATION_API_KEY_PATH}" \
-        --key-id "${NOTARIZATION_KEY_ID}" \
-        --issuer "${NOTARIZATION_ISSUER_ID}" \
-        "${submission_id}"
-      echo "$(printf '·%.0s' {1..60})"
-    else
-      print_info "Could not extract submission ID from notarization output"
-    fi
-
-    exit 1
-  fi
+  print_success "Release artifacts include the arm64 slice"
 }
 
 # Function to print usage information
 function print_usage() {
 cat <<EOF
 ./build.sh usage:
-  ./build.sh [<command>] [<options>]*
+  ./build.sh <command>
 
 Commands:
   help
@@ -1197,11 +710,11 @@ Commands:
   clean
     Clean previous build products and derived data.
 
+  generate
+    Verify the pinned IDB fork revision, then regenerate projects using XcodeGen.
+
   frameworks
     Generate the pinned fork project, then build all IDB frameworks (FBControlCore, XCTestBootstrap, FBSimulatorControl, FBDeviceControl).
-
-  generate
-    Verify the pinned Offsider IDB fork revision, then regenerate projects using XcodeGen.
 
   install
     Install built frameworks to the Frameworks directory.
@@ -1209,59 +722,33 @@ Commands:
   strip
     Strip nested frameworks from the built frameworks.
 
-  sign-frameworks
-    Code sign all frameworks with Developer ID.
-
   xcframeworks
     Create XCFrameworks from the built frameworks.
 
-  sign-xcframeworks
-    Code sign all XCFrameworks with Developer ID.
+  dev
+    Run setup, clean, frameworks, install, strip and xcframeworks. Frameworks stay unsigned beyond the linker's ad hoc signature.
 
   executable
-    Build the Offsider executable using Swift Package Manager.
-
-  sign-executable
-    Code sign the Offsider executable with Developer ID.
-
-  package
-    Create a notarization package (zip file).
-
-  notarize
-    Submit package for Apple notarization and replace original executable.
+    Build the arm64 Offsider executable using Swift Package Manager.
 
   verify-xcframeworks
-    Verify XCFramework inputs include arm64 and x86_64 slices.
+    Verify XCFramework inputs include the arm64 slice.
 
   verify-arches
-    Verify executable and frameworks include arm64 and x86_64 slices.
+    Verify the executable and frameworks include the arm64 slice.
 
-  build (default)
-    Run all steps from setup through notarization.
-
-Environment Variables (set inline, exported, or via a git-ignored .env file):
-  OFFSIDER_ENV_FILE           Path to the .env file to load (default: <repo-root>/.env)
-  OFFSIDER_CODESIGN_IDENTITY  Code-signing identity (required for signing; no default)
+Environment Variables:
   IDB_CHECKOUT_DIR       Directory for IDB repository (default: ./idb_checkout)
-  IDB_GIT_URL            Offsider IDB fork URL (default: https://github.com/cameroncooke/idb.git)
+  IDB_GIT_URL            IDB fork URL (default: https://github.com/cameroncooke/idb.git)
   IDB_GIT_REF            Exact fork revision (default: ${DEFAULT_IDB_GIT_REF})
   IDB_UPSTREAM_BASE_REF  Verified upstream base (default: e682506725e9efefb9c43b8b917c0b12eb2a5939)
   BUILD_OUTPUT_DIR       Directory for build outputs (default: ./build_products)
   DERIVED_DATA_PATH      Directory for derived data (default: ./build_derived_data)
-  TEMP_DIR               Temporary directory for final packages (default: system temp)
-  NOTARIZATION_API_KEY_PATH  Path to notarization API key (required to notarize; no default)
-  NOTARIZATION_KEY_ID    Notarization key ID (required to notarize; no default)
-  NOTARIZATION_ISSUER_ID Notarization issuer ID (required to notarize; no default)
-
-  Values already set in the environment take precedence over .env.
-  Copy .env.example to .env and fill in the values for your machine.
 
 Examples:
-  ./build.sh                    # Build everything (default)
-  ./build.sh help               # Show this help
-  ./build.sh frameworks         # Only build frameworks
-  ./build.sh sign-frameworks    # Only sign frameworks
-  ./build.sh notarize           # Only run notarization step
+  ./build.sh dev                # Build the IDB frameworks and XCFrameworks
+  ./build.sh executable         # Build build_products/offsider
+  ./build.sh verify-arches      # Check the built payload
 EOF
 }
 
@@ -1308,18 +795,6 @@ function cmd_strip() {
   strip_framework "${BUILD_OUTPUT_DIR}" "XCTestBootstrap.framework/Versions/Current/Frameworks/FBControlCore.framework"
 }
 
-function cmd_sign_frameworks() {
-  print_section "🔒" "Resigning Frameworks"
-  require_config "OFFSIDER_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
-  print_info "Resigning frameworks..."
-  sanitize_framework_rpaths "${BUILD_OUTPUT_DIR}/Frameworks"
-  resign_framework "${BUILD_OUTPUT_DIR}" "FBSimulatorControl.framework"
-  resign_framework "${BUILD_OUTPUT_DIR}" "FBDeviceControl.framework"
-  resign_framework "${BUILD_OUTPUT_DIR}" "XCTestBootstrap.framework"
-  resign_framework "${BUILD_OUTPUT_DIR}" "FBControlCore.framework"
-  print_success "Frameworks resigned successfully"
-}
-
 function cmd_xcframeworks() {
   print_section "📦" "Creating XCFrameworks"
   create_xcframework "FBControlCore" "${BUILD_OUTPUT_DIR}"
@@ -1334,46 +809,9 @@ function cmd_generate() {
   generate_idb_projects
 }
 
-function cmd_sign_xcframeworks() {
-  print_section "🔒" "Resigning XCFrameworks"
-  require_config "OFFSIDER_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
-  print_info "Resigning XCFrameworks with Developer ID..."
-  resign_xcframework "${BUILD_OUTPUT_DIR}" "FBControlCore.xcframework"
-  resign_xcframework "${BUILD_OUTPUT_DIR}" "XCTestBootstrap.xcframework"
-  resign_xcframework "${BUILD_OUTPUT_DIR}" "FBSimulatorControl.xcframework"
-  resign_xcframework "${BUILD_OUTPUT_DIR}" "FBDeviceControl.xcframework"
-  print_success "XCFrameworks resigned successfully"
-}
-
 function cmd_executable() {
   print_section "⚡" "Building Offsider Executable"
   build_offsider_executable "${BUILD_OUTPUT_DIR}"
-}
-
-function cmd_sign_executable() {
-  print_section "🔒" "Signing Offsider Executable"
-  require_config "OFFSIDER_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
-  sign_offsider_executable "${BUILD_OUTPUT_DIR}"
-}
-
-function cmd_package() {
-  print_section "📦" "Packaging for Notarization"
-  PACKAGE_ZIP=$(package_for_notarization "${BUILD_OUTPUT_DIR}")
-  print_info "Package created: ${PACKAGE_ZIP}"
-}
-
-function cmd_notarize() {
-  print_section "🍎" "Apple Notarization"
-  if [ -z "${PACKAGE_ZIP}" ]; then
-    # Find the most recent package if PACKAGE_ZIP isn't set
-    PACKAGE_ZIP=$(ls -t "${BUILD_OUTPUT_DIR}"/Offsider-*.zip 2>/dev/null | head -1)
-    if [ -z "${PACKAGE_ZIP}" ]; then
-      echo "❌ Error: No package found. Run 'package' command first."
-      exit 1
-    fi
-    print_info "Using package: ${PACKAGE_ZIP}"
-  fi
-  notarize_package "${PACKAGE_ZIP}"
 }
 
 function cmd_verify_xcframeworks() {
@@ -1386,44 +824,12 @@ function cmd_verify_arches() {
   verify_release_architectures "${BUILD_OUTPUT_DIR}"
 }
 
-function cmd_build() {
-  print_section "🚀" "IDB Framework Builder for Offsider Project"
-
-  print_info "IDB Checkout Directory: ${IDB_CHECKOUT_DIR}"
-  print_info "Build Output Directory: ${BUILD_OUTPUT_DIR}"
-  print_info "Derived Data Path: ${DERIVED_DATA_PATH}"
-  print_info "XCFramework Output Directory: ${BUILD_XCFRAMEWORK_DIR}"
-  print_info "Temporary Directory: ${TEMP_DIR}"
-  print_info "IDB Project: ${FBSIMCONTROL_PROJECT}"
-  print_info "Notarization API Key: ${NOTARIZATION_API_KEY_PATH}"
-  print_info "Notarization Key ID: ${NOTARIZATION_KEY_ID}"
-
-  # Run all steps
-  cmd_setup
-  cmd_clean
-  cmd_frameworks
-  cmd_install
-  cmd_strip
-  cmd_sign_frameworks
-  cmd_xcframeworks
-  cmd_sign_xcframeworks
-  cmd_executable
-  cmd_sign_executable
-  cmd_package
-  cmd_notarize
-
-  print_section "🎉" "Build Complete!"
-  print_success "All framework builds, XCFramework creation, Offsider executable, and notarization completed."
-  print_info "📦 XCFrameworks are located in ${BUILD_XCFRAMEWORK_DIR}"
-  print_info "📁 Final deployment package is located at ${PACKAGE_ZIP}"
-  print_info "🧹 Build artifacts (offsider executable and Frameworks) have been cleaned up"
-  echo ""
-  echo "🏁 Build process finished successfully!"
-  echo ""
-}
-
 # Parse command line arguments
-COMMAND="${1:-build}"
+if [[ $# -eq 0 ]]; then
+  print_usage
+  exit 1
+fi
+COMMAND="$1"
 
 case $COMMAND in
   help)
@@ -1441,35 +847,21 @@ case $COMMAND in
     cmd_install;;
   strip)
     cmd_strip;;
-  sign-frameworks)
-    cmd_sign_frameworks;;
   xcframeworks)
     cmd_xcframeworks;;
-  sign-xcframeworks)
-    cmd_sign_xcframeworks;;
   dev)
     cmd_setup
     cmd_clean
     cmd_frameworks
     cmd_install
     cmd_strip
-    cmd_sign_frameworks
-    cmd_xcframeworks
-    cmd_sign_xcframeworks;;
+    cmd_xcframeworks;;
   executable)
     cmd_executable;;
-  sign-executable)
-    cmd_sign_executable;;
-  package)
-    cmd_package;;
-  notarize)
-    cmd_notarize;;
   verify-xcframeworks)
     cmd_verify_xcframeworks;;
   verify-arches)
     cmd_verify_arches;;
-  build)
-    cmd_build;;
   *)
     echo "Unknown command: $COMMAND"
     echo ""
