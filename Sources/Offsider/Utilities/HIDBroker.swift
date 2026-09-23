@@ -194,7 +194,7 @@ enum HIDBroker {
         let uid = getuid()
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .resolvingSymlinksInPath()
-            .appendingPathComponent("axe-hid-\(uid)", isDirectory: true)
+            .appendingPathComponent("offsider-hid-\(uid)", isDirectory: true)
         try ensurePrivateDirectory(root.path, uid: uid)
         let developerDirectory = URL(fileURLWithPath: developerDirectory, isDirectory: true)
             .standardizedFileURL

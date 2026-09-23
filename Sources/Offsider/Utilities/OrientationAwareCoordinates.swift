@@ -246,7 +246,7 @@ struct OrientationAwareCoordinates {
         logger: OffsiderLogger
     ) async -> (width: Int, height: Int)? {
         let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("axe-screenshot-probe-\(UUID().uuidString)")
+            .appendingPathComponent("offsider-screenshot-probe-\(UUID().uuidString)")
             .appendingPathExtension("png")
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
