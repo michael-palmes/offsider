@@ -3,9 +3,11 @@ import Darwin
 import Foundation
 
 struct Init: AsyncParsableCommand {
+    private static let skillFolderName = "offsider"
+
     static let configuration = CommandConfiguration(
         commandName: "init",
-        abstract: "Install AXe skill files for detected AI clients."
+        abstract: "Install Offsider skill files for detected AI clients."
     )
 
     enum Client: String, ExpressibleByArgument, CaseIterable {
@@ -23,7 +25,7 @@ struct Init: AsyncParsableCommand {
     @Flag(help: "Overwrite an existing installed skill.")
     var force: Bool = false
 
-    @Flag(help: "Remove installed AXe skill from target directories.")
+    @Flag(help: "Remove installed Offsider skill from target directories.")
     var uninstall: Bool = false
 
     @Flag(name: .customLong("print"), help: "Print bundled skill content to stdout.")
@@ -84,15 +86,15 @@ struct Init: AsyncParsableCommand {
         guard let sourceURL = Bundle.module.url(
             forResource: "SKILL",
             withExtension: "md",
-            subdirectory: "skills/axe"
+            subdirectory: "skills/\(skillFolderName)"
         ) else {
-            throw CLIError(errorDescription: "Bundled AXe skill source was not found.")
+            throw CLIError(errorDescription: "Bundled Offsider skill source was not found.")
         }
 
         do {
             return try String(contentsOf: sourceURL, encoding: .utf8)
         } catch {
-            throw CLIError(errorDescription: "Failed to read bundled AXe skill source: \(error.localizedDescription)")
+            throw CLIError(errorDescription: "Failed to read bundled Offsider skill source: \(error.localizedDescription)")
         }
     }
 
@@ -101,7 +103,7 @@ struct Init: AsyncParsableCommand {
         var installedPaths: [String] = []
 
         for target in targets {
-            let targetDirectory = target.skillsDirectory.appendingPathComponent("axe", isDirectory: true)
+            let targetDirectory = target.skillsDirectory.appendingPathComponent(Self.skillFolderName, isDirectory: true)
             let targetFile = targetDirectory.appendingPathComponent("SKILL.md", isDirectory: false)
 
             if FileManager.default.fileExists(atPath: targetFile.path), !force {
@@ -116,7 +118,7 @@ struct Init: AsyncParsableCommand {
                 installedPaths.append("\(target.name): \(targetFile.path)")
             } catch {
                 throw CLIError(
-                    errorDescription: "Failed to install AXe skill for \(target.name): \(error.localizedDescription)"
+                    errorDescription: "Failed to install Offsider skill for \(target.name): \(error.localizedDescription)"
                 )
             }
         }
@@ -126,7 +128,7 @@ struct Init: AsyncParsableCommand {
         }
 
         for entry in installedPaths {
-            fputs("Installed AXe skill -> \(entry)\n", stdout)
+            fputs("Installed Offsider skill -> \(entry)\n", stdout)
         }
     }
 
@@ -134,7 +136,7 @@ struct Init: AsyncParsableCommand {
         var removedPaths: [String] = []
 
         for target in targets {
-            let targetDirectory = target.skillsDirectory.appendingPathComponent("axe", isDirectory: true)
+            let targetDirectory = target.skillsDirectory.appendingPathComponent(Self.skillFolderName, isDirectory: true)
             guard FileManager.default.fileExists(atPath: targetDirectory.path) else {
                 continue
             }
@@ -144,18 +146,18 @@ struct Init: AsyncParsableCommand {
                 removedPaths.append("\(target.name): \(targetDirectory.path)")
             } catch {
                 throw CLIError(
-                    errorDescription: "Failed to uninstall AXe skill for \(target.name): \(error.localizedDescription)"
+                    errorDescription: "Failed to uninstall Offsider skill for \(target.name): \(error.localizedDescription)"
                 )
             }
         }
 
         if removedPaths.isEmpty {
-            fputs("No installed AXe skill directories were found.\n", stdout)
+            fputs("No installed Offsider skill directories were found.\n", stdout)
             return
         }
 
         for entry in removedPaths {
-            fputs("Removed AXe skill -> \(entry)\n", stdout)
+            fputs("Removed Offsider skill -> \(entry)\n", stdout)
         }
     }
 
