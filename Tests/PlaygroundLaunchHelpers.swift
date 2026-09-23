@@ -38,7 +38,7 @@ extension TestHelpers {
         for attempt in 0..<2 {
             do {
                 _ = try await CommandRunner.run(
-                    "xcrun simctl launch --terminate-running-process \(udid) com.cameroncooke.AxePlayground --launch-arg \"screen=\(screen)\""
+                    "xcrun simctl launch --terminate-running-process \(udid) com.mpalmes.offsider.playground --launch-arg \"screen=\(screen)\""
                 )
             } catch {
                 lastLaunchError = error

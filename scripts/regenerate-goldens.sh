@@ -18,7 +18,7 @@ usage() {
     "" \
     "Options:" \
     "  --developer-dir PATH   Select Xcode without changing xcode-select" \
-    "  --fixture-screen NAME  AxePlayground screen (default: tap-test)" \
+    "  --fixture-screen NAME  OffsiderPlayground screen (default: tap-test)" \
     "  --output-root PATH     Golden root (default: Tests/Goldens)" \
     "  --check                Compare generated contracts with checked-in goldens" \
     "  --update               Replace the matrix-scoped goldens (default)" \
@@ -223,10 +223,10 @@ capture_case output-record-video-missing-value record-video --udid invalid --out
 capture_case output-screenshot-missing-value screenshot --udid invalid --output
 capture_case output-stream-video-stdout-format stream-video --udid invalid --format invalid
 
-xcrun simctl get_app_container "$SIMULATOR_UDID" com.cameroncooke.AxePlayground app >/dev/null \
-  || fail "AxePlayground is not installed on simulator $SIMULATOR_UDID"
-xcrun simctl terminate "$SIMULATOR_UDID" com.cameroncooke.AxePlayground >/dev/null 2>&1 || true
-xcrun simctl launch "$SIMULATOR_UDID" com.cameroncooke.AxePlayground --launch-arg "screen=$FIXTURE_SCREEN" >/dev/null
+xcrun simctl get_app_container "$SIMULATOR_UDID" com.mpalmes.offsider.playground app >/dev/null \
+  || fail "OffsiderPlayground is not installed on simulator $SIMULATOR_UDID"
+xcrun simctl terminate "$SIMULATOR_UDID" com.mpalmes.offsider.playground >/dev/null 2>&1 || true
+xcrun simctl launch "$SIMULATOR_UDID" com.mpalmes.offsider.playground --launch-arg "screen=$FIXTURE_SCREEN" >/dev/null
 sleep 2
 
 set +e

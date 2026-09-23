@@ -1,6 +1,6 @@
 //
-//  AxePlaygroundApp.swift
-//  AxePlayground
+//  OffsiderPlaygroundApp.swift
+//  OffsiderPlayground
 //
 //  Created by Cameron on 23/05/2025.
 //
@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct AxePlaygroundApp: App {
+struct OffsiderPlaygroundApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

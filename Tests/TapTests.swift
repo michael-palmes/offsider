@@ -101,7 +101,7 @@ struct TapTests {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test")
         
         // Act
-        try await TestHelpers.runOffsiderCommand("tap --label 'AXe Playground'", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label 'Offsider Playground'", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert

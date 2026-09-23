@@ -5,14 +5,14 @@ UDID="${UDID:-}"
 OFFSIDER_PATH="${OFFSIDER_PATH:-}"
 ITERATIONS="${ITERATIONS:-30}"
 ROUNDS="${ROUNDS:-7}"
-APP_BUNDLE="${APP_BUNDLE:-com.cameroncooke.AxePlayground}"
+APP_BUNDLE="${APP_BUNDLE:-com.mpalmes.offsider.playground}"
 SCREEN="${SCREEN:-tap-test}"
 
 usage() {
   cat <<EOF
 Usage: $0 --udid <simulator-udid> [--iterations N] [--rounds N] [--offsider-path PATH]
 
-Benchmarks equivalent non-batched vs batched workflows on AxePlayground.
+Benchmarks equivalent non-batched vs batched workflows on OffsiderPlayground.
 
 Defaults:
   iterations: ${ITERATIONS}

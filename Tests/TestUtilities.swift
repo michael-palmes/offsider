@@ -233,7 +233,7 @@ struct TestHelpers {
                 
         let roots = try UIStateParser.parseDescribeUIRoots(result.output)
         if let playgroundRoot = roots.first(where: { root in
-            root.type == "Application" && root.label == "AxePlayground"
+            root.type == "Application" && root.label == "OffsiderPlayground"
         }) {
             return playgroundRoot
         }

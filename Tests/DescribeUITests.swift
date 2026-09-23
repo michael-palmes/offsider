@@ -121,7 +121,7 @@ struct DescribeUITests {
         let targetedFrame = try #require(targetedElement.frame)
 
         #expect(targetedElement.identifier == "BackButton")
-        #expect(targetedElement.label == "AXe Playground")
+        #expect(targetedElement.label == "Offsider Playground")
         #expect(targetedElement.type == "Button")
         #expect(targetedElement.role == "AXButton")
         #expect(targetedElement.roleDescription == "back button")

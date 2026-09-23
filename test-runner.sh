@@ -17,9 +17,9 @@ NC='\033[0m' # No Color
 # Configuration
 SIMULATOR_NAME="iPhone 17 Pro"
 SIMULATOR_UDID="${SIMULATOR_UDID:-}"
-PLAYGROUND_PROJECT="AxePlaygroundApp/AxePlayground.xcodeproj"
-PLAYGROUND_SCHEME="AxePlayground"
-BUNDLE_ID="com.cameroncooke.AxePlayground"
+PLAYGROUND_PROJECT="OffsiderPlaygroundApp/OffsiderPlayground.xcodeproj"
+PLAYGROUND_SCHEME="OffsiderPlayground"
+BUNDLE_ID="com.mpalmes.offsider.playground"
 
 # Print colored messages
 print_info() {
@@ -185,6 +185,11 @@ check_prerequisites() {
         exit 1
     fi
 
+    if [[ "$UNIT_TESTS" != true ]] && ! command -v xcodegen &> /dev/null; then
+        print_error "xcodegen not found. Install it with 'brew install xcodegen' to generate the playground project."
+        exit 1
+    fi
+
     if ! configure_e2e_environment; then
         print_error "Xcode 26 or later is required to build and test Offsider. Set DEVELOPER_DIR to its Contents/Developer directory."
         exit 1
@@ -219,6 +224,10 @@ boot_simulator() {
     else
         print_success "Simulator already booted"
     fi
+}
+
+generate_playground_project() {
+    xcodegen generate --spec OffsiderPlaygroundApp/project.yml --quiet
 }
 
 # Function to clean build
@@ -349,7 +358,7 @@ build_playground_app() {
     xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" 2>/dev/null || true
 
     # Build the app (not build-for-testing since this is a regular app)
-    print_info "Building AxePlayground app..."
+    print_info "Building OffsiderPlayground app..."
     if [[ "$VERBOSE" == true ]]; then
         xcodebuild build \
             -project "$PLAYGROUND_PROJECT" \
@@ -378,7 +387,7 @@ build_playground_app() {
     fi
 
     # Install the app
-    print_info "Installing AxePlayground app on simulator..."
+    print_info "Installing OffsiderPlayground app on simulator..."
     if [[ "$VERBOSE" == true ]]; then
         xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
     else
@@ -560,6 +569,7 @@ main() {
 
     if [[ "$TESTS_ONLY" != true ]]; then
         build_idb_xcframeworks
+        generate_playground_project
         clean_build
         build_offsider
         ensure_test_framework_rpaths
