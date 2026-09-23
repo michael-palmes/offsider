@@ -15,7 +15,6 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-SIMULATOR_NAME="iPhone 17 Pro"
 SIMULATOR_UDID="${SIMULATOR_UDID:-}"
 PLAYGROUND_PROJECT="OffsiderPlaygroundApp/OffsiderPlayground.xcodeproj"
 PLAYGROUND_SCHEME="OffsiderPlayground"
@@ -62,6 +61,8 @@ show_usage() {
     echo "  OFFSIDER_BIN_PATH         Prebuilt Offsider executable to test with --tests-only"
     echo "  OFFSIDER_LANDSCAPE_E2E=1  Run gated landscape orientation precision tests when Simulator menu automation is available"
     echo "  OFFSIDER_REUSE_IDB=1      Skip the IDB framework rebuild when existing XCFrameworks pass verification"
+    echo "  OFFSIDER_SIMULATOR_NAME   Exact name of the simulator to test on (default: a stock iPhone on the Xcode's iOS major, booted first)"
+    echo "  SIMULATOR_UDID            UDID of the simulator to test on (overrides OFFSIDER_SIMULATOR_NAME)"
     echo ""
     echo "Test Filters (optional):"
     echo "  SwipeTests          Run only swipe tests"
@@ -204,7 +205,11 @@ check_prerequisites() {
 boot_simulator() {
     print_header "Setting Up Simulator"
 
-    select_e2e_simulator
+    if ! select_e2e_simulator; then
+        print_error "Could not select an iOS simulator for E2E tests."
+        exit 1
+    fi
+    print_info "Selected simulator: $SIMULATOR_NAME ($SIMULATOR_UDID)"
 
     print_info "Checking simulator status..."
     SIMULATOR_STATUS=$(xcrun simctl list devices | grep "$SIMULATOR_UDID" | grep -o "Booted\|Shutdown" || echo "NotFound")
@@ -218,8 +223,7 @@ boot_simulator() {
 
     if [[ "$SIMULATOR_STATUS" != "Booted" ]]; then
         print_info "Booting simulator $SIMULATOR_NAME..."
-        xcrun simctl boot "$SIMULATOR_UDID"
-        sleep 3
+        xcrun simctl bootstatus "$SIMULATOR_UDID" -b
         print_success "Simulator booted"
     else
         print_success "Simulator already booted"
