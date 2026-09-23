@@ -58,9 +58,10 @@ show_usage() {
     echo "  -v, --verbose       Verbose output"
     echo ""
     echo "Environment:"
-    echo "  DEVELOPER_DIR         Xcode used to build and run tests (Xcode 27 uses Device Hub)"
-    echo "  OFFSIDER_BIN_PATH          Prebuilt Offsider executable to test with --tests-only"
+    echo "  DEVELOPER_DIR             Xcode used to build and run tests (Xcode 27 uses Device Hub)"
+    echo "  OFFSIDER_BIN_PATH         Prebuilt Offsider executable to test with --tests-only"
     echo "  OFFSIDER_LANDSCAPE_E2E=1  Run gated landscape orientation precision tests when Simulator menu automation is available"
+    echo "  OFFSIDER_REUSE_IDB=1      Skip the IDB framework rebuild when existing XCFrameworks pass verification"
     echo ""
     echo "Test Filters (optional):"
     echo "  SwipeTests          Run only swipe tests"
@@ -237,6 +238,15 @@ clean_build() {
 
 build_idb_xcframeworks() {
     print_header "Building IDB Frameworks"
+
+    if [[ "${OFFSIDER_REUSE_IDB:-0}" == "1" ]]; then
+        scripts/build.sh setup
+        if scripts/build.sh verify-xcframeworks; then
+            print_success "Reusing verified IDB XCFrameworks"
+            return
+        fi
+        print_warning "Existing IDB XCFrameworks failed verification; rebuilding"
+    fi
 
     if ! command -v xcodegen &> /dev/null; then
         print_error "XcodeGen is required to build IDB frameworks. Install it with 'brew install xcodegen'."
