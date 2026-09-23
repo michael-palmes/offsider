@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in Offsider does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security issues go through the Security tab instead; see SECURITY.md.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "macOS 27.0 (27A123)"
+    validations:
+      required: true
+  - type: input
+    id: xcode
+    attributes:
+      label: Xcode version
+      description: Output of `xcodebuild -version`
+      placeholder: "Xcode 27.0 (27A123)"
+    validations:
+      required: true
+  - type: input
+    id: offsider-version
+    attributes:
+      label: Offsider version
+      description: Output of `offsider --version`
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Simulator device and runtime
+      placeholder: "iPhone 17 Pro, iOS 27.0"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the full output and any error message
+    validations:
+      required: true
