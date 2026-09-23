@@ -52,8 +52,7 @@ enum ProcessCapture {
             let name = ([URL(fileURLWithPath: executable).lastPathComponent] + arguments.prefix(2)).joined(separator: " ")
             throw ProcessCaptureTimeoutError(command: name, timeout: timeout)
         }
-        process.waitUntilExit()
-        // A grandchild can hold the pipe open, so stop reading shortly after the tool exits.
+        // Skip waitUntilExit (it can hang on a cooperative thread) and stop reading soon, as a grandchild can hold the pipe.
         let drainDeadline = Date().addingTimeInterval(1)
         while !(stdoutBuffer.isFinished && stderrBuffer.isFinished), Date() < drainDeadline {
             try? await Task.sleep(for: .milliseconds(10))
