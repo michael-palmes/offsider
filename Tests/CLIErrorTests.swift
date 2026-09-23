@@ -11,7 +11,7 @@ struct CLIErrorTests {
         #expect(String(describing: error) == "Simulator not found.")
     }
 
-    @Test("AXe runtime error types provide user-facing descriptions")
+    @Test("Offsider runtime error types provide user-facing descriptions")
     func offsiderRuntimeErrorsAreUserFacing() {
         #expect(
             String(describing: TextToHIDEvents.TextConversionError.unsupportedCharacter("💥"))
@@ -23,19 +23,19 @@ struct CLIErrorTests {
         )
         #expect(
             String(describing: VideoProcessingError.failedToDecodeImage)
-                == "AXe could not decode a simulator video frame."
+                == "Offsider could not decode a simulator video frame."
         )
         #expect(
             VideoProcessingError.failedToDecodeImage.localizedDescription
-                == "AXe could not decode a simulator video frame."
+                == "Offsider could not decode a simulator video frame."
         )
         #expect(
             String(describing: HIDBrokerNotReadyError())
-                == "AXe could not establish simulator input. Wait for the simulator to finish booting and try again."
+                == "Offsider could not establish simulator input. Wait for the simulator to finish booting and try again."
         )
         #expect(
             HIDBrokerNotReadyError().localizedDescription
-                == "AXe could not establish simulator input. Wait for the simulator to finish booting and try again."
+                == "Offsider could not establish simulator input. Wait for the simulator to finish booting and try again."
         )
     }
 
@@ -57,7 +57,7 @@ struct CLIErrorTests {
     func missingSimulatorErrorIsActionable() {
         let error = CLIError.simulatorNotFound(udid: "EXAMPLE-UDID")
 
-        #expect(error.description == "No simulator with UDID EXAMPLE-UDID was found. Run `axe list-simulators` to see available simulators.")
+        #expect(error.description == "No simulator with UDID EXAMPLE-UDID was found. Run `offsider list-simulators` to see available simulators.")
         #expect(!error.description.contains("set"))
     }
 

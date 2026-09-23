@@ -54,9 +54,9 @@ enum VideoProcessingError: LocalizedError, UserFacingError {
     var userFacingDescription: String {
         switch self {
         case .failedToDecodeImage:
-            return "AXe could not decode a simulator video frame."
+            return "Offsider could not decode a simulator video frame."
         case .failedToAllocatePixelBuffer:
-            return "AXe could not allocate memory for a simulator video frame."
+            return "Offsider could not allocate memory for a simulator video frame."
         }
     }
 

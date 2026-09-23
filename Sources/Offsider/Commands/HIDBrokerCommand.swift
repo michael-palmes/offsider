@@ -3,7 +3,7 @@ import Darwin
 import FBControlCore
 
 struct HIDBrokerCommand: AsyncParsableCommand {
-    // This hidden command is the process entry point used by AXe's HID client. It is an internal
+    // This hidden command is the process entry point used by Offsider's HID client. It is an internal
     // implementation detail rather than a supported public CLI command.
     static let configuration = CommandConfiguration(
         commandName: "hid-broker",

@@ -4,7 +4,7 @@ import Foundation
 @Suite("Button Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct ButtonTests {
     private func simulatorUDID() throws -> String {
-        try #require(defaultSimulatorUDID, "AXE_E2E_SIMULATOR_UDID is required for button E2E tests")
+        try #require(defaultSimulatorUDID, "SIMULATOR_UDID is required for button E2E tests")
     }
 
     private func springBoardState(_ name: String) async throws -> Int {
