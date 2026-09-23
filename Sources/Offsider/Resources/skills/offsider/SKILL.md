@@ -46,9 +46,9 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 ## Step 5: Batch vs discrete commands
 
 **Prefer `offsider batch`** for multi-step flows. Batch executes every step in a single process invocation, which means:
-- One tool call and one AI turn instead of many — significantly reduces agent latency and cost.
+- One tool call and one AI turn instead of many, which significantly reduces agent latency and cost.
 - A single HID session is reused across all steps, lowering per-step overhead.
-- Steps execute sequentially — each step runs before the next is resolved, so earlier taps can trigger navigation and later selector taps will find newly appeared elements (with `--wait-timeout`).
+- Steps execute sequentially: each step runs before the next is resolved, so earlier taps can trigger navigation and later selector taps will find newly appeared elements (with `--wait-timeout`).
 
 **Fall back to discrete commands** when:
 - A step's parameters depend on runtime inspection of a previous step's result (e.g. parsing `describe-ui` JSON to choose coordinates dynamically).
@@ -57,7 +57,7 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 **Handling animations and transitions in batch:**
 - Use `--wait-timeout <seconds>` so selector taps (`--id` / `--label`) poll the accessibility tree until the element appears or the timeout expires. This is the primary mechanism for multi-screen flows.
 - Use `--poll-interval <seconds>` to control polling frequency during waiting (default 0.25s).
-- Use `--ax-cache perStep` when *not* using `--wait-timeout` but the UI still changes between steps — this ensures each selector tap gets a fresh accessibility snapshot rather than a stale cached one.
+- Use `--ax-cache perStep` when *not* using `--wait-timeout` but the UI still changes between steps; this ensures each selector tap gets a fresh accessibility snapshot rather than a stale cached one.
 - Insert explicit `sleep <seconds>` steps when coordinate-based taps need the UI to be stable (selectors with `--wait-timeout` are preferred over sleep where possible).
 - Keep batch output quiet by default. Add `--verbose` only when troubleshooting.
 - Selector taps in batch share direct `tap` semantics, including switch/toggle activation-point handling and `--tap-style automatic` behavior. Use batch-level `--tap-style physical|simulator` as the default for tap steps, or step-level `tap --tap-style ...` to override one step.
