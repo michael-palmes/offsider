@@ -100,8 +100,8 @@ struct StreamVideoTests {
     func streamVideoInvalidFormat() async throws {
         let udid = try TestHelpers.requireSimulatorUDID()
 
-        let axePath = try TestHelpers.getAxePath()
-        let fullCommand = "\(axePath) stream-video --format h264 --udid \(udid)"
+        let offsiderPath = try TestHelpers.getOffsiderPath()
+        let fullCommand = "\(offsiderPath) stream-video --format h264 --udid \(udid)"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -130,9 +130,9 @@ struct StreamVideoTests {
     ) async throws -> (output: String, data: Data, dataString: String, dataSize: Int, exitCode: Int32) {
         let udid = try TestHelpers.requireSimulatorUDID()
 
-        let axePath = try TestHelpers.getAxePath()
+        let offsiderPath = try TestHelpers.getOffsiderPath()
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: axePath)
+        process.executableURL = URL(fileURLWithPath: offsiderPath)
         process.arguments = [
             "stream-video",
             "--format", format,

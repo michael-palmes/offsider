@@ -9,7 +9,7 @@ struct GestureTests {
         try await TestHelpers.launchPlaygroundApp(to: "gesture-presets")
         
         // Act
-        try await TestHelpers.runAxeCommand("gesture scroll-up", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("gesture scroll-up", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -26,7 +26,7 @@ struct GestureTests {
         try await TestHelpers.launchPlaygroundApp(to: "gesture-presets")
         
         // Act
-        try await TestHelpers.runAxeCommand("gesture scroll-down", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("gesture scroll-down", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -43,7 +43,7 @@ struct GestureTests {
         try await TestHelpers.launchPlaygroundApp(to: "gesture-presets")
         
         // Act
-        try await TestHelpers.runAxeCommand("gesture scroll-left", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("gesture scroll-left", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -60,7 +60,7 @@ struct GestureTests {
         try await TestHelpers.launchPlaygroundApp(to: "gesture-presets")
         
         // Act
-        try await TestHelpers.runAxeCommand("gesture scroll-right", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("gesture scroll-right", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -77,7 +77,7 @@ struct GestureTests {
         try await TestHelpers.launchPlaygroundApp(to: "gesture-presets")
         
         // Act
-        try await TestHelpers.runAxeCommand("gesture swipe-from-left-edge", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("gesture swipe-from-left-edge", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -95,7 +95,7 @@ struct GestureTests {
         try await TestHelpers.launchPlaygroundApp(to: "gesture-presets")
         
         // Act
-        try await TestHelpers.runAxeCommand("gesture swipe-from-right-edge", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("gesture swipe-from-right-edge", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -114,7 +114,7 @@ struct GestureTests {
         
         // Act - slower scroll
         let startTime = Date()
-        try await TestHelpers.runAxeCommand("gesture scroll-up --duration 2", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("gesture scroll-up --duration 2", simulatorUDID: defaultSimulatorUDID)
         let endTime = Date()
         
         // Assert
@@ -134,7 +134,7 @@ struct GestureTests {
         
         // Act
         let startTime = Date()
-        try await TestHelpers.runAxeCommand("gesture scroll-down --pre-delay 1 --post-delay 1", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("gesture scroll-down --pre-delay 1 --post-delay 1", simulatorUDID: defaultSimulatorUDID)
         let endTime = Date()
         
         // Assert

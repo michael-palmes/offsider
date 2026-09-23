@@ -24,18 +24,18 @@ let idbPrivateHeaderSearchFlags = [
 ].map { "-I\($0.path)" }
 
 let package = Package(
-    name: "AXe",
+    name: "Offsider",
     platforms: [
         .macOS(.v14)
     ],
     products: [
         .library(
-            name: "AXeCore",
-            targets: ["AXeCore"]
+            name: "OffsiderCore",
+            targets: ["OffsiderCore"]
         ),
         .executable(
-            name: "axe",
-            targets: ["AXe"]
+            name: "offsider",
+            targets: ["Offsider"]
         )
     ],
     dependencies: [
@@ -43,20 +43,20 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "AXeCore",
-            path: "Sources/AXeCore"
+            name: "OffsiderCore",
+            path: "Sources/OffsiderCore"
         ),
         .executableTarget(
-            name: "AXe",
+            name: "Offsider",
             dependencies: [
-                "AXeCore",
+                "OffsiderCore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 "FBSimulatorControl",
                 "FBDeviceControl",
                 "FBControlCore",
                 "XCTestBootstrap"
             ],
-            path: "Sources/AXe",
+            path: "Sources/Offsider",
             resources: [
                 .copy("Resources/skills")
             ],
@@ -76,8 +76,8 @@ let package = Package(
             plugins: ["VersionPlugin"]
         ),
         .testTarget(
-            name: "AXeTests",
-            dependencies: ["AXe", "AXeCore"],
+            name: "OffsiderTests",
+            dependencies: ["Offsider", "OffsiderCore"],
             path: "Tests",
             exclude: ["Goldens"],
             swiftSettings: [

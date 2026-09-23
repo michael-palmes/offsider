@@ -107,7 +107,7 @@ extension TestHelpers {
                         lastFocusRequest = Date()
                         let centerX = textFieldFrame.x + (textFieldFrame.width / 2)
                         let centerY = textFieldFrame.y + (textFieldFrame.height / 2)
-                        _ = try? await runAxeCommand(
+                        _ = try? await runOffsiderCommand(
                             "tap -x \(centerX) -y \(centerY)",
                             simulatorUDID: simulatorUDID
                         )

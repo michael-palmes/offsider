@@ -2,7 +2,7 @@ import Darwin
 import Dispatch
 import Foundation
 import Testing
-@testable import AXe
+@testable import Offsider
 
 @Suite("HID Broker Tests")
 struct HIDBrokerTests {

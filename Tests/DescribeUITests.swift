@@ -5,19 +5,19 @@ import Foundation
 struct DescribeUICommandSurfaceTests {
     @Test("--point appears in describe-ui --help")
     func describeUIHelpIncludesPoint() async throws {
-        let result = try await TestHelpers.runAxeCommand("describe-ui --help")
+        let result = try await TestHelpers.runOffsiderCommand("describe-ui --help")
         #expect(result.output.contains("--point <x,y>"))
     }
 
     @Test("--point appears in help describe-ui")
     func helpDescribeUIIncludesPoint() async throws {
-        let result = try await TestHelpers.runAxeCommand("help describe-ui")
+        let result = try await TestHelpers.runOffsiderCommand("help describe-ui")
         #expect(result.output.contains("--point <x,y>"))
     }
 
     @Test("Invalid --point format fails with guidance")
     func invalidPointFormatFails() async throws {
-        let result = try await TestHelpers.runAxeCommandAllowFailure("describe-ui --udid invalid --point nope")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("describe-ui --udid invalid --point nope")
         #expect(result.exitCode != 0)
         #expect(result.output.contains("--point must be in the form x,y using non-negative numbers."))
     }
@@ -109,7 +109,7 @@ struct DescribeUITests {
         let centerY = frame.y + (frame.height / 2)
         let point = "\(centerX),\(centerY)"
 
-        let result = try await TestHelpers.runAxeCommand(
+        let result = try await TestHelpers.runOffsiderCommand(
             "describe-ui --point \(point)",
             simulatorUDID: simulatorUDID
         )

@@ -1,12 +1,12 @@
 import Testing
 import Foundation
-@testable import AXe
+@testable import Offsider
 
 @Suite("Drag Command Surface Tests")
 struct DragCommandSurfaceTests {
     @Test("Drag help includes coordinate and timing options")
     func dragHelpIncludesCoordinateAndTimingOptions() async throws {
-        let result = try await TestHelpers.runAxeCommand("drag --help")
+        let result = try await TestHelpers.runOffsiderCommand("drag --help")
 
         #expect(result.output.contains("--start-x"))
         #expect(result.output.contains("--start-y"))
@@ -18,7 +18,7 @@ struct DragCommandSurfaceTests {
 
     @Test("Invalid drag coordinates fail validation")
     func invalidDragCoordinatesFailValidation() async throws {
-        let result = try await TestHelpers.runAxeCommandAllowFailure(
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure(
             "drag --start-x 100 --start-y 100 --end-x 100 --end-y 100 --udid invalid"
         )
 
@@ -28,7 +28,7 @@ struct DragCommandSurfaceTests {
 
     @Test("Too many drag steps fails validation")
     func tooManyDragStepsFailsValidation() async throws {
-        let result = try await TestHelpers.runAxeCommandAllowFailure(
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure(
             "drag --start-x 100 --start-y 100 --end-x 100 --end-y 200 --steps 1001 --udid invalid"
         )
 
@@ -69,7 +69,7 @@ struct DragTests {
         let start = (x: 250, y: 450)
         let end = (x: 250, y: 650)
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "drag --start-x \(start.x) --start-y \(start.y) --end-x \(end.x) --end-y \(end.y) --duration 0.4 --steps 40",
             simulatorUDID: defaultSimulatorUDID
         )
