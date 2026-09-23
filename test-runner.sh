@@ -59,8 +59,8 @@ show_usage() {
     echo ""
     echo "Environment:"
     echo "  DEVELOPER_DIR         Xcode used to build and run tests (Xcode 27 uses Device Hub)"
-    echo "  AXE_BIN_PATH          Prebuilt Offsider executable to test with --tests-only"
-    echo "  AXE_LANDSCAPE_E2E=1  Run gated landscape orientation precision tests when Simulator menu automation is available"
+    echo "  OFFSIDER_BIN_PATH          Prebuilt Offsider executable to test with --tests-only"
+    echo "  OFFSIDER_LANDSCAPE_E2E=1  Run gated landscape orientation precision tests when Simulator menu automation is available"
     echo ""
     echo "Test Filters (optional):"
     echo "  SwipeTests          Run only swipe tests"
@@ -318,10 +318,10 @@ run_unit_tests() {
     print_header "Running Non-E2E Swift Tests"
 
     ensure_test_framework_rpaths
-    AXE_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
-    export AXE_BIN_PATH
-    export AXE_E2E=0
-    export AXE_LANDSCAPE_E2E=0
+    OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
+    export OFFSIDER_BIN_PATH
+    export OFFSIDER_E2E=0
+    export OFFSIDER_LANDSCAPE_E2E=0
 
     local args=(--skip-build --no-parallel)
     [[ "$VERBOSE" == true ]] && args+=(--verbose)
@@ -398,34 +398,34 @@ run_tests() {
 
     # Set up environment
     export SIMULATOR_UDID="$SIMULATOR_UDID"
-    export AXE_E2E=1
-    if [[ -z "${AXE_BIN_PATH:-}" ]]; then
-        AXE_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
+    export OFFSIDER_E2E=1
+    if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
+        OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
-    export AXE_BIN_PATH
-    if [[ ! -f "$AXE_BIN_PATH" ]]; then
-        print_error "Offsider executable not found at $AXE_BIN_PATH. Run without --tests-only, run swift build first, or set AXE_BIN_PATH to a prebuilt payload."
+    export OFFSIDER_BIN_PATH
+    if [[ ! -f "$OFFSIDER_BIN_PATH" ]]; then
+        print_error "Offsider executable not found at $OFFSIDER_BIN_PATH. Run without --tests-only, run swift build first, or set OFFSIDER_BIN_PATH to a prebuilt payload."
         exit 1
     fi
 
-    local requested_landscape_e2e="${AXE_LANDSCAPE_E2E:-0}"
+    local requested_landscape_e2e="${OFFSIDER_LANDSCAPE_E2E:-0}"
     local normalized_landscape_e2e
     normalized_landscape_e2e=$(printf '%s' "$requested_landscape_e2e" | tr '[:upper:]' '[:lower:]')
     case "$normalized_landscape_e2e" in
         1|true|yes)
             if landscape_orientation_menu_available; then
-                export AXE_LANDSCAPE_E2E=1
+                export OFFSIDER_LANDSCAPE_E2E=1
             else
-                print_warning "Skipping landscape orientation precision tests because Simulator menu automation is unavailable. Open Simulator and grant macOS Accessibility permissions, then rerun with AXE_LANDSCAPE_E2E=1."
-                export AXE_LANDSCAPE_E2E=0
+                print_warning "Skipping landscape orientation precision tests because Simulator menu automation is unavailable. Open Simulator and grant macOS Accessibility permissions, then rerun with OFFSIDER_LANDSCAPE_E2E=1."
+                export OFFSIDER_LANDSCAPE_E2E=0
             fi
             ;;
         *)
-            export AXE_LANDSCAPE_E2E=0
+            export OFFSIDER_LANDSCAPE_E2E=0
             ;;
     esac
 
-    print_info "Environment: SIMULATOR_UDID=$SIMULATOR_UDID, AXE_E2E=$AXE_E2E, AXE_LANDSCAPE_E2E=$AXE_LANDSCAPE_E2E, AXE_BIN_PATH=$AXE_BIN_PATH"
+    print_info "Environment: SIMULATOR_UDID=$SIMULATOR_UDID, OFFSIDER_E2E=$OFFSIDER_E2E, OFFSIDER_LANDSCAPE_E2E=$OFFSIDER_LANDSCAPE_E2E, OFFSIDER_BIN_PATH=$OFFSIDER_BIN_PATH"
 
     run_swift_test() {
         local filter="$1"

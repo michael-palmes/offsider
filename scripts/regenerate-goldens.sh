@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_ROOT="$ROOT_DIR/Tests/Goldens"
 MODE="update"
-AXE_BIN=""
+OFFSIDER_BIN=""
 SIMULATOR_UDID=""
 MATRIX_ID=""
 SELECTED_DEVELOPER_DIR="${DEVELOPER_DIR:-}"
@@ -40,7 +40,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --offsider)
       require_value "$1" "${2:-}"
-      AXE_BIN="$2"
+      OFFSIDER_BIN="$2"
       shift 2
       ;;
     --udid)
@@ -86,7 +86,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -x "$AXE_BIN" ]] || fail "Offsider executable not found or not executable: $AXE_BIN"
+[[ -x "$OFFSIDER_BIN" ]] || fail "Offsider executable not found or not executable: $OFFSIDER_BIN"
 [[ -n "$SIMULATOR_UDID" ]] || fail "--udid is required"
 [[ "$MATRIX_ID" =~ ^[A-Za-z0-9._-]+$ ]] || fail "--matrix-id must contain only letters, numbers, '.', '_' or '-'"
 [[ "$MATRIX_ID" != "." && "$MATRIX_ID" != ".." ]] || fail "--matrix-id cannot be '.' or '..'"
@@ -109,12 +109,12 @@ DEVICE_NAME="$(jq -r --arg udid "$SIMULATOR_UDID" '[.devices[][] | select(.udid 
 XCODE_VERSION_OUTPUT="$(xcodebuild -version)"
 XCODE_VERSION="$(awk 'NR == 1 { print }' <<< "$XCODE_VERSION_OUTPUT")"
 XCODE_BUILD="$(awk '/Build version/ { print $3 }' <<< "$XCODE_VERSION_OUTPUT")"
-AXE_SHA256="$(shasum -a 256 "$AXE_BIN" | awk '{ print $1 }')"
+OFFSIDER_SHA256="$(shasum -a 256 "$OFFSIDER_BIN" | awk '{ print $1 }')"
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/offsider-goldens.XXXXXX")"
 GENERATED_DIR="$WORK_DIR/$MATRIX_ID"
 STABLE_DIR="$GENERATED_DIR/stable"
-WORK_DIR_MARKER_VALUE="offsider-goldens-workdir:$AXE_SHA256:$$"
+WORK_DIR_MARKER_VALUE="offsider-goldens-workdir:$OFFSIDER_SHA256:$$"
 printf '%s\n' "$WORK_DIR_MARKER_VALUE" > "$WORK_DIR/.offsider-goldens-workdir"
 WORK_DIR_IDENTITY="$(stat -f '%d:%i' "$WORK_DIR")"
 mkdir -p "$STABLE_DIR/cases" "$STABLE_DIR/hierarchy"
@@ -149,7 +149,7 @@ capture_case() {
   printf '\n' >> "$case_dir/argv.txt"
 
   set +e
-  "$AXE_BIN" "$@" > "$case_dir/stdout.txt" 2> "$case_dir/stderr.txt"
+  "$OFFSIDER_BIN" "$@" > "$case_dir/stdout.txt" 2> "$case_dir/stderr.txt"
   local status=$?
   set -e
   printf '%s\n' "$status" > "$case_dir/exit-code.txt"
@@ -168,7 +168,7 @@ capture_stdin_case() {
   printf '%s' "$input" > "$case_dir/stdin.txt"
 
   set +e
-  printf '%s' "$input" | "$AXE_BIN" "$@" > "$case_dir/stdout.txt" 2> "$case_dir/stderr.txt"
+  printf '%s' "$input" | "$OFFSIDER_BIN" "$@" > "$case_dir/stdout.txt" 2> "$case_dir/stderr.txt"
   local status=${PIPESTATUS[1]}
   set -e
   printf '%s\n' "$status" > "$case_dir/exit-code.txt"
@@ -230,7 +230,7 @@ xcrun simctl launch "$SIMULATOR_UDID" com.cameroncooke.AxePlayground --launch-ar
 sleep 2
 
 set +e
-"$AXE_BIN" describe-ui --udid "$SIMULATOR_UDID" \
+"$OFFSIDER_BIN" describe-ui --udid "$SIMULATOR_UDID" \
   > "$STABLE_DIR/hierarchy/raw.json" \
   2> "$STABLE_DIR/hierarchy/stderr.txt"
 HIERARCHY_STATUS=$?
@@ -273,7 +273,7 @@ done < <(find "$GENERATED_DIR" -type f ! -name 'provenance.json' -print | sort) 
 STABLE_SHA256="$(shasum -a 256 "$STABLE_MANIFEST" | awk '{ print $1 }')"
 
 jq -n -S \
-  --arg axe_sha256 "$AXE_SHA256" \
+  --arg axe_sha256 "$OFFSIDER_SHA256" \
   --arg simulator_udid "$SIMULATOR_UDID" \
   --arg device_name "$DEVICE_NAME" \
   --arg stable_sha256 "$STABLE_SHA256" \
@@ -294,7 +294,7 @@ if [[ "$MODE" == "check" ]]; then
   [[ ! -L "$DESTINATION_DIR" && -d "$DESTINATION_DIR" ]] \
     || fail "Golden matrix does not exist or is a symlink: $DESTINATION_DIR"
   jq -e \
-    --arg payload "$AXE_SHA256" \
+    --arg payload "$OFFSIDER_SHA256" \
     --arg stable "$STABLE_SHA256" \
     '.schema_version == 1 and .axe_payload_sha256 == $payload and .stable_contract_sha256 == $stable' \
     "$DESTINATION_DIR/provenance.json" >/dev/null \
