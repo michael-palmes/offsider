@@ -5,16 +5,18 @@ description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator 
 
 ## Step 1: Confirm runtime context
 1. Identify simulator UDID target first (`offsider list-simulators`).
-2. Simulator-interaction Offsider commands require `--udid <UDID>`. Commands like `list-simulators` and `init` do not.
-3. Run `offsider describe-ui --udid <UDID>` to inspect the full current screen. Use `offsider describe-ui --point <X,Y> --udid <UDID>` to inspect the element at a specific coordinate. Use the output to discover available `--id` and `--label` values for selector taps and slider setting, and to confirm coordinates for coordinate-based taps.
-4. Prefer selectors (`tap --id` / `tap --label`, `slider --id` / `slider --label`) over raw coordinates. Selectors are resilient to layout changes, work across device sizes, and support element waiting where documented. For UIKit `UISwitch` and SwiftUI `Toggle` rows, selector taps activate the contained switch/toggle when the match contains exactly one such control. Default tap style is `automatic`: switches/toggles use physical touch down/up, while normal taps use simulator `tapAt`.
+2. Run `offsider doctor --udid <UDID> --json` at the start of a session and whenever input seems ignored. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint`. `offsider doctor --udid <UDID> --fix` opens Device Hub or the device window and removes a stale HID broker directory, then checks again.
+3. Simulator-interaction Offsider commands require `--udid <UDID>`. Commands like `list-simulators`, `init` and `doctor` do not.
+4. Run `offsider describe-ui --udid <UDID>` to inspect the full current screen. Use `offsider describe-ui --point <X,Y> --udid <UDID>` to inspect the element at a specific coordinate. Use the output to discover available `--id` and `--label` values for selector taps and slider setting, and to confirm coordinates for coordinate-based taps.
+5. Prefer selectors (`tap --id` / `tap --label`, `slider --id` / `slider --label`) over raw coordinates. Selectors are resilient to layout changes, work across device sizes, and support element waiting where documented. For UIKit `UISwitch` and SwiftUI `Toggle` rows, selector taps activate the contained switch/toggle when the match contains exactly one such control. Default tap style is `automatic`: switches/toggles use physical touch down/up, while normal taps use simulator `tapAt`.
 
 ## Step 2: Choose the right command
 
-Available commands: `init`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `batch`, `describe-ui`, `screenshot`, `record-video`, `stream-video`, `list-simulators`. Run `offsider --help` or `offsider <command> --help` for full options.
+Available commands: `doctor`, `init`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `batch`, `describe-ui`, `screenshot`, `record-video`, `stream-video`, `list-simulators`. Run `offsider --help` or `offsider <command> --help` for full options.
 
 Common examples:
 ```bash
+offsider doctor --udid <UDID> --json
 offsider tap --id <identifier> --udid <UDID>
 offsider tap --label <text> --udid <UDID>
 offsider tap --label 'Weather Alerts' --udid <UDID>
