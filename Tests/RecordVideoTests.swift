@@ -27,7 +27,7 @@ struct RecordVideoTests {
     @Test("Record video uses provided directory without deleting its contents")
     func recordVideoOutputDirectory() async throws {
         let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("axe-record-output-\(UUID().uuidString)")
+            .appendingPathComponent("offsider-record-output-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         let sentinel = tempDir.appendingPathComponent("sentinel.txt")
         try "sentinel".write(to: sentinel, atomically: true, encoding: .utf8)
@@ -89,7 +89,7 @@ struct RecordVideoTests {
         let offsiderPath = try TestHelpers.getOffsiderPath()
 
         let defaultOutputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("axe-record-test-\(UUID().uuidString).mp4")
+            .appendingPathComponent("offsider-record-test-\(UUID().uuidString).mp4")
         let configuredOutputPath = outputPath ?? defaultOutputURL.path
 
         let process = Process()
