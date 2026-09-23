@@ -258,8 +258,8 @@ ${version_line}  sha256 "$3"
   end
 
   depends_on arch: :arm64
-  depends_on xcode: "26.0"
   depends_on macos: :sequoia
+  depends_on xcode: "26.0"
 
   # Pre-built, Developer ID signed and notarised payload. Keep @rpath install names so
   # Homebrew's relocation does not rewrite the frameworks and replace their signatures.
