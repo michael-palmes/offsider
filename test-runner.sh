@@ -475,6 +475,7 @@ run_tests() {
         local suites=(
             "BatchTests"
             "ButtonTests"
+            "CommandNamingTests"
             "DescribeUITests"
             "GestureTests"
             "InitTests"
