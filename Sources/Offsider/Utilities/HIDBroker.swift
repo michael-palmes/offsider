@@ -85,6 +85,29 @@ enum HIDBroker {
 
         let bootIdentity = try currentBootIdentity(simulatorUDID: simulatorUDID)
         let session = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
+        do {
+            try await acceptClients(
+                on: listener,
+                bootIdentity: bootIdentity,
+                session: session,
+                simulatorUDID: simulatorUDID,
+                logger: logger
+            )
+        } catch {
+            await HIDInteractor.closeSession(session)
+            throw error
+        }
+        await HIDInteractor.closeSession(session)
+    }
+
+    @MainActor
+    private static func acceptClients(
+        on listener: Int32,
+        bootIdentity: HIDBrokerBootIdentity,
+        session: HIDInteractor.Session,
+        simulatorUDID: String,
+        logger: OffsiderLogger
+    ) async throws {
         while true {
             var pollDescriptor = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
             let result = Darwin.poll(&pollDescriptor, 1, idleTimeoutMilliseconds)

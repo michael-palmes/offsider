@@ -82,6 +82,7 @@ struct TapTestView: View {
                     .shadow(color: indicator.color.opacity(0.3), radius: 3, x: 0, y: 2)
                     .accessibilityIdentifier("tap-indicator-\(indicator.id.uuidString)")
                     .accessibilityValue("x:\(Int(indicator.displayX)),y:\(Int(indicator.displayY))")
+                    .allowsHitTesting(false)
             }
             
             // Hidden accessibility element that reports all tap history

@@ -18,8 +18,8 @@ DEFAULT_IDB_CHECKOUT_DIR="${REPO_ROOT}/idb_checkout"
 IDB_CHECKOUT_DIR="${IDB_CHECKOUT_DIR:-${DEFAULT_IDB_CHECKOUT_DIR}}"
 IDB_CHECKOUT_DIR="$(cd "$(dirname "$IDB_CHECKOUT_DIR")" && pwd)/$(basename "$IDB_CHECKOUT_DIR")"
 IDB_GIT_URL="${IDB_GIT_URL:-https://github.com/michael-palmes/idb.git}"
-# Tag offsider-idb-v0.1.0 on branch offsider/xcode27
-DEFAULT_IDB_GIT_REF="604c51013438f0c3603b720a05a44b7c5b8f286d"
+# Tag offsider-idb-v0.2.0 on branch offsider/xcode27
+DEFAULT_IDB_GIT_REF="c50bca23e92903704338d0e09b121b59f087c26b"
 IDB_GIT_REF="${IDB_GIT_REF:-${DEFAULT_IDB_GIT_REF}}"
 IDB_UPSTREAM_BASE_REF="${IDB_UPSTREAM_BASE_REF:-e682506725e9efefb9c43b8b917c0b12eb2a5939}"
 BUILD_OUTPUT_DIR="${BUILD_OUTPUT_DIR:-./build_products}"
@@ -166,6 +166,7 @@ function verify_fbsimulatorcontrol_fork_features() {
     "enableAutomationModeWithError:"
     "loadAccessibilityWithTimeout:reply:"
     "transportType"
+    "dtuhidd did not answer a liveness probe in "
   )
   local reference
   for reference in "${required_references[@]}"; do
@@ -210,7 +211,8 @@ function verify_fbsimulatorcontrol_fork_features() {
   done
 
   if ! grep -F 'FBAccessibilityElement' "${public_module_artifacts[0]}" >/dev/null ||
-    ! grep -F 'accessibilityElementForFrontmostApplication' "${public_module_artifacts[0]}" >/dev/null
+    ! grep -F 'accessibilityElementForFrontmostApplication' "${public_module_artifacts[0]}" >/dev/null ||
+    ! grep -F 'public func close() async' "${public_module_artifacts[0]}" >/dev/null
   then
     echo "❌ Error: FBSimulatorControl lost the public Offsider accessibility command surface"
     echo "   Checked: ${public_module_artifacts[0]}"
@@ -365,6 +367,9 @@ function verify_idb_source_state() {
     "FBSimulatorControl/Commands/FBAXTranslationDispatcher.swift|clientType = 2"
     "FBSimulatorControl/Commands/FBAXTranslationRequest.swift|@_implementationOnly import AccessibilityPlatformTranslation"
     "FBSimulatorControl/HID/FBSimulatorHID.swift|public let transportType"
+    "FBSimulatorControl/HID/FBSimulatorDTUHIDTransport.swift|func confirmLiveness()"
+    "FBSimulatorControl/HID/FBSimulatorDTUHIDTransport.swift|struct DTUHIDTiming"
+    "FBSimulatorControl/HID/FBSimulatorHID.swift|public func close() async"
     "FBSimulatorControl/HID/FBSimulatorHIDEvent.swift|event.event(for: transportType)"
     "FBSimulatorControl/Utility/FBSimulatorControlFrameworkLoader.m|XCUIDeviceRemoteAutomationSession"
   )
@@ -817,6 +822,10 @@ function cmd_executable() {
 
 function cmd_verify_xcframeworks() {
   print_section "🧪" "Verifying XCFramework Inputs"
+  if ! grep -Fxq "IDB_SHA=${IDB_GIT_REF}" "${BUILD_XCFRAMEWORK_DIR}/IDB_BUILD_EVIDENCE.txt" 2>/dev/null; then
+    echo "❌ Error: XCFrameworks were not built from the pinned IDB fork revision ${IDB_GIT_REF}"
+    exit 1
+  fi
   verify_xcframework_inputs "${BUILD_OUTPUT_DIR}"
 }
 
