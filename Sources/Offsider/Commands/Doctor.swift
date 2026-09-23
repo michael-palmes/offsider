@@ -13,19 +13,28 @@ struct Doctor: AsyncParsableCommand {
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
 
+    @Flag(name: .customLong("fix"), help: "Apply safe, repeatable fixes, then check again.")
+    var fix = false
+
     func run() async throws {
         let runner = DoctorRunner(
             udid: simulatorUDID,
             environment: ProcessInfo.processInfo.environment,
             logger: OffsiderLogger()
         )
-        let result = await runner.run()
+        var result = await runner.run()
+        var fixes: [DoctorFixResult] = []
+        if fix {
+            fixes = await DoctorFixes.apply(after: result, udid: simulatorUDID)
+            result = await runner.run()
+        }
         let report = DoctorReport(
             offsiderVersion: VERSION,
             udid: simulatorUDID,
             xcode: result.xcode,
             booted: result.booted,
-            checks: result.checks
+            checks: result.checks,
+            fixes: fixes
         )
         try write(report)
         if report.exitCode != .success {
