@@ -105,26 +105,32 @@ struct Batch: AsyncParsableCommand {
 
         var failures: [String] = []
 
-        for (index, line) in stepLines.enumerated() {
-            var stepName = "<unparsed>"
-            do {
-                let tokens = try ShellTokenizer.tokenize(line)
-                stepName = tokens.first ?? "<empty>"
-                let primitives = try await BatchStepParser.parseStepTokens(
-                    tokens,
-                    globalUDID: simulatorUDID,
-                    context: context,
-                    logger: logger
-                )
-                try await runner.run(BatchPlan(primitives: primitives))
-            } catch {
-                if continueOnError {
-                    failures.append("Step \(index + 1) failed: [\(stepName)] -> \(error.localizedDescription)")
-                } else {
-                    throw CLIError(errorDescription: "Step \(index + 1) failed: [\(stepName)]\n\(error.localizedDescription)")
+        do {
+            for (index, line) in stepLines.enumerated() {
+                var stepName = "<unparsed>"
+                do {
+                    let tokens = try ShellTokenizer.tokenize(line)
+                    stepName = tokens.first ?? "<empty>"
+                    let primitives = try await BatchStepParser.parseStepTokens(
+                        tokens,
+                        globalUDID: simulatorUDID,
+                        context: context,
+                        logger: logger
+                    )
+                    try await runner.run(BatchPlan(primitives: primitives))
+                } catch {
+                    if continueOnError {
+                        failures.append("Step \(index + 1) failed: [\(stepName)] -> \(error.localizedDescription)")
+                    } else {
+                        throw CLIError(errorDescription: "Step \(index + 1) failed: [\(stepName)]\n\(error.localizedDescription)")
+                    }
                 }
             }
+        } catch {
+            await HIDInteractor.closeSession(session)
+            throw error
         }
+        await HIDInteractor.closeSession(session)
 
         if !failures.isEmpty {
             let failureMessage = failures.joined(separator: "\n")
