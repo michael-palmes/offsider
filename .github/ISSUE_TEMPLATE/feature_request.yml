@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest an improvement to Offsider
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How you would like Offsider to handle it
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: upstream
+    attributes:
+      label: Would this suit the upstream project too?
+      description: Offsider is a fork. Features that apply upstream are best proposed there first; CONTRIBUTING.md links the upstream repository.
+      options:
+        - "No, it is specific to Offsider"
+        - "Yes, and I have proposed it upstream"
+        - "Yes, but I have not proposed it upstream"
+        - "Not sure"
+    validations:
+      required: true
