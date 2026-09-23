@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import AXe
+@testable import Offsider
 
 @Suite("CLI Error Tests")
 struct CLIErrorTests {
@@ -12,7 +12,7 @@ struct CLIErrorTests {
     }
 
     @Test("AXe runtime error types provide user-facing descriptions")
-    func axeRuntimeErrorsAreUserFacing() {
+    func offsiderRuntimeErrorsAreUserFacing() {
         #expect(
             String(describing: TextToHIDEvents.TextConversionError.unsupportedCharacter("💥"))
                 == "No keycode found for character: '💥'"

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# AXe Test Runner Script
-# Automates building AXe executable, playground app, and running tests
+# Offsider Test Runner Script
+# Automates building Offsider executable, playground app, and running tests
 
 set -e  # Exit on any error
 
@@ -50,7 +50,7 @@ show_usage() {
     echo ""
     echo "Options:"
     echo "  -h, --help          Show this help message"
-    echo "  -b, --build-only    Only build AXe and playground app (skip tests)"
+    echo "  -b, --build-only    Only build Offsider and playground app (skip tests)"
     echo "  -t, --tests-only    Only run tests (skip building)"
     echo "  -u, --unit-tests    Build dependencies and run non-E2E Swift tests without a simulator"
     echo "  -c, --clean         Clean build before building"
@@ -59,7 +59,7 @@ show_usage() {
     echo ""
     echo "Environment:"
     echo "  DEVELOPER_DIR         Xcode used to build and run tests (Xcode 27 uses Device Hub)"
-    echo "  AXE_BIN_PATH          Prebuilt AXe executable to test with --tests-only"
+    echo "  AXE_BIN_PATH          Prebuilt Offsider executable to test with --tests-only"
     echo "  AXE_LANDSCAPE_E2E=1  Run gated landscape orientation precision tests when Simulator menu automation is available"
     echo ""
     echo "Test Filters (optional):"
@@ -163,7 +163,7 @@ check_prerequisites() {
 
     # Check if we're in the right directory
     if [[ ! -f "Package.swift" ]]; then
-        print_error "Package.swift not found. Please run this script from the AXe project root."
+        print_error "Package.swift not found. Please run this script from the Offsider project root."
         exit 1
     fi
 
@@ -185,7 +185,7 @@ check_prerequisites() {
     fi
 
     if ! configure_e2e_environment; then
-        print_error "Xcode 26 or later is required to build and test AXe. Set DEVELOPER_DIR to its Contents/Developer directory."
+        print_error "Xcode 26 or later is required to build and test Offsider. Set DEVELOPER_DIR to its Contents/Developer directory."
         exit 1
     fi
 
@@ -252,17 +252,17 @@ build_idb_xcframeworks() {
     print_success "IDB frameworks built with Xcode $SELECTED_XCODE_VERSION"
 }
 
-# Function to build AXe executable
-build_axe() {
-    print_header "Building AXe Executable"
+# Function to build Offsider executable
+build_offsider() {
+    print_header "Building Offsider Executable"
 
-    print_info "Building AXe CLI tool..."
+    print_info "Building Offsider CLI tool..."
     if [[ "$VERBOSE" == true ]]; then
         run_selected_swift build --build-tests
     else
-        SWIFT_BUILD_LOG="$(mktemp "${TMPDIR:-/tmp}/axe-e2e-swift-build.XXXXXX")"
+        SWIFT_BUILD_LOG="$(mktemp "${TMPDIR:-/tmp}/offsider-e2e-swift-build.XXXXXX")"
         if ! run_selected_swift build --build-tests > "$SWIFT_BUILD_LOG" 2>&1; then
-            print_error "Failed to build AXe with Xcode $SELECTED_XCODE_VERSION. Build output:"
+            print_error "Failed to build Offsider with Xcode $SELECTED_XCODE_VERSION. Build output:"
             tail -80 "$SWIFT_BUILD_LOG"
             exit 1
         fi
@@ -270,15 +270,15 @@ build_axe() {
         SWIFT_BUILD_LOG=""
     fi
 
-    local axe_bin_path
-    axe_bin_path="$(run_selected_swift build --show-bin-path)/axe"
+    local offsider_bin_path
+    offsider_bin_path="$(run_selected_swift build --show-bin-path)/offsider"
 
     # Verify the executable exists
-    if [[ -f "$axe_bin_path" ]]; then
-        print_success "AXe executable built successfully"
-        print_info "Location: $axe_bin_path"
+    if [[ -f "$offsider_bin_path" ]]; then
+        print_success "Offsider executable built successfully"
+        print_info "Location: $offsider_bin_path"
     else
-        print_error "Failed to build AXe executable"
+        print_error "Failed to build Offsider executable"
         exit 1
     fi
 }
@@ -318,7 +318,7 @@ run_unit_tests() {
     print_header "Running Non-E2E Swift Tests"
 
     ensure_test_framework_rpaths
-    AXE_BIN_PATH="$(run_selected_swift build --show-bin-path)/axe"
+    AXE_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     export AXE_BIN_PATH
     export AXE_E2E=0
     export AXE_LANDSCAPE_E2E=0
@@ -400,11 +400,11 @@ run_tests() {
     export SIMULATOR_UDID="$SIMULATOR_UDID"
     export AXE_E2E=1
     if [[ -z "${AXE_BIN_PATH:-}" ]]; then
-        AXE_BIN_PATH="$(run_selected_swift build --show-bin-path)/axe"
+        AXE_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
     export AXE_BIN_PATH
     if [[ ! -f "$AXE_BIN_PATH" ]]; then
-        print_error "AXe executable not found at $AXE_BIN_PATH. Run without --tests-only, run swift build first, or set AXE_BIN_PATH to a prebuilt payload."
+        print_error "Offsider executable not found at $AXE_BIN_PATH. Run without --tests-only, run swift build first, or set AXE_BIN_PATH to a prebuilt payload."
         exit 1
     fi
 
@@ -502,7 +502,7 @@ show_summary() {
 
     if [[ "$BUILD_ONLY" == true ]]; then
         print_success "Build completed successfully"
-        print_info "AXe executable: $(run_selected_swift build --show-bin-path)/axe"
+        print_info "Offsider executable: $(run_selected_swift build --show-bin-path)/offsider"
         print_info "Playground app installed on: $SIMULATOR_NAME ($SIMULATOR_UDID)"
     elif [[ "$TESTS_ONLY" == true ]]; then
         if [[ -n "$TEST_FILTER" ]]; then
@@ -512,7 +512,7 @@ show_summary() {
         fi
     else
         print_success "Build and test cycle completed successfully"
-        print_info "AXe executable: $(run_selected_swift build --show-bin-path)/axe"
+        print_info "Offsider executable: $(run_selected_swift build --show-bin-path)/offsider"
         print_info "Playground app: Installed and tested on $SIMULATOR_NAME"
         if [[ -n "$TEST_FILTER" ]]; then
             print_info "Test suite: $TEST_FILTER"
@@ -524,7 +524,7 @@ show_summary() {
 
 # Main execution
 main() {
-    print_header "AXe Test Runner"
+    print_header "Offsider Test Runner"
     print_info "Starting automated build and test cycle..."
 
     # Always check prerequisites
@@ -532,11 +532,11 @@ main() {
 
     if [[ "$UNIT_TESTS" == true ]]; then
         build_idb_xcframeworks
-        build_axe
+        build_offsider
         run_unit_tests
         print_header "Summary"
         print_success "Non-E2E Swift build and tests completed successfully"
-        print_info "AXe executable: $(run_selected_swift build --show-bin-path)/axe"
+        print_info "Offsider executable: $(run_selected_swift build --show-bin-path)/offsider"
         return
     fi
 
@@ -551,7 +551,7 @@ main() {
     if [[ "$TESTS_ONLY" != true ]]; then
         build_idb_xcframeworks
         clean_build
-        build_axe
+        build_offsider
         ensure_test_framework_rpaths
         build_playground_app
     fi

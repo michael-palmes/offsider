@@ -27,7 +27,7 @@ struct PresentationFixtureTests {
     func alertFixtureExposesAlertControlsAndAction() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "alert-test")
 
-        try await TestHelpers.runAxeCommand("tap --id alert-test-show-alert", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --id alert-test-show-alert", simulatorUDID: defaultSimulatorUDID)
 
         _ = try await waitForElement(timeout: 3) { uiState in
             UIStateParser.findElementByLabel(in: uiState, label: "Delete Draft?")
@@ -37,7 +37,7 @@ struct PresentationFixtureTests {
         }
         #expect(deleteButton.type == "Button")
 
-        try await TestHelpers.runAxeCommand("tap --label Delete --element-type Button", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label Delete --element-type Button", simulatorUDID: defaultSimulatorUDID)
 
         let state = try await TestHelpers.waitForLabel(containing: "Alert State:", timeout: 3) {
             $0 == "Alert State: Deleted"
@@ -49,7 +49,7 @@ struct PresentationFixtureTests {
     func sheetFixtureExposesSheetContentAndState() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "sheet-test")
 
-        try await TestHelpers.runAxeCommand("tap --id sheet-test-open-sheet", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --id sheet-test-open-sheet", simulatorUDID: defaultSimulatorUDID)
 
         _ = try await waitForElement(timeout: 3) { uiState in
             UIStateParser.findElementByLabel(in: uiState, label: "Sheet Fixture")
@@ -59,8 +59,8 @@ struct PresentationFixtureTests {
         }
         #expect(actionButton.type == "Button")
 
-        try await TestHelpers.runAxeCommand("tap --label 'Run Sheet Action' --element-type Button", simulatorUDID: defaultSimulatorUDID)
-        try await TestHelpers.runAxeCommand("tap --label 'Close Sheet' --element-type Button", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label 'Run Sheet Action' --element-type Button", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label 'Close Sheet' --element-type Button", simulatorUDID: defaultSimulatorUDID)
 
         let state = try await TestHelpers.waitForLabel(containing: "Sheet State:", timeout: 3) {
             $0 == "Sheet State: Sheet action tapped"
@@ -78,7 +78,7 @@ struct PresentationFixtureTests {
         let centerX = Int(frame.x + frame.width / 2)
         let centerY = Int(frame.y + frame.height / 2)
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "touch -x \(centerX) -y \(centerY) --down --up --delay 1.0",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -88,7 +88,7 @@ struct PresentationFixtureTests {
         }
         #expect(favoriteAction.frame != nil)
 
-        try await TestHelpers.runAxeCommand("tap --label Favorite", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label Favorite", simulatorUDID: defaultSimulatorUDID)
 
         let state = try await TestHelpers.waitForLabel(containing: "Context Menu State:", timeout: 3) {
             $0 == "Context Menu State: Favorited"
@@ -100,7 +100,7 @@ struct PresentationFixtureTests {
     func modalNavigationFixtureExposesNestedRouteActions() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "modal-navigation-test")
 
-        try await TestHelpers.runAxeCommand("tap --id modal-navigation-test-open", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --id modal-navigation-test-open", simulatorUDID: defaultSimulatorUDID)
 
         _ = try await waitForElement(timeout: 3) { uiState in
             UIStateParser.findElementByLabel(in: uiState, label: "Modal Flow")
@@ -110,7 +110,7 @@ struct PresentationFixtureTests {
         }
         #expect(detailLink.frame != nil)
 
-        try await TestHelpers.runAxeCommand("tap --id modal-navigation-test-detail-link", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --id modal-navigation-test-detail-link", simulatorUDID: defaultSimulatorUDID)
 
         _ = try await waitForElement(timeout: 3) { uiState in
             UIStateParser.findElement(in: uiState, withIdentifier: "modal-navigation-test-detail")
@@ -133,7 +133,7 @@ struct PresentationFixtureTests {
         #expect(firstRow?.label == "Long Scroll Row 1")
         #expect(firstRow?.frame != nil)
 
-        try await TestHelpers.runAxeCommand("tap --id long-scroll-test-row-1", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --id long-scroll-test-row-1", simulatorUDID: defaultSimulatorUDID)
 
         let state = try await TestHelpers.waitForLabel(containing: "Long Scroll Selected:", timeout: 3) {
             $0 == "Long Scroll Selected: Row 1"

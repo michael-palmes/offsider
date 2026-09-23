@@ -10,7 +10,7 @@ struct TypeTests {
         let textToType = "Hello World"
         
         // Act
-        try await TestHelpers.runAxeCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -30,7 +30,7 @@ struct TypeTests {
         let textToType = "Test@123!$%&*"  // Removed £ which doesn't have keycode mapping
         
         // Act
-        try await TestHelpers.runAxeCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -48,7 +48,7 @@ struct TypeTests {
         let textToType = "1234567890"
         
         // Act
-        try await TestHelpers.runAxeCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -66,7 +66,7 @@ struct TypeTests {
         let textToType = "HeLLo WoRLd"
         
         // Act
-        try await TestHelpers.runAxeCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -86,7 +86,7 @@ struct TypeTests {
         // Act
         // Escape the text properly for shell - use double quotes and escape internal quotes
         let escapedText = inputText.replacingOccurrences(of: "\"", with: "\\\"")
-        try await TestHelpers.runAxeCommand("type \"\(escapedText)\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"\(escapedText)\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -111,11 +111,11 @@ struct TypeTests {
         try await TestHelpers.launchPlaygroundApp(to: "text-input")
         
         // First type something to ensure field is not empty
-        try await TestHelpers.runAxeCommand("type \"Initial text\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"Initial text\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 500_000_000)
         
         // Act - type empty string (should do nothing)
-        try await TestHelpers.runAxeCommand("type \"\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 500_000_000)
         
         // Assert - text should remain unchanged
@@ -134,7 +134,7 @@ struct TypeTests {
                         "This is a longer piece of text to test typing performance and accuracy."
         
         // Act
-        try await TestHelpers.runAxeCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 2_000_000_000)
         
         // Assert
@@ -154,7 +154,7 @@ struct TypeTests {
         // Act - Since AXe type doesn't have built-in delay options, we'll add manual delays
         let startTime = Date()
         try await Task.sleep(nanoseconds: 1_000_000_000) // Manual pre-delay
-        try await TestHelpers.runAxeCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000) // Manual post-delay
         let endTime = Date()
         
@@ -184,9 +184,9 @@ struct TypeTests {
         }
         #expect(searchField?.frame != nil)
 
-        try await TestHelpers.runAxeCommand("tap --value 'Search Books' --element-type TextField", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --value 'Search Books' --element-type TextField", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 400_000_000)
-        try await TestHelpers.runAxeCommand("type Alpha", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type Alpha", simulatorUDID: defaultSimulatorUDID)
 
         let filteredState = try await TestHelpers.waitForLabel(containing: "Search Query:", timeout: 3) {
             $0 == "Search Query: Alpha"
@@ -208,7 +208,7 @@ struct TypeTests {
         
         // Act & Assert - Command should fail with unsupported character error
         await #expect(throws: (any Error).self) {
-            try await TestHelpers.runAxeCommand("type '\(unsupportedText)'", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("type '\(unsupportedText)'", simulatorUDID: defaultSimulatorUDID)
         }
     }
     
@@ -222,8 +222,8 @@ struct TypeTests {
         guard let udid = defaultSimulatorUDID else {
             throw TestError.commandError("No simulator UDID specified in SIMULATOR_UDID environment variable")
         }
-        let axePath = try TestHelpers.getAxePath()
-        let command = "echo '\(textToType)' | \(axePath) type --stdin --udid \(udid)"
+        let offsiderPath = try TestHelpers.getOffsiderPath()
+        let command = "echo '\(textToType)' | \(offsiderPath) type --stdin --udid \(udid)"
         let result = try await CommandRunner.run(command)
         #expect(result.exitCode == 0, "Command should succeed")
         try await Task.sleep(nanoseconds: 1_000_000_000)
@@ -248,7 +248,7 @@ struct TypeTests {
         defer { try? FileManager.default.removeItem(at: tempFile) }
         
         // Act
-        try await TestHelpers.runAxeCommand("type --file \"\(tempFile.path)\"", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("type --file \"\(tempFile.path)\"", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert

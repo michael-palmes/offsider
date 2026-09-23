@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import Testing
-@testable import AXe
+@testable import Offsider
 
 @Suite("HID Broker Reliability Tests")
 struct HIDBrokerReliabilityTests {

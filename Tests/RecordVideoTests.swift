@@ -46,10 +46,10 @@ struct RecordVideoTests {
     @Test("Record video validates FPS input")
     func recordVideoInvalidFPS() async throws {
         let udid = try TestHelpers.requireSimulatorUDID()
-        let axePath = try TestHelpers.getAxePath()
+        let offsiderPath = try TestHelpers.getOffsiderPath()
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: axePath)
+        process.executableURL = URL(fileURLWithPath: offsiderPath)
         process.arguments = [
             "record-video",
             "--udid", udid,
@@ -86,14 +86,14 @@ struct RecordVideoTests {
         outputPath: String? = nil
     ) async throws -> RecordingResult {
         let udid = try TestHelpers.requireSimulatorUDID()
-        let axePath = try TestHelpers.getAxePath()
+        let offsiderPath = try TestHelpers.getOffsiderPath()
 
         let defaultOutputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("axe-record-test-\(UUID().uuidString).mp4")
         let configuredOutputPath = outputPath ?? defaultOutputURL.path
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: axePath)
+        process.executableURL = URL(fileURLWithPath: offsiderPath)
         process.arguments = [
             "record-video",
             "--udid", udid,

@@ -9,7 +9,7 @@ struct TapTests {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test")
         
         // Act
-        try await TestHelpers.runAxeCommand("tap -x 200 -y 400", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap -x 200 -y 400", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -37,7 +37,7 @@ struct TapTests {
             let logicalX = Int(frame.x + frame.width / 2)
             let logicalY = Int(frame.y + frame.height / 2)
 
-            try await TestHelpers.runAxeCommand("tap -x \(logicalX) -y \(logicalY)", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("tap -x \(logicalX) -y \(logicalY)", simulatorUDID: defaultSimulatorUDID)
 
             let hitCount = try await waitForLandscapeHitCount(expected: "Landscape Hit Count: 1", timeout: 3)
             #expect(hitCount == "Landscape Hit Count: 1")
@@ -66,7 +66,7 @@ struct TapTests {
             let logicalX = Int(frame.x + frame.width / 2)
             let logicalY = Int(frame.y + frame.height / 2)
 
-            try await TestHelpers.runAxeCommand("tap -x \(logicalX) -y \(logicalY)", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("tap -x \(logicalX) -y \(logicalY)", simulatorUDID: defaultSimulatorUDID)
 
             let hitCount = try await waitForLandscapeHitCount(expected: "Landscape Hit Count: 1", timeout: 3)
             #expect(hitCount == "Landscape Hit Count: 1")
@@ -84,7 +84,7 @@ struct TapTests {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test")
         
         // Act
-        try await TestHelpers.runAxeCommand("tap --id BackButton", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --id BackButton", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -101,7 +101,7 @@ struct TapTests {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test")
         
         // Act
-        try await TestHelpers.runAxeCommand("tap --label 'AXe Playground'", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label 'AXe Playground'", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -120,7 +120,7 @@ struct TapTests {
         
         // Act
         for i in 1...tapCount {
-            try await TestHelpers.runAxeCommand("tap -x \(100 + i * 50) -y \(300 + i * 20)", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("tap -x \(100 + i * 50) -y \(300 + i * 20)", simulatorUDID: defaultSimulatorUDID)
             try await Task.sleep(nanoseconds: 300_000_000)
         }
         
@@ -139,7 +139,7 @@ struct TapTests {
         
         // Act
         let startTime = Date()
-        try await TestHelpers.runAxeCommand("tap -x 200 -y 300 --pre-delay 1.0 --post-delay 1.0", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap -x 200 -y 300 --pre-delay 1.0 --post-delay 1.0", simulatorUDID: defaultSimulatorUDID)
         let endTime = Date()
         
         // Assert
@@ -214,7 +214,7 @@ struct TapTests {
         #expect(settingsTab?.type == "RadioButton")
         #expect(settingsTab?.frame != nil)
 
-        try await TestHelpers.runAxeCommand("tap --label Settings --element-type RadioButton", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label Settings --element-type RadioButton", simulatorUDID: defaultSimulatorUDID)
 
         let selectedState = try await TestHelpers.waitForLabel(containing: "Current Tab:", timeout: 3) {
             $0 == "Current Tab: Settings"
@@ -239,7 +239,7 @@ struct TapTests {
         #expect(positionText?.value == "0.25")
         #expect(slider != nil)
 
-        try await TestHelpers.runAxeCommand("tap --id slider-value-button", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --id slider-value-button", simulatorUDID: defaultSimulatorUDID)
 
         let tappedState = try await TestHelpers.waitForLabel(containing: "Slider Value State:", timeout: 3) {
             $0 == "Slider Value State: Tapped"
@@ -256,7 +256,7 @@ struct TapTests {
         }
         #expect(initialState == "Toolbar Picker State: All")
 
-        try await TestHelpers.runAxeCommand("tap --label Unread --element-type RadioButton", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label Unread --element-type RadioButton", simulatorUDID: defaultSimulatorUDID)
 
         let selectedState = try await TestHelpers.waitForLabel(containing: "Toolbar Picker State:", timeout: 3) {
             $0 == "Toolbar Picker State: Unread"
@@ -272,7 +272,7 @@ struct TapTests {
         let backButton = UIStateParser.findElement(in: uiState, withIdentifier: "BackButton")
         #expect(backButton?.type == "Button")
 
-        try await TestHelpers.runAxeCommand("tap --id BackButton", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --id BackButton", simulatorUDID: defaultSimulatorUDID)
 
         let menuState = try await TestHelpers.waitForLabel(containing: "Touch & Gestures", timeout: 3) {
             $0 == "Touch & Gestures"
@@ -284,7 +284,7 @@ struct TapTests {
     func selectorTapTogglesSwiftUIToggle() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "switch-test")
 
-        try await TestHelpers.runAxeCommand("tap --label 'SwiftUI Weather Alerts'", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label 'SwiftUI Weather Alerts'", simulatorUDID: defaultSimulatorUDID)
 
         let state = try await TestHelpers.waitForLabel(containing: "SwiftUI Weather Alerts:", timeout: 3) {
             $0 == "SwiftUI Weather Alerts: On"
@@ -296,7 +296,7 @@ struct TapTests {
     func selectorTapTogglesUIKitSwitch() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "switch-test")
 
-        try await TestHelpers.runAxeCommand("tap --label 'UIKit Weather Alerts'", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap --label 'UIKit Weather Alerts'", simulatorUDID: defaultSimulatorUDID)
 
         let state = try await TestHelpers.waitForLabel(containing: "UIKit Weather Alerts:", timeout: 3) {
             $0 == "UIKit Weather Alerts: On"
@@ -320,7 +320,7 @@ struct TapTests {
 
         let centerX = frame.x + (frame.width / 2.0)
         let centerY = frame.y + (frame.height / 2.0)
-        try await TestHelpers.runAxeCommand("tap -x \(centerX) -y \(centerY) --tap-style physical", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("tap -x \(centerX) -y \(centerY) --tap-style physical", simulatorUDID: defaultSimulatorUDID)
 
         let state = try await TestHelpers.waitForLabel(containing: "UIKit Weather Alerts:", timeout: 3) {
             $0 == "UIKit Weather Alerts: On"
@@ -343,7 +343,7 @@ struct TapTests {
         
         // Act
         for corner in corners {
-            try await TestHelpers.runAxeCommand("tap -x \(corner.x) -y \(corner.y)", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("tap -x \(corner.x) -y \(corner.y)", simulatorUDID: defaultSimulatorUDID)
             try await Task.sleep(nanoseconds: 500_000_000)
         }
 

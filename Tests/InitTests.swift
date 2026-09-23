@@ -5,7 +5,7 @@ import Testing
 struct InitTests {
     @Test("print outputs skill content")
     func printOutputsSkill() async throws {
-        let result = try await TestHelpers.runAxeCommand("init --print")
+        let result = try await TestHelpers.runOffsiderCommand("init --print")
         #expect(result.output.contains("name: axe"))
         #expect(result.output.contains("Provides agent-ready AXe CLI usage guidance"))
     }
@@ -20,7 +20,7 @@ struct InitTests {
             try? FileManager.default.removeItem(at: tempRoot)
         }
 
-        _ = try await TestHelpers.runAxeCommand("init --dest \(skillsDir.path)")
+        _ = try await TestHelpers.runOffsiderCommand("init --dest \(skillsDir.path)")
 
         let installedFile = skillsDir.appendingPathComponent("axe/SKILL.md").path
         #expect(FileManager.default.fileExists(atPath: installedFile))
@@ -41,12 +41,12 @@ struct InitTests {
             try? FileManager.default.removeItem(at: tempRoot)
         }
 
-        let failedResult = try await TestHelpers.runAxeCommandAllowFailure("init --dest \(skillsDir.path)")
+        let failedResult = try await TestHelpers.runOffsiderCommandAllowFailure("init --dest \(skillsDir.path)")
         #expect(failedResult.exitCode != 0)
         #expect(failedResult.output.contains("Skill already installed at \(installedFile.path). Re-run with --force to overwrite."))
         #expect(!failedResult.output.contains("CLIError(errorDescription:"))
 
-        _ = try await TestHelpers.runAxeCommand("init --dest \(skillsDir.path) --force")
+        _ = try await TestHelpers.runOffsiderCommand("init --dest \(skillsDir.path) --force")
         let newContent = try String(contentsOf: installedFile, encoding: .utf8)
         #expect(newContent.contains("name: axe"))
     }
@@ -61,8 +61,8 @@ struct InitTests {
             try? FileManager.default.removeItem(at: tempRoot)
         }
 
-        _ = try await TestHelpers.runAxeCommand("init --dest \(skillsDir.path)")
-        _ = try await TestHelpers.runAxeCommand("init --dest \(skillsDir.path) --uninstall")
+        _ = try await TestHelpers.runOffsiderCommand("init --dest \(skillsDir.path)")
+        _ = try await TestHelpers.runOffsiderCommand("init --dest \(skillsDir.path) --uninstall")
 
         let installedDirectory = skillsDir.appendingPathComponent("axe", isDirectory: true).path
         #expect(!FileManager.default.fileExists(atPath: installedDirectory))
@@ -70,14 +70,14 @@ struct InitTests {
 
     @Test("non-interactive mode requires explicit target")
     func nonInteractiveModeRequiresExplicitTarget() async throws {
-        let result = try await TestHelpers.runAxeCommandAllowFailure("init")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("init")
         #expect(result.exitCode != 0)
         #expect(result.output.contains("Non-interactive mode requires --client or --dest"))
     }
 
     @Test("refuses root destination")
     func refusesRootDestination() async throws {
-        let result = try await TestHelpers.runAxeCommandAllowFailure("init --dest /")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("init --dest /")
         #expect(result.exitCode != 0)
         #expect(result.output.contains("filesystem root"))
     }

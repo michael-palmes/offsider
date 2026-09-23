@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import Testing
 import UniformTypeIdentifiers
-@testable import AXe
+@testable import Offsider
 
 @Suite("Video Frame Utilities Tests")
 struct VideoFrameUtilitiesTests {

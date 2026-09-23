@@ -92,7 +92,7 @@ struct ButtonTests {
         try await prepareUnlockedSimulator()
         let startTime = ContinuousClock.now
         do {
-            try await TestHelpers.runAxeCommand(command, simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand(command, simulatorUDID: defaultSimulatorUDID)
         } catch {
             try? await rebootSimulator()
             throw error
@@ -112,7 +112,7 @@ struct ButtonTests {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test")
         
         // Act
-        try await TestHelpers.runAxeCommand("button home", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("button home", simulatorUDID: defaultSimulatorUDID)
         
         // Note: Cannot assert UI state as home button takes us out of the app
         // This test verifies the command executes without error
@@ -136,13 +136,13 @@ struct ButtonTests {
     @Test("Apple Pay button command executes")
     func applePayButtonPress() async throws {
         try await waitForDeviceHIDServiceIfRequired()
-        try await TestHelpers.runAxeCommand("button apple-pay", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("button apple-pay", simulatorUDID: defaultSimulatorUDID)
     }
 
     @Test("Siri button command executes")
     func siriButtonPress() async throws {
         try await waitForDeviceHIDServiceIfRequired()
-        try await TestHelpers.runAxeCommand("button siri", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("button siri", simulatorUDID: defaultSimulatorUDID)
     }
     
     @Test("Button press with duration")

@@ -1,0 +1,29 @@
+{
+  "configurations" : [
+    {
+      "id" : "27A26F8E-966F-4110-B9A8-67BD135EBC3D",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:",
+      "identifier" : "offsider",
+      "name" : "offsider"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "OffsiderTests",
+        "name" : "OffsiderTests"
+      }
+    }
+  ],
+  "version" : 1
+}

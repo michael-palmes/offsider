@@ -10,14 +10,14 @@ SCREEN="${SCREEN:-tap-test}"
 
 usage() {
   cat <<EOF
-Usage: $0 --udid <simulator-udid> [--iterations N] [--rounds N] [--axe-path PATH]
+Usage: $0 --udid <simulator-udid> [--iterations N] [--rounds N] [--offsider-path PATH]
 
 Benchmarks equivalent non-batched vs batched workflows on AxePlayground.
 
 Defaults:
   iterations: ${ITERATIONS}
   rounds: ${ROUNDS}
-  axe-path: ${AXE_PATH}
+  offsider-path: ${AXE_PATH}
   screen: ${SCREEN}
 EOF
 }
@@ -39,8 +39,8 @@ while [[ $# -gt 0 ]]; do
       ROUNDS="$2"
       shift 2
       ;;
-    --axe-path)
-      [[ $# -ge 2 ]] || { echo "Missing value for --axe-path" >&2; usage; exit 1; }
+    --offsider-path)
+      [[ $# -ge 2 ]] || { echo "Missing value for --offsider-path" >&2; usage; exit 1; }
       AXE_PATH="$2"
       shift 2
       ;;
@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$AXE_PATH" ]]; then
-  AXE_PATH="$(swift build --show-bin-path)/axe"
+  AXE_PATH="$(swift build --show-bin-path)/offsider"
 fi
 
 if [[ -z "$UDID" ]]; then
@@ -67,7 +67,7 @@ if [[ -z "$UDID" ]]; then
 fi
 
 if [[ ! -x "$AXE_PATH" ]]; then
-  echo "Axe binary not found or not executable at: $AXE_PATH" >&2
+  echo "Offsider binary not found or not executable at: $AXE_PATH" >&2
   exit 1
 fi
 
