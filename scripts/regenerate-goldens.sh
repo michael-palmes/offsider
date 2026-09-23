@@ -273,13 +273,13 @@ done < <(find "$GENERATED_DIR" -type f ! -name 'provenance.json' -print | sort) 
 STABLE_SHA256="$(shasum -a 256 "$STABLE_MANIFEST" | awk '{ print $1 }')"
 
 jq -n -S \
-  --arg axe_sha256 "$OFFSIDER_SHA256" \
+  --arg offsider_sha256 "$OFFSIDER_SHA256" \
   --arg simulator_udid "$SIMULATOR_UDID" \
   --arg device_name "$DEVICE_NAME" \
   --arg stable_sha256 "$STABLE_SHA256" \
   '{
     schema_version: 1,
-    axe_payload_sha256: $axe_sha256,
+    offsider_payload_sha256: $offsider_sha256,
     simulator: {udid: $simulator_udid, device_name: $device_name},
     stable_contract_sha256: $stable_sha256
   }' > "$GENERATED_DIR/provenance.json"
@@ -296,7 +296,7 @@ if [[ "$MODE" == "check" ]]; then
   jq -e \
     --arg payload "$OFFSIDER_SHA256" \
     --arg stable "$STABLE_SHA256" \
-    '.schema_version == 1 and .axe_payload_sha256 == $payload and .stable_contract_sha256 == $stable' \
+    '.schema_version == 1 and .offsider_payload_sha256 == $payload and .stable_contract_sha256 == $stable' \
     "$DESTINATION_DIR/provenance.json" >/dev/null \
     || fail "Checked-in provenance does not match the exact payload and stable contract"
   diff -u "$DESTINATION_DIR/contract.json" "$GENERATED_DIR/contract.json"
