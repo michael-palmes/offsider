@@ -231,7 +231,8 @@ public enum DoctorRules {
         return Int(tokens[1])
     }
 
-    public static func dtuhidState(flag: Int?, dtuhiddRunning: Bool, dtuhidEra: Bool, udid: String) -> Verdict {
+    /// `selectedTransport` is the transport Offsider picked ("dtuhid" or "indigo"), or nil when that probe did not run or failed.
+    public static func dtuhidState(flag: Int?, dtuhiddRunning: Bool, dtuhidEra: Bool, selectedTransport: String?, udid: String) -> Verdict {
         guard dtuhidEra else {
             return (.skip, "Only used from CoreSimulator \(dtuhidCoreSimulatorVersion)", nil)
         }
@@ -244,11 +245,23 @@ public enum DoctorRules {
         case (true, true):
             return (.pass, "DTUHID transport; the legacy keyboard and buttons are off for this boot, as expected", nil)
         case (true, false):
-            return (
-                .fail,
-                "Legacy keyboard and buttons are off for this boot, but dtuhidd is not running, so type, key and button input is dropped",
-                "Open the device window (offsider doctor --udid \(udid) --fix) or reboot the simulator: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
-            )
+            let hint = "Open the device window (offsider doctor --udid \(udid) --fix) or reboot the simulator: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
+            switch selectedTransport {
+            case "dtuhid":
+                return (.pass, "dtuhidd is idle and starts on demand", nil)
+            case "indigo":
+                return (
+                    .fail,
+                    "Legacy keyboard and buttons are off for this boot, but Offsider selected Indigo, so type, key and button input is dropped",
+                    hint
+                )
+            default:
+                return (
+                    .warn,
+                    "Legacy keyboard and buttons are off for this boot and dtuhidd is not running; the selected HID transport is unknown",
+                    hint
+                )
+            }
         case (false, true):
             return (.warn, "dtuhidd is attaching", "Run doctor again in a few seconds.")
         }

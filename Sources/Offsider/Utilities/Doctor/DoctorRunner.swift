@@ -207,6 +207,18 @@ struct DoctorRunner {
             checks.append(.skipped(.resizeMode, "Only checked with Xcode 27 or later"))
         }
 
+        // The flag verdict depends on the selected transport, so probe it first and report it in id order.
+        let transportCheck: DoctorCheckResult
+        var selectedTransport: String?
+        if let uptime, uptime.seconds >= DoctorRules.minimumBootUptime {
+            let probe = await DoctorProbes.hidTransport(simulator: simulator)
+            selectedTransport = probe.transport
+            transportCheck = DoctorCheckResult(id: .hidTransport, verdict: probe.verdict)
+        } else {
+            let age = uptime.map { "simulator booted \(Int($0.seconds)) s ago" } ?? "simulator is still starting"
+            transportCheck = .skipped(.hidTransport, age)
+        }
+
         if !dtuhidEra {
             checks.append(.skipped(.dtuhidd, "Only used from CoreSimulator \(DoctorRules.dtuhidCoreSimulatorVersion)"))
             checks.append(.skipped(.dtuhidActiveFlag, "Only used from CoreSimulator \(DoctorRules.dtuhidCoreSimulatorVersion)"))
@@ -216,19 +228,14 @@ struct DoctorRunner {
             let flag = await DoctorProbes.dtuhidActiveFlag(udid: udid)
             checks.append(DoctorCheckResult(
                 id: .dtuhidActiveFlag,
-                verdict: DoctorRules.dtuhidState(flag: flag, dtuhiddRunning: dtuhiddPid != nil, dtuhidEra: true, udid: udid)
+                verdict: DoctorRules.dtuhidState(flag: flag, dtuhiddRunning: dtuhiddPid != nil, dtuhidEra: true, selectedTransport: selectedTransport, udid: udid)
             ))
         } else {
             checks.append(.skipped(.dtuhidd, "launchd_sim not found"))
             checks.append(.skipped(.dtuhidActiveFlag, "launchd_sim not found"))
         }
 
-        if let uptime, uptime.seconds >= DoctorRules.minimumBootUptime {
-            checks.append(DoctorCheckResult(id: .hidTransport, verdict: await DoctorProbes.hidTransport(simulator: simulator)))
-        } else {
-            let age = uptime.map { "simulator booted \(Int($0.seconds)) s ago" } ?? "simulator is still starting"
-            checks.append(.skipped(.hidTransport, age))
-        }
+        checks.append(transportCheck)
 
         let accessibility = await DoctorProbes.accessibility(udid: udid, logger: logger)
         checks.append(DoctorCheckResult(id: .accessibility, verdict: DoctorRules.accessibility(accessibility)))

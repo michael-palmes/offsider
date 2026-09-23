@@ -178,19 +178,21 @@ enum DoctorProbes {
     }
 
     /// Uses the default transport selection only: forcing DTUHID would attach dtuhidd for the rest of the boot.
-    static func hidTransport(simulator: FBSimulator) async -> DoctorRules.Verdict {
+    static func hidTransport(simulator: FBSimulator) async -> (verdict: DoctorRules.Verdict, transport: String?) {
         do {
             let hid = try await withTimeout(5, operation: "Connecting to simulator HID") {
                 try await simulator.connectToHID()
             }
             defer { hid.disconnect() }
+            let transport: String
             switch hid.transportType {
-            case .dtuhid: return (.pass, "dtuhid", nil)
-            case .indigo: return (.pass, "indigo", nil)
-            @unknown default: return (.pass, String(describing: hid.transportType), nil)
+            case .dtuhid: transport = "dtuhid"
+            case .indigo: transport = "indigo"
+            @unknown default: transport = String(describing: hid.transportType)
             }
+            return ((.pass, transport, nil), transport)
         } catch {
-            return (.fail, error.localizedDescription, hidTransportHint(for: error))
+            return ((.fail, error.localizedDescription, hidTransportHint(for: error)), nil)
         }
     }
 

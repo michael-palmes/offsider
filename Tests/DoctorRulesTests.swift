@@ -6,15 +6,27 @@ import OffsiderCore
 struct DoctorRulesTests {
     private let udid = "TEST-SIMULATOR-UDID"
 
-    @Test("dtuhidd flag and process agree in the healthy states")
-    func dtuhidHealthyStates() {
-        #expect(DoctorRules.dtuhidState(flag: 0, dtuhiddRunning: false, dtuhidEra: true, udid: udid).status == .pass)
-        #expect(DoctorRules.dtuhidState(flag: 1, dtuhiddRunning: true, dtuhidEra: true, udid: udid).status == .pass)
+    private func flagState(_ flag: Int?, running: Bool, transport: String?) -> DoctorRules.Verdict {
+        DoctorRules.dtuhidState(flag: flag, dtuhiddRunning: running, dtuhidEra: true, selectedTransport: transport, udid: udid)
     }
 
-    @Test("Flag set without dtuhidd fails with a reboot hint")
-    func dtuhidFlagWithoutDaemonFails() throws {
-        let verdict = DoctorRules.dtuhidState(flag: 1, dtuhiddRunning: false, dtuhidEra: true, udid: udid)
+    @Test("dtuhidd flag and process agree in the healthy states")
+    func dtuhidHealthyStates() {
+        #expect(flagState(0, running: false, transport: "indigo").status == .pass)
+        #expect(flagState(1, running: true, transport: "dtuhid").status == .pass)
+        #expect(flagState(1, running: true, transport: nil).status == .pass)
+    }
+
+    @Test("An idle dtuhidd is healthy when Offsider selected DTUHID")
+    func idleDaemonWithDTUHIDPasses() {
+        let verdict = flagState(1, running: false, transport: "dtuhid")
+        #expect(verdict.status == .pass)
+        #expect(verdict.hint == nil)
+    }
+
+    @Test("Flag set with Indigo selected fails because keyboard and button input is dropped")
+    func legacyServicesOffWithIndigoFails() throws {
+        let verdict = flagState(1, running: false, transport: "indigo")
         #expect(verdict.status == .fail)
         #expect(verdict.detail.contains("type, key and button"))
         let hint = try #require(verdict.hint)
@@ -22,11 +34,18 @@ struct DoctorRulesTests {
         #expect(hint.contains("--fix"))
     }
 
+    @Test("Flag set without dtuhidd and an unknown transport warns with the reboot hint")
+    func unknownTransportWarns() {
+        let verdict = flagState(1, running: false, transport: nil)
+        #expect(verdict.status == .warn)
+        #expect(verdict.hint?.contains("simctl shutdown \(udid)") == true)
+    }
+
     @Test("dtuhidd running before the flag is set warns, and an unreadable flag warns")
     func dtuhidTransitionalStates() {
-        #expect(DoctorRules.dtuhidState(flag: 0, dtuhiddRunning: true, dtuhidEra: true, udid: udid).status == .warn)
-        #expect(DoctorRules.dtuhidState(flag: nil, dtuhiddRunning: true, dtuhidEra: true, udid: udid).status == .warn)
-        #expect(DoctorRules.dtuhidState(flag: nil, dtuhiddRunning: false, dtuhidEra: true, udid: udid).status == .warn)
+        #expect(flagState(0, running: true, transport: "dtuhid").status == .warn)
+        #expect(flagState(nil, running: true, transport: "dtuhid").status == .warn)
+        #expect(flagState(nil, running: false, transport: nil).status == .warn)
     }
 
     @Test("notifyutil output parses to the flag value")
