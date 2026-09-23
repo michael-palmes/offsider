@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+
+jobs:
+  lint:
+    name: Lint (shell, workflows)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: bash -n
+        run: |
+          set -euo pipefail
+          for f in scripts/*.sh test-runner.sh; do bash -n "$f"; done
+
+      # Full strictness on the release script; upstream scripts gated at error level until cleaned up.
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          shellcheck scripts/release.sh
+          shellcheck --severity=error scripts/*.sh test-runner.sh
+
+      - name: actionlint
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+
+  build-test:
+    name: Build, unit tests, release rehearsal (ad-hoc)
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 75
+    env:
+      # Stable symlink present before and after the RC to GA path rename on the xcode-27 image.
+      XCODE_APP: ${{ vars.XCODE_APP || '/Applications/Xcode_27.0.app' }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        id: xcode
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = arm64 ] || { echo "::error::expected an arm64 runner"; exit 1; }
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "::error::$XCODE_APP not found"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select --switch "$XCODE_APP"
+          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
+          sw_vers; xcodebuild -version
+          echo "build=$(xcodebuild -version | awk '/Build version/ { print $3 }')" >> "$GITHUB_OUTPUT"
+
+      - name: Install XcodeGen (pinned)
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/xcodegen.zip"
+          curl -fsSLo "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  $zip" | shasum -a 256 -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen"
+          bin_dir="$(dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)")"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          "$bin_dir/xcodegen" --version
+
+      - name: Resolve idb pin
+        id: idb
+        run: |
+          set -euo pipefail
+          ref="$(sed -nE 's/^DEFAULT_IDB_GIT_REF="([0-9a-f]{40})"$/\1/p' scripts/build.sh)"
+          [ -n "$ref" ] || { echo "::error::DEFAULT_IDB_GIT_REF not found in scripts/build.sh"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      # Key: Xcode build + idb commit + XcodeGen + build.sh/Package.swift hash.
+      - name: Cache idb checkout and frameworks
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            idb_checkout
+            build_products/Frameworks
+            build_products/XCFrameworks
+          key: idb-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-xcodegen-${{ env.XCODEGEN_VERSION }}-${{ hashFiles('scripts/build.sh', 'Package.swift') }}
+
+      - name: Build idb frameworks
+        env:
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          scripts/build.sh setup
+          if [ "$CACHE_HIT" = true ] && scripts/build.sh verify-xcframeworks; then
+            echo "Reusing cached idb frameworks"
+          else
+            for step in clean frameworks install strip xcframeworks verify-xcframeworks; do
+              scripts/build.sh "$step"
+            done
+          fi
+
+      - name: Unit tests
+        run: OFFSIDER_REUSE_IDB=1 ./test-runner.sh --unit-tests
+
+      - name: Release build (arm64)
+        env:
+          OFFSIDER_VERSION: "0.0.0-ci"
+          SWIFT_DETERMINISTIC_HASHING: "1"
+        run: scripts/build.sh executable
+
+      # Runs the real release script with an ad-hoc identity: stage, sign, package, verify,
+      # and a Homebrew install that byte-compares the keg against the payload. No secrets.
+      - name: Release pipeline rehearsal (ad-hoc)
+        run: scripts/release.sh rehearse --version 0.0.0-ci --adhoc

@@ -1,0 +1,324 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build, sign, notarise and verify only (no attestation, release or tap update). false is only honoured when dispatched on a v* tag."
+        type: boolean
+        default: true
+      version:
+        description: "Version to embed when not dispatched on a tag (e.g. 0.1.0-rc.1)"
+        type: string
+        default: "0.0.0-dryrun"
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+  SIGNING_IDENTITY_NAME: "Developer ID Application: Michael Palmes (Q4B8N8ZKA2)"
+  TAP_REPO: michael-palmes/homebrew-tap
+
+jobs:
+  build:
+    name: Build, sign, notarise, verify
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    # Signing and notary secrets live only in this environment (required reviewer: you).
+    environment: release
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      XCODE_APP: ${{ vars.XCODE_APP || '/Applications/Xcode_27.0.app' }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      publish: ${{ steps.meta.outputs.publish }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      archive: ${{ steps.meta.outputs.archive }}
+      sha256: ${{ steps.checksum.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # tag verification and ancestry check need full history
+          persist-credentials: false
+
+      - name: Resolve release metadata
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          tag=""
+          if [ "$REF_TYPE" = tag ]; then tag="$REF_NAME"; version="${tag#v}"; else version="$INPUT_VERSION"; fi
+          re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          [[ "$version" =~ $re ]] || { echo "::error::invalid version '$version'"; exit 1; }
+          publish=false
+          if [ -n "$tag" ] && { [ "$EVENT_NAME" = push ] || [ "$INPUT_DRY_RUN" = false ]; }; then publish=true; fi
+          prerelease=false
+          case "$version" in *-*) prerelease=true ;; esac
+          {
+            echo "version=$version"; echo "tag=$tag"; echo "publish=$publish"
+            echo "prerelease=$prerelease"; echo "archive=offsider-${version}-arm64.tar.gz"
+          } >> "$GITHUB_OUTPUT"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Offsider $version (tag: ${tag:-none}, publish: $publish, prerelease: $prerelease)"
+
+      # Pins the signer to the key in main's .github/allowed_signers (read from main, never from
+      # the tagged tree, so a tag cannot vouch for itself), and requires the tag to be on main.
+      - name: Verify tag signature and ancestry
+        if: steps.meta.outputs.tag != ''
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin "+refs/tags/${TAG}:refs/tags/${TAG}" "+refs/heads/main:refs/remotes/origin/main"
+          [ "$(git cat-file -t "refs/tags/${TAG}")" = tag ] || { echo "::error::${TAG} is not an annotated tag (use git tag -s)"; exit 1; }
+          git show origin/main:.github/allowed_signers > "$RUNNER_TEMP/allowed_signers"
+          git -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/allowed_signers" verify-tag --verbose "$TAG"
+          commit="$(git rev-parse "${TAG}^{commit}")"
+          [ "$(git rev-parse HEAD)" = "$commit" ] || { echo "::error::checkout is not the tagged commit"; exit 1; }
+          git merge-base --is-ancestor "$commit" origin/main || { echo "::error::${TAG} is not on main"; exit 1; }
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = arm64 ] || { echo "::error::expected an arm64 runner"; exit 1; }
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "::error::$XCODE_APP not found"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select --switch "$XCODE_APP"
+          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
+          sw_vers; xcodebuild -version; xcrun notarytool --version
+
+      - name: Install XcodeGen (pinned)
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/xcodegen.zip"
+          curl -fsSLo "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  $zip" | shasum -a 256 -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen"
+          bin_dir="$(dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)")"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          "$bin_dir/xcodegen" --version
+
+      # Deliberately uncached: the signed artifact is built from pinned source on a clean runner.
+      - name: Build idb frameworks from pinned source
+        run: |
+          set -euo pipefail
+          for step in setup clean frameworks install strip xcframeworks verify-xcframeworks; do
+            scripts/build.sh "$step"
+          done
+
+      - name: Build Offsider (release, arm64)
+        env:
+          OFFSIDER_VERSION: ${{ steps.meta.outputs.version }}
+          SWIFT_DETERMINISTIC_HASHING: "1"
+        run: scripts/build.sh executable
+
+      - name: Stage payload
+        run: scripts/release.sh stage --version "$VERSION"
+
+      - name: Import Developer ID certificate into a temporary keychain
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          kc="$RUNNER_TEMP/offsider-signing.keychain-db"
+          kc_pw="$(openssl rand -base64 32)"
+          p12="$RUNNER_TEMP/developer-id.p12"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$p12"
+          security create-keychain -p "$kc_pw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kc_pw" "$kc"
+          security import "$p12" -k "$kc" -f pkcs12 -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pw" "$kc" >/dev/null
+          existing="$(security list-keychains -d user | sed -E 's/^[[:space:]]*"(.*)"$/\1/')"
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$kc" $existing
+          identity="$(security find-identity -v -p codesigning "$kc" | grep -F "\"${SIGNING_IDENTITY_NAME}\"" | awk '{ print $2 }' | head -1)"
+          [ -n "$identity" ] || { echo "::error::'${SIGNING_IDENTITY_NAME}' not found in the imported p12"; exit 1; }
+          { echo "SIGNING_KEYCHAIN=$kc"; echo "OFFSIDER_SIGNING_IDENTITY=$identity"; } >> "$GITHUB_ENV"
+
+      - name: Sign (inside-out, hardened runtime, secure timestamp)
+        run: scripts/release.sh sign --version "$VERSION"
+
+      - name: Write notary API key
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/AuthKey.p8"
+          case "$NOTARY_KEY_P8" in
+            *"BEGIN PRIVATE KEY"*) printf '%s\n' "$NOTARY_KEY_P8" > "$key" ;;
+            *) printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$key" ;;
+          esac
+          echo "OFFSIDER_NOTARY_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      - name: Notarise
+        env:
+          OFFSIDER_NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          OFFSIDER_NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: scripts/release.sh notarize --version "$VERSION"
+
+      - name: Package tarball and SHA256SUMS
+        run: scripts/release.sh package --version "$VERSION"
+
+      - name: Record checksum
+        id: checksum
+        run: echo "sha256=$(cut -d' ' -f1 dist/SHA256SUMS)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify shipped tarball
+        run: scripts/release.sh verify --version "$VERSION" --check-notarization
+
+      # Pre-publish gate: install the exact tarball through a local tap with the same formula
+      # template, then prove Homebrew left every byte and the Developer ID signatures intact.
+      - name: Homebrew gate
+        run: scripts/release.sh brew-gate --version "$VERSION"
+
+      - name: Render Homebrew formula
+        run: scripts/release.sh render-formula --version "$VERSION" > dist/offsider.rb
+
+      - name: Summary
+        run: |
+          set -euo pipefail
+          {
+            echo "### Offsider ${VERSION}"
+            echo '```'; cat dist/SHA256SUMS; echo '```'
+            echo "Notary submission: $(jq -r .id dist/notary-submit.json)"
+            echo '```'; codesign -dv --verbose=4 "dist/offsider-${VERSION}-arm64/offsider" 2>&1; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: offsider-${{ steps.meta.outputs.version }}
+          path: |
+            dist/${{ steps.meta.outputs.archive }}
+            dist/SHA256SUMS
+            dist/offsider.rb
+            dist/notary-submit.json
+            dist/notary-log.json
+            dist/notarised-cdhashes.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          if [ -n "${SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$SIGNING_KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/developer-id.p12"
+
+  publish:
+    name: Attest and publish GitHub release
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      VERSION: ${{ needs.build.outputs.version }}
+      ARCHIVE: ${{ needs.build.outputs.archive }}
+      SHA256: ${{ needs.build.outputs.sha256 }}
+      PRERELEASE: ${{ needs.build.outputs.prerelease }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: offsider-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Check artifact integrity against build job output
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum -c SHA256SUMS
+          [ "$(sha256sum "$ARCHIVE" | cut -d' ' -f1)" = "$SHA256" ]
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/${{ needs.build.outputs.archive }}
+            dist/SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          ## Install
+
+              brew install michael-palmes/tap/offsider
+
+          ## Verify
+
+              shasum -a 256 -c SHA256SUMS
+              gh attestation verify ${ARCHIVE} --repo ${GITHUB_REPOSITORY} \\
+                --signer-workflow ${GITHUB_REPOSITORY}/.github/workflows/release.yml --source-ref refs/tags/${TAG}
+
+          Signed with Developer ID Application: Michael Palmes (Q4B8N8ZKA2), hardened runtime, notarised by Apple.
+          EOF
+          flags=(--repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Offsider ${VERSION}" --notes-file notes.md --generate-notes)
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease --latest=false); fi
+          # Draft first, then publish, so immutable releases lock a complete asset set.
+          gh release create "$TAG" "${flags[@]}" "dist/${ARCHIVE}" dist/SHA256SUMS
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  tap:
+    name: Update Homebrew tap
+    needs: [build, publish]
+    if: needs.build.outputs.publish == 'true' && needs.build.outputs.prerelease == 'false'
+    runs-on: ubuntu-24.04
+    environment: homebrew-tap # holds HOMEBREW_TAP_TOKEN; no reviewer, v* tags only
+    timeout-minutes: 10
+    permissions: {}
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      SHA256: ${{ needs.build.outputs.sha256 }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: offsider-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Commit Formula/offsider.rb
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          grep -Fq "sha256 \"${SHA256}\"" dist/offsider.rb
+          path=Formula/offsider.rb
+          current="$(gh api "repos/${TAP_REPO}/contents/${path}?ref=main" --jq .sha 2>/dev/null || true)"
+          if [ "$current" = null ]; then current=""; fi
+          args=(--method PUT "repos/${TAP_REPO}/contents/${path}"
+            -f message="offsider ${VERSION}"
+            -f branch=main
+            -f content="$(base64 -w0 dist/offsider.rb)")
+          if [ -n "$current" ]; then args+=(-f sha="$current"); fi
+          gh api "${args[@]}" --jq '.commit.html_url'
