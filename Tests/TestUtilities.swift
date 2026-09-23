@@ -6,11 +6,11 @@ import Testing
 
 let defaultSimulatorUDID = ProcessInfo.processInfo.environment["SIMULATOR_UDID"]
 let isE2EEnabled = {
-    let raw = ProcessInfo.processInfo.environment["AXE_E2E"]?.lowercased() ?? ""
+    let raw = ProcessInfo.processInfo.environment["OFFSIDER_E2E"]?.lowercased() ?? ""
     return raw == "1" || raw == "true" || raw == "yes"
 }()
 let isLandscapeE2EEnabled = {
-    let raw = ProcessInfo.processInfo.environment["AXE_LANDSCAPE_E2E"]?.lowercased() ?? ""
+    let raw = ProcessInfo.processInfo.environment["OFFSIDER_LANDSCAPE_E2E"]?.lowercased() ?? ""
     return isE2EEnabled && (raw == "1" || raw == "true" || raw == "yes")
 }()
 
@@ -130,7 +130,7 @@ struct TestHelpers {
 
     static func requireE2EEnabled() throws {
         if !isE2EEnabled {
-            throw TestError.commandError("E2E simulator tests are disabled. Run via ./test-runner.sh or set AXE_E2E=1.")
+            throw TestError.commandError("E2E simulator tests are disabled. Run via ./test-runner.sh or set OFFSIDER_E2E=1.")
         }
     }
 
@@ -144,12 +144,12 @@ struct TestHelpers {
 
     /// Get the path to the offsider binary using #file to find source root
     static func getOffsiderPath(testFile: String = #file) throws -> String {
-        if let offsiderBinPath = ProcessInfo.processInfo.environment["AXE_BIN_PATH"], !offsiderBinPath.isEmpty {
+        if let offsiderBinPath = ProcessInfo.processInfo.environment["OFFSIDER_BIN_PATH"], !offsiderBinPath.isEmpty {
             if FileManager.default.fileExists(atPath: offsiderBinPath) {
                 return offsiderBinPath
             }
 
-            throw TestError.unexpectedState("AXE_BIN_PATH points to a missing offsider binary at \(offsiderBinPath). Please run 'swift build'.")
+            throw TestError.unexpectedState("OFFSIDER_BIN_PATH points to a missing offsider binary at \(offsiderBinPath). Please run 'swift build'.")
         }
 
         let sourceRoot: String

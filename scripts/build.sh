@@ -15,11 +15,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # --- Local environment overrides (.env) ---
 # Load KEY=VALUE pairs from a local, git-ignored .env file (repo root by
-# default; override with AXE_ENV_FILE). This is where per-machine constants
+# default; override with OFFSIDER_ENV_FILE). This is where per-machine constants
 # such as the code-signing identity live. Values already present in the
-# environment win over the file, so `AXE_CODESIGN_IDENTITY=... ./build.sh`
+# environment win over the file, so `OFFSIDER_CODESIGN_IDENTITY=... ./build.sh`
 # still works. See .env.example for the supported keys.
-ENV_FILE="${AXE_ENV_FILE:-${REPO_ROOT}/.env}"
+ENV_FILE="${OFFSIDER_ENV_FILE:-${REPO_ROOT}/.env}"
 
 function load_env_file() {
   local file="$1"
@@ -74,11 +74,11 @@ FRAMEWORK_SDK="macosx"
 FRAMEWORK_CONFIGURATION="Release"
 
 # Codesigning configuration.
-# Provided via AXE_CODESIGN_IDENTITY (from .env locally, or the environment / CI
+# Provided via OFFSIDER_CODESIGN_IDENTITY (from .env locally, or the environment / CI
 # secrets) — there is intentionally no baked-in default. Must be a
 # "Developer ID Application" identity for notarizable release builds; an
 # "Apple Development" identity is fine for local `dev` builds only.
-CODESIGN_IDENTITY="${AXE_CODESIGN_IDENTITY:-}"
+CODESIGN_IDENTITY="${OFFSIDER_CODESIGN_IDENTITY:-}"
 
 # Notarization configuration (provided via the environment / .env / CI secrets).
 NOTARIZATION_API_KEY_PATH="${NOTARIZATION_API_KEY_PATH:-}"
@@ -1240,8 +1240,8 @@ Commands:
     Run all steps from setup through notarization.
 
 Environment Variables (set inline, exported, or via a git-ignored .env file):
-  AXE_ENV_FILE           Path to the .env file to load (default: <repo-root>/.env)
-  AXE_CODESIGN_IDENTITY  Code-signing identity (required for signing; no default)
+  OFFSIDER_ENV_FILE           Path to the .env file to load (default: <repo-root>/.env)
+  OFFSIDER_CODESIGN_IDENTITY  Code-signing identity (required for signing; no default)
   IDB_CHECKOUT_DIR       Directory for IDB repository (default: ./idb_checkout)
   IDB_GIT_URL            Offsider IDB fork URL (default: https://github.com/cameroncooke/idb.git)
   IDB_GIT_REF            Exact fork revision (default: ${DEFAULT_IDB_GIT_REF})
@@ -1310,7 +1310,7 @@ function cmd_strip() {
 
 function cmd_sign_frameworks() {
   print_section "🔒" "Resigning Frameworks"
-  require_config "AXE_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
+  require_config "OFFSIDER_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
   print_info "Resigning frameworks..."
   sanitize_framework_rpaths "${BUILD_OUTPUT_DIR}/Frameworks"
   resign_framework "${BUILD_OUTPUT_DIR}" "FBSimulatorControl.framework"
@@ -1336,7 +1336,7 @@ function cmd_generate() {
 
 function cmd_sign_xcframeworks() {
   print_section "🔒" "Resigning XCFrameworks"
-  require_config "AXE_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
+  require_config "OFFSIDER_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
   print_info "Resigning XCFrameworks with Developer ID..."
   resign_xcframework "${BUILD_OUTPUT_DIR}" "FBControlCore.xcframework"
   resign_xcframework "${BUILD_OUTPUT_DIR}" "XCTestBootstrap.xcframework"
@@ -1352,7 +1352,7 @@ function cmd_executable() {
 
 function cmd_sign_executable() {
   print_section "🔒" "Signing Offsider Executable"
-  require_config "AXE_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
+  require_config "OFFSIDER_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
   sign_offsider_executable "${BUILD_OUTPUT_DIR}"
 }
 

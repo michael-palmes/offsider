@@ -2,7 +2,7 @@
 set -euo pipefail
 
 UDID="${UDID:-}"
-AXE_PATH="${AXE_PATH:-}"
+OFFSIDER_PATH="${OFFSIDER_PATH:-}"
 ITERATIONS="${ITERATIONS:-30}"
 ROUNDS="${ROUNDS:-7}"
 APP_BUNDLE="${APP_BUNDLE:-com.cameroncooke.AxePlayground}"
@@ -17,7 +17,7 @@ Benchmarks equivalent non-batched vs batched workflows on AxePlayground.
 Defaults:
   iterations: ${ITERATIONS}
   rounds: ${ROUNDS}
-  offsider-path: ${AXE_PATH}
+  offsider-path: ${OFFSIDER_PATH}
   screen: ${SCREEN}
 EOF
 }
@@ -41,7 +41,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --offsider-path)
       [[ $# -ge 2 ]] || { echo "Missing value for --offsider-path" >&2; usage; exit 1; }
-      AXE_PATH="$2"
+      OFFSIDER_PATH="$2"
       shift 2
       ;;
     -h|--help)
@@ -56,8 +56,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$AXE_PATH" ]]; then
-  AXE_PATH="$(swift build --show-bin-path)/offsider"
+if [[ -z "$OFFSIDER_PATH" ]]; then
+  OFFSIDER_PATH="$(swift build --show-bin-path)/offsider"
 fi
 
 if [[ -z "$UDID" ]]; then
@@ -66,8 +66,8 @@ if [[ -z "$UDID" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$AXE_PATH" ]]; then
-  echo "Offsider binary not found or not executable at: $AXE_PATH" >&2
+if [[ ! -x "$OFFSIDER_PATH" ]]; then
+  echo "Offsider binary not found or not executable at: $OFFSIDER_PATH" >&2
   exit 1
 fi
 
@@ -89,14 +89,14 @@ launch_playground() {
 
 run_non_batch_once() {
   for _ in $(seq 1 "$ITERATIONS"); do
-    "$AXE_PATH" tap -x 180 -y 360 --udid "$UDID" >/dev/null 2>&1
-    "$AXE_PATH" tap -x 220 -y 420 --udid "$UDID" >/dev/null 2>&1
+    "$OFFSIDER_PATH" tap -x 180 -y 360 --udid "$UDID" >/dev/null 2>&1
+    "$OFFSIDER_PATH" tap -x 220 -y 420 --udid "$UDID" >/dev/null 2>&1
   done
 }
 
 run_batch_once() {
   for _ in $(seq 1 "$ITERATIONS"); do
-    "$AXE_PATH" batch --udid "$UDID" --step "tap -x 180 -y 360" --step "tap -x 220 -y 420" >/dev/null 2>&1
+    "$OFFSIDER_PATH" batch --udid "$UDID" --step "tap -x 180 -y 360" --step "tap -x 220 -y 420" >/dev/null 2>&1
   done
 }
 

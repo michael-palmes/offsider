@@ -20,9 +20,9 @@ struct HIDInteractor {
     // Cache for HID connections per simulator
     private static var hidConnections: [String: FBSimulatorHID] = [:]
     /// Configurable stabilization delay to ensure HID events are fully processed
-    /// Can be set via AXE_HID_STABILIZATION_MS environment variable
+    /// Can be set via OFFSIDER_HID_STABILIZATION_MS environment variable
     private static var stabilizationDelayMs: UInt64 {
-        if let envValue = ProcessInfo.processInfo.environment["AXE_HID_STABILIZATION_MS"],
+        if let envValue = ProcessInfo.processInfo.environment["OFFSIDER_HID_STABILIZATION_MS"],
            let milliseconds = UInt64(envValue) {
             return min(milliseconds, 1000)
         }
