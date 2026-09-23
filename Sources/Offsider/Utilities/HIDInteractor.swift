@@ -5,9 +5,8 @@ import FBSimulatorControl
 // MARK: - HID Interactor
 
 
-// Xcode 27 Beta 3 (27A5218g) Device Hub requires Resize Mode to be disabled for UI automation.
-// With Resize Mode enabled, both DTUHID and legacy Indigo reported successful sends without
-// delivering touches; with it disabled, the ui-interactions pass through this IDB path.
+// On Xcode 27, dtuhidd silently drops events that reach it before its HID services open if the sender exits first.
+// The pinned idb frameworks wait for dtuhidd to be ready, and closeSession drains before a one-shot command exits.
 @MainActor
 struct HIDInteractor {
 
@@ -105,9 +104,20 @@ struct HIDInteractor {
         }
     }
 
+    static func closeSession(_ session: Session) async {
+        hidConnections.removeValue(forKey: session.simulatorUDID)
+        await session.hid.close()
+    }
+
     static func performHIDEvent(_ event: FBSimulatorHIDEvent, for simulatorUDID: String, logger: OffsiderLogger) async throws {
         let session = try await makeSession(for: simulatorUDID, logger: logger)
-        try await performHIDEvent(event, in: session, logger: logger)
+        do {
+            try await performHIDEvent(event, in: session, logger: logger)
+        } catch {
+            await closeSession(session)
+            throw error
+        }
+        await closeSession(session)
     }
 
     static func makeCompositeDragEvent(
@@ -193,7 +203,13 @@ struct HIDInteractor {
         logger: OffsiderLogger
     ) async throws {
         let session = try await makeSession(for: simulatorUDID, logger: logger)
-        try await performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay, in: session, logger: logger)
+        do {
+            try await performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay, in: session, logger: logger)
+        } catch {
+            await closeSession(session)
+            throw error
+        }
+        await closeSession(session)
     }
 
     static func performPhysicalTap(
@@ -241,7 +257,7 @@ struct HIDInteractor {
         }
 
         logger.info().log("Creating new HID connection for simulator \(simulator.udid)...")
-        let hid = try await simulator.connectToHID()
+        let hid = try await FBSimulatorHID(for: simulator)
 
         hidConnections[simulator.udid] = hid
         logger.info().log("HID connection created and cached for simulator \(simulator.udid)")
