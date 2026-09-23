@@ -152,6 +152,11 @@ struct TestHelpers {
             throw TestError.unexpectedState("OFFSIDER_BIN_PATH points to a missing offsider binary at \(offsiderBinPath). Please run 'swift build'.")
         }
 
+        // Under swift test the binary sits beside the test bundle, which avoids waiting on SwiftPM's build lock.
+        if let besideBundle = binaryBesideTestBundle() {
+            return besideBundle
+        }
+
         let sourceRoot: String
         if let srcRoot = ProcessInfo.processInfo.environment["SRC_ROOT"] {
             sourceRoot = srcRoot
@@ -171,6 +176,22 @@ struct TestHelpers {
         throw TestError.unexpectedState("offsider binary not found at \(offsiderPath). Please run 'swift build'.")
     }
     
+    private static func binaryBesideTestBundle() -> String? {
+        var info = Dl_info()
+        guard dladdr(#dsohandle, &info) != 0, let imagePath = info.dli_fname else {
+            return nil
+        }
+        var directory = URL(fileURLWithPath: String(cString: imagePath)).deletingLastPathComponent()
+        for _ in 0..<5 {
+            let candidate = directory.appendingPathComponent("offsider").path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+            directory = directory.deletingLastPathComponent()
+        }
+        return nil
+    }
+
     static func setSimulatorOrientationPortrait() async throws {
         try await setSimulatorOrientation(menuItem: "Portrait")
     }
