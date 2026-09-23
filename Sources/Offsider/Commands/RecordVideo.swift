@@ -22,7 +22,7 @@ struct RecordVideo: AsyncParsableCommand {
     @Option(help: "Scale factor (0.1-1.0, default: 1.0)")
     var scale: Double = 1.0
 
-    @Option(help: "Output MP4 file path. Defaults to axe-video-<timestamp>.mp4 in the current directory.")
+    @Option(help: "Output MP4 file path. Defaults to offsider-video-<timestamp>.mp4 in the current directory.")
     var output: String?
 
     func validate() throws {
@@ -176,7 +176,7 @@ struct RecordVideo: AsyncParsableCommand {
         if let providedPath, !providedPath.isEmpty {
             resolvedPath = (providedPath as NSString).expandingTildeInPath
         } else {
-            resolvedPath = "axe-video-\(formatter.string(from: Date())).mp4"
+            resolvedPath = "offsider-video-\(formatter.string(from: Date())).mp4"
         }
 
         let baseURL: URL
@@ -188,7 +188,7 @@ struct RecordVideo: AsyncParsableCommand {
 
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: baseURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
-            let filename = "axe-video-\(formatter.string(from: Date())).mp4"
+            let filename = "offsider-video-\(formatter.string(from: Date())).mp4"
             let directoryURL = baseURL
             if !fileManager.fileExists(atPath: directoryURL.path) {
                 try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)

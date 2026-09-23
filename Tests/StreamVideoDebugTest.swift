@@ -9,7 +9,7 @@ struct StreamVideoDebugTests {
 
         let offsiderPath = try TestHelpers.getOffsiderPath()
         let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("axe-video-debug-\(UUID().uuidString).mp4")
+            .appendingPathComponent("offsider-video-debug-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
         let process = Process()
