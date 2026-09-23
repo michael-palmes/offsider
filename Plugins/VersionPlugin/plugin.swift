@@ -17,7 +17,7 @@ struct VersionPlugin: BuildToolPlugin {
 
                     func getVersion() -> String {
                         // Priority 1: Environment variable (CI)
-                        if let envVersion = ProcessInfo.processInfo.environment["AXE_VERSION"] {
+                        if let envVersion = ProcessInfo.processInfo.environment["OFFSIDER_VERSION"] {
                             return envVersion
                         }
 
