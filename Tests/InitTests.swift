@@ -6,8 +6,8 @@ struct InitTests {
     @Test("print outputs skill content")
     func printOutputsSkill() async throws {
         let result = try await TestHelpers.runOffsiderCommand("init --print")
-        #expect(result.output.contains("name: axe"))
-        #expect(result.output.contains("Provides agent-ready AXe CLI usage guidance"))
+        #expect(result.output.contains("name: offsider"))
+        #expect(result.output.range(of: #"\baxe\b"#, options: [.regularExpression, .caseInsensitive]) == nil)
     }
 
     @Test("installs skill to custom destination")
@@ -22,7 +22,7 @@ struct InitTests {
 
         _ = try await TestHelpers.runOffsiderCommand("init --dest \(skillsDir.path)")
 
-        let installedFile = skillsDir.appendingPathComponent("axe/SKILL.md").path
+        let installedFile = skillsDir.appendingPathComponent("offsider/SKILL.md").path
         #expect(FileManager.default.fileExists(atPath: installedFile))
     }
 
@@ -31,7 +31,7 @@ struct InitTests {
         let tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let skillsDir = tempRoot.appendingPathComponent("skills", isDirectory: true)
-        let installedDir = skillsDir.appendingPathComponent("axe", isDirectory: true)
+        let installedDir = skillsDir.appendingPathComponent("offsider", isDirectory: true)
         let installedFile = installedDir.appendingPathComponent("SKILL.md", isDirectory: false)
 
         try FileManager.default.createDirectory(at: installedDir, withIntermediateDirectories: true)
@@ -48,7 +48,7 @@ struct InitTests {
 
         _ = try await TestHelpers.runOffsiderCommand("init --dest \(skillsDir.path) --force")
         let newContent = try String(contentsOf: installedFile, encoding: .utf8)
-        #expect(newContent.contains("name: axe"))
+        #expect(newContent.contains("name: offsider"))
     }
 
     @Test("uninstall removes installed directory")
@@ -64,7 +64,7 @@ struct InitTests {
         _ = try await TestHelpers.runOffsiderCommand("init --dest \(skillsDir.path)")
         _ = try await TestHelpers.runOffsiderCommand("init --dest \(skillsDir.path) --uninstall")
 
-        let installedDirectory = skillsDir.appendingPathComponent("axe", isDirectory: true).path
+        let installedDirectory = skillsDir.appendingPathComponent("offsider", isDirectory: true).path
         #expect(!FileManager.default.fileExists(atPath: installedDirectory))
     }
 
