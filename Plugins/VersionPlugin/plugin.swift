@@ -5,6 +5,8 @@ import PackagePlugin
 struct VersionPlugin: BuildToolPlugin {
     func createBuildCommands(context: PluginContext, target _: Target) async throws -> [Command] {
         let outputPath = context.pluginWorkDirectory.appending("Version.swift")
+        // The generator runs with an empty environment, so the override is passed through explicitly.
+        let environment = ProcessInfo.processInfo.environment["OFFSIDER_VERSION"].map { ["OFFSIDER_VERSION": $0] } ?? [:]
 
         return [
             .buildCommand(
@@ -55,7 +57,7 @@ struct VersionPlugin: BuildToolPlugin {
                     """,
                     outputPath.string,
                 ],
-                environment: [:],
+                environment: environment,
                 inputFiles: [],
                 outputFiles: [outputPath]
             ),
