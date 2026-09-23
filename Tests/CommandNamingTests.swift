@@ -27,7 +27,7 @@ struct CommandNamingTests {
                 help.range(of: "USAGE: offsider \(name)(\\s|$)", options: .regularExpression) != nil,
                 "\(name) --help does not show offsider usage"
             )
-            #expect(!mentionsUpstreamName(help), "\(name) --help mentions axe")
+            #expect(!mentionsUpstreamName(help), "\(name) --help mentions the upstream name")
         }
     }
 
