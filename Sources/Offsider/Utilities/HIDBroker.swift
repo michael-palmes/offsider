@@ -35,7 +35,7 @@ struct HIDBrokerBootIdentity: Equatable {
 }
 
 enum HIDBroker {
-    static let inputDeliveryFailureDescription = "AXe could not deliver simulator input. The simulator may have restarted or disconnected. Confirm it is booted and try again."
+    static let inputDeliveryFailureDescription = "Offsider could not deliver simulator input. The simulator may have restarted or disconnected. Confirm it is booted and try again."
     static let dtuhidMinimumBootUptime: TimeInterval = 10
     private static let protocolVersion = 2
     static let maximumMessageBytes = 64 * 1024
@@ -239,7 +239,7 @@ enum HIDBroker {
 
     private static func spawnBroker(simulatorUDID: String) throws {
         guard let executable = Bundle.main.executableURL else {
-            throw CLIError(errorDescription: "Unable to locate the AXe executable for the HID broker.")
+            throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.")
         }
         let process = Process()
         process.executableURL = executable

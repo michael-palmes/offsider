@@ -191,7 +191,7 @@ struct AccessibilityFetcher {
         )
         guard status == 0 else {
             throw CLIError(
-                errorDescription: "AXe could not restore accessibility automation for simulator \(simulatorUDID). Restart the simulator and try again."
+                errorDescription: "Offsider could not restore accessibility automation for simulator \(simulatorUDID). Restart the simulator and try again."
             )
         }
         try await dependencies.wait(.milliseconds(250))
@@ -231,7 +231,7 @@ struct AccessibilityFetcher {
         }
         if process.isRunning {
             terminateProcess(process)
-            throw CLIError(errorDescription: "AXe timed out while restoring accessibility automation.")
+            throw CLIError(errorDescription: "Offsider timed out while restoring accessibility automation.")
         }
         process.waitUntilExit()
         return process.terminationStatus
@@ -363,7 +363,7 @@ struct AccessibilityFetcher {
 
     static func serializeAccessibilityInfo(_ accessibilityInfo: Any) throws -> Data {
         guard accessibilityInfo is [String: Any] || accessibilityInfo is [[String: Any]] else {
-            throw CLIError(errorDescription: "AXe received an unsupported accessibility response from the simulator.")
+            throw CLIError(errorDescription: "Offsider received an unsupported accessibility response from the simulator.")
         }
         return try JSONSerialization.data(withJSONObject: accessibilityInfo, options: [.prettyPrinted])
     }
@@ -384,7 +384,7 @@ struct AccessibilityFetcher {
         return element
     }
 
-    // This key set preserves AXe's legacy public JSON schema; update it only with explicit schema coverage.
+    // This key set preserves the legacy public JSON schema; update it only with explicit schema coverage.
     static let accessibilityOutputKeys: Set<FBAXKeys> = [
         .label,
         .frame,
@@ -404,7 +404,7 @@ struct AccessibilityFetcher {
         .traits,
     ]
 
-    // AXe's former IDB serializer did not return traits. Xcode 27's private nested serializer also
+    // The former IDB serializer did not return traits. Xcode 27's private nested serializer also
     // returns an empty hierarchy when `.traits` is requested, so retain the existing public value
     // as an empty compatibility placeholder after requesting the safe subset on every Xcode version.
     static let accessibilityRequestKeys = accessibilityOutputKeys.subtracting([.traits])

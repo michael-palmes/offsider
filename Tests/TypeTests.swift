@@ -26,7 +26,7 @@ struct TypeTests {
     func typingSpecialCharacters() async throws {
         // Arrange
         try await TestHelpers.launchPlaygroundApp(to: "text-input")
-        // Note: Using only characters that have keycode mappings in AXe
+        // Note: Using only characters that have keycode mappings in Offsider
         let textToType = "Test@123!$%&*"  // Removed £ which doesn't have keycode mapping
         
         // Act
@@ -151,7 +151,7 @@ struct TypeTests {
         try await TestHelpers.launchPlaygroundApp(to: "text-input")
         let textToType = "Delayed"
         
-        // Act - Since AXe type doesn't have built-in delay options, we'll add manual delays
+        // Act - Since Offsider type doesn't have built-in delay options, we'll add manual delays
         let startTime = Date()
         try await Task.sleep(nanoseconds: 1_000_000_000) // Manual pre-delay
         try await TestHelpers.runOffsiderCommand("type \"\(textToType)\"", simulatorUDID: defaultSimulatorUDID)

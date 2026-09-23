@@ -174,7 +174,7 @@ struct StreamVideo: AsyncParsableCommand {
         FileHandle.standardError.write(Data("Starting BGRA video stream from simulator \(simulator.udid)...\n".utf8))
         FileHandle.standardError.write(Data("Format: bgra, Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Note: This is raw pixel data. Use ffmpeg to convert:\n".utf8))
-        FileHandle.standardError.write(Data("  axe stream-video --format bgra --udid <UDID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
+        FileHandle.standardError.write(Data("  offsider stream-video --format bgra --udid <UDID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
         let config = FBVideoStreamConfiguration(

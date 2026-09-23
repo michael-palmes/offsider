@@ -18,9 +18,9 @@ struct Key: AsyncParsableCommand {
           224-231 - Modifier keys (Ctrl, Shift, Alt, etc.)
         
         Examples:
-          axe key 40 --udid SIMULATOR_UDID                    # Press Enter
-          axe key 44 --udid SIMULATOR_UDID                    # Press Space
-          axe key 42 --duration 1.0 --udid SIMULATOR_UDID    # Hold Backspace for 1 second
+          offsider key 40 --udid SIMULATOR_UDID                    # Press Enter
+          offsider key 44 --udid SIMULATOR_UDID                    # Press Space
+          offsider key 42 --duration 1.0 --udid SIMULATOR_UDID    # Hold Backspace for 1 second
         """
     )
     

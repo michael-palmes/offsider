@@ -14,7 +14,7 @@ private struct HIDBrokerResponse: Codable {
 }
 
 struct HIDBrokerNotReadyError: LocalizedError, UserFacingError {
-    let userFacingDescription = "AXe could not establish simulator input. Wait for the simulator to finish booting and try again."
+    let userFacingDescription = "Offsider could not establish simulator input. Wait for the simulator to finish booting and try again."
     let diagnosticDescription: String
     let isSafeToReplaceBroker: Bool
     let allowsReplacementAfterProcessExit: Bool
@@ -41,7 +41,7 @@ struct HIDBrokerSocketIdentity: Equatable {
 
 extension HIDBroker {
     private static let diagnosticLogger = Logger(
-        subsystem: "com.cameroncooke.axe",
+        subsystem: "com.mpalmes.offsider",
         category: "HIDBroker"
     )
 
