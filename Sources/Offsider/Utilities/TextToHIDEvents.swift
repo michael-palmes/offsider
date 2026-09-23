@@ -17,7 +17,7 @@ struct TextToHIDEvents {
         }
 
         var userFacingDescription: String {
-            errorDescription ?? "AXe could not convert the requested text into simulator keyboard input."
+            errorDescription ?? "Offsider could not convert the requested text into simulator keyboard input."
         }
     }
     

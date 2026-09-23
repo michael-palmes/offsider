@@ -70,7 +70,7 @@ enum CoordinateMapping {
 // MARK: - Orientation-Aware Coordinate Translation
 
 /// Translates logical UI coordinates (as reported by the accessibility tree and
-/// consumed by `axe tap`, `axe touch`, and `axe swipe`) into the physical portrait
+/// consumed by `offsider tap`, `offsider touch`, and `offsider swipe`) into the physical portrait
 /// coordinate space that FBSimulatorHIDEvent expects.
 ///
 /// ## Root cause
@@ -82,12 +82,12 @@ enum CoordinateMapping {
 ///
 /// ## Two landscape cases
 /// Both a rotated device and a portrait device running a landscape-only app produce
-/// a landscape-shaped AX application frame. AXe first asks the simulator's private
+/// a landscape-shaped AX application frame. Offsider first asks the simulator's private
 /// screen properties for the current UI orientation so it can distinguish landscape
 /// left from landscape right automatically. If that private probe is unavailable,
 /// screenshot dimensions are used only to distinguish rotated hardware from a
 /// portrait device running a letterboxed landscape-only app. If the screenshot
-/// confirms rotated hardware but private orientation is unavailable, AXe fails
+/// confirms rotated hardware but private orientation is unavailable, Offsider fails
 /// clearly instead of guessing landscape direction.
 ///
 /// ## Portrait dimensions
@@ -116,7 +116,7 @@ struct OrientationAwareCoordinates {
     ///   - orientationOverride: Forces a specific rotated-device `SimulatorOrientation`.
     ///     Intended for internal tests or future explicit callers; normal CLI commands
     ///     rely on automatic private orientation detection.
-    ///   - logger: AXe logger instance.
+    ///   - logger: Offsider logger instance.
     /// - Returns: The `CoordinateMapping` that applies to the current simulator state.
     static func detectMapping(
         for simulatorUDID: String,
@@ -229,7 +229,7 @@ struct OrientationAwareCoordinates {
             "Screenshot \(screenshotDims.width)×\(screenshotDims.height)px is landscape-shaped; using rotation mapping"
         )
 
-        throw CLIError(errorDescription: "Unable to determine rotated simulator orientation. AXe can read landscape coordinates only when SimulatorKit reports the current UI orientation; the screenshot confirms the simulator is rotated, but the private orientation probe was unavailable.")
+        throw CLIError(errorDescription: "Unable to determine rotated simulator orientation. Offsider can read landscape coordinates only when SimulatorKit reports the current UI orientation; the screenshot confirms the simulator is rotated, but the private orientation probe was unavailable.")
     }
 
     // MARK: - Screenshot Dimension Probe
@@ -425,7 +425,7 @@ struct OrientationAwareCoordinates {
     ///   - orientationOverride: Optional explicit rotated-device orientation. Pass
     ///     `.landscapeFlipped` when the device is rotated counter-clockwise. Leave nil for
     ///     automatic letterbox detection in portrait-hardware landscape-only apps.
-    ///   - logger: AXe logger instance.
+    ///   - logger: Offsider logger instance.
     /// - Returns: Physical (x, y) ready for FBSimulatorHIDEvent.
     static func translate(
         point: (x: Double, y: Double),
@@ -468,7 +468,7 @@ struct OrientationAwareCoordinates {
     ///   - points: Logical (x, y) pairs in the current UI orientation.
     ///   - simulatorUDID: Target simulator UDID.
     ///   - orientationOverride: Optional explicit orientation for the rotated device case.
-    ///   - logger: AXe logger instance.
+    ///   - logger: Offsider logger instance.
     /// - Returns: Physical (x, y) pairs ready for FBSimulatorHIDEvent, in the same order as input.
     static func translateBatch(
         points: [(x: Double, y: Double)],
@@ -551,7 +551,7 @@ struct OrientationAwareCoordinates {
     /// - Parameters:
     ///   - simulatorUDID: Target simulator UDID.
     ///   - orientationOverride: When non-nil, skip detection and use this value.
-    ///   - logger: AXe logger instance.
+    ///   - logger: Offsider logger instance.
     /// - Returns: The detected (or overridden) orientation.
     static func detectOrientation(
         for simulatorUDID: String,

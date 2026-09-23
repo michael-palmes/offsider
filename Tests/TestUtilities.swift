@@ -121,7 +121,7 @@ struct TestHelpers {
 
         if process.terminationStatus != 0 || output.isEmpty {
             throw TestError.commandError(
-                "Unable to resolve AXe binary path via `swift build --show-bin-path` from \(sourceRoot). \(errorOutput)"
+                "Unable to resolve Offsider binary path via `swift build --show-bin-path` from \(sourceRoot). \(errorOutput)"
             )
         }
 
@@ -142,14 +142,14 @@ struct TestHelpers {
         return udid
     }
 
-    /// Get the path to the axe binary using #file to find source root
+    /// Get the path to the offsider binary using #file to find source root
     static func getOffsiderPath(testFile: String = #file) throws -> String {
         if let offsiderBinPath = ProcessInfo.processInfo.environment["AXE_BIN_PATH"], !offsiderBinPath.isEmpty {
             if FileManager.default.fileExists(atPath: offsiderBinPath) {
                 return offsiderBinPath
             }
 
-            throw TestError.unexpectedState("AXE_BIN_PATH points to a missing axe binary at \(offsiderBinPath). Please run 'swift build'.")
+            throw TestError.unexpectedState("AXE_BIN_PATH points to a missing offsider binary at \(offsiderBinPath). Please run 'swift build'.")
         }
 
         let sourceRoot: String
@@ -168,7 +168,7 @@ struct TestHelpers {
             return offsiderPath
         }
         
-        throw TestError.unexpectedState("axe binary not found at \(offsiderPath). Please run 'swift build'.")
+        throw TestError.unexpectedState("offsider binary not found at \(offsiderPath). Please run 'swift build'.")
     }
     
     static func setSimulatorOrientationPortrait() async throws {
@@ -228,7 +228,7 @@ struct TestHelpers {
         
         // Check if the command failed
         if result.exitCode != 0 {
-            throw TestError.unexpectedState("axe describe-ui command failed with exit code \(result.exitCode). Output: \(result.output)")
+            throw TestError.unexpectedState("offsider describe-ui command failed with exit code \(result.exitCode). Output: \(result.output)")
         }
                 
         let roots = try UIStateParser.parseDescribeUIRoots(result.output)
@@ -320,7 +320,7 @@ struct TestHelpers {
         
         // Check if the command failed
         if exitCode != 0 {
-            throw TestError.unexpectedState("axe command '\(fullCommand)' failed with exit code \(exitCode). Output: \(output)")
+            throw TestError.unexpectedState("offsider command '\(fullCommand)' failed with exit code \(exitCode). Output: \(output)")
         }
         
         return CommandOutput(output: output, exitCode: exitCode)

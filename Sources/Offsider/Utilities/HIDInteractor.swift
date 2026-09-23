@@ -38,7 +38,7 @@ struct HIDInteractor {
         } catch {
             logger.error().log("Failed to load private frameworks: \(error)")
             throw CLIError(
-                errorDescription: "AXe could not initialize simulator input using the selected Xcode installation. Confirm Xcode 26 or later is selected and try again."
+                errorDescription: "Offsider could not initialize simulator input using the selected Xcode installation. Confirm Xcode 26 or later is selected and try again."
             )
         }
 
@@ -82,7 +82,7 @@ struct HIDInteractor {
         ) else {
             hidConnections.removeValue(forKey: simulatorUDID)
             throw CLIError(
-                errorDescription: "Simulator \(simulatorUDID) restarted while AXe was connecting. Try the command again."
+                errorDescription: "Simulator \(simulatorUDID) restarted while Offsider was connecting. Try the command again."
             )
         }
         try await HIDBroker.waitForHIDReadiness(

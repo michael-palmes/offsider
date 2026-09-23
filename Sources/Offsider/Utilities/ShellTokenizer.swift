@@ -18,7 +18,7 @@ struct ShellTokenizer {
         }
 
         var userFacingDescription: String {
-            errorDescription ?? "AXe could not parse the batch step."
+            errorDescription ?? "Offsider could not parse the batch step."
         }
     }
 

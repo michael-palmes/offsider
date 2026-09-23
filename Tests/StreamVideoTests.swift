@@ -93,7 +93,7 @@ struct StreamVideoTests {
         _ = await task.result
 
         let pid = try #require(processIdentifier.value, "Stream process should have started")
-        #expect(kill(pid, 0) == -1 && errno == ESRCH, "Cancelling the test task must not leak the AXe subprocess")
+        #expect(kill(pid, 0) == -1 && errno == ESRCH, "Cancelling the test task must not leak the Offsider subprocess")
     }
 
     @Test("Stream video rejects invalid formats")

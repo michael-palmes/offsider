@@ -11,9 +11,9 @@ struct KeySequence: AsyncParsableCommand {
         Each key will be pressed and released before the next key is pressed.
         
         Examples:
-          axe key-sequence 11,8,15,15,18 --udid SIMULATOR_UDID    # Type "hello" (h=11, e=8, l=15, l=15, o=18)
-          axe key-sequence 40,40,40 --udid SIMULATOR_UDID          # Press Enter 3 times
-          axe key-sequence 224,4,225 --udid SIMULATOR_UDID        # Ctrl+A (Ctrl=224, A=4, release Ctrl=225)
+          offsider key-sequence 11,8,15,15,18 --udid SIMULATOR_UDID    # Type "hello" (h=11, e=8, l=15, l=15, o=18)
+          offsider key-sequence 40,40,40 --udid SIMULATOR_UDID          # Press Enter 3 times
+          offsider key-sequence 224,4,225 --udid SIMULATOR_UDID        # Ctrl+A (Ctrl=224, A=4, release Ctrl=225)
         """
     )
     

@@ -91,9 +91,9 @@ struct Gesture: AsyncParsableCommand {
           swipe-from-top-edge, swipe-from-bottom-edge
         
         Examples:
-          axe gesture scroll-up --udid SIMULATOR_UDID
-          axe gesture scroll-down --duration 1.5 --udid SIMULATOR_UDID
-          axe gesture swipe-from-left-edge --screen-width 430 --screen-height 932 --udid SIMULATOR_UDID
+          offsider gesture scroll-up --udid SIMULATOR_UDID
+          offsider gesture scroll-down --duration 1.5 --udid SIMULATOR_UDID
+          offsider gesture swipe-from-left-edge --screen-width 430 --screen-height 932 --udid SIMULATOR_UDID
         """
     )
     

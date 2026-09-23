@@ -8,14 +8,14 @@ struct Type: AsyncParsableCommand {
         abstract: "Type text by entering a sequence of characters.",
         discussion: """
         Input Methods:
-        1. Direct text: axe type "Hello World" --udid UDID
-        2. From stdin: echo "Hello World!" | axe type --stdin --udid UDID
-        3. From file: axe type --file text.txt --udid UDID
+        1. Direct text: offsider type "Hello World" --udid UDID
+        2. From stdin: echo "Hello World!" | offsider type --stdin --udid UDID
+        3. From file: offsider type --file text.txt --udid UDID
         
         Examples:
-        • Simple text: axe type "Hello World" --udid UDID
-        • With spaces: axe type "Hello, how are you?" --udid UDID
-        • Special characters: axe type 'Hello!' --udid UDID
+        • Simple text: offsider type "Hello World" --udid UDID
+        • With spaces: offsider type "Hello, how are you?" --udid UDID
+        • Special characters: offsider type 'Hello!' --udid UDID
         
         Shell Escaping Tips:
         • Use double quotes for text with spaces: "Hello World"

@@ -296,18 +296,18 @@ struct Slider: AsyncParsableCommand {
 
     private func parseNormalizedAXValue(_ rawValue: String?) throws -> Double {
         guard let rawValue else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so AXe cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so Offsider cannot deterministically set it.")
         }
 
         let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedValue.isEmpty else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so AXe cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so Offsider cannot deterministically set it.")
         }
 
         let isPercent = trimmedValue.hasSuffix("%")
         let numericText = trimmedValue.replacingOccurrences(of: "%", with: "")
         guard let parsedValue = Double(numericText.trimmingCharacters(in: .whitespacesAndNewlines)), parsedValue.isFinite else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so AXe cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so Offsider cannot deterministically set it.")
         }
 
         let normalizedValue = isPercent || parsedValue > 1.0 ? parsedValue / 100.0 : parsedValue

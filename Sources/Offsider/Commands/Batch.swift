@@ -15,9 +15,9 @@ struct Batch: AsyncParsableCommand {
           sleep <seconds>
 
         Examples:
-          axe batch --udid SIMULATOR_UDID --step "tap --id BackButton" --step "type 'hello'"
-          axe batch --udid SIMULATOR_UDID --file steps.txt
-          cat steps.txt | axe batch --udid SIMULATOR_UDID --stdin
+          offsider batch --udid SIMULATOR_UDID --step "tap --id BackButton" --step "type 'hello'"
+          offsider batch --udid SIMULATOR_UDID --file steps.txt
+          cat steps.txt | offsider batch --udid SIMULATOR_UDID --stdin
         """
     )
 

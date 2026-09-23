@@ -22,10 +22,10 @@ struct KeyCombo: AsyncParsableCommand {
           231 - Right Command (GUI)
 
         Examples:
-          axe key-combo --modifiers 227 --key 4 --udid SIMULATOR_UDID          # Cmd+A (Select All)
-          axe key-combo --modifiers 227 --key 6 --udid SIMULATOR_UDID          # Cmd+C (Copy)
-          axe key-combo --modifiers 227 --key 25 --udid SIMULATOR_UDID         # Cmd+V (Paste)
-          axe key-combo --modifiers 227,225 --key 4 --udid SIMULATOR_UDID      # Cmd+Shift+A
+          offsider key-combo --modifiers 227 --key 4 --udid SIMULATOR_UDID          # Cmd+A (Select All)
+          offsider key-combo --modifiers 227 --key 6 --udid SIMULATOR_UDID          # Cmd+C (Copy)
+          offsider key-combo --modifiers 227 --key 25 --udid SIMULATOR_UDID         # Cmd+V (Paste)
+          offsider key-combo --modifiers 227,225 --key 4 --udid SIMULATOR_UDID      # Cmd+Shift+A
         """
     )
 

@@ -44,7 +44,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
     }
 
     var userFacingDescription: String {
-        errorDescription ?? "AXe could not resolve the requested accessibility element."
+        errorDescription ?? "Offsider could not resolve the requested accessibility element."
     }
 }
 
@@ -55,7 +55,7 @@ struct AccessibilityMatch {
 }
 
 struct AccessibilityTargetResolver {
-    static let describeUITip = "Make sure the app is on the expected screen, then run `axe describe-ui --udid <SIMULATOR_UDID>` and prefer --id when available."
+    static let describeUITip = "Make sure the app is on the expected screen, then run `offsider describe-ui --udid <SIMULATOR_UDID>` and prefer --id when available."
 
     private static let wideSwitchActivationWidthThreshold = 100.0
     private static let switchTrailingActivationInset = 31.0

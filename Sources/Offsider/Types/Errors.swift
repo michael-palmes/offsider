@@ -20,7 +20,7 @@ struct CLIError: LocalizedError, UserFacingError {
 
     static func simulatorNotFound(udid: String) -> CLIError {
         CLIError(
-            errorDescription: "No simulator with UDID \(udid) was found. Run `axe list-simulators` to see available simulators."
+            errorDescription: "No simulator with UDID \(udid) was found. Run `offsider list-simulators` to see available simulators."
         )
     }
 

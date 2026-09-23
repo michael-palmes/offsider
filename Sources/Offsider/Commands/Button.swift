@@ -48,9 +48,9 @@ struct Button: AsyncParsableCommand {
         Available buttons: apple-pay, home, lock, side-button, siri
         
         Examples:
-          axe button home --udid SIMULATOR_UDID
-          axe button lock --duration 2.0 --udid SIMULATOR_UDID
-          axe button siri --udid SIMULATOR_UDID
+          offsider button home --udid SIMULATOR_UDID
+          offsider button lock --duration 2.0 --udid SIMULATOR_UDID
+          offsider button siri --udid SIMULATOR_UDID
         """
     )
     

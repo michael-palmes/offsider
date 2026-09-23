@@ -11,7 +11,7 @@ func performGlobalSetup(logger: OffsiderLogger) async throws {
     do {
         let xcodePath = try FBXcodeDirectory.resolveDeveloperDirectory()
         if xcodePath.isEmpty {
-            let errorMessage = "AXe could not find an active Xcode installation. Select Xcode with `xcode-select` or set `DEVELOPER_DIR`, then try again."
+            let errorMessage = "Offsider could not find an active Xcode installation. Select Xcode with `xcode-select` or set `DEVELOPER_DIR`, then try again."
             logger.error().log(errorMessage)
             throw CLIError(errorDescription: errorMessage)
         }
@@ -19,7 +19,7 @@ func performGlobalSetup(logger: OffsiderLogger) async throws {
     } catch let error as CLIError {
         throw error
     } catch {
-        let errorMessage = "AXe could not resolve the active Xcode installation: \(error.localizedDescription)"
+        let errorMessage = "Offsider could not resolve the active Xcode installation: \(error.localizedDescription)"
         logger.error().log(errorMessage)
         throw CLIError(errorDescription: errorMessage)
     }
@@ -35,7 +35,7 @@ func performGlobalSetup(logger: OffsiderLogger) async throws {
         try FBSimulatorControlFrameworkLoader.xcodeFrameworks.loadPrivateFrameworks(logger)
         logger.info().log("Successfully loaded Xcode frameworks.")
     } catch {
-        let errorMessage = "AXe could not load simulator support from the selected Xcode installation: \(error.localizedDescription)"
+        let errorMessage = "Offsider could not load simulator support from the selected Xcode installation: \(error.localizedDescription)"
         logger.error().log(errorMessage)
         throw CLIError(errorDescription: errorMessage)
     }
