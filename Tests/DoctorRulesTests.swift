@@ -130,6 +130,11 @@ struct DoctorRulesTests {
         #expect(DoctorRules.isBrokerDirectoryFixable(ownedUnsafe))
         #expect(!DoctorRules.isBrokerDirectoryFixable(.unsafe(reason: "owned by uid 0", ownedByCurrentUser: false)))
         #expect(!DoctorRules.isBrokerDirectoryFixable(.absent))
+
+        let file = BrokerDirectoryState.unsafe(reason: BrokerDirectoryState.notADirectoryReason, ownedByCurrentUser: true)
+        #expect(DoctorRules.brokerDirectory(file, path: path).status == .fail)
+        #expect(!DoctorRules.isBrokerDirectoryFixable(file))
+        #expect(DoctorRules.brokerDirectory(file, path: path).hint?.contains("--fix") == false)
     }
 
     @Test("A boot under 10 s old warns and skips HID probes")

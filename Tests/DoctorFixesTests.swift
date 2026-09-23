@@ -69,4 +69,19 @@ struct DoctorFixesTests {
         #expect(DoctorFixes.removeStaleBrokerDirectory(context).outcome == .skipped)
         #expect(FileManager.default.fileExists(atPath: context.brokerRootPath))
     }
+
+    @Test("A regular file at the broker path is left in place")
+    func keepsFileAtBrokerPath() throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsider-doctor-fix-\(UUID().uuidString)").path
+        FileManager.default.createFile(atPath: path, contents: Data("not ours".utf8), attributes: [.posixPermissions: 0o600])
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        var context = DoctorContext()
+        context.brokerRootPath = path
+
+        let result = DoctorFixes.removeStaleBrokerDirectory(context)
+
+        #expect(result.outcome == .skipped)
+        #expect(FileManager.default.contents(atPath: path) == Data("not ours".utf8))
+    }
 }

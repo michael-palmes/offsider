@@ -95,7 +95,7 @@ enum DoctorProbes {
         }
         let owned = info.st_uid == getuid()
         guard (info.st_mode & S_IFMT) == S_IFDIR else {
-            return .unsafe(reason: "not a directory", ownedByCurrentUser: owned)
+            return .unsafe(reason: BrokerDirectoryState.notADirectoryReason, ownedByCurrentUser: owned)
         }
         guard owned else {
             return .unsafe(reason: "owned by uid \(info.st_uid)", ownedByCurrentUser: false)

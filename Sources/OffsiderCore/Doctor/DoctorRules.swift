@@ -1,6 +1,8 @@
 import Foundation
 
 public enum BrokerDirectoryState: Equatable, Sendable {
+    public static let notADirectoryReason = "not a directory"
+
     case absent
     case unsafe(reason: String, ownedByCurrentUser: Bool)
     case healthy(live: Int, stale: Int, unexpectedEntries: [String])
@@ -145,6 +147,8 @@ public enum DoctorRules {
         switch state {
         case .absent:
             return (.pass, "Not created yet", nil)
+        case .unsafe(let reason, _) where reason == BrokerDirectoryState.notADirectoryReason:
+            return (.fail, "Unsafe broker directory: \(reason)", "Offsider did not create \"\(path)\"; check what it is and remove it yourself.")
         case .unsafe(let reason, let owned):
             return (.fail, "Unsafe broker directory: \(reason)", owned ? hint : "Remove \"\(path)\" as its owner, then run the command again.")
         case .healthy(let live, let stale, let unexpected):
@@ -163,8 +167,8 @@ public enum DoctorRules {
         switch state {
         case .absent:
             return false
-        case .unsafe(_, let owned):
-            return owned
+        case .unsafe(let reason, let owned):
+            return owned && reason != BrokerDirectoryState.notADirectoryReason
         case .healthy(let live, let stale, let unexpected):
             return stale > 0 && live == 0 && unexpected.isEmpty
         }

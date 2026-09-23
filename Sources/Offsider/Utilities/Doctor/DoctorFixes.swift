@@ -63,6 +63,8 @@ enum DoctorFixes {
             switch state {
             case .absent:
                 return result(.skipped, "Nothing to remove")
+            case .unsafe(let reason, _) where reason == BrokerDirectoryState.notADirectoryReason:
+                return result(.skipped, "Not a directory; Offsider did not create it")
             case .unsafe:
                 return result(.skipped, "Owned by another user; remove it as that user")
             case .healthy(let live, _, let unexpected) where !unexpected.isEmpty || live > 0:
@@ -82,12 +84,12 @@ enum DoctorFixes {
         }
     }
 
-    /// Re-checks an owned directory right before removal, including one with loose permissions.
+    /// Re-checks right before removal: only an owned directory holding broker files may go.
     private static func removalBlocker(path: String) -> String? {
         var info = stat()
         guard lstat(path, &info) == 0 else { return "Nothing to remove" }
         guard info.st_uid == getuid() else { return "Owned by another user; remove it as that user" }
-        guard (info.st_mode & S_IFMT) == S_IFDIR else { return nil }
+        guard (info.st_mode & S_IFMT) == S_IFDIR else { return "Not a directory; Offsider did not create it" }
         guard let entries = try? FileManager.default.contentsOfDirectory(atPath: path) else {
             return "Cannot list its entries"
         }
