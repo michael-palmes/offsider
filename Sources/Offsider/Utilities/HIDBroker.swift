@@ -200,8 +200,9 @@ enum HIDBroker {
             .standardizedFileURL
             .resolvingSymlinksInPath()
             .path
-        let identity = String(fnv1a64(developerDirectory), radix: 16)
-        let simulatorIdentity = String(fnv1a64(simulatorUDID), radix: 16)
+        // Base 36 keeps the socket path inside the 104-byte sun_path limit.
+        let identity = String(fnv1a64(developerDirectory), radix: 36)
+        let simulatorIdentity = String(fnv1a64(simulatorUDID), radix: 36)
         // Version the endpoint so a running broker from an older wire protocol cannot intercept
         // a request before the current client completes its readiness handshake.
         let filename = "\(simulatorIdentity)-\(identity)-v\(protocolVersion).sock"
