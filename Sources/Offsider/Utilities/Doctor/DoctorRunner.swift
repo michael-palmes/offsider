@@ -112,14 +112,15 @@ struct DoctorRunner {
         ))
 
         var simulators: [FBSimulator] = []
+        var simulatorsListed = false
         if frameworksLoaded {
             do {
                 simulators = try await DoctorProbes.simulators(logger: logger)
+                simulatorsListed = true
                 let booted = simulators.filter { $0.state == .booted }
                 run.booted = booted.map(DoctorProbes.bootedSimulator).sorted { ($0.name, $0.udid) < ($1.name, $1.udid) }
                 run.checks.append(DoctorCheckResult(id: .bootedSimulators, verdict: DoctorRules.bootedSimulators(count: booted.count)))
             } catch {
-                frameworksLoaded = false
                 run.checks.append(DoctorCheckResult(
                     id: .bootedSimulators,
                     status: .fail,
@@ -138,7 +139,8 @@ struct DoctorRunner {
         if let udid {
             let perSimulator = await simulatorChecks(
                 udid: udid,
-                simulators: frameworksLoaded ? simulators : nil,
+                simulators: simulatorsListed ? simulators : nil,
+                unavailableReason: frameworksLoaded ? "requires simulators.booted" : "requires xcode.frameworks",
                 xcodeMajor: xcodeMajor,
                 dtuhidEra: DoctorRules.isDTUHIDEra(coreSimulatorVersion: coreSimulator),
                 deviceHubProcessIdentifier: deviceHubProcessIdentifier,
@@ -152,6 +154,7 @@ struct DoctorRunner {
     private func simulatorChecks(
         udid: String,
         simulators: [FBSimulator]?,
+        unavailableReason: String,
         xcodeMajor: Int?,
         dtuhidEra: Bool,
         deviceHubProcessIdentifier: pid_t?,
@@ -159,7 +162,7 @@ struct DoctorRunner {
     ) async -> [DoctorCheckResult] {
         let dependents: [DoctorCheckID] = [.deviceWindow, .resizeMode, .dtuhidd, .dtuhidActiveFlag, .hidTransport, .accessibility]
         guard let simulators else {
-            return ([.simulatorState] + dependents).map { .skipped($0, "requires xcode.frameworks") }
+            return ([.simulatorState] + dependents).map { .skipped($0, unavailableReason) }
         }
         guard let simulator = simulators.first(where: { $0.udid == udid }) else {
             return [DoctorCheckResult(
