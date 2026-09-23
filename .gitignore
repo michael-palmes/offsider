@@ -14,9 +14,11 @@
 idb_checkout/
 /build_products
 /build_derived_data
+/dist
+/.build.hidden-by-release-sh
 
 # Generated version file
-Sources/AXe/Version.swift
+Sources/Offsider/Version.swift
 
 # macOS
 .DS_Store
@@ -47,7 +49,8 @@ Temporary Items
 /.cursorrules
 
 # Claude AI
-.claude
+/.claude/*
+!/.claude/skills
 
 # Local environment overrides
 .env

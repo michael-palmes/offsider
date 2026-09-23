@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-import AXeCore
+import OffsiderCore
 
 // MARK: - Orientation Math Tests
 //
@@ -12,7 +12,7 @@ import AXeCore
 //   (a) Rotated hardware — `translateToPhysical` rotation math.
 //   (b) Portrait hardware + landscape-only app — `letterboxToPhysical` scale + offset math.
 //
-// The pure coordinate math lives in AXeCore so production and tests exercise the
+// The pure coordinate math lives in OffsiderCore so production and tests exercise the
 // same implementation rather than mirrored copies.
 //
 // Device under test in the parameterized tests: iPad Pro 13-inch (M5)

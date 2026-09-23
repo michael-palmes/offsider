@@ -10,7 +10,7 @@ struct SwipeTests {
         try await Task.sleep(nanoseconds: 1_000_000_000) // Extra wait for app to be ready
         
         // Act
-        try await TestHelpers.runAxeCommand("swipe --start-x 100 --start-y 400 --end-x 300 --end-y 400", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("swipe --start-x 100 --start-y 400 --end-x 300 --end-y 400", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Assert
@@ -45,7 +45,7 @@ struct SwipeTests {
             let endX = Int(endFrame.x + endFrame.width / 2)
             let endY = Int(endFrame.y + endFrame.height / 2)
 
-            try await TestHelpers.runAxeCommand(
+            try await TestHelpers.runOffsiderCommand(
                 "swipe --start-x \(startX) --start-y \(startY) --end-x \(endX) --end-y \(endY) --duration 0.3 --delta 10",
                 simulatorUDID: defaultSimulatorUDID
             )
@@ -82,7 +82,7 @@ struct SwipeTests {
             let endX = Int(endFrame.x + endFrame.width / 2)
             let endY = Int(endFrame.y + endFrame.height / 2)
 
-            try await TestHelpers.runAxeCommand(
+            try await TestHelpers.runOffsiderCommand(
                 "swipe --start-x \(startX) --start-y \(startY) --end-x \(endX) --end-y \(endY) --duration 0.3 --delta 10",
                 simulatorUDID: defaultSimulatorUDID
             )
@@ -112,7 +112,7 @@ struct SwipeTests {
         try await Task.sleep(nanoseconds: 1_000_000_000) // Extra wait for app to be ready
         
         // Act
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "swipe --start-x \(swipeTest.start.0) --start-y \(swipeTest.start.1) --end-x \(swipeTest.end.0) --end-y \(swipeTest.end.1)",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -133,7 +133,7 @@ struct SwipeTests {
         
         // Act - slower swipe (2 seconds)
         let startTime = Date()
-        try await TestHelpers.runAxeCommand("swipe --start-x 100 --start-y 400 --end-x 300 --end-y 400 --duration 2", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("swipe --start-x 100 --start-y 400 --end-x 300 --end-y 400 --duration 2", simulatorUDID: defaultSimulatorUDID)
         let endTime = Date()
         
         // Assert
@@ -153,7 +153,7 @@ struct SwipeTests {
         
         // Act
         for i in 1...swipeCount {
-            try await TestHelpers.runAxeCommand("swipe --start-x \(100 + i * 30) --start-y \(400 + i * 20) --end-x \(200 + i * 30) --end-y \(400 + i * 20)", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("swipe --start-x \(100 + i * 30) --start-y \(400 + i * 20) --end-x \(200 + i * 30) --end-y \(400 + i * 20)", simulatorUDID: defaultSimulatorUDID)
             try await Task.sleep(nanoseconds: 500_000_000)
         }
         
@@ -254,7 +254,7 @@ struct SwipeTests {
             let midEndY = Int(Double(endVertex.y) - (Double(endVertex.y - startVertex.y) * gapSize))
             
             // Draw segment with gap - use smaller delta for better detection
-            try await TestHelpers.runAxeCommand(
+            try await TestHelpers.runOffsiderCommand(
                 "swipe --start-x \(midStartX) --start-y \(midStartY) --end-x \(midEndX) --end-y \(midEndY) --duration 0.3 --delta 10",
                 simulatorUDID: defaultSimulatorUDID
             )

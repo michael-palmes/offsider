@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the required IDB Frameworks for the AXe project.
+# Builds the required IDB Frameworks for the Offsider project.
 
 set -e
 set -o pipefail
@@ -145,7 +145,7 @@ function remove_idb_replacement() {
 
   if [[ -L "$replacement_root" || ! -d "$replacement_root" ||
         "$(dirname "$replacement_root")" != "$checkout_parent" ||
-        "$(basename "$replacement_root")" != .axe-idb-replacement.* ]]; then
+        "$(basename "$replacement_root")" != .offsider-idb-replacement.* ]]; then
     print_warning "Refusing unsafe IDB replacement cleanup: $replacement_root"
     return 0
   fi
@@ -163,10 +163,10 @@ function cleanup_stale_idb_replacements() {
   local checkout_parent candidate owner_pid
   checkout_parent="$(dirname "$IDB_CHECKOUT_DIR")"
 
-  for candidate in "$checkout_parent"/.axe-idb-replacement.*; do
+  for candidate in "$checkout_parent"/.offsider-idb-replacement.*; do
     [[ ! -L "$candidate" && -d "$candidate" ]] || continue
-    [[ ! -L "$candidate/.axe-owner-pid" && -f "$candidate/.axe-owner-pid" ]] || continue
-    owner_pid="$(< "$candidate/.axe-owner-pid")"
+    [[ ! -L "$candidate/.offsider-owner-pid" && -f "$candidate/.offsider-owner-pid" ]] || continue
+    owner_pid="$(< "$candidate/.offsider-owner-pid")"
     if [[ "$owner_pid" =~ ^[0-9]+$ ]] && kill -0 "$owner_pid" 2>/dev/null; then
       continue
     fi
@@ -269,7 +269,7 @@ function verify_fbsimulatorcontrol_fork_features() {
     if grep -E 'AccessibilityPlatformTranslation|AXP[A-Za-z]' "$artifact" >/dev/null; then
       echo "❌ Error: FBSimulatorControl leaks AccessibilityPlatformTranslation through its public interface"
       echo "   Leaking artifact: ${artifact}"
-      echo "   Rebuild from the pinned AXe IDB fork revision."
+      echo "   Rebuild from the pinned Offsider IDB fork revision."
       exit 1
     fi
   done
@@ -277,7 +277,7 @@ function verify_fbsimulatorcontrol_fork_features() {
   if ! grep -F 'FBAccessibilityElement' "${public_module_artifacts[0]}" >/dev/null ||
     ! grep -F 'accessibilityElementForFrontmostApplication' "${public_module_artifacts[0]}" >/dev/null
   then
-    echo "❌ Error: FBSimulatorControl lost the public AXe accessibility command surface"
+    echo "❌ Error: FBSimulatorControl lost the public Offsider accessibility command surface"
     echo "   Checked: ${public_module_artifacts[0]}"
     exit 1
   fi
@@ -310,7 +310,7 @@ function swift_build_bin_path() {
 
 function copy_resource_bundle() {
   local output_base_dir="$1"
-  local bundle_name="AXe_AXe.bundle"
+  local bundle_name="Offsider_Offsider.bundle"
   local bundle_dest="${output_base_dir}/${bundle_name}"
   local bundle_source=""
   local candidate_dir=""
@@ -326,20 +326,20 @@ function copy_resource_bundle() {
   done
 
   if [[ -z "$bundle_source" ]]; then
-    echo "❌ Error: AXe resource bundle not found in Swift build outputs"
+    echo "❌ Error: Offsider resource bundle not found in Swift build outputs"
     exit 1
   fi
 
   rm -rf "$bundle_dest"
   cp -R "$bundle_source" "$bundle_dest"
-  print_success "AXe resource bundle installed to ${bundle_dest}"
+  print_success "Offsider resource bundle installed to ${bundle_dest}"
 }
 
 function fresh_clone_idb_repo() {
   if [[ -e "$IDB_CHECKOUT_DIR" ]]; then
     local existing_remote
     existing_remote="$(git -C "$IDB_CHECKOUT_DIR" remote get-url origin 2>/dev/null || true)"
-    if [[ ! -f "$IDB_CHECKOUT_DIR/.git/axe-managed-checkout" &&
+    if [[ ! -f "$IDB_CHECKOUT_DIR/.git/offsider-managed-checkout" &&
           ( "$IDB_CHECKOUT_DIR" != "$DEFAULT_IDB_CHECKOUT_DIR" || "$existing_remote" != "$IDB_GIT_URL" ) ]]; then
       echo "❌ Error: Refusing to replace an unmanaged IDB checkout: $IDB_CHECKOUT_DIR" >&2
       echo "   Remove or repair that checkout manually, then retry." >&2
@@ -347,17 +347,17 @@ function fresh_clone_idb_repo() {
     fi
   fi
 
-  IDB_REPLACEMENT_ROOT="$(mktemp -d "$(dirname "$IDB_CHECKOUT_DIR")/.axe-idb-replacement.XXXXXX")"
-  printf '%s\n' "$$" > "$IDB_REPLACEMENT_ROOT/.axe-owner-pid"
+  IDB_REPLACEMENT_ROOT="$(mktemp -d "$(dirname "$IDB_CHECKOUT_DIR")/.offsider-idb-replacement.XXXXXX")"
+  printf '%s\n' "$$" > "$IDB_REPLACEMENT_ROOT/.offsider-owner-pid"
   local replacement_checkout
   replacement_checkout="${IDB_REPLACEMENT_ROOT}/checkout"
-  print_info "Cloning AXe's IDB fork into $IDB_CHECKOUT_DIR..."
+  print_info "Cloning Offsider's IDB fork into $IDB_CHECKOUT_DIR..."
   if ! git clone --no-checkout "$IDB_GIT_URL" "$replacement_checkout" ||
      ! git -C "$replacement_checkout" checkout --detach "$IDB_GIT_REF"; then
     cleanup_current_idb_replacement
     return 1
   fi
-  touch "$replacement_checkout/.git/axe-managed-checkout"
+  touch "$replacement_checkout/.git/offsider-managed-checkout"
   if [[ -e "$IDB_CHECKOUT_DIR" ]]; then
     rm -r "$IDB_CHECKOUT_DIR"
   fi
@@ -378,7 +378,7 @@ function clone_idb_repo() {
        git -C "$IDB_CHECKOUT_DIR" cat-file -e "${IDB_GIT_REF}^{tree}" 2>/dev/null; then
       if [[ -n "$(git -C "$IDB_CHECKOUT_DIR" status --porcelain)" ]]; then
         if [[ "$IDB_CHECKOUT_DIR" != "$DEFAULT_IDB_CHECKOUT_DIR" &&
-              ! -f "$IDB_CHECKOUT_DIR/.git/axe-managed-checkout" ]]; then
+              ! -f "$IDB_CHECKOUT_DIR/.git/offsider-managed-checkout" ]]; then
           echo "Error: Refusing to repair an unmanaged IDB checkout: $IDB_CHECKOUT_DIR" >&2
           echo "   Clean or repair that checkout manually, then retry." >&2
           return 1
@@ -394,13 +394,13 @@ function clone_idb_repo() {
           fi
         fi
       fi
-      touch "$IDB_CHECKOUT_DIR/.git/axe-managed-checkout"
+      touch "$IDB_CHECKOUT_DIR/.git/offsider-managed-checkout"
       print_info "Reusing pinned IDB fork checkout at $IDB_GIT_REF."
       verify_idb_source_state
       return 0
     fi
 
-    print_info "Updating AXe's IDB fork to $IDB_GIT_REF..."
+    print_info "Updating Offsider's IDB fork to $IDB_GIT_REF..."
     git -C "$IDB_CHECKOUT_DIR" remote set-url origin "$IDB_GIT_URL"
     if ! (cd "$IDB_CHECKOUT_DIR" && git fetch origin --tags --prune && git checkout -- . && git clean -fd && git checkout --detach "$IDB_GIT_REF"); then
       print_warning "The cached IDB checkout is incomplete; replacing it with a clean clone."
@@ -776,19 +776,19 @@ function sanitize_framework_rpaths() {
   fi
 }
 
-# Function to build the AXe executable using Swift Package Manager
+# Function to build the Offsider executable using Swift Package Manager
 # $1: Base output directory
-function build_axe_executable() {
+function build_offsider_executable() {
   local output_base_dir="$1"
   local build_config="release"
-  local executable_dest="${output_base_dir}/axe"
-  local arm64_executable="${output_base_dir}/axe-arm64"
-  local x64_executable="${output_base_dir}/axe-x86_64"
+  local executable_dest="${output_base_dir}/offsider"
+  local arm64_executable="${output_base_dir}/offsider-arm64"
+  local x64_executable="${output_base_dir}/offsider-x86_64"
   local arm64_bin_path
   local x64_bin_path
 
-  print_subsection "⚡" "Building AXe executable"
-  print_info "Using Swift Package Manager to build AXe..."
+  print_subsection "⚡" "Building Offsider executable"
+  print_info "Using Swift Package Manager to build Offsider..."
 
   # Clean any existing build products to ensure fresh build
   print_info "Cleaning previous build products..."
@@ -796,18 +796,18 @@ function build_axe_executable() {
 
   print_info "Building arm64 executable..."
   swift build --configuration "${build_config}" --arch arm64
-  arm64_bin_path="$(swift_build_bin_path "$build_config" "arm64")/axe"
+  arm64_bin_path="$(swift_build_bin_path "$build_config" "arm64")/offsider"
   if [[ ! -f "${arm64_bin_path}" ]]; then
-    echo "❌ Error: arm64 AXe executable not found at ${arm64_bin_path}"
+    echo "❌ Error: arm64 Offsider executable not found at ${arm64_bin_path}"
     exit 1
   fi
   cp "${arm64_bin_path}" "${arm64_executable}"
 
   print_info "Building x86_64 executable..."
   swift build --configuration "${build_config}" --arch x86_64
-  x64_bin_path="$(swift_build_bin_path "$build_config" "x86_64")/axe"
+  x64_bin_path="$(swift_build_bin_path "$build_config" "x86_64")/offsider"
   if [[ ! -f "${x64_bin_path}" ]]; then
-    echo "❌ Error: x86_64 AXe executable not found at ${x64_bin_path}"
+    echo "❌ Error: x86_64 Offsider executable not found at ${x64_bin_path}"
     exit 1
   fi
   cp "${x64_bin_path}" "${x64_executable}"
@@ -820,7 +820,7 @@ function build_axe_executable() {
 
   verify_macho_has_arch "${executable_dest}" "arm64"
   verify_macho_has_arch "${executable_dest}" "x86_64"
-  print_success "AXe executable installed to ${executable_dest}"
+  print_success "Offsider executable installed to ${executable_dest}"
 
   # Configure rpath for organized framework loading
   print_info "Configuring executable rpath for organized framework loading..."
@@ -892,7 +892,7 @@ function verify_xcframework_inputs() {
 function verify_release_architectures() {
   local output_base_dir="$1"
   local frameworks_dir="${output_base_dir}/Frameworks"
-  local executable_path="${output_base_dir}/axe"
+  local executable_path="${output_base_dir}/offsider"
   local expected_frameworks=("FBControlCore" "XCTestBootstrap" "FBSimulatorControl" "FBDeviceControl")
 
   print_subsection "🧪" "Validating release artifact architectures"
@@ -926,14 +926,14 @@ function verify_release_architectures() {
   print_success "Release artifacts include arm64 and x86_64 slices"
 }
 
-# Function to sign the AXe executable with Developer ID
+# Function to sign the Offsider executable with Developer ID
 # $1: Base output directory
-function sign_axe_executable() {
+function sign_offsider_executable() {
   local output_base_dir="$1"
-  local executable_path="${output_base_dir}/axe"
+  local executable_path="${output_base_dir}/offsider"
 
   if [ -f "$executable_path" ]; then
-    print_info "Signing AXe executable: ${executable_path}"
+    print_info "Signing Offsider executable: ${executable_path}"
 
     # Sign with Developer ID and runtime hardening
     codesign_with_retry --force \
@@ -944,28 +944,28 @@ function sign_axe_executable() {
       "$executable_path"
 
     if [ $? -eq 0 ]; then
-      print_success "AXe executable signed successfully"
+      print_success "Offsider executable signed successfully"
 
       # Verify the signature with strictest verification
-      print_info "Performing strict verification for AXe executable..."
+      print_info "Performing strict verification for Offsider executable..."
       codesign -vvv "$executable_path"
 
       if [ $? -eq 0 ]; then
-        print_success "AXe executable signature verification passed"
+        print_success "Offsider executable signature verification passed"
 
         # Display signature details
-        print_info "AXe executable signature details:"
+        print_info "Offsider executable signature details:"
         codesign -dv "$executable_path" 2>&1 | grep -E "(Identifier|TeamIdentifier|Authority)" || true
       else
-        echo "❌ Error: AXe executable signature verification failed"
+        echo "❌ Error: Offsider executable signature verification failed"
         exit 1
       fi
     else
-      echo "❌ Error: Failed to sign AXe executable"
+      echo "❌ Error: Failed to sign Offsider executable"
       exit 1
     fi
   else
-    print_warning "AXe executable not found: $executable_path"
+    print_warning "Offsider executable not found: $executable_path"
   fi
 }
 
@@ -973,7 +973,7 @@ function sign_axe_executable() {
 # $1: Base output directory
 function package_for_notarization() {
   local output_base_dir="$1"
-  local package_name="AXe-$(date +%Y%m%d-%H%M%S)"
+  local package_name="Offsider-$(date +%Y%m%d-%H%M%S)"
   local package_dir="${output_base_dir}/${package_name}"
   local package_zip="${output_base_dir}/${package_name}.zip"
 
@@ -1061,8 +1061,8 @@ function notarize_package() {
     local extracted_package_dir
     extracted_package_dir="$(find "${temp_extract_dir}" -mindepth 1 -maxdepth 1 -type d | head -1)"
 
-    if [ -n "${extracted_package_dir}" ] && [ -f "${extracted_package_dir}/axe" ]; then
-      cp "${extracted_package_dir}/axe" "${BUILD_OUTPUT_DIR}/axe"
+    if [ -n "${extracted_package_dir}" ] && [ -f "${extracted_package_dir}/offsider" ]; then
+      cp "${extracted_package_dir}/offsider" "${BUILD_OUTPUT_DIR}/offsider"
       print_success "Original executable replaced with notarized version"
 
       rm -rf "${BUILD_OUTPUT_DIR}/Frameworks"
@@ -1074,25 +1074,25 @@ function notarize_package() {
         exit 1
       fi
 
-      rm -rf "${BUILD_OUTPUT_DIR}/AXe_AXe.bundle"
-      if [ -d "${extracted_package_dir}/AXe_AXe.bundle" ]; then
-        cp -R "${extracted_package_dir}/AXe_AXe.bundle" "${BUILD_OUTPUT_DIR}/"
-        print_success "Original AXe resource bundle replaced with notarized version"
+      rm -rf "${BUILD_OUTPUT_DIR}/Offsider_Offsider.bundle"
+      if [ -d "${extracted_package_dir}/Offsider_Offsider.bundle" ]; then
+        cp -R "${extracted_package_dir}/Offsider_Offsider.bundle" "${BUILD_OUTPUT_DIR}/"
+        print_success "Original Offsider resource bundle replaced with notarized version"
       else
-        echo "❌ Error: Notarized package missing AXe resource bundle"
+        echo "❌ Error: Notarized package missing Offsider resource bundle"
         exit 1
       fi
 
       # Verify notarization status using spctl
       print_info "Verifying notarization with spctl assessment..."
-      spctl -a -v "${BUILD_OUTPUT_DIR}/axe" 2>&1 | grep -q "accepted" || {
+      spctl -a -v "${BUILD_OUTPUT_DIR}/offsider" 2>&1 | grep -q "accepted" || {
         print_info "Note: spctl shows 'not an app' for command-line tools - this is expected"
         print_info "Notarized command-line tools are validated differently by macOS"
       }
 
       # Check if the executable has the notarization signature
       print_info "Checking code signature details..."
-      local sig_info=$(codesign -dv "${BUILD_OUTPUT_DIR}/axe" 2>&1)
+      local sig_info=$(codesign -dv "${BUILD_OUTPUT_DIR}/offsider" 2>&1)
       if echo "$sig_info" | grep -q "runtime"; then
         print_success "Executable has runtime hardening enabled (required for notarization)"
       else
@@ -1103,7 +1103,7 @@ function notarize_package() {
 
       # Create final deployment package in temporary directory
       print_info "Creating final deployment package..."
-      local final_package_name="AXe-Final-$(date +%Y%m%d-%H%M%S)"
+      local final_package_name="Offsider-Final-$(date +%Y%m%d-%H%M%S)"
       local final_package_dir="${TEMP_DIR}/${final_package_name}"
       local final_package_zip="${TEMP_DIR}/${final_package_name}.zip"
 
@@ -1112,7 +1112,7 @@ function notarize_package() {
 
       # Copy notarized executable, resource bundle, and frameworks to final package
       copy_release_payload "${BUILD_OUTPUT_DIR}" "${final_package_dir}"
-      print_info "Included staged AXe payload in final package"
+      print_info "Included staged Offsider payload in final package"
 
       # Create final zip package while preserving framework symlinks and metadata
       print_info "Creating final package: ${final_package_zip}"
@@ -1124,12 +1124,12 @@ function notarize_package() {
       if [ -f "${final_package_zip}" ]; then
         print_success "Final deployment package created: ${final_package_zip}"
 
-        # Clean up build artifacts (axe executable and Frameworks, keep XCFrameworks)
+        # Clean up build artifacts (offsider executable and Frameworks, keep XCFrameworks)
         print_info "Cleaning up build artifacts..."
-        rm -f "${BUILD_OUTPUT_DIR}/axe"
-        rm -rf "${BUILD_OUTPUT_DIR}/AXe_AXe.bundle"
+        rm -f "${BUILD_OUTPUT_DIR}/offsider"
+        rm -rf "${BUILD_OUTPUT_DIR}/Offsider_Offsider.bundle"
         rm -rf "${BUILD_OUTPUT_DIR}/Frameworks"
-        print_success "Cleaned up axe executable, resource bundle, and Frameworks directory"
+        print_success "Cleaned up offsider executable, resource bundle, and Frameworks directory"
         print_info "Preserved XCFrameworks directory for Swift package builds"
 
         # Output the final package path
@@ -1201,7 +1201,7 @@ Commands:
     Generate the pinned fork project, then build all IDB frameworks (FBControlCore, XCTestBootstrap, FBSimulatorControl, FBDeviceControl).
 
   generate
-    Verify the pinned AXe IDB fork revision, then regenerate projects using XcodeGen.
+    Verify the pinned Offsider IDB fork revision, then regenerate projects using XcodeGen.
 
   install
     Install built frameworks to the Frameworks directory.
@@ -1219,10 +1219,10 @@ Commands:
     Code sign all XCFrameworks with Developer ID.
 
   executable
-    Build the AXe executable using Swift Package Manager.
+    Build the Offsider executable using Swift Package Manager.
 
   sign-executable
-    Code sign the AXe executable with Developer ID.
+    Code sign the Offsider executable with Developer ID.
 
   package
     Create a notarization package (zip file).
@@ -1243,7 +1243,7 @@ Environment Variables (set inline, exported, or via a git-ignored .env file):
   AXE_ENV_FILE           Path to the .env file to load (default: <repo-root>/.env)
   AXE_CODESIGN_IDENTITY  Code-signing identity (required for signing; no default)
   IDB_CHECKOUT_DIR       Directory for IDB repository (default: ./idb_checkout)
-  IDB_GIT_URL            AXe IDB fork URL (default: https://github.com/cameroncooke/idb.git)
+  IDB_GIT_URL            Offsider IDB fork URL (default: https://github.com/cameroncooke/idb.git)
   IDB_GIT_REF            Exact fork revision (default: ${DEFAULT_IDB_GIT_REF})
   IDB_UPSTREAM_BASE_REF  Verified upstream base (default: e682506725e9efefb9c43b8b917c0b12eb2a5939)
   BUILD_OUTPUT_DIR       Directory for build outputs (default: ./build_products)
@@ -1346,14 +1346,14 @@ function cmd_sign_xcframeworks() {
 }
 
 function cmd_executable() {
-  print_section "⚡" "Building AXe Executable"
-  build_axe_executable "${BUILD_OUTPUT_DIR}"
+  print_section "⚡" "Building Offsider Executable"
+  build_offsider_executable "${BUILD_OUTPUT_DIR}"
 }
 
 function cmd_sign_executable() {
-  print_section "🔒" "Signing AXe Executable"
+  print_section "🔒" "Signing Offsider Executable"
   require_config "AXE_CODESIGN_IDENTITY" "${CODESIGN_IDENTITY}"
-  sign_axe_executable "${BUILD_OUTPUT_DIR}"
+  sign_offsider_executable "${BUILD_OUTPUT_DIR}"
 }
 
 function cmd_package() {
@@ -1366,7 +1366,7 @@ function cmd_notarize() {
   print_section "🍎" "Apple Notarization"
   if [ -z "${PACKAGE_ZIP}" ]; then
     # Find the most recent package if PACKAGE_ZIP isn't set
-    PACKAGE_ZIP=$(ls -t "${BUILD_OUTPUT_DIR}"/AXe-*.zip 2>/dev/null | head -1)
+    PACKAGE_ZIP=$(ls -t "${BUILD_OUTPUT_DIR}"/Offsider-*.zip 2>/dev/null | head -1)
     if [ -z "${PACKAGE_ZIP}" ]; then
       echo "❌ Error: No package found. Run 'package' command first."
       exit 1
@@ -1387,7 +1387,7 @@ function cmd_verify_arches() {
 }
 
 function cmd_build() {
-  print_section "🚀" "IDB Framework Builder for AXe Project"
+  print_section "🚀" "IDB Framework Builder for Offsider Project"
 
   print_info "IDB Checkout Directory: ${IDB_CHECKOUT_DIR}"
   print_info "Build Output Directory: ${BUILD_OUTPUT_DIR}"
@@ -1413,10 +1413,10 @@ function cmd_build() {
   cmd_notarize
 
   print_section "🎉" "Build Complete!"
-  print_success "All framework builds, XCFramework creation, AXe executable, and notarization completed."
+  print_success "All framework builds, XCFramework creation, Offsider executable, and notarization completed."
   print_info "📦 XCFrameworks are located in ${BUILD_XCFRAMEWORK_DIR}"
   print_info "📁 Final deployment package is located at ${PACKAGE_ZIP}"
-  print_info "🧹 Build artifacts (axe executable and Frameworks) have been cleaned up"
+  print_info "🧹 Build artifacts (offsider executable and Frameworks) have been cleaned up"
   echo ""
   echo "🏁 Build process finished successfully!"
   echo ""

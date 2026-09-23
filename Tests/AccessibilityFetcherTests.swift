@@ -1,7 +1,7 @@
 import Foundation
 import FBControlCore
 import Testing
-@testable import AXe
+@testable import Offsider
 
 @Suite("Accessibility Fetcher Tests")
 @MainActor
@@ -378,7 +378,7 @@ struct AccessibilityFetcherTests {
 
         let result = try await AccessibilityFetcher.retryingAfterTestManagerRecovery(
             simulatorUDID: "TEST-UDID",
-            logger: AxeLogger(),
+            logger: OffsiderLogger(),
             dependencies: dependencies
         ) {
             operationCount += 1
@@ -413,7 +413,7 @@ struct AccessibilityFetcherTests {
         do {
             _ = try await AccessibilityFetcher.retryingAfterTestManagerRecovery(
                 simulatorUDID: "TEST-UDID",
-                logger: AxeLogger(),
+                logger: OffsiderLogger(),
                 dependencies: dependencies
             ) {
                 operationCount += 1
@@ -447,7 +447,7 @@ struct AccessibilityFetcherTests {
         do {
             _ = try await AccessibilityFetcher.retryingAfterTestManagerRecovery(
                 simulatorUDID: "TEST-UDID",
-                logger: AxeLogger(),
+                logger: OffsiderLogger(),
                 dependencies: dependencies
             ) {
                 throw unrelated

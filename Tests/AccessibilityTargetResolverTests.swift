@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import AXe
+@testable import Offsider
 
 @Suite("Accessibility Target Resolver Tests")
 struct AccessibilityTargetResolverTests {

@@ -14,7 +14,7 @@ FIXTURE_SCREEN="tap-test"
 usage() {
   printf '%s\n' \
     "Usage:" \
-    "  scripts/regenerate-goldens.sh --axe PATH --udid UDID --matrix-id ID [options]" \
+    "  scripts/regenerate-goldens.sh --offsider PATH --udid UDID --matrix-id ID [options]" \
     "" \
     "Options:" \
     "  --developer-dir PATH   Select Xcode without changing xcode-select" \
@@ -38,7 +38,7 @@ require_value() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --axe)
+    --offsider)
       require_value "$1" "${2:-}"
       AXE_BIN="$2"
       shift 2
@@ -86,7 +86,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -x "$AXE_BIN" ]] || fail "AXe executable not found or not executable: $AXE_BIN"
+[[ -x "$AXE_BIN" ]] || fail "Offsider executable not found or not executable: $AXE_BIN"
 [[ -n "$SIMULATOR_UDID" ]] || fail "--udid is required"
 [[ "$MATRIX_ID" =~ ^[A-Za-z0-9._-]+$ ]] || fail "--matrix-id must contain only letters, numbers, '.', '_' or '-'"
 [[ "$MATRIX_ID" != "." && "$MATRIX_ID" != ".." ]] || fail "--matrix-id cannot be '.' or '..'"
@@ -111,11 +111,11 @@ XCODE_VERSION="$(awk 'NR == 1 { print }' <<< "$XCODE_VERSION_OUTPUT")"
 XCODE_BUILD="$(awk '/Build version/ { print $3 }' <<< "$XCODE_VERSION_OUTPUT")"
 AXE_SHA256="$(shasum -a 256 "$AXE_BIN" | awk '{ print $1 }')"
 
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/axe-goldens.XXXXXX")"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/offsider-goldens.XXXXXX")"
 GENERATED_DIR="$WORK_DIR/$MATRIX_ID"
 STABLE_DIR="$GENERATED_DIR/stable"
-WORK_DIR_MARKER_VALUE="axe-goldens-workdir:$AXE_SHA256:$$"
-printf '%s\n' "$WORK_DIR_MARKER_VALUE" > "$WORK_DIR/.axe-goldens-workdir"
+WORK_DIR_MARKER_VALUE="offsider-goldens-workdir:$AXE_SHA256:$$"
+printf '%s\n' "$WORK_DIR_MARKER_VALUE" > "$WORK_DIR/.offsider-goldens-workdir"
 WORK_DIR_IDENTITY="$(stat -f '%d:%i' "$WORK_DIR")"
 mkdir -p "$STABLE_DIR/cases" "$STABLE_DIR/hierarchy"
 
@@ -124,9 +124,9 @@ safe_remove_work_dir() {
     || fail "Refusing unsafe temporary work directory cleanup: $WORK_DIR"
   [[ "$(stat -f '%d:%i' "$WORK_DIR")" == "$WORK_DIR_IDENTITY" ]] \
     || fail "Temporary work directory identity changed: $WORK_DIR"
-  [[ -f "$WORK_DIR/.axe-goldens-workdir" ]] \
+  [[ -f "$WORK_DIR/.offsider-goldens-workdir" ]] \
     || fail "Temporary work directory ownership marker is missing: $WORK_DIR"
-  [[ "$(< "$WORK_DIR/.axe-goldens-workdir")" == "$WORK_DIR_MARKER_VALUE" ]] \
+  [[ "$(< "$WORK_DIR/.offsider-goldens-workdir")" == "$WORK_DIR_MARKER_VALUE" ]] \
     || fail "Temporary work directory ownership marker changed: $WORK_DIR"
   rm -r "$WORK_DIR"
 }
@@ -144,7 +144,7 @@ capture_case() {
   local case_dir="$STABLE_DIR/cases/$name"
   mkdir -p "$case_dir"
 
-  printf 'axe ' > "$case_dir/argv.txt"
+  printf 'offsider ' > "$case_dir/argv.txt"
   printf '%q ' "$@" >> "$case_dir/argv.txt"
   printf '\n' >> "$case_dir/argv.txt"
 
@@ -162,7 +162,7 @@ capture_stdin_case() {
   local case_dir="$STABLE_DIR/cases/$name"
   mkdir -p "$case_dir"
 
-  printf 'axe ' > "$case_dir/argv.txt"
+  printf 'offsider ' > "$case_dir/argv.txt"
   printf '%q ' "$@" >> "$case_dir/argv.txt"
   printf '\n' >> "$case_dir/argv.txt"
   printf '%s' "$input" > "$case_dir/stdin.txt"
@@ -188,7 +188,7 @@ done
 # Every public subcommand gets the same parser-level unknown-option contract.
 # Command-specific validation cases below cover typed values, stdin, and output paths.
 for subcommand in "${SUBCOMMANDS[@]}"; do
-  capture_case "error-$subcommand-unknown-option" "$subcommand" --axe-invalid-option
+  capture_case "error-$subcommand-unknown-option" "$subcommand" --offsider-invalid-option
 done
 
 VALIDATION_CASES=(
@@ -309,7 +309,7 @@ BACKUP_DIR=""
 BACKUP_IDENTITY=""
 if [[ -d "$DESTINATION_DIR" ]]; then
   [[ ! -L "$DESTINATION_DIR" ]] || fail "Refusing to replace symlinked golden matrix: $DESTINATION_DIR"
-  BACKUP_DIR="$(mktemp -d "$OUTPUT_ROOT/.axe-golden-backup.$MATRIX_ID.XXXXXX")"
+  BACKUP_DIR="$(mktemp -d "$OUTPUT_ROOT/.offsider-golden-backup.$MATRIX_ID.XXXXXX")"
   rmdir "$BACKUP_DIR"
   mv "$DESTINATION_DIR" "$BACKUP_DIR"
   BACKUP_IDENTITY="$(stat -f '%d:%i' "$BACKUP_DIR")"
@@ -327,7 +327,7 @@ if [[ -n "$BACKUP_DIR" ]]; then
     || fail "Golden backup identity changed before cleanup: $BACKUP_DIR"
   [[ "$(dirname "$BACKUP_DIR")" == "$OUTPUT_ROOT" ]] \
     || fail "Golden backup escaped the output root: $BACKUP_DIR"
-  [[ "$(basename "$BACKUP_DIR")" == .axe-golden-backup."$MATRIX_ID".* ]] \
+  [[ "$(basename "$BACKUP_DIR")" == .offsider-golden-backup."$MATRIX_ID".* ]] \
     || fail "Golden backup name is not owned by this run: $BACKUP_DIR"
   rm -r "$BACKUP_DIR"
 fi

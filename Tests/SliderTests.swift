@@ -1,12 +1,12 @@
 import Testing
 import Foundation
-@testable import AXe
+@testable import Offsider
 
 @Suite("Slider Command Surface Tests")
 struct SliderCommandSurfaceTests {
     @Test("Slider help includes selector and value options")
     func sliderHelpIncludesSelectorAndValueOptions() async throws {
-        let result = try await TestHelpers.runAxeCommand("slider --help")
+        let result = try await TestHelpers.runOffsiderCommand("slider --help")
 
         #expect(result.output.contains("--id"))
         #expect(result.output.contains("--label"))
@@ -16,7 +16,7 @@ struct SliderCommandSurfaceTests {
 
     @Test("Invalid slider value fails validation")
     func invalidSliderValueFailsValidation() async throws {
-        let result = try await TestHelpers.runAxeCommandAllowFailure("slider --id slider-value-slider --value 101 --udid invalid")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --id slider-value-slider --value 101 --udid invalid")
 
         #expect(result.exitCode != 0)
         #expect(result.output.contains("--value must be a finite number between 0 and 100."))
@@ -24,7 +24,7 @@ struct SliderCommandSurfaceTests {
 
     @Test("Missing slider selector fails validation")
     func missingSliderSelectorFailsValidation() async throws {
-        let result = try await TestHelpers.runAxeCommandAllowFailure("slider --value 75 --udid invalid")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --value 75 --udid invalid")
 
         #expect(result.exitCode != 0)
         #expect(result.output.contains("Use exactly one of --id or --label to target a slider."))
@@ -63,7 +63,7 @@ struct SliderTests {
     func sliderCommandReachesObservableAXValueToleranceWithOneCommand(requestedPercent: Double) async throws {
         try await TestHelpers.launchPlaygroundApp(to: "slider-value-test")
 
-        _ = try await TestHelpers.runAxeCommand(
+        _ = try await TestHelpers.runOffsiderCommand(
             "slider --id slider-value-slider --value \(formatCommandValue(requestedPercent)) --element-type Slider",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -76,7 +76,7 @@ struct SliderTests {
     func sliderCommandSetsValueByAccessibilityLabel() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "slider-value-test")
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "slider --label 'Slider Value Slider' --value 40 --element-type Slider",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -90,7 +90,7 @@ struct SliderTests {
         try await TestHelpers.launchPlaygroundApp(to: "slider-value-test")
 
         for requestedPercent in [0.0, 0.1, 1.50, 100.0, 78.25, 40.0, 75.0] {
-            try await TestHelpers.runAxeCommand(
+            try await TestHelpers.runOffsiderCommand(
                 "slider --id slider-value-slider --value \(formatCommandValue(requestedPercent)) --element-type Slider",
                 simulatorUDID: defaultSimulatorUDID
             )

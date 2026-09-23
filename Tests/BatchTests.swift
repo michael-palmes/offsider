@@ -7,7 +7,7 @@ struct BatchTests {
     func orderedTapSteps() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test")
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "batch --step \"tap -x 180 -y 360\" --step \"tap -x 220 -y 420\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -34,7 +34,7 @@ struct BatchTests {
         try steps.write(to: tempFile, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tempFile) }
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "batch --file \"\(tempFile.path)\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -48,9 +48,9 @@ struct BatchTests {
     func stdinInputSource() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test")
         let udid = try TestHelpers.requireSimulatorUDID()
-        let axePath = try TestHelpers.getAxePath()
+        let offsiderPath = try TestHelpers.getOffsiderPath()
 
-        let command = "printf 'tap -x 160 -y 350\\ntap -x 200 -y 410\\n' | \"\(axePath)\" batch --stdin --udid \"\(udid)\""
+        let command = "printf 'tap -x 160 -y 350\\ntap -x 200 -y 410\\n' | \"\(offsiderPath)\" batch --stdin --udid \"\(udid)\""
         let result = try await CommandRunner.run(command)
         #expect(result.exitCode == 0)
 
@@ -84,7 +84,7 @@ struct BatchTests {
             let endX = Int(swipeEndFrame.x + swipeEndFrame.width / 2)
             let endY = Int(swipeEndFrame.y + swipeEndFrame.height / 2)
 
-            try await TestHelpers.runAxeCommand(
+            try await TestHelpers.runOffsiderCommand(
                 "batch --step \"tap -x \(tapX) -y \(tapY)\" --step \"swipe --start-x \(startX) --start-y \(startY) --end-x \(endX) --end-y \(endY) --duration 0.3 --delta 10\"",
                 simulatorUDID: defaultSimulatorUDID
             )
@@ -105,7 +105,7 @@ struct BatchTests {
     func continueOnError() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-test")
 
-        let result = try await TestHelpers.runAxeCommandAllowFailure(
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure(
             "batch --continue-on-error --wait-timeout 2 --poll-interval 0.1 --ax-cache perStep --step \"unknown-command\" --step \"tap --label 'Trigger State Change'\" --step \"tap --label 'State Target'\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -122,7 +122,7 @@ struct BatchTests {
     func perBatchCacheCanFailOnStateChange() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-test")
 
-        let result = try await TestHelpers.runAxeCommandAllowFailure(
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure(
             "batch --ax-cache perBatch --step \"tap --label 'Trigger State Change'\" --step \"tap --label 'State Target'\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -135,7 +135,7 @@ struct BatchTests {
     func perStepCacheHandlesStateChange() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-test")
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "batch --ax-cache perStep --step \"tap --label 'Trigger State Change'\" --step \"tap --label 'State Target'\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -148,7 +148,7 @@ struct BatchTests {
     func waitTimeoutFindsDelayedElement() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-test")
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "batch --wait-timeout 5 --poll-interval 0.1 --step \"tap --label 'Trigger Delayed Element'\" --step \"tap --label 'Delayed Target'\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -161,7 +161,7 @@ struct BatchTests {
     func noWaitTimeoutFailsForDelayedElement() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-test")
 
-        let result = try await TestHelpers.runAxeCommandAllowFailure(
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure(
             "batch --wait-timeout 0 --step \"tap --label 'Trigger Delayed Element'\" --step \"tap --label 'Delayed Target'\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -174,7 +174,7 @@ struct BatchTests {
     func loginFlowWithLoadingTransition() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-login-flow")
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "batch --ax-cache perStep --wait-timeout 6 --poll-interval 0.1 --step \"type 'cam@example.com'\" --step \"tap --label Continue\" --step \"type 'supersecret'\" --step \"tap --label 'Sign In'\" --step \"tap --label 'Open Settings'\" --step \"tap --label 'Toggle Preference'\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -193,7 +193,7 @@ struct BatchTests {
     func selectorTapsToggleSwitches() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "switch-test")
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "batch --ax-cache perStep --step \"tap --label 'SwiftUI Weather Alerts'\" --step \"tap --label 'UIKit Weather Alerts'\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -212,7 +212,7 @@ struct BatchTests {
     func tapStepAutomaticOverridesSimulatorBatchStyleForSwitches() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "switch-test")
 
-        try await TestHelpers.runAxeCommand(
+        try await TestHelpers.runOffsiderCommand(
             "batch --tap-style simulator --step \"tap --label 'SwiftUI Weather Alerts' --tap-style automatic\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -227,7 +227,7 @@ struct BatchTests {
     func loginFlowFailsWithoutWait() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-login-flow")
 
-        let result = try await TestHelpers.runAxeCommandAllowFailure(
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure(
             "batch --ax-cache perStep --wait-timeout 0 --step \"type 'cam@example.com'\" --step \"tap --label Continue\" --step \"type 'supersecret'\" --step \"tap --label 'Sign In'\" --step \"tap --label 'Open Settings'\"",
             simulatorUDID: defaultSimulatorUDID
         )
@@ -243,7 +243,7 @@ struct BatchTests {
         defer { try? FileManager.default.removeItem(at: tempFile) }
 
         await #expect(throws: (any Error).self) {
-            try await TestHelpers.runAxeCommand(
+            try await TestHelpers.runOffsiderCommand(
                 "batch --step \"tap -x 100 -y 200\" --file \"\(tempFile.path)\"",
                 simulatorUDID: defaultSimulatorUDID
             )

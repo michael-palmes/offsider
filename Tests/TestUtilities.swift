@@ -143,13 +143,13 @@ struct TestHelpers {
     }
 
     /// Get the path to the axe binary using #file to find source root
-    static func getAxePath(testFile: String = #file) throws -> String {
-        if let axeBinPath = ProcessInfo.processInfo.environment["AXE_BIN_PATH"], !axeBinPath.isEmpty {
-            if FileManager.default.fileExists(atPath: axeBinPath) {
-                return axeBinPath
+    static func getOffsiderPath(testFile: String = #file) throws -> String {
+        if let offsiderBinPath = ProcessInfo.processInfo.environment["AXE_BIN_PATH"], !offsiderBinPath.isEmpty {
+            if FileManager.default.fileExists(atPath: offsiderBinPath) {
+                return offsiderBinPath
             }
 
-            throw TestError.unexpectedState("AXE_BIN_PATH points to a missing axe binary at \(axeBinPath). Please run 'swift build'.")
+            throw TestError.unexpectedState("AXE_BIN_PATH points to a missing axe binary at \(offsiderBinPath). Please run 'swift build'.")
         }
 
         let sourceRoot: String
@@ -161,14 +161,14 @@ struct TestHelpers {
             sourceRoot = testsDirectory.deletingLastPathComponent().path
         }
 
-        let axePath = URL(fileURLWithPath: try resolveSwiftBinPath(sourceRoot: sourceRoot))
-            .appendingPathComponent("axe")
+        let offsiderPath = URL(fileURLWithPath: try resolveSwiftBinPath(sourceRoot: sourceRoot))
+            .appendingPathComponent("offsider")
             .path
-        if FileManager.default.fileExists(atPath: axePath) {
-            return axePath
+        if FileManager.default.fileExists(atPath: offsiderPath) {
+            return offsiderPath
         }
         
-        throw TestError.unexpectedState("axe binary not found at \(axePath). Please run 'swift build'.")
+        throw TestError.unexpectedState("axe binary not found at \(offsiderPath). Please run 'swift build'.")
     }
     
     static func setSimulatorOrientationPortrait() async throws {
@@ -224,7 +224,7 @@ struct TestHelpers {
         } else {
             udid = try requireSimulatorUDID()
         }
-        let result = try await runAxeCommand("describe-ui", simulatorUDID: udid)
+        let result = try await runOffsiderCommand("describe-ui", simulatorUDID: udid)
         
         // Check if the command failed
         if result.exitCode != 0 {
@@ -301,7 +301,7 @@ struct TestHelpers {
     }
     
     @discardableResult
-    static func runAxeCommand(
+    static func runOffsiderCommand(
         _ command: String,
         simulatorUDID: String? = nil,
         environment: [String: String]? = nil
@@ -312,9 +312,9 @@ struct TestHelpers {
         }
         
         // Use the built executable directly for faster test execution
-        let axePath = try getAxePath()
+        let offsiderPath = try getOffsiderPath()
         let (output, exitCode) = try await CommandRunner.run(
-            "\(axePath) \(fullCommand)",
+            "\(offsiderPath) \(fullCommand)",
             environment: environment
         )
         
@@ -326,7 +326,7 @@ struct TestHelpers {
         return CommandOutput(output: output, exitCode: exitCode)
     }
 
-    static func runAxeCommandAllowFailure(
+    static func runOffsiderCommandAllowFailure(
         _ command: String,
         simulatorUDID: String? = nil,
         environment: [String: String]? = nil
@@ -336,9 +336,9 @@ struct TestHelpers {
             fullCommand.append(" --udid \(udid)")
         }
 
-        let axePath = try getAxePath()
+        let offsiderPath = try getOffsiderPath()
         let (output, exitCode) = try await CommandRunner.run(
-            "\(axePath) \(fullCommand)",
+            "\(offsiderPath) \(fullCommand)",
             environment: environment,
             allowFailure: true
         )

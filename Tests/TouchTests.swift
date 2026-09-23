@@ -9,7 +9,7 @@ struct TouchTests {
         try await TestHelpers.launchPlaygroundApp(to: "touch-control")
         
         // Act - Touch down
-        try await TestHelpers.runAxeCommand("touch -x 200 -y 400 --down", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 200 -y 400 --down", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 500_000_000)
         
         // Assert touch down
@@ -18,7 +18,7 @@ struct TouchTests {
         #expect(touchDownElement?.label == "Last touch down: (200, 400)", "Touch down coordinates should be recorded")
         
         // Act - Touch up
-        try await TestHelpers.runAxeCommand("touch -x 200 -y 400 --up", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 200 -y 400 --up", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 500_000_000)
         
         // Assert touch up
@@ -43,17 +43,17 @@ struct TouchTests {
         try await TestHelpers.launchPlaygroundApp(to: "touch-control")
         
         // Act - Touch down, move, then up
-        try await TestHelpers.runAxeCommand("touch -x 100 -y 300 --down", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 100 -y 300 --down", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 300_000_000)
         
-        try await TestHelpers.runAxeCommand("touch -x 200 -y 400 --down", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 200 -y 400 --down", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 300_000_000)
         
-        try await TestHelpers.runAxeCommand("touch -x 300 -y 500 --down", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 300 -y 500 --down", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 300_000_000)
         
         // Touch up at final position
-        try await TestHelpers.runAxeCommand("touch -x 300 -y 500 --up", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 300 -y 500 --up", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 300_000_000)
         
         // Assert touch down and up were registered with correct coordinates
@@ -76,11 +76,11 @@ struct TouchTests {
             let y = 300 + i * 30
             
             // Touch down
-            try await TestHelpers.runAxeCommand("touch -x \(x) -y \(y) --down", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("touch -x \(x) -y \(y) --down", simulatorUDID: defaultSimulatorUDID)
             try await Task.sleep(nanoseconds: 200_000_000)
             
             // Touch up
-            try await TestHelpers.runAxeCommand("touch -x \(x) -y \(y) --up", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("touch -x \(x) -y \(y) --up", simulatorUDID: defaultSimulatorUDID)
             try await Task.sleep(nanoseconds: 200_000_000)
         }
         
@@ -101,16 +101,16 @@ struct TouchTests {
         try await TestHelpers.launchPlaygroundApp(to: "touch-control")
         
         // Act - Simulate drag from left to right
-        try await TestHelpers.runAxeCommand("touch -x 100 -y 400 --down", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 100 -y 400 --down", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 200_000_000)
         
         // Move in steps to simulate smooth drag (using touch down at each position)
         for x in stride(from: 150, through: 300, by: 50) {
-            try await TestHelpers.runAxeCommand("touch -x \(x) -y 400 --down", simulatorUDID: defaultSimulatorUDID)
+            try await TestHelpers.runOffsiderCommand("touch -x \(x) -y 400 --down", simulatorUDID: defaultSimulatorUDID)
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         
-        try await TestHelpers.runAxeCommand("touch -x 300 -y 400 --up", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 300 -y 400 --up", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 300_000_000)
         
         // Assert
@@ -129,7 +129,7 @@ struct TouchTests {
         
         // Act - Use the delay feature for touch down then up
         let startTime = Date()
-        try await TestHelpers.runAxeCommand("touch -x 200 -y 300 --down --up --delay 1.0", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 200 -y 300 --down --up --delay 1.0", simulatorUDID: defaultSimulatorUDID)
         let endTime = Date()
         
         // Assert
@@ -170,7 +170,7 @@ struct TouchTests {
             let logicalX = Int(frame.x + frame.width / 2)
             let logicalY = Int(frame.y + frame.height / 2)
 
-            try await TestHelpers.runAxeCommand(
+            try await TestHelpers.runOffsiderCommand(
                 "touch -x \(logicalX) -y \(logicalY) --down --up",
                 simulatorUDID: defaultSimulatorUDID
             )
@@ -237,7 +237,7 @@ struct TouchTests {
         try await TestHelpers.launchPlaygroundApp(to: "touch-control")
 
         // Act
-        try await TestHelpers.runAxeCommand("touch -x 220 -y 340 --down --up --delay 1.0", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("touch -x 220 -y 340 --down --up --delay 1.0", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(nanoseconds: 500_000_000)
 
         // Assert

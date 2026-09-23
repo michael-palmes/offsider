@@ -35,8 +35,8 @@ copy_release_payload() {
   local source_dir="$1"
   local destination_dir="$2"
 
-  if [[ ! -f "${source_dir}/axe" ]]; then
-    echo "❌ Error: AXe executable missing from ${source_dir}" >&2
+  if [[ ! -f "${source_dir}/offsider" ]]; then
+    echo "❌ Error: Offsider executable missing from ${source_dir}" >&2
     exit 1
   fi
 
@@ -45,15 +45,15 @@ copy_release_payload() {
     exit 1
   fi
 
-  if [[ ! -d "${source_dir}/AXe_AXe.bundle" ]]; then
-    echo "❌ Error: AXe resource bundle missing from ${source_dir}" >&2
+  if [[ ! -d "${source_dir}/Offsider_Offsider.bundle" ]]; then
+    echo "❌ Error: Offsider resource bundle missing from ${source_dir}" >&2
     exit 1
   fi
 
   rm -rf "$destination_dir"
   mkdir -p "$destination_dir"
-  cp "$source_dir/axe" "$destination_dir/"
+  cp "$source_dir/offsider" "$destination_dir/"
   cp -R "$source_dir/Frameworks" "$destination_dir/"
-  cp -R "$source_dir/AXe_AXe.bundle" "$destination_dir/"
+  cp -R "$source_dir/Offsider_Offsider.bundle" "$destination_dir/"
   sanitize_release_payload "$destination_dir"
 }
