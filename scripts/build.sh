@@ -17,7 +17,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEFAULT_IDB_CHECKOUT_DIR="${REPO_ROOT}/idb_checkout"
 IDB_CHECKOUT_DIR="${IDB_CHECKOUT_DIR:-${DEFAULT_IDB_CHECKOUT_DIR}}"
 IDB_CHECKOUT_DIR="$(cd "$(dirname "$IDB_CHECKOUT_DIR")" && pwd)/$(basename "$IDB_CHECKOUT_DIR")"
-IDB_GIT_URL="${IDB_GIT_URL:-https://github.com/cameroncooke/idb.git}"
+IDB_GIT_URL="${IDB_GIT_URL:-https://github.com/michael-palmes/idb.git}"
+# Tag offsider-idb-v0.1.0 on branch offsider/xcode27
 DEFAULT_IDB_GIT_REF="604c51013438f0c3603b720a05a44b7c5b8f286d"
 IDB_GIT_REF="${IDB_GIT_REF:-${DEFAULT_IDB_GIT_REF}}"
 IDB_UPSTREAM_BASE_REF="${IDB_UPSTREAM_BASE_REF:-e682506725e9efefb9c43b8b917c0b12eb2a5939}"
@@ -739,7 +740,7 @@ Commands:
 
 Environment Variables:
   IDB_CHECKOUT_DIR       Directory for IDB repository (default: ./idb_checkout)
-  IDB_GIT_URL            IDB fork URL (default: https://github.com/cameroncooke/idb.git)
+  IDB_GIT_URL            IDB fork URL (default: https://github.com/michael-palmes/idb.git)
   IDB_GIT_REF            Exact fork revision (default: ${DEFAULT_IDB_GIT_REF})
   IDB_UPSTREAM_BASE_REF  Verified upstream base (default: e682506725e9efefb9c43b8b917c0b12eb2a5939)
   BUILD_OUTPUT_DIR       Directory for build outputs (default: ./build_products)
