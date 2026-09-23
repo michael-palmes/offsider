@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  AxePlayground
+//  OffsiderPlayground
 //
 //  Created by Cameron on 23/05/2025.
 //
@@ -172,7 +172,7 @@ struct MainMenuView: View {
             
 
         }
-        .navigationTitle("AXe Playground")
+        .navigationTitle("Offsider Playground")
         .navigationBarTitleDisplayMode(.large)
     }
 }
