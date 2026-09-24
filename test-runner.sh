@@ -1,0 +1,567 @@
+#!/bin/bash
+
+# AXe Test Runner Script
+# Automates building AXe executable, playground app, and running tests
+
+set -e  # Exit on any error
+
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Configuration
+SIMULATOR_NAME="iPhone 17 Pro"
+SIMULATOR_UDID="${SIMULATOR_UDID:-}"
+PLAYGROUND_PROJECT="AxePlaygroundApp/AxePlayground.xcodeproj"
+PLAYGROUND_SCHEME="AxePlayground"
+BUNDLE_ID="com.cameroncooke.AxePlayground"
+
+# Print colored messages
+print_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+print_header() {
+    echo -e "\n${BLUE}================================================${NC}"
+    echo -e "${BLUE}🎯 $1${NC}"
+    echo -e "${BLUE}================================================${NC}\n"
+}
+
+# Function to show usage
+show_usage() {
+    echo "Usage: $0 [OPTIONS] [TEST_FILTER]"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help          Show this help message"
+    echo "  -b, --build-only    Only build AXe and playground app (skip tests)"
+    echo "  -t, --tests-only    Only run tests (skip building)"
+    echo "  -u, --unit-tests    Build dependencies and run non-E2E Swift tests without a simulator"
+    echo "  -c, --clean         Clean build before building"
+    echo "  -s, --sequential    Run suites one-by-one (single simulator-safe flow)"
+    echo "  -v, --verbose       Verbose output"
+    echo ""
+    echo "Environment:"
+    echo "  DEVELOPER_DIR         Xcode used to build and run tests (Xcode 27 uses Device Hub)"
+    echo "  AXE_BIN_PATH          Prebuilt AXe executable to test with --tests-only"
+    echo "  AXE_LANDSCAPE_E2E=1  Run gated landscape orientation precision tests when Simulator menu automation is available"
+    echo ""
+    echo "Test Filters (optional):"
+    echo "  SwipeTests          Run only swipe tests"
+    echo "  DragTests           Run only drag tests"
+    echo "  SliderTests         Run only slider tests"
+    echo "  DescribeUITests     Run only describe-ui tests"
+    echo "  InitTests           Run only init tests"
+    echo "  KeyComboTests       Run only key-combo tests"
+    echo "  KeySequenceTests    Run only key-sequence tests"
+    echo "  TapTests            Run only tap tests"
+    echo "  KeyTests            Run only key tests"
+    echo "  TouchTests          Run only touch tests"
+    echo "  TypeTests           Run only type tests"
+    echo "  ButtonTests         Run only button tests"
+    echo "  GestureTests        Run only gesture tests"
+    echo "  ListSimulatorsTests Run only list simulators tests"
+    echo "  RecordVideoTests    Run only record video tests"
+    echo "  StreamVideoDebugTests Run only stream video debug tests"
+    echo "  StreamVideoTests    Run only stream video tests"
+    echo ""
+    echo "Examples:"
+    echo "  $0                  # Build everything and run all tests"
+    echo "  $0 SwipeTests       # Build everything and run only swipe tests"
+    echo "  $0 DragTests        # Build everything and run only drag tests"
+    echo "  $0 -t SwipeTests    # Skip building, run only swipe tests"
+    echo "  $0 -u               # Build and run non-E2E Swift tests without a simulator"
+    echo "  $0 -b               # Only build, skip tests"
+    echo "  $0 -c               # Clean build and run all tests"
+}
+
+# Parse command line arguments
+BUILD_ONLY=false
+TESTS_ONLY=false
+UNIT_TESTS=false
+CLEAN_BUILD=false
+SEQUENTIAL=true
+VERBOSE=false
+TEST_FILTER=""
+SWIFT_BUILD_LOG=""
+
+cleanup_test_runner() {
+    if [[ -n "$SWIFT_BUILD_LOG" && -f "$SWIFT_BUILD_LOG" ]]; then
+        rm "$SWIFT_BUILD_LOG"
+    fi
+}
+
+trap cleanup_test_runner EXIT
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_usage
+            exit 0
+            ;;
+        -b|--build-only)
+            BUILD_ONLY=true
+            shift
+            ;;
+        -t|--tests-only)
+            TESTS_ONLY=true
+            shift
+            ;;
+        -u|--unit-tests)
+            UNIT_TESTS=true
+            shift
+            ;;
+        -c|--clean)
+            CLEAN_BUILD=true
+            shift
+            ;;
+        -s|--sequential)
+            SEQUENTIAL=true
+            shift
+            ;;
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        BatchTests|ButtonTests|DescribeUITests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListSimulatorsTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests)
+            TEST_FILTER="$1"
+            shift
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
+if [[ "$UNIT_TESTS" == true ]] &&
+   [[ "$BUILD_ONLY" == true || "$TESTS_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
+    print_error "--unit-tests cannot be combined with build, E2E test, clean, or test-filter options."
+    exit 1
+fi
+
+# Function to check prerequisites
+check_prerequisites() {
+    print_header "Checking Prerequisites"
+
+    # Check if we're in the right directory
+    if [[ ! -f "Package.swift" ]]; then
+        print_error "Package.swift not found. Please run this script from the AXe project root."
+        exit 1
+    fi
+
+    # Check if Xcode is available
+    if ! command -v xcodebuild &> /dev/null; then
+        print_error "xcodebuild not found. Please install Xcode."
+        exit 1
+    fi
+
+    # Check if Swift is available
+    if ! command -v swift &> /dev/null; then
+        print_error "swift not found. Please install Swift."
+        exit 1
+    fi
+
+    if [[ "$UNIT_TESTS" != true ]] && ! command -v jq &> /dev/null; then
+        print_error "jq not found. Install jq to select the matching simulator runtime."
+        exit 1
+    fi
+
+    if ! configure_e2e_environment; then
+        print_error "Xcode 26 or later is required to build and test AXe. Set DEVELOPER_DIR to its Contents/Developer directory."
+        exit 1
+    fi
+
+    print_info "Selected toolchain: Xcode $SELECTED_XCODE_VERSION ($(e2e_xcode_build "$SELECTED_DEVELOPER_DIR"))"
+
+    print_success "All prerequisites satisfied"
+}
+
+# Function to boot simulator
+boot_simulator() {
+    print_header "Setting Up Simulator"
+
+    select_e2e_simulator
+
+    print_info "Checking simulator status..."
+    SIMULATOR_STATUS=$(xcrun simctl list devices | grep "$SIMULATOR_UDID" | grep -o "Booted\|Shutdown" || echo "NotFound")
+
+    if [[ -z "$SIMULATOR_UDID" || "$SIMULATOR_STATUS" == "NotFound" ]]; then
+        print_error "Simulator with UDID $SIMULATOR_UDID not found"
+        print_info "Available simulators:"
+        xcrun simctl list devices | grep "iPhone"
+        exit 1
+    fi
+
+    if [[ "$SIMULATOR_STATUS" != "Booted" ]]; then
+        print_info "Booting simulator $SIMULATOR_NAME..."
+        xcrun simctl boot "$SIMULATOR_UDID"
+        sleep 3
+        print_success "Simulator booted"
+    else
+        print_success "Simulator already booted"
+    fi
+}
+
+# Function to clean build
+clean_build() {
+    if [[ "$CLEAN_BUILD" == true ]]; then
+        print_header "Cleaning Build"
+
+        print_info "Cleaning Swift build..."
+        run_selected_swift package clean
+
+        print_info "Cleaning Xcode build..."
+        xcodebuild clean -project "$PLAYGROUND_PROJECT" -scheme "$PLAYGROUND_SCHEME" -destination "id=$SIMULATOR_UDID"
+
+        print_success "Build cleaned"
+    fi
+}
+
+build_idb_xcframeworks() {
+    print_header "Building IDB Frameworks"
+
+    if ! command -v xcodegen &> /dev/null; then
+        print_error "XcodeGen is required to build IDB frameworks. Install it with 'brew install xcodegen'."
+        exit 1
+    fi
+
+    local command
+    for command in setup clean frameworks install strip xcframeworks; do
+        scripts/build.sh "$command"
+    done
+
+    run_selected_swift package clean
+    print_success "IDB frameworks built with Xcode $SELECTED_XCODE_VERSION"
+}
+
+# Function to build AXe executable
+build_axe() {
+    print_header "Building AXe Executable"
+
+    print_info "Building AXe CLI tool..."
+    if [[ "$VERBOSE" == true ]]; then
+        run_selected_swift build --build-tests
+    else
+        SWIFT_BUILD_LOG="$(mktemp "${TMPDIR:-/tmp}/axe-e2e-swift-build.XXXXXX")"
+        if ! run_selected_swift build --build-tests > "$SWIFT_BUILD_LOG" 2>&1; then
+            print_error "Failed to build AXe with Xcode $SELECTED_XCODE_VERSION. Build output:"
+            tail -80 "$SWIFT_BUILD_LOG"
+            exit 1
+        fi
+        rm "$SWIFT_BUILD_LOG"
+        SWIFT_BUILD_LOG=""
+    fi
+
+    local axe_bin_path
+    axe_bin_path="$(run_selected_swift build --show-bin-path)/axe"
+
+    # Verify the executable exists
+    if [[ -f "$axe_bin_path" ]]; then
+        print_success "AXe executable built successfully"
+        print_info "Location: $axe_bin_path"
+    else
+        print_error "Failed to build AXe executable"
+        exit 1
+    fi
+}
+
+ensure_test_framework_rpaths() {
+    local build_dir
+    build_dir="$(run_selected_swift build --show-bin-path)"
+
+    local package_frameworks_dir="$build_dir/PackageFrameworks"
+    mkdir -p "$package_frameworks_dir"
+
+    local framework_names=(
+        "FBControlCore.framework"
+        "FBDeviceControl.framework"
+        "FBSimulatorControl.framework"
+        "XCTestBootstrap.framework"
+    )
+
+    local framework
+    for framework in "$build_dir"/*.framework "$build_dir"/ExecutableModules/*.framework; do
+        [[ -d "$framework" ]] || continue
+        framework_names+=("$(basename "$framework")")
+    done
+
+    local framework_name
+    for framework_name in "${framework_names[@]}"; do
+        local link_path="$package_frameworks_dir/$framework_name"
+        if [[ -e "$link_path" || -L "$link_path" ]]; then
+            continue
+        fi
+
+        ln -s "../$framework_name" "$link_path"
+    done
+}
+
+run_unit_tests() {
+    print_header "Running Non-E2E Swift Tests"
+
+    ensure_test_framework_rpaths
+    AXE_BIN_PATH="$(run_selected_swift build --show-bin-path)/axe"
+    export AXE_BIN_PATH
+    export AXE_E2E=0
+    export AXE_LANDSCAPE_E2E=0
+
+    local args=(--skip-build --no-parallel)
+    [[ "$VERBOSE" == true ]] && args+=(--verbose)
+    print_info "Test command: swift test ${args[*]}"
+    run_selected_swift test "${args[@]}"
+    print_success "Non-E2E Swift tests passed"
+}
+
+# Function to build and install playground app
+build_playground_app() {
+    print_header "Building and Installing Playground App"
+
+    # Terminate existing app instance
+    print_info "Terminating existing app instance..."
+    xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" 2>/dev/null || true
+
+    # Build the app (not build-for-testing since this is a regular app)
+    print_info "Building AxePlayground app..."
+    if [[ "$VERBOSE" == true ]]; then
+        xcodebuild build \
+            -project "$PLAYGROUND_PROJECT" \
+            -scheme "$PLAYGROUND_SCHEME" \
+            -destination "id=$SIMULATOR_UDID"
+    else
+        xcodebuild build \
+            -project "$PLAYGROUND_PROJECT" \
+            -scheme "$PLAYGROUND_SCHEME" \
+            -destination "id=$SIMULATOR_UDID" \
+            -quiet > /dev/null 2>&1
+    fi
+
+    # Find the built app path using TARGET_BUILD_DIR + FULL_PRODUCT_NAME (more semantically correct)
+    print_info "Getting app bundle path..."
+    BUILD_SETTINGS=$(xcodebuild -project "$PLAYGROUND_PROJECT" -scheme "$PLAYGROUND_SCHEME" -destination "id=$SIMULATOR_UDID" -showBuildSettings)
+    TARGET_BUILD_DIR=$(echo "$BUILD_SETTINGS" | grep "TARGET_BUILD_DIR" | head -1 | sed 's/.*= //')
+    FULL_PRODUCT_NAME=$(echo "$BUILD_SETTINGS" | grep "FULL_PRODUCT_NAME" | head -1 | sed 's/.*= //')
+    APP_PATH="$TARGET_BUILD_DIR/$FULL_PRODUCT_NAME"
+
+    if [[ -z "$APP_PATH" || ! -d "$APP_PATH" ]]; then
+        print_error "Built app not found at: $APP_PATH"
+        print_info "TARGET_BUILD_DIR: $TARGET_BUILD_DIR"
+        print_info "FULL_PRODUCT_NAME: $FULL_PRODUCT_NAME"
+        exit 1
+    fi
+
+    # Install the app
+    print_info "Installing AxePlayground app on simulator..."
+    if [[ "$VERBOSE" == true ]]; then
+        xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
+    else
+        xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH" > /dev/null 2>&1
+    fi
+
+    print_success "Playground app built and installed successfully"
+    print_info "App path: $APP_PATH"
+}
+
+landscape_orientation_menu_available() {
+    local enabled_items
+    enabled_items=$(osascript \
+        -e 'tell application "Simulator" to activate' \
+        -e 'delay 0.5' \
+        -e 'tell application "System Events" to tell process "Simulator" to get enabled of menu items of menu "Orientation" of menu item "Orientation" of menu "Device" of menu bar 1' \
+        2>/dev/null || true)
+
+    [[ "$enabled_items" == true,\ true,\ true,\ true* ]]
+}
+
+# Function to run tests
+run_tests() {
+    print_header "Running Tests"
+
+    ensure_test_framework_rpaths
+
+    # Set up environment
+    export SIMULATOR_UDID="$SIMULATOR_UDID"
+    export AXE_E2E=1
+    if [[ -z "${AXE_BIN_PATH:-}" ]]; then
+        AXE_BIN_PATH="$(run_selected_swift build --show-bin-path)/axe"
+    fi
+    export AXE_BIN_PATH
+    if [[ ! -f "$AXE_BIN_PATH" ]]; then
+        print_error "AXe executable not found at $AXE_BIN_PATH. Run without --tests-only, run swift build first, or set AXE_BIN_PATH to a prebuilt payload."
+        exit 1
+    fi
+
+    local requested_landscape_e2e="${AXE_LANDSCAPE_E2E:-0}"
+    local normalized_landscape_e2e
+    normalized_landscape_e2e=$(printf '%s' "$requested_landscape_e2e" | tr '[:upper:]' '[:lower:]')
+    case "$normalized_landscape_e2e" in
+        1|true|yes)
+            if landscape_orientation_menu_available; then
+                export AXE_LANDSCAPE_E2E=1
+            else
+                print_warning "Skipping landscape orientation precision tests because Simulator menu automation is unavailable. Open Simulator and grant macOS Accessibility permissions, then rerun with AXE_LANDSCAPE_E2E=1."
+                export AXE_LANDSCAPE_E2E=0
+            fi
+            ;;
+        *)
+            export AXE_LANDSCAPE_E2E=0
+            ;;
+    esac
+
+    print_info "Environment: SIMULATOR_UDID=$SIMULATOR_UDID, AXE_E2E=$AXE_E2E, AXE_LANDSCAPE_E2E=$AXE_LANDSCAPE_E2E, AXE_BIN_PATH=$AXE_BIN_PATH"
+
+    run_swift_test() {
+        local filter="$1"
+        local args=(--filter "$filter")
+        [[ "$VERBOSE" == true ]] && args+=(--verbose)
+        print_info "Test command: swift test --skip-build --no-parallel --filter $filter"
+        run_selected_swift test --skip-build --no-parallel "${args[@]}"
+    }
+
+    if [[ -n "$TEST_FILTER" ]]; then
+        print_info "Running test filter: $TEST_FILTER"
+        echo ""
+        if run_swift_test "$TEST_FILTER"; then
+            print_success "Selected tests passed"
+        else
+            print_error "Selected tests failed"
+            exit 1
+        fi
+        return
+    fi
+
+    if [[ "$SEQUENTIAL" == true ]]; then
+        print_info "Running E2E suites one-by-one to avoid simulator contention"
+        local suites=(
+            "BatchTests"
+            "ButtonTests"
+            "DescribeUITests"
+            "GestureTests"
+            "InitTests"
+            "KeyComboTests"
+            "KeySequenceTests"
+            "KeyTests"
+            "ListSimulatorsTests"
+            "RecordVideoTests"
+            "StreamVideoDebugTests"
+            "StreamVideoTests"
+            "SwipeTests"
+            "DragTests"
+            "SliderTests"
+            "TapTests"
+            "TouchTests"
+            "TypeTests"
+        )
+
+        echo ""
+        for suite in "${suites[@]}"; do
+            print_header "Running $suite"
+            if ! run_swift_test "$suite"; then
+                print_error "$suite failed"
+                exit 1
+            fi
+        done
+
+        print_success "All test suites passed"
+        return
+    fi
+
+    print_info "Running all tests"
+    local args=()
+    [[ "$VERBOSE" == true ]] && args+=(--verbose)
+    print_info "Test command: swift test --skip-build --no-parallel"
+    echo ""
+    if run_selected_swift test --skip-build --no-parallel "${args[@]}"; then
+        print_success "All tests passed"
+    else
+        print_error "Some tests failed"
+        exit 1
+    fi
+}
+
+# Function to show summary
+show_summary() {
+    print_header "Summary"
+
+    if [[ "$BUILD_ONLY" == true ]]; then
+        print_success "Build completed successfully"
+        print_info "AXe executable: $(run_selected_swift build --show-bin-path)/axe"
+        print_info "Playground app installed on: $SIMULATOR_NAME ($SIMULATOR_UDID)"
+    elif [[ "$TESTS_ONLY" == true ]]; then
+        if [[ -n "$TEST_FILTER" ]]; then
+            print_success "Test suite '$TEST_FILTER' completed successfully"
+        else
+            print_success "All test suites completed successfully"
+        fi
+    else
+        print_success "Build and test cycle completed successfully"
+        print_info "AXe executable: $(run_selected_swift build --show-bin-path)/axe"
+        print_info "Playground app: Installed and tested on $SIMULATOR_NAME"
+        if [[ -n "$TEST_FILTER" ]]; then
+            print_info "Test suite: $TEST_FILTER"
+        else
+            print_info "Test coverage: All test suites"
+        fi
+    fi
+}
+
+# Main execution
+main() {
+    print_header "AXe Test Runner"
+    print_info "Starting automated build and test cycle..."
+
+    # Always check prerequisites
+    check_prerequisites
+
+    if [[ "$UNIT_TESTS" == true ]]; then
+        build_idb_xcframeworks
+        build_axe
+        run_unit_tests
+        print_header "Summary"
+        print_success "Non-E2E Swift build and tests completed successfully"
+        print_info "AXe executable: $(run_selected_swift build --show-bin-path)/axe"
+        return
+    fi
+
+    ensure_e2e_runtime_host || {
+        print_error "Could not start the Xcode 27 Device Hub runtime host."
+        exit 1
+    }
+
+    # Always boot simulator (needed for both building and testing)
+    boot_simulator
+
+    if [[ "$TESTS_ONLY" != true ]]; then
+        build_idb_xcframeworks
+        clean_build
+        build_axe
+        ensure_test_framework_rpaths
+        build_playground_app
+    fi
+
+    if [[ "$BUILD_ONLY" != true ]]; then
+        run_tests
+    fi
+
+    show_summary
+}
+
+# Run main function
+main "$@"

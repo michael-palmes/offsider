@@ -1,0 +1,47 @@
+import Foundation
+import FBSimulatorControl
+
+@MainActor
+struct BatchPlanRunner {
+    let session: HIDInteractor.Session
+    let logger: AxeLogger
+
+    func run(_ plan: BatchPlan) async throws {
+        var pendingMergeable: [FBSimulatorHIDEvent] = []
+
+        func flushPending() async throws {
+            guard !pendingMergeable.isEmpty else { return }
+            let event = pendingMergeable.count == 1 ? pendingMergeable[0] : FBSimulatorHIDEvent.composite(pendingMergeable)
+            try await HIDInteractor.performHIDEvent(event, in: session, logger: logger)
+            pendingMergeable.removeAll(keepingCapacity: true)
+        }
+
+        for primitive in plan.primitives {
+            switch primitive {
+            case .hidMergeable(let event):
+                pendingMergeable.append(event)
+            case .hidBarrier(let event):
+                try await flushPending()
+                // A barrier prevents event coalescing; failures propagate without replaying
+                // this event or any earlier event in the batch.
+                try await HIDInteractor.performHIDEvent(event, in: session, logger: logger)
+            case .hostSleep(let seconds):
+                try await flushPending()
+                guard seconds > 0 else { continue }
+
+                try await Task.sleep(for: .seconds(seconds))
+            case .physicalTap(let point, let preDelay, let postDelay):
+                try await flushPending()
+                try await HIDInteractor.performPhysicalTap(
+                    at: point,
+                    preDelay: preDelay,
+                    postDelay: postDelay,
+                    in: session,
+                    logger: logger
+                )
+            }
+        }
+
+        try await flushPending()
+    }
+}
