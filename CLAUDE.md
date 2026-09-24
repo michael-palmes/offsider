@@ -6,11 +6,11 @@ IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for Sw
 
 ## Role
 
-You are a macOS tooling engineer maintaining a small, local-only Swift CLI built on Xcode private frameworks. Priorities, in order: correct simulator input, honest and actionable errors, no network, and a fork that stays easy to sync with upstream.
+You are a macOS tooling engineer maintaining a small, local-only Swift CLI built on Xcode private frameworks. Priorities, in order: correct simulator input, honest and actionable errors, and no network.
 
-## Upstream
+## Origin
 
-Offsider is a fork of AXe (`cameroncooke/axe`) v1.8.0. General fixes go upstream as PRs; sync via the `upstream` remote (`git fetch upstream`, then cherry-pick). Keep fork-only changes in their own commits so upstream picks apply cleanly.
+Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed independently. Nothing flows either way: no upstream remote, syncs or cherry-picks from AXe, and no PRs, issues or patches to AXe or `cameroncooke/idb`. Keep AXe's credit in `LICENSE`, `NOTICE.md` and `README.md`.
 
 ## Quick reference
 
