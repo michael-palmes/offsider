@@ -271,6 +271,21 @@ public enum DoctorRules {
         }
     }
 
+    public static func hidTransport(transport: String, latencyMilliseconds: Int) -> Verdict {
+        (.pass, "\(transport) (ready in \(latencyMilliseconds) ms)", nil)
+    }
+
+    /// `unresponsive` means dtuhidd never answered the liveness probe; `timedOut` means the connect overran doctor's own limit.
+    public static func hidTransportHint(unresponsive: Bool, timedOut: Bool, udid: String) -> String? {
+        if unresponsive {
+            return "dtuhidd did not answer. Wait for the simulator to finish booting, open the device window (offsider doctor --udid \(udid) --fix), or reboot it: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
+        }
+        if timedOut {
+            return "Connecting to the simulator HID service timed out; reboot the simulator and run doctor again."
+        }
+        return nil
+    }
+
     public static func accessibility(_ state: AccessibilityProbeState) -> Verdict {
         let hint = "Launch an app, or run describe-ui to see the error."
         switch state {

@@ -177,27 +177,46 @@ enum DoctorProbes {
         return DoctorRules.parseNotifyFlag(result.stdout)
     }
 
+    static let hidTransportTimeout: TimeInterval = 45
+
     /// Uses the default transport selection only: forcing DTUHID would attach dtuhidd for the rest of the boot.
     static func hidTransport(simulator: FBSimulator) async -> (verdict: DoctorRules.Verdict, transport: String?) {
+        let udid = simulator.udid
+        let started = ContinuousClock.now
+        let progress = Task { @MainActor in
+            try await Task.sleep(for: .seconds(5))
+            FileHandle.standardError.write(Data("Waiting for dtuhidd to answer (up to \(Int(hidTransportTimeout)) s)...\n".utf8))
+        }
+        defer { progress.cancel() }
         do {
-            let hid = try await withTimeout(5, operation: "Connecting to simulator HID") {
-                try await simulator.connectToHID()
+            let hid = try await withTimeout(hidTransportTimeout, operation: "Connecting to simulator HID") {
+                let hid = try await FBSimulatorHID(for: simulator)
+                // A connect that lands after the timeout is closed here, not leaked.
+                if Task.isCancelled {
+                    await hid.close()
+                    throw CancellationError()
+                }
+                return hid
             }
-            defer { hid.disconnect() }
+            let elapsed = ContinuousClock.now - started
+            await hid.close()
             let transport: String
             switch hid.transportType {
             case .dtuhid: transport = "dtuhid"
             case .indigo: transport = "indigo"
             @unknown default: transport = String(describing: hid.transportType)
             }
-            return ((.pass, transport, nil), transport)
+            let milliseconds = Int(elapsed / .milliseconds(1))
+            return (DoctorRules.hidTransport(transport: transport, latencyMilliseconds: milliseconds), transport)
         } catch {
-            return ((.fail, error.localizedDescription, hidTransportHint(for: error)), nil)
+            return ((.fail, error.localizedDescription, hidTransportHint(for: error, udid: udid)), nil)
         }
     }
 
-    static func hidTransportHint(for error: Error) -> String? {
-        nil
+    static func hidTransportHint(for error: Error, udid: String) -> String? {
+        let unresponsive: Bool
+        if case .dtuhidUnresponsive = error as? FBSimulatorHIDError { unresponsive = true } else { unresponsive = false }
+        return DoctorRules.hidTransportHint(unresponsive: unresponsive, timedOut: error is DoctorTimeoutError, udid: udid)
     }
 
     static func accessibility(udid: String, logger: OffsiderLogger) async -> AccessibilityProbeState {
