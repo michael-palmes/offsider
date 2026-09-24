@@ -63,6 +63,7 @@ offsider describe-ui --point 200,400 --udid "$UDID"
 # Interact
 offsider tap -x 200 -y 400 --udid "$UDID"
 offsider tap --id LoginButton --udid "$UDID"
+offsider tap --id LoginButton --verify --udid "$UDID"   # exits 5 if nothing changes
 offsider type 'Hello world' --udid "$UDID"
 offsider screenshot --output ./screen.png --udid "$UDID"
 
@@ -70,7 +71,7 @@ offsider screenshot --output ./screen.png --udid "$UDID"
 offsider init --client claude
 ```
 
-Most input commands confirm that the event was dispatched to the simulator, not that the app acted on it. Check the outcome with `describe-ui` or `screenshot`. `slider` is the exception: it reads the value back and fails if it is out of tolerance. If input seems to be ignored, run `offsider doctor --udid "$UDID"`.
+Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. `slider` always checks its value. If input seems to be ignored, run `offsider doctor --udid "$UDID"`.
 
 ## Commands
 
@@ -82,15 +83,15 @@ Every simulator command takes `--udid <UDID>`. Run `offsider <command> --help` f
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--udid` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes |
 | `describe-ui` | Print the accessibility hierarchy of the screen, or only the element at `--point x,y` |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
-| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--tap-style` and delays |
+| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--tap-style`, delays and `--verify, --retries, --json` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label`, then verify the result |
-| `type` | Type US keyboard text from an argument, `--stdin` or `--file` |
+| `type` | Type US keyboard text from an argument, `--stdin` or `--file`; supports `--verify, --retries, --json` |
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
 | `drag` | Low-level point-to-point drag using explicit touch moves (`--duration`, `--steps`) |
 | `gesture` | Run a preset: `scroll-up`, `scroll-down`, `scroll-left`, `scroll-right`, `swipe-from-left-edge`, `swipe-from-right-edge`, `swipe-from-top-edge`, `swipe-from-bottom-edge` |
 | `touch` | Send touch down and/or up at `-x`/`-y` (`--down`, `--up`, `--delay`) |
-| `button` | Press a hardware button: `home`, `lock`, `side-button`, `siri`, `apple-pay` (optional `--duration`) |
-| `key` | Press one HID keycode (0 to 255), optionally held for `--duration` |
+| `button` | Press a hardware button: `home`, `lock`, `side-button`, `siri`, `apple-pay` (optional `--duration`); supports `--verify, --retries, --json` |
+| `key` | Press one HID keycode (0 to 255), optionally held for `--duration`; supports `--verify, --retries, --json` |
 | `key-sequence` | Press comma-separated `--keycodes` in order, with an optional `--delay` |
 | `key-combo` | Press `--key` while holding comma-separated `--modifiers` |
 | `batch` | Run ordered steps in one simulator session from `--step`, `--file` or `--stdin`; supports `--wait-timeout`, `--ax-cache`, `--continue-on-error` and `sleep` steps |
@@ -106,6 +107,7 @@ Every simulator command takes `--udid <UDID>`. Run `offsider <command> --help` f
 | 1 | The command failed; the error is printed to stderr |
 | 3 | `doctor` found warnings |
 | 4 | `doctor` found failures |
+| 5 | `--verify`: the input was dispatched but nothing observable changed |
 | 64 | Invalid arguments or options |
 
 ## Privacy

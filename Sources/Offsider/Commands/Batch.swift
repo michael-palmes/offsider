@@ -87,6 +87,11 @@ struct Batch: AsyncParsableCommand {
         if stepLines.isEmpty {
             throw ValidationError("No executable steps found.")
         }
+        for line in stepLines {
+            if let tokens = try? ShellTokenizer.tokenize(line) {
+                try BatchStepParser.rejectUnsupportedFlags(tokens)
+            }
+        }
 
         let context = await MainActor.run {
             BatchContext(

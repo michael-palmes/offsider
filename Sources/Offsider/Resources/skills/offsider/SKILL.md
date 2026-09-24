@@ -25,6 +25,7 @@ offsider slider --label <text> --value 40 --element-type Slider --udid <UDID>
 offsider drag --start-x <X1> --start-y <Y1> --end-x <X2> --end-y <Y2> --udid <UDID>
 offsider tap -x <X> -y <Y> --tap-style physical --udid <UDID>
 offsider tap -x <X> -y <Y> --udid <UDID>
+offsider tap --id <identifier> --verify --json --udid <UDID>
 offsider type 'text' --udid <UDID>
 offsider describe-ui --udid <UDID>
 offsider describe-ui --point <X,Y> --udid <UDID>
@@ -34,7 +35,10 @@ offsider screenshot --udid <UDID> --output screenshot.png
 ## Step 3: Understand the execution model
 
 Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-forget: Offsider confirms the event was dispatched to the simulator but cannot verify the app actually processed it. A tap may land before a view is interactive, or during a transition. `slider` is the exception: it performs one selector-resolved low-level HID drag, re-reads the matched slider AXValue, and fails if the observed 0-100 value is outside tolerance. iOS slider controls quantize values to their rendered track resolution, so Offsider does not retry correction gestures to chase unreachable decimals. This means:
-- Always verify outcomes separately with `describe-ui` or `screenshot` when app behavior matters beyond the direct command result.
+- Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change after the input. Offsider compares the accessibility tree (ignoring elements that were already changing), then falls back to screenshots; it exits 0 when something changed and 5 when nothing did. "Verified" means something changed, not that the right thing changed: check the new state when it matters.
+- `--verify-timeout <seconds>` (0.5 to 30, default 2) is the wait per attempt. `--retries <n>` (0 to 3, default 1) repeats the input when nothing changed; tap retries switch between simulator and physical tap style. Use `--retries 0` for non-idempotent actions such as submit, send or delete, because a late effect plus a retry can act twice.
+- `--json` (requires `--verify`) prints one object to stdout with `verified`, `dispatched`, `attempts`, `change` (`accessibility-tree`, `screenshot` or `none`) and `style` (tap only); human text goes to stderr. A `screenshot` change can be animation or the status bar clock in landscape, so confirm with `describe-ui`. `button lock` only shows as a black screen.
+- Without `--verify`, verify outcomes separately with `describe-ui` or `screenshot` when app behavior matters beyond the direct command result.
 - Use `--wait-timeout` in batch to wait for tap elements to appear, and `sleep` steps or `--pre-delay` / `--post-delay` to allow animations to settle.
 
 ## Step 4: Apply timing and input best practices
@@ -55,6 +59,7 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 **Fall back to discrete commands** when:
 - A step's parameters depend on runtime inspection of a previous step's result (e.g. parsing `describe-ui` JSON to choose coordinates dynamically).
 - Using `slider`; batch steps do not support slider verification.
+- You need `--verify`; batch steps reject `--verify`, `--verify-timeout`, `--retries` and `--json`. Run that input on its own with `--verify`, or check with `describe-ui` after the batch.
 
 **Handling animations and transitions in batch:**
 - Use `--wait-timeout <seconds>` so selector taps (`--id` / `--label`) poll the accessibility tree until the element appears or the timeout expires. This is the primary mechanism for multi-screen flows.
@@ -72,7 +77,9 @@ Key rules:
 - Do not pass `--udid` inside step lines; keep it at batch level.
 
 ## Step 6: Verify outcomes
-Batch and individual commands are execution-focused, not assertion-focused. Always suggest verification when outcomes matter:
+Batch and commands without `--verify` are execution-focused, not assertion-focused. Always suggest verification when outcomes matter.
+
+Exit 5 from a `--verify` command means the input was dispatched but nothing observable changed. Run `describe-ui` to check the target is on screen and interactive, then `offsider doctor --udid <UDID>` if input seems ignored. Read the `change` field of the JSON result to see how the change was detected.
 
 ```bash
 offsider describe-ui --udid <UDID>
