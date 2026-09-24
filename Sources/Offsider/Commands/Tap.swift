@@ -2,8 +2,9 @@ import ArgumentParser
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
 
-struct Tap: AsyncParsableCommand {
+struct Tap: AsyncParsableCommand, VerifiableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Tap a point on the screen, or locate an element by accessibility and tap its activation point."
     )
@@ -40,6 +41,9 @@ struct Tap: AsyncParsableCommand {
 
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active (default: 0.25).")
     var pollInterval: Double = 0.25
+
+    @OptionGroup
+    var verification: VerificationOptions
 
     @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
     var simulatorUDID: String
@@ -97,6 +101,23 @@ struct Tap: AsyncParsableCommand {
     }
 
     func run() async throws {
+        guard verification.verify else {
+            try await execute(progress: nil)
+            return
+        }
+        try await VerifyOutput.reportingFailures(command: "tap", target: verifyTarget, options: verification) { progress in
+            try await execute(progress: progress)
+        }
+    }
+
+    private var verifyTarget: String {
+        if let pointX, let pointY { return VerifyOutput.pointDescription(x: pointX, y: pointY) }
+        if let elementID { return "id=\(elementID)" }
+        if let elementLabel { return "label=\(elementLabel)" }
+        return "value=\(elementValue ?? "")"
+    }
+
+    private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         try await setup(logger: logger)
 
@@ -145,13 +166,51 @@ struct Tap: AsyncParsableCommand {
             logger: logger
         )
 
-        switch resolvedTapStyle(for: resolution) {
+        let style = resolvedTapStyle(for: resolution)
+        if let progress {
+            let initial: TapDeliveryStyle = style == .physical ? .physical : .simulator
+            let subject = pointX != nil ? "Tap at \(verifyTarget)" : "Tap on \(verifyTarget)"
+            let request = VerifyRequest(
+                command: "tap",
+                subject: subject,
+                target: verifyTarget,
+                simulatorUDID: simulatorUDID,
+                options: verification,
+                styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries)
+            )
+            try await VerifyOutput.perform(request, progress: progress, logger: logger) { attempt, session in
+                let attemptStyle: TapStyle = attempt.style == .physical ? .physical : .simulator
+                try await dispatchTap(point: physicalPoint, style: attemptStyle, in: session, logger: logger)
+            }
+            return
+        }
+
+        let session = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
+        do {
+            try await dispatchTap(point: physicalPoint, style: style, in: session, logger: logger)
+        } catch {
+            await HIDInteractor.closeSession(session)
+            throw error
+        }
+        await HIDInteractor.closeSession(session)
+
+        logger.info().log("Tap completed successfully")
+        print("✓ Tap at \(resolvedDescription) completed successfully")
+    }
+
+    private func dispatchTap(
+        point: (x: Double, y: Double),
+        style: TapStyle,
+        in session: HIDInteractor.Session,
+        logger: OffsiderLogger
+    ) async throws {
+        switch style {
         case .physical:
             try await HIDInteractor.performPhysicalTap(
-                at: physicalPoint,
+                at: point,
                 preDelay: preDelay,
                 postDelay: postDelay,
-                for: simulatorUDID,
+                in: session,
                 logger: logger
             )
         case .simulator:
@@ -160,20 +219,17 @@ struct Tap: AsyncParsableCommand {
                 logger.info().log("Pre-delay: \(preDelay)s")
                 events.append(.delay(preDelay))
             }
-            events.append(.tapAt(x: physicalPoint.x, y: physicalPoint.y))
+            events.append(.tapAt(x: point.x, y: point.y))
             if let postDelay, postDelay > 0 {
                 logger.info().log("Post-delay: \(postDelay)s")
                 events.append(.delay(postDelay))
             }
 
             let finalEvent = events.count == 1 ? events[0] : FBSimulatorHIDEvent.composite(events)
-            try await HIDInteractor.performHIDEvent(finalEvent, for: simulatorUDID, logger: logger)
+            try await HIDInteractor.performHIDEvent(finalEvent, in: session, logger: logger)
         case .automatic:
             throw CLIError(errorDescription: "Unexpected tap style resolution.")
         }
-
-        logger.info().log("Tap completed successfully")
-        print("✓ Tap at \(resolvedDescription) completed successfully")
     }
 
     private func resolvedTapStyle(for resolution: TapResolution) -> TapStyle {

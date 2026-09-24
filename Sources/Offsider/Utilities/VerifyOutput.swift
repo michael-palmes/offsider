@@ -143,11 +143,11 @@ enum VerifyOutput {
         return "! No observable change after attempt \(failed.number); retrying"
     }
 
-    static func pointDescription(x: Double, y: Double) -> String {
+    nonisolated static func pointDescription(x: Double, y: Double) -> String {
         "(\(number(x)), \(number(y)))"
     }
 
-    private static func number(_ value: Double) -> String {
+    nonisolated private static func number(_ value: Double) -> String {
         value.rounded() == value && abs(value) < 1e15 ? String(Int(value)) : String(value)
     }
 
