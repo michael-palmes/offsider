@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
 
 struct HIDBrokerPrimitive: Codable, Equatable {
     enum Kind: String, Codable {
@@ -37,7 +38,6 @@ struct HIDBrokerBootIdentity: Equatable {
 enum HIDBroker {
     static let inputDeliveryFailureDescription = "Offsider could not deliver simulator input. The simulator may have restarted or disconnected. Confirm it is booted and try again."
     static let dtuhidMinimumBootUptime: TimeInterval = 10
-    private static let protocolVersion = 2
     static let maximumMessageBytes = 64 * 1024
     private static let idleTimeoutMilliseconds: Int32 = 60_000
     static let serverIOTimeoutMilliseconds: Int = 2_000
@@ -213,23 +213,26 @@ enum HIDBroker {
         return try endpointPath(simulatorUDID: simulatorUDID, developerDirectory: developerDirectory)
     }
 
-    static func endpointPath(simulatorUDID: String, developerDirectory: String) throws -> String {
-        let uid = getuid()
-        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    static func brokerRootPath() -> String {
+        URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .resolvingSymlinksInPath()
-            .appendingPathComponent("offsider-hid-\(uid)", isDirectory: true)
-        try ensurePrivateDirectory(root.path, uid: uid)
+            .appendingPathComponent(BrokerEndpointNaming.rootDirectoryName(uid: getuid()), isDirectory: true)
+            .path
+    }
+
+    static func endpointPath(simulatorUDID: String, developerDirectory: String) throws -> String {
+        let root = brokerRootPath()
+        try ensurePrivateDirectory(root, uid: getuid())
         let developerDirectory = URL(fileURLWithPath: developerDirectory, isDirectory: true)
             .standardizedFileURL
             .resolvingSymlinksInPath()
             .path
-        // Base 36 keeps the socket path inside the 104-byte sun_path limit.
-        let identity = String(fnv1a64(developerDirectory), radix: 36)
-        let simulatorIdentity = String(fnv1a64(simulatorUDID), radix: 36)
-        // Version the endpoint so a running broker from an older wire protocol cannot intercept
-        // a request before the current client completes its readiness handshake.
-        let filename = "\(simulatorIdentity)-\(identity)-v\(protocolVersion).sock"
-        let path = root.appendingPathComponent(filename).path
+        // The filename carries the wire protocol version so an older broker cannot intercept a request.
+        let filename = BrokerEndpointNaming.endpointFilename(
+            simulatorUDID: simulatorUDID,
+            developerDirectory: developerDirectory
+        )
+        let path = URL(fileURLWithPath: root, isDirectory: true).appendingPathComponent(filename).path
         guard path.utf8.count < MemoryLayout.size(ofValue: sockaddr_un().sun_path) else {
             throw CLIError(errorDescription: "HID broker socket path is too long.")
         }
@@ -406,12 +409,6 @@ enum HIDBroker {
             )
         }
         throw failure
-    }
-
-    private static func fnv1a64(_ string: String) -> UInt64 {
-        string.utf8.reduce(14_695_981_039_346_656_037) { hash, byte in
-            (hash ^ UInt64(byte)) &* 1_099_511_628_211
-        }
     }
 
 }

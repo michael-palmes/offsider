@@ -18,6 +18,28 @@ struct HIDBrokerReliabilityTests {
         #expect(try !HIDBroker.isBrokerProcessAlive(endpoint: endpoint))
     }
 
+    @Test("Liveness reports a held, released or missing lock without creating one")
+    func livenessDoesNotCreateLock() throws {
+        let endpoint = try makeEndpoint()
+        defer { removeEndpointArtifacts(endpoint) }
+        let lockPath = endpoint + ".lifetime.lock"
+
+        #expect(HIDBroker.liveness(endpoint: endpoint) == .absent)
+        #expect(!FileManager.default.fileExists(atPath: lockPath))
+
+        let listener = try HIDBroker.makeListener(at: endpoint)
+        defer { Darwin.close(listener) }
+        #expect(HIDBroker.liveness(endpoint: endpoint) == .stale)
+        #expect(!FileManager.default.fileExists(atPath: lockPath))
+
+        let lifetimeLock = try HIDBroker.acquireLifetimeLock(endpoint: endpoint)
+        #expect(HIDBroker.liveness(endpoint: endpoint) == .alive)
+
+        #expect(flock(lifetimeLock, LOCK_UN) == 0)
+        Darwin.close(lifetimeLock)
+        #expect(HIDBroker.liveness(endpoint: endpoint) == .stale)
+    }
+
     @Test("A refused connection cannot remove an endpoint owned by a live broker")
     func refusedConnectionPreservesLiveBrokerEndpoint() throws {
         let endpoint = try makeEndpoint()
