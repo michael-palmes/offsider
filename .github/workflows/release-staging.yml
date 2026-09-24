@@ -1,0 +1,47 @@
+name: Release Staging
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Exact ref to build for staging (branch, tag, or SHA)'
+        required: true
+        type: string
+      intent:
+        description: 'Whether to validate only or publish a staging release'
+        required: true
+        type: choice
+        default: validate
+        options:
+          - validate
+          - publish
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  staging-validate:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.intent == 'validate')
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/release-shared.yml
+    with:
+      mode: staging-validate
+      requested_ref: ${{ github.event_name == 'pull_request' && github.sha || github.event.inputs.ref }}
+
+  staging-publish:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.intent == 'publish')
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-shared.yml
+    secrets: inherit
+    with:
+      mode: staging-publish
+      requested_ref: ${{ github.event_name == 'push' && github.ref || github.event.inputs.ref }}

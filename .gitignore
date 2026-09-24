@@ -1,0 +1,58 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+!*.xcworkspace/xcshareddata/
+!*.xcworkspace/xcshareddata/xcschemes/
+*.xcuserdatad
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Transient build artifacts and dependencies
+idb_checkout/
+/build_products
+/build_derived_data
+
+# Generated version file
+Sources/AXe/Version.swift
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# VSCode
+.vscode
+/.cursorrules
+
+# Claude AI
+.claude
+
+# Local environment overrides
+.env
+!.env.example
+
+# Other
+/keys
+/buildServer.json
