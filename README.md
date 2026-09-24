@@ -129,7 +129,7 @@ The simulator frameworks come from [michael-palmes/idb](https://github.com/micha
 
 ## Contributing and security
 
-Issues and pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. Fixes that apply to AXe as well are best proposed upstream. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). This project follows a [code of conduct](CODE_OF_CONDUCT.md).
+Issues and pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). This project follows a [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Licensing and attribution
 

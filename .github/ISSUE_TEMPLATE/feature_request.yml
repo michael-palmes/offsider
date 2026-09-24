@@ -20,15 +20,3 @@ body:
     id: alternatives
     attributes:
       label: Alternatives considered
-  - type: dropdown
-    id: upstream
-    attributes:
-      label: Would this suit the upstream project too?
-      description: Offsider is a fork. Features that apply upstream are best proposed there first; CONTRIBUTING.md links the upstream repository.
-      options:
-        - "No, it is specific to Offsider"
-        - "Yes, and I have proposed it upstream"
-        - "Yes, but I have not proposed it upstream"
-        - "Not sure"
-    validations:
-      required: true

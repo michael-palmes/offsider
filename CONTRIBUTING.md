@@ -1,10 +1,10 @@
 # Contributing to Offsider
 
-Thanks for your interest. Offsider is a small, independently maintained fork of [AXe](https://github.com/cameroncooke/axe), so a few things work differently from a typical project.
+Thanks for your interest. Offsider is a small, independently maintained project that began as a fork of [AXe](https://github.com/cameroncooke/axe), so a few things work differently from a typical project.
 
 ## Before you start
 
-- **General fixes belong upstream first.** If a bug or feature applies to AXe as well, propose it to AXe. Offsider picks up upstream fixes regularly.
+- **Offsider is independent of AXe.** Report Offsider problems and ideas here, not to the AXe project.
 - **Issues are welcome.** Use the issue templates and include your macOS, Xcode and `offsider --version` details.
 - **Pull requests may be declined** if they do not fit Offsider's scope: a local-only CLI for driving iOS Simulators from terminals and agents. Opening an issue first avoids wasted work.
 - Security problems go through [SECURITY.md](SECURITY.md), not public issues.
