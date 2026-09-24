@@ -80,10 +80,8 @@ struct VideoFrameUtilities {
     static func processJPEGData(_ data: Data, scale: Double, quality: Int) async throws -> Data {
         if scale < 1.0 {
             return try await scaleJPEGData(data, scale: scale, quality: quality)
-        } else if quality != 80 {
-            return try await reencodeJPEGData(data, quality: quality)
         }
-        return data
+        return try await reencodeJPEGData(data, quality: quality)
     }
 
     static func computeDimensions(for image: CGImage, scale: Double) -> (width: Int, height: Int) {
