@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
 
 enum ButtonType: String, CaseIterable, ExpressibleByArgument {
     case applePay = "apple-pay"
@@ -41,7 +42,7 @@ enum ButtonType: String, CaseIterable, ExpressibleByArgument {
     }
 }
 
-struct Button: AsyncParsableCommand {
+struct Button: AsyncParsableCommand, VerifiableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Press a hardware button on the simulator.",
         discussion: """
@@ -60,6 +61,9 @@ struct Button: AsyncParsableCommand {
     @Option(name: .customLong("duration"), help: "Duration to hold the button in seconds (optional).")
     var duration: Double?
     
+    @OptionGroup
+    var verification: VerificationOptions
+
     @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
     var simulatorUDID: String
 
@@ -76,6 +80,16 @@ struct Button: AsyncParsableCommand {
     }
 
     func run() async throws {
+        guard verification.verify else {
+            try await execute(progress: nil)
+            return
+        }
+        try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in
+            try await execute(progress: progress)
+        }
+    }
+
+    private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         try await setup(logger: logger)
         
@@ -105,6 +119,21 @@ struct Button: AsyncParsableCommand {
             buttonEvent = FBSimulatorHIDEvent.shortButtonPress(buttonType.hidButton)
         }
         
+        if let progress {
+            let request = VerifyRequest(
+                command: "button",
+                subject: buttonType.description,
+                target: buttonType.rawValue,
+                simulatorUDID: simulatorUDID,
+                options: verification,
+                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
+            )
+            try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
+                try await HIDInteractor.performHIDEvent(buttonEvent, in: session, logger: logger)
+            }
+            return
+        }
+
         // Perform the button event
         try await HIDInteractor
             .performHIDEvent(
