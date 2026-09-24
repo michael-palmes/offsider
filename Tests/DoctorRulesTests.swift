@@ -176,4 +176,27 @@ struct DoctorRulesTests {
         #expect(DoctorRules.bootedSimulators(count: 0).status == .warn)
         #expect(DoctorRules.bootedSimulators(count: 2).status == .pass)
     }
+
+    @Test("An unanswered dtuhidd liveness probe hints at the device window and a reboot for that simulator")
+    func hidTransportUnresponsiveHint() throws {
+        let hint = try #require(DoctorRules.hidTransportHint(unresponsive: true, timedOut: false, udid: udid))
+        #expect(hint.hasPrefix("dtuhidd did not answer."))
+        #expect(hint.contains("offsider doctor --udid \(udid) --fix"))
+        #expect(hint.contains("xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)"))
+    }
+
+    @Test("A HID connect timeout hints at a reboot, and other connect errors carry no hint")
+    func hidTransportTimeoutHint() throws {
+        let hint = try #require(DoctorRules.hidTransportHint(unresponsive: false, timedOut: true, udid: udid))
+        #expect(hint.contains("timed out"))
+        #expect(hint.contains("reboot the simulator"))
+        #expect(DoctorRules.hidTransportHint(unresponsive: false, timedOut: false, udid: udid) == nil)
+    }
+
+    @Test("A connected HID transport passes and reports how long it took to be ready")
+    func hidTransportReportsLatency() {
+        let verdict = DoctorRules.hidTransport(transport: "dtuhid", latencyMilliseconds: 1040)
+        #expect(verdict.status == .pass)
+        #expect(verdict.detail == "dtuhid (ready in 1040 ms)")
+    }
 }
