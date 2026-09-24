@@ -53,6 +53,9 @@ offsider --version
 offsider list-simulators
 export UDID=<UDID>
 
+# Check Xcode, Device Hub and the simulator before driving it
+offsider doctor --udid "$UDID"
+
 # Inspect the current screen, or the element at one point
 offsider describe-ui --udid "$UDID"
 offsider describe-ui --point 200,400 --udid "$UDID"
@@ -67,7 +70,7 @@ offsider screenshot --output ./screen.png --udid "$UDID"
 offsider init --client claude
 ```
 
-Most input commands confirm that the event was dispatched to the simulator, not that the app acted on it. Check the outcome with `describe-ui` or `screenshot`. `slider` is the exception: it reads the value back and fails if it is out of tolerance.
+Most input commands confirm that the event was dispatched to the simulator, not that the app acted on it. Check the outcome with `describe-ui` or `screenshot`. `slider` is the exception: it reads the value back and fails if it is out of tolerance. If input seems to be ignored, run `offsider doctor --udid "$UDID"`.
 
 ## Commands
 
@@ -76,6 +79,7 @@ Every simulator command takes `--udid <UDID>`. Run `offsider <command> --help` f
 | Command | What it does |
 | --- | --- |
 | `list-simulators` | List available simulators and their UDIDs |
+| `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--udid` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes |
 | `describe-ui` | Print the accessibility hierarchy of the screen, or only the element at `--point x,y` |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--tap-style` and delays |
@@ -93,6 +97,16 @@ Every simulator command takes `--udid <UDID>`. Run `offsider <command> --help` f
 | `screenshot` | Save a PNG of the simulator display (`--output`) |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success; for `doctor`, every check passed or was skipped |
+| 1 | The command failed; the error is printed to stderr |
+| 3 | `doctor` found warnings |
+| 4 | `doctor` found failures |
+| 64 | Invalid arguments or options |
 
 ## Privacy
 

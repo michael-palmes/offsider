@@ -69,6 +69,7 @@ show_usage() {
     echo "  DragTests           Run only drag tests"
     echo "  SliderTests         Run only slider tests"
     echo "  DescribeUITests     Run only describe-ui tests"
+    echo "  DoctorTests         Run only doctor tests"
     echo "  InitTests           Run only init tests"
     echo "  KeyComboTests       Run only key-combo tests"
     echo "  KeySequenceTests    Run only key-sequence tests"
@@ -142,7 +143,7 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
-        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListSimulatorsTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests)
+        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListSimulatorsTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests)
             TEST_FILTER="$1"
             shift
             ;;
@@ -478,6 +479,7 @@ run_tests() {
             "ButtonTests"
             "CommandNamingTests"
             "DescribeUITests"
+            "DoctorTests"
             "GestureTests"
             "InitTests"
             "KeyComboTests"

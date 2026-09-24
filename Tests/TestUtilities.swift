@@ -19,6 +19,12 @@ struct CommandOutput {
     let exitCode: Int32
 }
 
+struct SeparatedCommandOutput {
+    let stdout: String
+    let stderr: String
+    let exitCode: Int32
+}
+
 struct CommandRunner {
     static func run(
         _ command: String,
@@ -26,6 +32,25 @@ struct CommandRunner {
         allowFailure: Bool = false,
         timeout: TimeInterval = 30
     ) async throws -> (output: String, exitCode: Int32) {
+        let result = try await runSeparated(command, environment: environment, timeout: timeout)
+        let combinedOutput = result.stdout + (result.stderr.isEmpty ? "" : "\n\(result.stderr)")
+
+        if result.exitCode != 0, !allowFailure {
+            throw NSError(
+                domain: "CommandRunner",
+                code: Int(result.exitCode),
+                userInfo: [NSLocalizedDescriptionKey: combinedOutput]
+            )
+        }
+
+        return (combinedOutput, result.exitCode)
+    }
+
+    static func runSeparated(
+        _ command: String,
+        environment: [String: String]? = nil,
+        timeout: TimeInterval = 30
+    ) async throws -> SeparatedCommandOutput {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
@@ -83,15 +108,7 @@ struct CommandRunner {
             )
         }
 
-        if process.terminationStatus != 0, !allowFailure {
-            throw NSError(
-                domain: "CommandRunner",
-                code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: combinedOutput]
-            )
-        }
-
-        return (combinedOutput, process.terminationStatus)
+        return SeparatedCommandOutput(stdout: stdoutText, stderr: stderrText, exitCode: process.terminationStatus)
     }
 }
 
@@ -365,6 +382,24 @@ struct TestHelpers {
         )
 
         return CommandOutput(output: output, exitCode: exitCode)
+    }
+
+    static func runOffsiderCommandSeparated(
+        _ command: String,
+        simulatorUDID: String? = nil,
+        environment: [String: String]? = nil,
+        timeout: TimeInterval = 60
+    ) async throws -> SeparatedCommandOutput {
+        var fullCommand = command
+        if let udid = simulatorUDID {
+            fullCommand.append(" --udid \(udid)")
+        }
+        let offsiderPath = try getOffsiderPath()
+        return try await CommandRunner.runSeparated(
+            "\(offsiderPath) \(fullCommand)",
+            environment: environment,
+            timeout: timeout
+        )
     }
 
     static func waitForProcessExit(

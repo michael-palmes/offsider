@@ -34,6 +34,12 @@ struct HIDBrokerNotReadyError: LocalizedError, UserFacingError {
     }
 }
 
+enum HIDBrokerLiveness: Equatable {
+    case alive
+    case stale
+    case absent
+}
+
 struct HIDBrokerSocketIdentity: Equatable {
     let device: dev_t
     let inode: ino_t
@@ -130,6 +136,23 @@ extension HIDBroker {
         _ = flock(descriptor, LOCK_UN)
         Darwin.close(descriptor)
         return false
+    }
+
+    /// Reports whether a broker holds the endpoint without creating the lock file.
+    static func liveness(endpoint: String) -> HIDBrokerLiveness {
+        let descriptor = Darwin.open(lifetimeLockPath(endpoint), O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else {
+            // A lock that exists but cannot be opened is treated as live so nothing removes it.
+            guard errno == ENOENT else { return .alive }
+            var info = stat()
+            return lstat(endpoint, &info) == 0 ? .stale : .absent
+        }
+        defer { Darwin.close(descriptor) }
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            guard errno == EINTR else { return .alive }
+        }
+        _ = flock(descriptor, LOCK_UN)
+        return .stale
     }
 
     private static func lifetimeLockPath(_ endpoint: String) -> String {
