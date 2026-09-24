@@ -1,6 +1,7 @@
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
 
 // MARK: - HID Interactor
 
@@ -18,14 +19,10 @@ struct HIDInteractor {
 
     // Cache for HID connections per simulator
     private static var hidConnections: [String: FBSimulatorHID] = [:]
-    /// Configurable stabilization delay to ensure HID events are fully processed
-    /// Can be set via OFFSIDER_HID_STABILIZATION_MS environment variable
-    private static var stabilizationDelayMs: UInt64 {
-        if let envValue = ProcessInfo.processInfo.environment["OFFSIDER_HID_STABILIZATION_MS"],
-           let milliseconds = UInt64(envValue) {
-            return min(milliseconds, 1000)
-        }
-        return 25
+    static func stabilizationDelayMs(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> UInt64 {
+        HIDStabilization.resolve(environment: environment).milliseconds
     }
 
     static func makeSession(for simulatorUDID: String, logger: OffsiderLogger) async throws -> Session {
@@ -98,9 +95,10 @@ struct HIDInteractor {
         try await session.hid.send(event: event, logger: logger)
         logger.info().log("HID event performed successfully.")
 
-        if stabilizationDelayMs > 0 {
-            logger.info().log("Applying stabilization delay of \(stabilizationDelayMs)ms...")
-            try await Task.sleep(nanoseconds: stabilizationDelayMs * 1_000_000)
+        let delayMs = stabilizationDelayMs()
+        if delayMs > 0 {
+            logger.info().log("Applying stabilization delay of \(delayMs)ms...")
+            try await Task.sleep(nanoseconds: delayMs * 1_000_000)
         }
     }
 

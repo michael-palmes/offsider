@@ -67,7 +67,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 
 - Xcode 27 has no Simulator.app; simulators run under Device Hub. Quit Simulator.app before E2E runs.
 - Resolve Xcode through `xcode-select -p` or `DEVELOPER_DIR`, never a hard-coded path.
-- Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `describe-ui` or `screenshot`; only `slider` checks its own result.
+- Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `describe-ui` or `screenshot`; only `slider` checks its own result. When input seems ignored, run `offsider doctor --udid <UDID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` and rejects peers running as another user.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
 
