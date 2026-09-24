@@ -61,4 +61,3 @@ ci: pin actions to commit shas
 - Ambiguous hunk ownership: ask, do not guess
 - Aborted mid-plan: stop; `git reset --soft HEAD~N` undoes the last N commits
 - Binary files (screenshots, goldens): stage by name, never diff; goldens change only with a deliberate recapture
-- Cherry-picked upstream work: reword to this repo's style with `git commit --amend -m "type: subject"`; never keep `-x` trailers or upstream scopes
