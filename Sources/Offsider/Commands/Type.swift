@@ -2,8 +2,9 @@ import ArgumentParser
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
 
-struct Type: AsyncParsableCommand {
+struct Type: AsyncParsableCommand, VerifiableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Type text by entering a sequence of characters.",
         discussion: """
@@ -41,6 +42,9 @@ struct Type: AsyncParsableCommand {
     @Option(name: .customLong("file"), help: "Read text from the specified file.")
     var inputFile: String?
     
+    @OptionGroup
+    var verification: VerificationOptions
+
     @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
     var simulatorUDID: String
 
@@ -56,6 +60,16 @@ struct Type: AsyncParsableCommand {
     }
 
     func run() async throws {
+        guard verification.verify else {
+            try await execute(progress: nil)
+            return
+        }
+        try await VerifyOutput.reportingFailures(command: "type", target: "text", options: verification) { progress in
+            try await execute(progress: progress)
+        }
+    }
+
+    private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         try await setup(logger: logger)
         
@@ -128,7 +142,23 @@ struct Type: AsyncParsableCommand {
         }
         
         logger.info().log("Performing HID event sequence for text typing")
-        
+
+        if let progress {
+            let target = "text (\(inputText.count) character\(inputText.count == 1 ? "" : "s"))"
+            let request = VerifyRequest(
+                command: "type",
+                subject: "Typing \(target)",
+                target: target,
+                simulatorUDID: simulatorUDID,
+                options: verification,
+                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
+            )
+            try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
+                try await HIDInteractor.performHIDEvent(.composite(hidEvents), in: session, logger: logger)
+            }
+            return
+        }
+
         if !hidEvents.isEmpty {
             // Keep typing in one ordered session. Indigo awaits each send, while DTUHID adds its
             // own keyboard pacing; unconditional delays here would double-pace the DTUHID path.
