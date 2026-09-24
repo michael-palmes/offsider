@@ -77,6 +77,7 @@ show_usage() {
     echo "  KeyTests            Run only key tests"
     echo "  TouchTests          Run only touch tests"
     echo "  TypeTests           Run only type tests"
+    echo "  VerifyTests         Run only --verify tests"
     echo "  ButtonTests         Run only button tests"
     echo "  CommandNamingTests  Run only command naming tests"
     echo "  GestureTests        Run only gesture tests"
@@ -143,7 +144,7 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
-        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListSimulatorsTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests)
+        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListSimulatorsTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests|VerifyTests)
             TEST_FILTER="$1"
             shift
             ;;
@@ -495,6 +496,7 @@ run_tests() {
             "TapTests"
             "TouchTests"
             "TypeTests"
+            "VerifyTests"
         )
 
         echo ""

@@ -2,8 +2,9 @@ import ArgumentParser
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
 
-struct Key: AsyncParsableCommand {
+struct Key: AsyncParsableCommand, VerifiableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Press a single key by keycode on the simulator.",
         discussion: """
@@ -30,6 +31,9 @@ struct Key: AsyncParsableCommand {
     @Option(name: .customLong("duration"), help: "Duration to hold the key in seconds (optional).")
     var duration: Double?
     
+    @OptionGroup
+    var verification: VerificationOptions
+
     @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
     var simulatorUDID: String
 
@@ -51,6 +55,16 @@ struct Key: AsyncParsableCommand {
     }
 
     func run() async throws {
+        guard verification.verify else {
+            try await execute(progress: nil)
+            return
+        }
+        try await VerifyOutput.reportingFailures(command: "key", target: "keycode \(keycode)", options: verification) { progress in
+            try await execute(progress: progress)
+        }
+    }
+
+    private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         try await setup(logger: logger)
         
@@ -80,6 +94,21 @@ struct Key: AsyncParsableCommand {
             keyEvent = FBSimulatorHIDEvent.shortKeyPress(UInt32(keycode))
         }
         
+        if let progress {
+            let request = VerifyRequest(
+                command: "key",
+                subject: "Key \(keycode)",
+                target: "keycode \(keycode)",
+                simulatorUDID: simulatorUDID,
+                options: verification,
+                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
+            )
+            try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
+                try await HIDInteractor.performHIDEvent(keyEvent, in: session, logger: logger)
+            }
+            return
+        }
+
         // Perform the key event
         try await HIDInteractor
             .performHIDEvent(

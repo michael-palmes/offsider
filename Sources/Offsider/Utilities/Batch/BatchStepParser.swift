@@ -16,6 +16,19 @@ enum BatchStepKind: String {
 
 @MainActor
 struct BatchStepParser {
+    nonisolated static let unsupportedFlags = ["--verify", "--verify-timeout", "--retries", "--json"]
+    nonisolated static let unsupportedFlagsMessage = "Batch steps do not support --verify. Run the command on its own with --verify, or check with describe-ui after the batch."
+
+    nonisolated static func rejectUnsupportedFlags(_ tokens: [String]) throws {
+        let arguments = tokens.dropFirst()
+        let found = arguments.contains { token in
+            unsupportedFlags.contains { token == $0 || token.hasPrefix($0 + "=") }
+        }
+        if found {
+            throw ValidationError(unsupportedFlagsMessage)
+        }
+    }
+
     static func parseStepTokens(
         _ tokens: [String],
         globalUDID: String,
@@ -70,6 +83,9 @@ struct BatchStepParser {
     ) async throws -> [BatchPrimitive] {
         guard var parsed = try C.parseAsRoot(arguments) as? C else {
             throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))")
+        }
+        if (parsed as? VerifiableCommand)?.verification.isRequested == true {
+            throw ValidationError(unsupportedFlagsMessage)
         }
         try parsed.validate()
         return try await parsed.toBatchPrimitives(context: context, logger: logger)
