@@ -23,7 +23,7 @@ brew install michael-palmes/tap/offsider
 Each release publishes `offsider-<version>-arm64.tar.gz`, a `SHA256SUMS` file and a GitHub build provenance attestation from `.github/workflows/release.yml`. The binary is signed with a Developer ID certificate and notarised.
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 gh release download "v${VERSION}" --repo michael-palmes/offsider \
   --pattern "offsider-${VERSION}-arm64.tar.gz" --pattern SHA256SUMS
 shasum -a 256 -c SHA256SUMS
@@ -125,7 +125,7 @@ swift test        # unit tests; simulator suites are skipped
 make e2e          # rebuild everything and run the simulator end-to-end suites
 ```
 
-The simulator frameworks come from [michael-palmes/idb](https://github.com/michael-palmes/idb), a mirror of facebook/idb with Cameron Cooke's Xcode 27 changes on the `offsider/xcode27` branch (tag `offsider-idb-v0.1.0`). `scripts/build.sh` pins the exact revision and verifies it before building.
+The simulator frameworks come from [michael-palmes/idb](https://github.com/michael-palmes/idb), a mirror of facebook/idb with Cameron Cooke's Xcode 27 changes on the `offsider/xcode27` branch (tag `offsider-idb-v0.2.0`). `scripts/build.sh` pins the exact revision and verifies it before building.
 
 ## Contributing and security
 
