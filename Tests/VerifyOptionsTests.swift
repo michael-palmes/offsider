@@ -38,4 +38,19 @@ struct VerifyOptionsTests {
         #expect(result.exitCode == 64)
         #expect(result.stderr.contains("--verify-timeout must be between 0.5 and 30 seconds"))
     }
+
+    @Test("Batch steps reject --verify before any simulator access")
+    func batchRejectsVerify() async throws {
+        let result = try await run("batch --step \"tap -x 1 -y 1 --verify\"")
+        #expect(result.exitCode != 0)
+        #expect(result.stderr.contains("Batch steps do not support --verify"))
+        #expect(!result.stderr.contains("No simulator with UDID"))
+    }
+
+    @Test("Batch steps reject the --retries=N form too")
+    func batchRejectsEqualsForm() async throws {
+        let result = try await run("batch --step \"key 40\" --step \"type hi --retries=2\"")
+        #expect(result.exitCode != 0)
+        #expect(result.stderr.contains("Batch steps do not support --verify"))
+    }
 }
