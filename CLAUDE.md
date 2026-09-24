@@ -10,7 +10,9 @@ You are a macOS tooling engineer maintaining a small, local-only Swift CLI built
 
 ## Upstream
 
-Offsider is a fork of AXe (`cameroncooke/axe`) v1.8.0. General fixes go upstream as PRs; sync via the `upstream` remote (`git fetch upstream`, then cherry-pick). Keep fork-only changes in their own commits so upstream picks apply cleanly.
+Offsider is a fork of AXe (`cameroncooke/axe`) v1.8.0, kept as a standalone GitHub repository, so `gh` targets `michael-palmes/offsider` by default. Sync via the fetch-only `upstream` remote (`git fetch upstream`, then cherry-pick). Keep fork-only changes in their own commits so upstream picks apply cleanly.
+
+General fixes go upstream as PRs from the `michael-palmes/axe` fork (`git remote add axe-fork https://github.com/michael-palmes/axe.git`): branch from `upstream/main` in a separate worktree, re-apply the fix with AXe naming, `git push axe-fork <branch>`, then `gh pr create --repo cameroncooke/axe --head michael-palmes:<branch>`. Never push Offsider branches to `axe-fork`.
 
 ## Quick reference
 
