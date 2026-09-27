@@ -75,23 +75,15 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
             logger.info().log("Duration: \(duration) seconds")
         }
 
-        // Create key HID event
-        let keyEvent: FBSimulatorHIDEvent
-        
+        let keyEvent: InputEvent
         if let duration = duration {
-            // For duration-based presses, we need to create separate down/up events with delay
-            let keyDownEvent = FBSimulatorHIDEvent.keyboard(direction: .down, keyCode: UInt32(keycode))
-            let delayEvent = FBSimulatorHIDEvent.delay(duration)
-            let keyUpEvent = FBSimulatorHIDEvent.keyboard(direction: .up, keyCode: UInt32(keycode))
-
-            keyEvent = FBSimulatorHIDEvent.composite([
-                keyDownEvent,
-                delayEvent,
-                keyUpEvent
+            keyEvent = .composite([
+                .keyboard(direction: .down, keyCode: UInt32(keycode)),
+                .delay(duration),
+                .keyboard(direction: .up, keyCode: UInt32(keycode))
             ])
         } else {
-            // Simple short key press
-            keyEvent = FBSimulatorHIDEvent.shortKeyPress(UInt32(keycode))
+            keyEvent = .shortKeyPress(UInt32(keycode))
         }
         
         if let progress {
@@ -104,7 +96,7 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
                 styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
             )
             try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
-                try await HIDInteractor.performHIDEvent(keyEvent, in: session, logger: logger)
+                try await HIDInteractor.performHIDEvent(keyEvent.hidEvent, in: session, logger: logger)
             }
             return
         }
@@ -112,7 +104,7 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
         // Perform the key event
         try await HIDInteractor
             .performHIDEvent(
-                keyEvent,
+                keyEvent.hidEvent,
                 for: simulatorUDID,
                 logger: logger
             )

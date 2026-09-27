@@ -214,19 +214,15 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 logger: logger
             )
         case .simulator:
-            var events: [FBSimulatorHIDEvent] = []
             if let preDelay, preDelay > 0 {
                 logger.info().log("Pre-delay: \(preDelay)s")
-                events.append(.delay(preDelay))
             }
-            events.append(.tapAt(x: point.x, y: point.y))
             if let postDelay, postDelay > 0 {
                 logger.info().log("Post-delay: \(postDelay)s")
-                events.append(.delay(postDelay))
             }
 
-            let finalEvent = events.count == 1 ? events[0] : FBSimulatorHIDEvent.composite(events)
-            try await HIDInteractor.performHIDEvent(finalEvent, in: session, logger: logger)
+            let finalEvent = InputEvent.delayed(.tapAt(x: point.x, y: point.y), pre: preDelay, post: postDelay)
+            try await HIDInteractor.performHIDEvent(finalEvent.hidEvent, in: session, logger: logger)
         case .automatic:
             throw CLIError(errorDescription: "Unexpected tap style resolution.")
         }

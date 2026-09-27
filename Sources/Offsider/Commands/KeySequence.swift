@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
 
 struct KeySequence: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -69,28 +70,18 @@ struct KeySequence: AsyncParsableCommand {
         logger.info().log("Pressing key sequence: \(parsedKeycodes)")
         logger.info().log("Delay between keys: \(keyDelay) seconds")
 
-        // Create sequence of key events
-        var events: [FBSimulatorHIDEvent] = []
-        
+        var events: [InputEvent] = []
         for (index, keycode) in parsedKeycodes.enumerated() {
-            // Add key press event
-            let keyEvent = FBSimulatorHIDEvent.shortKeyPress(UInt32(keycode))
-            events.append(keyEvent)
-            
-            // Add delay between keys (except after the last key)
+            events.append(.shortKeyPress(UInt32(keycode)))
             if index < parsedKeycodes.count - 1 && keyDelay > 0 {
-                let delayEvent = FBSimulatorHIDEvent.delay(keyDelay)
-                events.append(delayEvent)
+                events.append(.delay(keyDelay))
             }
         }
-        
-        // Create composite event
-        let sequenceEvent = FBSimulatorHIDEvent.composite(events)
-        
-        // Perform the key sequence event
+        let sequenceEvent = InputEvent.composite(events)
+
         try await HIDInteractor
             .performHIDEvent(
-                sequenceEvent,
+                sequenceEvent.hidEvent,
                 for: simulatorUDID,
                 logger: logger
             )

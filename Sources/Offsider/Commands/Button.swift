@@ -100,23 +100,15 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
             logger.info().log("Duration: \(duration) seconds")
         }
 
-        // Create button HID event
-        let buttonEvent: FBSimulatorHIDEvent
-        
+        let buttonEvent: InputEvent
         if let duration = duration {
-            // For duration-based presses, we need to create separate down/up events with delay
-            let buttonDownEvent = FBSimulatorHIDEvent.button(direction: .down, button: buttonType.hardwareButton.hidButton)
-            let delayEvent = FBSimulatorHIDEvent.delay(duration)
-            let buttonUpEvent = FBSimulatorHIDEvent.button(direction: .up, button: buttonType.hardwareButton.hidButton)
-
-            buttonEvent = FBSimulatorHIDEvent.composite([
-                buttonDownEvent,
-                delayEvent,
-                buttonUpEvent
+            buttonEvent = .composite([
+                .button(direction: .down, button: buttonType.hardwareButton),
+                .delay(duration),
+                .button(direction: .up, button: buttonType.hardwareButton)
             ])
         } else {
-            // Simple short button press
-            buttonEvent = FBSimulatorHIDEvent.shortButtonPress(buttonType.hardwareButton.hidButton)
+            buttonEvent = .shortButtonPress(buttonType.hardwareButton)
         }
         
         if let progress {
@@ -129,7 +121,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
                 styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
             )
             try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
-                try await HIDInteractor.performHIDEvent(buttonEvent, in: session, logger: logger)
+                try await HIDInteractor.performHIDEvent(buttonEvent.hidEvent, in: session, logger: logger)
             }
             return
         }
@@ -137,7 +129,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         // Perform the button event
         try await HIDInteractor
             .performHIDEvent(
-                buttonEvent,
+                buttonEvent.hidEvent,
                 for: simulatorUDID,
                 logger: logger
             )
