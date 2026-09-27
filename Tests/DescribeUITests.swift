@@ -17,7 +17,7 @@ struct DescribeUICommandSurfaceTests {
 
     @Test("Invalid --point format fails with guidance")
     func invalidPointFormatFails() async throws {
-        let result = try await TestHelpers.runOffsiderCommandAllowFailure("describe-ui --udid invalid --point nope")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("describe-ui --device invalid --point nope")
         #expect(result.exitCode != 0)
         #expect(result.output.contains("--point must be in the form x,y using non-negative numbers."))
     }

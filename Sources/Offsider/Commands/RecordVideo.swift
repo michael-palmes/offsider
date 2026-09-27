@@ -9,8 +9,8 @@ struct RecordVideo: AsyncParsableCommand {
         abstract: "Record the simulator display to an MP4 file using H.264 encoding"
     )
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     @Option(help: "Frames per second (1-30, default: 10)")
     var fps: Int = 10
@@ -40,7 +40,7 @@ struct RecordVideo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)

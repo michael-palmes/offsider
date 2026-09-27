@@ -7,14 +7,14 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         abstract: "Type text by entering a sequence of characters.",
         discussion: """
         Input Methods:
-        1. Direct text: offsider type "Hello World" --udid UDID
-        2. From stdin: echo "Hello World!" | offsider type --stdin --udid UDID
-        3. From file: offsider type --file text.txt --udid UDID
+        1. Direct text: offsider type "Hello World" --device DEVICE_ID
+        2. From stdin: echo "Hello World!" | offsider type --stdin --device DEVICE_ID
+        3. From file: offsider type --file text.txt --device DEVICE_ID
         
         Examples:
-        • Simple text: offsider type "Hello World" --udid UDID
-        • With spaces: offsider type "Hello, how are you?" --udid UDID
-        • Special characters: offsider type 'Hello!' --udid UDID
+        • Simple text: offsider type "Hello World" --device DEVICE_ID
+        • With spaces: offsider type "Hello, how are you?" --device DEVICE_ID
+        • Special characters: offsider type 'Hello!' --device DEVICE_ID
         
         Shell Escaping Tips:
         • Use double quotes for text with spaces: "Hello World"
@@ -43,8 +43,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     @OptionGroup
     var verification: VerificationOptions
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     func validate() throws {
         let sourceCount = [text != nil, useStdin, inputFile != nil].filter { $0 }.count
@@ -69,7 +69,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

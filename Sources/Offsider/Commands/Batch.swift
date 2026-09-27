@@ -15,14 +15,14 @@ struct Batch: AsyncParsableCommand {
           sleep <seconds>
 
         Examples:
-          offsider batch --udid SIMULATOR_UDID --step "tap --id BackButton" --step "type 'hello'"
-          offsider batch --udid SIMULATOR_UDID --file steps.txt
-          cat steps.txt | offsider batch --udid SIMULATOR_UDID --stdin
+          offsider batch --device DEVICE_ID --step "tap --id BackButton" --step "type 'hello'"
+          offsider batch --device DEVICE_ID --file steps.txt
+          cat steps.txt | offsider batch --device DEVICE_ID --stdin
         """
     )
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     @Option(name: .customLong("step"), help: "Step to execute. Repeat for multiple steps.")
     var steps: [String] = []
@@ -80,7 +80,7 @@ struct Batch: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger(writeToStdErr: verbose)
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
@@ -121,7 +121,7 @@ struct Batch: AsyncParsableCommand {
                     stepName = tokens.first ?? "<empty>"
                     let primitives = try await BatchStepParser.parseStepTokens(
                         tokens,
-                        globalUDID: simulatorUDID,
+                        deviceID: device.rawValue,
                         context: context,
                         logger: logger
                     )

@@ -31,7 +31,7 @@ struct BatchStepParser {
 
     static func parseStepTokens(
         _ tokens: [String],
-        globalUDID: String,
+        deviceID: String,
         context: BatchContext,
         logger: OffsiderLogger
     ) async throws -> [BatchPrimitive] {
@@ -48,8 +48,8 @@ struct BatchStepParser {
         }
 
         let stepArguments = Array(tokens.dropFirst())
-        try ensureNoPerStepUDID(stepArguments)
-        let arguments = stepArguments + ["--udid", globalUDID]
+        try rejectPerStepDevice(stepArguments)
+        let arguments = stepArguments + ["--device", deviceID]
 
         switch kind {
         case .tap:
@@ -91,9 +91,12 @@ struct BatchStepParser {
         return try await parsed.toBatchPrimitives(context: context, logger: logger)
     }
 
-    private static func ensureNoPerStepUDID(_ args: [String]) throws {
-        if args.contains(where: { $0 == "--udid" || $0.hasPrefix("--udid=") }) {
-            throw ValidationError("Per-step --udid is not supported in batch steps. Use batch-level --udid.")
+    nonisolated static let perStepDeviceMessage = "Batch steps cannot choose their own device. Use batch-level --device."
+
+    nonisolated static func rejectPerStepDevice(_ args: [String]) throws {
+        let flags = ["--device", "--udid"]
+        if args.contains(where: { arg in flags.contains { arg == $0 || arg.hasPrefix($0 + "=") } }) {
+            throw ValidationError(perStepDeviceMessage)
         }
     }
 

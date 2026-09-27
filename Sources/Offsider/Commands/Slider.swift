@@ -37,8 +37,8 @@ struct Slider: AsyncParsableCommand {
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active (default: 0.25).")
     var pollInterval: Double = 0.25
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     func validate() throws {
         let selectorCount = [elementID != nil, elementLabel != nil].filter { $0 }.count
@@ -68,7 +68,7 @@ struct Slider: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let target = SliderTarget(backend: route.backend, device: route.device)
         try await target.backend.prepare()
 

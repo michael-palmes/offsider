@@ -6,7 +6,7 @@ struct VerifyOptionsTests {
     private static let fakeUDID = "00000000-0000-0000-0000-000000000000"
 
     private func run(_ command: String) async throws -> SeparatedCommandOutput {
-        try await TestHelpers.runOffsiderCommandSeparated("\(command) --udid \(Self.fakeUDID)")
+        try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(Self.fakeUDID)")
     }
 
     @Test("--retries without --verify is a usage error")

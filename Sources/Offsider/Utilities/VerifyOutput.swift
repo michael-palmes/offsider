@@ -133,7 +133,7 @@ enum VerifyOutput {
             styleText = ""
         }
         return "✗ \(request.subject) was dispatched but nothing observable changed after \(outcome.attempts) \(plural)\(styleText). "
-            + "Check the target with describe-ui, or run offsider doctor --udid \(request.device.rawValue)."
+            + "Check the target with describe-ui, or run offsider doctor --device \(request.device.rawValue)."
     }
 
     static func retryLine(failed: Verifier.Attempt, next: Verifier.Attempt) -> String {

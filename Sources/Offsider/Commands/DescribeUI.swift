@@ -6,8 +6,8 @@ struct DescribeUI: AsyncParsableCommand {
         abstract: "Describes the UI hierarchy of a booted simulator using accessibility information."
     )
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     @Option(
         name: .customLong("point"),
@@ -24,7 +24,7 @@ struct DescribeUI: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         try await route.backend.prepare()
 
         let jsonData = try await route.backend.accessibilityJSON(for: route.device, point: try parsedPoint())

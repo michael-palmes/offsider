@@ -55,7 +55,7 @@ struct AccessibilityMatch {
 }
 
 struct AccessibilityTargetResolver {
-    static let describeUITip = "Make sure the app is on the expected screen, then run `offsider describe-ui --udid <SIMULATOR_UDID>` and prefer --id when available."
+    static let describeUITip = "Make sure the app is on the expected screen, then run `offsider describe-ui --device <DEVICE_ID>` and prefer --id when available."
 
     private static let wideSwitchActivationWidthThreshold = 100.0
     private static let switchTrailingActivationInset = 31.0

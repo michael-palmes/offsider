@@ -108,7 +108,7 @@ enum DoctorFixes {
             DoctorFixResult(id: .deviceWindow, action: "Open the device window", outcome: outcome, detail: detail)
         }
         guard let udid else {
-            return result(.skipped, "Requires --udid")
+            return result(.skipped, "Requires --device")
         }
         guard DoctorRules.isDeviceHubEra(xcodeMajor: run.context.xcodeMajor), let appPath = run.context.deviceHubAppPath else {
             return result(.skipped, "Only applies to Xcode 27 or later")

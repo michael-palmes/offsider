@@ -37,8 +37,8 @@ struct Drag: AsyncParsableCommand {
     @Option(name: .customLong("post-delay"), help: "Delay after completing the drag in seconds.")
     var postDelay: Double?
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     func validate() throws {
         guard startX >= 0, startY >= 0, endX >= 0, endY >= 0 else {
@@ -67,7 +67,7 @@ struct Drag: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

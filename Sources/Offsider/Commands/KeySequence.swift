@@ -10,9 +10,9 @@ struct KeySequence: AsyncParsableCommand {
         Each key will be pressed and released before the next key is pressed.
         
         Examples:
-          offsider key-sequence 11,8,15,15,18 --udid SIMULATOR_UDID    # Type "hello" (h=11, e=8, l=15, l=15, o=18)
-          offsider key-sequence 40,40,40 --udid SIMULATOR_UDID          # Press Enter 3 times
-          offsider key-sequence 224,4,225 --udid SIMULATOR_UDID        # Ctrl+A (Ctrl=224, A=4, release Ctrl=225)
+          offsider key-sequence 11,8,15,15,18 --device DEVICE_ID    # Type "hello" (h=11, e=8, l=15, l=15, o=18)
+          offsider key-sequence 40,40,40 --device DEVICE_ID          # Press Enter 3 times
+          offsider key-sequence 224,4,225 --device DEVICE_ID        # Ctrl+A (Ctrl=224, A=4, release Ctrl=225)
         """
     )
     
@@ -22,8 +22,8 @@ struct KeySequence: AsyncParsableCommand {
     @Option(name: .customLong("delay"), help: "Delay between key presses in seconds (default: 0.1).")
     var delay: Double?
     
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
     
     func validate() throws {
         let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
@@ -58,7 +58,7 @@ struct KeySequence: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

@@ -101,7 +101,7 @@ struct StreamVideoTests {
         let udid = try TestHelpers.requireSimulatorUDID()
 
         let offsiderPath = try TestHelpers.getOffsiderPath()
-        let fullCommand = "\(offsiderPath) stream-video --format h264 --udid \(udid)"
+        let fullCommand = "\(offsiderPath) stream-video --format h264 --device \(udid)"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -139,7 +139,7 @@ struct StreamVideoTests {
             "--fps", String(fps),
             "--quality", String(quality),
             "--scale", String(scale),
-            "--udid", udid,
+            "--device", udid,
         ]
 
         let outputPipe = Pipe()

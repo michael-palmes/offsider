@@ -90,9 +90,9 @@ struct Gesture: AsyncParsableCommand {
           swipe-from-top-edge, swipe-from-bottom-edge
         
         Examples:
-          offsider gesture scroll-up --udid SIMULATOR_UDID
-          offsider gesture scroll-down --duration 1.5 --udid SIMULATOR_UDID
-          offsider gesture swipe-from-left-edge --screen-width 430 --screen-height 932 --udid SIMULATOR_UDID
+          offsider gesture scroll-up --device DEVICE_ID
+          offsider gesture scroll-down --duration 1.5 --device DEVICE_ID
+          offsider gesture swipe-from-left-edge --screen-width 430 --screen-height 932 --device DEVICE_ID
         """
     )
     
@@ -117,8 +117,8 @@ struct Gesture: AsyncParsableCommand {
     @Option(name: .customLong("post-delay"), help: "Delay after completing the gesture in seconds.")
     var postDelay: Double?
     
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     func validate() throws {
         // Validate screen dimensions if provided
@@ -164,7 +164,7 @@ struct Gesture: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
