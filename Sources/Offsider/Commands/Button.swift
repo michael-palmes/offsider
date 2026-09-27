@@ -11,18 +11,18 @@ enum ButtonType: String, CaseIterable, ExpressibleByArgument {
     case sideButton = "side-button"
     case siri = "siri"
     
-    var hidButton: FBSimulatorHIDButton {
+    var hardwareButton: HardwareButton {
         switch self {
         case .applePay:
-            return FBSimulatorHIDButton(rawValue: 1)! // FBSimulatorHIDButtonApplePay
+            return .applePay
         case .home:
-            return FBSimulatorHIDButton(rawValue: 2)! // FBSimulatorHIDButtonHomeButton
+            return .home
         case .lock:
-            return FBSimulatorHIDButton(rawValue: 3)! // FBSimulatorHIDButtonLock
+            return .lock
         case .sideButton:
-            return FBSimulatorHIDButton(rawValue: 4)! // FBSimulatorHIDButtonSideButton
+            return .sideButton
         case .siri:
-            return FBSimulatorHIDButton(rawValue: 5)! // FBSimulatorHIDButtonSiri
+            return .siri
         }
     }
     
@@ -105,9 +105,9 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         
         if let duration = duration {
             // For duration-based presses, we need to create separate down/up events with delay
-            let buttonDownEvent = FBSimulatorHIDEvent.button(direction: .down, button: buttonType.hidButton)
+            let buttonDownEvent = FBSimulatorHIDEvent.button(direction: .down, button: buttonType.hardwareButton.hidButton)
             let delayEvent = FBSimulatorHIDEvent.delay(duration)
-            let buttonUpEvent = FBSimulatorHIDEvent.button(direction: .up, button: buttonType.hidButton)
+            let buttonUpEvent = FBSimulatorHIDEvent.button(direction: .up, button: buttonType.hardwareButton.hidButton)
 
             buttonEvent = FBSimulatorHIDEvent.composite([
                 buttonDownEvent,
@@ -116,7 +116,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
             ])
         } else {
             // Simple short button press
-            buttonEvent = FBSimulatorHIDEvent.shortButtonPress(buttonType.hidButton)
+            buttonEvent = FBSimulatorHIDEvent.shortButtonPress(buttonType.hardwareButton.hidButton)
         }
         
         if let progress {

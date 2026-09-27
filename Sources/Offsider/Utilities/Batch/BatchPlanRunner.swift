@@ -1,5 +1,5 @@
 import Foundation
-import FBSimulatorControl
+import OffsiderCore
 
 @MainActor
 struct BatchPlanRunner {
@@ -7,12 +7,12 @@ struct BatchPlanRunner {
     let logger: OffsiderLogger
 
     func run(_ plan: BatchPlan) async throws {
-        var pendingMergeable: [FBSimulatorHIDEvent] = []
+        var pendingMergeable: [InputEvent] = []
 
         func flushPending() async throws {
             guard !pendingMergeable.isEmpty else { return }
-            let event = pendingMergeable.count == 1 ? pendingMergeable[0] : FBSimulatorHIDEvent.composite(pendingMergeable)
-            try await HIDInteractor.performHIDEvent(event, in: session, logger: logger)
+            let event = pendingMergeable.count == 1 ? pendingMergeable[0] : InputEvent.composite(pendingMergeable)
+            try await HIDInteractor.performHIDEvent(event.hidEvent, in: session, logger: logger)
             pendingMergeable.removeAll(keepingCapacity: true)
         }
 
@@ -24,7 +24,7 @@ struct BatchPlanRunner {
                 try await flushPending()
                 // A barrier prevents event coalescing; failures propagate without replaying
                 // this event or any earlier event in the batch.
-                try await HIDInteractor.performHIDEvent(event, in: session, logger: logger)
+                try await HIDInteractor.performHIDEvent(event.hidEvent, in: session, logger: logger)
             case .hostSleep(let seconds):
                 try await flushPending()
                 guard seconds > 0 else { continue }

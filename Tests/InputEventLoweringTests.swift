@@ -16,6 +16,30 @@ struct InputEventLoweringTests {
         #expect(Set(HardwareButton.allCases.map(\.hidButton)) == Set(FBSimulatorHIDButton.allCases))
     }
 
+    @Test("every button command maps to a distinct hardware button")
+    func everyButtonCommandMapsToDistinctHardwareButton() {
+        let mapped = ButtonType.allCases.map(\.hardwareButton)
+
+        #expect(Set(mapped) == Set(HardwareButton.allCases))
+        #expect(mapped.count == HardwareButton.allCases.count)
+        #expect(ButtonType.home.hardwareButton.hidButton == .homeButton)
+        #expect(ButtonType.sideButton.hardwareButton.hidButton == .sideButton)
+    }
+
+    @Test("typed text lowers to plain and shifted key presses")
+    func typedTextLowersToPlainAndShiftedKeyPresses() throws {
+        let events = try TextToHIDEvents.convertTextToHIDEvents("aA")
+
+        #expect(InputEvent.composite(events).hidEvent == .composite([
+            .keyboard(direction: .down, keyCode: 4),
+            .keyboard(direction: .up, keyCode: 4),
+            .keyboard(direction: .down, keyCode: 225),
+            .keyboard(direction: .down, keyCode: 4),
+            .keyboard(direction: .up, keyCode: 4),
+            .keyboard(direction: .up, keyCode: 225)
+        ]))
+    }
+
     @Test("directions lower to idb directions")
     func directionsLowerToIDBDirections() {
         #expect(InputDirection.down.hidDirection == .down)

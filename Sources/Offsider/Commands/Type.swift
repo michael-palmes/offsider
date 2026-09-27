@@ -129,7 +129,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         }
         
         // Convert text to HID events using the new utility
-        let hidEvents: [FBSimulatorHIDEvent]
+        let hidEvents: [InputEvent]
         do {
             hidEvents = try TextToHIDEvents.convertTextToHIDEvents(inputText)
             logger.info().log("Successfully converted text to \(hidEvents.count) HID events")
@@ -154,7 +154,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
             )
             try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
-                try await HIDInteractor.performHIDEvent(.composite(hidEvents), in: session, logger: logger)
+                try await HIDInteractor.performHIDEvent(InputEvent.composite(hidEvents).hidEvent, in: session, logger: logger)
             }
             return
         }
@@ -164,7 +164,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             // own keyboard pacing; unconditional delays here would double-pace the DTUHID path.
             try await HIDInteractor
                 .performHIDEvent(
-                    .composite(hidEvents),
+                    InputEvent.composite(hidEvents).hidEvent,
                     for: simulatorUDID,
                     logger: logger
                 )
