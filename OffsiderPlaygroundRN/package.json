@@ -16,8 +16,8 @@
   },
   "scripts": {
     "start": "EXPO_NO_TELEMETRY=1 expo start --port 8742",
-    "android": "EXPO_NO_TELEMETRY=1 expo run:android --port 8742",
-    "ios": "EXPO_NO_TELEMETRY=1 expo run:ios --port 8742",
+    "android": "../scripts/rn-playground.sh dev-android",
+    "ios": "../scripts/rn-playground.sh dev-ios",
     "prebuild": "EXPO_NO_TELEMETRY=1 EXPO_OFFLINE=1 COCOAPODS_DISABLE_STATS=true expo prebuild --clean",
     "android:release": "../scripts/rn-playground.sh build-android",
     "ios:release": "../scripts/rn-playground.sh build-ios",

@@ -12,6 +12,7 @@ IOS_APP="${IOS_DERIVED_DATA}/Build/Products/Release-iphonesimulator/OffsiderPlay
 ANDROID_APK="${BUILD_DIR}/android/OffsiderPlaygroundRN-release.apk"
 APP_ID="com.mpalmes.offsider.playground.rn"
 SCREEN_URL="offsiderplaygroundrn://screen"
+METRO_PORT=8742
 
 export EXPO_NO_TELEMETRY=1
 export EXPO_OFFLINE=1
@@ -30,6 +31,8 @@ Commands:
   install-android <serial>          Install the APK on a running emulator
   launch-ios <udid> <screen>        Launch straight to a fixture screen (-OffsiderScreen <screen>)
   launch-android <serial> <screen>  Launch straight to a fixture screen (${SCREEN_URL}/<screen>)
+  dev-ios <udid>                    Debug build and run with Metro on ${METRO_PORT} (pnpm ios <udid>)
+  dev-android <serial|avd>          Debug build and run with Metro on ${METRO_PORT} (pnpm android <serial|avd>)
 
 Artefacts:
   ${IOS_APP#"${REPO_ROOT}"/}
@@ -143,6 +146,23 @@ launch_android() {
   "${adb}" -s "$1" shell am start -S -W -a android.intent.action.VIEW -d "${SCREEN_URL}/$2" "${APP_ID}"
 }
 
+dev_ios() {
+  [ -n "${1:-}" ] || die "a simulator is required: pnpm ios <udid> (UDIDs from 'xcrun simctl list devices'). No default device is used."
+  [[ "$1" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || die "'$1' is not a simulator UDID."
+  (cd "${APP_DIR}" && pnpm exec expo run:ios --device "$1" --port "${METRO_PORT}")
+}
+
+dev_android() {
+  [ -n "${1:-}" ] || die "an emulator is required: pnpm android <serial|avd> (serials from 'adb devices'). No default device is used."
+  local device="$1" adb
+  if [[ "${device}" =~ ^emulator-[0-9]+$ ]]; then
+    adb=$(adb_bin)
+    device=$("${adb}" -s "$1" emu avd name 2>/dev/null | head -1 | tr -d '\r') || device=""
+    [ -n "${device}" ] || die "$1 is not a running emulator ('adb devices' lists them)."
+  fi
+  (cd "${APP_DIR}" && pnpm exec expo run:android --device "${device}" --port "${METRO_PORT}")
+}
+
 command="${1:-help}"
 shift || true
 
@@ -153,6 +173,8 @@ case "${command}" in
   install-android) install_android "$@" ;;
   launch-ios) launch_ios "$@" ;;
   launch-android) launch_android "$@" ;;
+  dev-ios) dev_ios "$@" ;;
+  dev-android) dev_android "$@" ;;
   help | -h | --help) usage ;;
   *)
     usage >&2

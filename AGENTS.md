@@ -39,6 +39,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
 | `scripts/rn-playground.sh build-ios` or `build-android` | Build the RN playground Release app or arm64 APK (`help` lists install and launch) |
 | `pnpm --dir OffsiderPlaygroundRN typecheck` | Typecheck the RN playground |
+| `pnpm --dir OffsiderPlaygroundRN android <serial>` or `ios <udid>` | RN debug build with Metro on 8742 (Android also takes an AVD name); refuses to run without a named device |
 | `bash -n <script>` | Syntax-check a changed shell script |
 
 | Variable | Effect |
