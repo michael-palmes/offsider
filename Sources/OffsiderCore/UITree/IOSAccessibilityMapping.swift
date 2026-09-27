@@ -1,0 +1,134 @@
+import Foundation
+
+/// Maps the iOS accessibility JSON from idb onto neutral `UINode`s.
+public enum IOSAccessibilityMapping {
+    public enum MappingError: Error, Equatable, Sendable {
+        case notAnAccessibilityTree
+    }
+
+    private static let rolesByType: [String: UIRole] = [
+        "Application": .application,
+        "Window": .window,
+        "Button": .button,
+        "PopUpButton": .button,
+        "Link": .link,
+        "MenuItem": .menuItem,
+        "Tab": .tab,
+        "TabBarButton": .tab,
+        "TabBar": .tabBar,
+        "SegmentedControl": .segmentedControl,
+        "CheckBox": .checkbox,
+        "RadioButton": .radioButton,
+        "TextField": .textField,
+        "SecureTextField": .secureTextField,
+        "SearchField": .searchField,
+        "TextView": .textArea,
+        "TextEditor": .textArea,
+        "StaticText": .text,
+        "Image": .image,
+        "Cell": .cell,
+        "Table": .list,
+        "CollectionView": .list,
+        "ScrollView": .scrollView,
+        "ScrollArea": .scrollView,
+        "NavigationBar": .header,
+        "Heading": .header,
+        "Picker": .picker,
+        "PickerWheel": .picker,
+        "ProgressIndicator": .progress,
+        "ActivityIndicator": .progress,
+        "Keyboard": .keyboard,
+        "Key": .keyboard,
+        "Group": .group,
+    ]
+
+    public static func roots(fromJSON data: Data) throws -> [UINode] {
+        let object = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        if let array = object as? [[String: Any]] {
+            return array.map(node(from:))
+        }
+        if let dictionary = object as? [String: Any] {
+            return [node(from: dictionary)]
+        }
+        throw MappingError.notAnAccessibilityTree
+    }
+
+    public static func node(from dictionary: [String: Any]) -> UINode {
+        let type = text(dictionary["type"])
+        let nativeRole = text(dictionary["role"])
+        let subrole = text(dictionary["subrole"])
+        let roleDescription = text(dictionary["role_description"])
+        let role = role(type: type, role: nativeRole, subrole: subrole, roleDescription: roleDescription)
+        let value = text(dictionary["AXValue"])
+
+        return UINode(
+            role: role,
+            id: text(dictionary["AXUniqueId"]) ?? text(dictionary["AXIdentifier"]),
+            label: text(dictionary["AXLabel"]),
+            value: value,
+            frame: frame(dictionary["frame"]),
+            enabled: dictionary["enabled"] as? Bool,
+            state: UIState(checked: checked(role: role, value: value)),
+            native: .ios(IOSNativeAttributes(
+                type: type,
+                role: nativeRole,
+                subrole: subrole,
+                roleDescription: roleDescription,
+                title: text(dictionary["title"]),
+                help: text(dictionary["help"]),
+                customActions: (dictionary["custom_actions"] as? [Any] ?? []).compactMap(text),
+                contentRequired: dictionary["content_required"] as? Bool,
+                pid: (dictionary["pid"] as? NSNumber)?.intValue,
+                axFrame: text(dictionary["AXFrame"])
+            )),
+            children: (dictionary["children"] as? [[String: Any]] ?? []).map(node(from:))
+        )
+    }
+
+    /// Switch and slider checks run first because SwiftUI reports some switches as CheckBox or Other.
+    public static func role(type: String?, role: String?, subrole: String?, roleDescription: String?) -> UIRole {
+        let description = roleDescription?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if type == "Switch" || type == "Toggle" || role == "AXSwitch" || subrole == "AXSwitch"
+            || description.contains("switch") || description.contains("toggle") {
+            return .switch
+        }
+        if type == "Slider" || role == "AXSlider" || subrole == "AXSlider" || description.contains("slider") {
+            return .slider
+        }
+        let typeKey = type ?? role.map { $0.hasPrefix("AX") ? String($0.dropFirst(2)) : $0 }
+        return typeKey.flatMap { rolesByType[$0] } ?? .other
+    }
+
+    private static func checked(role: UIRole, value: String?) -> Bool? {
+        guard role == .switch || role == .checkbox else { return nil }
+        switch value?.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "1": return true
+        case "0": return false
+        default: return nil
+        }
+    }
+
+    private static func frame(_ value: Any?) -> UIFrame? {
+        guard let frame = value as? [String: Any],
+              let x = number(frame["x"]), let y = number(frame["y"]),
+              let width = number(frame["width"]), let height = number(frame["height"]) else {
+            return nil
+        }
+        return UIFrame(x: x, y: y, width: width, height: height)
+    }
+
+    private static func text(_ value: Any?) -> String? {
+        switch value {
+        case let string as String:
+            return string
+        case let number as NSNumber:
+            return number.stringValue
+        default:
+            return nil
+        }
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        (value as? NSNumber)?.doubleValue
+    }
+}
