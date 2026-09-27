@@ -17,7 +17,7 @@ Offsider is a local command-line tool. It has no telemetry, no accounts, no upda
 It touches:
 
 - Xcode's private simulator frameworks (CoreSimulator, SimulatorKit and related), loaded at runtime from the selected Xcode.
-- Simulator HID input: touches, key presses, hardware buttons and text are sent to the simulator you name with `--udid`.
+- Simulator HID input: touches, key presses, hardware buttons and text are sent to the simulator you name with `--device`.
 - A per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` for its HID broker. The broker rejects connections from any other user.
 - Files you ask for: screenshots and recordings are written to `--output` or to a default name in the current directory, and `type` and `batch` read the file you pass with `--file`.
 - `offsider init`, which writes its skill to `~/.claude/skills/offsider`, `~/.agents/skills/offsider` or the directory you pass with `--dest`.
