@@ -42,7 +42,7 @@ struct HIDInteractor {
         logger.info().log("FBSimulatorSet obtained.")
 
         guard let simulator = simulatorSet.allSimulators.first(where: { $0.udid == simulatorUDID }) else {
-            throw CLIError.simulatorNotFound(udid: simulatorUDID)
+            throw CLIError.deviceNotFound(id: simulatorUDID)
         }
 
         logger.info().log("Target (FBSimulator) obtained: \(simulator.udid)")

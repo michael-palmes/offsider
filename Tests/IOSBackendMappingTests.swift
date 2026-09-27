@@ -34,6 +34,7 @@ private final class StubBackend: DeviceBackend {
 
     var platform: DevicePlatform { .ios }
     func prepare() async throws {}
+    func listDevices() async throws -> [DeviceSummary] { [] }
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice { BootedDevice(id: id, name: "Stub") }
     func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data { Data("[]".utf8) }
     func deviceCoordinates(

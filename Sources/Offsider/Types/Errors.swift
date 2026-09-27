@@ -18,9 +18,9 @@ struct CLIError: LocalizedError, UserFacingError {
         self.errorDescription = errorDescription
     }
 
-    static func simulatorNotFound(udid: String) -> CLIError {
+    static func deviceNotFound(id: String) -> CLIError {
         CLIError(
-            errorDescription: "No simulator with UDID \(udid) was found. Run `offsider list-simulators` to see available simulators."
+            errorDescription: "No device with ID \(id) was found. Run `offsider list-devices` to see available devices."
         )
     }
 

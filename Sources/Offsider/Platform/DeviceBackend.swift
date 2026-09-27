@@ -1,18 +1,6 @@
 import Foundation
 import OffsiderCore
 
-enum DevicePlatform: String, Sendable {
-    case ios
-    case android
-}
-
-struct DeviceID: Hashable, Sendable, CustomStringConvertible {
-    let rawValue: String
-    let platform: DevicePlatform
-
-    var description: String { rawValue }
-}
-
 struct BootedDevice: Sendable {
     let id: DeviceID
     let name: String
@@ -30,6 +18,7 @@ enum DetachedTouchStep: Equatable, Sendable {
 protocol DeviceBackend: AnyObject {
     var platform: DevicePlatform { get }
     func prepare() async throws
+    func listDevices() async throws -> [DeviceSummary]
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice
     func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data
     /// Logical points to input-space points; `roots` reuses an accessibility tree the caller already holds.

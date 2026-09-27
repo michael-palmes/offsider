@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import AVFoundation
+import OffsiderCore
 
 struct RecordVideo: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
