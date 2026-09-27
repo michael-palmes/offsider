@@ -47,9 +47,9 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         Available buttons: apple-pay, home, lock, side-button, siri
         
         Examples:
-          offsider button home --udid SIMULATOR_UDID
-          offsider button lock --duration 2.0 --udid SIMULATOR_UDID
-          offsider button siri --udid SIMULATOR_UDID
+          offsider button home --device DEVICE_ID
+          offsider button lock --duration 2.0 --device DEVICE_ID
+          offsider button siri --device DEVICE_ID
         """
     )
     
@@ -62,8 +62,8 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
     @OptionGroup
     var verification: VerificationOptions
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     func validate() throws {
         // Validate duration if provided
@@ -89,7 +89,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
 
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

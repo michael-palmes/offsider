@@ -160,6 +160,19 @@ struct TestHelpers {
     }
 
     /// Get the path to the offsider binary using #file to find source root
+    static func listedSubcommands(in help: String) -> [String] {
+        let lines = help.components(separatedBy: .newlines)
+        guard let header = lines.firstIndex(of: "SUBCOMMANDS:") else { return [] }
+
+        var names: [String] = []
+        for line in lines[(header + 1)...] {
+            if line.trimmingCharacters(in: .whitespaces).isEmpty { break }
+            guard let match = line.range(of: #"^  [a-z][a-z0-9-]*"#, options: .regularExpression) else { continue }
+            names.append(line[match].trimmingCharacters(in: .whitespaces))
+        }
+        return names
+    }
+
     static func getOffsiderPath(testFile: String = #file) throws -> String {
         if let offsiderBinPath = ProcessInfo.processInfo.environment["OFFSIDER_BIN_PATH"], !offsiderBinPath.isEmpty {
             if FileManager.default.fileExists(atPath: offsiderBinPath) {
@@ -346,7 +359,7 @@ struct TestHelpers {
     ) async throws -> CommandOutput {
         var fullCommand = command
         if let udid = simulatorUDID {
-            fullCommand.append(" --udid \(udid)")
+            fullCommand.append(" --device \(udid)")
         }
         
         // Use the built executable directly for faster test execution
@@ -371,7 +384,7 @@ struct TestHelpers {
     ) async throws -> CommandOutput {
         var fullCommand = command
         if let udid = simulatorUDID {
-            fullCommand.append(" --udid \(udid)")
+            fullCommand.append(" --device \(udid)")
         }
 
         let offsiderPath = try getOffsiderPath()
@@ -392,7 +405,7 @@ struct TestHelpers {
     ) async throws -> SeparatedCommandOutput {
         var fullCommand = command
         if let udid = simulatorUDID {
-            fullCommand.append(" --udid \(udid)")
+            fullCommand.append(" --device \(udid)")
         }
         let offsiderPath = try getOffsiderPath()
         return try await CommandRunner.runSeparated(

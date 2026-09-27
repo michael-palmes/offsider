@@ -16,7 +16,7 @@ struct CommandNamingTests {
     @Test("every listed subcommand presents the offsider command")
     func subcommandHelpUsesOffsiderName() async throws {
         let rootHelp = try await TestHelpers.runOffsiderCommand("--help").output
-        let subcommands = listedSubcommands(in: rootHelp)
+        let subcommands = TestHelpers.listedSubcommands(in: rootHelp)
 
         #expect(subcommands.contains("tap"))
         #expect(subcommands.contains("init"))
@@ -33,18 +33,5 @@ struct CommandNamingTests {
 
     private func mentionsUpstreamName(_ text: String) -> Bool {
         text.range(of: Self.upstreamName, options: [.regularExpression, .caseInsensitive]) != nil
-    }
-
-    private func listedSubcommands(in help: String) -> [String] {
-        let lines = help.components(separatedBy: .newlines)
-        guard let header = lines.firstIndex(of: "SUBCOMMANDS:") else { return [] }
-
-        var names: [String] = []
-        for line in lines[(header + 1)...] {
-            if line.trimmingCharacters(in: .whitespaces).isEmpty { break }
-            guard let match = line.range(of: #"^  [a-z][a-z0-9-]*"#, options: .regularExpression) else { continue }
-            names.append(line[match].trimmingCharacters(in: .whitespaces))
-        }
-        return names
     }
 }

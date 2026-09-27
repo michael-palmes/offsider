@@ -15,8 +15,8 @@ struct StreamVideo: AsyncParsableCommand {
         abstract: "Stream simulator frames to stdout using screenshot capture"
     )
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     @Option(help: "Output format: mjpeg, raw, ffmpeg, bgra (default: mjpeg)")
     var format: OutputFormat = .mjpeg
@@ -46,7 +46,7 @@ struct StreamVideo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
@@ -166,7 +166,7 @@ struct StreamVideo: AsyncParsableCommand {
         FileHandle.standardError.write(Data("Starting BGRA video stream from simulator \(device.rawValue)...\n".utf8))
         FileHandle.standardError.write(Data("Format: bgra, Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Note: This is raw pixel data. Use ffmpeg to convert:\n".utf8))
-        FileHandle.standardError.write(Data("  offsider stream-video --format bgra --udid <UDID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
+        FileHandle.standardError.write(Data("  offsider stream-video --format bgra --device <DEVICE_ID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
         try await streamer.streamBGRA(

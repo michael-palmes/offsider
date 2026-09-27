@@ -4,11 +4,11 @@ import OffsiderCore
 
 struct Doctor: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Check the host and, with --udid, a simulator for problems that stop Offsider input or accessibility reads."
+        abstract: "Check the host and, with --device, a simulator for problems that stop Offsider input or accessibility reads."
     )
 
-    @Option(name: .customLong("udid"), help: "Also check this simulator.")
-    var simulatorUDID: String?
+    @OptionGroup
+    var deviceOption: OptionalDeviceOption
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
@@ -17,7 +17,7 @@ struct Doctor: AsyncParsableCommand {
     var fix = false
 
     func run() async throws {
-        let udid = simulatorUDID.map(Self.canonicalUDID)
+        let udid = deviceOption.id.map(Self.canonicalUDID)
         let runner = DoctorRunner(
             udid: udid,
             environment: ProcessInfo.processInfo.environment,

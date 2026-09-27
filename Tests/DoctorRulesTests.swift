@@ -181,7 +181,7 @@ struct DoctorRulesTests {
     func hidTransportUnresponsiveHint() throws {
         let hint = try #require(DoctorRules.hidTransportHint(unresponsive: true, timedOut: false, udid: udid))
         #expect(hint.hasPrefix("dtuhidd did not answer."))
-        #expect(hint.contains("offsider doctor --udid \(udid) --fix"))
+        #expect(hint.contains("offsider doctor --device \(udid) --fix"))
         #expect(hint.contains("xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)"))
     }
 

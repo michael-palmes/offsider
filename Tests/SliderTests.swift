@@ -16,7 +16,7 @@ struct SliderCommandSurfaceTests {
 
     @Test("Invalid slider value fails validation")
     func invalidSliderValueFailsValidation() async throws {
-        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --id slider-value-slider --value 101 --udid invalid")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --id slider-value-slider --value 101 --device invalid")
 
         #expect(result.exitCode != 0)
         #expect(result.output.contains("--value must be a finite number between 0 and 100."))
@@ -24,7 +24,7 @@ struct SliderCommandSurfaceTests {
 
     @Test("Missing slider selector fails validation")
     func missingSliderSelectorFailsValidation() async throws {
-        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --value 75 --udid invalid")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --value 75 --device invalid")
 
         #expect(result.exitCode != 0)
         #expect(result.output.contains("Use exactly one of --id or --label to target a slider."))
