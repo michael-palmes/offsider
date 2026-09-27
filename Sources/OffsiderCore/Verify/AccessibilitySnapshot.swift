@@ -25,6 +25,7 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
         public var title: String?
         public var enabled: Bool?
         public var frame: Frame?
+        public var state: UIState
         public var children: [Node]
 
         public init(
@@ -37,6 +38,7 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
             title: String? = nil,
             enabled: Bool? = nil,
             frame: Frame? = nil,
+            state: UIState = UIState(),
             children: [Node] = []
         ) {
             self.type = type
@@ -48,6 +50,7 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
             self.title = title
             self.enabled = enabled
             self.frame = frame
+            self.state = state
             self.children = children
         }
     }
@@ -60,6 +63,10 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
 
     public init(roots: [Node]) {
         self.roots = roots
+    }
+
+    public init(tree: UITree) {
+        roots = tree.roots.map(Node.init(node:))
     }
 
     public init(jsonData: Data) throws {
@@ -87,6 +94,29 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
 }
 
 extension AccessibilitySnapshot.Node {
+    /// Keys stay `type#identifier` with the native type, so iOS results match the JSON path.
+    init(node: UINode) {
+        let ios: IOSNativeAttributes?
+        if case .ios(let attributes) = node.native {
+            ios = attributes
+        } else {
+            ios = nil
+        }
+        self.init(
+            type: node.native.typeName ?? node.role.rawValue,
+            identifier: node.id,
+            role: ios?.role ?? node.role.rawValue,
+            subrole: ios?.subrole,
+            label: node.label,
+            value: node.value,
+            title: ios?.title,
+            enabled: node.enabled,
+            frame: node.frame.map { AccessibilitySnapshot.Frame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) },
+            state: node.state,
+            children: node.children.map(Self.init(node:))
+        )
+    }
+
     init(dictionary: [String: Any]) {
         let frame = (dictionary["frame"] as? [String: Any]).flatMap { frame -> AccessibilitySnapshot.Frame? in
             guard let x = Self.number(frame["x"]), let y = Self.number(frame["y"]),
