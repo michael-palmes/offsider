@@ -1,13 +1,17 @@
 import Foundation
-import OffsiderCore
 
-struct BootedDevice: Sendable {
-    let id: DeviceID
-    let name: String
+public struct BootedDevice: Sendable {
+    public let id: DeviceID
+    public let name: String
+
+    public init(id: DeviceID, name: String) {
+        self.id = id
+        self.name = name
+    }
 }
 
 /// Touch steps that must outlive the process, such as `touch --down` now and `touch --up` later.
-enum DetachedTouchStep: Equatable, Sendable {
+public enum DetachedTouchStep: Equatable, Sendable {
     case down(x: Double, y: Double)
     case up(x: Double, y: Double)
     case hold(TimeInterval)
@@ -15,12 +19,15 @@ enum DetachedTouchStep: Equatable, Sendable {
 
 /// One platform's device access for a single command run; backends hold the logger.
 @MainActor
-protocol DeviceBackend: AnyObject {
+public protocol DeviceBackend: AnyObject {
     var platform: DevicePlatform { get }
     func prepare() async throws
     func listDevices() async throws -> [DeviceSummary]
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice
-    func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data
+    /// The frontmost app's tree, or with `point` the element there as the only root; `screen` is left nil.
+    func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree
+    /// For `describe-ui` only; nil when the platform cannot report it.
+    func screenInfo(for id: DeviceID) async throws -> UIScreenInfo?
     /// Logical points to input-space points; `tree` reuses an accessibility tree the caller already holds.
     func deviceCoordinates(
         for points: [(x: Double, y: Double)],
@@ -33,13 +40,12 @@ protocol DeviceBackend: AnyObject {
 }
 
 extension DeviceBackend {
-    func accessibilityTree(for id: DeviceID) async throws -> UITree {
-        let jsonData = try await accessibilityJSON(for: id, point: nil)
-        return UITree(platform: platform, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+    public func accessibilityTree(for id: DeviceID) async throws -> UITree {
+        try await accessibilityTree(for: id, point: nil)
     }
 
     /// Opens a session, performs one event and closes the session, on failure too.
-    func perform(_ event: InputEvent, on id: DeviceID) async throws {
+    public func perform(_ event: InputEvent, on id: DeviceID) async throws {
         let session = try await openInputSession(for: id)
         do {
             try await session.perform(event)
@@ -53,7 +59,7 @@ extension DeviceBackend {
 
 /// Optional capability: raw pixel streaming for `stream-video --format bgra`.
 @MainActor
-protocol RawVideoStreaming: DeviceBackend {
+public protocol RawVideoStreaming: DeviceBackend {
     func streamBGRA(
         from id: DeviceID,
         fps: Int,

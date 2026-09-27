@@ -54,8 +54,31 @@ final class IOSBackend: DeviceBackend {
         return BootedDevice(id: DeviceID(rawValue: udid, platform: .ios), name: simulator.name)
     }
 
-    func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data {
-        try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(for: id.rawValue, point: point, logger: logger)
+    func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+        let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
+            for: id.rawValue,
+            point: point.map { AccessibilityPoint(x: $0.x, y: $0.y) },
+            logger: logger
+        )
+        return UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+    }
+
+    /// Device pixels over scale, swapped when SimulatorKit reports a landscape orientation.
+    func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
+        guard let info = try await simulator(for: id).screenInfo, info.scale > 0 else {
+            return nil
+        }
+        let scale = Double(info.scale)
+        let orientation = await SimulatorOrientationReader.currentOrientation(simulatorUDID: id.rawValue, logger: logger)
+        let portraitWidth = Double(info.widthPixels) / scale
+        let portraitHeight = Double(info.heightPixels) / scale
+        let isLandscape = orientation?.isLandscape == true
+        return UIScreenInfo(
+            width: isLandscape ? portraitHeight : portraitWidth,
+            height: isLandscape ? portraitWidth : portraitHeight,
+            scale: scale,
+            orientation: orientation?.coreOrientation
+        )
     }
 
     func deviceCoordinates(

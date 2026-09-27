@@ -120,6 +120,8 @@ struct ListDevicesTests {
         let result = try await TestHelpers.runOffsiderCommandAllowFailure("describe-ui --device \(udid.lowercased())")
 
         #expect(result.exitCode == 0, "describe-ui failed: \(result.output)")
-        #expect(try !UIStateParser.parseDescribeUIRoots(result.output).isEmpty)
+        let envelope = try UIStateParser.parseDescribeUIEnvelope(result.output)
+        #expect(!envelope.roots.isEmpty)
+        #expect(envelope.device == udid.uppercased())
     }
 }
