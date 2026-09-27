@@ -53,11 +53,11 @@ struct CLIErrorTests {
         #expect(!HIDBroker.brokerResponseDescription(for: frameworkError).contains("implementation detail"))
     }
 
-    @Test("Missing simulator errors use public terminology and provide recovery guidance")
-    func missingSimulatorErrorIsActionable() {
-        let error = CLIError.simulatorNotFound(udid: "EXAMPLE-UDID")
+    @Test("Missing device errors use public terminology and provide recovery guidance")
+    func missingDeviceErrorIsActionable() {
+        let error = CLIError.deviceNotFound(id: "EXAMPLE-ID")
 
-        #expect(error.description == "No simulator with UDID EXAMPLE-UDID was found. Run `offsider list-simulators` to see available simulators.")
+        #expect(error.description == "No device with ID EXAMPLE-ID was found. Run `offsider list-devices` to see available devices.")
         #expect(!error.description.contains("set"))
     }
 

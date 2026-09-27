@@ -16,7 +16,7 @@ struct OffsiderCommand: AsyncParsableCommand {
         version: VERSION,
         subcommands: [
             DescribeUI.self,
-            ListSimulators.self,
+            ListDevices.self,
             Doctor.self,
             Init.self,
             Tap.self,

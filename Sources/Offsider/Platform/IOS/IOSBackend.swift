@@ -20,6 +20,20 @@ final class IOSBackend: DeviceBackend {
         try await performGlobalSetup(logger: logger)
     }
 
+    func listDevices() async throws -> [DeviceSummary] {
+        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
+        return simulatorSet.allSimulators.map { simulator in
+            DeviceSummary(
+                id: simulator.udid,
+                platform: .ios,
+                state: FBiOSTargetStateStringFromState(simulator.state).rawValue,
+                name: simulator.name,
+                osVersion: simulator.osVersion.name.rawValue,
+                deviceType: simulator.deviceType.model.rawValue
+            )
+        }
+    }
+
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         let udid = id.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !udid.isEmpty else {
@@ -81,7 +95,7 @@ final class IOSBackend: DeviceBackend {
         }
         let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
         guard let simulator = simulatorSet.allSimulators.first(where: { $0.udid == id.rawValue }) else {
-            throw CLIError.simulatorNotFound(udid: id.rawValue)
+            throw CLIError.deviceNotFound(id: id.rawValue)
         }
         simulators[id.rawValue] = simulator
         return simulator

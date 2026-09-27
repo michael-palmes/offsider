@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderCore
 
 struct StreamVideo: AsyncParsableCommand {
     enum OutputFormat: String, ExpressibleByArgument {
