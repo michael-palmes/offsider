@@ -105,7 +105,8 @@ struct Batch: AsyncParsableCommand {
             )
         }
 
-        let session = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
+        let hidSession = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
+        let session: any InputSession = await IOSInputSession(hidSession: hidSession, logger: logger)
         let runner = BatchPlanRunner(session: session, logger: logger)
 
         var failures: [String] = []
@@ -132,10 +133,10 @@ struct Batch: AsyncParsableCommand {
                 }
             }
         } catch {
-            await HIDInteractor.closeSession(session)
+            await session.close()
             throw error
         }
-        await HIDInteractor.closeSession(session)
+        await session.close()
 
         if !failures.isEmpty {
             let failureMessage = failures.joined(separator: "\n")

@@ -3,7 +3,7 @@ import OffsiderCore
 
 @MainActor
 struct BatchPlanRunner {
-    let session: HIDInteractor.Session
+    let session: any InputSession
     let logger: OffsiderLogger
 
     func run(_ plan: BatchPlan) async throws {
@@ -12,7 +12,7 @@ struct BatchPlanRunner {
         func flushPending() async throws {
             guard !pendingMergeable.isEmpty else { return }
             let event = pendingMergeable.count == 1 ? pendingMergeable[0] : InputEvent.composite(pendingMergeable)
-            try await HIDInteractor.performHIDEvent(event.hidEvent, in: session, logger: logger)
+            try await session.perform(event)
             pendingMergeable.removeAll(keepingCapacity: true)
         }
 
@@ -24,7 +24,7 @@ struct BatchPlanRunner {
                 try await flushPending()
                 // A barrier prevents event coalescing; failures propagate without replaying
                 // this event or any earlier event in the batch.
-                try await HIDInteractor.performHIDEvent(event.hidEvent, in: session, logger: logger)
+                try await session.perform(event)
             case .hostSleep(let seconds):
                 try await flushPending()
                 guard seconds > 0 else { continue }
@@ -32,13 +32,7 @@ struct BatchPlanRunner {
                 try await Task.sleep(for: .seconds(seconds))
             case .physicalTap(let point, let preDelay, let postDelay):
                 try await flushPending()
-                try await HIDInteractor.performPhysicalTap(
-                    at: point,
-                    preDelay: preDelay,
-                    postDelay: postDelay,
-                    in: session,
-                    logger: logger
-                )
+                try await session.performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
             }
         }
 

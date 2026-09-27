@@ -154,7 +154,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
             )
             try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
-                try await HIDInteractor.performHIDEvent(InputEvent.composite(hidEvents).hidEvent, in: session, logger: logger)
+                try await session.perform(.composite(hidEvents))
             }
             return
         }

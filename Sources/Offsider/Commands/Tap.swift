@@ -185,14 +185,15 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             return
         }
 
-        let session = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
+        let hidSession = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
+        let session: any InputSession = await IOSInputSession(hidSession: hidSession, logger: logger)
         do {
             try await dispatchTap(point: physicalPoint, style: style, in: session, logger: logger)
         } catch {
-            await HIDInteractor.closeSession(session)
+            await session.close()
             throw error
         }
-        await HIDInteractor.closeSession(session)
+        await session.close()
 
         logger.info().log("Tap completed successfully")
         print("✓ Tap at \(resolvedDescription) completed successfully")
@@ -201,18 +202,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     private func dispatchTap(
         point: (x: Double, y: Double),
         style: TapStyle,
-        in session: HIDInteractor.Session,
+        in session: any InputSession,
         logger: OffsiderLogger
     ) async throws {
         switch style {
         case .physical:
-            try await HIDInteractor.performPhysicalTap(
-                at: point,
-                preDelay: preDelay,
-                postDelay: postDelay,
-                in: session,
-                logger: logger
-            )
+            try await session.performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
         case .simulator:
             if let preDelay, preDelay > 0 {
                 logger.info().log("Pre-delay: \(preDelay)s")
@@ -222,7 +217,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             }
 
             let finalEvent = InputEvent.delayed(.tapAt(x: point.x, y: point.y), pre: preDelay, post: postDelay)
-            try await HIDInteractor.performHIDEvent(finalEvent.hidEvent, in: session, logger: logger)
+            try await session.perform(finalEvent)
         case .automatic:
             throw CLIError(errorDescription: "Unexpected tap style resolution.")
         }

@@ -55,15 +55,16 @@ enum VerifyOutput {
         _ request: VerifyRequest,
         progress: VerifyProgress,
         logger: OffsiderLogger,
-        action: (Verifier.Attempt, HIDInteractor.Session) async throws -> Void
+        action: (Verifier.Attempt, any InputSession) async throws -> Void
     ) async throws {
-        let session = try await HIDInteractor.makeSession(for: request.simulatorUDID, logger: logger)
+        let hidSession = try await HIDInteractor.makeSession(for: request.simulatorUDID, logger: logger)
+        let session = IOSInputSession(hidSession: hidSession, logger: logger)
         let outcome: Verifier.Outcome
         do {
             outcome = try await Verifier.run(
                 styles: request.styles,
                 timeout: .milliseconds(Int((request.options.resolvedTimeout * 1000).rounded())),
-                dependencies: .live(session: session, logger: logger),
+                dependencies: .live(session: hidSession, logger: logger),
                 onRetry: { failed, next in
                     writeError(retryLine(failed: failed, next: next))
                 },
@@ -75,10 +76,10 @@ enum VerifyOutput {
                 }
             )
         } catch {
-            await HIDInteractor.closeSession(session)
+            await session.close()
             throw error
         }
-        await HIDInteractor.closeSession(session)
+        await session.close()
         try report(outcome, for: request)
     }
 
