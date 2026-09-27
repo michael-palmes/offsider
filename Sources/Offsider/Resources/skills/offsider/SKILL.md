@@ -4,32 +4,32 @@ description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator 
 ---
 
 ## Step 1: Confirm runtime context
-1. Identify simulator UDID target first (`offsider list-simulators`).
-2. Run `offsider doctor --udid <UDID> --json` at the start of a session and whenever input seems ignored. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint`. `offsider doctor --udid <UDID> --fix` opens Device Hub or the device window and removes a stale HID broker directory, then checks again.
-3. Simulator-interaction Offsider commands require `--udid <UDID>`. Commands like `list-simulators`, `init` and `doctor` do not.
-4. Run `offsider describe-ui --udid <UDID>` to inspect the full current screen. Use `offsider describe-ui --point <X,Y> --udid <UDID>` to inspect the element at a specific coordinate. Use the output to discover available `--id` and `--label` values for selector taps and slider setting, and to confirm coordinates for coordinate-based taps.
+1. Identify the target device ID first with `offsider list-devices` (a table), or `offsider list-devices --json` for `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType}]}`. IDs are case-insensitive.
+2. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint`. `offsider doctor --device <DEVICE_ID> --fix` opens Device Hub or the device window and removes a stale HID broker directory, then checks again.
+3. Simulator-interaction Offsider commands require `--device <DEVICE_ID>`. Commands like `list-devices`, `init` and `doctor` do not. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.
+4. Run `offsider describe-ui --device <DEVICE_ID>` to inspect the full current screen. Use `offsider describe-ui --point <X,Y> --device <DEVICE_ID>` to inspect the element at a specific coordinate. Use the output to discover available `--id` and `--label` values for selector taps and slider setting, and to confirm coordinates for coordinate-based taps.
 5. Prefer selectors (`tap --id` / `tap --label`, `slider --id` / `slider --label`) over raw coordinates. Selectors are resilient to layout changes, work across device sizes, and support element waiting where documented. For UIKit `UISwitch` and SwiftUI `Toggle` rows, selector taps activate the contained switch/toggle when the match contains exactly one such control. Default tap style is `automatic`: switches/toggles use physical touch down/up, while normal taps use simulator `tapAt`.
 
 ## Step 2: Choose the right command
 
-Available commands: `doctor`, `init`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `batch`, `describe-ui`, `screenshot`, `record-video`, `stream-video`, `list-simulators`. Run `offsider --help` or `offsider <command> --help` for full options.
+Available commands: `doctor`, `init`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `batch`, `describe-ui`, `screenshot`, `record-video`, `stream-video`, `list-devices`. Run `offsider --help` or `offsider <command> --help` for full options.
 
 Common examples:
 ```bash
-offsider doctor --udid <UDID> --json
-offsider tap --id <identifier> --udid <UDID>
-offsider tap --label <text> --udid <UDID>
-offsider tap --label 'Weather Alerts' --udid <UDID>
-offsider slider --id <identifier> --value 75 --udid <UDID>
-offsider slider --label <text> --value 40 --element-type Slider --udid <UDID>
-offsider drag --start-x <X1> --start-y <Y1> --end-x <X2> --end-y <Y2> --udid <UDID>
-offsider tap -x <X> -y <Y> --tap-style physical --udid <UDID>
-offsider tap -x <X> -y <Y> --udid <UDID>
-offsider tap --id <identifier> --verify --json --udid <UDID>
-offsider type 'text' --udid <UDID>
-offsider describe-ui --udid <UDID>
-offsider describe-ui --point <X,Y> --udid <UDID>
-offsider screenshot --udid <UDID> --output screenshot.png
+offsider doctor --device <DEVICE_ID> --json
+offsider tap --id <identifier> --device <DEVICE_ID>
+offsider tap --label <text> --device <DEVICE_ID>
+offsider tap --label 'Weather Alerts' --device <DEVICE_ID>
+offsider slider --id <identifier> --value 75 --device <DEVICE_ID>
+offsider slider --label <text> --value 40 --element-type Slider --device <DEVICE_ID>
+offsider drag --start-x <X1> --start-y <Y1> --end-x <X2> --end-y <Y2> --device <DEVICE_ID>
+offsider tap -x <X> -y <Y> --tap-style physical --device <DEVICE_ID>
+offsider tap -x <X> -y <Y> --device <DEVICE_ID>
+offsider tap --id <identifier> --verify --json --device <DEVICE_ID>
+offsider type 'text' --device <DEVICE_ID>
+offsider describe-ui --device <DEVICE_ID>
+offsider describe-ui --point <X,Y> --device <DEVICE_ID>
+offsider screenshot --device <DEVICE_ID> --output screenshot.png
 ```
 
 ## Step 3: Understand the execution model
@@ -74,23 +74,23 @@ Key rules:
 - Use exactly one step source per run: `--step`, `--file`, or `--stdin`.
 - Steps run in order; default is fail-fast.
 - Add `--continue-on-error` for best-effort execution.
-- Do not pass `--udid` inside step lines; keep it at batch level.
+- Do not pass `--device` inside step lines; keep it at batch level.
 
 ## Step 6: Verify outcomes
 Batch and commands without `--verify` are execution-focused, not assertion-focused. Always suggest verification when outcomes matter.
 
-Exit 5 from a `--verify` command means the input was dispatched but nothing observable changed. Run `describe-ui` to check the target is on screen and interactive, then `offsider doctor --udid <UDID>` if input seems ignored. Read the `change` field of the JSON result to see how the change was detected.
+Exit 5 from a `--verify` command means the input was dispatched but nothing observable changed. Run `describe-ui` to check the target is on screen and interactive, then `offsider doctor --device <DEVICE_ID>` if input seems ignored. Read the `change` field of the JSON result to see how the change was detected.
 
 ```bash
-offsider describe-ui --udid <UDID>
-offsider describe-ui --point <X,Y> --udid <UDID>
+offsider describe-ui --device <DEVICE_ID>
+offsider describe-ui --point <X,Y> --device <DEVICE_ID>
 # or
-offsider screenshot --udid <UDID> --output post-state.png
+offsider screenshot --device <DEVICE_ID> --output post-state.png
 ```
 
 ## Step 7: Exit criteria
 Before finalising guidance, verify:
-- Every simulator-interaction command includes `--udid`.
+- Every simulator-interaction command includes `--device`.
 - Only valid Offsider commands and flags are used.
 - Shell quoting is correct (single quotes for literals, `--stdin`/`--file` for complex text).
 - Verification is suggested as a separate step when results matter.

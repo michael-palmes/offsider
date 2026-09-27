@@ -49,38 +49,58 @@ offsider --version
 ## Quick start
 
 ```bash
-# Find a booted simulator and keep its UDID
-offsider list-simulators
-export UDID=<UDID>
+# Find a booted simulator and keep its device ID
+offsider list-devices
+export DEVICE=<ID>
 
 # Check Xcode, Device Hub and the simulator before driving it
-offsider doctor --udid "$UDID"
+offsider doctor --device "$DEVICE"
 
 # Inspect the current screen, or the element at one point
-offsider describe-ui --udid "$UDID"
-offsider describe-ui --point 200,400 --udid "$UDID"
+offsider describe-ui --device "$DEVICE"
+offsider describe-ui --point 200,400 --device "$DEVICE"
 
 # Interact
-offsider tap -x 200 -y 400 --udid "$UDID"
-offsider tap --id LoginButton --udid "$UDID"
-offsider tap --id LoginButton --verify --udid "$UDID"   # exits 5 if nothing changes
-offsider type 'Hello world' --udid "$UDID"
-offsider screenshot --output ./screen.png --udid "$UDID"
+offsider tap -x 200 -y 400 --device "$DEVICE"
+offsider tap --id LoginButton --device "$DEVICE"
+offsider tap --id LoginButton --verify --device "$DEVICE"   # exits 5 if nothing changes
+offsider type 'Hello world' --device "$DEVICE"
+offsider screenshot --output ./screen.png --device "$DEVICE"
 
 # Install the Offsider skill for Claude Code
 offsider init --client claude
 ```
 
-Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. `slider` always checks its value. If input seems to be ignored, run `offsider doctor --udid "$UDID"`.
+Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. `slider` always checks its value. If input seems to be ignored, run `offsider doctor --device "$DEVICE"`.
 
 ## Commands
 
-Every simulator command takes `--udid <UDID>`. Run `offsider <command> --help` for the full list of options.
+Every simulator command takes `--device <id>`, using an ID from `offsider list-devices` (IDs are case-insensitive). Run `offsider <command> --help` for the full list of options.
+
+`list-devices --json` prints one object with a schema version, for scripts and agents:
+
+```json
+{
+  "version": 1,
+  "devices": [
+    {
+      "id": "<ID>",
+      "platform": "ios",
+      "state": "Booted",
+      "name": "iPhone 17 Pro",
+      "osVersion": "iOS 27.0",
+      "deviceType": "iPhone 17 Pro"
+    }
+  ]
+}
+```
+
+In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devices`. The old names exit 64 with a hint.
 
 | Command | What it does |
 | --- | --- |
-| `list-simulators` | List available simulators and their UDIDs |
-| `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--udid` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes |
+| `list-devices` | List available devices and their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
+| `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--device` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes |
 | `describe-ui` | Print the accessibility hierarchy of the screen, or only the element at `--point x,y` |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--tap-style`, delays and `--verify, --retries, --json` |
@@ -108,7 +128,7 @@ Every simulator command takes `--udid <UDID>`. Run `offsider <command> --help` f
 | 3 | `doctor` found warnings |
 | 4 | `doctor` found failures |
 | 5 | `--verify`: the input was dispatched but nothing observable changed |
-| 64 | Invalid arguments or options |
+| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators` |
 
 ## Privacy
 

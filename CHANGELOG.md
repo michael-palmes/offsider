@@ -8,11 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `list-devices` command: one row per device with PLATFORM, STATE, ID, NAME and OS columns.
+- `list-devices --json` prints `{"version": 1, "devices": [...]}`, each device with `id`, `platform`, `state`, `name`, `osVersion` and `deviceType` (null when unknown).
+- `list-devices --platform ios|android` lists one platform. This build lists iOS simulators only.
 - React Native playground (`OffsiderPlaygroundRN`) for shared iOS and Android fixtures.
+
+### Changed
+
+- `--device <id>` replaces `--udid` on every command, including `doctor`. Pass an ID from `offsider list-devices`. The `doctor --json` report keeps its `udid` key.
+- Device IDs are case-insensitive: a lowercase simulator UDID now reaches the same simulator.
+- An ID that is not a simulator UDID fails with a hint to run `offsider list-devices`. Android emulator serials and AVD names are refused as not supported by this build yet.
+- Batch steps reject `--device` (and `--udid`); set the device once on `batch`.
 
 ### Fixed
 
 - `stream-video` now emits JPEG frames in the `mjpeg`, `raw` and `ffmpeg` formats at the default `--scale` and `--quality`. Previously those frames were PNG, labelled `image/jpeg` in the `mjpeg` stream.
+
+### Removed
+
+- `list-simulators`. Use `list-devices`; the old name exits 64 with a rename hint.
+- `--udid`. Use `--device`; the old flag exits 64 with a rename hint.
 
 ## [0.2.0] - 2026-09-24
 

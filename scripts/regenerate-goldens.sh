@@ -178,8 +178,8 @@ capture_case version --version
 capture_case help --help
 
 SUBCOMMANDS=(
-  batch button describe-ui drag gesture init key key-combo key-sequence
-  list-simulators record-video screenshot slider stream-video swipe tap touch type
+  batch button describe-ui doctor drag gesture init key key-combo key-sequence
+  list-devices record-video screenshot slider stream-video swipe tap touch type
 )
 for subcommand in "${SUBCOMMANDS[@]}"; do
   capture_case "help-$subcommand" "$subcommand" --help
@@ -192,24 +192,25 @@ for subcommand in "${SUBCOMMANDS[@]}"; do
 done
 
 VALIDATION_CASES=(
-  "batch-source|batch|--udid|invalid|--step|tap -x 1 -y 1|--stdin"
-  "button-value|button|invalid-button|--udid|invalid"
-  "describe-ui-point|describe-ui|--udid|invalid|--point|nope"
-  "drag-duration|drag|--start-x|0|--start-y|0|--end-x|1|--end-y|1|--duration|-1|--udid|invalid"
-  "gesture-value|gesture|invalid-gesture|--udid|invalid"
+  "batch-source|batch|--device|invalid|--step|tap -x 1 -y 1|--stdin"
+  "button-value|button|invalid-button|--device|invalid"
+  "describe-ui-point|describe-ui|--device|invalid|--point|nope"
+  "drag-duration|drag|--start-x|0|--start-y|0|--end-x|1|--end-y|1|--duration|-1|--device|invalid"
+  "gesture-value|gesture|invalid-gesture|--device|invalid"
   "init-client|init|--client|invalid-client"
-  "key-value|key|256|--udid|invalid"
-  "key-combo-value|key-combo|--modifiers|invalid|--key|1|--udid|invalid"
-  "key-sequence-value|key-sequence|--keycodes|invalid|--udid|invalid"
-  "list-simulators-value|list-simulators|unexpected"
-  "record-video-fps|record-video|--udid|invalid|--fps|0"
-  "screenshot-output|screenshot|--udid|invalid|--output"
-  "slider-value|slider|--id|slider|--value|101|--udid|invalid"
-  "stream-video-format|stream-video|--udid|invalid|--format|invalid"
-  "swipe-duration|swipe|--start-x|0|--start-y|0|--end-x|1|--end-y|1|--duration|-1|--udid|invalid"
-  "tap-coordinates|tap|-x|not-a-number|-y|1|--udid|invalid"
-  "touch-mode|touch|-x|1|-y|1|--udid|invalid"
-  "type-source|type|literal|--stdin|--udid|invalid"
+  "key-value|key|256|--device|invalid"
+  "key-combo-value|key-combo|--modifiers|invalid|--key|1|--device|invalid"
+  "key-sequence-value|key-sequence|--keycodes|invalid|--device|invalid"
+  "list-devices-value|list-devices|unexpected"
+  "list-devices-platform|list-devices|--platform|invalid"
+  "record-video-fps|record-video|--device|invalid|--fps|0"
+  "screenshot-output|screenshot|--device|invalid|--output"
+  "slider-value|slider|--id|slider|--value|101|--device|invalid"
+  "stream-video-format|stream-video|--device|invalid|--format|invalid"
+  "swipe-duration|swipe|--start-x|0|--start-y|0|--end-x|1|--end-y|1|--duration|-1|--device|invalid"
+  "tap-coordinates|tap|-x|not-a-number|-y|1|--device|invalid"
+  "touch-mode|touch|-x|1|-y|1|--device|invalid"
+  "type-source|type|literal|--stdin|--device|invalid"
 )
 for row in "${VALIDATION_CASES[@]}"; do
   IFS='|' read -r -a fields <<< "$row"
@@ -217,11 +218,15 @@ for row in "${VALIDATION_CASES[@]}"; do
   capture_case "validation-$case_name" "${fields[@]:1}"
 done
 
-capture_stdin_case stdin-batch-empty "" batch --udid invalid --stdin
-capture_stdin_case stdin-type-unsupported "💥" type --udid invalid --stdin
-capture_case output-record-video-missing-value record-video --udid invalid --output
-capture_case output-screenshot-missing-value screenshot --udid invalid --output
-capture_case output-stream-video-stdout-format stream-video --udid invalid --format invalid
+# A well-formed but absent UDID, so routing passes and the stdin handling is what fails.
+ABSENT_DEVICE="00000000-0000-0000-0000-000000000000"
+capture_stdin_case stdin-batch-empty "" batch --device "$ABSENT_DEVICE" --stdin
+capture_stdin_case stdin-type-unsupported "💥" type --device "$ABSENT_DEVICE" --stdin
+capture_case output-record-video-missing-value record-video --device invalid --output
+capture_case output-screenshot-missing-value screenshot --device invalid --output
+capture_case output-stream-video-stdout-format stream-video --device invalid --format invalid
+capture_case renamed-udid tap -x 1 -y 1 --udid invalid
+capture_case renamed-list-simulators list-simulators
 
 xcrun simctl get_app_container "$SIMULATOR_UDID" com.mpalmes.offsider.playground app >/dev/null \
   || fail "OffsiderPlayground is not installed on simulator $SIMULATOR_UDID"
@@ -230,7 +235,7 @@ xcrun simctl launch "$SIMULATOR_UDID" com.mpalmes.offsider.playground --launch-a
 sleep 2
 
 set +e
-"$OFFSIDER_BIN" describe-ui --udid "$SIMULATOR_UDID" \
+"$OFFSIDER_BIN" describe-ui --device "$SIMULATOR_UDID" \
   > "$STABLE_DIR/hierarchy/raw.json" \
   2> "$STABLE_DIR/hierarchy/stderr.txt"
 HIERARCHY_STATUS=$?

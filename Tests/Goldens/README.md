@@ -13,12 +13,14 @@ scripts/regenerate-goldens.sh \
   --update
 ```
 
+The script's own `--udid` picks the simulator for `simctl`; the Offsider commands it captures receive that ID as `--device`.
+
 Use `--check` with the same arguments and the exact same Offsider payload to regenerate into a temporary directory and compare it with the checked-in cell. The payload must be byte-identical because provenance validation includes its SHA-256.
 
 Each cell has three parts:
 
 - `contract.json` records stable matrix identity: schema version, Xcode version/build, runtime build, and fixture.
-- `stable/` records argv, stdout, stderr, stdin where applicable, and exit status. It covers help and unknown-option behaviour for every public subcommand, plus command-specific typed validation, stdin, and output-path contracts. Hierarchy values are intentionally excluded because labels, frames, and identifiers can be fixture- or host-specific; `stable/hierarchy/schema-types.json` records normalised JSON paths and types.
+- `stable/` records argv, stdout, stderr, stdin where applicable, and exit status. It covers help and unknown-option behaviour for every public subcommand, plus command-specific typed validation, stdin, output-path and rename-hint contracts. Hierarchy values are intentionally excluded because labels, frames, and identifiers can be fixture- or host-specific; `stable/hierarchy/schema-types.json` records normalised JSON paths and types.
 - `provenance.json` records volatile run identity: the exact payload SHA-256 (`offsider_payload_sha256`), simulator UDID/device name, and the SHA-256 of the stable contract. `--check` requires the supplied payload SHA-256 and generated stable contract SHA-256 to match this file, then compares `contract.json` and `stable/`. A different simulator does not create golden churn, but a rebuilt payload must be byte-identical.
 
 Checked-in cells record configurations on which Offsider compatibility was validated. Their exact Xcode and runtime build identifiers are provenance, not build or release requirements. Add a new matrix directory when validating another supported configuration; do not replace an existing cell to broaden the claimed support range.
