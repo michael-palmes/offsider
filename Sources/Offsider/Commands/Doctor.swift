@@ -17,20 +17,21 @@ struct Doctor: AsyncParsableCommand {
     var fix = false
 
     func run() async throws {
+        let udid = simulatorUDID.map(Self.canonicalUDID)
         let runner = DoctorRunner(
-            udid: simulatorUDID,
+            udid: udid,
             environment: ProcessInfo.processInfo.environment,
             logger: OffsiderLogger()
         )
         var result = await runner.run()
         var fixes: [DoctorFixResult] = []
         if fix {
-            fixes = await DoctorFixes.apply(after: result, udid: simulatorUDID)
+            fixes = await DoctorFixes.apply(after: result, udid: udid)
             result = await runner.run()
         }
         let report = DoctorReport(
             offsiderVersion: VERSION,
-            udid: simulatorUDID,
+            udid: udid,
             xcode: result.xcode,
             booted: result.booted,
             checks: result.checks,
@@ -40,6 +41,13 @@ struct Doctor: AsyncParsableCommand {
         if report.exitCode != .success {
             throw ExitCode(report.exitCode.rawValue)
         }
+    }
+
+    private static func canonicalUDID(_ raw: String) -> String {
+        if case .iosSimulator(let udid) = DeviceIDClassifier.classify(raw) {
+            return udid
+        }
+        return raw
     }
 
     private func write(_ report: DoctorReport) throws {

@@ -177,12 +177,35 @@ struct IOSBackendMappingTests {
         #expect(failing.session.isClosed)
     }
 
-    @Test("every device ID routes to the iOS backend unchanged")
-    func everyDeviceIDRoutesToIOSUnchanged() async throws {
-        let route = try await DeviceRouter.route(" SIM-UDID ", logger: OffsiderLogger())
+    @Test("a UUID routes to the iOS backend in canonical uppercase")
+    func uuidRoutesToIOS() async throws {
+        let route = try await DeviceRouter.route(" abcdef00-0000-4000-8000-00000000abcd ", logger: OffsiderLogger())
 
         #expect(route.backend is IOSBackend)
         #expect(route.backend.platform == .ios)
-        #expect(route.device == DeviceID(rawValue: " SIM-UDID ", platform: .ios))
+        #expect(route.device == DeviceID(rawValue: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios))
+    }
+
+    @Test("Android serials and AVD names are refused in this build", arguments: ["emulator-5554", "Pixel_9_API_37"])
+    func androidIDsAreRefused(id: String) async {
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await DeviceRouter.route(id, logger: OffsiderLogger())
+        }
+        let message = error?.userFacingDescription ?? ""
+
+        #expect(message.hasPrefix("Device \(id) "))
+        #expect(message.contains("Android emulators are not supported by this build yet."))
+        #expect(message.contains("`offsider list-devices`"))
+    }
+
+    @Test("empty and unrecognised IDs point to list-devices", arguments: ["", "  ", "192.168.1.5:5555"])
+    func unusableIDsPointToListDevices(id: String) async {
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await DeviceRouter.route(id, logger: OffsiderLogger())
+        }
+        let message = error?.userFacingDescription ?? ""
+
+        #expect(message.contains("Run `offsider list-devices` to find device IDs."))
+        #expect(!message.contains("Android"))
     }
 }

@@ -80,6 +80,16 @@ struct DoctorCommandTests {
         #expect(result.exitCode == 4)
     }
 
+    @Test("A lowercase UDID is checked and reported in uppercase")
+    func lowercaseUDIDIsCanonical() async throws {
+        let result = try await TestHelpers.runOffsiderCommandSeparated(
+            "doctor --json",
+            simulatorUDID: "0000000a-0000-4000-8000-00000000abcd"
+        )
+        let report = try parseReport(result.stdout)
+        #expect(report["udid"] as? String == "0000000A-0000-4000-8000-00000000ABCD")
+    }
+
     @Test("Report mode leaves an absent HID broker directory absent")
     @MainActor
     func reportModeHasNoSideEffects() async throws {

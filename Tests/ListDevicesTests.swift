@@ -113,4 +113,13 @@ struct ListDevicesTests {
 
         #expect(ios.output == all.output)
     }
+
+    @Test("A lowercase device ID reaches the same simulator")
+    func lowercaseDeviceIDRoutes() async throws {
+        let udid = try TestHelpers.requireSimulatorUDID()
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("describe-ui --udid \(udid.lowercased())")
+
+        #expect(result.exitCode == 0, "describe-ui failed: \(result.output)")
+        #expect(try !UIStateParser.parseDescribeUIRoots(result.output).isEmpty)
+    }
 }
