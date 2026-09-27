@@ -101,7 +101,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | --- | --- |
 | `list-devices` | List available devices and their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--device` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes |
-| `describe-ui` | Print the accessibility hierarchy of the screen, or only the element at `--point x,y` |
+| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y` |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--tap-style`, delays and `--verify, --retries, --json` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label`, then verify the result |
@@ -118,6 +118,46 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `screenshot` | Save a PNG of the simulator display (`--output`) |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
+
+### describe-ui output
+
+`describe-ui` prints one object. Every key is present, with `null` when a value is unknown, and `--point x,y` returns the same envelope with the element at that point as the only root. `screen` is in points.
+
+```json
+{
+  "version": 1,
+  "platform": "ios",
+  "device": "<ID>",
+  "screen": { "width": 402, "height": 874, "scale": 3, "orientation": "portrait" },
+  "roots": [
+    {
+      "role": "button",
+      "id": "BackButton",
+      "label": "Back",
+      "value": null,
+      "frame": { "x": 16, "y": 62, "width": 44, "height": 44 },
+      "enabled": true,
+      "state": { "checked": null, "selected": null, "focused": null },
+      "native": { "type": "Button", "role": "AXButton", "subrole": null, "roleDescription": "back button", "title": null, "help": null, "customActions": [], "contentRequired": false, "pid": 4242, "axFrame": "{{16, 62}, {44, 44}}" },
+      "children": []
+    }
+  ]
+}
+```
+
+`role` is one of `application`, `window`, `group`, `other`, `button`, `link`, `menuItem`, `tab`, `tabBar`, `segmentedControl`, `text`, `header`, `image`, `progress`, `textField`, `secureTextField`, `searchField`, `textArea`, `switch`, `checkbox`, `radioButton`, `slider`, `picker`, `cell`, `list`, `scrollView` or `keyboard`.
+
+| Field | iOS source |
+| --- | --- |
+| `id` | `AXUniqueId` (`accessibilityIdentifier`, or `testID` in React Native), else `AXIdentifier` |
+| `label` | `AXLabel` |
+| `value` | `AXValue`, as a string |
+| `frame`, `enabled` | The same keys |
+| `state.checked` | `switch` and `checkbox` only: `AXValue` `1` or `0` |
+| `state.selected`, `state.focused` | Always `null` on iOS |
+| `native` | `type`, `role`, `subrole`, `roleDescription`, `title`, `help`, `customActions`, `contentRequired`, `pid`, `axFrame` |
+
+`--id`, `--label` and `--value` match `id`, `label` and `value`. `--element-type` matches `role` in any case or the native `type` exactly, so `button`, `Button` and `RadioButton` all work.
 
 ### Exit codes
 
