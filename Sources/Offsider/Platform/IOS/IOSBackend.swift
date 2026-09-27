@@ -88,6 +88,61 @@ final class IOSBackend: DeviceBackend {
     }
 }
 
+extension IOSBackend: RawVideoStreaming {
+    func streamBGRA(
+        from id: DeviceID,
+        fps: Int,
+        quality: Int,
+        scale: Double,
+        to fileDescriptor: Int32,
+        isCancelled: @escaping @Sendable () async -> Bool
+    ) async throws {
+        let simulator = try await self.simulator(for: id)
+
+        let config = FBVideoStreamConfiguration(
+            format: .bgra(),
+            framesPerSecond: NSNumber(value: fps),
+            rateControl: .quality(NSNumber(value: Double(quality) / 100.0)),
+            scaleFactor: NSNumber(value: scale),
+            keyFrameRate: nil
+        )
+
+        let stdoutConsumer = FBFileWriter.syncWriter(withFileDescriptor: fileDescriptor, closeOnEndOfFile: false)
+        var videoStream: (any FBVideoStream)?
+        var isStreaming = false
+
+        do {
+            let stream = try await simulator.createStream(configuration: config)
+            videoStream = stream
+            try await stream.startStreamingAsync(stdoutConsumer)
+            isStreaming = true
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            FileHandle.standardError.write(Data("BGRA stream is now running...\n".utf8))
+
+            while true {
+                if Task.isCancelled {
+                    break
+                }
+                if await isCancelled() {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+
+            FileHandle.standardError.write(Data("\nStopping BGRA stream...\n".utf8))
+            isStreaming = false
+            try await stream.stopStreamingAsync()
+            FileHandle.standardError.write(Data("BGRA stream stopped\n".utf8))
+        } catch {
+            if isStreaming, let videoStream {
+                isStreaming = false
+                try? await videoStream.stopStreamingAsync()
+            }
+            throw CLIError(errorDescription: "Failed to stream BGRA video: \(error.localizedDescription)")
+        }
+    }
+}
+
 extension DetachedTouchStep {
     var brokerPrimitive: HIDBrokerPrimitive {
         switch self {

@@ -68,3 +68,16 @@ extension DeviceBackend {
         await session.close()
     }
 }
+
+/// Optional capability: raw pixel streaming for `stream-video --format bgra`.
+@MainActor
+protocol RawVideoStreaming: DeviceBackend {
+    func streamBGRA(
+        from id: DeviceID,
+        fps: Int,
+        quality: Int,
+        scale: Double,
+        to fileDescriptor: Int32,
+        isCancelled: @escaping @Sendable () async -> Bool
+    ) async throws
+}

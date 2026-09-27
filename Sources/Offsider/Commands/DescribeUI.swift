@@ -24,13 +24,10 @@ struct DescribeUI: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        try await route.backend.prepare()
 
-        let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
-            for: simulatorUDID,
-            point: try parsedPoint(),
-            logger: logger
-        )
+        let jsonData = try await route.backend.accessibilityJSON(for: route.device, point: try parsedPoint())
         guard let jsonString = String(data: jsonData, encoding: .utf8) else {
             throw CLIError(errorDescription: "Failed to convert accessibility info to JSON string.")
         }
