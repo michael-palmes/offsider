@@ -81,6 +81,49 @@ struct IOSBackendMappingTests {
         #expect(InputEvent.delayed(tap, pre: 0, post: 2) == .composite([tap, .delay(2)]))
     }
 
+    @Test("a composite drag holds, moves in even steps, holds and releases at the end")
+    func compositeDragMatchesTheTouchSequence() throws {
+        let drag = try InputEvent.compositeDrag(
+            from: (x: 0, y: 0),
+            to: (x: 100, y: 200),
+            duration: 1,
+            steps: 2,
+            initialHold: 0.05,
+            finalHold: 0.2
+        )
+
+        #expect(drag == .composite([
+            .touch(direction: .down, x: 0, y: 0),
+            .delay(0.05),
+            .delay(0.5),
+            .touch(direction: .down, x: 50, y: 100),
+            .delay(0.5),
+            .touch(direction: .down, x: 100, y: 200),
+            .delay(0.2),
+            .touch(direction: .up, x: 100, y: 200)
+        ]))
+    }
+
+    @Test("a composite drag rejects invalid timing and step counts")
+    func compositeDragRejectsInvalidArguments() {
+        let start = (x: 0.0, y: 0.0)
+        let end = (x: 10.0, y: 10.0)
+
+        let negativeDuration = #expect(throws: CLIError.self) {
+            try InputEvent.compositeDrag(from: start, to: end, duration: -1, steps: 1, initialHold: 0, finalHold: 0)
+        }
+        let noSteps = #expect(throws: CLIError.self) {
+            try InputEvent.compositeDrag(from: start, to: end, duration: 1, steps: 0, initialHold: 0, finalHold: 0)
+        }
+        let negativeHold = #expect(throws: CLIError.self) {
+            try InputEvent.compositeDrag(from: start, to: end, duration: 1, steps: 1, initialHold: 0, finalHold: -0.1)
+        }
+
+        #expect(negativeDuration?.userFacingDescription == "Drag duration must be non-negative.")
+        #expect(noSteps?.userFacingDescription == "Drag steps must be greater than 0.")
+        #expect(negativeHold?.userFacingDescription == "Drag hold durations must be non-negative.")
+    }
+
     @Test("the default physical tap sends a touch down then a touch up")
     func defaultPhysicalTapSendsDownThenUp() async throws {
         let session = EventOnlyInputSession()

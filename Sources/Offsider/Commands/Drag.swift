@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderCore
 
 struct Drag: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -66,8 +67,10 @@ struct Drag: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         logger.info().log("Performing low-level drag from (\(startX), \(startY)) to (\(endX), \(endY))")
         logger.info().log("Duration: \(duration)s, steps: \(steps)")
@@ -77,22 +80,21 @@ struct Drag: AsyncParsableCommand {
             try await Task.sleep(for: .seconds(preDelay))
         }
 
-        let physicalPoints = try await OrientationAwareCoordinates.translateBatch(
-            points: [(x: startX, y: startY), (x: endX, y: endY)],
-            for: simulatorUDID,
-            logger: logger
+        let physicalPoints = try await backend.deviceCoordinates(
+            for: [(x: startX, y: startY), (x: endX, y: endY)],
+            roots: nil,
+            on: device
         )
 
-        try await HIDInteractor.performCompositeDrag(
+        let dragEvent = try InputEvent.compositeDrag(
             from: physicalPoints[0],
             to: physicalPoints[1],
             duration: duration,
             steps: steps,
             initialHold: Self.initialHold,
-            finalHold: Self.finalHold,
-            for: simulatorUDID,
-            logger: logger
+            finalHold: Self.finalHold
         )
+        try await backend.perform(dragEvent, on: device)
 
         if let postDelay, postDelay > 0 {
             logger.info().log("Post-delay: \(postDelay)s")

@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
 import OffsiderCore
 
 struct Swipe: AsyncParsableCommand {
@@ -78,9 +76,10 @@ struct Swipe: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         // Use default values if not provided
         let swipeDuration = duration ?? 1.0  // Default 1 second
@@ -89,10 +88,10 @@ struct Swipe: AsyncParsableCommand {
         logger.info().log("Performing swipe from (\(startX), \(startY)) to (\(endX), \(endY))")
         logger.info().log("Duration: \(swipeDuration)s, Delta: \(swipeDelta)px")
 
-        let physicalPoints = try await OrientationAwareCoordinates.translateBatch(
-            points: [(x: startX, y: startY), (x: endX, y: endY)],
-            for: simulatorUDID,
-            logger: logger
+        let physicalPoints = try await backend.deviceCoordinates(
+            for: [(x: startX, y: startY), (x: endX, y: endY)],
+            roots: nil,
+            on: device
         )
         let physicalStart = physicalPoints[0]
         let physicalEnd = physicalPoints[1]
@@ -128,12 +127,7 @@ struct Swipe: AsyncParsableCommand {
         )
         let finalEvent = InputEvent.delayed(swipeEvent, pre: preDelay, post: postDelay)
 
-        try await HIDInteractor
-            .performHIDEvent(
-                finalEvent.hidEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        try await backend.perform(finalEvent, on: device)
         
         logger.info().log("Swipe gesture completed successfully")
     }

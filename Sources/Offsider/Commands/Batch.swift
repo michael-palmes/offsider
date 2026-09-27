@@ -80,8 +80,10 @@ struct Batch: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger(writeToStdErr: verbose)
-        try await setup(logger: logger)
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         let stepLines = try loadStepLines()
         if stepLines.isEmpty {
@@ -95,7 +97,8 @@ struct Batch: AsyncParsableCommand {
 
         let context = await MainActor.run {
             BatchContext(
-                simulatorUDID: simulatorUDID,
+                backend: backend,
+                device: device,
                 axCachePolicy: axCachePolicy,
                 typeSubmissionMode: typeSubmissionMode,
                 typeChunkSize: typeChunkSize,
@@ -105,8 +108,7 @@ struct Batch: AsyncParsableCommand {
             )
         }
 
-        let hidSession = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
-        let session: any InputSession = await IOSInputSession(hidSession: hidSession, logger: logger)
+        let session = try await backend.openInputSession(for: device)
         let runner = BatchPlanRunner(session: session, logger: logger)
 
         var failures: [String] = []

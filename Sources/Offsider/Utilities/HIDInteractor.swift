@@ -159,17 +159,7 @@ struct HIDInteractor {
         to end: (x: Double, y: Double),
         steps: Int
     ) throws -> [(x: Double, y: Double)] {
-        guard steps > 0 else {
-            throw CLIError(errorDescription: "Drag steps must be greater than 0.")
-        }
-
-        return (1...steps).map { step in
-            let progress = Double(step) / Double(steps)
-            return (
-                x: start.x + ((end.x - start.x) * progress),
-                y: start.y + ((end.y - start.y) * progress)
-            )
-        }
+        try InputEvent.compositeDragMovePoints(from: start, to: end, steps: steps)
     }
 
     static func performCompositeDrag(

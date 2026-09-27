@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
 import OffsiderCore
 
 enum GesturePreset: String, CaseIterable, ExpressibleByArgument {
@@ -166,9 +164,10 @@ struct Gesture: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         // Use provided dimensions or defaults
         let width = screenWidth ?? 390.0
@@ -203,12 +202,7 @@ struct Gesture: AsyncParsableCommand {
         )
         let finalEvent = InputEvent.delayed(gestureEvent, pre: preDelay, post: postDelay)
 
-        try await HIDInteractor
-            .performHIDEvent(
-                finalEvent.hidEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        try await backend.perform(finalEvent, on: device)
         
         logger.info().log("Gesture completed successfully")
     }

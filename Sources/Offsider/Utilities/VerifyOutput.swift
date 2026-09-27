@@ -7,7 +7,8 @@ struct VerifyRequest {
     let command: String
     let subject: String
     let target: String
-    let simulatorUDID: String
+    let backend: any DeviceBackend
+    let device: DeviceID
     let options: VerificationOptions
     let styles: [TapDeliveryStyle?]
 }
@@ -54,17 +55,15 @@ enum VerifyOutput {
     static func perform(
         _ request: VerifyRequest,
         progress: VerifyProgress,
-        logger: OffsiderLogger,
         action: (Verifier.Attempt, any InputSession) async throws -> Void
     ) async throws {
-        let hidSession = try await HIDInteractor.makeSession(for: request.simulatorUDID, logger: logger)
-        let session = IOSInputSession(hidSession: hidSession, logger: logger)
+        let session = try await request.backend.openInputSession(for: request.device)
         let outcome: Verifier.Outcome
         do {
             outcome = try await Verifier.run(
                 styles: request.styles,
                 timeout: .milliseconds(Int((request.options.resolvedTimeout * 1000).rounded())),
-                dependencies: .live(session: hidSession, logger: logger),
+                dependencies: .live(backend: request.backend, device: request.device),
                 onRetry: { failed, next in
                     writeError(retryLine(failed: failed, next: next))
                 },
@@ -134,7 +133,7 @@ enum VerifyOutput {
             styleText = ""
         }
         return "✗ \(request.subject) was dispatched but nothing observable changed after \(outcome.attempts) \(plural)\(styleText). "
-            + "Check the target with describe-ui, or run offsider doctor --udid \(request.simulatorUDID)."
+            + "Check the target with describe-ui, or run offsider doctor --udid \(request.device.rawValue)."
     }
 
     static func retryLine(failed: Verifier.Attempt, next: Verifier.Attempt) -> String {

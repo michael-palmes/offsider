@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
 import OffsiderCore
 
 struct KeySequence: AsyncParsableCommand {
@@ -60,9 +58,10 @@ struct KeySequence: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
         let keyDelay = delay ?? 0.1  // Default 100ms delay between keys
@@ -79,12 +78,7 @@ struct KeySequence: AsyncParsableCommand {
         }
         let sequenceEvent = InputEvent.composite(events)
 
-        try await HIDInteractor
-            .performHIDEvent(
-                sequenceEvent.hidEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        try await backend.perform(sequenceEvent, on: device)
         
         logger.info().log("Key sequence completed successfully")
     }

@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
 import OffsiderCore
 
 struct Type: AsyncParsableCommand, VerifiableCommand {
@@ -71,9 +69,10 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
         
         // Determine input source and get text
         let inputText: String
@@ -149,11 +148,12 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 command: "type",
                 subject: "Typing \(target)",
                 target: target,
-                simulatorUDID: simulatorUDID,
+                backend: backend,
+                device: device,
                 options: verification,
                 styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
             )
-            try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
+            try await VerifyOutput.perform(request, progress: progress) { _, session in
                 try await session.perform(.composite(hidEvents))
             }
             return
@@ -162,12 +162,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if !hidEvents.isEmpty {
             // Keep typing in one ordered session. Indigo awaits each send, while DTUHID adds its
             // own keyboard pacing; unconditional delays here would double-pace the DTUHID path.
-            try await HIDInteractor
-                .performHIDEvent(
-                    InputEvent.composite(hidEvents).hidEvent,
-                    for: simulatorUDID,
-                    logger: logger
-                )
+            try await backend.perform(InputEvent.composite(hidEvents), on: device)
         }
         
         logger.info().log("Text typing completed successfully")

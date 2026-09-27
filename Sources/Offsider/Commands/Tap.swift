@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
 import OffsiderCore
 
 struct Tap: AsyncParsableCommand, VerifiableCommand {
@@ -119,9 +117,10 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         let resolution: TapResolution
         let resolvedDescription: String
@@ -144,7 +143,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             do {
                 resolution = try await AccessibilityPoller.resolveWithPolling(
                     query: query,
-                    simulatorUDID: simulatorUDID,
+                    on: backend,
+                    device: device,
                     waitTimeout: waitTimeout,
                     pollInterval: pollInterval,
                     elementType: elementType,
@@ -160,11 +160,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
         logger.info().log("Tapping at \(resolvedDescription)")
 
-        let physicalPoint = try await OrientationAwareCoordinates.translate(
-            point: resolution.point,
-            for: simulatorUDID,
-            logger: logger
-        )
+        let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], roots: nil, on: device)[0]
 
         let style = resolvedTapStyle(for: resolution)
         if let progress {
@@ -174,19 +170,19 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 command: "tap",
                 subject: subject,
                 target: verifyTarget,
-                simulatorUDID: simulatorUDID,
+                backend: backend,
+                device: device,
                 options: verification,
                 styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries)
             )
-            try await VerifyOutput.perform(request, progress: progress, logger: logger) { attempt, session in
+            try await VerifyOutput.perform(request, progress: progress) { attempt, session in
                 let attemptStyle: TapStyle = attempt.style == .physical ? .physical : .simulator
                 try await dispatchTap(point: physicalPoint, style: attemptStyle, in: session, logger: logger)
             }
             return
         }
 
-        let hidSession = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
-        let session: any InputSession = await IOSInputSession(hidSession: hidSession, logger: logger)
+        let session = try await backend.openInputSession(for: device)
         do {
             try await dispatchTap(point: physicalPoint, style: style, in: session, logger: logger)
         } catch {

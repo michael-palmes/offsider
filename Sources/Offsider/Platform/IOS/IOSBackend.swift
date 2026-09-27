@@ -66,7 +66,8 @@ final class IOSBackend: DeviceBackend {
         return IOSInputSession(hidSession: hidSession, logger: logger)
     }
 
-    func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
+    /// Nonisolated so the blocking broker exchange stays off the main actor, as when `touch` called it directly.
+    nonisolated func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         try HIDBroker.sendTouchPrimitives(steps.map(\.brokerPrimitive), simulatorUDID: id.rawValue)
     }
 

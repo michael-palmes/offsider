@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
 import OffsiderCore
 
 enum ButtonType: String, CaseIterable, ExpressibleByArgument {
@@ -91,9 +89,10 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
 
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         logger.info().log("Pressing \(buttonType.description)")
         if let duration = duration {
@@ -116,23 +115,19 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
                 command: "button",
                 subject: buttonType.description,
                 target: buttonType.rawValue,
-                simulatorUDID: simulatorUDID,
+                backend: backend,
+                device: device,
                 options: verification,
                 styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
             )
-            try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
+            try await VerifyOutput.perform(request, progress: progress) { _, session in
                 try await session.perform(buttonEvent)
             }
             return
         }
 
         // Perform the button event
-        try await HIDInteractor
-            .performHIDEvent(
-                buttonEvent.hidEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        try await backend.perform(buttonEvent, on: device)
         
         logger.info().log("\(buttonType.description) press completed successfully")
     }

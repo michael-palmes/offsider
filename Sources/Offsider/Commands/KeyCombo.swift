@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
 import OffsiderCore
 
 struct KeyCombo: AsyncParsableCommand {
@@ -63,9 +61,10 @@ struct KeyCombo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         let parsedModifiers = try parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")
 
@@ -83,12 +82,7 @@ struct KeyCombo: AsyncParsableCommand {
         }
         let comboEvent = InputEvent.composite(events)
 
-        try await HIDInteractor
-            .performHIDEvent(
-                comboEvent.hidEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        try await backend.perform(comboEvent, on: device)
 
         logger.info().log("Key combo completed successfully")
     }

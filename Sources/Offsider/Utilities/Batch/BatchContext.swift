@@ -14,7 +14,8 @@ enum TypeSubmissionMode: String, CaseIterable, ExpressibleByArgument {
 
 @MainActor
 final class BatchContext {
-    let simulatorUDID: String
+    let backend: any DeviceBackend
+    let device: DeviceID
     let axCachePolicy: AXCachePolicy
     let typeSubmissionMode: TypeSubmissionMode
     let typeChunkSize: Int
@@ -25,7 +26,8 @@ final class BatchContext {
     private var cachedRoots: [AccessibilityElement]?
 
     init(
-        simulatorUDID: String,
+        backend: any DeviceBackend,
+        device: DeviceID,
         axCachePolicy: AXCachePolicy,
         typeSubmissionMode: TypeSubmissionMode,
         typeChunkSize: Int,
@@ -33,7 +35,8 @@ final class BatchContext {
         waitTimeout: TimeInterval = 0,
         pollInterval: TimeInterval = 0.25
     ) {
-        self.simulatorUDID = simulatorUDID
+        self.backend = backend
+        self.device = device
         self.axCachePolicy = axCachePolicy
         self.typeSubmissionMode = typeSubmissionMode
         self.typeChunkSize = typeChunkSize
@@ -42,17 +45,17 @@ final class BatchContext {
         self.pollInterval = pollInterval
     }
 
-    func accessibilityRoots(logger: OffsiderLogger, forceRefresh: Bool = false) async throws -> [AccessibilityElement] {
+    func accessibilityRoots(forceRefresh: Bool = false) async throws -> [AccessibilityElement] {
         switch axCachePolicy {
         case .none:
-            return try await AccessibilityFetcher.fetchAccessibilityElements(for: simulatorUDID, logger: logger)
+            return try await backend.accessibilityRoots(for: device)
         case .perStep:
-            return try await AccessibilityFetcher.fetchAccessibilityElements(for: simulatorUDID, logger: logger)
+            return try await backend.accessibilityRoots(for: device)
         case .perBatch:
             if !forceRefresh, let cachedRoots {
                 return cachedRoots
             }
-            let roots = try await AccessibilityFetcher.fetchAccessibilityElements(for: simulatorUDID, logger: logger)
+            let roots = try await backend.accessibilityRoots(for: device)
             cachedRoots = roots
             return roots
         }
