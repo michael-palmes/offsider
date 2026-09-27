@@ -82,7 +82,7 @@ struct Drag: AsyncParsableCommand {
 
         let physicalPoints = try await backend.deviceCoordinates(
             for: [(x: startX, y: startY), (x: endX, y: endY)],
-            roots: nil,
+            tree: nil,
             on: device
         )
 

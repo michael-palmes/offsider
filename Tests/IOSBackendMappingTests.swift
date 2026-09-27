@@ -39,7 +39,7 @@ private final class StubBackend: DeviceBackend {
     func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data { Data("[]".utf8) }
     func deviceCoordinates(
         for points: [(x: Double, y: Double)],
-        roots: [AccessibilityElement]?,
+        tree: UITree?,
         on id: DeviceID
     ) async throws -> [(x: Double, y: Double)] { points }
     func openInputSession(for id: DeviceID) async throws -> any InputSession {

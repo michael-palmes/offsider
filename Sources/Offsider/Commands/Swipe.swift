@@ -90,7 +90,7 @@ struct Swipe: AsyncParsableCommand {
 
         let physicalPoints = try await backend.deviceCoordinates(
             for: [(x: startX, y: startY), (x: endX, y: endY)],
-            roots: nil,
+            tree: nil,
             on: device
         )
         let physicalStart = physicalPoints[0]

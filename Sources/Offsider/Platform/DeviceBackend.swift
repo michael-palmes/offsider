@@ -21,10 +21,10 @@ protocol DeviceBackend: AnyObject {
     func listDevices() async throws -> [DeviceSummary]
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice
     func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data
-    /// Logical points to input-space points; `roots` reuses an accessibility tree the caller already holds.
+    /// Logical points to input-space points; `tree` reuses an accessibility tree the caller already holds.
     func deviceCoordinates(
         for points: [(x: Double, y: Double)],
-        roots: [AccessibilityElement]?,
+        tree: UITree?,
         on id: DeviceID
     ) async throws -> [(x: Double, y: Double)]
     func openInputSession(for id: DeviceID) async throws -> any InputSession
@@ -33,16 +33,9 @@ protocol DeviceBackend: AnyObject {
 }
 
 extension DeviceBackend {
-    func accessibilityRoots(for id: DeviceID) async throws -> [AccessibilityElement] {
+    func accessibilityTree(for id: DeviceID) async throws -> UITree {
         let jsonData = try await accessibilityJSON(for: id, point: nil)
-        let decoder = JSONDecoder()
-
-        if let roots = try? decoder.decode([AccessibilityElement].self, from: jsonData) {
-            return roots
-        }
-
-        let root = try decoder.decode(AccessibilityElement.self, from: jsonData)
-        return [root]
+        return UITree(platform: platform, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
     }
 
     /// Opens a session, performs one event and closes the session, on failure too.

@@ -72,7 +72,7 @@ struct Touch: AsyncParsableCommand {
 
         logger.info().log("Performing touch events at (\(pointX), \(pointY))")
 
-        let physicalPoint = try await backend.deviceCoordinates(for: [(x: pointX, y: pointY)], roots: nil, on: device)[0]
+        let physicalPoint = try await backend.deviceCoordinates(for: [(x: pointX, y: pointY)], tree: nil, on: device)[0]
 
         var steps: [DetachedTouchStep] = []
         if touchDown && touchUp {

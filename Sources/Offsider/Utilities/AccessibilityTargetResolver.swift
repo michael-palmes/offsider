@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 enum AccessibilityQuery {
     case id(String)
@@ -30,11 +31,11 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
             if hasUniqueIDs {
                 return "Multiple (\(count)) accessibility elements matched \(kind) '\(value)'. Use --id when labels are not unique. \(tip)"
             }
-            return "Multiple (\(count)) accessibility elements matched \(kind) '\(value)', and none of the matches expose AXUniqueId on this screen. Use coordinates for this step (tap -x/-y) or target a more specific screen/state. \(tip)"
+            return "Multiple (\(count)) accessibility elements matched \(kind) '\(value)', and none of the matches expose an id on this screen. Use coordinates for this step (tap -x/-y) or target a more specific screen/state. \(tip)"
         case .invalidFrame(let reason):
             return "\(reason) \(tip)"
         case .multipleSwitchDescendants(let count, let selectorDescription):
-            return "Matched element for \(selectorDescription) contains multiple (\(count)) switch/toggle controls. Target the switch more specifically with --id when available, or use coordinates. Use --element-type only when describe-ui reports a specific target type like Switch or Toggle. \(tip)"
+            return "Matched element for \(selectorDescription) contains multiple (\(count)) switch/toggle controls. Target the switch more specifically with --id when available, or use coordinates. Use --element-type only when describe-ui reports a specific role or type, such as switch or Toggle. \(tip)"
         }
     }
 
@@ -49,9 +50,9 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
 }
 
 struct AccessibilityMatch {
-    let element: AccessibilityElement
+    let element: UINode
     let selectorDescription: String
-    let applicationFrame: AccessibilityElement.Frame?
+    let applicationFrame: UIFrame?
 }
 
 struct AccessibilityTargetResolver {
@@ -61,7 +62,7 @@ struct AccessibilityTargetResolver {
     private static let switchTrailingActivationInset = 31.0
 
     static func resolveTapPoint(
-        roots: [AccessibilityElement],
+        roots: [UINode],
         query: AccessibilityQuery,
         elementType: String? = nil
     ) throws -> (x: Double, y: Double) {
@@ -69,23 +70,23 @@ struct AccessibilityTargetResolver {
     }
 
     static func resolveElement(
-        roots: [AccessibilityElement],
+        roots: [UINode],
         query: AccessibilityQuery,
         elementType: String? = nil
     ) throws -> AccessibilityMatch {
         var allElements = roots.flatMap { $0.flattened() }
 
         if let elementType {
-            allElements = allElements.filter { $0.type == elementType }
+            allElements = allElements.filter { $0.matches(elementType: elementType) }
         }
 
-        let matchedElement: AccessibilityElement
+        let matchedElement: UINode
         let selectorDescription: String
 
         switch query {
         case .id(let rawValue):
             let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            let matches = allElements.filter { $0.normalizedUniqueId == value }
+            let matches = allElements.filter { $0.normalizedID == value }
             matchedElement = try selectUniqueMatch(matches, kind: "--id", value: rawValue)
             selectorDescription = "--id '\(rawValue)'"
         case .label(let rawValue):
@@ -103,12 +104,12 @@ struct AccessibilityTargetResolver {
         return AccessibilityMatch(
             element: matchedElement,
             selectorDescription: selectorDescription,
-            applicationFrame: applicationFrame(from: roots)
+            applicationFrame: UITree.applicationFrame(in: roots)
         )
     }
 
     static func resolveTap(
-        roots: [AccessibilityElement],
+        roots: [UINode],
         query: AccessibilityQuery,
         elementType: String? = nil
     ) throws -> TapResolution {
@@ -130,39 +131,34 @@ struct AccessibilityTargetResolver {
 
         return TapResolution(
             point: activationPoint(for: activationElement, frame: frame),
-            isSwitchLikeControl: activationElement.isSwitchLikeControl
+            isSwitchLikeControl: activationElement.isSwitch
         )
     }
 
     private static func activationPoint(
-        for element: AccessibilityElement,
-        frame: AccessibilityElement.Frame
+        for element: UINode,
+        frame: UIFrame
     ) -> (x: Double, y: Double) {
         let centerY = frame.y + (frame.height / 2.0)
 
-        if element.isSwitchLikeControl, frame.width > wideSwitchActivationWidthThreshold {
+        if element.isSwitch, frame.width > wideSwitchActivationWidthThreshold {
             return (x: frame.x + frame.width - switchTrailingActivationInset, y: centerY)
         }
 
         return (x: frame.x + (frame.width / 2.0), y: centerY)
     }
 
-    private static func applicationFrame(from roots: [AccessibilityElement]) -> AccessibilityElement.Frame? {
-        roots.first { $0.type == "Application" }?.frame ?? roots.first?.frame
-    }
-
     private static func selectUniqueMatch(
-        _ matches: [AccessibilityElement],
+        _ matches: [UINode],
         kind: String,
         value: String
-    ) throws -> AccessibilityElement {
+    ) throws -> UINode {
         guard !matches.isEmpty else {
             throw ElementResolutionError.notFound(kind: kind, value: value)
         }
         guard matches.count == 1 else {
             let hasUniqueIDs = matches.contains {
-                guard let id = $0.normalizedUniqueId else { return false }
-                return !id.isEmpty
+                $0.normalizedID != nil
             }
             throw ElementResolutionError.multipleMatches(count: matches.count, kind: kind, value: value, hasUniqueIDs: hasUniqueIDs)
         }
@@ -170,11 +166,11 @@ struct AccessibilityTargetResolver {
     }
 
     private static func selectBestLabelMatch(
-        _ matches: [AccessibilityElement],
+        _ matches: [UINode],
         kind: String = "--label",
         value: String
-    ) throws -> AccessibilityElement {
-        let switchLikeMatches = matches.filter(\.isSwitchLikeControl)
+    ) throws -> UINode {
+        let switchLikeMatches = matches.filter(\.isSwitch)
         if switchLikeMatches.count == 1 {
             return switchLikeMatches[0]
         }
@@ -182,7 +178,7 @@ struct AccessibilityTargetResolver {
             return try selectUniqueMatch(switchLikeMatches, kind: kind, value: value)
         }
 
-        let actionableMatches = matches.filter(\.isActionable)
+        let actionableMatches = matches.filter(\.role.isActionable)
         if actionableMatches.count == 1 {
             return actionableMatches[0]
         }
@@ -195,16 +191,16 @@ struct AccessibilityTargetResolver {
     }
 
     private static func selectActivationElement(
-        from matchedElement: AccessibilityElement,
-        roots: [AccessibilityElement],
+        from matchedElement: UINode,
+        roots: [UINode],
         selectorDescription: String,
         allowSiblingRedirection: Bool
-    ) throws -> AccessibilityElement {
-        if matchedElement.isSwitchLikeControl {
+    ) throws -> UINode {
+        if matchedElement.isSwitch {
             return matchedElement
         }
 
-        let switchDescendants = matchedElement.switchLikeDescendantsIncludingSelf()
+        let switchDescendants = matchedElement.flattened().filter(\.isSwitch)
         if !switchDescendants.isEmpty {
             guard switchDescendants.count == 1 else {
                 throw ElementResolutionError.multipleSwitchDescendants(
@@ -215,7 +211,7 @@ struct AccessibilityTargetResolver {
             return switchDescendants[0]
         }
 
-        if matchedElement.isActionable {
+        if matchedElement.role.isActionable {
             return matchedElement
         }
 
@@ -229,14 +225,14 @@ struct AccessibilityTargetResolver {
         return matchedElement
     }
 
-    private static func directSwitchLikeChildren(of element: AccessibilityElement) -> [AccessibilityElement] {
-        element.children?.filter(\.isSwitchLikeControl) ?? []
+    private static func directSwitchLikeChildren(of element: UINode) -> [UINode] {
+        element.children.filter(\.isSwitch)
     }
 
     private static func nearestAncestor(
-        of matchedElement: AccessibilityElement,
-        in roots: [AccessibilityElement]
-    ) -> AccessibilityElement? {
+        of matchedElement: UINode,
+        in roots: [UINode]
+    ) -> UINode? {
         for root in roots {
             if let ancestor = nearestAncestor(of: matchedElement, in: root, parent: nil) {
                 return ancestor
@@ -246,15 +242,15 @@ struct AccessibilityTargetResolver {
     }
 
     private static func nearestAncestor(
-        of matchedElement: AccessibilityElement,
-        in currentElement: AccessibilityElement,
-        parent: AccessibilityElement?
-    ) -> AccessibilityElement? {
+        of matchedElement: UINode,
+        in currentElement: UINode,
+        parent: UINode?
+    ) -> UINode? {
         if sameElement(currentElement, matchedElement) {
             return parent
         }
 
-        for child in currentElement.children ?? [] {
+        for child in currentElement.children {
             if let ancestor = nearestAncestor(of: matchedElement, in: child, parent: currentElement) {
                 return ancestor
             }
@@ -262,32 +258,35 @@ struct AccessibilityTargetResolver {
         return nil
     }
 
-    private static func sameElement(_ lhs: AccessibilityElement, _ rhs: AccessibilityElement) -> Bool {
-        if let lhsID = lhs.normalizedStableUniqueId, let rhsID = rhs.normalizedStableUniqueId {
-            return lhsID == rhsID
-        }
+    /// The matched node is a copy from this tree, so every field but the children identifies it.
+    private static func sameElement(_ lhs: UINode, _ rhs: UINode) -> Bool {
+        lhs.role == rhs.role
+            && lhs.id == rhs.id
+            && lhs.label == rhs.label
+            && lhs.value == rhs.value
+            && lhs.frame == rhs.frame
+            && lhs.enabled == rhs.enabled
+            && lhs.state == rhs.state
+            && lhs.native == rhs.native
+    }
+}
 
-        guard lhs.type == rhs.type,
-              lhs.normalizedLabel == rhs.normalizedLabel,
-              lhs.normalizedValue == rhs.normalizedValue,
-              sameFrame(lhs.frame, rhs.frame) else {
-            return false
-        }
+extension UINode {
+    var normalizedID: String? { Self.trimmed(id) }
+    var normalizedLabel: String? { Self.trimmed(label) }
+    var normalizedValue: String? { Self.trimmed(value) }
+    var isSwitch: Bool { role == .switch }
+    var isSlider: Bool { role == .slider }
 
-        if lhs.normalizedLabel == nil && lhs.normalizedValue == nil {
-            return lhs.role == rhs.role
-                && lhs.roleDescription == rhs.roleDescription
-                && lhs.subrole == rhs.subrole
-        }
-
-        return true
+    /// `--element-type` matches the neutral role in any case, or the native type name exactly.
+    func matches(elementType: String) -> Bool {
+        role.rawValue.caseInsensitiveCompare(elementType) == .orderedSame || native.typeName == elementType
     }
 
-    private static func sameFrame(_ lhs: AccessibilityElement.Frame?, _ rhs: AccessibilityElement.Frame?) -> Bool {
-        guard let lhs, let rhs else { return lhs == nil && rhs == nil }
-        return lhs.x == rhs.x
-            && lhs.y == rhs.y
-            && lhs.width == rhs.width
-            && lhs.height == rhs.height
+    private static func trimmed(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 }

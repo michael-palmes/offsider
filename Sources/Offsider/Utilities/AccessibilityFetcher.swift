@@ -349,18 +349,6 @@ struct AccessibilityFetcher {
         }
     }
 
-    static func fetchAccessibilityElements(for simulatorUDID: String, logger: OffsiderLogger) async throws -> [AccessibilityElement] {
-        let jsonData = try await fetchAccessibilityInfoJSONData(for: simulatorUDID, point: nil, logger: logger)
-        let decoder = JSONDecoder()
-        
-        if let roots = try? decoder.decode([AccessibilityElement].self, from: jsonData) {
-            return roots
-        }
-        
-        let root = try decoder.decode(AccessibilityElement.self, from: jsonData)
-        return [root]
-    }
-
     static func serializeAccessibilityInfo(_ accessibilityInfo: Any) throws -> Data {
         guard accessibilityInfo is [String: Any] || accessibilityInfo is [[String: Any]] else {
             throw CLIError(errorDescription: "Offsider received an unsupported accessibility response from the simulator.")

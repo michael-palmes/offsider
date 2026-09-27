@@ -31,8 +31,12 @@ public struct UITree: Equatable, Sendable {
         self.roots = roots
     }
 
-    /// The application root's frame, else the first root's.
     public var applicationFrame: UIFrame? {
+        Self.applicationFrame(in: roots)
+    }
+
+    /// The application root's frame, else the first root's.
+    public static func applicationFrame(in roots: [UINode]) -> UIFrame? {
         roots.first { $0.role == .application }?.frame ?? roots.first?.frame
     }
 

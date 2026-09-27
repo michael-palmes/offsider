@@ -20,7 +20,7 @@ struct AccessibilityPoller {
             logger: logger,
             resolver: AccessibilityTargetResolver.resolveTap
         ) {
-            try await backend.accessibilityRoots(for: device)
+            try await backend.accessibilityTree(for: device)
         }
     }
 
@@ -41,7 +41,7 @@ struct AccessibilityPoller {
             logger: logger,
             resolver: AccessibilityTargetResolver.resolveElement
         ) {
-            try await backend.accessibilityRoots(for: device)
+            try await backend.accessibilityTree(for: device)
         }
     }
 
@@ -51,7 +51,7 @@ struct AccessibilityPoller {
         pollInterval: TimeInterval,
         elementType: String?,
         logger: OffsiderLogger,
-        rootsFetcher: () async throws -> [AccessibilityElement]
+        treeFetcher: () async throws -> UITree
     ) async throws -> TapResolution {
         try await pollForResolution(
             query: query,
@@ -60,7 +60,7 @@ struct AccessibilityPoller {
             elementType: elementType,
             logger: logger,
             resolver: AccessibilityTargetResolver.resolveTap,
-            rootsFetcher: rootsFetcher
+            treeFetcher: treeFetcher
         )
     }
 
@@ -70,12 +70,12 @@ struct AccessibilityPoller {
         pollInterval: TimeInterval,
         elementType: String?,
         logger: OffsiderLogger,
-        resolver: ([AccessibilityElement], AccessibilityQuery, String?) throws -> T,
-        rootsFetcher: () async throws -> [AccessibilityElement]
+        resolver: ([UINode], AccessibilityQuery, String?) throws -> T,
+        treeFetcher: () async throws -> UITree
     ) async throws -> T {
-        let roots = try await rootsFetcher()
+        let tree = try await treeFetcher()
         do {
-            return try resolver(roots, query, elementType)
+            return try resolver(tree.roots, query, elementType)
         } catch let error as ElementResolutionError where error.isNotFound && waitTimeout > 0 {
             let clock = ContinuousClock()
             let deadline = clock.now + .seconds(waitTimeout)
@@ -85,9 +85,9 @@ struct AccessibilityPoller {
                 logger.info().log("Element not found, retrying in \(pollInterval)s…")
                 try await Task.sleep(for: .seconds(pollInterval))
 
-                let freshRoots = try await rootsFetcher()
+                let freshTree = try await treeFetcher()
                 do {
-                    return try resolver(freshRoots, query, elementType)
+                    return try resolver(freshTree.roots, query, elementType)
                 } catch let retryError as ElementResolutionError where retryError.isNotFound {
                     lastError = retryError
                     continue
