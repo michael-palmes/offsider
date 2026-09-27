@@ -36,7 +36,8 @@ private final class StubBackend: DeviceBackend {
     func prepare() async throws {}
     func listDevices() async throws -> [DeviceSummary] { [] }
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice { BootedDevice(id: id, name: "Stub") }
-    func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data { Data("[]".utf8) }
+    func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree { UITree(platform: platform, device: id.rawValue, roots: []) }
+    func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? { nil }
     func deviceCoordinates(
         for points: [(x: Double, y: Double)],
         tree: UITree?,
