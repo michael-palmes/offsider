@@ -12,9 +12,9 @@ private func resolveBatchTapPoint(
     context: BatchContext,
     elementType: String?,
     logger: OffsiderLogger
-) async throws -> (resolution: TapResolution, roots: [AccessibilityElement]) {
+) async throws -> (resolution: TapResolution, tree: UITree?) {
     var isFirstFetch = true
-    var latestRoots: [AccessibilityElement] = []
+    var latestTree: UITree?
     let resolution = try await AccessibilityPoller.pollForResolution(
         query: query,
         waitTimeout: context.waitTimeout,
@@ -24,11 +24,11 @@ private func resolveBatchTapPoint(
     ) {
         let forceRefresh = !isFirstFetch
         isFirstFetch = false
-        let roots = try await context.accessibilityRoots(forceRefresh: forceRefresh)
-        latestRoots = roots
-        return roots
+        let tree = try await context.accessibilityTree(forceRefresh: forceRefresh)
+        latestTree = tree
+        return tree
     }
-    return (resolution, latestRoots)
+    return (resolution, latestTree)
 }
 
 func parseCommaSeparatedIntsStrict(_ rawValue: String, fieldName: String) throws -> [Int] {
@@ -61,11 +61,11 @@ extension Tap: BatchConvertible {
 
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let resolution: TapResolution
-        let resolvedRoots: [AccessibilityElement]?
+        let resolvedTree: UITree?
 
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
-            resolvedRoots = nil
+            resolvedTree = nil
         } else {
             let query: AccessibilityQuery
             if let elementID {
@@ -85,12 +85,12 @@ extension Tap: BatchConvertible {
                 logger: logger
             )
             resolution = resolved.resolution
-            resolvedRoots = resolved.roots
+            resolvedTree = resolved.tree
         }
 
         let physicalPoint = try await context.backend.deviceCoordinates(
             for: [resolution.point],
-            roots: resolvedRoots,
+            tree: resolvedTree,
             on: context.device
         )[0]
 
@@ -113,7 +113,7 @@ extension Swipe: BatchConvertible {
         let swipeDelta = delta ?? 50.0
         let physicalPoints = try await context.backend.deviceCoordinates(
             for: [(x: startX, y: startY), (x: endX, y: endY)],
-            roots: nil,
+            tree: nil,
             on: context.device
         )
         let physicalStart = physicalPoints[0]
@@ -156,7 +156,7 @@ extension Touch: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let physicalPoint = try await context.backend.deviceCoordinates(
             for: [(x: pointX, y: pointY)],
-            roots: nil,
+            tree: nil,
             on: context.device
         )[0]
 

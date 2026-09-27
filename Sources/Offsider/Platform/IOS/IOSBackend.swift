@@ -60,13 +60,13 @@ final class IOSBackend: DeviceBackend {
 
     func deviceCoordinates(
         for points: [(x: Double, y: Double)],
-        roots: [AccessibilityElement]?,
+        tree: UITree?,
         on id: DeviceID
     ) async throws -> [(x: Double, y: Double)] {
-        if let roots {
+        if let tree {
             return try await OrientationAwareCoordinates.translateBatch(
                 points: points,
-                roots: roots,
+                applicationFrame: tree.applicationFrame,
                 for: id.rawValue,
                 logger: logger
             )

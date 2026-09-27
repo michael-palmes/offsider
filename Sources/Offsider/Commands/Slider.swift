@@ -19,13 +19,13 @@ struct Slider: AsyncParsableCommand {
     private static let lowRangeCoordinateOffset = 0.0268
     private static let highRangeCoordinateOffset = 0.0271
 
-    @Option(name: [.customLong("id")], help: "Set the slider matching AXUniqueId (accessibilityIdentifier).")
+    @Option(name: [.customLong("id")], help: "Set the slider whose describe-ui id matches (accessibilityIdentifier, or testID in React Native).")
     var elementID: String?
 
-    @Option(name: [.customLong("label")], help: "Set the slider matching AXLabel (accessibilityLabel).")
+    @Option(name: [.customLong("label")], help: "Set the slider whose describe-ui label matches (accessibilityLabel).")
     var elementLabel: String?
 
-    @Option(name: [.customLong("element-type")], help: "Filter matches to this accessibility type, usually Slider.")
+    @Option(name: [.customLong("element-type")], help: "Filter matches to this describe-ui role (any case, usually slider) or native type.")
     var elementType: String?
 
     @Option(name: [.customLong("value")], help: "Target slider value as a percentage from 0 to 100.")
@@ -94,7 +94,7 @@ struct Slider: AsyncParsableCommand {
         )
 
         logger.info().log("Slider set completed successfully")
-        print("✓ Slider set to \(formatPercent(value)) successfully (AXValue: \(observedValue))")
+        print("✓ Slider set to \(formatPercent(value)) successfully (value: \(observedValue))")
     }
 
     private func accessibilityQuery() throws -> AccessibilityQuery {
@@ -108,13 +108,13 @@ struct Slider: AsyncParsableCommand {
     }
 
     private func makeDragPlan(
-        for element: AccessibilityElement,
-        applicationFrame: AccessibilityElement.Frame?,
+        for element: UINode,
+        applicationFrame: UIFrame?,
         targetNormalized: Double
     ) throws -> SliderDragPlan {
-        guard element.isSliderLikeControl else {
-            let typeDescription = element.type ?? element.role ?? "unknown"
-            throw CLIError(errorDescription: "Matched element is not a slider (type: \(typeDescription)). Use --element-type Slider or a more specific --id/--label selector.")
+        guard element.isSlider else {
+            let typeDescription = element.native.typeName ?? element.role.rawValue
+            throw CLIError(errorDescription: "Matched element is not a slider (type: \(typeDescription)). Use --element-type slider or a more specific --id/--label selector.")
         }
         guard let frame = element.frame else {
             throw ElementResolutionError.invalidFrame(reason: "Matched slider has no frame.")
@@ -123,7 +123,7 @@ struct Slider: AsyncParsableCommand {
             throw ElementResolutionError.invalidFrame(reason: "Matched slider has an invalid frame size (\(frame.width)x\(frame.height)).")
         }
 
-        let currentNormalized = try parseNormalizedAXValue(element.normalizedValue)
+        let currentNormalized = try parseNormalizedValue(element.normalizedValue)
         let centerY = frame.y + (frame.height / 2.0)
         let commandedNormalized = Self.commandedNormalizedValue(
             currentNormalized: currentNormalized,
@@ -161,7 +161,7 @@ struct Slider: AsyncParsableCommand {
             targetNormalized: targetNormalized
         )
         logger.info().log(
-            "Setting slider \(initialMatch.selectorDescription) from AXValue \(formatNormalized(dragPlan.currentNormalized)) toward \(formatNormalized(dragPlan.targetNormalized)) with low-level HID drag"
+            "Setting slider \(initialMatch.selectorDescription) from value \(formatNormalized(dragPlan.currentNormalized)) toward \(formatNormalized(dragPlan.targetNormalized)) with low-level HID drag"
         )
 
         if abs(dragPlan.currentNormalized - targetNormalized) > Self.alreadyAtTargetTolerance {
@@ -175,7 +175,7 @@ struct Slider: AsyncParsableCommand {
         )
         guard observedValue.isWithinTolerance else {
             throw CLIError(
-                errorDescription: "Slider value did not reach requested value \(formatPercent(value)) after direct drag. Observed AXValue: \(observedValue.rawValue ?? "none")."
+                errorDescription: "Slider value did not reach requested value \(formatPercent(value)) after direct drag. Observed value: \(observedValue.rawValue ?? "none")."
             )
         }
         return observedValue.rawValue ?? formatNormalized(observedValue.normalizedValue)
@@ -184,7 +184,7 @@ struct Slider: AsyncParsableCommand {
     private func performSliderDrag(_ dragPlan: SliderDragPlan, on target: SliderTarget) async throws {
         let physicalPoints = try await target.backend.deviceCoordinates(
             for: [dragPlan.logicalStart, dragPlan.logicalEnd],
-            roots: nil,
+            tree: nil,
             on: target.device
         )
         let physicalStart = physicalPoints[0]
@@ -202,13 +202,13 @@ struct Slider: AsyncParsableCommand {
     }
 
     private func resolveSliderElement(query: AccessibilityQuery, on target: SliderTarget) async throws -> AccessibilityMatch {
-        let roots = try await target.backend.accessibilityRoots(for: target.device)
+        let tree = try await target.backend.accessibilityTree(for: target.device)
         let match = try AccessibilityTargetResolver.resolveElement(
-            roots: roots,
+            roots: tree.roots,
             query: query,
             elementType: elementType
         )
-        guard match.element.isSliderLikeControl else {
+        guard match.element.isSlider else {
             throw CLIError(errorDescription: "Matched element is no longer a slider.")
         }
         return match
@@ -226,7 +226,7 @@ struct Slider: AsyncParsableCommand {
         repeat {
             let match = try await resolveSliderElement(query: query, on: target)
             let rawValue = match.element.normalizedValue
-            let normalizedValue = try parseNormalizedAXValue(rawValue)
+            let normalizedValue = try parseNormalizedValue(rawValue)
             let observedValue = SliderObservedValue(
                 match: match,
                 rawValue: rawValue,
@@ -240,7 +240,7 @@ struct Slider: AsyncParsableCommand {
                 }
                 let stableMatch = try await resolveSliderElement(query: query, on: target)
                 let stableRawValue = stableMatch.element.normalizedValue
-                let stableNormalizedValue = try parseNormalizedAXValue(stableRawValue)
+                let stableNormalizedValue = try parseNormalizedValue(stableRawValue)
                 let stableObservedValue = SliderObservedValue(
                     match: stableMatch,
                     rawValue: stableRawValue,
@@ -263,11 +263,11 @@ struct Slider: AsyncParsableCommand {
         if let lastObservedValue {
             return lastObservedValue
         }
-        throw CLIError(errorDescription: "Slider value could not be verified because AXValue was unavailable after dragging.")
+        throw CLIError(errorDescription: "Slider value could not be verified because its value was unavailable after dragging.")
     }
 
     private func dragStartX(
-        frame: AccessibilityElement.Frame,
+        frame: UIFrame,
         nominalStartX: Double,
         currentNormalized: Double,
         targetNormalized: Double
@@ -290,7 +290,7 @@ struct Slider: AsyncParsableCommand {
 
     static func clampedDragEndX(
         _ x: Double,
-        applicationFrame: AccessibilityElement.Frame?
+        applicationFrame: UIFrame?
     ) -> Double {
         guard let applicationFrame, applicationFrame.width > 0 else {
             return x
@@ -298,25 +298,25 @@ struct Slider: AsyncParsableCommand {
         return min(max(x, applicationFrame.x), applicationFrame.x + applicationFrame.width)
     }
 
-    private func parseNormalizedAXValue(_ rawValue: String?) throws -> Double {
+    private func parseNormalizedValue(_ rawValue: String?) throws -> Double {
         guard let rawValue else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so Offsider cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.")
         }
 
         let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedValue.isEmpty else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so Offsider cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.")
         }
 
         let isPercent = trimmedValue.hasSuffix("%")
         let numericText = trimmedValue.replacingOccurrences(of: "%", with: "")
         guard let parsedValue = Double(numericText.trimmingCharacters(in: .whitespacesAndNewlines)), parsedValue.isFinite else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric AXValue, so Offsider cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.")
         }
 
         let normalizedValue = isPercent || parsedValue > 1.0 ? parsedValue / 100.0 : parsedValue
         guard (0...1).contains(normalizedValue) else {
-            throw CLIError(errorDescription: "Matched slider AXValue is outside the supported 0...100 range: \(rawValue).")
+            throw CLIError(errorDescription: "Matched slider value is outside the supported 0...100 range: \(rawValue).")
         }
         return normalizedValue
     }

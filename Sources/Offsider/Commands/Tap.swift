@@ -13,16 +13,16 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customShort("y"), help: "The Y coordinate of the point to tap.")
     var pointY: Double?
 
-    @Option(name: [.customLong("id")], help: "Tap the activation point of the element matching AXUniqueId (accessibilityIdentifier). Ignored if -x and -y are provided.")
+    @Option(name: [.customLong("id")], help: "Tap the activation point of the element whose describe-ui id matches (accessibilityIdentifier, or testID in React Native). Ignored if -x and -y are provided.")
     var elementID: String?
 
-    @Option(name: [.customLong("label")], help: "Tap the activation point of the element matching AXLabel (accessibilityLabel). Ignored if -x and -y are provided.")
+    @Option(name: [.customLong("label")], help: "Tap the activation point of the element whose describe-ui label matches (accessibilityLabel). Ignored if -x and -y are provided.")
     var elementLabel: String?
 
-    @Option(name: [.customLong("value")], help: "Tap the activation point of the element matching AXValue (the current value of a control). Ignored if -x and -y are provided.")
+    @Option(name: [.customLong("value")], help: "Tap the activation point of the element whose describe-ui value matches (the current value of a control). Ignored if -x and -y are provided.")
     var elementValue: String?
 
-    @Option(name: [.customLong("element-type")], help: "Filter matches to elements of this accessibility type (e.g. Button, TextField, Switch). Narrows --id/--label/--value results when multiple elements match.")
+    @Option(name: [.customLong("element-type")], help: "Filter matches to this describe-ui role in any case (e.g. button, textField, switch) or exact native type (e.g. TextEditor). Narrows --id/--label/--value results when multiple elements match.")
     var elementType: String?
 
     @Option(name: .customLong("pre-delay"), help: "Delay before tapping in seconds.")
@@ -31,7 +31,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("post-delay"), help: "Delay after tapping in seconds.")
     var postDelay: Double?
 
-    @Option(name: .customLong("tap-style"), help: "Tap event style: automatic uses physical touch for switches/toggles and simulator tap for other targets; simulator always uses FBSimulator tapAt; physical uses touch down/up.")
+    @Option(name: .customLong("tap-style"), help: "Tap event style: automatic uses physical touch for switches and a single tap event for other targets; simulator always sends a single tap event; physical uses touch down and up.")
     var tapStyle: TapStyle?
 
     @Option(name: .customLong("wait-timeout"), help: "Maximum seconds to poll for the element before failing (0 = no waiting, default). Only applies to --id/--label/--value targeting.")
@@ -160,7 +160,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
         logger.info().log("Tapping at \(resolvedDescription)")
 
-        let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], roots: nil, on: device)[0]
+        let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: nil, on: device)[0]
 
         let style = resolvedTapStyle(for: resolution)
         if let progress {
