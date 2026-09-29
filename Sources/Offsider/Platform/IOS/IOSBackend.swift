@@ -22,7 +22,13 @@ final class IOSBackend: DeviceBackend {
 
     func listDevices() async throws -> [DeviceSummary] {
         let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
-        return simulatorSet.allSimulators.map { simulator in
+        let iosSimulators = simulatorSet.allSimulators.filter { simulator in
+            SimulatorRuntime.isIOS(
+                runtimeIdentifier: Self.runtimeIdentifier(of: simulator),
+                osVersionName: simulator.osVersion.name.rawValue
+            )
+        }
+        return iosSimulators.map { simulator in
             DeviceSummary(
                 id: simulator.udid,
                 platform: .ios,
@@ -32,6 +38,16 @@ final class IOSBackend: DeviceBackend {
                 deviceType: simulator.deviceType.model.rawValue
             )
         }
+    }
+
+    /// Read through KVC with `responds(to:)` guards because `SimDevice` is a private CoreSimulator class.
+    private static func runtimeIdentifier(of simulator: FBSimulator) -> String? {
+        guard simulator.responds(to: NSSelectorFromString("device")),
+              let device = simulator.value(forKey: "device") as? NSObject,
+              device.responds(to: NSSelectorFromString("runtimeIdentifier")) else {
+            return nil
+        }
+        return device.value(forKey: "runtimeIdentifier") as? String
     }
 
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {

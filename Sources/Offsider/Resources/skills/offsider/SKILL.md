@@ -4,7 +4,7 @@ description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator 
 ---
 
 ## Step 1: Confirm runtime context
-1. Identify the target device ID first with `offsider list-devices` (a table), or `offsider list-devices --json` for `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType}]}`. IDs are case-insensitive.
+1. Identify the target device ID first with `offsider list-devices` (a table of iOS simulators; watchOS, tvOS and visionOS are not listed), or `offsider list-devices --json` for `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType}]}`. IDs are case-insensitive.
 2. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint`. `offsider doctor --device <DEVICE_ID> --fix` opens Device Hub or the device window and removes a stale HID broker directory, then checks again.
 3. Simulator-interaction Offsider commands require `--device <DEVICE_ID>`. Commands like `list-devices`, `init` and `doctor` do not. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.
 4. Run `offsider describe-ui --device <DEVICE_ID>` to inspect the full current screen. Use `offsider describe-ui --point <X,Y> --device <DEVICE_ID>` to inspect the element at a specific coordinate. Use the output to discover available `--id` and `--label` values for selector taps and slider setting, and to confirm coordinates for coordinate-based taps.
