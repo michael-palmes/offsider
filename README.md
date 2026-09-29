@@ -99,7 +99,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 
 | Command | What it does |
 | --- | --- |
-| `list-devices` | List available devices and their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
+| `list-devices` | List iOS simulators (iPhone and iPad) and their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--device` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes |
 | `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y` |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |

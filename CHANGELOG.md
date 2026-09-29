@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Device IDs are case-insensitive: a lowercase simulator UDID now reaches the same simulator.
 - An ID that is not a simulator UDID fails with a hint to run `offsider list-devices`. Android emulator serials and AVD names are refused as not supported by this build yet.
 - Batch steps reject `--device` (and `--udid`); set the device once on `batch`.
+- `list-devices` lists iOS simulators only (iPhone and iPad), whereas `list-simulators` listed every runtime, including watchOS, tvOS and visionOS.
 - `describe-ui` prints a versioned, platform-neutral schema: `{"version": 1, "platform", "device", "screen", "roots"}`, each node with `role`, `id`, `label`, `value`, `frame`, `enabled`, `state`, `native` and `children`, and every key present with `null` when unknown. `AXUniqueId`, `AXLabel` and `AXValue` become `id`, `label` and `value`; the iOS `type`, `role`, `role_description` and other attributes move under `native` in camelCase. `--point` returns the same envelope with one root.
 - `--element-type` on `tap`, `slider` and batch taps matches the describe-ui `role` in any case (`button`, `slider`) or the native type exactly (`RadioButton`, `TextEditor`). `--element-type Button` now also matches `PopUpButton` elements.
 - Text areas (`TextView` and `TextEditor`, role `textArea`) are actionable: `tap --label` prefers them over plain text with the same label, as it does for text fields.

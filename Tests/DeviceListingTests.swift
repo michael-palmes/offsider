@@ -129,6 +129,38 @@ struct DeviceListingTests {
     }
 }
 
+@Suite("Simulator Runtime Tests")
+struct SimulatorRuntimeTests {
+    @Test("iOS runtimes are listed, including the ones iPad simulators run", arguments: [
+        "com.apple.CoreSimulator.SimRuntime.iOS-27-0", "com.apple.CoreSimulator.SimRuntime.iOS-18-5",
+    ])
+    func iosRuntimeIsListed(identifier: String) {
+        #expect(SimulatorRuntime.isIOS(runtimeIdentifier: identifier, osVersionName: "iOS 27.0"))
+    }
+
+    @Test("watchOS, tvOS and visionOS runtimes are not listed", arguments: [
+        ("com.apple.CoreSimulator.SimRuntime.watchOS-11-0", "watchOS 11.0"),
+        ("com.apple.CoreSimulator.SimRuntime.tvOS-18-0", "tvOS 18.0"),
+        ("com.apple.CoreSimulator.SimRuntime.xrOS-2-0", "visionOS 2.0"),
+    ])
+    func otherRuntimesAreNotListed(identifier: String, name: String) {
+        #expect(!SimulatorRuntime.isIOS(runtimeIdentifier: identifier, osVersionName: name))
+    }
+
+    @Test("the runtime identifier decides over the OS name")
+    func identifierWins() {
+        #expect(!SimulatorRuntime.isIOS(runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-11-0", osVersionName: "iOS 27.0"))
+        #expect(SimulatorRuntime.isIOS(runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-27-0", osVersionName: "Unknown"))
+    }
+
+    @Test("without an identifier the OS name decides", arguments: [
+        (nil, "iOS 18.5", true), ("", "iOS 27.0", true), (nil, "watchOS 11.0", false), (nil, "visionOS 2.0", false), (nil, "", false),
+    ] as [(String?, String, Bool)])
+    func nameIsTheFallback(identifier: String?, name: String, expected: Bool) {
+        #expect(SimulatorRuntime.isIOS(runtimeIdentifier: identifier, osVersionName: name) == expected)
+    }
+}
+
 @Suite("List Devices Platform Filter Tests")
 struct ListDevicesPlatformFilterTests {
     @Test("--platform android lists only the header in this build")
