@@ -211,14 +211,29 @@ public final class AndroidBackend: DeviceBackend {
         return .grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep))
     }
 
-    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.
+    /// gRPC `getScreenshot`, turned upright when only the guest rotated; else adb's `screencap`.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         try await prepare()
-        let png = try await requireClient().exec("screencap -p", on: id.rawValue, timeout: .seconds(15))
+        let serial = id.rawValue
+        guard case .grpc(let emulator) = try await transport(for: serial) else {
+            return try await adbScreenshot(serial)
+        }
+        let geometry = try await geometry(for: serial)
+        let frame = try await emulator.screenshot(.png, fitting: nil)
+        do {
+            return try AndroidScreenCapture.png(from: frame, guestRotation: geometry.rotation)
+        } catch let failure as AndroidScreenCapture.ImageFailure {
+            throw AndroidError.screenshotFailed(serial, detail: failure.detail)
+        }
+    }
+
+    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.
+    func adbScreenshot(_ serial: String) async throws -> Data {
+        let png = try await requireClient().exec("screencap -p", on: serial, timeout: .seconds(15))
         guard png.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) else {
             let text = String(decoding: png.prefix(200), as: UTF8.self)
             let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
-            throw AndroidError.adbCommandFailed(serial: id.rawValue, command: "screencap -p", detail: firstLine)
+            throw AndroidError.adbCommandFailed(serial: serial, command: "screencap -p", detail: firstLine)
         }
         return png
     }

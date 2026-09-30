@@ -117,6 +117,11 @@ struct VideoFrameUtilities {
     }
 
     #if os(macOS)
+    /// For frames a `FrameCapturing` device already scaled.
+    static func jpegData(from image: CGImage, quality: Int) throws -> Data {
+        try encodeJPEG(image, width: image.width, height: image.height, quality: quality)
+    }
+
     private static func encodeJPEG(
         _ image: CGImage,
         width: Int,

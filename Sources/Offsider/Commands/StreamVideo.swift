@@ -102,8 +102,14 @@ struct StreamVideo: AsyncParsableCommand {
             let frameStartTime = Date()
 
             do {
-                let screenshotData = try await backend.screenshotPNG(for: device)
-                let processedData = try await VideoFrameUtilities.processJPEGData(screenshotData, scale: scale, quality: quality)
+                let processedData: Data
+                if let capturer = backend as? any FrameCapturing {
+                    let image = try await capturer.captureFrame(for: device, scale: scale)
+                    processedData = try VideoFrameUtilities.jpegData(from: image, quality: quality)
+                } else {
+                    let screenshotData = try await backend.screenshotPNG(for: device)
+                    processedData = try await VideoFrameUtilities.processJPEGData(screenshotData, scale: scale, quality: quality)
+                }
 
                 switch format {
                 case .mjpeg:

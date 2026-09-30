@@ -38,6 +38,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case grpcUnavailable
         case grpcDeadlineExceeded
         case grpcFailed
+        case screenshotFailed
+        case videoOutputFailed
     }
 
     public let kind: Kind
@@ -205,6 +207,14 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     static func grpcFailed(endpoint: String, method: String, detail: String) -> AndroidError {
         AndroidError(.grpcFailed, "The emulator's gRPC endpoint (\(endpoint)) failed `\(method)`: \(detail).")
+    }
+
+    static func screenshotFailed(_ serial: String, detail: String) -> AndroidError {
+        AndroidError(.screenshotFailed, "Could not read the screen of \(serial) (\(detail)). Retry, or check it with `offsider list-devices`.")
+    }
+
+    static func videoOutputFailed(detail: String) -> AndroidError {
+        AndroidError(.videoOutputFailed, "Could not write video frames to standard output (\(detail)).")
     }
 
     static func grpcForced(serial: String, reason: String) -> AndroidError {

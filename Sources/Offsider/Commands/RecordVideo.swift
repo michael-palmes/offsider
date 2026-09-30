@@ -83,12 +83,19 @@ struct RecordVideo: AsyncParsableCommand {
         scale: Double,
         cancellationFlag: CancellationFlag
     ) async throws {
-        let initialFrameData = try await backend.screenshotPNG(for: device)
-        guard let initialImage = VideoFrameUtilities.makeCGImage(from: initialFrameData) else {
-            throw CLIError(errorDescription: "Failed to decode simulator screenshot")
+        let capturer = backend as? any FrameCapturing
+        let initialImage: CGImage
+        if let capturer {
+            initialImage = try await capturer.captureFrame(for: device, scale: scale)
+        } else {
+            let initialFrameData = try await backend.screenshotPNG(for: device)
+            guard let image = VideoFrameUtilities.makeCGImage(from: initialFrameData) else {
+                throw CLIError(errorDescription: "Failed to decode simulator screenshot")
+            }
+            initialImage = image
         }
 
-        let dimensions = VideoFrameUtilities.computeDimensions(for: initialImage, scale: scale)
+        let dimensions = VideoFrameUtilities.computeDimensions(for: initialImage, scale: capturer == nil ? scale : 1.0)
         let recorder = try H264StreamRecorder(
             outputURL: outputURL,
             width: dimensions.width,
@@ -118,8 +125,13 @@ struct RecordVideo: AsyncParsableCommand {
             let frameStart = Date()
 
             do {
-                let frameData = try await backend.screenshotPNG(for: device)
-                guard let cgImage = VideoFrameUtilities.makeCGImage(from: frameData) else {
+                let decoded: CGImage?
+                if let capturer {
+                    decoded = try await capturer.captureFrame(for: device, scale: scale)
+                } else {
+                    decoded = VideoFrameUtilities.makeCGImage(from: try await backend.screenshotPNG(for: device))
+                }
+                guard let cgImage = decoded else {
                     FileHandle.standardError.write(Data("Unable to decode screenshot frame\n".utf8))
                     continue
                 }
