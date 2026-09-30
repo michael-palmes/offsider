@@ -122,11 +122,41 @@ public final class AndroidBackend: DeviceBackend {
     }
 
     public func openInputSession(for id: DeviceID) async throws -> any InputSession {
-        throw AndroidError.notSupported("input")
+        let serial = id.rawValue
+        let geometry = try await geometry(for: serial)
+        return AndroidInputSession(
+            device: id,
+            executor: .adb(AdbDeviceShell(client: try requireClient(), serial: serial)),
+            geometry: geometry,
+            avdName: avdNames[serial],
+            pasteUnavailableReason: pasteUnavailableReason(for: serial),
+            log: log
+        )
     }
 
+    /// `touch --down` now and `touch --up` later: each call is one `input motionevent` script.
     public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
-        throw AndroidError.notSupported("touch")
+        try await prepare()
+        let inputSteps: [AndroidInputStep] = steps.map { step in
+            switch step {
+            case .down(let x, let y): return .touch(.down, AndroidPoint(x: x, y: y))
+            case .up(let x, let y): return .touch(.up, AndroidPoint(x: x, y: y))
+            case .hold(let seconds): return .pause(seconds)
+            }
+        }
+        let shell = AdbDeviceShell(client: try requireClient(), serial: id.rawValue)
+        for script in try AdbInputScript.scripts(for: inputSteps) {
+            try await shell.run(script, waiting: AdbInputScript.waitTime(of: inputSteps))
+        }
+    }
+
+    /// Finishes "and emulator-5556 ..." in the error for text that needs a paste.
+    private func pasteUnavailableReason(for serial: String) -> String {
+        let port = Int(serial.dropFirst("emulator-".count))
+        let hasEndpoint = EmulatorDiscovery.live(host: host).contains { $0.consolePort == port && $0.grpcPort != nil }
+        return hasEndpoint
+            ? "has one, but this build sends input over adb only"
+            : "has none (it was probably started with -port)"
     }
 
     public func screenshotPNG(for id: DeviceID) async throws -> Data {

@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 /// Every Android failure a user can see; each message says what happened and what to do next.
 public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
@@ -24,9 +25,11 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case uiautomatorNoWindow
         case uiautomatorFailed
         case unsupportedKey
+        case unsupportedButton
         case unsupportedControlCharacter
         case displayProbeUnparseable
         case notSupported
+        case inputFailed
     }
 
     public let kind: Kind
@@ -171,7 +174,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     static func unsupportedKey(_ usage: UInt32) -> AndroidError {
         AndroidError(
             .unsupportedKey,
-            "Key \(usage) has no Android equivalent. Supported HID usages: 4 to 57, 58 to 69 (F1 to F12), 73 to 82, 127 to 129 and 224 to 231."
+            "Key \(usage) has no Android equivalent. Supported HID usages: 4 to 49, 51 to 57, 58 to 69 (F1 to F12), 73 to 82, 127 to 129 and 224 to 231."
         )
     }
 
@@ -193,5 +196,21 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     static func notSupported(_ feature: String) -> AndroidError {
         AndroidError(.notSupported, "\(feature) is not supported on Android emulators in this build.")
+    }
+
+    static func unsupportedButton(_ button: HardwareButton) -> AndroidError {
+        AndroidError(.unsupportedButton, "The \(Self.buttonName(button)) button is iOS only. Android buttons in this build: home, lock.")
+    }
+
+    static func inputFailed(serial: String, detail: String) -> AndroidError {
+        AndroidError(.inputFailed, "Input on \(serial) failed: \(detail). Check that the emulator is still running with `offsider list-devices`.")
+    }
+
+    private static func buttonName(_ button: HardwareButton) -> String {
+        switch button {
+        case .applePay: return "apple-pay"
+        case .sideButton: return "side-button"
+        default: return button.rawValue
+        }
     }
 }
