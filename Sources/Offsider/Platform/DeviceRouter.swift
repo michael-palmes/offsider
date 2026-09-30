@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderAndroid
 import OffsiderCore
 
 /// Picks the backend from the device ID's shape; only iOS simulators are supported in this build.
@@ -9,8 +10,8 @@ enum DeviceRouter {
         let device: DeviceID
     }
 
-    static func allBackends(logger: OffsiderLogger) -> [any DeviceBackend] {
-        [IOSBackend(logger: logger)]
+    static func allBackends(logger: OffsiderLogger, host: AndroidHost = .live()) -> [any DeviceBackend] {
+        [IOSBackend(logger: logger), AndroidBackend.make(logger: logger, host: host)]
     }
 
     static func route(_ rawID: String, logger: OffsiderLogger) async throws -> Route {

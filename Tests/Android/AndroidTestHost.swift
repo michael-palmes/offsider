@@ -60,6 +60,13 @@ enum AndroidTestHost {
         )
     }
 
+    /// A temporary home with an SDK in the Android Studio location, so `prepare()` finds adb without any variable.
+    static func homeWithSDK() throws -> URL {
+        let home = try temporaryHome()
+        try makeExecutable("Library/Android/sdk/platform-tools/adb", in: home)
+        return home
+    }
+
     static func temporaryHome() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("offsider-android-\(UUID().uuidString)", isDirectory: true)

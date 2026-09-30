@@ -26,6 +26,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case unsupportedKey
         case unsupportedControlCharacter
         case displayProbeUnparseable
+        case notSupported
     }
 
     public let kind: Kind
@@ -188,5 +189,9 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
             .displayProbeUnparseable,
             "Could not read the display size and rotation of \(serial) (\(firstLine)). Check it with `adb -s \(serial) shell dumpsys input`."
         )
+    }
+
+    static func notSupported(_ feature: String) -> AndroidError {
+        AndroidError(.notSupported, "\(feature) is not supported on Android emulators in this build.")
     }
 }

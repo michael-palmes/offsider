@@ -49,14 +49,19 @@ struct CommandRunner {
     static func runSeparated(
         _ command: String,
         environment: [String: String]? = nil,
+        unsetting unsetVariables: [String] = [],
         timeout: TimeInterval = 30
     ) async throws -> SeparatedCommandOutput {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
 
-        if let environment {
-            process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+        if environment != nil || !unsetVariables.isEmpty {
+            var merged = ProcessInfo.processInfo.environment.merging(environment ?? [:]) { _, new in new }
+            for name in unsetVariables {
+                merged.removeValue(forKey: name)
+            }
+            process.environment = merged
         }
 
         let outputPipe = Pipe()
@@ -401,6 +406,7 @@ struct TestHelpers {
         _ command: String,
         simulatorUDID: String? = nil,
         environment: [String: String]? = nil,
+        unsetting unsetVariables: [String] = [],
         timeout: TimeInterval = 60
     ) async throws -> SeparatedCommandOutput {
         var fullCommand = command
@@ -411,7 +417,23 @@ struct TestHelpers {
         return try await CommandRunner.runSeparated(
             "\(offsiderPath) \(fullCommand)",
             environment: environment,
+            unsetting: unsetVariables,
             timeout: timeout
+        )
+    }
+
+    /// Runs the binary where no Android SDK or adb server can be found: an empty HOME, no SDK variables, no adb on PATH.
+    static func runOffsiderWithoutAndroid(_ command: String) async throws -> SeparatedCommandOutput {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-no-android-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        return try await runOffsiderCommandSeparated(
+            command,
+            environment: ["HOME": home.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"],
+            unsetting: [
+                "ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_AVD_HOME", "ANDROID_USER_HOME", "ANDROID_EMULATOR_HOME",
+                "ADB_SERVER_SOCKET", "ANDROID_ADB_SERVER_ADDRESS", "ANDROID_ADB_SERVER_PORT",
+            ]
         )
     }
 

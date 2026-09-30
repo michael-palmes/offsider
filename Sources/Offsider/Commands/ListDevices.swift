@@ -23,26 +23,34 @@ struct ListDevices: AsyncParsableCommand {
     @MainActor
     private static func listDevices(platform: DevicePlatform?, logger: OffsiderLogger) async throws -> [DeviceSummary] {
         let backends = DeviceRouter.allBackends(logger: logger).filter { platform == nil || $0.platform == platform }
-        return try await collect(from: backends) { warning in
+        return try await collect(from: backends, platformFilter: platform) { warning in
             FileHandle.standardError.write(Data("Warning: \(warning)\n".utf8))
         }
     }
 
     /// Each backend is prepared on its own, so one missing toolchain only warns unless every backend fails.
+    /// A platform whose toolchain is not installed at all is skipped quietly, unless `--platform` asked for it.
     @MainActor
-    static func collect(from backends: [any DeviceBackend], warn: (String) -> Void) async throws -> [DeviceSummary] {
+    static func collect(
+        from backends: [any DeviceBackend],
+        platformFilter: DevicePlatform? = nil,
+        warn: (String) -> Void
+    ) async throws -> [DeviceSummary] {
         var devices: [DeviceSummary] = []
         var failures: [(platform: DevicePlatform, error: Error)] = []
+        var skipped = 0
         for backend in backends {
             do {
                 try await backend.prepare()
                 devices += try await backend.listDevices()
+            } catch is PlatformUnavailable where platformFilter == nil {
+                skipped += 1
             } catch {
                 failures.append((backend.platform, error))
             }
         }
 
-        if !failures.isEmpty, failures.count == backends.count {
+        if !failures.isEmpty, failures.count == backends.count - skipped {
             if failures.count == 1 {
                 throw failures[0].error
             }
