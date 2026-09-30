@@ -160,7 +160,7 @@ struct GestureRotatedInputTests {
             try await gestureEvent(["scroll-up"], applicationFrame: nil)
         }
 
-        #expect(error?.errorDescription.contains("no application frame") == true)
-        #expect(error?.errorDescription.contains("offsider doctor --device LANDSCAPE") == true)
+        #expect(error?.errorDescription?.contains("no application frame") == true)
+        #expect(error?.errorDescription?.contains("offsider doctor --device LANDSCAPE") == true)
     }
 }
