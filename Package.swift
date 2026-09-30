@@ -26,7 +26,7 @@ let idbPrivateHeaderSearchFlags = [
 let package = Package(
     name: "Offsider",
     platforms: [
-        .macOS(.v14)
+        .macOS("26.0")
     ],
     products: [
         .library(
@@ -46,10 +46,16 @@ let package = Package(
             name: "OffsiderCore",
             path: "Sources/OffsiderCore"
         ),
+        .target(
+            name: "OffsiderAndroid",
+            dependencies: ["OffsiderCore"],
+            path: "Sources/OffsiderAndroid"
+        ),
         .executableTarget(
             name: "Offsider",
             dependencies: [
                 "OffsiderCore",
+                "OffsiderAndroid",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 "FBSimulatorControl",
                 "FBDeviceControl",
@@ -77,7 +83,7 @@ let package = Package(
         ),
         .testTarget(
             name: "OffsiderTests",
-            dependencies: ["Offsider", "OffsiderCore"],
+            dependencies: ["Offsider", "OffsiderCore", "OffsiderAndroid"],
             path: "Tests",
             exclude: ["Goldens"],
             swiftSettings: [

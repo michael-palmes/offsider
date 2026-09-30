@@ -43,7 +43,7 @@ offsider --version
 ## Requirements
 
 - Apple silicon (arm64). Intel Macs are not supported.
-- macOS 15 or later.
+- macOS 26 or later.
 - Xcode 26 or later, selected with `xcode-select` or `DEVELOPER_DIR`. Tested on Xcode 27, where simulators run under Device Hub and Simulator.app is not required.
 
 ## Quick start
