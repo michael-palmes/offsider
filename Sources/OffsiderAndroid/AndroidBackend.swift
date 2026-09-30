@@ -10,6 +10,7 @@ public final class AndroidBackend: DeviceBackend {
     private var client: AdbClient?
     private var geometries: [String: AndroidDisplayGeometry] = [:]
     private var avdNames: [String: String] = [:]
+    private var dumpCounter = 0
 
     public init(host: AndroidHost = .live(), log: @escaping AndroidLog) {
         self.host = host
@@ -68,8 +69,35 @@ public final class AndroidBackend: DeviceBackend {
         return try await directory().serial(forAVDNamed: name)
     }
 
+    /// `uiautomator dump --compressed` mapped to dp; with `point`, the deepest node there as the only root.
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
-        throw AndroidError.notSupported("describe-ui")
+        let serial = id.rawValue
+        let geometry = try await geometry(for: serial)
+        dumpCounter += 1
+        let script = UIAutomatorDump.script(path: UIAutomatorDump.devicePath(pid: getpid(), counter: dumpCounter))
+        let result = try await requireClient().shell(script, on: serial, timeout: .seconds(20))
+
+        let xml: String
+        switch UIAutomatorDump.classify(result) {
+        case .tree(let text): xml = text
+        case .busy: throw AndroidError.uiautomatorBusy(serial)
+        case .idleTimeout: throw AndroidError.uiautomatorIdle(serial)
+        case .noWindow: throw AndroidError.uiautomatorNoWindow(serial)
+        case .failed(let detail): throw AndroidError.uiautomatorFailed(serial, detail: detail)
+        }
+        let hierarchy: UIAutomatorHierarchy
+        do {
+            hierarchy = try UIAutomatorDump.parse(xml)
+        } catch let error as UIAutomatorDump.ParseFailure {
+            throw AndroidError.uiautomatorFailed(serial, detail: error.detail)
+        }
+        if let rotation = hierarchy.rotation {
+            geometries[serial] = geometry.rotated(to: rotation)
+        }
+
+        let tree = UITree(platform: .android, device: serial, roots: AndroidTreeMapping.roots(from: hierarchy, scale: geometry.scale))
+        guard let point else { return tree }
+        return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
     }
 
     /// Logical size over scale, scale = density / 160, orientation from the viewport rotation.

@@ -25,6 +25,21 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
         }
     }
 
+    /// The same display after the guest turned to `rotation`; the logical size swaps when the turn is a quarter.
+    func rotated(to rotation: Int) -> AndroidDisplayGeometry {
+        guard (0...3).contains(rotation), rotation != self.rotation else { return self }
+        let swaps = rotation % 2 != self.rotation % 2
+        return AndroidDisplayGeometry(
+            naturalWidth: naturalWidth,
+            naturalHeight: naturalHeight,
+            logicalWidth: swaps ? logicalHeight : logicalWidth,
+            logicalHeight: swaps ? logicalWidth : logicalHeight,
+            rotation: rotation,
+            densityDpi: densityDpi,
+            hasSizeOverride: hasSizeOverride
+        )
+    }
+
     static let probeScript = "wm size; wm density; dumpsys input | grep -m1 'Viewport INTERNAL: displayId=0'"
 
     struct Unparseable: Error, Equatable {
