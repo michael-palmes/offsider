@@ -187,18 +187,6 @@ struct IOSBackendMappingTests {
         #expect(route.device == DeviceID(rawValue: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios))
     }
 
-    @Test("Android serials and AVD names are refused in this build", arguments: ["emulator-5554", "Pixel_9_API_37"])
-    func androidIDsAreRefused(id: String) async {
-        let error = await #expect(throws: CLIError.self) {
-            _ = try await DeviceRouter.route(id, logger: OffsiderLogger())
-        }
-        let message = error?.userFacingDescription ?? ""
-
-        #expect(message.hasPrefix("Device \(id) "))
-        #expect(message.contains("Android emulators are not supported by this build yet."))
-        #expect(message.contains("`offsider list-devices`"))
-    }
-
     @Test("empty and unrecognised IDs point to list-devices", arguments: ["", "  ", "192.168.1.5:5555"])
     func unusableIDsPointToListDevices(id: String) async {
         let error = await #expect(throws: CLIError.self) {

@@ -4,13 +4,13 @@ import Foundation
 struct Screenshot: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "screenshot",
-        abstract: "Capture a screenshot from the simulator display and save it as a PNG file"
+        abstract: "Capture a screenshot from the device display and save it as a PNG file"
     )
 
     @OptionGroup
     var deviceOption: DeviceOption
 
-    @Option(help: "Output PNG file path. Defaults to 'Simulator Screenshot - <device name> - <timestamp>.png' in the current directory.")
+    @Option(help: "Output PNG file path. Defaults to 'Simulator Screenshot - <device name> - <timestamp>.png' (iOS) or 'Emulator Screenshot - <AVD> - <timestamp>.png' (Android) in the current directory.")
     var output: String?
 
     func run() async throws {
@@ -20,7 +20,8 @@ struct Screenshot: AsyncParsableCommand {
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
 
-        let outputURL = try prepareOutputURL(deviceName: booted.name)
+        let prefix = route.device.platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
+        let outputURL = try prepareOutputURL(prefix: prefix, deviceName: booted.name)
 
         let screenshotData = try await backend.screenshotPNG(for: booted.id)
 
@@ -30,7 +31,7 @@ struct Screenshot: AsyncParsableCommand {
         print(outputURL.path)
     }
 
-    private func prepareOutputURL(deviceName: String) throws -> URL {
+    private func prepareOutputURL(prefix: String, deviceName: String) throws -> URL {
         let fileManager = FileManager.default
 
         let providedPath = output?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -39,7 +40,7 @@ struct Screenshot: AsyncParsableCommand {
             resolvedPath = (providedPath as NSString).expandingTildeInPath
         } else {
             let timestamp = Self.formatTimestamp(Date())
-            resolvedPath = "Simulator Screenshot - \(deviceName) - \(timestamp).png"
+            resolvedPath = "\(prefix) - \(deviceName) - \(timestamp).png"
         }
 
         let baseURL: URL
@@ -52,7 +53,7 @@ struct Screenshot: AsyncParsableCommand {
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: baseURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
             let timestamp = Self.formatTimestamp(Date())
-            let filename = "Simulator Screenshot - \(deviceName) - \(timestamp).png"
+            let filename = "\(prefix) - \(deviceName) - \(timestamp).png"
             let directoryURL = baseURL
             if !fileManager.fileExists(atPath: directoryURL.path) {
                 try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)

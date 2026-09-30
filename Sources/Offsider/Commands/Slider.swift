@@ -69,6 +69,11 @@ struct Slider: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        guard route.device.platform != .android else {
+            throw CLIError(
+                errorDescription: "slider is not supported on Android emulators yet: the uiautomator tree does not report slider values. Use swipe or drag on the track, and read the result with describe-ui."
+            )
+        }
         let target = SliderTarget(backend: route.backend, device: route.device)
         try await target.backend.prepare()
 

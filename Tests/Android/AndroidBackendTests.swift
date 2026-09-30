@@ -112,3 +112,32 @@ struct AndroidBackendTests {
         #expect(server.connectionAttempts == 0)
     }
 }
+
+@Suite("Android screenshots")
+@MainActor
+struct AndroidScreenshotTests {
+    static func server(output: Data) -> FakeAdbServer {
+        FakeAdbServer(handler: FakeAdbServer.devices(
+            ["emulator-5556"],
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            device: { _, _ in FakeAdbServer.exec(output) }
+        ))
+    }
+
+    @Test("screencap's PNG comes back byte for byte")
+    func png() async throws {
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3])
+        let server = Self.server(output: png)
+        let data = try await AndroidBackendTests.backend(server).screenshotPNG(for: AndroidBackendTests.device)
+
+        #expect(data == png)
+        #expect(server.services.last == "exec:screencap -p")
+    }
+
+    @Test("output that is not a PNG is an error quoting it")
+    func notPNG() async throws {
+        let backend = try AndroidBackendTests.backend(Self.server(output: Data("Error: display off\n".utf8)))
+        let error = await #expect(throws: AndroidError.self) { try await backend.screenshotPNG(for: AndroidBackendTests.device) }
+        #expect(error?.message == "`screencap -p` failed on emulator-5556: Error: display off.")
+    }
+}

@@ -159,8 +159,16 @@ public final class AndroidBackend: DeviceBackend {
             : "has none (it was probably started with -port)"
     }
 
+    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
-        throw AndroidError.notSupported("screenshot")
+        try await prepare()
+        let png = try await requireClient().exec("screencap -p", on: id.rawValue, timeout: .seconds(15))
+        guard png.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) else {
+            let text = String(decoding: png.prefix(200), as: UTF8.self)
+            let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
+            throw AndroidError.adbCommandFailed(serial: id.rawValue, command: "screencap -p", detail: firstLine)
+        }
+        return png
     }
 
     func requireClient() throws -> AdbClient {

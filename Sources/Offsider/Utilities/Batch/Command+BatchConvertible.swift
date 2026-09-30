@@ -249,6 +249,10 @@ extension Type: BatchConvertible {
             throw CLIError(errorDescription: "Invalid input configuration.")
         }
 
+        if context.device.platform == .android {
+            return inputText.isEmpty ? [] : [.text(inputText)]
+        }
+
         guard TextToHIDEvents.validateText(inputText) else {
             let unsupportedChars = inputText.compactMap { char in
                 let keyEvent = KeyEvent.keyCodeForString(String(char))
