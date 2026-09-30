@@ -75,7 +75,7 @@ public final class AndroidBackend: DeviceBackend {
         let geometry = try await geometry(for: serial)
         dumpCounter += 1
         let script = UIAutomatorDump.script(path: UIAutomatorDump.devicePath(pid: getpid(), counter: dumpCounter))
-        let result = try await requireClient().shell(script, on: serial, timeout: .seconds(20))
+        let result = try await requireClient().shell(script, on: serial, timeout: .seconds(20), label: "uiautomator dump")
 
         let xml: String
         switch UIAutomatorDump.classify(result) {
@@ -188,7 +188,7 @@ public final class AndroidBackend: DeviceBackend {
             return cached
         }
         try await prepare()
-        let result = try await requireClient().shell(AndroidDisplayGeometry.probeScript, on: serial)
+        let result = try await requireClient().shell(AndroidDisplayGeometry.probeScript, on: serial, label: "wm size; wm density; dumpsys input")
         do {
             let geometry = try AndroidDisplayGeometry.parse(result.stdoutText)
             geometries[serial] = geometry

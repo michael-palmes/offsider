@@ -40,12 +40,14 @@ actor AdbClient {
     }
 
     /// `host:transport:<serial>`, then `shell,v2,raw:<command>`; reads until the exit packet.
-    func shell(_ command: String, on serial: String, timeout: Duration = .seconds(10)) async throws -> AdbShellResult {
-        let connection = try await openDevice(serial, service: "shell,v2,raw:" + command, label: command, timeout: timeout)
+    /// `label` names the command in errors when the script itself is too long to quote.
+    func shell(_ command: String, on serial: String, timeout: Duration = .seconds(10), label: String? = nil) async throws -> AdbShellResult {
+        let name = label ?? command
+        let connection = try await openDevice(serial, service: "shell,v2,raw:" + command, label: name, timeout: timeout)
         var decoder = AdbWire.ShellV2Decoder()
         var stdout = Data()
         var stderr = Data()
-        return try await closing(connection, serial: serial, command: command, timeout: timeout) {
+        return try await closing(connection, serial: serial, command: name, timeout: timeout) {
             var chunk = connection.takeBuffered()
             while true {
                 for packet in try decoder.feed(chunk) {
@@ -58,7 +60,7 @@ actor AdbClient {
                 }
                 chunk = try await connection.stream.read(upTo: 64 * 1024, deadline: connection.deadline)
                 if chunk.isEmpty {
-                    throw AndroidError.adbCommandFailed(serial: serial, command: command, detail: "the connection closed before the command finished")
+                    throw AndroidError.adbCommandFailed(serial: serial, command: name, detail: "the connection closed before the command finished")
                 }
             }
         }

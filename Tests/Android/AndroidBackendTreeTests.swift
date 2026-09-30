@@ -64,4 +64,11 @@ struct AndroidBackendTreeTests {
         #expect(info == UIScreenInfo(width: 923.43, height: 411.43, scale: 2.625, orientation: .landscapeFlipped))
         #expect(server.services.filter { $0.hasSuffix(AndroidDisplayGeometry.probeScript) }.count == 1)
     }
+
+    @Test("a dump that never answers names uiautomator, not the whole script")
+    func dumpTimeout() async throws {
+        let backend = try AndroidBackendTests.backend(Self.server(dump: FakeAdbServer.okay))
+        let error = await #expect(throws: AndroidError.self) { try await backend.accessibilityTree(for: Self.device, point: nil) }
+        #expect(error?.message == "`uiautomator dump` failed on emulator-5556: no answer within 20 s.")
+    }
 }

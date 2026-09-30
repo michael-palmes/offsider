@@ -8,7 +8,8 @@ struct AdbDeviceShell: Sendable {
 
     func run(_ script: String, waiting seconds: TimeInterval = 0) async throws {
         let timeout = Duration.seconds(15) + .milliseconds(Int((seconds * 1000).rounded(.up)))
-        let result = try await client.shell(script, on: serial, timeout: timeout)
+        let label = script.count > 120 ? String(script.prefix(117)) + "..." : script
+        let result = try await client.shell(script, on: serial, timeout: timeout, label: label)
         guard result.status == 0 else {
             let message = (result.stderrText + result.stdoutText).split(whereSeparator: \.isNewline).first.map(String.init)
             throw AndroidError.inputFailed(serial: serial, detail: message ?? "`input` exited \(result.status)")
