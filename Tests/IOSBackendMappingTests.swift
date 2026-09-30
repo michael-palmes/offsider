@@ -24,7 +24,7 @@ private final class EventOnlyInputSession: InputSession {
 }
 
 @MainActor
-private final class StubBackend: DeviceBackend {
+final class StubBackend: DeviceBackend {
     let session: RecordingInputSession
     private(set) var openedDevices: [DeviceID] = []
 
