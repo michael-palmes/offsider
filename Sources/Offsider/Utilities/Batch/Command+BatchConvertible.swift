@@ -173,6 +173,7 @@ extension Touch: BatchConvertible {
 
 extension Button: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        try Self.checkAvailability(buttonType, on: context.backend.platform, device: context.device.rawValue)
         if let duration {
             let composite = InputEvent.composite([
                 .button(direction: .down, button: buttonType.hardwareButton),

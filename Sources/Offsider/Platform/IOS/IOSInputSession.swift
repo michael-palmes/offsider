@@ -16,7 +16,7 @@ final class IOSInputSession: InputSession {
     }
 
     func perform(_ event: InputEvent) async throws {
-        try await HIDInteractor.performHIDEvent(event.hidEvent, in: hidSession, logger: logger)
+        try await HIDInteractor.performHIDEvent(try event.hidEvent(), in: hidSession, logger: logger)
     }
 
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {

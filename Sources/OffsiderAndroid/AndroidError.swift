@@ -290,7 +290,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func unsupportedButton(_ button: HardwareButton) -> AndroidError {
-        AndroidError(.unsupportedButton, "The \(Self.buttonName(button)) button is iOS only. Android buttons in this build: home, lock.")
+        AndroidError(.unsupportedButton, "The \(Self.buttonName(button)) button is iOS only. Android buttons: back, app-switch, home, lock, volume-up, volume-down.")
     }
 
     static func inputFailed(serial: String, detail: String) -> AndroidError {
@@ -301,6 +301,9 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         switch button {
         case .applePay: return "apple-pay"
         case .sideButton: return "side-button"
+        case .appSwitch: return "app-switch"
+        case .volumeUp: return "volume-up"
+        case .volumeDown: return "volume-down"
         default: return button.rawValue
         }
     }

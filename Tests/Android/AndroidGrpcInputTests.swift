@@ -88,6 +88,14 @@ struct AndroidGrpcInputTests {
         #expect(rig.emulator.calls == [.key(.usb(0x070004, .press)), .key(.w3c("GoHome", .press)), .key(.usb(0x070028, .press))])
     }
 
+    @Test("Android's own buttons go as their W3C key values")
+    func androidButtons() async throws {
+        let rig = try Self.rig()
+        try await rig.backend.perform(.composite([.shortButtonPress(.back), .shortButtonPress(.appSwitch), .shortButtonPress(.volumeUp), .shortButtonPress(.volumeDown)]), on: Self.device)
+
+        #expect(rig.emulator.calls == [.key(.w3c("GoBack", .press)), .key(.w3c("AppSwitch", .press)), .key(.w3c("AudioVolumeUp", .press)), .key(.w3c("AudioVolumeDown", .press))])
+    }
+
     @Test("a held key is a real down, a host-timed pause and an up")
     func heldKey() async throws {
         let rig = try Self.rig()

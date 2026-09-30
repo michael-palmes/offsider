@@ -32,11 +32,23 @@ struct AndroidKeyTableTests {
         #expect(error?.message == "Key \(usage) has no Android equivalent. Supported HID usages: 4 to 49, 51 to 57, 58 to 69 (F1 to F12), 73 to 82, 127 to 129 and 224 to 231.")
     }
 
-    @Test("home and lock are Android's HOME and POWER keys; iOS-only buttons are refused by name")
+    @Test("Android buttons are their KEYCODE and W3C keys; iOS-only buttons are refused by name")
     func buttons() {
         #expect(AndroidButtonMap.keyCode(for: .home) == 3)
         #expect(AndroidButtonMap.keyCode(for: .lock) == 26)
+        #expect(AndroidButtonMap.keyCode(for: .back) == 4)
+        #expect(AndroidButtonMap.keyCode(for: .appSwitch) == 187)
+        #expect(AndroidButtonMap.keyCode(for: .volumeUp) == 24)
+        #expect(AndroidButtonMap.keyCode(for: .volumeDown) == 25)
+        #expect(AndroidButtonMap.w3cKey(for: .back) == "GoBack")
         let error = #expect(throws: AndroidError.self) { try AndroidButtonMap.requireKeyCode(for: .sideButton) }
-        #expect(error?.message == "The side-button button is iOS only. Android buttons in this build: home, lock.")
+        #expect(error?.message == "The side-button button is iOS only. Android buttons: back, app-switch, home, lock, volume-up, volume-down.")
+    }
+
+    @Test("every button whose platforms include Android has both an adb and a gRPC key, and no other does", arguments: HardwareButton.allCases)
+    func buttonMapMatchesPlatforms(button: HardwareButton) {
+        let android = button.platforms.contains(.android)
+        #expect((AndroidButtonMap.keyCode(for: button) != nil) == android)
+        #expect((AndroidButtonMap.w3cKey(for: button) != nil) == android)
     }
 }

@@ -5,13 +5,25 @@ public enum InputDirection: Equatable, Sendable {
     case up
 }
 
-/// Exactly the five hardware buttons idb supports.
+/// Hardware buttons across platforms; `lock` is the power key on Android.
 public enum HardwareButton: String, CaseIterable, Equatable, Sendable {
     case applePay
     case home
     case lock
     case sideButton
     case siri
+    case back
+    case appSwitch
+    case volumeUp
+    case volumeDown
+
+    public var platforms: Set<DevicePlatform> {
+        switch self {
+        case .home, .lock: return [.ios, .android]
+        case .applePay, .sideButton, .siri: return [.ios]
+        case .back, .appSwitch, .volumeUp, .volumeDown: return [.android]
+        }
+    }
 }
 
 /// Intent-level input. Coordinates are already in the backend's input space (iOS: portrait HID points).
