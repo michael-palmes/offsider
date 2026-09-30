@@ -214,10 +214,19 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    static func grpcRequiredForText(serial: String, avd: String?, reason: String) -> AndroidError {
-        AndroidError(
+    static func grpcRequiredForText(serial: String, avd: String?, reason: AdbReason) -> AndroidError {
+        grpcRequired(feature: "Typing non-ASCII text", serial: serial, avd: avd, reason: reason, alternative: "type ASCII only")
+    }
+
+    /// `feature` needs gRPC and this command is on adb; the advice follows from why.
+    static func grpcRequired(feature: String, serial: String, avd: String?, reason: AdbReason, alternative: String) -> AndroidError {
+        let prefix = "\(feature) on Android needs the emulator's gRPC endpoint, and"
+        if reason == .forced {
+            return AndroidError(.grpcRequired, "\(prefix) OFFSIDER_ANDROID_TRANSPORT is adb. Unset it, or \(alternative).")
+        }
+        return AndroidError(
             .grpcRequired,
-            "Typing non-ASCII text on Android needs the emulator's gRPC endpoint, and \(serial) \(reason). Restart it with `offsider boot \(avd ?? "<AVD>")`, or type ASCII only."
+            "\(prefix) \(serial) \(reason.clause). Restart it with `offsider boot \(avd ?? "<AVD>")`, or \(alternative)."
         )
     }
 

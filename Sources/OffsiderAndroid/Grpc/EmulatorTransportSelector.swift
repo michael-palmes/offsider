@@ -13,7 +13,9 @@ enum AdbReason: Equatable, Sendable {
         case .noDiscoveryFile: return "has none (it was probably started with -port)"
         case .noGrpcPort: return "has none (its discovery file lists no grpc.port)"
         case .forced: return "is driven over adb because OFFSIDER_ANDROID_TRANSPORT is adb"
-        case .grpcFailed(let message): return "has one, but it failed: \(message)"
+        case .grpcFailed(let message):
+            let trimmed = message.hasSuffix(".") ? String(message.dropLast()) : message
+            return "has one, but it failed (\(trimmed))"
         }
     }
 }

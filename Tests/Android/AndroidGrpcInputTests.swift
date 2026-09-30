@@ -34,7 +34,12 @@ struct AndroidGrpcInputTests {
     }
 
     /// emulator-5556 with a live discovery file (token and gRPC port) and a fake endpoint that answers.
-    static func rig(geometry: String = AndroidBackendTests.geometryOutput, emulator: FakeEmulator = FakeEmulator(), environment: [String: String] = [:]) throws -> Rig {
+    static func rig(
+        geometry: String = AndroidBackendTests.geometryOutput,
+        emulator: FakeEmulator = FakeEmulator(),
+        environment: [String: String] = [:],
+        failingScript: @escaping @Sendable (String) -> Bool = { _ in false }
+    ) throws -> Rig {
         let server = FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556"],
             host: { service in
@@ -47,6 +52,9 @@ struct AndroidGrpcInputTests {
             device: { _, service in
                 if service.hasSuffix(AndroidDisplayGeometry.probeScript) { return FakeAdbServer.shell(stdout: geometry) }
                 if service.hasSuffix(AndroidDeviceDirectory.propertiesScript) { return FakeAdbServer.shell(stdout: "Offsider_E2E_Pixel_9\n\n1\n16\n36\n") }
+                if failingScript(String(service.dropFirst("shell,v2,raw:".count))) {
+                    return FakeAdbServer.shell(stderr: "Error: injection failed\n", status: 1)
+                }
                 return FakeAdbServer.shell()
             }
         ))

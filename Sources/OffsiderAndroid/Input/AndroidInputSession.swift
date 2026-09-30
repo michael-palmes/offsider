@@ -30,8 +30,11 @@ final class AndroidInputSession: InputSession, TextInputSession {
     /// adb is always there, whatever carries the input.
     private let shell: AdbDeviceShell
     private let scale: Double
-    /// Why a paste is impossible here, finishing "and <serial> ...".
-    private let pasteUnavailableReason: String
+    /// The gRPC endpoint for the clipboard, even when a resized display keeps other input on adb.
+    private let clipboard: (any EmulatorControlling)?
+    /// Why there is no gRPC endpoint, for the error when text needs a paste.
+    private let adbReason: AdbReason
+    private let sleep: @Sendable (Duration) async throws -> Void
     /// Looked up only when a message needs it, so ordinary input costs no extra adb call.
     private let avdName: @MainActor () async -> String?
     private let log: AndroidLog
@@ -44,7 +47,9 @@ final class AndroidInputSession: InputSession, TextInputSession {
         shell: AdbDeviceShell,
         geometry: AndroidDisplayGeometry,
         avdName: @escaping @MainActor () async -> String?,
-        pasteUnavailableReason: String,
+        clipboard: (any EmulatorControlling)?,
+        adbReason: AdbReason,
+        sleep: @escaping @Sendable (Duration) async throws -> Void,
         log: @escaping AndroidLog
     ) {
         self.device = device
@@ -52,9 +57,16 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.shell = shell
         self.scale = geometry.scale
         self.avdName = avdName
-        self.pasteUnavailableReason = pasteUnavailableReason
+        self.clipboard = clipboard
+        self.adbReason = adbReason
+        self.sleep = sleep
         self.log = log
     }
+
+    /// The emulator syncs its clipboard into the guest asynchronously, and the app reads it after the paste key.
+    static let clipboardSyncWait = Duration.milliseconds(150)
+    static let pasteReadWait = Duration.milliseconds(300)
+    static let pasteKeyCode = 279
 
     func perform(_ event: InputEvent) async throws {
         var down = touchIsDown
@@ -63,11 +75,19 @@ final class AndroidInputSession: InputSession, TextInputSession {
         touchIsDown = down
     }
 
+    /// All-ASCII text as key events (gRPC `text` chunks, or adb `input text`); anything else pasted whole.
     func typeText(_ text: String) async throws {
         switch try AndroidTextPlan.make(for: text) {
-        case .paste:
-            throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: await avdName(), reason: pasteUnavailableReason)
+        case .paste(let whole):
+            guard let clipboard else {
+                throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: await avdName(), reason: adbReason)
+            }
+            try await paste(whole, through: clipboard)
         case .keys(let chunks):
+            if case .grpc(let driver) = executor {
+                try await type(chunks, on: driver.emulator)
+                return
+            }
             let commands = try chunks.flatMap { chunk -> [String] in
                 switch chunk {
                 case .text(let run): return AdbShellQuoting.inputTextCommands(for: run)
@@ -76,6 +96,41 @@ final class AndroidInputSession: InputSession, TextInputSession {
             }
             guard !commands.isEmpty else { return }
             try await shell.run(commands.joined(separator: " && "))
+        }
+    }
+
+    private func type(_ chunks: [AndroidTextPlan.Chunk], on emulator: any EmulatorControlling) async throws {
+        for chunk in chunks {
+            switch chunk {
+            case .text(let run):
+                try await emulator.sendKey(.text(run))
+            case .key(let usage):
+                guard let code = AndroidKeyTable.usbCode(for: usage) else { throw AndroidError.unsupportedKey(usage) }
+                try await emulator.sendKey(.usb(code, .press))
+            }
+        }
+    }
+
+    /// Save the clipboard, set the text, let it sync, paste over adb, let the app read it, then restore, on failure too.
+    private func paste(_ text: String, through emulator: any EmulatorControlling) async throws {
+        let saved = try await emulator.clipboard()
+        try await emulator.setClipboard(text)
+        do {
+            try await sleep(Self.clipboardSyncWait)
+            try await shell.run("input keyevent \(Self.pasteKeyCode)")
+            try await sleep(Self.pasteReadWait)
+        } catch {
+            await restoreClipboard(saved, on: emulator)
+            throw error
+        }
+        await restoreClipboard(saved, on: emulator)
+    }
+
+    private func restoreClipboard(_ saved: String, on emulator: any EmulatorControlling) async {
+        do {
+            try await emulator.setClipboard(saved)
+        } catch {
+            log(.warning, "Could not restore the emulator's clipboard after pasting: \((error as? AndroidError)?.message ?? error.localizedDescription)")
         }
     }
 

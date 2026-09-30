@@ -127,13 +127,23 @@ public final class AndroidBackend: DeviceBackend {
         let serial = id.rawValue
         let geometry = try await geometry(for: serial)
         let shell = AdbDeviceShell(client: try requireClient(), serial: serial)
+        let executor = try await inputExecutor(for: serial, geometry: geometry, shell: shell)
+        let transport = try await transport(for: serial)
+        var clipboard: (any EmulatorControlling)?
+        var adbReason = AdbReason.forced
+        switch transport {
+        case .grpc(let emulator): clipboard = emulator
+        case .adb(let reason): adbReason = reason
+        }
         return AndroidInputSession(
             device: id,
-            executor: try await inputExecutor(for: serial, geometry: geometry, shell: shell),
+            executor: executor,
             shell: shell,
             geometry: geometry,
             avdName: { await self.avdName(for: serial) },
-            pasteUnavailableReason: pasteUnavailableReason(for: serial),
+            clipboard: clipboard,
+            adbReason: adbReason,
+            sleep: host.sleep,
             log: log
         )
     }
@@ -199,15 +209,6 @@ public final class AndroidBackend: DeviceBackend {
             return .adb(shell)
         }
         return .grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep))
-    }
-
-    /// Finishes "and emulator-5556 ..." in the error for text that needs a paste.
-    private func pasteUnavailableReason(for serial: String) -> String {
-        let port = Int(serial.dropFirst("emulator-".count))
-        let hasEndpoint = EmulatorDiscovery.live(host: host).contains { $0.consolePort == port && $0.grpcPort != nil }
-        return hasEndpoint
-            ? "has one, but this build cannot paste through it yet"
-            : "has none (it was probably started with -port)"
     }
 
     /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.
