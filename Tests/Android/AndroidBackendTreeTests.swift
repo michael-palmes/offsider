@@ -52,6 +52,16 @@ struct AndroidBackendTreeTests {
         let error = await #expect(throws: AndroidError.self) { try await backend.accessibilityTree(for: Self.device, point: nil) }
         #expect(error?.kind == .uiautomatorBusy)
         #expect(error?.message.contains("Another UiAutomation client") == true)
+        #expect(error?.isTransientFailure == false)
+    }
+
+    @Test("no window is transient, so polling callers retry it")
+    func noWindowIsTransient() async throws {
+        let noWindow = FakeAdbServer.shell(stderr: "ERROR: null root node returned by UiTestAutomationBridge.\n", status: 3)
+        let backend = try AndroidBackendTests.backend(Self.server(dump: noWindow))
+        let error = await #expect(throws: AndroidError.self) { try await backend.accessibilityTree(for: Self.device, point: nil) }
+        #expect(error?.kind == .uiautomatorNoWindow)
+        #expect(error?.isTransientFailure == true)
     }
 
     @Test("the dump's rotation refreshes the cached geometry without another probe")

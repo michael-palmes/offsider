@@ -45,7 +45,7 @@ actor EmulatorControlClient: EmulatorControlling {
     }
 
     func status() async throws -> EmulatorStatusSummary {
-        let status = try await call(.getStatus, timeout: .seconds(1)) { stub, metadata, options in
+        let status = try await call(.getStatus, timeout: .seconds(2)) { stub, metadata, options in
             try await stub.getStatus(Google_Protobuf_Empty(), metadata: metadata, options: options)
         }
         return EmulatorStatusSummary(version: status.version, booted: status.booted, uptimeMilliseconds: status.uptime)

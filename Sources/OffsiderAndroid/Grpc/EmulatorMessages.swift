@@ -71,7 +71,7 @@ extension EmulatorControlClient {
     }
 }
 
-/// Tries 127.0.0.1, then `[::1]` when nothing answers there, proving each with `getStatus` within 1 s.
+/// Tries 127.0.0.1, then `[::1]` when nothing answers there, proving each with `getStatus` within 2 s.
 struct GrpcEmulatorConnector: EmulatorConnecting {
     func connect(discovery: EmulatorDiscovery, auth: EmulatorAuth) async throws -> any EmulatorControlling {
         guard let port = discovery.grpcPort else { throw AndroidError.grpcUnavailable(port: 0) }

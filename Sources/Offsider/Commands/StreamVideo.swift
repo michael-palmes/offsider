@@ -12,7 +12,7 @@ struct StreamVideo: AsyncParsableCommand {
 
     static let configuration = CommandConfiguration(
         commandName: "stream-video",
-        abstract: "Stream simulator frames to stdout using screenshot capture"
+        abstract: "Stream device frames to stdout using screenshot capture"
     )
 
     @OptionGroup
@@ -75,7 +75,7 @@ struct StreamVideo: AsyncParsableCommand {
         format: OutputFormat,
         cancellationFlag: CancellationFlag
     ) async throws {
-        FileHandle.standardError.write(Data("Starting screenshot-based video stream from simulator \(device.rawValue)...\n".utf8))
+        FileHandle.standardError.write(Data("Starting screenshot-based video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...\n".utf8))
         FileHandle.standardError.write(Data("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
@@ -169,10 +169,13 @@ struct StreamVideo: AsyncParsableCommand {
             throw CLIError(errorDescription: "BGRA streaming is not supported for device \(device.rawValue).")
         }
 
-        FileHandle.standardError.write(Data("Starting BGRA video stream from simulator \(device.rawValue)...\n".utf8))
+        FileHandle.standardError.write(Data("Starting BGRA video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...\n".utf8))
         FileHandle.standardError.write(Data("Format: bgra, Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Note: This is raw pixel data. Use ffmpeg to convert:\n".utf8))
         FileHandle.standardError.write(Data("  offsider stream-video --format bgra --device <DEVICE_ID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
+        if device.platform == .android {
+            FileHandle.standardError.write(Data("Note: the Android Emulator sends a new frame only when the screen changes, so a still screen sends one frame.\n".utf8))
+        }
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
         try await streamer.streamBGRA(

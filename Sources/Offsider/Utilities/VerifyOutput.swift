@@ -147,8 +147,10 @@ enum VerifyOutput {
         "(\(number(x)), \(number(y)))"
     }
 
+    /// Rounded to 0.01, the precision of describe-ui frames.
     nonisolated private static func number(_ value: Double) -> String {
-        value.rounded() == value && abs(value) < 1e15 ? String(Int(value)) : String(value)
+        let rounded = (value * 100).rounded() / 100
+        return rounded.rounded() == rounded && abs(rounded) < 1e15 ? String(Int(rounded)) : String(rounded)
     }
 
     private static func message(for error: Error) -> String {

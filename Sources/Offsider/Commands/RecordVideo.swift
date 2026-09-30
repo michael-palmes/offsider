@@ -6,7 +6,7 @@ import OffsiderCore
 struct RecordVideo: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "record-video",
-        abstract: "Record the simulator display to an MP4 file using H.264 encoding"
+        abstract: "Record the device display to an MP4 file using H.264 encoding"
     )
 
     @OptionGroup
@@ -46,7 +46,7 @@ struct RecordVideo: AsyncParsableCommand {
         let booted = try await backend.requireBootedDevice(route.device)
 
         let outputURL = try prepareOutputURL()
-        FileHandle.standardError.write(Data("Recording simulator \(booted.id.rawValue) to \(outputURL.path)\n".utf8))
+        FileHandle.standardError.write(Data("Recording \(booted.id.platform.videoSourceNoun) \(booted.id.rawValue) to \(outputURL.path)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop recording\n".utf8))
 
         let cancellationFlag = CancellationFlag()

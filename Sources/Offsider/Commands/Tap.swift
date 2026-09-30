@@ -127,7 +127,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
-            resolvedDescription = "(\(pointX), \(pointY))"
+            resolvedDescription = VerifyOutput.pointDescription(x: pointX, y: pointY)
         } else {
             let query: AccessibilityQuery
             if let elementID {
@@ -147,6 +147,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                     device: device,
                     waitTimeout: waitTimeout,
                     pollInterval: pollInterval,
+                    transientGrace: progress == nil ? 0 : verification.resolvedTimeout,
                     elementType: elementType,
                     logger: logger
                 )
@@ -155,7 +156,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw error
             }
 
-            resolvedDescription = "resolved tap point at (\(resolution.point.x), \(resolution.point.y))"
+            resolvedDescription = "resolved tap point at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y))"
         }
 
         logger.info().log("Tapping at \(resolvedDescription)")

@@ -305,3 +305,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         }
     }
 }
+
+/// uiautomator finds no window for a moment while an activity starts or restarts; polling callers retry it.
+extension AndroidError: TransientFailure {
+    public var isTransient: Bool { kind == .uiautomatorNoWindow }
+}
