@@ -70,6 +70,7 @@ public struct AndroidHost: Sendable {
     public var environment: [String: String]
     public var homeDirectory: URL
     var files: any FileSystemProbe
+    var adbConnector: any AdbConnecting
     var processes: any HostProcessRunning
     var isProcessAlive: @Sendable (Int32) -> Bool
     var sleep: @Sendable (Duration) async throws -> Void
@@ -78,6 +79,7 @@ public struct AndroidHost: Sendable {
         environment: [String: String],
         homeDirectory: URL,
         files: any FileSystemProbe = LocalFileSystem(),
+        adbConnector: any AdbConnecting = PosixAdbConnector(),
         processes: any HostProcessRunning = LocalProcessRunner(),
         isProcessAlive: @escaping @Sendable (Int32) -> Bool = { AndroidHost.processIsAlive($0) },
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
@@ -85,6 +87,7 @@ public struct AndroidHost: Sendable {
         self.environment = environment
         self.homeDirectory = homeDirectory
         self.files = files
+        self.adbConnector = adbConnector
         self.processes = processes
         self.isProcessAlive = isProcessAlive
         self.sleep = sleep

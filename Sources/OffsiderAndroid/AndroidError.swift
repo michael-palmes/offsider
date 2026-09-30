@@ -6,6 +6,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case sdkVariableWithoutAdb
         case nonLoopbackAdbServer
         case invalidAdbServerSetting
+        case adbServerNotRunning
         case adbServerStartFailed
         case adbServerNoAnswer
         case adbProtocol
@@ -60,6 +61,10 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
             .invalidAdbServerSetting,
             "\(variable) is \(value), which Offsider cannot read. Use \(expected), or unset it."
         )
+    }
+
+    static func adbServerNotRunning(endpoint: String) -> AndroidError {
+        AndroidError(.adbServerNotRunning, "No adb server is running on \(endpoint). Start it with `adb start-server`, then retry.")
     }
 
     static func adbServerStartFailed(adb: String, status: Int32, detail: String) -> AndroidError {
