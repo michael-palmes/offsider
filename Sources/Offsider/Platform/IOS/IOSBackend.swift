@@ -128,6 +128,11 @@ final class IOSBackend: DeviceBackend {
         try await VideoFrameUtilities.captureScreenshotData(from: try await simulator(for: id))
     }
 
+    /// The status bar; the home indicator does not change on its own.
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
+        ScreenBands(top: 60, bottom: 0)
+    }
+
     private func simulator(for id: DeviceID) async throws -> FBSimulator {
         if let simulator = simulators[id.rawValue] {
             return simulator

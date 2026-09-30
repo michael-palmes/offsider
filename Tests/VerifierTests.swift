@@ -3,6 +3,7 @@ import Foundation
 import ImageIO
 import Testing
 import UniformTypeIdentifiers
+import OffsiderAndroid
 import OffsiderCore
 @testable import Offsider
 
@@ -11,6 +12,7 @@ private final class FakeSimulator {
     var clock: TimeInterval = 0
     var trees: [AccessibilitySnapshot]
     var screens: [Data]
+    var bands = ScreenBands(top: 60, bottom: 0)
     private(set) var treeReads = 0
     private(set) var screenReads = 0
 
@@ -34,7 +36,8 @@ private final class FakeSimulator {
             sleep: { [unowned self] duration in
                 clock += Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
             },
-            now: { [unowned self] in clock }
+            now: { [unowned self] in clock },
+            bands: { [unowned self] in bands }
         )
     }
 }
@@ -54,6 +57,27 @@ private func screen(shade: UInt8) -> Data {
     var bytes = [UInt8](repeating: 255, count: width * height * 4)
     for y in 64..<height {
         for x in 0..<width { bytes[(y * width + x) * 4] = shade }
+    }
+    let provider = CGDataProvider(data: Data(bytes) as CFData)!
+    let image = CGImage(
+        width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+    )!
+    let data = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, image, nil)
+    CGImageDestinationFinalize(destination)
+    return data as Data
+}
+
+/// `screen(shade: 10)` except its bottom 16 rows, which sit inside a 48-point bottom band at this scale.
+private func bottomBar(shade: UInt8) -> Data {
+    let width = 64, height = 128
+    var bytes = [UInt8](repeating: 255, count: width * height * 4)
+    for y in 64..<height {
+        for x in 0..<width { bytes[(y * width + x) * 4] = y >= height - 16 ? shade : 10 }
     }
     let provider = CGDataProvider(data: Data(bytes) as CFData)!
     let image = CGImage(
@@ -214,13 +238,51 @@ struct VerifierTests {
         #expect(fake.treeReads == 2)
     }
 
-    @Test("The status bar band is excluded only in portrait")
-    func statusBandOnlyInPortrait() {
+    @Test("The bands are scaled to pixels and excluded only in portrait")
+    func bandsOnlyInPortrait() {
         let png = screen(shade: 10)
         let portrait = AccessibilitySnapshot.Frame(x: 0, y: 0, width: 32, height: 64)
         let landscape = AccessibilitySnapshot.Frame(x: 0, y: 0, width: 64, height: 32)
-        #expect(Verifier.statusBandPixels(pngData: png, screenFrame: portrait) == 120)
-        #expect(Verifier.statusBandPixels(pngData: png, screenFrame: landscape) == 0)
-        #expect(Verifier.statusBandPixels(pngData: png, screenFrame: nil) == 0)
+        let android = ScreenBands(top: 60, bottom: 48)
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: portrait, bands: android) == (120, 96))
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: portrait, bands: ScreenBands(top: 60, bottom: 0)) == (120, 0))
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: landscape, bands: android) == (0, 0))
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: nil, bands: android) == (0, 0))
+    }
+
+    @Test("A screen change only in the bottom band verifies with no bottom band and not with one")
+    func bottomBandChange() async throws {
+        for (bands, verified) in [(ScreenBands(top: 60, bottom: 0), true), (ScreenBands(top: 60, bottom: 48), false)] {
+            let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), bottomBar(shade: 200)])
+            fake.bands = bands
+            var actions: [Verifier.Attempt] = []
+            var retries: [Int] = []
+            let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+            #expect(outcome.verified == verified, "bands \(bands)")
+        }
+    }
+
+    @Test("An unverified command points at doctor only for iOS simulators, which doctor checks")
+    func unverifiedHintByPlatform() throws {
+        let outcome = Verifier.Outcome(verified: false, attempts: 1, change: .none, style: nil, summary: nil)
+        let options = try VerificationOptions.parse(["--verify"])
+        func line(_ device: DeviceID) -> String {
+            let request = VerifyRequest(
+                command: "key", subject: "Key 4", target: "4", backend: StubBackend(session: RecordingInputSession()),
+                device: device, options: options, styles: [nil]
+            )
+            return VerifyOutput.unverifiedLine(outcome, for: request)
+        }
+        let udid = UUID().uuidString
+        #expect(line(DeviceID(rawValue: udid, platform: .ios)).hasSuffix("Check the target with describe-ui, or run offsider doctor --device \(udid)."))
+        #expect(line(DeviceID(rawValue: "emulator-5556", platform: .android)).hasSuffix("Check the target with describe-ui."))
+    }
+
+    @Test("The backends' bands: iOS keeps the status bar only, Android adds the navigation bar")
+    func backendBands() async {
+        let device = DeviceID(rawValue: UUID().uuidString, platform: .ios)
+        #expect(await IOSBackend(logger: OffsiderLogger()).volatileScreenBands(for: device) == ScreenBands(top: 60, bottom: 0))
+        let android = AndroidBackend(host: .live(environment: [:])) { _, _ in }
+        #expect(await android.volatileScreenBands(for: DeviceID(rawValue: "emulator-5556", platform: .android)) == ScreenBands(top: 60, bottom: 48))
     }
 }

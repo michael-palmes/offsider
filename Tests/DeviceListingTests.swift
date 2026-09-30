@@ -37,6 +37,7 @@ private final class ListingBackend: DeviceBackend {
     func openInputSession(for id: DeviceID) async throws -> any InputSession { RecordingInputSession() }
     func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {}
     func screenshotPNG(for id: DeviceID) async throws -> Data { Data() }
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands { ScreenBands(top: 0, bottom: 0) }
 }
 
 @Suite("Device Listing Tests")

@@ -227,6 +227,11 @@ public final class AndroidBackend: DeviceBackend {
         }
     }
 
+    /// The status bar with its cutout (54 dp on a Pixel 9) and the navigation bar, until the tree reports window bounds.
+    public func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
+        ScreenBands(top: 60, bottom: 48)
+    }
+
     /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.
     func adbScreenshot(_ serial: String) async throws -> Data {
         let png = try await requireClient().exec("screencap -p", on: serial, timeout: .seconds(15))
