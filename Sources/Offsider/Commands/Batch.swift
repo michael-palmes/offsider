@@ -81,7 +81,11 @@ struct Batch: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger(writeToStdErr: verbose)
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        try await run(on: try await DeviceRouter.route(deviceOption.id, logger: logger), logger: logger)
+    }
+
+    /// Every step shares one input session, so an Android batch holds one gRPC client or adb executor throughout.
+    func run(on route: DeviceRouter.Route, logger: OffsiderLogger) async throws {
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
