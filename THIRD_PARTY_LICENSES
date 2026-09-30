@@ -247,3 +247,908 @@ Licensed under the Apache License, Version 2.0 with the Runtime Library Exceptio
     portions of this Software are embedded into the binary product as a result,
     you may redistribute such product without providing attribution as would
     otherwise be required by Sections 4(a), 4(b) and 4(d) of the License.
+
+---------------------------------------------------------------------
+
+gRPC Swift (grpc-swift-2)
+https://github.com/grpc/grpc-swift-2
+
+Copyright 2021 The gRPC Swift Project
+
+Licensed under the Apache License, Version 2.0; the full text is above.
+Statically linked into the offsider binary.
+
+Its NOTICES.txt, reproduced verbatim:
+
+                          The gRPC Swift Project
+                          ======================
+
+Copyright 2021 The gRPC Swift Project
+
+The gRPC Swift project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+-------------------------------------------------------------------------------
+
+This product uses derivations of SwiftNIOHTTP2's implementation of case
+insensitive comparison of strings, found in 'HPACKHeader.swift'.
+
+    * LICENSE (Apache License 2.0):
+      * https://github.com/apple/swift-nio-http2/blob/main/LICENSE.txt
+    * HOMEPAGE:
+      * https://github.com/apple/swift-nio-http2
+
+---
+
+This product uses derivations of swift-extras/swift-extras-base64 'Base64.swift'.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/swift-extras/swift-extras-base64/blob/main/LICENSE
+  * HOMEPAGE:
+    * https://github.com/swift-extras/swift-extras-base64
+
+---------------------------------------------------------------------
+
+gRPC Swift NIO Transport (grpc-swift-nio-transport)
+https://github.com/grpc/grpc-swift-nio-transport
+
+Copyright 2024 The gRPC Swift Project
+
+Licensed under the Apache License, Version 2.0; the full text is above.
+Statically linked into the offsider binary.
+
+Its NOTICES.txt, reproduced verbatim:
+
+                          The gRPC Swift Project
+                          ======================
+
+Copyright 2024 The gRPC Swift Project
+
+The gRPC Swift project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+-------------------------------------------------------------------------------
+
+This product uses derivations of swift-extras/swift-extras-base64 'Base64.swift'.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/swift-extras/swift-extras-base64/blob/main/LICENSE
+  * HOMEPAGE:
+    * https://github.com/swift-extras/swift-extras-base64
+
+---------------------------------------------------------------------
+
+gRPC Swift Protobuf (grpc-swift-protobuf)
+https://github.com/grpc/grpc-swift-protobuf
+
+Copyright 2021 The gRPC Swift Project
+
+Licensed under the Apache License, Version 2.0; the full text is above.
+Statically linked into the offsider binary.
+
+Its NOTICES.txt, reproduced verbatim:
+
+                          The gRPC Swift Project
+                          ======================
+
+Copyright 2021 The gRPC Swift Project
+
+The gRPC Swift project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+-------------------------------------------------------------------------------
+
+This product uses scripts derived from SwiftNIO's integration testing
+framework: 'test_01_allocation_counts.sh', 'run-nio-alloc-counter-tests.sh' and
+'test_functions.sh'.
+
+It also uses derivations of SwiftNIO's lock 'NIOLock.swift' and locked value box
+'NIOLockedValueBox.swift'.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/apple/swift-nio/blob/main/LICENSE.txt
+  * HOMEPAGE:
+    * https://github.com/apple/swift-nio
+
+---
+
+This product uses derivations of SwiftNIOHTTP2's implementation of case
+insensitive comparison of strings, found in 'HPACKHeader.swift'.
+    
+    * LICENSE (Apache License 2.0):
+      * https://github.com/apple/swift-nio-http2/blob/main/LICENSE.txt
+    * HOMEPAGE:
+      * https://github.com/apple/swift-nio-http2
+
+---
+
+This product contains a derivation of the backpressure aware async stream from
+the Swift project.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/apple/swift/blob/main/LICENSE.txt
+  * HOMEPAGE:
+    * https://github.com/apple/swift
+
+---
+
+This product uses derivations of swift-extras/swift-extras-base64 'Base64.swift'.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/swift-extras/swift-extras-base64/blob/main/LICENSE
+  * HOMEPAGE:
+    * https://github.com/swift-extras/swift-extras-base64
+
+---
+
+This product uses derivations of apple/swift-openapi-generator 'StructuredSwiftRepresentation.swift',
+'TypeName.swift', 'TypeUsage.swift', 'Builtins.swift', 'RendererProtocol.swift', 'TextBasedProtocol',
+'Test_TextBasedRenderer', and 'SnippetBasedReferenceTests.swift'.
+    
+    * LICENSE (Apache License 2.0):
+      * https://github.com/apple/swift-openapi-generator/blob/main/LICENSE.txt
+    * HOMEPAGE:
+      * https://github.com/apple/swift-openapi-generator
+
+---------------------------------------------------------------------
+
+Swift Protobuf (swift-protobuf)
+https://github.com/apple/swift-protobuf
+
+Copyright (c) 2014 - 2017 Apple Inc. and the project authors
+
+Licensed under the Apache License, Version 2.0 with the Runtime Library Exception; the full texts are above.
+Statically linked into the offsider binary.
+
+---------------------------------------------------------------------
+
+SwiftNIO (swift-nio)
+https://github.com/apple/swift-nio
+
+Copyright 2017, 2018 The SwiftNIO Project
+
+Licensed under the Apache License, Version 2.0; the full text is above.
+Statically linked into the offsider binary.
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+                            The SwiftNIO Project
+                            ====================
+
+Please visit the SwiftNIO web site for more information:
+
+  * https://github.com/apple/swift-nio
+
+Copyright 2017, 2018 The SwiftNIO Project
+
+The SwiftNIO Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.<component>.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+-------------------------------------------------------------------------------
+
+This product is heavily influenced by Netty.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/netty/netty/blob/4.1/LICENSE.txt
+  * HOMEPAGE:
+    * https://netty.io
+
+---
+
+This product contains NodeJS's llhttp.
+
+  * LICENSE (MIT):
+    * https://github.com/nodejs/llhttp/blob/1e1c5b43326494e97cf8244ff57475eb72a1b62c/LICENSE-MIT
+  * HOMEPAGE:
+    * https://github.com/nodejs/llhttp
+
+---
+
+This product contains "cpp_magic.h" from Thomas Nixon & Jonathan Heathcote's uSHET
+
+  * LICENSE (MIT):
+    * https://github.com/18sg/uSHET/blob/c09e0acafd86720efe42dc15c63e0cc228244c32/lib/cpp_magic.h
+  * HOMEPAGE:
+    * https://github.com/18sg/uSHET
+
+---
+
+This product contains "sha1.c" and "sha1.h" from FreeBSD (Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project)
+
+  * LICENSE (BSD-3):
+    * https://opensource.org/licenses/BSD-3-Clause
+  * HOMEPAGE:
+    * https://github.com/freebsd/freebsd-src
+
+---
+
+This product contains a derivation of Fabian Fett's 'Base64.swift'.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/swift-extras/swift-extras-base64/blob/b8af49699d59ad065b801715a5009619100245ca/LICENSE
+  * HOMEPAGE:
+    * https://github.com/fabianfett/swift-base64-kit
+
+---
+
+This product contains a derivation of "XCTest+AsyncAwait.swift" & "StructuredConcurrencyHelpers" from AsyncHTTPClient.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/swift-server/async-http-client
+
+---
+
+This product contains a derivation of "_TinyArray.swift" from SwiftCertificates.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-certificates
+
+---
+
+This product contains a derivation of the mocking infrastructure from Swift System.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-system
+
+---
+
+This product contains a derivation of "TokenBucket.swift" from Swift Package Manager.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/swiftlang/swift-package-manager
+
+---------------------------------------------------------------------
+
+SwiftNIO HTTP/2 (swift-nio-http2)
+https://github.com/apple/swift-nio-http2
+
+Copyright 2017, 2018 The SwiftNIO Project
+
+Licensed under the Apache License, Version 2.0; the full text is above.
+Statically linked into the offsider binary.
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+                            The SwiftNIO Project
+                            ====================
+
+Please visit the SwiftNIO web site for more information:
+
+  * https://github.com/apple/swift-nio
+
+Copyright 2017, 2018 The SwiftNIO Project
+
+The SwiftNIO Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.<component>.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+-------------------------------------------------------------------------------
+
+This product is heavily influenced by Netty.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/netty/netty/blob/4.1/LICENSE.txt
+  * HOMEPAGE:
+    * https://netty.io
+
+---
+
+This product contains a derivation of the Tony Stone's 'process_test_files.rb'.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://codegists.com/snippet/ruby/generate_xctest_linux_runnerrb_tonystone_ruby
+
+---
+
+The unit tests make use of 'hpack-test-case' by jxck, summerwind, kazu-yamamoto, and tatsuhiro-t.
+
+  * LICENSE (MIT):
+    * https://opensource.org/licenses/MIT
+  * HOMEPAGE:
+    * https://github.com/http2jp/hpack-test-case
+
+---
+
+This product contains a fuzz testing harness derived from Swift Protobuf.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/apple/swift-protobuf/blob/main/LICENSE.txt
+  * HOMEPAGE:
+    * https://github.com/apple/swift-protobuf
+
+---
+
+This product contains a graceful shutdown connection manager derived from gRPC Swift NIO Transport.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/grpc/grpc-swift-nio-transport/blob/main/LICENSE
+  * HOMEPAGE:
+    * https://github.com/gRPC/gRPC-swift-nio-transport
+
+---------------------------------------------------------------------
+
+SwiftNIO Extras (swift-nio-extras)
+https://github.com/apple/swift-nio-extras
+
+Copyright 2017, 2018 The SwiftNIO Project
+
+Licensed under the Apache License, Version 2.0; the full text is above.
+Statically linked into the offsider binary.
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+                            The SwiftNIO Project
+                            ====================
+
+Please visit the SwiftNIO web site for more information:
+
+  * https://github.com/apple/swift-nio
+
+Copyright 2017, 2018 The SwiftNIO Project
+
+The SwiftNIO Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.<component>.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+-------------------------------------------------------------------------------
+
+This product contains a derivation of the Tony Stone's 'process_test_files.rb'.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://codegists.com/snippet/ruby/generate_xctest_linux_runnerrb_tonystone_ruby
+
+---
+
+This product contains a derivation of "HTTP1ProxyConnectHandler.swift" and accompanying tests from AsyncHTTPClient.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/swift-server/async-http-client
+
+---
+
+This product contains a vendored copy of zlib with symbols prefixed as "cnioextras_z_".
+
+  * LICENSE (zlib License):
+    * https://www.zlib.net/zlib_license.html
+  * HOMEPAGE:
+    * https://www.zlib.net/
+
+---
+
+---------------------------------------------------------------------
+
+SwiftNIO Transport Services (swift-nio-transport-services)
+https://github.com/apple/swift-nio-transport-services
+
+Copyright (c) 2017-2021 Apple Inc. and the SwiftNIO project authors
+
+Licensed under the Apache License, Version 2.0; the full text is above.
+Statically linked into the offsider binary.
+
+---------------------------------------------------------------------
+
+Swift Atomics (swift-atomics)
+https://github.com/apple/swift-atomics
+
+Copyright (c) 2020 - 2025 Apple Inc. and the Swift project authors
+
+Licensed under the Apache License, Version 2.0 with the Runtime Library Exception; the full texts are above.
+Statically linked into the offsider binary.
+
+---------------------------------------------------------------------
+
+Swift Collections (swift-collections)
+https://github.com/apple/swift-collections
+
+Copyright (c) 2021 - 2026 Apple Inc. and the Swift project authors
+
+Licensed under the Apache License, Version 2.0 with the Runtime Library Exception; the full texts are above.
+Statically linked into the offsider binary.
+
+---------------------------------------------------------------------
+
+Packages resolved with the gRPC Swift packages but not compiled into Offsider
+
+These packages are in Package.resolved because the gRPC Swift manifests declare them, but no code from them is
+linked into the offsider binary. Each is licensed under the Apache License, Version 2.0 (Swift Algorithms,
+Swift Async Algorithms, Swift Numerics and Swift System with the Runtime Library Exception); the full texts
+are above. Their NOTICE files are reproduced so this list does not need re-auditing when the linked set shifts.
+
+Swift Algorithms (swift-algorithms)
+https://github.com/apple/swift-algorithms
+
+Swift ASN.1 (swift-asn1)
+https://github.com/apple/swift-asn1
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+                            The SwiftASN1 Project
+                            =====================
+
+Please visit the SwiftASN1 web site for more information:
+
+  * https://github.com/apple/swift-asn1
+
+Copyright 2022 The SwiftASN1 Project
+
+The SwiftASN1 Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+---
+
+This product contains derivations of various scripts from SwiftNIO.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-nio
+    
+---
+
+This product contains derivations of various scripts from Swift OpenAPI Generator.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-openapi-generator
+
+Swift Async Algorithms (swift-async-algorithms)
+https://github.com/apple/swift-async-algorithms
+
+Swift Certificates (swift-certificates)
+https://github.com/apple/swift-certificates
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+                            The SwiftCertificates Project
+                            =====================
+
+Please visit the SwiftCertificates web site for more information:
+
+  * https://github.com/apple/swift-certificates
+
+Copyright 2022 The SwiftCertificates Project
+
+The SwiftCertificates Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+---
+
+This product contains derivations of various scripts from SwiftNIO.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-nio
+    
+---
+
+This product contains test data derived from Webpki.
+
+  * LICENSE (ISC):
+    * https://github.com/briansmith/webpki/blob/main/LICENSE
+  * HOMEPAGE:
+    * https://github.com/briansmith/webpki/
+    
+---
+
+This product contains derivations of various ASN1 types from SwiftASN1.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-asn1
+
+---
+
+This product contains test vectors from pyca/cryptography.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/pyca/cryptography/blob/main/LICENSE.APACHE
+  * HOMEPAGE:
+    * https://github.com/pyca/cryptography
+
+---
+
+This product contains code to calculate and decompose UNIX timestamps derived from musl libc.
+
+  * LICENSE (MIT):
+    * https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT
+  * HOMEPAGE:
+    * https://musl.libc.org
+    
+---
+    
+This product contains derivations of various scripts from SwiftNIO SSH.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-nio-ssh
+    
+---
+
+This product contains derivations of various scripts from Swift OpenAPI Generator.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-openapi-generator
+
+Swift Crypto (swift-crypto)
+https://github.com/apple/swift-crypto
+
+Its NOTICE.txt, reproduced verbatim:
+
+                            The SwiftCrypto Project
+                            =======================
+
+Please visit the SwiftCrypto web site for more information:
+
+  * https://github.com/apple/swift-crypto
+
+Copyright 2019 The SwiftCrypto Project
+
+The SwiftCrypto Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.<component>.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+-------------------------------------------------------------------------------
+
+This product contains test vectors from Google's wycheproof project.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/C2SP/wycheproof/blob/31387e2cd596587c859c611027b6a44d2e2b65ff/LICENSE
+  * HOMEPAGE:
+    * https://github.com/google/wycheproof
+
+---
+
+This product contains a derivation of various files from SwiftNIO.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-nio
+
+Swift HTTP Structured Headers (swift-http-structured-headers)
+https://github.com/apple/swift-http-structured-headers
+
+Swift HTTP Types (swift-http-types)
+https://github.com/apple/swift-http-types
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+                            The Swift HTTP Types Project
+                            ====================================
+
+Please visit the Swift HTTP Types web site for more information:
+
+  * https://github.com/apple/swift-http-types
+
+Copyright 2023 The Swift HTTP Types Project
+
+The Swift HTTP Types Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.<component>.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+-------------------------------------------------------------------------------
+
+This product contains a derivation of various scripts from SwiftNIO.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-nio
+
+SwiftLog (swift-log)
+https://github.com/apple/swift-log
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+                            The SwiftLog Project
+                            ========================
+
+Please visit the SwiftLog web site for more information:
+
+  * https://github.com/apple/swift-log
+
+Copyright 2018, 2019 The SwiftLog Project
+
+The SwiftLog Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.<component>.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+-------------------------------------------------------------------------------
+
+This product contains a derivation of the lock implementation and various
+scripts from SwiftNIO.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://github.com/apple/swift-nio
+
+SwiftNIO SSL (swift-nio-ssl)
+https://github.com/apple/swift-nio-ssl
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+                            The SwiftNIO Project
+                            ====================
+
+Please visit the SwiftNIO web site for more information:
+
+  * https://github.com/apple/swift-nio
+
+Copyright 2017, 2018 The SwiftNIO Project
+
+The SwiftNIO Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.<component>.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+-------------------------------------------------------------------------------
+
+This product is heavily influenced by Netty.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/netty/netty/blob/4.1/LICENSE.txt
+  * HOMEPAGE:
+    * https://netty.io
+
+---
+
+This product contains a derivation of the Tony Stone's 'process_test_files.rb'.
+
+  * LICENSE (Apache License 2.0):
+    * https://www.apache.org/licenses/LICENSE-2.0
+  * HOMEPAGE:
+    * https://codegists.com/snippet/ruby/generate_xctest_linux_runnerrb_tonystone_ruby
+
+---
+
+This product contains code derived from grpc-swift.
+
+  * LICENSE (Apache License 2.0):
+    * https://github.com/grpc/grpc-swift/blob/0.7.0/LICENSE
+  * HOMEPAGE:
+    * https://github.com/grpc/grpc-swift
+
+---
+
+This product contains code from boringssl.
+
+  * LICENSE (Combination ISC and OpenSSL license)
+    * https://boringssl.googlesource.com/boringssl/+/refs/heads/master/LICENSE
+  * HOMEPAGE:
+    * https://boringssl.googlesource.com/boringssl/
+
+Swift Numerics (swift-numerics)
+https://github.com/apple/swift-numerics
+
+Swift Service Lifecycle (swift-service-lifecycle)
+https://github.com/swift-server/swift-service-lifecycle
+
+Its NOTICE.txt, reproduced verbatim:
+
+
+The ServiceLifecycle Project
+===========================
+
+Please visit the ServiceLifecycle web site for more information:
+
+* https://github.com/swift-server/swift-service-lifecycle
+
+Copyright 2019-2023 The ServiceLifecycle Project
+
+The ServiceLifecycle Project licenses this file to you under the Apache License,
+version 2.0 (the "License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations
+under the License.
+
+Also, please refer to each LICENSE.txt file, which is located in
+the 'license' directory of the distribution file, for the license terms of the
+components that this product depends on.
+
+---
+
+This product contains derivations of the Lock and LockedValueBox implementations from SwiftNIO.
+
+* LICENSE (Apache License 2.0):
+* https://www.apache.org/licenses/LICENSE-2.0
+* HOMEPAGE:
+* https://github.com/apple/swift-nio
+
+---
+
+This product uses swift-async-algorithms.
+
+* LICENSE (Apache License 2.0):
+* https://www.apache.org/licenses/LICENSE-2.0
+* HOMEPAGE:
+* https://github.com/apple/swift-async-algorithms
+
+---
+
+Swift System (swift-system)
+https://github.com/apple/swift-system
+
+---------------------------------------------------------------------
+
+Android Emulator gRPC protocol definition (emulator_controller.proto)
+From the Android SDK's emulator/lib/emulator_controller.proto (Android Emulator 37.1.11), also published in
+https://github.com/google/android-emulator-webrtc
+
+Copyright (C) 2018 The Android Open Source Project
+
+Licensed under the Apache License, Version 2.0; the full text is above.
+Modified (trimmed to the RPCs and messages Offsider uses) and vendored as
+Sources/OffsiderAndroid/Grpc/Proto/emulator_controller.proto; compiled into Offsider as generated Swift
+(Sources/OffsiderAndroid/Grpc/Generated).
