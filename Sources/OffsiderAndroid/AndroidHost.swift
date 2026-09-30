@@ -77,6 +77,9 @@ public struct AndroidHost: Sendable {
     /// The executable of a running process, or nil when it has gone or cannot be read.
     var processPath: @Sendable (Int32) -> String?
     var sleep: @Sendable (Duration) async throws -> Void
+    var launcher: any EmulatorLaunching
+    /// Monotonic time for deadlines; tests advance it with their recorded sleeps.
+    var uptime: @Sendable () -> Duration
 
     init(
         environment: [String: String],
@@ -87,7 +90,9 @@ public struct AndroidHost: Sendable {
         processes: any HostProcessRunning = LocalProcessRunner(),
         isProcessAlive: @escaping @Sendable (Int32) -> Bool = { AndroidHost.processIsAlive($0) },
         processPath: @escaping @Sendable (Int32) -> String? = { AndroidHost.executablePath(of: $0) },
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        launcher: any EmulatorLaunching = DetachedProcess(),
+        uptime: @escaping @Sendable () -> Duration = { .seconds(ProcessInfo.processInfo.systemUptime) }
     ) {
         self.environment = environment
         self.homeDirectory = homeDirectory
@@ -98,6 +103,8 @@ public struct AndroidHost: Sendable {
         self.isProcessAlive = isProcessAlive
         self.processPath = processPath
         self.sleep = sleep
+        self.launcher = launcher
+        self.uptime = uptime
     }
 
     /// `HOME` wins over the account's home folder, so a test run with an empty `HOME` sees no SDK or AVDs.

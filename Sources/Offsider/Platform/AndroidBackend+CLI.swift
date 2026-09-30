@@ -5,10 +5,12 @@ import OffsiderCore
 extension AndroidBackend {
     /// Debug and info go to the Offsider logger; warnings print one `Warning:` line on stderr.
     static func make(logger: OffsiderLogger, host: AndroidHost = .live()) -> AndroidBackend {
+        AndroidBackend(host: host, log: logBridge(logger: logger))
+    }
+
+    static func logBridge(logger: OffsiderLogger) -> AndroidLog {
         let sink = AndroidLogSink(logger: logger)
-        return AndroidBackend(host: host) { level, message in
-            sink.write(level, message)
-        }
+        return { level, message in sink.write(level, message) }
     }
 }
 

@@ -20,6 +20,7 @@ struct CommandNamingTests {
 
         #expect(subcommands.contains("tap"))
         #expect(subcommands.contains("init"))
+        #expect(subcommands.contains("boot"))
 
         for name in subcommands {
             let help = try await TestHelpers.runOffsiderCommand("\(name) --help").output

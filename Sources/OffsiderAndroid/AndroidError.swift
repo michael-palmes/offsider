@@ -40,6 +40,11 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case grpcFailed
         case screenshotFailed
         case videoOutputFailed
+        case noAVDNamed
+        case emulatorMissing
+        case emulatorLaunchFailed
+        case emulatorExited
+        case bootTimeout
     }
 
     public let kind: Kind
@@ -282,6 +287,33 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(
             .displayProbeUnparseable,
             "Could not read the display size and rotation of \(serial) (\(firstLine)). Check it with `adb -s \(serial) shell dumpsys input`."
+        )
+    }
+
+    static func noAVDNamed(_ name: String, available: [String]) -> AndroidError {
+        let list = available.isEmpty ? "This Mac has no AVDs." : "AVDs on this Mac: \(available.joined(separator: ", "))."
+        return AndroidError(.noAVDNamed, "No AVD named \(name). \(list) Create one in Android Studio's Device Manager.")
+    }
+
+    static func emulatorMissing(sdkRoot: String) -> AndroidError {
+        AndroidError(.emulatorMissing, "The Android Emulator is not installed in \(sdkRoot)/emulator. Install it with Android Studio's SDK Manager.")
+    }
+
+    static func emulatorLaunchFailed(path: String, detail: String) -> AndroidError {
+        AndroidError(.emulatorLaunchFailed, "Could not start \(path): \(detail).")
+    }
+
+    static func emulatorExited(status: Int32, logPath: String, tail: String) -> AndroidError {
+        let lines = tail.isEmpty ? " The log is empty." : " Last lines of \(logPath):\n\(tail)"
+        return AndroidError(.emulatorExited, "The emulator exited during start-up (status \(status)).\(lines)")
+    }
+
+    static func bootTimeout(avd: String, serial: String?, seconds: Int, logPath: String?) -> AndroidError {
+        let device = serial.map { "\(avd) (\($0))" } ?? avd
+        let hint = logPath.map { "check its window or \($0)" } ?? "check its window"
+        return AndroidError(
+            .bootTimeout,
+            "\(device) did not finish booting within \(seconds) s. It is still running; \(hint), then run `offsider boot \(avd)` again to keep waiting."
         )
     }
 

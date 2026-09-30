@@ -178,7 +178,7 @@ capture_case version --version
 capture_case help --help
 
 SUBCOMMANDS=(
-  batch button describe-ui doctor drag gesture init key key-combo key-sequence
+  batch boot button describe-ui doctor drag gesture init key key-combo key-sequence
   list-devices record-video screenshot slider stream-video swipe tap touch type
 )
 for subcommand in "${SUBCOMMANDS[@]}"; do
@@ -193,6 +193,7 @@ done
 
 VALIDATION_CASES=(
   "batch-source|batch|--device|invalid|--step|tap -x 1 -y 1|--stdin"
+  "boot-timeout|boot|Pixel_9|--timeout|5"
   "button-value|button|invalid-button|--device|invalid"
   "describe-ui-point|describe-ui|--device|invalid|--point|nope"
   "drag-duration|drag|--start-x|0|--start-y|0|--end-x|1|--end-y|1|--duration|-1|--device|invalid"
@@ -220,6 +221,7 @@ done
 
 # A well-formed but absent UDID, so routing passes and the stdin handling is what fails.
 ABSENT_DEVICE="00000000-0000-0000-0000-000000000000"
+capture_case validation-boot-simulator boot "$ABSENT_DEVICE"
 capture_stdin_case stdin-batch-empty "" batch --device "$ABSENT_DEVICE" --stdin
 capture_stdin_case stdin-type-unsupported "💥" type --device "$ABSENT_DEVICE" --stdin
 capture_case output-record-video-missing-value record-video --device invalid --output

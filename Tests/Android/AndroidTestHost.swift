@@ -31,6 +31,8 @@ final class SleepRecorder: @unchecked Sendable {
     private var recorded: [Duration] = []
 
     var sleeps: [Duration] { lock.withLock { recorded } }
+    /// Time slept so far: the test host's clock, so deadlines pass without real waiting.
+    var total: Duration { lock.withLock { recorded.reduce(.zero, +) } }
 
     func sleep(_ duration: Duration) {
         lock.withLock { recorded.append(duration) }
@@ -48,7 +50,8 @@ enum AndroidTestHost {
         files: (any FileSystemProbe)? = nil,
         liveProcesses: Set<Int32> = [],
         processPaths: [Int32: String] = [:],
-        sleeps: SleepRecorder = SleepRecorder()
+        sleeps: SleepRecorder = SleepRecorder(),
+        launcher: FakeLauncher = FakeLauncher()
     ) -> AndroidHost {
         let homeDirectory = home ?? URL(fileURLWithPath: "/nonexistent/offsider-test-home", isDirectory: true)
         return AndroidHost(
@@ -60,7 +63,9 @@ enum AndroidTestHost {
             processes: processes,
             isProcessAlive: { liveProcesses.contains($0) },
             processPath: { pid in processPaths[pid] ?? (liveProcesses.contains(pid) ? emulatorExecutable : nil) },
-            sleep: { sleeps.sleep($0) }
+            sleep: { sleeps.sleep($0) },
+            launcher: launcher,
+            uptime: { sleeps.total }
         )
     }
 
@@ -89,5 +94,39 @@ enum AndroidTestHost {
     static func makeExecutable(_ path: String, in root: URL) throws {
         try write("#!/bin/sh\nexit 0\n", to: path, in: root)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.appendingPathComponent(path).path)
+    }
+}
+
+/// Records launches instead of starting an emulator; `onLaunch` plays the emulator's part, such as writing its discovery file.
+final class FakeLauncher: EmulatorLaunching, @unchecked Sendable {
+    struct Launch: Equatable {
+        let executable: String
+        let arguments: [String]
+        let logPath: String
+    }
+
+    private let lock = NSLock()
+    private var recorded: [Launch] = []
+    private let pid: Int32
+    private let exit: Int32?
+    private let onLaunch: @Sendable (Launch) -> Void
+
+    init(pid: Int32 = 4242, exitStatus: Int32? = nil, onLaunch: @escaping @Sendable (Launch) -> Void = { _ in }) {
+        self.pid = pid
+        exit = exitStatus
+        self.onLaunch = onLaunch
+    }
+
+    var launches: [Launch] { lock.withLock { recorded } }
+
+    func launch(executable: URL, arguments: [String], environment: [String: String], logPath: String) throws -> Int32 {
+        let launch = Launch(executable: executable.path, arguments: arguments, logPath: logPath)
+        lock.withLock { recorded.append(launch) }
+        onLaunch(launch)
+        return pid
+    }
+
+    func exitStatus(of pid: Int32) -> Int32? {
+        pid == self.pid ? exit : nil
     }
 }

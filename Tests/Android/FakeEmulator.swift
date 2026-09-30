@@ -4,6 +4,7 @@ import Foundation
 /// An in-memory gRPC endpoint: records every call in order and fails the calls a test names.
 final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
     enum Call: Equatable {
+        case status
         case touch(PanelTouch)
         case key(EmulatorKeyEvent)
         case screenshot(EmulatorImageFormat, FrameBox?)
@@ -18,11 +19,14 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
     private var recorded: [Call] = []
     private var clipboardText: String
     private let frames: [EmulatorFrame]
+    private var bootedAnswers: [Bool]
     private let failure: @Sendable (Call) -> AndroidError?
 
-    init(clipboard: String = "", frames: [EmulatorFrame] = [], failing: @escaping @Sendable (Call) -> AndroidError? = { _ in nil }) {
+    /// `booted` scripts `getStatus` answers in order; the last one repeats.
+    init(clipboard: String = "", frames: [EmulatorFrame] = [], booted: [Bool] = [true], failing: @escaping @Sendable (Call) -> AndroidError? = { _ in nil }) {
         clipboardText = clipboard
         self.frames = frames
+        bootedAnswers = booted
         failure = failing
     }
 
@@ -32,6 +36,12 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
     private func record(_ call: Call) throws {
         lock.withLock { recorded.append(call) }
         if let error = failure(call) { throw error }
+    }
+
+    func status() async throws -> EmulatorStatusSummary {
+        try record(.status)
+        let booted = lock.withLock { bootedAnswers.count > 1 ? bootedAnswers.removeFirst() : bootedAnswers.first ?? true }
+        return EmulatorStatusSummary(version: "37.1.11.0", booted: booted, uptimeMilliseconds: 1000)
     }
 
     func sendTouch(_ touch: PanelTouch) async throws { try record(.touch(touch)) }

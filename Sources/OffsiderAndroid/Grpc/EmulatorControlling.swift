@@ -47,6 +47,7 @@ struct EmulatorFrame: Equatable, Sendable {
 /// What Android commands need from the emulator's gRPC endpoint; a protocol so tests never reach a real one.
 protocol EmulatorControlling: AnyObject, Sendable {
     var endpoint: String { get }
+    func status() async throws -> EmulatorStatusSummary
     func sendTouch(_ touch: PanelTouch) async throws
     func sendKey(_ event: EmulatorKeyEvent) async throws
     func screenshot(_ format: EmulatorImageFormat, fitting box: FrameBox?) async throws -> EmulatorFrame
