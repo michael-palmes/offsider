@@ -56,8 +56,8 @@ private final class OneShotListener: @unchecked Sendable {
     }
 }
 
-/// Generous timeouts: these use real threads and sockets, and a busy Mac can starve them for seconds.
-@Suite("POSIX adb connector")
+/// Serialised, because a closed test port can be handed to the next listener; generous timeouts for a busy Mac.
+@Suite("POSIX adb connector", .serialized)
 struct PosixAdbConnectorTests {
     @Test("host:version round-trips over a Unix socket")
     func unixSocket() async throws {
