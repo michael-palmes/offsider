@@ -75,17 +75,16 @@ public final class AndroidBackend: DeviceBackend {
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         let serial = id.rawValue
         let geometry = try await geometry(for: serial)
-        dumpCounter += 1
-        let script = UIAutomatorDump.script(path: UIAutomatorDump.devicePath(pid: getpid(), counter: dumpCounter))
-        let result = try await requireClient().shell(script, on: serial, timeout: .seconds(20), label: "uiautomator dump")
-
         let xml: String
-        switch UIAutomatorDump.classify(result) {
-        case .tree(let text): xml = text
-        case .busy: throw AndroidError.uiautomatorBusy(serial)
-        case .idleTimeout: throw AndroidError.uiautomatorIdle(serial)
-        case .noWindow: throw AndroidError.uiautomatorNoWindow(serial)
-        case .failed(let detail): throw AndroidError.uiautomatorFailed(serial, detail: detail)
+        if let first = try await dumpHierarchy(serial) {
+            xml = first
+        } else {
+            log(.debug, "uiautomator found no window on \(serial); reading the screen again")
+            try await host.sleep(.milliseconds(500))
+            guard let second = try await dumpHierarchy(serial) else {
+                throw AndroidError.uiautomatorNoWindow(serial)
+            }
+            xml = second
         }
         let hierarchy: UIAutomatorHierarchy
         do {
@@ -100,6 +99,20 @@ public final class AndroidBackend: DeviceBackend {
         let tree = UITree(platform: .android, device: serial, roots: AndroidTreeMapping.roots(from: hierarchy, scale: geometry.scale))
         guard let point else { return tree }
         return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
+    }
+
+    /// The hierarchy XML, or nil when uiautomator found no window, which lasts a moment while an activity starts.
+    private func dumpHierarchy(_ serial: String) async throws -> String? {
+        dumpCounter += 1
+        let script = UIAutomatorDump.script(path: UIAutomatorDump.devicePath(pid: getpid(), counter: dumpCounter))
+        let result = try await requireClient().shell(script, on: serial, timeout: .seconds(20), label: "uiautomator dump")
+        switch UIAutomatorDump.classify(result) {
+        case .tree(let text): return text
+        case .noWindow: return nil
+        case .busy: throw AndroidError.uiautomatorBusy(serial)
+        case .idleTimeout: throw AndroidError.uiautomatorIdle(serial)
+        case .failed(let detail): throw AndroidError.uiautomatorFailed(serial, detail: detail)
+        }
     }
 
     /// Logical size over scale, scale = density / 160, orientation from the viewport rotation.

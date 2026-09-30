@@ -55,13 +55,38 @@ struct AndroidBackendTreeTests {
         #expect(error?.isTransientFailure == false)
     }
 
-    @Test("no window is transient, so polling callers retry it")
+    nonisolated static let noWindow = FakeAdbServer.shell(stderr: "ERROR: null root node returned by UiTestAutomationBridge.\n", status: 3)
+
+    @Test("a screen with no window is read once more, then reported as transient so polling callers retry it")
     func noWindowIsTransient() async throws {
-        let noWindow = FakeAdbServer.shell(stderr: "ERROR: null root node returned by UiTestAutomationBridge.\n", status: 3)
-        let backend = try AndroidBackendTests.backend(Self.server(dump: noWindow))
+        let server = Self.server(dump: Self.noWindow)
+        let backend = try AndroidBackendTests.backend(server)
         let error = await #expect(throws: AndroidError.self) { try await backend.accessibilityTree(for: Self.device, point: nil) }
         #expect(error?.kind == .uiautomatorNoWindow)
         #expect(error?.isTransientFailure == true)
+        #expect(server.services.filter { $0.contains("uiautomator dump") }.count == 2)
+    }
+
+    @Test("a window that appears by the second read gives the tree")
+    func noWindowThenTree() async throws {
+        let reads = Counter()
+        let server = Self.server(dump: .hang)
+        let flaky = FakeAdbServer(handler: { request in
+            if request.service.contains("uiautomator dump") {
+                return reads.next() == 1 ? Self.noWindow : FakeAdbServer.shell(stdout: Self.dump(rotation: 0))
+            }
+            return server.handler(request)
+        })
+        let tree = try await AndroidBackendTests.backend(flaky).accessibilityTree(for: Self.device, point: nil)
+        #expect(tree.roots.first?.children.first?.id == "BackButton")
+        #expect(reads.count == 2)
+    }
+
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        var count: Int { lock.withLock { value } }
+        func next() -> Int { lock.withLock { value += 1; return value } }
     }
 
     @Test("the dump's rotation refreshes the cached geometry without another probe")
