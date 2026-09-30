@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 // MARK: - Error Types
 protocol UserFacingError: Error, CustomStringConvertible {
@@ -26,3 +27,5 @@ struct CLIError: LocalizedError, UserFacingError {
 
     var errorDescription: String? { userFacingDescription }
 }
+
+extension ProcessCaptureTimeoutError: UserFacingError {}

@@ -1,32 +1,49 @@
 import Darwin
 import Foundation
 
-struct ProcessCaptureResult: Equatable, Sendable {
-    let status: Int32
-    let stdout: String
-    let stderr: String
+public struct ProcessCaptureResult: Equatable, Sendable {
+    public let status: Int32
+    public let stdout: String
+    public let stderr: String
+
+    public init(status: Int32, stdout: String, stderr: String) {
+        self.status = status
+        self.stdout = stdout
+        self.stderr = stderr
+    }
 }
 
-struct ProcessCaptureTimeoutError: LocalizedError, UserFacingError {
-    let command: String
-    let timeout: TimeInterval
+public struct ProcessCaptureTimeoutError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
+    public let command: String
+    public let timeout: TimeInterval
 
-    var errorDescription: String? { userFacingDescription }
-    var userFacingDescription: String {
+    public init(command: String, timeout: TimeInterval) {
+        self.command = command
+        self.timeout = timeout
+    }
+
+    public var errorDescription: String? { userFacingDescription }
+    public var description: String { userFacingDescription }
+    public var userFacingDescription: String {
         "\(command) timed out after \(Int(timeout)) s"
     }
 }
 
 /// Runs a short-lived tool with a hard timeout and captures both output streams.
-enum ProcessCapture {
-    static func run(
+public enum ProcessCapture {
+    /// A nil `environment` inherits this process's environment.
+    public static func run(
         executable: String,
         arguments: [String],
+        environment: [String: String]? = nil,
         timeout: TimeInterval
     ) async throws -> ProcessCaptureResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        if let environment {
+            process.environment = environment
+        }
         process.standardInput = FileHandle.nullDevice
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()

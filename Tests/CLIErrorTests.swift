@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 @testable import Offsider
 
