@@ -141,3 +141,19 @@ struct AndroidScreenshotTests {
         #expect(error?.message == "`screencap -p` failed on emulator-5556: Error: display off.")
     }
 }
+
+@Suite("Android display probe failures")
+@MainActor
+struct AndroidDisplayProbeFailureTests {
+    @Test("when the framework is down, the probe error quotes the shell's own complaint")
+    func quotesStderr() async throws {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(
+            ["emulator-5556"],
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            device: { _, _ in FakeAdbServer.shell(stderr: "cmd: Can't find service: window\n", status: 0) }
+        ))
+        let backend = try AndroidBackendTests.backend(server)
+        let error = await #expect(throws: AndroidError.self) { try await backend.screenInfo(for: AndroidBackendTests.device) }
+        #expect(error?.message == "Could not read the display size and rotation of emulator-5556 (cmd: Can't find service: window). Check it with `adb -s emulator-5556 shell dumpsys input`.")
+    }
+}

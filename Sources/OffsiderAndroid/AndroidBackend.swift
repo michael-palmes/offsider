@@ -194,7 +194,9 @@ public final class AndroidBackend: DeviceBackend {
             geometries[serial] = geometry
             return geometry
         } catch let error as AndroidDisplayGeometry.Unparseable {
-            throw AndroidError.displayProbeUnparseable(serial, firstLine: error.firstLine)
+            let stderrLine = result.stderrText.split(whereSeparator: \.isNewline).first.map(String.init)
+            let detail = result.stdoutText.isEmpty ? stderrLine ?? error.firstLine : error.firstLine
+            throw AndroidError.displayProbeUnparseable(serial, firstLine: detail)
         }
     }
 
