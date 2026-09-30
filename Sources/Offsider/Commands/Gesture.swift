@@ -2,81 +2,7 @@ import ArgumentParser
 import Foundation
 import OffsiderCore
 
-enum GesturePreset: String, CaseIterable, ExpressibleByArgument {
-    case scrollUp = "scroll-up"
-    case scrollDown = "scroll-down" 
-    case scrollLeft = "scroll-left"
-    case scrollRight = "scroll-right"
-    case swipeFromLeftEdge = "swipe-from-left-edge"
-    case swipeFromRightEdge = "swipe-from-right-edge"
-    case swipeFromTopEdge = "swipe-from-top-edge"
-    case swipeFromBottomEdge = "swipe-from-bottom-edge"
-    
-    var description: String {
-        switch self {
-        case .scrollUp:
-            return "Scroll up in the center of screen"
-        case .scrollDown:
-            return "Scroll down in the center of screen"
-        case .scrollLeft:
-            return "Scroll left in the center of screen"
-        case .scrollRight:
-            return "Scroll right in the center of screen"
-        case .swipeFromLeftEdge:
-            return "Swipe from left edge to center (back navigation)"
-        case .swipeFromRightEdge:
-            return "Swipe from right edge to center (forward navigation)"
-        case .swipeFromTopEdge:
-            return "Swipe from top edge downward"
-        case .swipeFromBottomEdge:
-            return "Swipe from bottom edge upward"
-        }
-    }
-    
-    func coordinates(screenWidth: Double = 390, screenHeight: Double = 844) -> (startX: Double, startY: Double, endX: Double, endY: Double) {
-        let centerX = screenWidth / 2
-        let centerY = screenHeight / 2
-        let edgeMargin = 20.0
-        let scrollDistance = 200.0
-        
-        switch self {
-        case .scrollUp:
-            return (centerX, centerY + scrollDistance/2, centerX, centerY - scrollDistance/2)
-        case .scrollDown:
-            return (centerX, centerY - scrollDistance/2, centerX, centerY + scrollDistance/2)
-        case .scrollLeft:
-            return (centerX + scrollDistance/2, centerY, centerX - scrollDistance/2, centerY)
-        case .scrollRight:
-            return (centerX - scrollDistance/2, centerY, centerX + scrollDistance/2, centerY)
-        case .swipeFromLeftEdge:
-            return (edgeMargin, centerY, screenWidth - edgeMargin, centerY)
-        case .swipeFromRightEdge:
-            return (screenWidth - edgeMargin, centerY, edgeMargin, centerY)
-        case .swipeFromTopEdge:
-            return (centerX, edgeMargin, centerX, screenHeight - edgeMargin)
-        case .swipeFromBottomEdge:
-            return (centerX, screenHeight - edgeMargin, centerX, edgeMargin)
-        }
-    }
-    
-    var defaultDuration: Double {
-        switch self {
-        case .scrollUp, .scrollDown, .scrollLeft, .scrollRight:
-            return 0.5
-        case .swipeFromLeftEdge, .swipeFromRightEdge, .swipeFromTopEdge, .swipeFromBottomEdge:
-            return 0.3
-        }
-    }
-    
-    var defaultDelta: Double {
-        switch self {
-        case .scrollUp, .scrollDown, .scrollLeft, .scrollRight:
-            return 25.0
-        case .swipeFromLeftEdge, .swipeFromRightEdge, .swipeFromTopEdge, .swipeFromBottomEdge:
-            return 50.0
-        }
-    }
-}
+extension GesturePreset: ExpressibleByArgument {}
 
 struct Gesture: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -88,21 +14,26 @@ struct Gesture: AsyncParsableCommand {
           scroll-up, scroll-down, scroll-left, scroll-right
           swipe-from-left-edge, swipe-from-right-edge
           swipe-from-top-edge, swipe-from-bottom-edge
-        
+
+        Presets are sized to the foreground app's frame from the accessibility
+        tree and follow the simulator's orientation, like swipe coordinates.
+        --screen-width and --screen-height override that size, in points as
+        the screen is currently oriented.
+
         Examples:
           offsider gesture scroll-up --device DEVICE_ID
           offsider gesture scroll-down --duration 1.5 --device DEVICE_ID
           offsider gesture swipe-from-left-edge --screen-width 430 --screen-height 932 --device DEVICE_ID
         """
     )
-    
+
     @Argument(help: "The gesture preset to perform.")
     var preset: GesturePreset
-    
-    @Option(name: .customLong("screen-width"), help: "Screen width in points (default: 390 for iPhone 15).")
+
+    @Option(name: .customLong("screen-width"), help: "Screen width in points in the current orientation (default: the app's frame width).")
     var screenWidth: Double?
-    
-    @Option(name: .customLong("screen-height"), help: "Screen height in points (default: 844 for iPhone 15).")
+
+    @Option(name: .customLong("screen-height"), help: "Screen height in points in the current orientation (default: the app's frame height).")
     var screenHeight: Double?
     
     @Option(name: .customLong("duration"), help: "Duration of the gesture in seconds (uses preset default if not specified).")
@@ -169,22 +100,10 @@ struct Gesture: AsyncParsableCommand {
         let device = route.device
         try await backend.prepare()
 
-        // Use provided dimensions or defaults
-        let width = screenWidth ?? 390.0
-        let height = screenHeight ?? 844.0
-        
-        // Get gesture coordinates
-        let coords = preset.coordinates(screenWidth: width, screenHeight: height)
-        
-        // Use provided values or preset defaults
-        let gestureDuration = duration ?? preset.defaultDuration
-        let gestureDelta = delta ?? preset.defaultDelta
-        
         logger.info().log("Performing \(preset.description)")
-        logger.info().log("Screen size: \(width)x\(height)")
-        logger.info().log("Coordinates: (\(coords.startX), \(coords.startY)) to (\(coords.endX), \(coords.endY))")
-        logger.info().log("Duration: \(gestureDuration)s, Delta: \(gestureDelta)px")
-        
+        let tree = try await backend.accessibilityTree(for: device)
+        let gestureEvent = try await presetSwipe(tree: tree, backend: backend, device: device, logger: logger)
+
         if let preDelay = preDelay, preDelay > 0 {
             logger.info().log("Pre-delay: \(preDelay)s")
         }
@@ -192,18 +111,50 @@ struct Gesture: AsyncParsableCommand {
             logger.info().log("Post-delay: \(postDelay)s")
         }
 
-        let gestureEvent = InputEvent.swipe(
-            coords.startX,
-            yStart: coords.startY,
-            xEnd: coords.endX,
-            yEnd: coords.endY,
-            delta: gestureDelta,
-            duration: gestureDuration
-        )
         let finalEvent = InputEvent.delayed(gestureEvent, pre: preDelay, post: postDelay)
 
         try await backend.perform(finalEvent, on: device)
         
         logger.info().log("Gesture completed successfully")
     }
-} 
+
+    /// The preset as a swipe in the backend's input space, sized to the app frame in `tree`.
+    @MainActor
+    func presetSwipe(
+        tree: UITree,
+        backend: any DeviceBackend,
+        device: DeviceID,
+        logger: OffsiderLogger
+    ) async throws -> InputEvent {
+        guard let applicationFrame = tree.applicationFrame else {
+            throw CLIError(
+                errorDescription: "Unable to size the \(preset.rawValue) gesture because the accessibility tree has no application frame. Check an app is in the foreground, or run `offsider doctor --device \(device.rawValue)`."
+            )
+        }
+        let screen = GesturePreset.screen(applicationFrame: applicationFrame, width: screenWidth, height: screenHeight)
+        let (start, end) = preset.endpoints(in: screen)
+        let gestureDuration = duration ?? preset.defaultDuration
+        let gestureDelta = delta ?? preset.defaultDelta
+
+        logger.info().log("Screen size: \(screen.width)x\(screen.height)")
+        logger.info().log("Coordinates: (\(start.x), \(start.y)) to (\(end.x), \(end.y))")
+        logger.info().log("Duration: \(gestureDuration)s, Delta: \(gestureDelta)px")
+
+        let physicalPoints = try await backend.deviceCoordinates(
+            for: [(x: start.x, y: start.y), (x: end.x, y: end.y)],
+            tree: tree,
+            on: device
+        )
+        let physicalStart = physicalPoints[0]
+        let physicalEnd = physicalPoints[1]
+
+        return .swipe(
+            physicalStart.x,
+            yStart: physicalStart.y,
+            xEnd: physicalEnd.x,
+            yEnd: physicalEnd.y,
+            delta: gestureDelta,
+            duration: gestureDuration
+        )
+    }
+}

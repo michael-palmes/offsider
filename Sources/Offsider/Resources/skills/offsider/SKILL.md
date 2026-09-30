@@ -27,6 +27,7 @@ offsider tap --label 'Weather Alerts' --device <DEVICE_ID>
 offsider slider --id <identifier> --value 75 --device <DEVICE_ID>
 offsider slider --label <text> --value 40 --element-type slider --device <DEVICE_ID>
 offsider drag --start-x <X1> --start-y <Y1> --end-x <X2> --end-y <Y2> --device <DEVICE_ID>
+offsider gesture scroll-up --device <DEVICE_ID>
 offsider tap -x <X> -y <Y> --tap-style physical --device <DEVICE_ID>
 offsider tap -x <X> -y <Y> --device <DEVICE_ID>
 offsider tap --id <identifier> --verify --json --device <DEVICE_ID>
@@ -49,6 +50,7 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 - Use `--pre-delay` / `--post-delay` on tap, swipe, and gesture commands for fixed delays around actions.
 - Use `--duration` to control how long a swipe, gesture, button press, or key press lasts.
 - Coordinate-based `tap`, `swipe`, `drag`, and `touch` accept coordinates from `describe-ui` directly; Offsider detects rotated landscape simulator orientation and letterboxed landscape-only app layouts automatically.
+- `gesture` presets are sized to the foreground app's frame and go through the same orientation handling, so they fit any device and landscape. `--screen-width` and `--screen-height` override that size, in points as the screen is currently oriented.
 - Use `offsider slider --id <identifier> --value <0-100>` for sliders instead of approximating with raw swipe coordinates; it uses one calibrated low-level HID drag from the resolved slider frame and current `value`, through the same composite touch-move path as `drag`, verifies the result within tolerance, and fails clearly if the observed `value` remains outside tolerance.
 - For text with shell-sensitive characters, prefer `--stdin` or `--file` over inline quotes.
 - Use single quotes for inline text arguments to avoid shell expansion issues.
