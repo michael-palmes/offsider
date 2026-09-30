@@ -19,6 +19,7 @@ struct AdbDeviceShell: Sendable {
 
 enum AndroidInputExecutor: Sendable {
     case adb(AdbDeviceShell)
+    case grpc(GrpcInputDriver)
 }
 
 /// One command's input on one emulator; keeps finger state so a failed gesture can be lifted on close.
@@ -26,6 +27,8 @@ enum AndroidInputExecutor: Sendable {
 final class AndroidInputSession: InputSession, TextInputSession {
     let device: DeviceID
     private let executor: AndroidInputExecutor
+    /// adb is always there, whatever carries the input.
+    private let shell: AdbDeviceShell
     private let scale: Double
     /// Why a paste is impossible here, finishing "and <serial> ...".
     private let pasteUnavailableReason: String
@@ -38,6 +41,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
     init(
         device: DeviceID,
         executor: AndroidInputExecutor,
+        shell: AdbDeviceShell,
         geometry: AndroidDisplayGeometry,
         avdName: @escaping @MainActor () async -> String?,
         pasteUnavailableReason: String,
@@ -45,6 +49,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
     ) {
         self.device = device
         self.executor = executor
+        self.shell = shell
         self.scale = geometry.scale
         self.avdName = avdName
         self.pasteUnavailableReason = pasteUnavailableReason
@@ -69,32 +74,44 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 case .key(let usage): return ["input keyevent \(try AndroidKeyTable.requireKeyCode(for: usage))"]
                 }
             }
-            guard case .adb(let shell) = executor, !commands.isEmpty else { return }
+            guard !commands.isEmpty else { return }
             try await shell.run(commands.joined(separator: " && "))
         }
     }
 
     func close() async {
-        guard touchIsDown, let point = lastTouch, case .adb(let shell) = executor else { return }
+        guard touchIsDown, let point = lastTouch else { return }
         touchIsDown = false
         do {
-            try await shell.run("input motionevent UP \(Int(point.x.rounded())) \(Int(point.y.rounded()))")
+            switch executor {
+            case .adb(let shell):
+                try await shell.run("input motionevent UP \(Int(point.x.rounded())) \(Int(point.y.rounded()))")
+            case .grpc(let driver):
+                try await driver.touch(point, down: false)
+            }
         } catch {
             log(.warning, "Could not lift the touch left down on \(device.rawValue): \(error.localizedDescription)")
         }
     }
 
     private func run(_ steps: [AndroidInputStep]) async throws {
-        let scripts = try AdbInputScript.scripts(for: steps)
         if let last = steps.last(where: { if case .touch = $0 { return true } else { return false } }), case .touch(_, let point) = last {
             lastTouch = point
         }
         let pressesDown = steps.contains { if case .touch(.down, _) = $0 { return true } else { return false } }
-        guard case .adb(let shell) = executor else { return }
-        let wait = AdbInputScript.waitTime(of: steps)
+        var scripts: [String] = []
+        if case .adb = executor {
+            scripts = try AdbInputScript.scripts(for: steps)
+        }
         do {
-            for script in scripts {
-                try await shell.run(script, waiting: wait)
+            switch executor {
+            case .adb(let shell):
+                let wait = AdbInputScript.waitTime(of: steps)
+                for script in scripts {
+                    try await shell.run(script, waiting: wait)
+                }
+            case .grpc(let driver):
+                try await driver.run(steps)
             }
         } catch {
             if pressesDown { touchIsDown = true }

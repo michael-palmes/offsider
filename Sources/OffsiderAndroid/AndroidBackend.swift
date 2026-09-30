@@ -10,6 +10,8 @@ public final class AndroidBackend: DeviceBackend {
     private var client: AdbClient?
     private var geometries: [String: AndroidDisplayGeometry] = [:]
     private var avdNames: [String: String] = [:]
+    private var transports: [String: AndroidTransport] = [:]
+    private var warnedAboutOverride: Set<String> = []
     private var dumpCounter = 0
 
     public init(host: AndroidHost = .live(), log: @escaping AndroidLog) {
@@ -124,9 +126,11 @@ public final class AndroidBackend: DeviceBackend {
     public func openInputSession(for id: DeviceID) async throws -> any InputSession {
         let serial = id.rawValue
         let geometry = try await geometry(for: serial)
+        let shell = AdbDeviceShell(client: try requireClient(), serial: serial)
         return AndroidInputSession(
             device: id,
-            executor: .adb(AdbDeviceShell(client: try requireClient(), serial: serial)),
+            executor: try await inputExecutor(for: serial, geometry: geometry, shell: shell),
+            shell: shell,
             geometry: geometry,
             avdName: { await self.avdName(for: serial) },
             pasteUnavailableReason: pasteUnavailableReason(for: serial),
@@ -151,7 +155,8 @@ public final class AndroidBackend: DeviceBackend {
         return name
     }
 
-    /// `touch --down` now and `touch --up` later: each call is one `input motionevent` script.
+    /// `touch --down` now and `touch --up` later: one gRPC finger (lifted by the emulator after 120 s if forgotten),
+    /// or one `input motionevent` script per call over adb.
     public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         try await prepare()
         let inputSteps: [AndroidInputStep] = steps.map { step in
@@ -162,9 +167,38 @@ public final class AndroidBackend: DeviceBackend {
             }
         }
         let shell = AdbDeviceShell(client: try requireClient(), serial: id.rawValue)
+        if case .grpc(let driver) = try await inputExecutor(for: id.rawValue, geometry: try await geometry(for: id.rawValue), shell: shell) {
+            try await driver.run(inputSteps)
+            return
+        }
         for script in try AdbInputScript.scripts(for: inputSteps) {
             try await shell.run(script, waiting: AdbInputScript.waitTime(of: inputSteps))
         }
+    }
+
+    /// gRPC or adb for this serial, chosen once per command so a gesture never straddles both.
+    func transport(for serial: String) async throws -> AndroidTransport {
+        if let chosen = transports[serial] {
+            return chosen
+        }
+        try await prepare()
+        let chosen = try await EmulatorTransportSelector(host: host, log: log).choose(for: serial)
+        transports[serial] = chosen
+        return chosen
+    }
+
+    /// A resized display (`wm size` override) no longer maps one to one onto the panel, so its input stays on adb.
+    private func inputExecutor(for serial: String, geometry: AndroidDisplayGeometry, shell: AdbDeviceShell) async throws -> AndroidInputExecutor {
+        guard case .grpc(let emulator) = try await transport(for: serial) else {
+            return .adb(shell)
+        }
+        guard !geometry.hasSizeOverride else {
+            if warnedAboutOverride.insert(serial).inserted {
+                log(.warning, "The display of \(serial) is resized (`wm size` reports an override), so its input goes over adb in this command.")
+            }
+            return .adb(shell)
+        }
+        return .grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep))
     }
 
     /// Finishes "and emulator-5556 ..." in the error for text that needs a paste.
@@ -172,7 +206,7 @@ public final class AndroidBackend: DeviceBackend {
         let port = Int(serial.dropFirst("emulator-".count))
         let hasEndpoint = EmulatorDiscovery.live(host: host).contains { $0.consolePort == port && $0.grpcPort != nil }
         return hasEndpoint
-            ? "has one, but this build sends input over adb only"
+            ? "has one, but this build cannot paste through it yet"
             : "has none (it was probably started with -port)"
     }
 
