@@ -108,7 +108,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `type` | Type US keyboard text from an argument, `--stdin` or `--file`; supports `--verify, --retries, --json` |
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
 | `drag` | Low-level point-to-point drag using explicit touch moves (`--duration`, `--steps`) |
-| `gesture` | Run a preset: `scroll-up`, `scroll-down`, `scroll-left`, `scroll-right`, `swipe-from-left-edge`, `swipe-from-right-edge`, `swipe-from-top-edge`, `swipe-from-bottom-edge` |
+| `gesture` | Run a preset: `scroll-up`, `scroll-down`, `scroll-left`, `scroll-right`, `swipe-from-left-edge`, `swipe-from-right-edge`, `swipe-from-top-edge`, `swipe-from-bottom-edge`. Presets fit the foreground app's frame in the current orientation; `--screen-width` and `--screen-height` override the size |
 | `touch` | Send touch down and/or up at `-x`/`-y` (`--down`, `--up`, `--delay`) |
 | `button` | Press a hardware button: `home`, `lock`, `side-button`, `siri`, `apple-pay` (optional `--duration`); supports `--verify, --retries, --json` |
 | `key` | Press one HID keycode (0 to 255), optionally held for `--duration`; supports `--verify, --retries, --json` |
