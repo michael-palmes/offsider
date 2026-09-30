@@ -11,6 +11,26 @@ struct CLIErrorTests {
         #expect(String(describing: error) == "Simulator not found.")
     }
 
+    @Test("localizedDescription is the message, not Foundation's generic text")
+    func localizedDescriptionIsTheMessage() {
+        #expect(CLIError(errorDescription: "x").localizedDescription == "x")
+    }
+
+    @Test(
+        "Every user-facing error carries its message in localizedDescription",
+        arguments: [
+            TextToHIDEvents.TextConversionError.unsupportedCharacter("💥"),
+            ShellTokenizer.TokenizerError.danglingEscape,
+            VideoProcessingError.failedToDecodeImage,
+            HIDBrokerNotReadyError(),
+            ElementResolutionError.notFound(kind: "label", value: "Save"),
+            ProcessCaptureTimeoutError(command: "xcrun simctl", timeout: 5),
+        ] as [any UserFacingError]
+    )
+    func localizedDescriptionIsUserFacing(error: any UserFacingError) {
+        #expect(error.localizedDescription == error.userFacingDescription)
+    }
+
     @Test("Offsider runtime error types provide user-facing descriptions")
     func offsiderRuntimeErrorsAreUserFacing() {
         #expect(

@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderCore
 
 struct Batch: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -109,43 +110,61 @@ struct Batch: AsyncParsableCommand {
         }
 
         let session = try await backend.openInputSession(for: device)
-        let runner = BatchPlanRunner(session: session, logger: logger)
-
-        var failures: [String] = []
 
         do {
-            for (index, line) in stepLines.enumerated() {
-                var stepName = "<unparsed>"
-                do {
-                    let tokens = try ShellTokenizer.tokenize(line)
-                    stepName = tokens.first ?? "<empty>"
-                    let primitives = try await BatchStepParser.parseStepTokens(
-                        tokens,
-                        deviceID: device.rawValue,
-                        context: context,
-                        logger: logger
-                    )
-                    try await runner.run(BatchPlan(primitives: primitives))
-                } catch {
-                    if continueOnError {
-                        failures.append("Step \(index + 1) failed: [\(stepName)] -> \(error.localizedDescription)")
-                    } else {
-                        throw CLIError(errorDescription: "Step \(index + 1) failed: [\(stepName)]\n\(error.localizedDescription)")
-                    }
-                }
-            }
+            try await Self.runSteps(
+                stepLines,
+                context: context,
+                session: session,
+                continueOnError: continueOnError,
+                logger: logger
+            )
         } catch {
             await session.close()
             throw error
         }
         await session.close()
 
+        print("✓ Batch completed successfully (\(stepLines.count) steps)")
+    }
+
+    @MainActor
+    static func runSteps(
+        _ stepLines: [String],
+        context: BatchContext,
+        session: any InputSession,
+        continueOnError: Bool,
+        logger: OffsiderLogger
+    ) async throws {
+        let runner = BatchPlanRunner(session: session, logger: logger)
+        var failures: [String] = []
+
+        for (index, line) in stepLines.enumerated() {
+            var stepName = "<unparsed>"
+            do {
+                let tokens = try ShellTokenizer.tokenize(line)
+                stepName = tokens.first ?? "<empty>"
+                let primitives = try await BatchStepParser.parseStepTokens(
+                    tokens,
+                    deviceID: context.device.rawValue,
+                    context: context,
+                    logger: logger
+                )
+                try await runner.run(BatchPlan(primitives: primitives))
+            } catch {
+                let reason = message(for: error)
+                if continueOnError {
+                    failures.append("Step \(index + 1) failed: [\(stepName)] -> \(reason)")
+                } else {
+                    throw CLIError(errorDescription: "Step \(index + 1) failed: [\(stepName)]\n\(reason)")
+                }
+            }
+        }
+
         if !failures.isEmpty {
             let failureMessage = failures.joined(separator: "\n")
             throw CLIError(errorDescription: "Batch completed with \(failures.count) failure(s):\n\(failureMessage)")
         }
-
-        print("✓ Batch completed successfully (\(stepLines.count) steps)")
     }
 
     private func loadStepLines() throws -> [String] {

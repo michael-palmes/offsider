@@ -12,10 +12,10 @@ extension UserFacingError {
 }
 
 struct CLIError: LocalizedError, UserFacingError {
-    let errorDescription: String
+    let userFacingDescription: String
 
     init(errorDescription: String) {
-        self.errorDescription = errorDescription
+        userFacingDescription = errorDescription
     }
 
     static func deviceNotFound(id: String) -> CLIError {
@@ -24,7 +24,5 @@ struct CLIError: LocalizedError, UserFacingError {
         )
     }
 
-    var userFacingDescription: String {
-        errorDescription
-    }
+    var errorDescription: String? { userFacingDescription }
 }
