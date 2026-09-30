@@ -5,6 +5,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     public enum Kind: Equatable, Sendable {
         case sdkVariableWithoutAdb
         case nonLoopbackAdbServer
+        case invalidAdbServerSetting
         case adbServerStartFailed
         case adbServerNoAnswer
         case adbProtocol
@@ -48,6 +49,16 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(
             .nonLoopbackAdbServer,
             "\(variable) is \(value), which is not on this Mac. Offsider only talks to an adb server on 127.0.0.1, ::1 or a Unix socket. Unset it or point it at a local server."
+        )
+    }
+
+    static func invalidAdbServerSetting(variable: String, value: String) -> AndroidError {
+        let expected = variable == "ADB_SERVER_SOCKET"
+            ? "tcp:<port>, tcp:127.0.0.1:<port>, tcp:[::1]:<port> or localfilesystem:<path>"
+            : "a port from 1 to 65535"
+        return AndroidError(
+            .invalidAdbServerSetting,
+            "\(variable) is \(value), which Offsider cannot read. Use \(expected), or unset it."
         )
     }
 
