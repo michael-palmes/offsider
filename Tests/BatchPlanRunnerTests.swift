@@ -14,17 +14,19 @@ final class RecordingInputSession: InputSession {
 
     let device = DeviceID(rawValue: "recording", platform: .ios)
     private let failingEvent: InputEvent?
+    private let failure: any Error
     private(set) var calls: [Call] = []
     private(set) var isClosed = false
 
-    init(failingOn failingEvent: InputEvent? = nil) {
+    init(failingOn failingEvent: InputEvent? = nil, with failure: any Error = FakeInputSessionError()) {
         self.failingEvent = failingEvent
+        self.failure = failure
     }
 
     func perform(_ event: InputEvent) async throws {
         calls.append(.perform(event))
         if event == failingEvent {
-            throw FakeInputSessionError()
+            throw failure
         }
     }
 
