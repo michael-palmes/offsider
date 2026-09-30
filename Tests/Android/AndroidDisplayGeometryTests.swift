@@ -56,4 +56,13 @@ struct AndroidDisplayGeometryTests {
         }
         #expect(error?.firstLine == firstLine)
     }
+
+    @Test("with several viewport lines, the first one counts")
+    func firstViewportWins() throws {
+        let output = Self.probe(rotation: 1, frame: "[0, 0, 2424, 1080]")
+            + "\n  Viewport INTERNAL: displayId=0, uniqueId=local:1, orientation=0, logicalFrame=[0, 0, 1080, 2424], isActive=[1]\n"
+        let geometry = try AndroidDisplayGeometry.parse(output)
+        #expect(geometry.rotation == 1)
+        #expect(geometry.logicalWidth == 2424)
+    }
 }

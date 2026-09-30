@@ -40,7 +40,8 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
         )
     }
 
-    static let probeScript = "wm size; wm density; dumpsys input | grep -m1 'Viewport INTERNAL: displayId=0'"
+    /// Plain `grep`, not `-m1`: an early exit breaks dumpsys's pipe, which can hold the shell until dumpsys times out.
+    static let probeScript = "wm size; wm density; dumpsys input | grep 'Viewport INTERNAL: displayId=0'"
 
     struct Unparseable: Error, Equatable {
         let firstLine: String
