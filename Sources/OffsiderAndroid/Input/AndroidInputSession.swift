@@ -29,7 +29,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private let scale: Double
     /// Why a paste is impossible here, finishing "and <serial> ...".
     private let pasteUnavailableReason: String
-    private let avdName: String?
+    /// Looked up only when a message needs it, so ordinary input costs no extra adb call.
+    private let avdName: @MainActor () async -> String?
     private let log: AndroidLog
     private var touchIsDown = false
     private var lastTouch: AndroidPoint?
@@ -38,7 +39,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         device: DeviceID,
         executor: AndroidInputExecutor,
         geometry: AndroidDisplayGeometry,
-        avdName: String?,
+        avdName: @escaping @MainActor () async -> String?,
         pasteUnavailableReason: String,
         log: @escaping AndroidLog
     ) {
@@ -60,7 +61,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
     func typeText(_ text: String) async throws {
         switch try AndroidTextPlan.make(for: text) {
         case .paste:
-            throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: avdName, reason: pasteUnavailableReason)
+            throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: await avdName(), reason: pasteUnavailableReason)
         case .keys(let chunks):
             let commands = try chunks.flatMap { chunk -> [String] in
                 switch chunk {

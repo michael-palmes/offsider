@@ -73,6 +73,8 @@ public struct AndroidHost: Sendable {
     var adbConnector: any AdbConnecting
     var processes: any HostProcessRunning
     var isProcessAlive: @Sendable (Int32) -> Bool
+    /// The executable of a running process, or nil when it has gone or cannot be read.
+    var processPath: @Sendable (Int32) -> String?
     var sleep: @Sendable (Duration) async throws -> Void
 
     init(
@@ -82,6 +84,7 @@ public struct AndroidHost: Sendable {
         adbConnector: any AdbConnecting = PosixAdbConnector(),
         processes: any HostProcessRunning = LocalProcessRunner(),
         isProcessAlive: @escaping @Sendable (Int32) -> Bool = { AndroidHost.processIsAlive($0) },
+        processPath: @escaping @Sendable (Int32) -> String? = { AndroidHost.executablePath(of: $0) },
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.environment = environment
@@ -90,6 +93,7 @@ public struct AndroidHost: Sendable {
         self.adbConnector = adbConnector
         self.processes = processes
         self.isProcessAlive = isProcessAlive
+        self.processPath = processPath
         self.sleep = sleep
     }
 
@@ -104,6 +108,14 @@ public struct AndroidHost: Sendable {
     static func processIsAlive(_ pid: Int32) -> Bool {
         guard pid > 0 else { return false }
         return kill(pid, 0) == 0 || errno == EPERM
+    }
+
+    static func executablePath(of pid: Int32) -> String? {
+        guard pid > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        return String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     /// A set, non-empty variable; an empty value counts as unset.

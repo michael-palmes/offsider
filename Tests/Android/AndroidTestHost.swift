@@ -46,6 +46,7 @@ enum AndroidTestHost {
         processes: RecordingProcessRunner = RecordingProcessRunner(),
         files: (any FileSystemProbe)? = nil,
         liveProcesses: Set<Int32> = [],
+        processPaths: [Int32: String] = [:],
         sleeps: SleepRecorder = SleepRecorder()
     ) -> AndroidHost {
         let homeDirectory = home ?? URL(fileURLWithPath: "/nonexistent/offsider-test-home", isDirectory: true)
@@ -56,9 +57,12 @@ enum AndroidTestHost {
             adbConnector: adb,
             processes: processes,
             isProcessAlive: { liveProcesses.contains($0) },
+            processPath: { pid in processPaths[pid] ?? (liveProcesses.contains(pid) ? emulatorExecutable : nil) },
             sleep: { sleeps.sleep($0) }
         )
     }
+
+    static let emulatorExecutable = "/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64"
 
     /// A temporary home with an SDK in the Android Studio location, so `prepare()` finds adb without any variable.
     static func homeWithSDK() throws -> URL {

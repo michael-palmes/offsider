@@ -38,16 +38,25 @@ struct EmulatorDiscovery: Equatable, Sendable, CustomStringConvertible {
         host.homeDirectory.appendingPathComponent("Library/Caches/TemporaryItems/avd/running", isDirectory: true)
     }
 
-    /// Files whose pid is alive; a file that vanishes or fails to parse mid-scan is skipped.
+    /// Files whose pid is a running emulator, so a pid reused by another program cannot revive a stale file.
+    /// A file that vanishes or fails to parse mid-scan is skipped.
     static func live(host: AndroidHost) -> [EmulatorDiscovery] {
         let directory = directory(host: host).path
         return host.files.contentsOfDirectory(atPath: directory).sorted().compactMap { name in
             guard let data = host.files.contents(atPath: (directory as NSString).appendingPathComponent(name)),
                   let discovery = try? parse(fileName: name, directory: directory, contents: String(decoding: data, as: UTF8.self)),
-                  host.isProcessAlive(discovery.pid) else {
+                  host.isProcessAlive(discovery.pid),
+                  let executable = host.processPath(discovery.pid),
+                  isEmulatorExecutable(executable) else {
                 return nil
             }
             return discovery
         }
+    }
+
+    /// `qemu-system-aarch64` (what writes the file today) or an `emulator` launcher binary.
+    static func isEmulatorExecutable(_ path: String) -> Bool {
+        let name = (path as NSString).lastPathComponent
+        return name.hasPrefix("qemu-system") || name.hasPrefix("emulator")
     }
 }

@@ -28,4 +28,28 @@ struct AndroidHostTests {
         child.waitUntilExit()
         #expect(!AndroidHost.processIsAlive(child.processIdentifier))
     }
+
+    @Test("a running process has an executable path and a reaped child has none")
+    func executablePath() throws {
+        let own = try #require(AndroidHost.executablePath(of: getpid()))
+        #expect(own.hasPrefix("/"))
+        #expect(FileManager.default.isExecutableFile(atPath: own))
+
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try child.run()
+        child.waitUntilExit()
+        #expect(AndroidHost.executablePath(of: child.processIdentifier) == nil)
+        #expect(AndroidHost.executablePath(of: 0) == nil)
+    }
+
+    @Test("qemu and emulator binaries count as emulators; other programs do not", arguments: [
+        ("/Users/x/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64", true),
+        ("/sdk/emulator/emulator", true),
+        ("/Applications/Safari.app/Contents/MacOS/Safari", false),
+        ("/usr/local/bin/python3", false),
+    ])
+    func emulatorExecutables(path: String, expected: Bool) {
+        #expect(EmulatorDiscovery.isEmulatorExecutable(path) == expected)
+    }
 }

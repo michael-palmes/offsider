@@ -67,6 +67,37 @@ struct EmulatorDiscoveryTests {
         #expect(live.first?.consolePort == 5558)
     }
 
+    @Test("a stale file whose pid now belongs to another program is ignored")
+    func reusedPidIgnored() throws {
+        let home = try AndroidTestHost.temporaryHome()
+        let running = "Library/Caches/TemporaryItems/avd/running"
+        try AndroidTestHost.write(Self.contents, to: "\(running)/pid_68613.ini", in: home)
+        try AndroidTestHost.write(Self.contents.replacingOccurrences(of: "5556", with: "5558"), to: "\(running)/pid_700.ini", in: home)
+        try AndroidTestHost.write(Self.contents.replacingOccurrences(of: "5556", with: "5560"), to: "\(running)/pid_701.ini", in: home)
+        let host = AndroidTestHost.make(
+            home: home,
+            liveProcesses: [68613, 700, 701],
+            processPaths: [68613: "/Applications/Safari.app/Contents/MacOS/Safari", 700: "/sdk/emulator/emulator"]
+        )
+
+        #expect(EmulatorDiscovery.live(host: host).map(\.pid) == [700, 701])
+    }
+
+    @Test("a live pid whose executable cannot be read does not count")
+    func unreadableExecutableIgnored() throws {
+        let home = try AndroidTestHost.temporaryHome()
+        try AndroidTestHost.write(Self.contents, to: "Library/Caches/TemporaryItems/avd/running/pid_700.ini", in: home)
+        let host = AndroidHost(
+            environment: [:],
+            homeDirectory: home,
+            isProcessAlive: { _ in true },
+            processPath: { _ in nil },
+            sleep: { _ in }
+        )
+
+        #expect(EmulatorDiscovery.live(host: host).isEmpty)
+    }
+
     @Test("a file deleted between listing and reading is skipped")
     func vanishedFileSkipped() {
         let host = AndroidTestHost.make(files: VanishingFiles(listing: ["pid_700.ini"]), liveProcesses: [700])

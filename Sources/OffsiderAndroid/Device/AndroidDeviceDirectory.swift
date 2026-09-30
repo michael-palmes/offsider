@@ -7,6 +7,8 @@ struct RunningEmulator: Equatable, Sendable {
     let state: AdbDeviceState
     let avdName: String?
     let bootCompleted: Bool
+    /// The emulator is in state `device` but its properties could not be read, so its boot state is unknown.
+    let propertiesUnreadable: Bool
     let osRelease: String?
     let apiLevel: Int?
     let model: String?
@@ -31,7 +33,7 @@ struct AndroidDeviceDirectory {
         for (entry, port) in entries {
             let discovery = discoveries.first { $0.consolePort == port }
             let query = entry.state == .device && (detailed || discovery?.avdID == nil)
-            emulators.append(await describe(entry, port: port, discovery: discovery, queryDevice: query))
+            emulators.append(try await describe(entry, port: port, discovery: discovery, queryDevice: query))
         }
         return emulators
     }
@@ -43,15 +45,29 @@ struct AndroidDeviceDirectory {
             return nil
         }
         let discovery = EmulatorDiscovery.live(host: host).first { $0.consolePort == port }
-        return await describe(entry, port: port, discovery: discovery, queryDevice: entry.state == .device)
+        return try await describe(entry, port: port, discovery: discovery, queryDevice: entry.state == .device, throwing: true)
     }
 
-    private func describe(_ entry: AdbDeviceEntry, port: Int, discovery: EmulatorDiscovery?, queryDevice: Bool) async -> RunningEmulator {
+    /// With `throwing`, a failed property query is the error; otherwise the row says its state is unknown.
+    private func describe(
+        _ entry: AdbDeviceEntry,
+        port: Int,
+        discovery: EmulatorDiscovery?,
+        queryDevice: Bool,
+        throwing: Bool = false
+    ) async throws -> RunningEmulator {
         var properties = [String](repeating: "", count: 5)
-        if queryDevice, let result = try? await client.shell(Self.propertiesScript, on: entry.serial, timeout: .seconds(5)) {
-            let lines = result.stdoutText.split(separator: "\n", omittingEmptySubsequences: false)
-            for index in 0..<min(5, lines.count) {
-                properties[index] = lines[index].trimmingCharacters(in: .whitespaces)
+        var unreadable = false
+        if queryDevice {
+            do {
+                let result = try await client.shell(Self.propertiesScript, on: entry.serial, timeout: .seconds(5), label: "getprop")
+                let lines = result.stdoutText.split(separator: "\n", omittingEmptySubsequences: false)
+                for index in 0..<min(5, lines.count) {
+                    properties[index] = lines[index].trimmingCharacters(in: .whitespaces)
+                }
+            } catch {
+                if throwing { throw error }
+                unreadable = true
             }
         }
         return RunningEmulator(
@@ -60,6 +76,7 @@ struct AndroidDeviceDirectory {
             state: entry.state,
             avdName: [discovery?.avdID ?? "", properties[0], properties[1]].first { !$0.isEmpty },
             bootCompleted: properties[2] == "1",
+            propertiesUnreadable: unreadable,
             osRelease: properties[3].isEmpty ? nil : properties[3],
             apiLevel: Int(properties[4]),
             model: entry.properties["model"],
@@ -115,6 +132,7 @@ struct AndroidDeviceDirectory {
 
     static func stateName(_ emulator: RunningEmulator) -> String {
         switch emulator.state {
+        case .device where emulator.propertiesUnreadable: return "Unknown"
         case .device: return emulator.bootCompleted ? "Booted" : "Booting"
         case .offline: return "Offline"
         case .unauthorized: return "Unauthorised"

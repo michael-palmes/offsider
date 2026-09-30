@@ -56,6 +56,22 @@ struct AndroidDeviceDirectoryTests {
         ])
     }
 
+    @Test("an emulator whose properties cannot be read is Unknown, not Booting; checking that serial alone fails")
+    func unreadableProperties() async throws {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(
+            ["emulator-5554", "emulator-5556"],
+            host: { service in service == "host:devices-l" ? FakeAdbServer.okay(payload: Self.listing) : .hang },
+            device: { serial, _ in serial == "emulator-5556" ? .hang : FakeAdbServer.shell(stdout: "Work_AVD\n\n1\n15\n35\n") }
+        ))
+        let directory = Self.directory(server, home: try AndroidTestHost.temporaryHome())
+
+        let rows = try await directory.summaries()
+        #expect(rows.map(\.state) == ["Booted", "Unknown", "Offline"])
+
+        let error = await #expect(throws: AndroidError.self) { try await directory.runningEmulator(serial: "emulator-5556") }
+        #expect(error?.message.hasPrefix("`getprop` failed on emulator-5556") == true)
+    }
+
     @Test("a live discovery file names the AVD; getprop is the fallback, then the older kernel property")
     func avdNameSources() async throws {
         let home = try AndroidTestHost.temporaryHome()

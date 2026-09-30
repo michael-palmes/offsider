@@ -128,10 +128,27 @@ public final class AndroidBackend: DeviceBackend {
             device: id,
             executor: .adb(AdbDeviceShell(client: try requireClient(), serial: serial)),
             geometry: geometry,
-            avdName: avdNames[serial],
+            avdName: { await self.avdName(for: serial) },
             pasteUnavailableReason: pasteUnavailableReason(for: serial),
             log: log
         )
+    }
+
+    /// For messages: the cached name, else the live discovery file, else one `getprop` on this serial only.
+    func avdName(for serial: String) async -> String? {
+        if let cached = avdNames[serial] {
+            return cached
+        }
+        let port = Int(serial.dropFirst("emulator-".count))
+        let fromFile = EmulatorDiscovery.live(host: host).first { $0.consolePort == port }?.avdID
+        let name: String?
+        if let fromFile {
+            name = fromFile
+        } else {
+            name = try? await directory().runningEmulator(serial: serial)?.avdName
+        }
+        avdNames[serial] = name
+        return name
     }
 
     /// `touch --down` now and `touch --up` later: each call is one `input motionevent` script.

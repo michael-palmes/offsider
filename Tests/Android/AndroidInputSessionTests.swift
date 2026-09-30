@@ -10,10 +10,19 @@ struct AndroidInputSessionTests {
     static func server(failing: @escaping @Sendable (String) -> Bool = { _ in false }) -> FakeAdbServer {
         FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556"],
-            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            host: { service in
+                switch service {
+                case "host:version": return FakeAdbServer.okay(payload: "0029")
+                case "host:devices-l": return FakeAdbServer.okay(payload: "emulator-5556 device transport_id:3\n")
+                default: return .hang
+                }
+            },
             device: { _, service in
                 if service.hasSuffix(AndroidDisplayGeometry.probeScript) {
                     return FakeAdbServer.shell(stdout: AndroidBackendTests.geometryOutput)
+                }
+                if service.hasSuffix(AndroidDeviceDirectory.propertiesScript) {
+                    return FakeAdbServer.shell(stdout: "Offsider_E2E_Pixel_9\n\n1\n16\n36\n")
                 }
                 let script = String(service.dropFirst("shell,v2,raw:".count))
                 return failing(script) ? FakeAdbServer.shell(stderr: "Error: injection failed\n", status: 1) : FakeAdbServer.shell()
@@ -23,7 +32,7 @@ struct AndroidInputSessionTests {
 
     static func scripts(_ server: FakeAdbServer) -> [String] {
         server.services
-            .filter { $0.hasPrefix("shell,v2,raw:") && !$0.hasSuffix(AndroidDisplayGeometry.probeScript) }
+            .filter { $0.hasPrefix("shell,v2,raw:") && !$0.hasSuffix(AndroidDisplayGeometry.probeScript) && !$0.hasSuffix(AndroidDeviceDirectory.propertiesScript) }
             .map { String($0.dropFirst("shell,v2,raw:".count)) }
     }
 
@@ -80,14 +89,14 @@ struct AndroidInputSessionTests {
         #expect(Self.scripts(server) == ["input text 'hello%sworld' && input keyevent 66"])
     }
 
-    @Test("non-ASCII text on an adb-only emulator fails with the gRPC message and sends nothing")
+    @Test("non-ASCII text on an adb-only emulator fails with the gRPC message naming the AVD, and types nothing")
     func typeNonASCII() async throws {
         let server = Self.server()
         let session = try #require(try await AndroidBackendTests.backend(server).openInputSession(for: Self.device) as? any TextInputSession)
 
         let error = await #expect(throws: AndroidError.self) { try await session.typeText("héllo") }
         #expect(error?.kind == .grpcRequired)
-        #expect(error?.message == "Typing non-ASCII text on Android needs the emulator's gRPC endpoint, and emulator-5556 has none (it was probably started with -port). Restart it with `offsider boot <AVD>`, or type ASCII only.")
+        #expect(error?.message == "Typing non-ASCII text on Android needs the emulator's gRPC endpoint, and emulator-5556 has none (it was probably started with -port). Restart it with `offsider boot Offsider_E2E_Pixel_9`, or type ASCII only.")
         #expect(Self.scripts(server).isEmpty)
     }
 
