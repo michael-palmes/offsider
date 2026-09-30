@@ -30,6 +30,14 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case displayProbeUnparseable
         case notSupported
         case inputFailed
+        case invalidSetting
+        case grpcNoCredentials
+        case grpcKeyNotActivated
+        case grpcUnauthenticated
+        case grpcPermissionDenied
+        case grpcUnavailable
+        case grpcDeadlineExceeded
+        case grpcFailed
     }
 
     public let kind: Kind
@@ -139,6 +147,70 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(
             .avdRunningTwice,
             "\(name) is running more than once (\(serials.joined(separator: ", "))). Pass one serial with --device."
+        )
+    }
+
+    static func invalidSetting(variable: String, value: String, expected: String) -> AndroidError {
+        AndroidError(.invalidSetting, "\(variable) is \(value), which Offsider cannot read. Use \(expected), or unset it.")
+    }
+
+    static func grpcNoCredentials(port: Int, avd: String?, missing: String) -> AndroidError {
+        AndroidError(
+            .grpcNoCredentials,
+            "The emulator's gRPC endpoint on port \(port) offers no credentials Offsider can use (its discovery file has no \(missing)). Restart it with `offsider boot \(avd ?? "<AVD>")`."
+        )
+    }
+
+    static func grpcKeyNotActivated(activeListPath: String, avd: String?) -> AndroidError {
+        AndroidError(
+            .grpcKeyNotActivated,
+            "The emulator did not accept Offsider's signing key within 3 s (`\(activeListPath)`). Restart it with `offsider boot \(avd ?? "<AVD>")`."
+        )
+    }
+
+    static func grpcKeyNotWritten(directory: String, detail: String) -> AndroidError {
+        AndroidError(
+            .grpcKeyNotActivated,
+            "Could not give the emulator Offsider's signing key in \(directory) (\(detail)). Check that the folder is writable, or restart the emulator."
+        )
+    }
+
+    static func grpcUnauthenticated(endpoint: String, method: String, avd: String?) -> AndroidError {
+        AndroidError(
+            .grpcUnauthenticated,
+            "The emulator's gRPC endpoint (\(endpoint)) rejected Offsider's credentials for `\(method)`. Restart the emulator with `offsider boot \(avd ?? "<AVD>")` so it issues fresh credentials."
+        )
+    }
+
+    static func grpcPermissionDenied(allowlist: String, issuer: String, method: String, avd: String?) -> AndroidError {
+        AndroidError(
+            .grpcPermissionDenied,
+            "The emulator's gRPC allowlist (`\(allowlist)`) does not let issuer \(issuer) call `\(method)`. Restart the emulator with `offsider boot \(avd ?? "<AVD>")` so it offers a token."
+        )
+    }
+
+    static func grpcUnavailable(port: Int) -> AndroidError {
+        AndroidError(
+            .grpcUnavailable,
+            "The emulator's gRPC endpoint on port \(port) did not answer on 127.0.0.1 or [::1]; it may be shutting down."
+        )
+    }
+
+    static func grpcDeadlineExceeded(method: String, seconds: Int) -> AndroidError {
+        AndroidError(
+            .grpcDeadlineExceeded,
+            "The emulator did not answer `\(method)` within \(seconds) s. It may be overloaded; retry, or check it with `offsider list-devices`."
+        )
+    }
+
+    static func grpcFailed(endpoint: String, method: String, detail: String) -> AndroidError {
+        AndroidError(.grpcFailed, "The emulator's gRPC endpoint (\(endpoint)) failed `\(method)`: \(detail).")
+    }
+
+    static func grpcForced(serial: String, reason: String) -> AndroidError {
+        AndroidError(
+            .grpcRequired,
+            "OFFSIDER_ANDROID_TRANSPORT is grpc, which needs the emulator's gRPC endpoint, and \(serial) \(reason). Unset it to fall back to adb."
         )
     }
 

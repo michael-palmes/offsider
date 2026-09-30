@@ -71,6 +71,7 @@ public struct AndroidHost: Sendable {
     public var homeDirectory: URL
     var files: any FileSystemProbe
     var adbConnector: any AdbConnecting
+    var emulatorConnector: any EmulatorConnecting
     var processes: any HostProcessRunning
     var isProcessAlive: @Sendable (Int32) -> Bool
     /// The executable of a running process, or nil when it has gone or cannot be read.
@@ -82,6 +83,7 @@ public struct AndroidHost: Sendable {
         homeDirectory: URL,
         files: any FileSystemProbe = LocalFileSystem(),
         adbConnector: any AdbConnecting = PosixAdbConnector(),
+        emulatorConnector: any EmulatorConnecting = GrpcEmulatorConnector(),
         processes: any HostProcessRunning = LocalProcessRunner(),
         isProcessAlive: @escaping @Sendable (Int32) -> Bool = { AndroidHost.processIsAlive($0) },
         processPath: @escaping @Sendable (Int32) -> String? = { AndroidHost.executablePath(of: $0) },
@@ -91,6 +93,7 @@ public struct AndroidHost: Sendable {
         self.homeDirectory = homeDirectory
         self.files = files
         self.adbConnector = adbConnector
+        self.emulatorConnector = emulatorConnector
         self.processes = processes
         self.isProcessAlive = isProcessAlive
         self.processPath = processPath
