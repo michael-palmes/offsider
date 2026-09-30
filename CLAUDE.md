@@ -1,12 +1,12 @@
 # Offsider agent guide
 
-Offsider: a hand for your agent on the iOS Simulator. A Swift CLI that inspects and drives iOS Simulators (describe the UI, tap, type, swipe, capture) for terminals and AI agents.
+Offsider: a hand for your agent on the iOS Simulator and the Android Emulator. A Swift CLI that inspects and drives iOS Simulators and Android Emulators (describe the UI, tap, type, swipe, capture) for terminals and AI agents.
 
-IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for Swift Testing, swift-argument-parser and idb/FBSimulatorControl tasks.
+IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for Swift Testing, swift-argument-parser, idb/FBSimulatorControl, grpc-swift-2 and adb server protocol tasks.
 
 ## Role
 
-You are a macOS tooling engineer maintaining a small, local-only Swift CLI built on Xcode private frameworks. Priorities, in order: correct simulator input, honest and actionable errors, and no network.
+You are a macOS tooling engineer maintaining a small, local-only Swift CLI built on Xcode private frameworks and the Android SDK's local daemons. Priorities, in order: correct device input, honest and actionable errors, and nothing leaves the Mac.
 
 ## Origin
 
@@ -17,11 +17,13 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | Aspect | Guidance |
 | --- | --- |
 | Toolchain | Swift 6.4; `Package.swift` declares `swift-tools-version:5.10` |
-| Platform | Apple silicon (arm64) only; `Package.swift` targets macOS 14, releases support macOS 15 or later; Xcode 27 is the target |
+| Platform | Apple silicon (arm64) only; `Package.swift` targets macOS 26, and releases need macOS 26 or later; Xcode 27 is the target |
 | CLI | swift-argument-parser: one `AsyncParsableCommand` per file |
 | Tests | Swift Testing (`import Testing`, `@Suite`, `@Test`, `#expect`), never XCTest |
 | Simulator stack | idb's FBSimulatorControl, FBControlCore, FBDeviceControl and XCTestBootstrap, built by `scripts/build.sh` from the `michael-palmes/idb` fork at the pinned revision, linked from `build_products/XCFrameworks` |
 | Private headers | Compile-only, from `idb_checkout/PrivateHeaders`; never shipped |
+| Android stack | `OffsiderAndroid` (never imports idb): a Swift adb server client over loopback plus the emulator gRPC service (grpc-swift-2, generated code checked in from a trimmed proto) |
+| Android toolchain | Android SDK with Platform-Tools and the Emulator, found through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` or `adb` on `PATH`; `arm64-v8a` images, tested on API 36 |
 | Fixture app | `OffsiderPlaygroundApp` (XcodeGen `project.yml`) |
 
 ## Commands
@@ -36,6 +38,8 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `make e2e` or `./test-runner.sh` | Rebuild idb, build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
 | `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
+| `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites (needs `OFFSIDER_ANDROID_DEVICE`) |
+| `scripts/generate-emulator-grpc.sh [--check]` or `make grpc-generate` | Regenerate the emulator gRPC client from the vendored proto; `--check` compares with the checked-in code |
 | `bash -n <script>` | Syntax-check a changed shell script |
 
 | Variable | Effect |
@@ -46,6 +50,14 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_REUSE_IDB=1` | `test-runner.sh` skips the idb rebuild when existing XCFrameworks verify |
 | `SIMULATOR_UDID` | Pins E2E runs to one simulator |
 | `OFFSIDER_SIGNING_IDENTITY` | Developer ID identity for `scripts/release.sh`; set it in git-ignored `.env` (copy `.env.example`) |
+| `OFFSIDER_ANDROID_E2E=1` | Enables the Android E2E suites in `swift test` (`test-runner.sh --android` sets it) |
+| `OFFSIDER_ANDROID_DEVICE` | The E2E emulator's serial or AVD name (required for Android E2E) |
+| `OFFSIDER_ANDROID_APK` | The React Native playground's release APK the Android suites install |
+| `OFFSIDER_ANDROID_E2E_AVD` | The only AVD Android E2E may drive (default `Offsider_E2E_Pixel_9`) |
+| `OFFSIDER_ANDROID_LANDSCAPE_E2E=1` | Adds the Android landscape suite (Settings) |
+| `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD |
+| `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
+| `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 
 ## Layout
 
@@ -53,6 +65,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | --- | --- |
 | A command | `Sources/Offsider/Commands/<Name>.swift`; register new ones in `Sources/Offsider/main.swift` |
 | Pure logic with no idb import | `Sources/OffsiderCore/` (fast unit tests) |
+| Android backend | `Sources/OffsiderAndroid/` (pure parsers stay `internal`, tests use `@testable import`); unit tests in `Tests/Android/`, E2E in `Tests/AndroidE2E/` |
 | HID broker, accessibility resolution, errors | `Sources/Offsider/Utilities/` |
 | The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` |
 | Version string | `Plugins/VersionPlugin` (generates git-ignored `Version.swift`) |
@@ -70,6 +83,14 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` and rejects peers running as another user.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
+
+## Android emulator caveats
+
+- Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
+- Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
+- E2E and manual checks drive only `Offsider_E2E_Pixel_9`, and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
+- Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
+- The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
 
 ## Collaboration
 
@@ -108,12 +129,12 @@ Simulator-dependent suites are gated: `@Suite("Tap", .serialized, .enabled(if: i
 ## Boundaries
 
 - ✅ **Always**: run `swift build && swift test` before committing; use `git mv` for renames so history follows; pin GitHub Actions to full commit SHAs with the version in a trailing comment.
-- ⚠️ **Ask first**: adding a dependency; changing `entitlements.plist`; changing the idb pin; changing `release.yml` or `scripts/release.sh`; touching `Package.swift` platforms; removing code or behaviour that looks intentional.
+- ⚠️ **Ask first**: adding a dependency; changing `entitlements.plist`; changing the idb pin; changing `release.yml` or `scripts/release.sh`; touching `Package.swift` platforms; changing the vendored emulator proto, its generated gRPC code or the gRPC package pins; adding emulator launch flags to `boot`; removing code or behaviour that looks intentional.
 - 🚫 **Never**:
   - Commit secrets or signing material (`.p12`, `.p8`, `.env`, `keys/`). Keep them in `.env` and GitHub secrets.
   - Add an `axe` alias or compatibility shim. Document `offsider` instead.
   - Reference private notes or internal roadmap stages in the repo. Describe the change itself.
   - Use `--no-verify`. Fix what the hook reports.
   - Sign with `codesign --deep`. Sign nested code inside-out, frameworks first.
-  - Add telemetry or network calls. Offsider stays local-only.
+  - Connect to non-loopback addresses, resolve hostnames or send telemetry. Offsider may use Unix sockets and loopback TCP to local developer daemons (the adb server and the Android Emulator); nothing leaves the Mac.
   - Edit files under `idb_checkout/`. Move the pin instead.
