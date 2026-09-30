@@ -39,11 +39,16 @@ enum UIAutomatorDump {
         "/data/local/tmp/offsider-ui-\(pid)-\(counter).xml"
     }
 
-    /// Prints the XML on stdout and deletes the file; on failure, uiautomator's own output goes to stderr with status 3.
+    /// The device-side limit, under the host's 20 s, so a slow dump never outlives the command and holds UiAutomation.
+    static let deviceTimeoutSeconds = 18
+
+    /// Prints the XML on stdout and deletes the file. On failure uiautomator's output goes to stderr and the status is
+    /// 4 for the device timeout, the signal status when uiautomator was killed, else 3.
     static func script(path: String) -> String {
         let file = AdbShellQuoting.quote(path)
-        return "f=\(file); out=$(uiautomator dump --compressed \"$f\" 2>&1); "
-            + "if [ -s \"$f\" ]; then cat \"$f\"; rm -f \"$f\"; else rm -f \"$f\"; echo \"$out\" >&2; exit 3; fi"
+        return "f=\(file); out=$(timeout \(deviceTimeoutSeconds) uiautomator dump --compressed \"$f\" 2>&1); rc=$?; "
+            + "if [ -s \"$f\" ]; then cat \"$f\"; rm -f \"$f\"; else rm -f \"$f\"; echo \"$out\" >&2; "
+            + "[ $rc -eq 124 ] && exit 4; [ $rc -ge 128 ] && exit $rc; exit 3; fi"
     }
 
     static func classify(_ result: AdbShellResult) -> Outcome {
@@ -59,6 +64,9 @@ enum UIAutomatorDump {
             return .noWindow
         }
         let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if result.status == 4 {
+            return .failed("no hierarchy within \(deviceTimeoutSeconds) s; the emulator may be overloaded")
+        }
         if result.status == 137 || result.status == 134 || (result.status == 3 && trimmed.isEmpty) {
             return .busy
         }

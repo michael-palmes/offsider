@@ -16,6 +16,8 @@ struct UIAutomatorDumpTests {
         (result(3), .busy),
         (result(3, stderr: "ERROR: null root node returned by UiTestAutomationBridge.\n"), .noWindow),
         (result(3, stderr: "Killed\nmore\n"), .failed("Killed")),
+        (result(137, stderr: "Killed\n"), .busy),
+        (result(4), .failed("no hierarchy within 18 s; the emulator may be overloaded")),
         (result(1), .failed("exit status 1")),
     ])
     func classify(result: AdbShellResult, expected: UIAutomatorDump.Outcome) {
@@ -27,9 +29,9 @@ struct UIAutomatorDumpTests {
         let path = UIAutomatorDump.devicePath(pid: 4242, counter: 3)
         #expect(path == "/data/local/tmp/offsider-ui-4242-3.xml")
         let script = UIAutomatorDump.script(path: path)
-        #expect(script.hasPrefix("f='/data/local/tmp/offsider-ui-4242-3.xml'; out=$(uiautomator dump --compressed \"$f\" 2>&1);"))
+        #expect(script.hasPrefix("f='/data/local/tmp/offsider-ui-4242-3.xml'; out=$(timeout 18 uiautomator dump --compressed \"$f\" 2>&1); rc=$?;"))
         #expect(script.contains("rm -f \"$f\""))
-        #expect(script.hasSuffix("exit 3; fi"))
+        #expect(script.hasSuffix("[ $rc -eq 124 ] && exit 4; [ $rc -ge 128 ] && exit $rc; exit 3; fi"))
     }
 
     @Test("attributes, nesting, rotation, entities and non-ASCII text survive parsing")
