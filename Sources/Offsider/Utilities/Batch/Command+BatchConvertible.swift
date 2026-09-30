@@ -133,21 +133,12 @@ extension Swipe: BatchConvertible {
 
 extension Gesture: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let width = screenWidth ?? 390.0
-        let height = screenHeight ?? 844.0
-        let coords = preset.coordinates(screenWidth: width, screenHeight: height)
-        let gestureDuration = duration ?? preset.defaultDuration
-        let gestureDelta = delta ?? preset.defaultDelta
-
-        let gestureEvent = InputEvent.swipe(
-            coords.startX,
-            yStart: coords.startY,
-            xEnd: coords.endX,
-            yEnd: coords.endY,
-            delta: gestureDelta,
-            duration: gestureDuration
+        let gestureEvent = try await presetSwipe(
+            tree: try await context.accessibilityTree(),
+            backend: context.backend,
+            device: context.device,
+            logger: logger
         )
-
         return [.hidMergeable(InputEvent.delayed(gestureEvent, pre: preDelay, post: postDelay))]
     }
 }
