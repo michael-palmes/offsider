@@ -11,11 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `list-devices` command: one row per device with PLATFORM, STATE, ID, NAME and OS columns.
 - `list-devices --json` prints `{"version": 1, "devices": [...]}`, each device with `id`, `platform`, `state`, `name`, `osVersion` and `deviceType` (null when unknown).
 - `list-devices --platform ios|android` lists one platform.
-- Android Emulator support: `list-devices`, `describe-ui` (through `uiautomator`, in dp), `tap`, `swipe`, `drag`, `gesture`, `touch`, `type`, `key`, `key-sequence`, `key-combo`, `button`, `screenshot`, `record-video`, `stream-video`, `batch` and `--verify` work with an emulator serial or a running AVD name. Offsider talks to the adb server and the emulator's gRPC endpoint on loopback, starts the adb server with mDNS off when none is running, and falls back to adb for emulators without gRPC.
+- Android Emulator support: `list-devices`, `describe-ui` (through a UiAutomation helper, in dp), `tap`, `swipe`, `drag`, `gesture`, `touch`, `type`, `key`, `key-sequence`, `key-combo`, `button`, `screenshot`, `record-video`, `stream-video`, `batch` and `--verify` work with an emulator serial or a running AVD name. Offsider talks to the adb server and the emulator's gRPC endpoint on loopback, starts the adb server with mDNS off when none is running, and falls back to adb for emulators without gRPC.
 - `type` on Android pastes text with non-ASCII characters through the emulator's clipboard, then restores the clipboard.
 - `boot <avd>` starts an Android emulator (windowed, or `--headless`) with `-no-metrics`, waits until Android and its gRPC endpoint are ready and prints the serial; an AVD that is already running is not started again.
 - `button back`, `app-switch`, `volume-up` and `volume-down` for Android; `lock` is the power key there.
 - `OFFSIDER_ANDROID_TRANSPORT` (`adb` or `grpc`) and `OFFSIDER_ANDROID_GRPC_AUTH` (`jwt`) for troubleshooting Android transports.
+- Android `describe-ui` and every tree read go through a small UiAutomation helper that Offsider pushes to the emulator and runs for one command (about 0.5 s per `describe-ui`); `uiautomator` remains the fallback, with a warning.
+- `OFFSIDER_ANDROID_TREE` (`helper` or `uiautomator`) for troubleshooting Android screen reads.
 - React Native playground (`OffsiderPlaygroundRN`) for shared iOS and Android fixtures.
 
 ### Changed
@@ -32,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--verify` compares the neutral tree. iOS change summaries are unchanged; a checked state change without a value change reads "checked state of X changed".
 - Selector help and errors say id, label and value instead of AXUniqueId, AXLabel and AXValue, and `slider` reports `value:`.
 - `--id` also matches the part of an Android resource id after `:id/` when no id matches exactly.
+- Android trees add the keyboard window as a `keyboard` root, label the application root with the window title, report slider and progress values as percentages and tri-state checkboxes as `2`, and fill `stateDescription`, `roleDescription` and `testTag` (a Compose `testTag` is the `id` when there is no resource id).
 - `--verify` leaves each platform's system bars out of screenshot comparisons: the status bar on iOS as before, and the status and navigation bars on Android. A command that changed nothing suggests `doctor` only for simulators.
 - A `button` that the device's platform does not have exits 64 before touching the device.
 - Tap summaries round points to 0.01, for example `resolved tap point at (217.15, 272.2)`.

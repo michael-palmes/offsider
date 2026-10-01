@@ -8,12 +8,13 @@ public final class AndroidBackend: DeviceBackend {
     let log: AndroidLog
     private var sdk: AndroidSDK?
     private var client: AdbClient?
-    private var geometries: [String: AndroidDisplayGeometry] = [:]
+    var geometries: [String: AndroidDisplayGeometry] = [:]
     private var avdNames: [String: String] = [:]
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
     private var dumpCounter = 0
-    private var helperSessions: [String: HelperSession] = [:]
+    var treeSources: [String: AndroidTreeSource] = [:]
+    var warnedAboutTruncation: Set<String> = []
 
     public init(host: AndroidHost = .live(), log: @escaping AndroidLog) {
         self.host = host
@@ -72,9 +73,22 @@ public final class AndroidBackend: DeviceBackend {
         return try await directory().serial(forAVDNamed: name)
     }
 
-    /// `uiautomator dump --compressed` mapped to dp; with `point`, the deepest node there as the only root.
+    /// The helper's dump (else `uiautomator dump --compressed`) mapped to dp; with `point`, the deepest node there as the only root.
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         let serial = id.rawValue
+        let roots: [UINode]
+        switch try await treeSource(for: serial) {
+        case .helper(let session):
+            roots = try await helperRoots(serial, session: session)
+        case .uiautomator:
+            roots = try await uiautomatorRoots(serial)
+        }
+        let tree = UITree(platform: .android, device: serial, roots: roots)
+        guard let point else { return tree }
+        return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
+    }
+
+    private func uiautomatorRoots(_ serial: String) async throws -> [UINode] {
         let geometry = try await geometry(for: serial)
         let xml: String
         if let first = try await dumpHierarchy(serial) {
@@ -96,10 +110,7 @@ public final class AndroidBackend: DeviceBackend {
         if let rotation = hierarchy.rotation {
             geometries[serial] = geometry.rotated(to: rotation)
         }
-
-        let tree = UITree(platform: .android, device: serial, roots: AndroidTreeMapping.roots(from: hierarchy, scale: geometry.scale))
-        guard let point else { return tree }
-        return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
+        return AndroidTreeMapping.roots(from: hierarchy, scale: geometry.scale)
     }
 
     /// The hierarchy XML, or nil when uiautomator found no window, which lasts a moment while an activity starts.
@@ -286,29 +297,15 @@ public final class AndroidBackend: DeviceBackend {
         }
     }
 
-    /// The command's helper on `serial`, started on first use; throws `HelperStartFailure` or a device error.
-    func helperSession(for serial: String) async throws -> HelperSession {
-        if let running = helperSessions[serial] {
-            return running
-        }
-        try await prepare()
-        let dex: HelperDex
-        do {
-            dex = try host.helperDex()
-        } catch let error as HelperDexError {
-            log(.debug, "The bundled helper cannot be used: \(error)")
-            throw HelperStartFailure.unavailable(HelperUnavailableReason(error))
-        }
-        let session = try await HelperSession.start(client: try requireClient(), serial: serial, dex: dex, log: log)
-        helperSessions[serial] = session
-        return session
-    }
-
     /// Stops helpers first (freeing the UiAutomation slot), then gRPC clients and their keys; a second call does nothing.
     public func close() async {
-        let helpers = helperSessions.sorted { $0.key < $1.key }.map(\.value)
+        let helpers = treeSources.sorted { $0.key < $1.key }.compactMap { _, source -> HelperSession? in
+            guard case .helper(let session) = source else { return nil }
+            return session
+        }
         let open = transports.sorted { $0.key < $1.key }.map(\.value)
-        helperSessions = [:]
+        treeSources = [:]
+        warnedAboutTruncation = []
         transports = [:]
         geometries = [:]
         avdNames = [:]

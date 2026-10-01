@@ -16,6 +16,8 @@ final class HelperSession {
     private(set) var windows: [HelperWindow] = []
     /// The latest dump's `eventSeq`: events after it are changes since Offsider last read the tree.
     private(set) var eventCursor: Int64 = 0
+    /// The latest mapped dump's nodes and references, for actions on what the command last saw.
+    private(set) var index: HelperTreeIndex?
 
     private let launcher: HelperLauncher
     private let log: AndroidLog
@@ -72,6 +74,10 @@ final class HelperSession {
         windows = dump.windows
         eventCursor = dump.eventSeq
         return dump
+    }
+
+    func remember(_ index: HelperTreeIndex) {
+        self.index = index
     }
 
     /// The `display` op: the display and the window list, without trees.

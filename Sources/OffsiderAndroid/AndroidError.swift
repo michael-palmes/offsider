@@ -29,6 +29,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case helperCrashed
         case helperTimedOut
         case helperFailed
+        case noWindow
         case unsupportedKey
         case unsupportedButton
         case unsupportedControlCharacter
@@ -314,6 +315,10 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func noWindow(_ serial: String) -> AndroidError {
+        AndroidError(.noWindow, "Offsider found no window on \(serial). Unlock the emulator and bring an app to the front.")
+    }
+
     static func unsupportedKey(_ usage: UInt32) -> AndroidError {
         AndroidError(
             .unsupportedKey,
@@ -388,7 +393,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 }
 
-/// uiautomator finds no window for a moment while an activity starts or restarts; polling callers retry it.
+/// Android shows no window for a moment while an activity starts or restarts; polling callers retry it.
 extension AndroidError: TransientFailure {
-    public var isTransient: Bool { kind == .uiautomatorNoWindow }
+    public var isTransient: Bool { kind == .uiautomatorNoWindow || kind == .noWindow }
 }

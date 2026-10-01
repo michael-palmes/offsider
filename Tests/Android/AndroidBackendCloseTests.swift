@@ -108,7 +108,7 @@ struct AndroidBackendCloseTests {
             liveProcesses: [50144], helperDex: FakeHelperDevice.dex
         )
         let backend = AndroidBackend(host: host, log: LogRecorder().log)
-        _ = try await backend.helperSession(for: "emulator-5556")
+        _ = try await backend.accessibilityTree(for: Self.device, point: nil)
         try await backend.perform(.tapAt(x: 10, y: 20), on: Self.device)
 
         await backend.close()
@@ -116,7 +116,7 @@ struct AndroidBackendCloseTests {
 
         #expect(atQuit.calls?.contains(.close) == false)
         #expect(emulator.calls.filter { $0 == .close }.count == 1)
-        #expect(device.ops == ["hello", "quit"])
+        #expect(device.ops == ["hello", "dump", "quit"])
         let timeline = device.timeline
         #expect(try #require(timeline.firstIndex(of: "exit 1 0")) < (try #require(timeline.firstIndex(of: "shell closed 1"))))
     }

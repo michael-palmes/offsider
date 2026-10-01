@@ -65,4 +65,39 @@ struct AndroidDisplayGeometryTests {
         #expect(geometry.rotation == 1)
         #expect(geometry.logicalWidth == 2424)
     }
+
+    static func display(width: Int, height: Int, rotation: Int?, physical: (Int, Int)? = (1080, 2424), density: Int = 420) -> HelperDisplay {
+        HelperDisplay(
+            source: "DisplayManagerGlobal", logicalWidthPx: width, logicalHeightPx: height, rotation: rotation,
+            physicalWidthPx: physical?.0, physicalHeightPx: physical?.1, densityDpi: density
+        )
+    }
+
+    @Test("the helper's display gives the same geometry as the shell probe, without running it")
+    func fromHelperDisplay() throws {
+        let fromHelper = try #require(AndroidDisplayGeometry(display: Self.display(width: 1080, height: 2424, rotation: 0)))
+        #expect(fromHelper == (try AndroidDisplayGeometry.parse(Self.probe(rotation: 0, frame: "[0, 0, 1080, 2424]"))))
+    }
+
+    @Test("rotation 1 from the helper keeps the swapped logical size and the panel's natural size")
+    func fromHelperRotated() throws {
+        let geometry = try #require(AndroidDisplayGeometry(display: Self.display(width: 2424, height: 1080, rotation: 1)))
+        #expect(geometry.logicalWidth == 2424)
+        #expect(geometry.naturalWidth == 1080)
+        #expect(geometry.naturalHeight == 2424)
+        #expect(geometry.orientation == .landscapeFlipped)
+        #expect(!geometry.hasSizeOverride)
+    }
+
+    @Test("a logical size that differs from the display mode's is a size override")
+    func fromHelperOverride() throws {
+        let geometry = try #require(AndroidDisplayGeometry(display: Self.display(width: 720, height: 1616, rotation: 0)))
+        #expect(geometry.hasSizeOverride)
+        #expect(geometry.naturalWidth == 1080)
+    }
+
+    @Test("without a rotation (the helper's fallback read) there is no geometry, so the shell probe runs")
+    func fromHelperWithoutRotation() {
+        #expect(AndroidDisplayGeometry(display: Self.display(width: 1080, height: 2424, rotation: nil, physical: nil)) == nil)
+    }
 }
