@@ -23,6 +23,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | Simulator stack | idb's FBSimulatorControl, FBControlCore, FBDeviceControl and XCTestBootstrap, built by `scripts/build.sh` from the `michael-palmes/idb` fork at the pinned revision, linked from `build_products/XCFrameworks` |
 | Private headers | Compile-only, from `idb_checkout/PrivateHeaders`; never shipped |
 | Fixture app | `OffsiderPlaygroundApp` (XcodeGen `project.yml`) |
+| RN fixture app | `OffsiderPlaygroundRN`: Expo SDK 57, pnpm 11, same screens and ids for iOS and Android; `/ios`, `/android` and `/build` are generated and git-ignored; dev Metro on 8742 |
 
 ## Commands
 
@@ -36,6 +37,9 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `make e2e` or `./test-runner.sh` | Rebuild idb, build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
 | `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
+| `scripts/rn-playground.sh build-ios` or `build-android` | Build the RN playground Release app or arm64 APK (`help` lists install and launch) |
+| `pnpm --dir OffsiderPlaygroundRN typecheck` | Typecheck the RN playground |
+| `pnpm --dir OffsiderPlaygroundRN android <serial>` or `ios <udid>` | RN debug build with Metro on 8742 (Android also takes an AVD name); refuses to run without a named device |
 | `bash -n <script>` | Syntax-check a changed shell script |
 
 | Variable | Effect |
@@ -57,6 +61,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` |
 | Version string | `Plugins/VersionPlugin` (generates git-ignored `Version.swift`) |
 | Tests | `Tests/<Name>Tests.swift`; E2E fixture screens in `OffsiderPlaygroundApp/` |
+| RN fixture screens | `OffsiderPlaygroundRN/src/screens/` (one per file); `Readout`, `Target` and the header marker in `src/fixtures.tsx` |
 | Build, release, goldens | `scripts/` |
 | CI and releases | `.github/workflows/ci.yml`, `.github/workflows/release.yml` |
 | Project skills | `.agents/skills/` (`.claude/skills` is a relative symlink to it) |
