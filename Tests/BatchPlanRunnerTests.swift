@@ -14,17 +14,19 @@ final class RecordingInputSession: InputSession {
 
     let device = DeviceID(rawValue: "recording", platform: .ios)
     private let failingEvent: InputEvent?
+    private let failure: any Error
     private(set) var calls: [Call] = []
     private(set) var isClosed = false
 
-    init(failingOn failingEvent: InputEvent? = nil) {
+    init(failingOn failingEvent: InputEvent? = nil, with failure: any Error = FakeInputSessionError()) {
         self.failingEvent = failingEvent
+        self.failure = failure
     }
 
     func perform(_ event: InputEvent) async throws {
         calls.append(.perform(event))
         if event == failingEvent {
-            throw FakeInputSessionError()
+            throw failure
         }
     }
 
@@ -35,6 +37,27 @@ final class RecordingInputSession: InputSession {
     func close() async {
         isClosed = true
     }
+}
+
+@MainActor
+final class RecordingTextInputSession: TextInputSession {
+    enum Call: Equatable {
+        case perform(InputEvent)
+        case typeText(String)
+    }
+
+    let device = DeviceID(rawValue: "emulator-5556", platform: .android)
+    private(set) var calls: [Call] = []
+
+    func perform(_ event: InputEvent) async throws {
+        calls.append(.perform(event))
+    }
+
+    func typeText(_ text: String) async throws {
+        calls.append(.typeText(text))
+    }
+
+    func close() async {}
 }
 
 @Suite("Batch Plan Runner Tests")
@@ -110,5 +133,25 @@ struct BatchPlanRunnerTests {
         }
 
         #expect(session.calls == [.perform(first), .perform(second)])
+    }
+
+    @Test("a text step flushes pending events, then types the whole string once")
+    func textStepFlushesAndTypesOnce() async throws {
+        let session = RecordingTextInputSession()
+
+        try await BatchPlanRunner(session: session, logger: OffsiderLogger())
+            .run(BatchPlan(primitives: [.hidMergeable(first), .text("héllo world"), .hidMergeable(second)]))
+
+        #expect(session.calls == [.perform(first), .typeText("héllo world"), .perform(second)])
+    }
+
+    @Test("a text step on a session that cannot type text fails without sending it as keys")
+    func textStepNeedsTextSession() async throws {
+        let session = RecordingInputSession()
+
+        await #expect(throws: CLIError.self) {
+            try await run([.hidMergeable(first), .text("hello")], on: session)
+        }
+        #expect(session.calls == [.perform(first)])
     }
 }

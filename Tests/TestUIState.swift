@@ -1,87 +1,16 @@
 import Foundation
 
+/// One node of the neutral describe-ui schema.
 struct UIElement: Decodable {
-    let type: String
+    let role: String
+    let id: String?
+    let label: String?
+    let value: String?
     let frame: Frame?
-    let children: [UIElement]?
-    let role: String?
     let enabled: Bool?
-    let title: String?
-    let subrole: String?
-    let contentRequired: Bool?
-    let roleDescription: String?
-    let helpText: String?
-    let AXFrame: String?
-    let customActions: [String]?
-    let AXLabel: String?
-    let AXValue: String?
-    let AXUniqueId: String?
-    let AXIdentifier: String?
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case frame
-        case children
-        case role
-        case enabled
-        case title
-        case subrole
-        case contentRequired = "content_required"
-        case roleDescription = "role_description"
-        case helpText = "help"
-        case AXFrame
-        case customActions = "custom_actions"
-        case AXLabel
-        case AXValue
-        case AXUniqueId
-        case AXIdentifier
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        type = try container.decode(String.self, forKey: .type)
-        frame = try container.decodeIfPresent(Frame.self, forKey: .frame)
-        children = try container.decodeIfPresent([UIElement].self, forKey: .children)
-        role = try Self.decodeOptionalScalarString(from: container, forKey: .role)
-        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled)
-        title = try Self.decodeOptionalScalarString(from: container, forKey: .title)
-        subrole = try Self.decodeOptionalScalarString(from: container, forKey: .subrole)
-        contentRequired = try container.decodeIfPresent(Bool.self, forKey: .contentRequired)
-        roleDescription = try Self.decodeOptionalScalarString(from: container, forKey: .roleDescription)
-        helpText = try Self.decodeOptionalScalarString(from: container, forKey: .helpText)
-        AXFrame = try Self.decodeOptionalScalarString(from: container, forKey: .AXFrame)
-        customActions = try container.decodeIfPresent([String].self, forKey: .customActions)
-        AXLabel = try Self.decodeOptionalScalarString(from: container, forKey: .AXLabel)
-        AXValue = try Self.decodeOptionalScalarString(from: container, forKey: .AXValue)
-        AXUniqueId = try Self.decodeOptionalScalarString(from: container, forKey: .AXUniqueId)
-        AXIdentifier = try Self.decodeOptionalScalarString(from: container, forKey: .AXIdentifier)
-    }
-
-    private static func decodeOptionalScalarString(
-        from container: KeyedDecodingContainer<CodingKeys>,
-        forKey key: CodingKeys
-    ) throws -> String? {
-        if !container.contains(key) {
-            return nil
-        }
-        if try container.decodeNil(forKey: key) {
-            return nil
-        }
-        if let value = try? container.decode(String.self, forKey: key) {
-            return value
-        }
-        if let value = try? container.decode(Int.self, forKey: key) {
-            return String(value)
-        }
-        if let value = try? container.decode(Double.self, forKey: key) {
-            return String(value)
-        }
-        if let value = try? container.decode(Bool.self, forKey: key) {
-            return String(value)
-        }
-        return nil
-    }
+    let state: State
+    let native: Native
+    let children: [UIElement]?
 
     struct Frame: Decodable {
         let x: Double
@@ -90,24 +19,55 @@ struct UIElement: Decodable {
         let height: Double
     }
 
-    var label: String? {
-        AXLabel
+    struct State: Decodable {
+        let checked: Bool?
+        let selected: Bool?
+        let focused: Bool?
     }
 
-    var value: String? {
-        AXValue
+    struct Native: Decodable {
+        let type: String?
+        let role: String?
+        let subrole: String?
+        let roleDescription: String?
+        let title: String?
+        let help: String?
+        let customActions: [String]?
+        let contentRequired: Bool?
+        let pid: Int?
+        let axFrame: String?
     }
 
     var identifier: String? {
-        AXUniqueId ?? AXIdentifier
+        id
+    }
+
+    /// The iOS type such as `TextField`, else the neutral role.
+    var type: String {
+        native.type ?? role
     }
 }
 
+struct DescribeUIEnvelope: Decodable {
+    struct Screen: Decodable {
+        let width: Double
+        let height: Double
+        let scale: Double?
+        let orientation: String?
+    }
+
+    let version: Int
+    let platform: String
+    let device: String
+    let screen: Screen?
+    let roots: [UIElement]
+}
+
 struct UIStateParser {
-    static func parseDescribeUIRoots(_ jsonString: String) throws -> [UIElement] {
+    static func parseDescribeUIEnvelope(_ jsonString: String) throws -> DescribeUIEnvelope {
         var jsonContent = jsonString
 
-        if let jsonStart = jsonString.firstIndex(where: { $0 == "[" || $0 == "{" }) {
+        if let jsonStart = jsonString.firstIndex(of: "{") {
             jsonContent = String(jsonString[jsonStart...])
         }
 
@@ -115,13 +75,11 @@ struct UIStateParser {
             throw TestError.invalidJSON("Could not convert string to data")
         }
 
-        let decoder = JSONDecoder()
-        if let elements = try? decoder.decode([UIElement].self, from: data) {
-            return elements
-        }
+        return try JSONDecoder().decode(DescribeUIEnvelope.self, from: data)
+    }
 
-        let element = try decoder.decode(UIElement.self, from: data)
-        return [element]
+    static func parseDescribeUIRoots(_ jsonString: String) throws -> [UIElement] {
+        try parseDescribeUIEnvelope(jsonString).roots
     }
 
     static func parseDescribeUIOutput(_ jsonString: String) throws -> UIElement {

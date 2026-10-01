@@ -123,13 +123,8 @@ struct OrientationAwareCoordinates {
         orientationOverride: SimulatorOrientation? = nil,
         logger: OffsiderLogger
     ) async throws -> CoordinateMapping {
-        let roots = try await AccessibilityFetcher.fetchAccessibilityElements(
-            for: simulatorUDID,
-            logger: logger
-        )
-
-        return try await detectMapping(
-            from: roots,
+        try await detectMapping(
+            applicationFrame: try await fetchApplicationFrame(for: simulatorUDID, logger: logger),
             simulatorUDID: simulatorUDID,
             orientationOverride: orientationOverride,
             logger: logger
@@ -137,21 +132,18 @@ struct OrientationAwareCoordinates {
     }
 
     static func detectMapping(
-        from roots: [AccessibilityElement],
+        applicationFrame: UIFrame?,
         simulatorUDID: String,
         orientationOverride: SimulatorOrientation? = nil,
         logger: OffsiderLogger
     ) async throws -> CoordinateMapping {
-        guard let appFrame = applicationFrame(from: roots) else {
+        guard let appFrame = applicationFrame else {
             throw CLIError(errorDescription: "Unable to determine coordinate mapping because the accessibility application frame is unavailable.")
         }
 
         if let orientationOverride {
             logger.info().log("Using explicit orientation override: \(orientationOverride.rawValue)")
-            guard let portraitSize = portraitDimensions(from: roots, orientation: orientationOverride) else {
-                throw CLIError(errorDescription: "Unable to determine coordinate mapping because portrait dimensions are unavailable.")
-            }
-            return .rotation(orientationOverride, portraitSize: portraitSize)
+            return .rotation(orientationOverride, portraitSize: portraitDimensions(applicationFrame: appFrame, orientation: orientationOverride))
         }
 
         // Prefer the simulator's private UI orientation state when available; this
@@ -163,9 +155,7 @@ struct OrientationAwareCoordinates {
 
         if let simulatorOrientation {
             logger.info().log("Detected simulator UI orientation: \(simulatorOrientation.rawValue)")
-            guard let portraitSize = portraitDimensions(from: roots, orientation: simulatorOrientation) else {
-                throw CLIError(errorDescription: "Unable to determine coordinate mapping because portrait dimensions are unavailable.")
-            }
+            let portraitSize = portraitDimensions(applicationFrame: appFrame, orientation: simulatorOrientation)
 
             switch simulatorOrientation {
             case .portrait:
@@ -391,15 +381,13 @@ struct OrientationAwareCoordinates {
     /// In landscape, the width and height are swapped compared to portrait.
     ///
     /// - Parameters:
-    ///   - roots: Root accessibility elements from `AccessibilityFetcher`.
+    ///   - applicationFrame: The accessibility application frame.
     ///   - orientation: The current logical orientation.
-    /// - Returns: Portrait `(width, height)`, or `nil` if the application frame is unavailable.
+    /// - Returns: Portrait `(width, height)`.
     static func portraitDimensions(
-        from roots: [AccessibilityElement],
+        applicationFrame frame: UIFrame,
         orientation: SimulatorOrientation
-    ) -> (width: Double, height: Double)? {
-        guard let frame = applicationFrame(from: roots) else { return nil }
-
+    ) -> (width: Double, height: Double) {
         if orientation.isLandscape {
             // In landscape: logical width = portrait height, logical height = portrait width
             return (width: frame.height, height: frame.width)
@@ -442,23 +430,6 @@ struct OrientationAwareCoordinates {
         return applyMapping(mapping, to: point, logger: logger)
     }
 
-    static func translate(
-        point: (x: Double, y: Double),
-        roots: [AccessibilityElement],
-        for simulatorUDID: String,
-        orientationOverride: SimulatorOrientation? = nil,
-        logger: OffsiderLogger
-    ) async throws -> (x: Double, y: Double) {
-        let mapping = try await detectMapping(
-            from: roots,
-            simulatorUDID: simulatorUDID,
-            orientationOverride: orientationOverride,
-            logger: logger
-        )
-
-        return applyMapping(mapping, to: point, logger: logger)
-    }
-
     /// Translates multiple logical points using a single detection round-trip.
     ///
     /// Prefer this over calling `translate(point:for:orientationOverride:logger:)` in a loop when
@@ -487,13 +458,13 @@ struct OrientationAwareCoordinates {
 
     static func translateBatch(
         points: [(x: Double, y: Double)],
-        roots: [AccessibilityElement],
+        applicationFrame: UIFrame?,
         for simulatorUDID: String,
         orientationOverride: SimulatorOrientation? = nil,
         logger: OffsiderLogger
     ) async throws -> [(x: Double, y: Double)] {
         let mapping = try await detectMapping(
-            from: roots,
+            applicationFrame: applicationFrame,
             simulatorUDID: simulatorUDID,
             orientationOverride: orientationOverride,
             logger: logger
@@ -533,11 +504,9 @@ struct OrientationAwareCoordinates {
         return physical
     }
 
-    private static func applicationFrame(
-        from roots: [AccessibilityElement]
-    ) -> AccessibilityElement.Frame? {
-        roots.first { $0.type == "Application" }?.frame
-            ?? roots.first?.frame
+    private static func fetchApplicationFrame(for simulatorUDID: String, logger: OffsiderLogger) async throws -> UIFrame? {
+        let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(for: simulatorUDID, logger: logger)
+        return UITree.applicationFrame(in: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
     }
 
     // MARK: - Orientation Detection (legacy — preserved for callers that need it directly)
@@ -563,12 +532,7 @@ struct OrientationAwareCoordinates {
             return override
         }
 
-        let roots = try await AccessibilityFetcher.fetchAccessibilityElements(
-            for: simulatorUDID,
-            logger: logger
-        )
-
-        guard let appFrame = applicationFrame(from: roots) else {
+        guard let appFrame = try await fetchApplicationFrame(for: simulatorUDID, logger: logger) else {
             logger.info().log("Could not read application frame; assuming portrait orientation")
             return .portrait
         }

@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -279,13 +280,88 @@ struct AccessibilityTargetResolverTests {
         let match = try AccessibilityTargetResolver.resolveElement(roots: roots, query: .label("Volume"), elementType: "Slider")
 
         #expect(match.selectorDescription == "--label 'Volume'")
-        #expect(match.element.isSliderLikeControl)
+        #expect(match.element.role == .slider)
         #expect(match.element.frame?.x == 40)
         #expect(match.element.normalizedValue == "0.25")
     }
 
-    private func decodeElements(_ json: String) throws -> [AccessibilityElement] {
-        let data = try #require(json.data(using: .utf8))
-        return try JSONDecoder().decode([AccessibilityElement].self, from: data)
+    @Test("--element-type matches the neutral role in any case or the native type exactly", arguments: [
+        ("Slider", true), ("slider", true), ("SLIDER", true), ("Other", true), ("other", false), ("AXSlider", false),
+    ])
+    func elementTypeMatchesRoleOrNativeType(elementType: String, matches: Bool) throws {
+        let roots = try decodeElements(
+            """
+            [{"type": "Other", "role": "AXSlider", "frame": {"x": 0, "y": 0, "width": 100, "height": 20}, "AXLabel": "Volume"}]
+            """
+        )
+
+        let resolve = { try AccessibilityTargetResolver.resolveElement(roots: roots, query: .label("Volume"), elementType: elementType) }
+        if matches {
+            #expect(try resolve().element.role == .slider)
+        } else {
+            #expect(throws: ElementResolutionError.self) { try resolve() }
+        }
+    }
+
+    @Test("--element-type accepts a native type name such as RadioButton or TextEditor")
+    func elementTypeAcceptsNativeTypeName() throws {
+        let roots = try decodeElements(
+            """
+            [
+              {"type": "RadioButton", "frame": {"x": 0, "y": 0, "width": 80, "height": 40}, "AXLabel": "Home"},
+              {"type": "StaticText", "frame": {"x": 0, "y": 50, "width": 80, "height": 40}, "AXLabel": "Home"},
+              {"type": "TextEditor", "frame": {"x": 0, "y": 100, "width": 300, "height": 120}, "AXLabel": "Notes"},
+              {"type": "TextView", "frame": {"x": 0, "y": 300, "width": 300, "height": 120}, "AXLabel": "Notes"}
+            ]
+            """
+        )
+
+        let radio = try AccessibilityTargetResolver.resolveElement(roots: roots, query: .label("Home"), elementType: "RadioButton")
+        let editor = try AccessibilityTargetResolver.resolveElement(roots: roots, query: .label("Notes"), elementType: "TextEditor")
+
+        #expect(radio.element.frame?.y == 0)
+        #expect(editor.element.frame?.y == 100)
+    }
+
+    @Test("A text area is preferred over static text with the same label")
+    func textAreaIsActionableForLabelMatching() throws {
+        let roots = try decodeElements(
+            """
+            [
+              {"type": "StaticText", "frame": {"x": 16, "y": 100, "width": 120, "height": 20}, "AXLabel": "Notes"},
+              {"type": "TextEditor", "frame": {"x": 16, "y": 130, "width": 300, "height": 120}, "AXLabel": "Notes"}
+            ]
+            """
+        )
+
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: roots, query: .label("Notes"))
+
+        #expect(point.x == 166)
+        #expect(point.y == 190)
+    }
+
+    @Test("Ambiguous matches without ids suggest coordinates and name the neutral id")
+    func ambiguousMatchesWithoutIDsUseNeutralWording() throws {
+        let roots = try decodeElements(
+            """
+            [
+              {"type": "Button", "frame": {"x": 0, "y": 0, "width": 80, "height": 40}, "AXLabel": "Save"},
+              {"type": "Button", "frame": {"x": 0, "y": 50, "width": 80, "height": 40}, "AXLabel": "Save"}
+            ]
+            """
+        )
+
+        do {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"))
+            Issue.record("Expected an ambiguous match error")
+        } catch let error as ElementResolutionError {
+            let message = error.userFacingDescription
+            #expect(message.contains("none of the matches expose an id on this screen"))
+            #expect(!message.contains("AX"))
+        }
+    }
+
+    private func decodeElements(_ json: String) throws -> [UINode] {
+        try IOSAccessibilityMapping.roots(fromJSON: Data(json.utf8))
     }
 }

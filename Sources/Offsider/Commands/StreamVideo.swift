@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderCore
 
 struct StreamVideo: AsyncParsableCommand {
     enum OutputFormat: String, ExpressibleByArgument {
@@ -11,11 +12,11 @@ struct StreamVideo: AsyncParsableCommand {
 
     static let configuration = CommandConfiguration(
         commandName: "stream-video",
-        abstract: "Stream simulator frames to stdout using screenshot capture"
+        abstract: "Stream device frames to stdout using screenshot capture"
     )
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     @Option(help: "Output format: mjpeg, raw, ffmpeg, bgra (default: mjpeg)")
     var format: OutputFormat = .mjpeg
@@ -45,7 +46,7 @@ struct StreamVideo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
@@ -74,7 +75,7 @@ struct StreamVideo: AsyncParsableCommand {
         format: OutputFormat,
         cancellationFlag: CancellationFlag
     ) async throws {
-        FileHandle.standardError.write(Data("Starting screenshot-based video stream from simulator \(device.rawValue)...\n".utf8))
+        FileHandle.standardError.write(Data("Starting screenshot-based video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...\n".utf8))
         FileHandle.standardError.write(Data("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
@@ -101,8 +102,14 @@ struct StreamVideo: AsyncParsableCommand {
             let frameStartTime = Date()
 
             do {
-                let screenshotData = try await backend.screenshotPNG(for: device)
-                let processedData = try await VideoFrameUtilities.processJPEGData(screenshotData, scale: scale, quality: quality)
+                let processedData: Data
+                if let capturer = backend as? any FrameCapturing {
+                    let image = try await capturer.captureFrame(for: device, scale: scale)
+                    processedData = try VideoFrameUtilities.jpegData(from: image, quality: quality)
+                } else {
+                    let screenshotData = try await backend.screenshotPNG(for: device)
+                    processedData = try await VideoFrameUtilities.processJPEGData(screenshotData, scale: scale, quality: quality)
+                }
 
                 switch format {
                 case .mjpeg:
@@ -162,10 +169,13 @@ struct StreamVideo: AsyncParsableCommand {
             throw CLIError(errorDescription: "BGRA streaming is not supported for device \(device.rawValue).")
         }
 
-        FileHandle.standardError.write(Data("Starting BGRA video stream from simulator \(device.rawValue)...\n".utf8))
+        FileHandle.standardError.write(Data("Starting BGRA video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...\n".utf8))
         FileHandle.standardError.write(Data("Format: bgra, Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Note: This is raw pixel data. Use ffmpeg to convert:\n".utf8))
-        FileHandle.standardError.write(Data("  offsider stream-video --format bgra --udid <UDID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
+        FileHandle.standardError.write(Data("  offsider stream-video --format bgra --device <DEVICE_ID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
+        if device.platform == .android {
+            FileHandle.standardError.write(Data("Note: the Android Emulator sends a new frame only when the screen changes, so a still screen sends one frame.\n".utf8))
+        }
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
         try await streamer.streamBGRA(

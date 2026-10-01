@@ -17,7 +17,8 @@ public struct ImageFingerprint: Equatable, Sendable {
         bytesPerRow: Int,
         columns: Int = 16,
         rows: Int = 32,
-        excludingTopPixels: Int = 0
+        excludingTopPixels: Int = 0,
+        excludingBottomPixels: Int = 0
     ) {
         let columns = max(1, min(columns, max(width, 1)))
         let rows = max(1, min(rows, max(height, 1)))
@@ -29,11 +30,12 @@ public struct ImageFingerprint: Equatable, Sendable {
         var tiles = [UInt64](repeating: 0xcbf2_9ce4_8422_2325, count: columns * rows)
         let columnStarts = (0...columns).map { $0 * width / columns }
         let firstRow = max(0, min(excludingTopPixels, height))
+        let endRow = max(firstRow, height - max(0, excludingBottomPixels))
         guard let base = rgba.baseAddress, width > 0 else {
             self.tiles = tiles
             return
         }
-        for y in firstRow..<height {
+        for y in firstRow..<endRow {
             let tileRow = y * rows / height
             let rowStart = base + y * bytesPerRow
             for column in 0..<columns {
@@ -62,7 +64,7 @@ public struct ImageFingerprint: Equatable, Sendable {
         return hash
     }
 
-    public init?(pngData: Data, columns: Int = 16, rows: Int = 32, excludingTopPixels: Int = 0) {
+    public init?(pngData: Data, columns: Int = 16, rows: Int = 32, excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0) {
         guard let source = CGImageSourceCreateWithData(pngData as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
               let colourSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
@@ -96,7 +98,8 @@ public struct ImageFingerprint: Equatable, Sendable {
                 bytesPerRow: bytesPerRow,
                 columns: columns,
                 rows: rows,
-                excludingTopPixels: excludingTopPixels
+                excludingTopPixels: excludingTopPixels,
+                excludingBottomPixels: excludingBottomPixels
             )
         }
     }

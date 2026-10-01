@@ -1,24 +1,7 @@
 import Foundation
 
+/// Decode type for `AccessibilityFetcher.isTransientPointFallback`; commands use `UINode`.
 struct AccessibilityElement: Decodable {
-    private static let actionableTypes: Set<String> = [
-        "Button",
-        "Cell",
-        "CheckBox",
-        "Link",
-        "MenuItem",
-        "PopUpButton",
-        "RadioButton",
-        "SecureTextField",
-        "SegmentedControl",
-        "Slider",
-        "Switch",
-        "Tab",
-        "TabBarButton",
-        "TextField",
-        "Toggle"
-    ]
-
     struct Frame: Decodable {
         let x: Double
         let y: Double
@@ -30,8 +13,6 @@ struct AccessibilityElement: Decodable {
     let frame: Frame?
     let children: [AccessibilityElement]?
     let role: String?
-    let roleDescription: String?
-    let subrole: String?
 
     let AXLabel: String?
     let AXUniqueId: String?
@@ -43,8 +24,6 @@ struct AccessibilityElement: Decodable {
         case frame
         case children
         case role
-        case roleDescription = "role_description"
-        case subrole
         case AXLabel
         case AXUniqueId
         case AXIdentifier
@@ -58,8 +37,6 @@ struct AccessibilityElement: Decodable {
         frame = try container.decodeIfPresent(Frame.self, forKey: .frame)
         children = try container.decodeIfPresent([AccessibilityElement].self, forKey: .children)
         role = try Self.decodeOptionalScalarString(from: container, forKey: .role)
-        roleDescription = try Self.decodeOptionalScalarString(from: container, forKey: .roleDescription)
-        subrole = try Self.decodeOptionalScalarString(from: container, forKey: .subrole)
         AXLabel = try Self.decodeOptionalScalarString(from: container, forKey: .AXLabel)
         AXUniqueId = try Self.decodeOptionalScalarString(from: container, forKey: .AXUniqueId)
         AXIdentifier = try Self.decodeOptionalScalarString(from: container, forKey: .AXIdentifier)
@@ -96,59 +73,11 @@ struct AccessibilityElement: Decodable {
     }
 
     var normalizedUniqueId: String? {
-        normalizedStableUniqueId ?? trimmed(AXIdentifier)
-    }
-
-    var normalizedStableUniqueId: String? {
-        trimmed(AXUniqueId)
+        trimmed(AXUniqueId) ?? trimmed(AXIdentifier)
     }
 
     var normalizedValue: String? {
         trimmed(AXValue)
-    }
-
-    var isActionable: Bool {
-        isSwitchLikeControl || isSliderLikeControl || type.map(Self.actionableTypes.contains) == true
-    }
-
-    var isSliderLikeControl: Bool {
-        if type == "Slider" {
-            return true
-        }
-        if role == "AXSlider" || subrole == "AXSlider" {
-            return true
-        }
-        if let roleDescription = trimmed(roleDescription)?.lowercased(),
-           roleDescription.contains("slider") {
-            return true
-        }
-        return false
-    }
-
-    var isSwitchLikeControl: Bool {
-        if type == "Switch" || type == "Toggle" {
-            return true
-        }
-        if role == "AXSwitch" || subrole == "AXSwitch" {
-            return true
-        }
-        if let roleDescription = trimmed(roleDescription)?.lowercased(),
-           roleDescription.contains("switch") || roleDescription.contains("toggle") {
-            return true
-        }
-        return false
-    }
-
-    func flattened() -> [AccessibilityElement] {
-        var result: [AccessibilityElement] = [self]
-        if let children {
-            result.append(contentsOf: children.flatMap { $0.flattened() })
-        }
-        return result
-    }
-
-    func switchLikeDescendantsIncludingSelf() -> [AccessibilityElement] {
-        flattened().filter(\.isSwitchLikeControl)
     }
 
     private func trimmed(_ value: String?) -> String? {

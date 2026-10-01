@@ -17,9 +17,9 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
           224-231 - Modifier keys (Ctrl, Shift, Alt, etc.)
         
         Examples:
-          offsider key 40 --udid SIMULATOR_UDID                    # Press Enter
-          offsider key 44 --udid SIMULATOR_UDID                    # Press Space
-          offsider key 42 --duration 1.0 --udid SIMULATOR_UDID    # Hold Backspace for 1 second
+          offsider key 40 --device DEVICE_ID                    # Press Enter
+          offsider key 44 --device DEVICE_ID                    # Press Space
+          offsider key 42 --duration 1.0 --device DEVICE_ID    # Hold Backspace for 1 second
         """
     )
     
@@ -32,8 +32,8 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
     @OptionGroup
     var verification: VerificationOptions
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     func validate() throws {
         // Validate keycode range
@@ -64,7 +64,7 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
 
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

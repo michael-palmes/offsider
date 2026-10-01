@@ -1,0 +1,526 @@
+// Copyright (C) 2018 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Modified for Offsider: trimmed to the RPCs and messages below from the emulator 37.1.11 copy
+// (SHA-256 1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f).
+// Names, field numbers and the package are unchanged. EmulatorStatus drops field 5 (hardwareConfig).
+// Regenerate the Swift code with `scripts/generate-emulator-grpc.sh`.
+
+syntax = "proto3";
+option java_multiple_files = true;
+option java_package = "com.android.emulator.control";
+option objc_class_prefix = "AEC";
+package android.emulation.control;
+import "google/protobuf/empty.proto";
+
+// An EmulatorController service lets you control the emulator.
+// Note that this is currently an experimental feature, and that the
+// service definition might change without notice. Use at your own risk!
+//
+// We use the following rough conventions:
+//
+// streamXXX --> streams values XXX (usually for emulator lifetime). Values
+//               are updated as soon as they become available.
+// getXXX    --> gets a single value XXX
+// setXXX    --> sets a single value XXX, does not returning state, these
+//               usually have an observable lasting side effect.
+// sendXXX   --> send a single event XXX, possibly returning state information.
+//               android usually responds to these events.
+service EmulatorController {
+    // Retrieves the current status of the emulator. This includes comprehensive
+    // information about the virtual machine's configuration and the guest operating system's state.
+    //
+    // The `EmulatorStatus` reply contains:
+    // - `version`: The emulator version string.
+    // - `uptime`: The time the emulator has been active in milliseconds.
+    // - `booted`: A boolean indicating if the device has completed booting.
+    // - `vmConfig`: Detailed `VmConfiguration` (hypervisor type, CPU cores, RAM size).
+    // - `hardwareConfig`: Key-value pairs describing the emulator's hardware configuration.
+    // - `heartbeat`: A monotonically increasing number indicating guest activity (incremented approximately once per second).
+    // - `guestConfig`: A map of key-value pairs with guest-specific configurations, including:
+    //    - "multidisplay": "available" or "unavailable" based on display pipe readiness.
+    //    - "androidVersion": The Android version of the guest OS.
+    //    - "hypervisorVersion": The hypervisor version used by the guest.
+    //
+    // This method returns `OK` (code 0) upon successful retrieval of the emulator status.
+    rpc getStatus(google.protobuf.Empty) returns (EmulatorStatus) {}
+
+    // Sends touch events to the emulator. This operation is asynchronous and executed on the main looper.
+    //
+    // The `TouchEvent` contains a list of `Touch` objects, each with `x`, `y` coordinates, `identifier`, `pressure`, `touch_major`, `touch_minor`, `expiration`, and `orientation`.
+    // Coordinates are scaled to the emulator's display resolution. Each `Touch` `identifier` is mapped to an internal Linux multitouch slot.
+    // Expiration handling ensures that inactive touch events are properly "lifted" after 120 seconds.
+    //
+    // This method returns `OK` (code 0) upon successful asynchronous scheduling of the operation. Warnings are logged if no touch slots are available.
+    rpc sendTouch(TouchEvent) returns (google.protobuf.Empty) {}
+
+    // Sends a keyboard event to the emulator. This operation is asynchronous
+    // and executed on the main looper.
+    //
+    // The `KeyboardEvent` message allows specifying input using `keyCode`, `key` (W3C standard string), or `text` (UTF-8 string).
+    // The `KeyEventSender` prioritizes `key`, then `keyCode`, then `text`.
+    // - If `key` is a non-printable W3C key string (e.g., "Backspace", "ArrowUp"), it's translated to an evdev keycode and sent.
+    // - If `key` is a printable Unicode character, it's converted to a sequence of evdev keydown/keyup events, handling modifiers.
+    // - If `keyCode` is provided, it's translated from its `codeType` (Usb, Evdev, XKB, Win, Mac) to an evdev keycode and sent as keydown/keyup pairs.
+    // - If `text` is provided, each UTF-8 character is converted to evdev keypress (keydown then keyup) events.
+    //
+    // This method returns `OK` (code 0) upon successful asynchronous scheduling of the operation.
+    rpc sendKey(KeyboardEvent) returns (google.protobuf.Empty) {}
+
+    // Retrieves a single screenshot in the desired format.
+    //
+    // The image will be scaled to the `desiredWidth` and `desiredHeight` specified in `ImageFormat`, while maintaining
+    // the aspect ratio. If `width` or `height` are 0, the device's current display dimensions are used.
+    // The returned image will never exceed the device's actual display resolution, but can be smaller.
+    //
+    // The `display` field in `ImageFormat` specifies the target display; 0 (or omitted) indicates the main display.
+    // For folded Pixel Fold devices, the display ID might be internally remapped, and `foldedDisplay` information will be populated.
+    // The resulting image is properly oriented based on the device's coarse-grained orientation, derived from sensor state.
+    //
+    // The `transport` field in `ImageFormat` can specify `MMAP` for shared memory delivery, but if the shared memory region
+    // is too small, a `FAILED_PRECONDITION` error will be returned.
+    //
+    // This method returns:
+    // - `OK` (code 0) and an `Image` object upon success.
+    // - `INVALID_ARGUMENT` (code 3) if the specified `display` ID is invalid or disabled.
+    // - `CANCELLED` (code 1) if the gRPC context is cancelled during the operation (an expensive operation).
+    // - `FAILED_PRECONDITION` (code 9) if the guest has not posted a new frame yet (for non-PNG formats when fast path is used).
+    //
+    // This method will return an image with width 0 and height 0 if the display is not visible.
+    rpc getScreenshot(ImageFormat) returns (Image) {}
+
+    // Streams a series of screenshots in the desired format. This is a server-side streaming RPC.
+    //
+    // A new frame is delivered whenever the device produces a new frame or when sensor changes occur.
+    // Initial state: The first frame delivered might be an empty image (width 0, height 0) if the display is inactive.
+    // Subsequent frames are delivered when new content is available or a sensor event triggers an update.
+    // If the display becomes inactive, an empty image will be delivered again. Images resume when the display becomes active.
+    //
+    // `ImageFormat` parameters (format, width, height, display) behave as described in `getScreenshot`.
+    // The `transport` field in `ImageFormat` can specify `MMAP` for shared memory delivery. If `MMAP` is used and the
+    // provided shared memory handle is valid and mapped, pixel data will be written directly to it.
+    // The `image` field in the `Image` reply will be empty if `MMAP` transport is used.
+    //
+    // Performance considerations:
+    // - Streaming can produce a significant amount of data.
+    // - `PNG` format is CPU-intensive due to encoding overhead.
+    // - Using `MMAP` transport can significantly reduce gRPC overhead for pixel data.
+    //
+    // This method returns:
+    // - A server-side streaming reactor.
+    // - `INVALID_ARGUMENT` (code 3) if the specified `display` ID is invalid or disabled.
+    // - `CANCELLED` (code 1) if the gRPC context is cancelled during the operation.
+    rpc streamScreenshot(ImageFormat) returns (stream Image) {}
+
+    // Atomically sets the current primary clipboard data. This operation is asynchronous
+    // and executed on the emulator's main looper. It triggers a `ClipboardEvent`
+    // to all listeners (except the originating channel) indicating the new content.
+    //
+    // This method returns `OK` (code 0) upon successful asynchronous scheduling of the operation.
+    rpc setClipboard(ClipData) returns (google.protobuf.Empty) {}
+
+    // Retrieves the current primary clipboard data. This is a synchronous operation.
+    //
+    // This method returns `OK` (code 0) and the current `ClipData` upon success.
+    rpc getClipboard(google.protobuf.Empty) returns (ClipData) {}
+}
+
+// in line with android/emulation/resizable_display_config.h
+enum DisplayModeValue {
+    PHONE = 0;
+    FOLDABLE = 1;
+    TABLET = 2;
+    DESKTOP = 3;
+}
+
+// Information about the hypervisor that is currently in use.
+message VmConfiguration {
+    enum VmHypervisorType {
+        // An unknown hypervisor
+        UNKNOWN = 0;
+
+        // No hypervisor is in use. This usually means that the guest is
+        // running on a different CPU than the host, or you are using a
+        // platform where no hypervisor is available.
+        NONE = 1;
+
+        // The Kernel based Virtual Machine
+        // (https://www.linux-kvm.org/page/Main_Page)
+        KVM = 2;
+
+        // Intel® Hardware Accelerated Execution Manager (Intel® HAXM)
+        HAXM = 3 [deprecated = true];
+
+        // Hypervisor Framework.
+        // https://developer.apple.com/documentation/hypervisor
+        HVF = 4;
+
+        // Window Hypervisor Platform
+        // https://docs.microsoft.com/en-us/virtualization/api/
+        WHPX = 5;
+
+        AEHD = 6;
+    }
+
+    VmHypervisorType hypervisorType = 1;
+    int32 numberOfCpuCores = 2;
+    int64 ramSizeBytes = 3;
+}
+
+// Representation of a clipped data object on the clipboard.
+message ClipData {
+    // UTF-8 Encoded text.
+    string text = 1;
+}
+
+// The Touch interface represents a single contact point on a
+// touch-sensitive device. The contact point is commonly a finger or stylus
+// and the device may be a touchscreen or trackpad.
+message Touch {
+    // The horizontal coordinate. This is the physical location on the
+    // screen For example 0 indicates the leftmost coordinate.
+    int32 x = 1;
+
+    // The vertical coordinate. This is the physical location on the screen
+    // For example 0 indicates the top left coordinate.
+    int32 y = 2;
+
+    // The identifier is an arbitrary non-negative integer that is used to
+    // identify and track each tool independently when multiple tools are
+    // active. For example, when multiple fingers are touching the device,
+    // each finger should be assigned a distinct tracking id that is used as
+    // long as the finger remains in contact. Tracking ids may be reused
+    // when their associated tools move out of range.
+    //
+    // The emulator currently supports up to 10 concurrent touch events. The
+    // identifier can be any uninque value and will be mapped to the next
+    // available internal identifier.
+    int32 identifier = 3;
+
+    // Reports the physical pressure applied to the tip of the tool or the
+    // signal strength of the touch contact.
+    //
+    // The values reported must be non-zero when the tool is touching the
+    // device and zero otherwise to indicate that the touch event is
+    // completed.
+    //
+    // Make sure to deliver a pressure of 0 for the given identifier when
+    // the touch event is completed, otherwise the touch identifier will not
+    // be unregistered!
+    int32 pressure = 4;
+
+    // Optionally reports the cross-sectional area of the touch contact, or
+    // the length of the longer dimension of the touch contact.
+    int32 touch_major = 5;
+
+    // Optionally reports the length of the shorter dimension of the touch
+    // contact. This axis will be ignored if touch_major is reporting an
+    // area measurement greater than 0.
+    int32 touch_minor = 6;
+
+    enum EventExpiration {
+        // The system will use the default time of 120s to track
+        // the touch event with the given identifier. If no update happens
+        // within this timeframe the identifier is considered expired
+        // and can be made available for re-use. This means that a touch event
+        // with pressure 0 for this identifier will be send to the emulator.
+        EVENT_EXPIRATION_UNSPECIFIED = 0;
+
+        // Never expire the given slot. You must *ALWAYS* close the identifier
+        // by sending a touch event with 0 pressure.
+        NEVER_EXPIRE = 1;
+    }
+
+    EventExpiration expiration = 7;
+
+    // The orientation of the contact, if any.
+    int32 orientation = 8;
+}
+
+// A TouchEvent contains a list of Touch objects that are in contact with
+// the touch surface.
+//
+// Touch events are delivered in sequence as specified in the touchList.
+//
+// TouchEvents are delivered to the emulated devices using ["Protocol
+// B"](https://www.kernel.org/doc/Documentation/input/multi-touch-protocol.txt)
+message TouchEvent {
+    // The list of Touch objects, note that these do not need to be unique
+    repeated Touch touches = 1;
+
+    // The display device where the touch event occurred.
+    // Omitting or using the value 0 indicates the main display.
+    int32 display = 2;
+}
+
+// KeyboardEvent objects describe a user interaction with the keyboard; each
+// event describes a single interaction between the user and a key (or
+// combination of a key with modifier keys) on the keyboard.
+// This follows the pattern as set by
+// (javascript)[https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent]
+//
+// Note: that only keyCode, key, or text can be set and that the semantics
+// will slightly vary.
+message KeyboardEvent {
+    // Code types that the emulator can receive. Note that the emulator
+    // will do its best to translate the code to an evdev value that
+    // will be send to the emulator. This translation is based on
+    // the chromium translation tables. See
+    // (this)[https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/android/android-grpc/android/emulation/control/keyboard/keycode_converter_data.inc]
+    // for details on the translation.
+    enum KeyCodeType {
+        Usb = 0;
+        Evdev = 1;
+        XKB = 2;
+        Win = 3;
+        Mac = 4;
+    }
+
+    enum KeyEventType {
+        // Indicates that this keyevent should be send to the emulator
+        // as a key down event. Meaning that the key event will be
+        // translated to an EvDev event type and bit 11 (0x400) will be
+        // set before it is sent to the emulator.
+        keydown = 0;
+
+        // Indicates that the keyevent should be send to the emulator
+        // as a key up event. Meaning that the key event will be
+        // translated to an EvDev event type and
+        // sent to the emulator.
+        keyup = 1;
+
+        // Indicates that the keyevent will be send to the emulator
+        // as e key down event and immediately followed by a keyup event.
+        keypress = 2;
+    }
+
+    // Type of keycode contained in the keyCode field.
+    KeyCodeType codeType = 1;
+
+    // The type of keyboard event that should be sent to the emulator
+    KeyEventType eventType = 2;
+
+    // This property represents a physical key on the keyboard (as opposed
+    // to the character generated by pressing the key). In other words, this
+    // property is a value which isn't altered by keyboard layout or the
+    // state of the modifier keys. This value will be interpreted by the
+    // emulator depending on the KeyCodeType. The incoming key code will be
+    // translated to an evdev code type and send to the emulator.
+    // The values in key and text will be ignored.
+    int32 keyCode = 3;
+
+    // The value of the key pressed by the user, taking into consideration
+    // the state of modifier keys such as Shift as well as the keyboard
+    // locale and layout. This follows the w3c standard used in browsers.
+    // You can find an accurate description of valid values
+    // [here](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key/Key_Values)
+    //
+    // Note that some keys can result in multiple evdev events that are
+    // delivered to the emulator. for example the Key "A" will result in a
+    // sequence:
+    // ["Shift", "a"] -> [0x2a, 0x1e] whereas "a" results in ["a"] -> [0x1e].
+    //
+    // Not all documented keys are understood by android, and only printable
+    // ASCII [32-127) characters are properly translated.
+    //
+    // Keep in mind that there are a set of key values that result in android
+    // specific behavior
+    // [see](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key/Key_Values#Phone_keys):
+    //
+    // - "AppSwitch": Behaves as the "Overview" button in android.
+    // - "GoBack": The Back button.
+    // - "GoHome": The Home button, which takes the user to the phone's main
+    //             screen (usually an application launcher).
+    // - "Power":  The Power button.
+    string key = 4;
+
+    // Series of utf8 encoded characters to send to the emulator. An attempt
+    // will be made to translate every character will an EvDev event type and
+    // send to the emulator as a keypress event. The values in keyCode,
+    // eventType, codeType and key will be ignored.
+    //
+    // Note that most printable ASCII characters (range [32-127) can be send
+    // individually with the "key" param. Do not expect arbitrary UTF symbols to
+    // arrive in the emulator (most will be ignored).
+    //
+    // Note that it is possible to overrun the keyboard buffer by slamming this
+    // endpoint with large quantities of text (>1kb). The clipboard api is
+    // better suited for transferring large quantities of text.
+    string text = 5;
+}
+
+// An ImageTransport allows for specifying a side channel for
+// delivering image frames versus using the standard bytes array that is
+// returned with the gRPC request.
+message ImageTransport {
+    enum TransportChannel {
+        // Return full frames over the gRPC transport
+        TRANSPORT_CHANNEL_UNSPECIFIED = 0;
+
+        // Write images to the a file/shared memory handle.
+        MMAP = 1;
+    }
+
+    // The desired transport channel used for delivering image frames. Only
+    // relevant when streaming screenshots.
+    TransportChannel channel = 1;
+
+    // Handle used for writing image frames if transport is mmap. The client
+    // sets and owns this handle. It can be either a shm region, or a mmap. A
+    // mmap should be a url that starts with `file:///` Note: the mmap can
+    // result in tearing.
+    string handle = 2;
+}
+
+// The aspect ratio (width/height) will be different from the one
+// where the device is unfolded.
+message FoldedDisplay {
+    uint32 width = 1;
+    uint32 height = 2;
+    // It is possible for the screen to be folded in different ways depending
+    // on which surface is shown to the user. So xOffset and yOffset indicate
+    // the top left corner of the folded screen within the original unfolded
+    // screen.
+    uint32 xOffset = 3;
+    uint32 yOffset = 4;
+}
+
+message ImageFormat {
+    enum ImgFormat {
+        // Portable Network Graphics format
+        // (https://en.wikipedia.org/wiki/Portable_Network_Graphics)
+        PNG = 0;
+
+        // Three-channel RGB color model supplemented with a fourth alpha
+        // channel. https://en.wikipedia.org/wiki/RGBA_color_model
+        // Each pixel consists of 4 bytes.
+        RGBA8888 = 1;
+
+        // Three-channel RGB color model, each pixel consists of 3 bytes
+        RGB888 = 2;
+    }
+
+    // The (desired) format of the resulting bytes.
+    ImgFormat format = 1;
+
+    // [Output Only] The rotation of the image. The image will be rotated
+    // based upon the coarse grained orientation of the device.
+    Rotation rotation = 2;
+
+    // The (desired) width of the image. When passed as input
+    // the image will be scaled to match the given
+    // width, while maintaining the aspect ratio of the device.
+    // The returned image will never exceed the given width, but can be less.
+    // Omitting this value (or passing in 0) will result in no scaling,
+    // and the width of the actual device will be used.
+    uint32 width = 3;
+
+    // The (desired) height of the image.  When passed as input
+    // the image will be scaled to match the given
+    // height, while maintaining the aspect ratio of the device.
+    // The returned image will never exceed the given height, but can be less.
+    // Omitting this value (or passing in 0) will result in no scaling,
+    // and the height of the actual device will be used.
+    uint32 height = 4;
+
+    // The (desired) display id of the device. Setting this to 0 (or omitting)
+    // indicates the main display.
+    uint32 display = 5;
+
+    // Set this if you wish to use a different transport channel to deliver
+    // image frames.
+    ImageTransport transport = 6;
+
+    // [Output Only] Display configuration when screen is folded. The value is
+    // the original configuration before scaling.
+    FoldedDisplay foldedDisplay = 7;
+
+    // [Output Only] Display mode when AVD is resizable.
+    DisplayModeValue displayMode = 8;
+}
+
+message Image {
+    ImageFormat format = 1;
+
+    uint32 width = 2 [deprecated = true];   // width is contained in format.
+    uint32 height = 3 [deprecated = true];  // height is contained in format.
+
+    // The organization of the pixels in the image buffer is from left to
+    // right and bottom up. This will be empty if an alternative image transport
+    // is requested in the image format. In that case the side channel should
+    // be used to obtain the image data.
+    bytes image = 4;
+
+    // [Output Only] Monotonically increasing sequence number in a stream of
+    // screenshots. The first screenshot will have a sequence of 0. A single
+    // screenshot will always have a sequence number of 0. The sequence is not
+    // necessarily contiguous, and can be used to detect how many frames were
+    // dropped. An example sequence could be: [0, 3, 5, 7, 9, 11].
+    uint32 seq = 5;
+
+    // [Output Only] Unix timestamp in microseconds when the emulator estimates
+    // the frame was generated. The timestamp is before the actual frame is
+    // copied and transformed. This can be used to calculate variance between
+    // frame production time, and frame depiction time.
+    uint64 timestampUs = 6;
+}
+
+message Rotation {
+    enum SkinRotation {
+        PORTRAIT = 0;           // 0 degrees
+        LANDSCAPE = 1;          // 90 degrees
+        REVERSE_PORTRAIT = 2;   // -180 degrees
+        REVERSE_LANDSCAPE = 3;  // -90 degrees
+    }
+
+    // The rotation of the device, derived from the sensor state
+    // of the emulator. The derivation reflects how android observes
+    // the rotation state.
+    SkinRotation rotation = 1;
+
+    // Specifies the angle of rotation, in degrees [-180, 180]
+    double xAxis = 2;
+    double yAxis = 3;
+    double zAxis = 4;
+}
+
+message EmulatorStatus {
+    // The emulator version string.
+    string version = 1;
+
+    // The time the emulator has been active in .ms
+    uint64 uptime = 2;
+
+    // True if the device has completed booting.
+    // For P and later this information will accurate,
+    // for older images we rely on adb.
+    bool booted = 3;
+
+    // The current vm configuration
+    VmConfiguration vmConfig = 4;
+
+    // Some guests will produce a heart beat, that can be used to
+    // detect if the guest is active.
+    // This is a monotonically increasing number that gets incremented
+    // around once a second.
+    uint64 heartbeat = 6;
+
+    // The configuration of services in the guest, this map
+    // contains key value pairs that are specific to the image
+    // used by the guest.
+    map<string, string> guestConfig = 7;
+
+    // Configuration of the emulator hardware
+    map<string, string> platformConfig = 8;
+}

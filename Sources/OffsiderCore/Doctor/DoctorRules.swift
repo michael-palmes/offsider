@@ -249,7 +249,7 @@ public enum DoctorRules {
         case (true, true):
             return (.pass, "DTUHID transport; the legacy keyboard and buttons are off for this boot, as expected", nil)
         case (true, false):
-            let hint = "Open the device window (offsider doctor --udid \(udid) --fix) or reboot the simulator: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
+            let hint = "Open the device window (offsider doctor --device \(udid) --fix) or reboot the simulator: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
             switch selectedTransport {
             case "dtuhid":
                 return (.pass, "dtuhidd is idle and starts on demand", nil)
@@ -278,7 +278,7 @@ public enum DoctorRules {
     /// `unresponsive` means dtuhidd never answered the liveness probe; `timedOut` means the connect overran doctor's own limit.
     public static func hidTransportHint(unresponsive: Bool, timedOut: Bool, udid: String) -> String? {
         if unresponsive {
-            return "dtuhidd did not answer. Wait for the simulator to finish booting, open the device window (offsider doctor --udid \(udid) --fix), or reboot it: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
+            return "dtuhidd did not answer. Wait for the simulator to finish booting, open the device window (offsider doctor --device \(udid) --fix), or reboot it: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
         }
         if timedOut {
             return "Connecting to the simulator HID service timed out; reboot the simulator and run doctor again."

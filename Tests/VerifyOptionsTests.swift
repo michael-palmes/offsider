@@ -6,7 +6,7 @@ struct VerifyOptionsTests {
     private static let fakeUDID = "00000000-0000-0000-0000-000000000000"
 
     private func run(_ command: String) async throws -> SeparatedCommandOutput {
-        try await TestHelpers.runOffsiderCommandSeparated("\(command) --udid \(Self.fakeUDID)")
+        try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(Self.fakeUDID)")
     }
 
     @Test("--retries without --verify is a usage error")
@@ -44,7 +44,7 @@ struct VerifyOptionsTests {
         let result = try await run("batch --step \"tap -x 1 -y 1 --verify\"")
         #expect(result.exitCode != 0)
         #expect(result.stderr.contains("Batch steps do not support --verify"))
-        #expect(!result.stderr.contains("No simulator with UDID"))
+        #expect(!result.stderr.contains("No device with ID"))
     }
 
     @Test("Batch steps reject the --retries=N form too")

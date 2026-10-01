@@ -157,8 +157,8 @@ struct HIDBrokerTests {
             Issue.record("An invalid response should fail with an ambiguous outcome")
         } catch {
             let cliError = error as? CLIError
-            #expect(cliError?.errorDescription.contains("outcome is unknown") == true)
-            #expect(cliError?.errorDescription.contains("was not replayed") == true)
+            #expect(cliError?.userFacingDescription.contains("outcome is unknown") == true)
+            #expect(cliError?.userFacingDescription.contains("was not replayed") == true)
         }
 
         let request = try HIDBroker.readMessage(from: descriptors[1])

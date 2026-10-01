@@ -50,7 +50,7 @@ struct BatchTests {
         let udid = try TestHelpers.requireSimulatorUDID()
         let offsiderPath = try TestHelpers.getOffsiderPath()
 
-        let command = "printf 'tap -x 160 -y 350\\ntap -x 200 -y 410\\n' | \"\(offsiderPath)\" batch --stdin --udid \"\(udid)\""
+        let command = "printf 'tap -x 160 -y 350\\ntap -x 200 -y 410\\n' | \"\(offsiderPath)\" batch --stdin --device \"\(udid)\""
         let result = try await CommandRunner.run(command)
         #expect(result.exitCode == 0)
 

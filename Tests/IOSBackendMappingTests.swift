@@ -24,7 +24,7 @@ private final class EventOnlyInputSession: InputSession {
 }
 
 @MainActor
-private final class StubBackend: DeviceBackend {
+final class StubBackend: DeviceBackend {
     let session: RecordingInputSession
     private(set) var openedDevices: [DeviceID] = []
 
@@ -34,11 +34,13 @@ private final class StubBackend: DeviceBackend {
 
     var platform: DevicePlatform { .ios }
     func prepare() async throws {}
+    func listDevices() async throws -> [DeviceSummary] { [] }
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice { BootedDevice(id: id, name: "Stub") }
-    func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data { Data("[]".utf8) }
+    func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree { UITree(platform: platform, device: id.rawValue, roots: []) }
+    func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? { nil }
     func deviceCoordinates(
         for points: [(x: Double, y: Double)],
-        roots: [AccessibilityElement]?,
+        tree: UITree?,
         on id: DeviceID
     ) async throws -> [(x: Double, y: Double)] { points }
     func openInputSession(for id: DeviceID) async throws -> any InputSession {
@@ -47,6 +49,7 @@ private final class StubBackend: DeviceBackend {
     }
     func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {}
     func screenshotPNG(for id: DeviceID) async throws -> Data { Data() }
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands { ScreenBands(top: 0, bottom: 0) }
 }
 
 @Suite("iOS Backend Mapping Tests")
@@ -176,12 +179,23 @@ struct IOSBackendMappingTests {
         #expect(failing.session.isClosed)
     }
 
-    @Test("every device ID routes to the iOS backend unchanged")
-    func everyDeviceIDRoutesToIOSUnchanged() async throws {
-        let route = try await DeviceRouter.route(" SIM-UDID ", logger: OffsiderLogger())
+    @Test("a UUID routes to the iOS backend in canonical uppercase")
+    func uuidRoutesToIOS() async throws {
+        let route = try await DeviceRouter.route(" abcdef00-0000-4000-8000-00000000abcd ", logger: OffsiderLogger())
 
         #expect(route.backend is IOSBackend)
         #expect(route.backend.platform == .ios)
-        #expect(route.device == DeviceID(rawValue: " SIM-UDID ", platform: .ios))
+        #expect(route.device == DeviceID(rawValue: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios))
+    }
+
+    @Test("empty and unrecognised IDs point to list-devices", arguments: ["", "  ", "192.168.1.5:5555"])
+    func unusableIDsPointToListDevices(id: String) async {
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await DeviceRouter.route(id, logger: OffsiderLogger())
+        }
+        let message = error?.userFacingDescription ?? ""
+
+        #expect(message.contains("Run `offsider list-devices` to find device IDs."))
+        #expect(!message.contains("Android"))
     }
 }

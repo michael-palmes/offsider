@@ -20,7 +20,7 @@ struct VideoFrameUtilitiesTests {
 
     @Test("Compressed stream frames are JPEG at the default scale and quality")
     func compressedStreamFramesAreJPEGAtDefaults() async throws {
-        let defaults = try StreamVideo.parse(["--udid", "TEST-UDID"])
+        let defaults = try StreamVideo.parse(["--device", "TEST-DEVICE"])
         let source = try makePNG(width: 120, height: 260)
 
         let frame = try await VideoFrameUtilities.processJPEGData(source, scale: defaults.scale, quality: defaults.quality)

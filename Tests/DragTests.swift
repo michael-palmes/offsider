@@ -19,7 +19,7 @@ struct DragCommandSurfaceTests {
     @Test("Invalid drag coordinates fail validation")
     func invalidDragCoordinatesFailValidation() async throws {
         let result = try await TestHelpers.runOffsiderCommandAllowFailure(
-            "drag --start-x 100 --start-y 100 --end-x 100 --end-y 100 --udid invalid"
+            "drag --start-x 100 --start-y 100 --end-x 100 --end-y 100 --device invalid"
         )
 
         #expect(result.exitCode != 0)
@@ -29,7 +29,7 @@ struct DragCommandSurfaceTests {
     @Test("Too many drag steps fails validation")
     func tooManyDragStepsFailsValidation() async throws {
         let result = try await TestHelpers.runOffsiderCommandAllowFailure(
-            "drag --start-x 100 --start-y 100 --end-x 100 --end-y 200 --steps 1001 --udid invalid"
+            "drag --start-x 100 --start-y 100 --end-x 100 --end-y 200 --steps 1001 --device invalid"
         )
 
         #expect(result.exitCode != 0)

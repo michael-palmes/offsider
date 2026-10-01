@@ -310,7 +310,7 @@ struct TapTests {
 
         let uiState = try await TestHelpers.getUIState()
         guard let switchElement = UIStateParser.findElement(in: uiState, matching: {
-            $0.label == "UIKit Weather Alerts" && $0.roleDescription == "switch"
+            $0.label == "UIKit Weather Alerts" && $0.role == "switch"
         }) else {
             throw TestError.elementNotFound("UIKit switch not found")
         }

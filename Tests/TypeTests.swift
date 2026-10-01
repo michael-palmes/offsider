@@ -223,7 +223,7 @@ struct TypeTests {
             throw TestError.commandError("No simulator UDID specified in SIMULATOR_UDID environment variable")
         }
         let offsiderPath = try TestHelpers.getOffsiderPath()
-        let command = "echo '\(textToType)' | \(offsiderPath) type --stdin --udid \(udid)"
+        let command = "echo '\(textToType)' | \(offsiderPath) type --stdin --device \(udid)"
         let result = try await CommandRunner.run(command)
         #expect(result.exitCode == 0, "Command should succeed")
         try await Task.sleep(nanoseconds: 1_000_000_000)

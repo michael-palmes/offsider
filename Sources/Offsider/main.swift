@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import AppKit
 import FBControlCore
+import OffsiderCore
 import Darwin // For Darwin.exit()
 
 // MARK: - Main Entry Point
@@ -12,11 +13,12 @@ struct OffsiderCommand: AsyncParsableCommand {
 
     static let configuration = CommandConfiguration(
         commandName: "offsider",
-        abstract: "A utility to interact with iOS Simulators and extract accessibility information.",
+        abstract: "A utility to interact with iOS Simulators and Android Emulators and extract accessibility information.",
         version: VERSION,
         subcommands: [
             DescribeUI.self,
-            ListSimulators.self,
+            ListDevices.self,
+            Boot.self,
             Doctor.self,
             Init.self,
             Tap.self,
@@ -37,4 +39,12 @@ struct OffsiderCommand: AsyncParsableCommand {
             HIDBrokerCommand.self
         ]
     )
+
+    static func main() async {
+        if let message = LegacyArguments.migrationMessage(for: Array(CommandLine.arguments.dropFirst())) {
+            FileHandle.standardError.write(Data("Error: \(message)\n".utf8))
+            Darwin.exit(OffsiderExitCode.usage.rawValue)
+        }
+        await main(nil)
+    }
 }

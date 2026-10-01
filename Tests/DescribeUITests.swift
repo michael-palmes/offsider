@@ -17,7 +17,7 @@ struct DescribeUICommandSurfaceTests {
 
     @Test("Invalid --point format fails with guidance")
     func invalidPointFormatFails() async throws {
-        let result = try await TestHelpers.runOffsiderCommandAllowFailure("describe-ui --udid invalid --point nope")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("describe-ui --device invalid --point nope")
         #expect(result.exitCode != 0)
         #expect(result.output.contains("--point must be in the form x,y using non-negative numbers."))
     }
@@ -35,6 +35,25 @@ struct DescribeUITests {
         
         // Assert - Should have basic structure (which means JSON was parsed successfully)
         #expect(uiState.type != "", "Root element should have a type")
+    }
+
+    @Test("Describe-ui prints the versioned neutral envelope")
+    func describeUIPrintsNeutralEnvelope() async throws {
+        let simulatorUDID = try TestHelpers.requireSimulatorUDID()
+        try await TestHelpers.launchPlaygroundApp(to: "tap-test", simulatorUDID: simulatorUDID)
+
+        let result = try await TestHelpers.runOffsiderCommand("describe-ui", simulatorUDID: simulatorUDID)
+        let envelope = try UIStateParser.parseDescribeUIEnvelope(result.output)
+        let screen = try #require(envelope.screen)
+        let application = try #require(envelope.roots.first)
+
+        #expect(envelope.version == 1)
+        #expect(envelope.platform == "ios")
+        #expect(envelope.device == simulatorUDID)
+        #expect(screen.width > 0 && screen.height > 0)
+        #expect(application.role == "application")
+        #expect(application.native.type == "Application")
+        #expect(UIStateParser.findElement(in: application, withIdentifier: "BackButton")?.role == "button")
     }
     
     @Test("Describe-ui captures UI hierarchy")
@@ -114,7 +133,10 @@ struct DescribeUITests {
             simulatorUDID: simulatorUDID
         )
 
-        let roots = try UIStateParser.parseDescribeUIRoots(result.output)
+        let envelope = try UIStateParser.parseDescribeUIEnvelope(result.output)
+        let roots = envelope.roots
+        #expect(envelope.version == 1)
+        #expect(envelope.device == simulatorUDID)
         #expect(roots.count == 1, "Point-based describe-ui should return a single top-level element")
 
         let targetedElement = try #require(roots.first)
@@ -122,17 +144,19 @@ struct DescribeUITests {
 
         #expect(targetedElement.identifier == "BackButton")
         #expect(targetedElement.label == "Offsider Playground")
+        #expect(targetedElement.role == "button")
         #expect(targetedElement.type == "Button")
-        #expect(targetedElement.role == "AXButton")
-        #expect(targetedElement.roleDescription == "back button")
         #expect(targetedElement.enabled == true)
-        #expect(targetedElement.contentRequired == false)
-        #expect(targetedElement.title == nil)
-        #expect(targetedElement.helpText == nil)
-        #expect(targetedElement.subrole == nil)
-        #expect(targetedElement.AXFrame == "{{16, 62}, {44, 44}}")
+        #expect(targetedElement.state.checked == nil)
+        #expect(targetedElement.native.role == "AXButton")
+        #expect(targetedElement.native.roleDescription == "back button")
+        #expect(targetedElement.native.contentRequired == false)
+        #expect(targetedElement.native.title == nil)
+        #expect(targetedElement.native.help == nil)
+        #expect(targetedElement.native.subrole == nil)
+        #expect(targetedElement.native.axFrame == "{{16, 62}, {44, 44}}")
         #expect(targetedElement.children?.isEmpty == true)
-        #expect(targetedElement.customActions?.isEmpty == true)
+        #expect(targetedElement.native.customActions?.isEmpty == true)
         #expect(targetedFrame.x == 16)
         #expect(targetedFrame.y == 62)
         #expect(targetedFrame.width == 44)
