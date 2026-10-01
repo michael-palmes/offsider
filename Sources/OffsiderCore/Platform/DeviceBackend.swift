@@ -37,6 +37,8 @@ public protocol DeviceBackend: AnyObject {
     func openInputSession(for id: DeviceID) async throws -> any InputSession
     func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws
     func screenshotPNG(for id: DeviceID) async throws -> Data
+    /// Portrait bands `--verify` leaves out of screenshot comparisons.
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands
 }
 
 extension DeviceBackend {

@@ -3,6 +3,7 @@ import FBSimulatorControl
 @preconcurrency import FBControlCore
 import AVFoundation
 import ImageIO
+import OffsiderCore
 #if os(macOS)
 import AppKit
 #endif
@@ -54,9 +55,9 @@ enum VideoProcessingError: LocalizedError, UserFacingError {
     var userFacingDescription: String {
         switch self {
         case .failedToDecodeImage:
-            return "Offsider could not decode a simulator video frame."
+            return "Offsider could not decode a video frame."
         case .failedToAllocatePixelBuffer:
-            return "Offsider could not allocate memory for a simulator video frame."
+            return "Offsider could not allocate memory for a video frame."
         }
     }
 
@@ -117,6 +118,11 @@ struct VideoFrameUtilities {
     }
 
     #if os(macOS)
+    /// For frames a `FrameCapturing` device already scaled.
+    static func jpegData(from image: CGImage, quality: Int) throws -> Data {
+        try encodeJPEG(image, width: image.width, height: image.height, quality: quality)
+    }
+
     private static func encodeJPEG(
         _ image: CGImage,
         width: Int,
@@ -294,5 +300,12 @@ final class H264StreamRecorder: @unchecked Sendable {
         let bitsPerPixel = 0.1 + (0.4 * qualityFactor)
         let bitrate = Double(width * height) * bitsPerPixel * Double(fps)
         return min(max(Int(bitrate), 1_000_000), 50_000_000)
+    }
+}
+
+extension DevicePlatform {
+    /// What video output calls the source: an Android emulator is not a simulator.
+    var videoSourceNoun: String {
+        self == .ios ? "simulator" : "device"
     }
 }

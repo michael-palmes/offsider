@@ -10,6 +10,7 @@ struct Verifier {
         var screenshot: @MainActor () async throws -> Data
         var sleep: @MainActor (Duration) async throws -> Void
         var now: @MainActor () -> TimeInterval
+        var bands: @MainActor () async -> ScreenBands = { ScreenBands(top: 60, bottom: 0) }
     }
 
     struct Attempt: Equatable {
@@ -28,7 +29,6 @@ struct Verifier {
     static let pollInterval: Duration = .milliseconds(200)
     static let screenshotSpacing: Duration = .milliseconds(350)
     static let screenshotCount = 3
-    static let statusBarPoints = 60.0
 
     static func run(
         styles: [TapDeliveryStyle?],
@@ -46,6 +46,7 @@ struct Verifier {
         var baseline = await read(dependencies)
         let volatile = detector.volatileKeys(first, baseline)
         let screenFrame = rootFrame(baseline) ?? rootFrame(first)
+        let bands = await dependencies.bands()
         var baselineShot: Data? = try? await dependencies.screenshot()
         var baselinePrint: ImageFingerprint?
 
@@ -81,16 +82,18 @@ struct Verifier {
             }
 
             if let shot = baselineShot {
-                let exclusion = statusBandPixels(pngData: shot, screenFrame: screenFrame)
+                let exclusion = bandPixels(pngData: shot, screenFrame: screenFrame, bands: bands)
                 if baselinePrint == nil {
-                    baselinePrint = ImageFingerprint(pngData: shot, excludingTopPixels: exclusion)
+                    baselinePrint = ImageFingerprint(pngData: shot, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom)
                 }
                 var afterShots: [Data] = []
                 for shotIndex in 0..<screenshotCount {
                     if shotIndex > 0 { try await dependencies.sleep(screenshotSpacing) }
                     if let data = try? await dependencies.screenshot() { afterShots.append(data) }
                 }
-                let afterPrints = afterShots.compactMap { ImageFingerprint(pngData: $0, excludingTopPixels: exclusion) }
+                let afterPrints = afterShots.compactMap {
+                    ImageFingerprint(pngData: $0, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom)
+                }
                 if let before = baselinePrint, !afterPrints.isEmpty,
                    ScreenChange.detect(before: before, after: afterPrints) {
                     return Outcome(verified: true, attempts: attempt.number, change: .screenshot, style: style, summary: nil)
@@ -117,15 +120,16 @@ struct Verifier {
         snapshot.roots.lazy.compactMap(\.frame).first { $0.width > 0 && $0.height > 0 }
     }
 
-    /// Portrait only: screenshots are portrait-native, so the band cannot be placed in landscape.
-    static func statusBandPixels(pngData: Data, screenFrame: AccessibilitySnapshot.Frame?) -> Int {
+    /// Portrait only: screenshots are portrait-native, so the bands cannot be placed in landscape.
+    static func bandPixels(pngData: Data, screenFrame: AccessibilitySnapshot.Frame?, bands: ScreenBands) -> (top: Int, bottom: Int) {
         guard let screenFrame, screenFrame.height >= screenFrame.width,
               let source = CGImageSourceCreateWithData(pngData as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let pixelWidth = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue else {
-            return 0
+            return (0, 0)
         }
-        return Int((statusBarPoints * pixelWidth / screenFrame.width).rounded())
+        let scale = pixelWidth / screenFrame.width
+        return (Int((bands.top * scale).rounded()), Int((bands.bottom * scale).rounded()))
     }
 }
 
@@ -135,7 +139,8 @@ extension Verifier.Dependencies {
             snapshot: { AccessibilitySnapshot(tree: try await backend.accessibilityTree(for: device)) },
             screenshot: { try await backend.screenshotPNG(for: device) },
             sleep: { duration in try await Task.sleep(for: duration) },
-            now: { ProcessInfo.processInfo.systemUptime }
+            now: { ProcessInfo.processInfo.systemUptime },
+            bands: { await backend.volatileScreenBands(for: device) }
         )
     }
 }

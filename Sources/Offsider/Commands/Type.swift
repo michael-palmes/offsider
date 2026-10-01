@@ -28,6 +28,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         • This is a limitation of the underlying HID keyboard protocol
         
         Note: iOS may apply smart punctuation spacing to some characters.
+
+        Android emulators: printable ASCII, newlines and tabs are typed as key events. Text with any other
+        character needs the emulator's gRPC endpoint.
         """
     )
     
@@ -110,6 +113,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             throw ValidationError("Invalid input configuration.")
         }
         
+        if device.platform == .android {
+            try await typeOnAndroid(inputText, backend: backend, device: device, progress: progress)
+            return
+        }
+
         // Validate text first
         guard TextToHIDEvents.validateText(inputText) else {
             // Find unsupported characters for detailed error message
@@ -168,6 +176,40 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         logger.info().log("Text typing completed successfully")
     }
     
+    /// Android picks key events or a paste itself, so the US-keyboard check and HID conversion do not apply.
+    private func typeOnAndroid(_ inputText: String, backend: any DeviceBackend, device: DeviceID, progress: VerifyProgress?) async throws {
+        let typeText: @MainActor (any InputSession) async throws -> Void = { session in
+            guard let textSession = session as? any TextInputSession else {
+                throw CLIError(errorDescription: "This device's input session cannot type text.")
+            }
+            try await textSession.typeText(inputText)
+        }
+        guard let progress else {
+            let session = try await backend.openInputSession(for: device)
+            do {
+                try await typeText(session)
+            } catch {
+                await session.close()
+                throw error
+            }
+            await session.close()
+            return
+        }
+        let target = "text (\(inputText.count) character\(inputText.count == 1 ? "" : "s"))"
+        let request = VerifyRequest(
+            command: "type",
+            subject: "Typing \(target)",
+            target: target,
+            backend: backend,
+            device: device,
+            options: verification,
+            styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
+        )
+        try await VerifyOutput.perform(request, progress: progress) { _, session in
+            try await typeText(session)
+        }
+    }
+
     // MARK: - Input Methods
     
     func readFromStdin() -> String {

@@ -5,7 +5,7 @@ import Testing
 
 @Suite("Device Option Tests")
 struct DeviceOptionTests {
-    private static let commandsWithoutDevice: Set<String> = ["init", "list-devices"]
+    private static let commandsWithoutDevice: Set<String> = ["boot", "init", "list-devices"]
 
     @Test("every device command takes --device and none takes --udid")
     func deviceCommandsTakeDevice() async throws {
@@ -27,7 +27,9 @@ struct DeviceOptionTests {
         #expect(throws: (any Error).self) { try Tap.parse(["-x", "1", "-y", "1"]) }
         #expect(try Tap.parse(["-x", "1", "-y", "1", "--device", "ID"]).deviceOption.id == "ID")
         #expect(try Doctor.parse([]).deviceOption.id == nil)
-        #expect(try Doctor.parse(["--device", "ID"]).deviceOption.id == "ID")
+        let udid = UUID().uuidString
+        #expect(try Doctor.parse(["--device", udid]).deviceOption.id == udid)
+        #expect(throws: (any Error).self) { try Doctor.parse(["--device", "emulator-5556"]) }
     }
 
     @Test("batch steps cannot choose their own device", arguments: [

@@ -13,7 +13,14 @@ struct InputEventLoweringTests {
         #expect(HardwareButton.lock.hidButton == .lock)
         #expect(HardwareButton.sideButton.hidButton == .sideButton)
         #expect(HardwareButton.siri.hidButton == .siri)
-        #expect(Set(HardwareButton.allCases.map(\.hidButton)) == Set(FBSimulatorHIDButton.allCases))
+        #expect(Set(HardwareButton.allCases.compactMap(\.hidButton)) == Set(FBSimulatorHIDButton.allCases))
+    }
+
+    @Test("Android-only buttons throw on iOS instead of reaching the HID layer", arguments: [HardwareButton.back, .appSwitch, .volumeUp, .volumeDown])
+    func androidButtonsThrowOnIOS(button: HardwareButton) {
+        #expect(button.hidButton == nil)
+        #expect(throws: CLIError.self) { try InputEvent.shortButtonPress(button).hidEvent() }
+        #expect(throws: CLIError.self) { try InputEvent.composite([.delay(0.1), .button(direction: .down, button: button)]).hidEvent() }
     }
 
     @Test("every button command maps to a distinct hardware button")
@@ -30,7 +37,7 @@ struct InputEventLoweringTests {
     func typedTextLowersToPlainAndShiftedKeyPresses() throws {
         let events = try TextToHIDEvents.convertTextToHIDEvents("aA")
 
-        #expect(InputEvent.composite(events).hidEvent == .composite([
+        #expect(try InputEvent.composite(events).hidEvent() == .composite([
             .keyboard(direction: .down, keyCode: 4),
             .keyboard(direction: .up, keyCode: 4),
             .keyboard(direction: .down, keyCode: 225),
@@ -47,29 +54,29 @@ struct InputEventLoweringTests {
     }
 
     @Test("single events lower to the idb events commands dispatch")
-    func singleEventsLowerToIDBEvents() {
-        #expect(InputEvent.tapAt(x: 10, y: 20).hidEvent == .composite([
+    func singleEventsLowerToIDBEvents() throws {
+        #expect(try InputEvent.tapAt(x: 10, y: 20).hidEvent() == .composite([
             .touch(direction: .down, x: 10, y: 20),
             .touch(direction: .up, x: 10, y: 20)
         ]))
-        #expect(InputEvent.touch(direction: .down, x: 1.5, y: 2.5).hidEvent == .touch(direction: .down, x: 1.5, y: 2.5))
-        #expect(InputEvent.touch(direction: .up, x: 3, y: 4).hidEvent == .touch(direction: .up, x: 3, y: 4))
-        #expect(InputEvent.button(direction: .down, button: .lock).hidEvent == .button(direction: .down, button: .lock))
-        #expect(InputEvent.shortButtonPress(.home).hidEvent == .composite([
+        #expect(try InputEvent.touch(direction: .down, x: 1.5, y: 2.5).hidEvent() == .touch(direction: .down, x: 1.5, y: 2.5))
+        #expect(try InputEvent.touch(direction: .up, x: 3, y: 4).hidEvent() == .touch(direction: .up, x: 3, y: 4))
+        #expect(try InputEvent.button(direction: .down, button: .lock).hidEvent() == .button(direction: .down, button: .lock))
+        #expect(try InputEvent.shortButtonPress(.home).hidEvent() == .composite([
             .button(direction: .down, button: .homeButton),
             .button(direction: .up, button: .homeButton)
         ]))
-        #expect(InputEvent.keyboard(direction: .up, keyCode: 225).hidEvent == .keyboard(direction: .up, keyCode: 225))
-        #expect(InputEvent.shortKeyPress(40).hidEvent == .composite([
+        #expect(try InputEvent.keyboard(direction: .up, keyCode: 225).hidEvent() == .keyboard(direction: .up, keyCode: 225))
+        #expect(try InputEvent.shortKeyPress(40).hidEvent() == .composite([
             .keyboard(direction: .down, keyCode: 40),
             .keyboard(direction: .up, keyCode: 40)
         ]))
-        #expect(InputEvent.delay(0.25).hidEvent == .delay(0.25))
+        #expect(try InputEvent.delay(0.25).hidEvent() == .delay(0.25))
     }
 
     @Test("swipes lower to the idb swipe expansion")
-    func swipesLowerToIDBSwipeExpansion() {
-        let lowered = InputEvent.swipe(100, yStart: 600, xEnd: 100, yEnd: 200, delta: 50, duration: 1).hidEvent
+    func swipesLowerToIDBSwipeExpansion() throws {
+        let lowered = try InputEvent.swipe(100, yStart: 600, xEnd: 100, yEnd: 200, delta: 50, duration: 1).hidEvent()
 
         #expect(lowered == .swipe(100, yStart: 600, xEnd: 100, yEnd: 200, delta: 50, duration: 1))
         guard case let .composite(events) = lowered else {
@@ -81,7 +88,7 @@ struct InputEventLoweringTests {
     }
 
     @Test("nested composites keep their order and nesting")
-    func nestedCompositesKeepOrderAndNesting() {
+    func nestedCompositesKeepOrderAndNesting() throws {
         let event = InputEvent.composite([
             .delay(0.5),
             .composite([
@@ -93,7 +100,7 @@ struct InputEventLoweringTests {
             .delay(1)
         ])
 
-        #expect(event.hidEvent == .composite([
+        #expect(try event.hidEvent() == .composite([
             .delay(0.5),
             .composite([
                 .button(direction: .down, button: .sideButton),

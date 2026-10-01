@@ -16,6 +16,14 @@ struct Doctor: AsyncParsableCommand {
     @Flag(name: .customLong("fix"), help: "Apply safe, repeatable fixes, then check again.")
     var fix = false
 
+    func validate() throws {
+        if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
+            throw ValidationError(
+                "doctor checks iOS simulators in this build; Android checks come later. Run `offsider doctor` for host checks."
+            )
+        }
+    }
+
     func run() async throws {
         let udid = deviceOption.id.map(Self.canonicalUDID)
         let runner = DoctorRunner(

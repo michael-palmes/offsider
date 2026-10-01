@@ -33,6 +33,12 @@ struct BatchPlanRunner {
             case .physicalTap(let point, let preDelay, let postDelay):
                 try await flushPending()
                 try await session.performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
+            case .text(let text):
+                try await flushPending()
+                guard let textSession = session as? any TextInputSession else {
+                    throw CLIError(errorDescription: "This device's input session cannot type text as one step.")
+                }
+                try await textSession.typeText(text)
             }
         }
 

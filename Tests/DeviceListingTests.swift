@@ -12,15 +12,18 @@ private final class ListingBackend: DeviceBackend {
     let platform: DevicePlatform
     private let devices: [DeviceSummary]
     private let failure: String?
+    private let unavailable: String?
 
-    init(_ platform: DevicePlatform, devices: [DeviceSummary] = [], failure: String? = nil) {
+    init(_ platform: DevicePlatform, devices: [DeviceSummary] = [], failure: String? = nil, unavailable: String? = nil) {
         self.platform = platform
         self.devices = devices
         self.failure = failure
+        self.unavailable = unavailable
     }
 
     func prepare() async throws {
         if let failure { throw ListingFailure(errorDescription: failure) }
+        if let unavailable { throw PlatformUnavailable(platform: platform, message: unavailable) }
     }
     func listDevices() async throws -> [DeviceSummary] { devices }
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice { BootedDevice(id: id, name: "Stub") }
@@ -34,6 +37,7 @@ private final class ListingBackend: DeviceBackend {
     func openInputSession(for id: DeviceID) async throws -> any InputSession { RecordingInputSession() }
     func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {}
     func screenshotPNG(for id: DeviceID) async throws -> Data { Data() }
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands { ScreenBands(top: 0, bottom: 0) }
 }
 
 @Suite("Device Listing Tests")
@@ -123,6 +127,37 @@ struct DeviceListingTests {
         #expect(error?.userFacingDescription == "Could not list devices.\nios: No Xcode.\nandroid: No SDK.")
     }
 
+    @Test("a platform with no toolchain installed is skipped without a warning")
+    func missingToolchainIsQuiet() async throws {
+        var warnings: [String] = []
+        let devices = try await ListDevices.collect(
+            from: [ListingBackend(.ios, devices: [phone]), ListingBackend(.android, unavailable: "Android SDK not found.")]
+        ) { warnings.append($0) }
+
+        #expect(devices == [phone])
+        #expect(warnings.isEmpty)
+    }
+
+    @Test("a missing toolchain is the error when --platform asks for that platform")
+    func missingToolchainWithFilterThrows() async {
+        let error = await #expect(throws: PlatformUnavailable.self) {
+            _ = try await ListDevices.collect(
+                from: [ListingBackend(.android, unavailable: "Android SDK not found.")],
+                platformFilter: .android
+            ) { _ in }
+        }
+        #expect(error?.message == "Android SDK not found.")
+    }
+
+    @Test("iOS failing on a Mac without an Android SDK is still an error, as before Android")
+    func iosFailureWithoutAndroidThrows() async {
+        await #expect(throws: ListingFailure.self) {
+            _ = try await ListDevices.collect(
+                from: [ListingBackend(.ios, failure: "Xcode is missing."), ListingBackend(.android, unavailable: "Android SDK not found.")]
+            ) { _ in }
+        }
+    }
+
     @Test("no backends lists nothing without failing")
     func noBackendsListNothing() async throws {
         #expect(try await ListDevices.collect(from: []) { _ in }.isEmpty)
@@ -163,22 +198,24 @@ struct SimulatorRuntimeTests {
 
 @Suite("List Devices Platform Filter Tests")
 struct ListDevicesPlatformFilterTests {
-    @Test("--platform android lists only the header in this build")
-    func androidTableIsHeaderOnly() async throws {
-        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform android")
+    static let sdkNotFound = "Android SDK not found. Set ANDROID_HOME to your SDK (Android Studio installs it in ~/Library/Android/sdk), or put adb on PATH."
 
-        #expect(result.exitCode == 0)
-        #expect(result.stdout == "PLATFORM  STATE  ID  NAME  OS\n")
+    @Test("--platform android without an SDK exits 1 with the install hint")
+    func androidWithoutSDKFails() async throws {
+        let result = try await TestHelpers.runOffsiderWithoutAndroid("list-devices --platform android")
+
+        #expect(result.exitCode == 1)
+        #expect(result.stdout.isEmpty)
+        #expect(result.stderr.contains(Self.sdkNotFound))
     }
 
-    @Test("--platform android --json is an empty device list")
-    func androidJSONIsEmpty() async throws {
-        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform android --json")
-        let object = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+    @Test("--platform android --json without an SDK prints no JSON")
+    func androidJSONWithoutSDKFails() async throws {
+        let result = try await TestHelpers.runOffsiderWithoutAndroid("list-devices --platform android --json")
 
-        #expect(result.exitCode == 0)
-        #expect(object["version"] as? Int == 1)
-        #expect((object["devices"] as? [Any])?.isEmpty == true)
+        #expect(result.exitCode == 1)
+        #expect(result.stdout.isEmpty)
+        #expect(result.stderr.contains(Self.sdkNotFound))
     }
 
     @Test("an unknown --platform is a usage error")

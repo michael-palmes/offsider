@@ -26,7 +26,7 @@ let idbPrivateHeaderSearchFlags = [
 let package = Package(
     name: "Offsider",
     platforms: [
-        .macOS(.v14)
+        .macOS("26.0")
     ],
     products: [
         .library(
@@ -40,16 +40,35 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
+        // Exact pins: the checked-in generated gRPC code must match the runtime it was generated for.
+        .package(url: "https://github.com/grpc/grpc-swift-2.git", exact: "2.4.3"),
+        .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", exact: "2.10.0"),
+        .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", exact: "2.4.1"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1"),
     ],
     targets: [
         .target(
             name: "OffsiderCore",
             path: "Sources/OffsiderCore"
         ),
+        .target(
+            name: "OffsiderAndroid",
+            dependencies: [
+                "OffsiderCore",
+                // Never the umbrella GRPCNIOTransportHTTP2 or the Posix product, which pull in NIOSSL and BoringSSL.
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                .product(name: "GRPCNIOTransportHTTP2TransportServices", package: "grpc-swift-nio-transport"),
+                .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ],
+            path: "Sources/OffsiderAndroid",
+            exclude: ["Grpc/Proto"]
+        ),
         .executableTarget(
             name: "Offsider",
             dependencies: [
                 "OffsiderCore",
+                "OffsiderAndroid",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 "FBSimulatorControl",
                 "FBDeviceControl",
@@ -77,7 +96,7 @@ let package = Package(
         ),
         .testTarget(
             name: "OffsiderTests",
-            dependencies: ["Offsider", "OffsiderCore"],
+            dependencies: ["Offsider", "OffsiderCore", "OffsiderAndroid"],
             path: "Tests",
             exclude: ["Goldens"],
             swiftSettings: [

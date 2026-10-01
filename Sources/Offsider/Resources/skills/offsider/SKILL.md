@@ -1,12 +1,13 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator automation. Use when asked to "use Offsider", "automate a simulator", "tap/swipe/type on simulator", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", or "interact with an iOS app". Covers all commands including touch, gestures, sliders, text input, keyboard, buttons, accessibility, screenshots, video, and batch workflows.
+description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", or "interact with an iOS, Android or React Native app". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, screenshots, video, and batch workflows.
 ---
 
 ## Step 1: Confirm runtime context
-1. Identify the target device ID first with `offsider list-devices` (a table of iOS simulators; watchOS, tvOS and visionOS are not listed), or `offsider list-devices --json` for `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType}]}`. IDs are case-insensitive.
-2. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint`. `offsider doctor --device <DEVICE_ID> --fix` opens Device Hub or the device window and removes a stale HID broker directory, then checks again.
-3. Simulator-interaction Offsider commands require `--device <DEVICE_ID>`. Commands like `list-devices`, `init` and `doctor` do not. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.
+1. Identify the target device ID first with `offsider list-devices` (iOS simulators, running Android emulators by serial and shut-down AVDs by name; watchOS, tvOS and visionOS are not listed), or `offsider list-devices --json` for `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType}]}`. `--platform ios|android` filters. Simulator IDs are case-insensitive; Android IDs are serials (`emulator-5554`) or the name of a running AVD.
+   - To start an Android emulator, run `DEVICE=$(offsider boot <AVD>)`: it waits until Android has booted and prints the serial (add `--headless` to hide the window). It never starts a second instance of a running AVD, so it is safe to call first. Never start emulators with `emulator -port` or `-grpc` yourself: Offsider then falls back to slower adb-only input.
+2. For iOS simulators, run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint`. `offsider doctor --device <DEVICE_ID> --fix` opens Device Hub or the device window and removes a stale HID broker directory, then checks again. `doctor --device` does not check Android emulators yet (exit 64); use `list-devices` and `describe-ui` instead.
+3. Device-interaction Offsider commands require `--device <DEVICE_ID>`. Commands like `list-devices`, `boot`, `init` and `doctor` do not. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.
 4. Run `offsider describe-ui --device <DEVICE_ID>` to inspect the full current screen. Use `offsider describe-ui --point <X,Y> --device <DEVICE_ID>` to inspect the element at a specific coordinate. Use the output to discover available `--id` and `--label` values for selector taps and slider setting, and to confirm coordinates for coordinate-based taps.
    - The output is `{"version": 1, "platform", "device", "screen", "roots": [...]}`. Each node has `role`, `id`, `label`, `value`, `frame`, `enabled`, `state` (`checked`, `selected`, `focused`), `native` and `children`; every key is present, with `null` when unknown. `--point` returns the same envelope with the hit element as the only root.
    - `--id`, `--label` and `--value` match a node's `id`, `label` and `value`. In React Native apps, `testID` appears as `id`.
@@ -16,7 +17,7 @@ description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator 
 
 ## Step 2: Choose the right command
 
-Available commands: `doctor`, `init`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `batch`, `describe-ui`, `screenshot`, `record-video`, `stream-video`, `list-devices`. Run `offsider --help` or `offsider <command> --help` for full options.
+Available commands: `doctor`, `init`, `boot`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `batch`, `describe-ui`, `screenshot`, `record-video`, `stream-video`, `list-devices`. Run `offsider --help` or `offsider <command> --help` for full options.
 
 Common examples:
 ```bash
@@ -35,7 +36,11 @@ offsider type 'text' --device <DEVICE_ID>
 offsider describe-ui --device <DEVICE_ID>
 offsider describe-ui --point <X,Y> --device <DEVICE_ID>
 offsider screenshot --device <DEVICE_ID> --output screenshot.png
+offsider boot <AVD> --headless
+offsider button back --device <DEVICE_ID>
 ```
+
+`button` names depend on the platform: iOS has `apple-pay`, `home`, `lock`, `side-button` and `siri`; Android has `back`, `app-switch`, `home`, `lock` (the power key), `volume-up` and `volume-down`. A button the device lacks exits 64.
 
 ## Step 3: Understand the execution model
 
@@ -54,6 +59,17 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 - Use `offsider slider --id <identifier> --value <0-100>` for sliders instead of approximating with raw swipe coordinates; it uses one calibrated low-level HID drag from the resolved slider frame and current `value`, through the same composite touch-move path as `drag`, verifies the result within tolerance, and fails clearly if the observed `value` remains outside tolerance.
 - For text with shell-sensitive characters, prefer `--stdin` or `--file` over inline quotes.
 - Use single quotes for inline text arguments to avoid shell expansion issues.
+
+## Step 4a: Android emulators and React Native
+- Coordinates, frames and `--delta` are in dp on Android (points on iOS); take them from `describe-ui` as usual.
+- `describe-ui` reads the screen through `uiautomator`: about 3 seconds per read, so `--wait-timeout` polls slowly and a verified tap takes about 6 to 10 seconds. Batch several steps rather than reading the tree between each one. A "found no window" error while an activity starts is retried by `--wait-timeout` and `tap --verify`; "Another UiAutomation client" means Appium, Maestro or similar holds the screen reader, so stop it.
+- `type` sends ASCII as key events; text with any other character is pasted through the emulator's clipboard, which Offsider restores afterwards. On an emulator without gRPC, `type` accepts ASCII only.
+- `slider` does not support Android yet: drag on the track with `swipe` or `drag`, then read the app's own value readout with `describe-ui`.
+- `stream-video --format bgra` sends a frame only when the screen changes.
+- React Native on Android: `testID` is `id` and `accessibilityLabel` is `label` (from `content-desc`), as on iOS. A `View` with neither `accessible` nor `testID` can be flattened away, so ask for a `testID` when a target is missing. A `Pressable` without a label takes its children's text as its label.
+- Android alerts show upper-case button text (`DELETE`, `CANCEL`) with ids `android:id/button1` and `android:id/button2`; `--id button1` matches through the `:id/` suffix. A `Modal` is its own window, so only the modal is in the tree while it is open.
+- Radio segments are `radioButton` on Android but `other` on iOS, so select them by `--id` or `--label` rather than `--element-type`. `SeekBar` reports no value in this release; read the app's readout instead.
+- `offsider button back` pops React Navigation and custom stacks, like the hardware back button.
 
 ## Step 5: Batch vs discrete commands
 
@@ -85,7 +101,7 @@ Key rules:
 ## Step 6: Verify outcomes
 Batch and commands without `--verify` are execution-focused, not assertion-focused. Always suggest verification when outcomes matter.
 
-Exit 5 from a `--verify` command means the input was dispatched but nothing observable changed. Run `describe-ui` to check the target is on screen and interactive, then `offsider doctor --device <DEVICE_ID>` if input seems ignored. Read the `change` field of the JSON result to see how the change was detected.
+Exit 5 from a `--verify` command means the input was dispatched but nothing observable changed. Run `describe-ui` to check the target is on screen and interactive, then, on an iOS simulator, `offsider doctor --device <DEVICE_ID>` if input seems ignored. Read the `change` field of the JSON result to see how the change was detected.
 
 ```bash
 offsider describe-ui --device <DEVICE_ID>
@@ -96,7 +112,7 @@ offsider screenshot --device <DEVICE_ID> --output post-state.png
 
 ## Step 7: Exit criteria
 Before finalising guidance, verify:
-- Every simulator-interaction command includes `--device`.
+- Every device-interaction command includes `--device`.
 - Only valid Offsider commands and flags are used.
 - Shell quoting is correct (single quotes for literals, `--stdin`/`--file` for complex text).
 - Verification is suggested as a separate step when results matter.

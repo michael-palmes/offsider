@@ -173,6 +173,7 @@ extension Touch: BatchConvertible {
 
 extension Button: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        try Self.checkAvailability(buttonType, on: context.backend.platform, device: context.device.rawValue)
         if let duration {
             let composite = InputEvent.composite([
                 .button(direction: .down, button: buttonType.hardwareButton),
@@ -247,6 +248,10 @@ extension Type: BatchConvertible {
             inputText = try readFromFile(file)
         default:
             throw CLIError(errorDescription: "Invalid input configuration.")
+        }
+
+        if context.device.platform == .android {
+            return inputText.isEmpty ? [] : [.text(inputText)]
         }
 
         guard TextToHIDEvents.validateText(inputText) else {

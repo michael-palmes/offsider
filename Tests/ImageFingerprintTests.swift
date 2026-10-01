@@ -26,9 +26,12 @@ struct ImageFingerprintTests {
         bytes[(y * width + x) * 4] &+= 17
     }
 
-    private func fingerprint(_ bytes: [UInt8], excludingTopPixels: Int = 0) -> ImageFingerprint {
+    private func fingerprint(_ bytes: [UInt8], excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0) -> ImageFingerprint {
         bytes.withUnsafeBytes {
-            ImageFingerprint(rgba: $0, width: width, height: height, bytesPerRow: width * 4, excludingTopPixels: excludingTopPixels)
+            ImageFingerprint(
+                rgba: $0, width: width, height: height, bytesPerRow: width * 4,
+                excludingTopPixels: excludingTopPixels, excludingBottomPixels: excludingBottomPixels
+            )
         }
     }
 
@@ -84,6 +87,22 @@ struct ImageFingerprintTests {
         let before = fingerprint(pixels(), excludingTopPixels: 10)
         let clockTick = fingerprint(pixels { setPixel(&$0, x: 5, y: 3) }, excludingTopPixels: 10)
         #expect(before.changedTiles(comparedTo: clockTick) == [])
+    }
+
+    @Test("A change inside the excluded bottom band is ignored, and one just above it is not")
+    func excludedBottomBand() {
+        let before = fingerprint(pixels(), excludingTopPixels: 10, excludingBottomPixels: 12)
+        let navigationBar = fingerprint(pixels { setPixel(&$0, x: 5, y: height - 12) }, excludingTopPixels: 10, excludingBottomPixels: 12)
+        let content = fingerprint(pixels { setPixel(&$0, x: 5, y: height - 13) }, excludingTopPixels: 10, excludingBottomPixels: 12)
+        #expect(before.changedTiles(comparedTo: navigationBar) == [])
+        #expect(before.changedTiles(comparedTo: content)?.count == 1)
+    }
+
+    @Test("Bands that overlap exclude the whole image without trapping")
+    func overlappingBands() {
+        let before = fingerprint(pixels(), excludingTopPixels: 100, excludingBottomPixels: 100)
+        let changed = fingerprint(pixels { setPixel(&$0, x: 5, y: 60) }, excludingTopPixels: 100, excludingBottomPixels: 100)
+        #expect(before.changedTiles(comparedTo: changed) == [])
     }
 
     @Test("Screen change ignores a tile that alternates across the after-shots")

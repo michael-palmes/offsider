@@ -86,7 +86,11 @@ struct AccessibilityTargetResolver {
         switch query {
         case .id(let rawValue):
             let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            let matches = allElements.filter { $0.normalizedID == value }
+            var matches = allElements.filter { $0.normalizedID == value }
+            if matches.isEmpty, !value.isEmpty {
+                // Native Android ids are `package:id/name`; `--id name` finds them when nothing matches exactly.
+                matches = allElements.filter { $0.normalizedID?.hasSuffix(":id/" + value) == true }
+            }
             matchedElement = try selectUniqueMatch(matches, kind: "--id", value: rawValue)
             selectorDescription = "--id '\(rawValue)'"
         case .label(let rawValue):

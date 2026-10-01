@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -43,11 +44,11 @@ struct CLIErrorTests {
         )
         #expect(
             String(describing: VideoProcessingError.failedToDecodeImage)
-                == "Offsider could not decode a simulator video frame."
+                == "Offsider could not decode a video frame."
         )
         #expect(
             VideoProcessingError.failedToDecodeImage.localizedDescription
-                == "Offsider could not decode a simulator video frame."
+                == "Offsider could not decode a video frame."
         )
         #expect(
             String(describing: HIDBrokerNotReadyError())
@@ -57,6 +58,12 @@ struct CLIErrorTests {
             HIDBrokerNotReadyError().localizedDescription
                 == "Offsider could not establish simulator input. Wait for the simulator to finish booting and try again."
         )
+    }
+
+    @Test("Video output never calls an Android emulator a simulator")
+    func videoOutputNamesTheSourceByPlatform() {
+        #expect(DevicePlatform.android.videoSourceNoun == "device")
+        #expect(DevicePlatform.ios.videoSourceNoun == "simulator")
     }
 
     @Test("Broker responses expose only curated errors")
