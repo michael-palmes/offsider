@@ -10,10 +10,10 @@ struct Touch: AsyncParsableCommand {
         You can either perform a single touch down, touch up, or both.
         
         Examples:
-          offsider touch --x 100 --y 200 --down --udid SIMULATOR_UDID        # Touch down at (100, 200)
-          offsider touch --x 100 --y 200 --up --udid SIMULATOR_UDID          # Touch up at (100, 200)
-          offsider touch --x 100 --y 200 --down --up --udid SIMULATOR_UDID   # Touch down then up (like tap)
-          offsider touch --x 100 --y 200 --down --up --delay 1.0 --udid SIMULATOR_UDID # Long press (hold for 1s)
+          offsider touch --x 100 --y 200 --down --device DEVICE_ID        # Touch down at (100, 200)
+          offsider touch --x 100 --y 200 --up --device DEVICE_ID          # Touch up at (100, 200)
+          offsider touch --x 100 --y 200 --down --up --device DEVICE_ID   # Touch down then up (like tap)
+          offsider touch --x 100 --y 200 --down --up --delay 1.0 --device DEVICE_ID # Long press (hold for 1s)
         """
     )
     
@@ -32,8 +32,8 @@ struct Touch: AsyncParsableCommand {
     @Option(name: .customLong("delay"), help: "Delay between touch down and up events in seconds (if both are specified).")
     var delay: Double?
     
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
 
     func validate() throws {
@@ -65,14 +65,14 @@ struct Touch: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
 
         logger.info().log("Performing touch events at (\(pointX), \(pointY))")
 
-        let physicalPoint = try await backend.deviceCoordinates(for: [(x: pointX, y: pointY)], roots: nil, on: device)[0]
+        let physicalPoint = try await backend.deviceCoordinates(for: [(x: pointX, y: pointY)], tree: nil, on: device)[0]
 
         var steps: [DetachedTouchStep] = []
         if touchDown && touchUp {

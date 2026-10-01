@@ -8,11 +8,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `list-devices` command: one row per device with PLATFORM, STATE, ID, NAME and OS columns.
+- `list-devices --json` prints `{"version": 1, "devices": [...]}`, each device with `id`, `platform`, `state`, `name`, `osVersion` and `deviceType` (null when unknown).
+- `list-devices --platform ios|android` lists one platform.
+- Android Emulator support: `list-devices`, `describe-ui` (through `uiautomator`, in dp), `tap`, `swipe`, `drag`, `gesture`, `touch`, `type`, `key`, `key-sequence`, `key-combo`, `button`, `screenshot`, `record-video`, `stream-video`, `batch` and `--verify` work with an emulator serial or a running AVD name. Offsider talks to the adb server and the emulator's gRPC endpoint on loopback, starts the adb server with mDNS off when none is running, and falls back to adb for emulators without gRPC.
+- `type` on Android pastes text with non-ASCII characters through the emulator's clipboard, then restores the clipboard.
+- `boot <avd>` starts an Android emulator (windowed, or `--headless`) with `-no-metrics`, waits until Android and its gRPC endpoint are ready and prints the serial; an AVD that is already running is not started again.
+- `button back`, `app-switch`, `volume-up` and `volume-down` for Android; `lock` is the power key there.
+- `OFFSIDER_ANDROID_TRANSPORT` (`adb` or `grpc`) and `OFFSIDER_ANDROID_GRPC_AUTH` (`jwt`) for troubleshooting Android transports.
 - React Native playground (`OffsiderPlaygroundRN`) for shared iOS and Android fixtures.
+
+### Changed
+
+- `--device <id>` replaces `--udid` on every command, including `doctor`. Pass an ID from `offsider list-devices`. The `doctor --json` report keeps its `udid` key.
+- Device IDs are case-insensitive: a lowercase simulator UDID now reaches the same simulator.
+- An ID that is neither a simulator UDID nor an Android serial or AVD name fails with a hint to run `offsider list-devices`.
+- Offsider requires macOS 26 or later.
+- Batch steps reject `--device` (and `--udid`); set the device once on `batch`.
+- `list-devices` lists iOS simulators (iPhone and iPad), not the watchOS, tvOS and visionOS ones `list-simulators` listed, plus Android emulators and AVDs.
+- `describe-ui` prints a versioned, platform-neutral schema: `{"version": 1, "platform", "device", "screen", "roots"}`, each node with `role`, `id`, `label`, `value`, `frame`, `enabled`, `state`, `native` and `children`, and every key present with `null` when unknown. `AXUniqueId`, `AXLabel` and `AXValue` become `id`, `label` and `value`; the iOS `type`, `role`, `role_description` and other attributes move under `native` in camelCase. `--point` returns the same envelope with one root.
+- `--element-type` on `tap`, `slider` and batch taps matches the describe-ui `role` in any case (`button`, `slider`) or the native type exactly (`RadioButton`, `TextEditor`). `--element-type Button` now also matches `PopUpButton` elements.
+- Text areas (`TextView` and `TextEditor`, role `textArea`) are actionable: `tap --label` prefers them over plain text with the same label, as it does for text fields.
+- `--verify` compares the neutral tree. iOS change summaries are unchanged; a checked state change without a value change reads "checked state of X changed".
+- Selector help and errors say id, label and value instead of AXUniqueId, AXLabel and AXValue, and `slider` reports `value:`.
+- `--id` also matches the part of an Android resource id after `:id/` when no id matches exactly.
+- `--verify` leaves each platform's system bars out of screenshot comparisons: the status bar on iOS as before, and the status and navigation bars on Android. A command that changed nothing suggests `doctor` only for simulators.
+- A `button` that the device's platform does not have exits 64 before touching the device.
+- Tap summaries round points to 0.01, for example `resolved tap point at (217.15, 272.2)`.
+- `record-video` and `stream-video` call their source a device, and their frame errors no longer mention a simulator.
 
 ### Fixed
 
+- `gesture` presets, on their own and as batch steps, fit the device and orientation: they are sized to the foreground app's frame from the accessibility tree instead of a fixed 390 x 844 point screen, and translated like `swipe` coordinates, so they land correctly in landscape and on every screen size. `--screen-width` and `--screen-height` still override the size, now in points as the screen is currently oriented.
 - `stream-video` now emits JPEG frames in the `mjpeg`, `raw` and `ffmpeg` formats at the default `--scale` and `--quality`. Previously those frames were PNG, labelled `image/jpeg` in the `mjpeg` stream.
+- `batch` step failures now include the underlying error, such as an unsupported step, an invalid argument or an input failure, with or without `--continue-on-error`. Previously many read "The operation couldn't be completed".
+- `doctor` details and other messages that wrap an Offsider error, such as a missing developer directory, now show that error's text instead of "The operation couldn't be completed".
+
+### Removed
+
+- `list-simulators`. Use `list-devices`; the old name exits 64 with a rename hint.
+- `--udid`. Use `--device`; the old flag exits 64 with a rename hint.
 
 ## [0.2.0] - 2026-09-24
 

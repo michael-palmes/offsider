@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -9,6 +10,26 @@ struct CLIErrorTests {
         let error = CLIError(errorDescription: "Simulator not found.")
 
         #expect(String(describing: error) == "Simulator not found.")
+    }
+
+    @Test("localizedDescription is the message, not Foundation's generic text")
+    func localizedDescriptionIsTheMessage() {
+        #expect(CLIError(errorDescription: "x").localizedDescription == "x")
+    }
+
+    @Test(
+        "Every user-facing error carries its message in localizedDescription",
+        arguments: [
+            TextToHIDEvents.TextConversionError.unsupportedCharacter("💥"),
+            ShellTokenizer.TokenizerError.danglingEscape,
+            VideoProcessingError.failedToDecodeImage,
+            HIDBrokerNotReadyError(),
+            ElementResolutionError.notFound(kind: "label", value: "Save"),
+            ProcessCaptureTimeoutError(command: "xcrun simctl", timeout: 5),
+        ] as [any UserFacingError]
+    )
+    func localizedDescriptionIsUserFacing(error: any UserFacingError) {
+        #expect(error.localizedDescription == error.userFacingDescription)
     }
 
     @Test("Offsider runtime error types provide user-facing descriptions")
@@ -23,11 +44,11 @@ struct CLIErrorTests {
         )
         #expect(
             String(describing: VideoProcessingError.failedToDecodeImage)
-                == "Offsider could not decode a simulator video frame."
+                == "Offsider could not decode a video frame."
         )
         #expect(
             VideoProcessingError.failedToDecodeImage.localizedDescription
-                == "Offsider could not decode a simulator video frame."
+                == "Offsider could not decode a video frame."
         )
         #expect(
             String(describing: HIDBrokerNotReadyError())
@@ -37,6 +58,12 @@ struct CLIErrorTests {
             HIDBrokerNotReadyError().localizedDescription
                 == "Offsider could not establish simulator input. Wait for the simulator to finish booting and try again."
         )
+    }
+
+    @Test("Video output never calls an Android emulator a simulator")
+    func videoOutputNamesTheSourceByPlatform() {
+        #expect(DevicePlatform.android.videoSourceNoun == "device")
+        #expect(DevicePlatform.ios.videoSourceNoun == "simulator")
     }
 
     @Test("Broker responses expose only curated errors")
@@ -53,11 +80,11 @@ struct CLIErrorTests {
         #expect(!HIDBroker.brokerResponseDescription(for: frameworkError).contains("implementation detail"))
     }
 
-    @Test("Missing simulator errors use public terminology and provide recovery guidance")
-    func missingSimulatorErrorIsActionable() {
-        let error = CLIError.simulatorNotFound(udid: "EXAMPLE-UDID")
+    @Test("Missing device errors use public terminology and provide recovery guidance")
+    func missingDeviceErrorIsActionable() {
+        let error = CLIError.deviceNotFound(id: "EXAMPLE-ID")
 
-        #expect(error.description == "No simulator with UDID EXAMPLE-UDID was found. Run `offsider list-simulators` to see available simulators.")
+        #expect(error.description == "No device with ID EXAMPLE-ID was found. Run `offsider list-devices` to see available devices.")
         #expect(!error.description.contains("set"))
     }
 

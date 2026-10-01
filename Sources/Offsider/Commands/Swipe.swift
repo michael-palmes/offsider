@@ -31,8 +31,8 @@ struct Swipe: AsyncParsableCommand {
     @Option(name: .customLong("post-delay"), help: "Delay after completing the swipe in seconds.")
     var postDelay: Double?
     
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
 
     func validate() throws {
@@ -76,7 +76,7 @@ struct Swipe: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
@@ -90,7 +90,7 @@ struct Swipe: AsyncParsableCommand {
 
         let physicalPoints = try await backend.deviceCoordinates(
             for: [(x: startX, y: startY), (x: endX, y: endY)],
-            roots: nil,
+            tree: nil,
             on: device
         )
         let physicalStart = physicalPoints[0]

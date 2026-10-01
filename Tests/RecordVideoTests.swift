@@ -52,7 +52,7 @@ struct RecordVideoTests {
         process.executableURL = URL(fileURLWithPath: offsiderPath)
         process.arguments = [
             "record-video",
-            "--udid", udid,
+            "--device", udid,
             "--fps", "40"
         ]
         let errorPipe = Pipe()
@@ -96,7 +96,7 @@ struct RecordVideoTests {
         process.executableURL = URL(fileURLWithPath: offsiderPath)
         process.arguments = [
             "record-video",
-            "--udid", udid,
+            "--device", udid,
             "--fps", "\(fps)",
             "--quality", "\(quality)",
             "--scale", "\(scale)",

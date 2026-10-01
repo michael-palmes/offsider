@@ -49,14 +49,19 @@ struct CommandRunner {
     static func runSeparated(
         _ command: String,
         environment: [String: String]? = nil,
+        unsetting unsetVariables: [String] = [],
         timeout: TimeInterval = 30
     ) async throws -> SeparatedCommandOutput {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
 
-        if let environment {
-            process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+        if environment != nil || !unsetVariables.isEmpty {
+            var merged = ProcessInfo.processInfo.environment.merging(environment ?? [:]) { _, new in new }
+            for name in unsetVariables {
+                merged.removeValue(forKey: name)
+            }
+            process.environment = merged
         }
 
         let outputPipe = Pipe()
@@ -160,6 +165,19 @@ struct TestHelpers {
     }
 
     /// Get the path to the offsider binary using #file to find source root
+    static func listedSubcommands(in help: String) -> [String] {
+        let lines = help.components(separatedBy: .newlines)
+        guard let header = lines.firstIndex(of: "SUBCOMMANDS:") else { return [] }
+
+        var names: [String] = []
+        for line in lines[(header + 1)...] {
+            if line.trimmingCharacters(in: .whitespaces).isEmpty { break }
+            guard let match = line.range(of: #"^  [a-z][a-z0-9-]*"#, options: .regularExpression) else { continue }
+            names.append(line[match].trimmingCharacters(in: .whitespaces))
+        }
+        return names
+    }
+
     static func getOffsiderPath(testFile: String = #file) throws -> String {
         if let offsiderBinPath = ProcessInfo.processInfo.environment["OFFSIDER_BIN_PATH"], !offsiderBinPath.isEmpty {
             if FileManager.default.fileExists(atPath: offsiderBinPath) {
@@ -346,7 +364,7 @@ struct TestHelpers {
     ) async throws -> CommandOutput {
         var fullCommand = command
         if let udid = simulatorUDID {
-            fullCommand.append(" --udid \(udid)")
+            fullCommand.append(" --device \(udid)")
         }
         
         // Use the built executable directly for faster test execution
@@ -371,7 +389,7 @@ struct TestHelpers {
     ) async throws -> CommandOutput {
         var fullCommand = command
         if let udid = simulatorUDID {
-            fullCommand.append(" --udid \(udid)")
+            fullCommand.append(" --device \(udid)")
         }
 
         let offsiderPath = try getOffsiderPath()
@@ -388,17 +406,34 @@ struct TestHelpers {
         _ command: String,
         simulatorUDID: String? = nil,
         environment: [String: String]? = nil,
+        unsetting unsetVariables: [String] = [],
         timeout: TimeInterval = 60
     ) async throws -> SeparatedCommandOutput {
         var fullCommand = command
         if let udid = simulatorUDID {
-            fullCommand.append(" --udid \(udid)")
+            fullCommand.append(" --device \(udid)")
         }
         let offsiderPath = try getOffsiderPath()
         return try await CommandRunner.runSeparated(
             "\(offsiderPath) \(fullCommand)",
             environment: environment,
+            unsetting: unsetVariables,
             timeout: timeout
+        )
+    }
+
+    /// Runs the binary where no Android SDK or adb server can be found: an empty HOME, no SDK variables, no adb on PATH.
+    static func runOffsiderWithoutAndroid(_ command: String) async throws -> SeparatedCommandOutput {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-no-android-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        return try await runOffsiderCommandSeparated(
+            command,
+            environment: ["HOME": home.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"],
+            unsetting: [
+                "ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_AVD_HOME", "ANDROID_USER_HOME", "ANDROID_EMULATOR_HOME",
+                "ADB_SERVER_SOCKET", "ANDROID_ADB_SERVER_ADDRESS", "ANDROID_ADB_SERVER_PORT",
+            ]
         )
     }
 

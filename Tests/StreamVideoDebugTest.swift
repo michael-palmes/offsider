@@ -16,7 +16,7 @@ struct StreamVideoDebugTests {
         process.executableURL = URL(fileURLWithPath: offsiderPath)
         process.arguments = [
             "record-video",
-            "--udid", udid,
+            "--device", udid,
             "--fps", "5",
             "--output", tempURL.path
         ]

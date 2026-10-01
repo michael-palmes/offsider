@@ -89,14 +89,14 @@ launch_playground() {
 
 run_non_batch_once() {
   for _ in $(seq 1 "$ITERATIONS"); do
-    "$OFFSIDER_PATH" tap -x 180 -y 360 --udid "$UDID" >/dev/null 2>&1
-    "$OFFSIDER_PATH" tap -x 220 -y 420 --udid "$UDID" >/dev/null 2>&1
+    "$OFFSIDER_PATH" tap -x 180 -y 360 --device "$UDID" >/dev/null 2>&1
+    "$OFFSIDER_PATH" tap -x 220 -y 420 --device "$UDID" >/dev/null 2>&1
   done
 }
 
 run_batch_once() {
   for _ in $(seq 1 "$ITERATIONS"); do
-    "$OFFSIDER_PATH" batch --udid "$UDID" --step "tap -x 180 -y 360" --step "tap -x 220 -y 420" >/dev/null 2>&1
+    "$OFFSIDER_PATH" batch --device "$UDID" --step "tap -x 180 -y 360" --step "tap -x 220 -y 420" >/dev/null 2>&1
   done
 }
 

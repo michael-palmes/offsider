@@ -1,13 +1,14 @@
 import ArgumentParser
 import Foundation
+import OffsiderCore
 
 struct DescribeUI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Describes the UI hierarchy of a booted simulator using accessibility information."
     )
 
-    @Option(name: .customLong("udid"), help: "The UDID of the simulator.")
-    var simulatorUDID: String
+    @OptionGroup
+    var deviceOption: DeviceOption
 
     @Option(
         name: .customLong("point"),
@@ -24,17 +25,15 @@ struct DescribeUI: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         try await route.backend.prepare()
 
-        let jsonData = try await route.backend.accessibilityJSON(for: route.device, point: try parsedPoint())
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-            throw CLIError(errorDescription: "Failed to convert accessibility info to JSON string.")
-        }
-        print(jsonString)
+        var tree = try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint())
+        tree.screen = try? await route.backend.screenInfo(for: route.device)
+        print(String(decoding: tree.jsonData(), as: UTF8.self), terminator: "")
     }
 
-    private func parsedPoint() throws -> AccessibilityPoint? {
+    private func parsedPoint() throws -> UIPoint? {
         guard let point else {
             return nil
         }
@@ -54,6 +53,6 @@ struct DescribeUI: AsyncParsableCommand {
             throw ValidationError("--point must be in the form x,y using non-negative numbers.")
         }
 
-        return AccessibilityPoint(x: x, y: y)
+        return UIPoint(x: x, y: y)
     }
 }

@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import OffsiderCore
 @testable import Offsider
 
 @Suite("Slider Command Surface Tests")
@@ -16,7 +17,7 @@ struct SliderCommandSurfaceTests {
 
     @Test("Invalid slider value fails validation")
     func invalidSliderValueFailsValidation() async throws {
-        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --id slider-value-slider --value 101 --udid invalid")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --id slider-value-slider --value 101 --device invalid")
 
         #expect(result.exitCode != 0)
         #expect(result.output.contains("--value must be a finite number between 0 and 100."))
@@ -24,7 +25,7 @@ struct SliderCommandSurfaceTests {
 
     @Test("Missing slider selector fails validation")
     func missingSliderSelectorFailsValidation() async throws {
-        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --value 75 --udid invalid")
+        let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --value 75 --device invalid")
 
         #expect(result.exitCode != 0)
         #expect(result.output.contains("Use exactly one of --id or --label to target a slider."))
@@ -32,7 +33,7 @@ struct SliderCommandSurfaceTests {
 
     @Test("Slider drag endpoints stay within the application frame")
     func sliderDragEndpointsStayWithinApplicationFrame() {
-        let applicationFrame = AccessibilityElement.Frame(x: 0, y: 0, width: 390, height: 844)
+        let applicationFrame = UIFrame(x: 0, y: 0, width: 390, height: 844)
 
         #expect(Slider.clampedDragEndX(-12, applicationFrame: applicationFrame) == 0)
         #expect(Slider.clampedDragEndX(402, applicationFrame: applicationFrame) == 390)

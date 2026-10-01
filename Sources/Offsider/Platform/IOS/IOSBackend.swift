@@ -20,10 +20,40 @@ final class IOSBackend: DeviceBackend {
         try await performGlobalSetup(logger: logger)
     }
 
+    func listDevices() async throws -> [DeviceSummary] {
+        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
+        let iosSimulators = simulatorSet.allSimulators.filter { simulator in
+            SimulatorRuntime.isIOS(
+                runtimeIdentifier: Self.runtimeIdentifier(of: simulator),
+                osVersionName: simulator.osVersion.name.rawValue
+            )
+        }
+        return iosSimulators.map { simulator in
+            DeviceSummary(
+                id: simulator.udid,
+                platform: .ios,
+                state: FBiOSTargetStateStringFromState(simulator.state).rawValue,
+                name: simulator.name,
+                osVersion: simulator.osVersion.name.rawValue,
+                deviceType: simulator.deviceType.model.rawValue
+            )
+        }
+    }
+
+    /// Read through KVC with `responds(to:)` guards because `SimDevice` is a private CoreSimulator class.
+    private static func runtimeIdentifier(of simulator: FBSimulator) -> String? {
+        guard simulator.responds(to: NSSelectorFromString("device")),
+              let device = simulator.value(forKey: "device") as? NSObject,
+              device.responds(to: NSSelectorFromString("runtimeIdentifier")) else {
+            return nil
+        }
+        return device.value(forKey: "runtimeIdentifier") as? String
+    }
+
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         let udid = id.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !udid.isEmpty else {
-            throw CLIError(errorDescription: "Simulator UDID cannot be empty. Use --udid to specify a simulator.")
+            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.")
         }
 
         let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
@@ -40,19 +70,42 @@ final class IOSBackend: DeviceBackend {
         return BootedDevice(id: DeviceID(rawValue: udid, platform: .ios), name: simulator.name)
     }
 
-    func accessibilityJSON(for id: DeviceID, point: AccessibilityPoint?) async throws -> Data {
-        try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(for: id.rawValue, point: point, logger: logger)
+    func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+        let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
+            for: id.rawValue,
+            point: point.map { AccessibilityPoint(x: $0.x, y: $0.y) },
+            logger: logger
+        )
+        return UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+    }
+
+    /// Device pixels over scale, swapped when SimulatorKit reports a landscape orientation.
+    func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
+        guard let info = try await simulator(for: id).screenInfo, info.scale > 0 else {
+            return nil
+        }
+        let scale = Double(info.scale)
+        let orientation = await SimulatorOrientationReader.currentOrientation(simulatorUDID: id.rawValue, logger: logger)
+        let portraitWidth = Double(info.widthPixels) / scale
+        let portraitHeight = Double(info.heightPixels) / scale
+        let isLandscape = orientation?.isLandscape == true
+        return UIScreenInfo(
+            width: isLandscape ? portraitHeight : portraitWidth,
+            height: isLandscape ? portraitWidth : portraitHeight,
+            scale: scale,
+            orientation: orientation?.coreOrientation
+        )
     }
 
     func deviceCoordinates(
         for points: [(x: Double, y: Double)],
-        roots: [AccessibilityElement]?,
+        tree: UITree?,
         on id: DeviceID
     ) async throws -> [(x: Double, y: Double)] {
-        if let roots {
+        if let tree {
             return try await OrientationAwareCoordinates.translateBatch(
                 points: points,
-                roots: roots,
+                applicationFrame: tree.applicationFrame,
                 for: id.rawValue,
                 logger: logger
             )
@@ -75,13 +128,18 @@ final class IOSBackend: DeviceBackend {
         try await VideoFrameUtilities.captureScreenshotData(from: try await simulator(for: id))
     }
 
+    /// The status bar; the home indicator does not change on its own.
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
+        ScreenBands(top: 60, bottom: 0)
+    }
+
     private func simulator(for id: DeviceID) async throws -> FBSimulator {
         if let simulator = simulators[id.rawValue] {
             return simulator
         }
         let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
         guard let simulator = simulatorSet.allSimulators.first(where: { $0.udid == id.rawValue }) else {
-            throw CLIError.simulatorNotFound(udid: id.rawValue)
+            throw CLIError.deviceNotFound(id: id.rawValue)
         }
         simulators[id.rawValue] = simulator
         return simulator

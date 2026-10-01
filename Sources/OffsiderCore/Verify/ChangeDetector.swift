@@ -3,9 +3,9 @@ import Foundation
 /// Compares two accessibility snapshots. Each node is keyed by its path of `type#identifier[n]`
 /// components, with UUID-shaped identifier text normalised to `<uuid>` and `n` the ordinal among
 /// siblings sharing that type and identifier. A shared key changes when its role, subrole, label,
-/// value, title, enabled state or frame (rounded to `framePrecision`) differs. The result is
-/// `changed` when the key sets or any shared signature differ outside the volatile keys, and
-/// `unknown` when either snapshot has no children to compare.
+/// value, title, enabled, checked, selected or focused state, or frame (rounded to `framePrecision`)
+/// differs. The result is `changed` when the key sets or any shared signature differ outside the
+/// volatile keys, and `unknown` when either snapshot has no children to compare.
 public struct ChangeDetector: Sendable {
     public struct Options: Sendable {
         public var framePrecision: Double
@@ -30,6 +30,7 @@ public struct ChangeDetector: Sendable {
         let value: String?
         let title: String?
         let enabled: Bool?
+        let state: UIState
         let frame: [Double]?
     }
 
@@ -117,6 +118,7 @@ public struct ChangeDetector: Sendable {
             value: node.value,
             title: node.title,
             enabled: node.enabled,
+            state: node.state,
             frame: frame
         )
     }
@@ -129,6 +131,9 @@ public struct ChangeDetector: Sendable {
         if a.label != b.label { return "label of \(name) changed from \(Self.quoted(a.label)) to \(Self.quoted(b.label))" }
         if a.title != b.title { return "title of \(name) changed from \(Self.quoted(a.title)) to \(Self.quoted(b.title))" }
         if a.enabled != b.enabled { return "\(name) became \(b.enabled == true ? "enabled" : "disabled")" }
+        if a.state.checked != b.state.checked { return "checked state of \(name) changed" }
+        if a.state.selected != b.state.selected { return "selected state of \(name) changed" }
+        if a.state.focused != b.state.focused { return "focused state of \(name) changed" }
         if a.frame != b.frame { return "\(name) moved or resized" }
         if a.role != b.role || a.subrole != b.subrole { return "role of \(name) changed" }
         return nil

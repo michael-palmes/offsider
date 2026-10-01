@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderCore
 
 enum AXCachePolicy: String, CaseIterable, ExpressibleByArgument {
     case perBatch
@@ -23,7 +24,7 @@ final class BatchContext {
     let waitTimeout: TimeInterval
     let pollInterval: TimeInterval
 
-    private var cachedRoots: [AccessibilityElement]?
+    private var cachedTree: UITree?
 
     init(
         backend: any DeviceBackend,
@@ -45,19 +46,19 @@ final class BatchContext {
         self.pollInterval = pollInterval
     }
 
-    func accessibilityRoots(forceRefresh: Bool = false) async throws -> [AccessibilityElement] {
+    func accessibilityTree(forceRefresh: Bool = false) async throws -> UITree {
         switch axCachePolicy {
         case .none:
-            return try await backend.accessibilityRoots(for: device)
+            return try await backend.accessibilityTree(for: device)
         case .perStep:
-            return try await backend.accessibilityRoots(for: device)
+            return try await backend.accessibilityTree(for: device)
         case .perBatch:
-            if !forceRefresh, let cachedRoots {
-                return cachedRoots
+            if !forceRefresh, let cachedTree {
+                return cachedTree
             }
-            let roots = try await backend.accessibilityRoots(for: device)
-            cachedRoots = roots
-            return roots
+            let tree = try await backend.accessibilityTree(for: device)
+            cachedTree = tree
+            return tree
         }
     }
 }

@@ -40,7 +40,7 @@ struct AccessibilityFetcher {
         let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
         
         guard let target = simulatorSet.allSimulators.first(where: { $0.udid == simulatorUDID }) else {
-            throw CLIError.simulatorNotFound(udid: simulatorUDID)
+            throw CLIError.deviceNotFound(id: simulatorUDID)
         }
 
         return try await retryingAfterTestManagerRecovery(
@@ -347,18 +347,6 @@ struct AccessibilityFetcher {
         default:
             return true
         }
-    }
-
-    static func fetchAccessibilityElements(for simulatorUDID: String, logger: OffsiderLogger) async throws -> [AccessibilityElement] {
-        let jsonData = try await fetchAccessibilityInfoJSONData(for: simulatorUDID, point: nil, logger: logger)
-        let decoder = JSONDecoder()
-        
-        if let roots = try? decoder.decode([AccessibilityElement].self, from: jsonData) {
-            return roots
-        }
-        
-        let root = try decoder.decode(AccessibilityElement.self, from: jsonData)
-        return [root]
     }
 
     static func serializeAccessibilityInfo(_ accessibilityInfo: Any) throws -> Data {

@@ -1,9 +1,12 @@
 import Foundation
-import OffsiderCore
+
+public enum TapTiming {
+    public static let defaultHoldDuration: TimeInterval = 0.1
+}
 
 /// One open input connection to a device; class-bound so a session can own its transport.
 @MainActor
-protocol InputSession: AnyObject {
+public protocol InputSession: AnyObject {
     var device: DeviceID { get }
     func perform(_ event: InputEvent) async throws
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws
@@ -12,7 +15,7 @@ protocol InputSession: AnyObject {
 
 extension InputSession {
     /// Down, hold, up. After a failure that follows the down, only a best-effort up is sent, never a second down.
-    func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+    public func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
         if let preDelay, preDelay > 0 {
             try await Task.sleep(for: .seconds(preDelay))
         }

@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 // MARK: - Error Types
 protocol UserFacingError: Error, CustomStringConvertible {
@@ -12,19 +13,19 @@ extension UserFacingError {
 }
 
 struct CLIError: LocalizedError, UserFacingError {
-    let errorDescription: String
+    let userFacingDescription: String
 
     init(errorDescription: String) {
-        self.errorDescription = errorDescription
+        userFacingDescription = errorDescription
     }
 
-    static func simulatorNotFound(udid: String) -> CLIError {
+    static func deviceNotFound(id: String) -> CLIError {
         CLIError(
-            errorDescription: "No simulator with UDID \(udid) was found. Run `offsider list-simulators` to see available simulators."
+            errorDescription: "No device with ID \(id) was found. Run `offsider list-devices` to see available devices."
         )
     }
 
-    var userFacingDescription: String {
-        errorDescription
-    }
+    var errorDescription: String? { userFacingDescription }
 }
+
+extension ProcessCaptureTimeoutError: UserFacingError {}

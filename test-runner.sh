@@ -52,6 +52,7 @@ show_usage() {
     echo "  -b, --build-only    Only build Offsider and playground app (skip tests)"
     echo "  -t, --tests-only    Only run tests (skip building)"
     echo "  -u, --unit-tests    Build dependencies and run non-E2E Swift tests without a simulator"
+    echo "  -a, --android       Build Offsider and run only the Android emulator E2E suites (no simulator)"
     echo "  -c, --clean         Clean build before building"
     echo "  -s, --sequential    Run suites one-by-one (single simulator-safe flow)"
     echo "  -v, --verbose       Verbose output"
@@ -63,6 +64,13 @@ show_usage() {
     echo "  OFFSIDER_REUSE_IDB=1      Skip the IDB framework rebuild when existing XCFrameworks pass verification"
     echo "  OFFSIDER_SIMULATOR_NAME   Exact name of the simulator to test on (default: a stock iPhone on the Xcode's iOS major, booted first)"
     echo "  SIMULATOR_UDID            UDID of the simulator to test on (overrides OFFSIDER_SIMULATOR_NAME)"
+    echo ""
+    echo "Android (--android):"
+    echo "  OFFSIDER_ANDROID_DEVICE   Required: the E2E emulator's serial or AVD name, for example Offsider_E2E"
+    echo "  OFFSIDER_ANDROID_APK      The React Native playground's release APK (default: OffsiderPlaygroundRN/build/android/OffsiderPlaygroundRN-release.apk)"
+    echo "  OFFSIDER_ANDROID_E2E_AVD  The only AVD the suites may drive (default: Offsider_E2E)"
+    echo "  OFFSIDER_ANDROID_LANDSCAPE_E2E=1  Also run the landscape suite on Settings"
+    echo "  OFFSIDER_ANDROID_BOOT_E2E=1       Also stop and cold-boot the E2E AVD"
     echo ""
     echo "Test Filters (optional):"
     echo "  SwipeTests          Run only swipe tests"
@@ -78,10 +86,12 @@ show_usage() {
     echo "  TouchTests          Run only touch tests"
     echo "  TypeTests           Run only type tests"
     echo "  VerifyTests         Run only --verify tests"
+    echo "  BatchTests          Run only batch tests"
     echo "  ButtonTests         Run only button tests"
     echo "  CommandNamingTests  Run only command naming tests"
     echo "  GestureTests        Run only gesture tests"
-    echo "  ListSimulatorsTests Run only list simulators tests"
+    echo "  ListDevicesTests    Run only list devices tests"
+    echo "  PresentationFixtureTests Run only presentation fixture tests"
     echo "  RecordVideoTests    Run only record video tests"
     echo "  StreamVideoDebugTests Run only stream video debug tests"
     echo "  StreamVideoTests    Run only stream video tests"
@@ -92,6 +102,7 @@ show_usage() {
     echo "  $0 DragTests        # Build everything and run only drag tests"
     echo "  $0 -t SwipeTests    # Skip building, run only swipe tests"
     echo "  $0 -u               # Build and run non-E2E Swift tests without a simulator"
+    echo "  $0 --android        # Build and run the Android E2E suites against OFFSIDER_ANDROID_DEVICE"
     echo "  $0 -b               # Only build, skip tests"
     echo "  $0 -c               # Clean build and run all tests"
 }
@@ -100,6 +111,7 @@ show_usage() {
 BUILD_ONLY=false
 TESTS_ONLY=false
 UNIT_TESTS=false
+ANDROID=false
 CLEAN_BUILD=false
 SEQUENTIAL=true
 VERBOSE=false
@@ -132,6 +144,10 @@ while [[ $# -gt 0 ]]; do
             UNIT_TESTS=true
             shift
             ;;
+        -a|--android)
+            ANDROID=true
+            shift
+            ;;
         -c|--clean)
             CLEAN_BUILD=true
             shift
@@ -144,7 +160,7 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
-        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListSimulatorsTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests|VerifyTests)
+        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListDevicesTests|PresentationFixtureTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests|VerifyTests)
             TEST_FILTER="$1"
             shift
             ;;
@@ -159,6 +175,11 @@ done
 if [[ "$UNIT_TESTS" == true ]] &&
    [[ "$BUILD_ONLY" == true || "$TESTS_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
     print_error "--unit-tests cannot be combined with build, E2E test, clean, or test-filter options."
+    exit 1
+fi
+
+if [[ "$ANDROID" == true ]] && [[ "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
+    print_error "--android can only be combined with --tests-only and --verbose."
     exit 1
 fi
 
@@ -184,12 +205,12 @@ check_prerequisites() {
         exit 1
     fi
 
-    if [[ "$UNIT_TESTS" != true ]] && ! command -v jq &> /dev/null; then
+    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true ]] && ! command -v jq &> /dev/null; then
         print_error "jq not found. Install jq to select the matching simulator runtime."
         exit 1
     fi
 
-    if [[ "$UNIT_TESTS" != true ]] && ! command -v xcodegen &> /dev/null; then
+    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true ]] && ! command -v xcodegen &> /dev/null; then
         print_error "xcodegen not found. Install it with 'brew install xcodegen' to generate the playground project."
         exit 1
     fi
@@ -356,6 +377,75 @@ run_unit_tests() {
     print_success "Non-E2E Swift tests passed"
 }
 
+# The playground APK: OFFSIDER_ANDROID_APK, else the React Native playground's release build, built when missing.
+resolve_android_apk() {
+    if [[ -n "${OFFSIDER_ANDROID_APK:-}" ]]; then
+        [[ -f "$OFFSIDER_ANDROID_APK" ]] || { print_error "OFFSIDER_ANDROID_APK is $OFFSIDER_ANDROID_APK, which does not exist."; exit 1; }
+        return
+    fi
+    local default_apk="OffsiderPlaygroundRN/build/android/OffsiderPlaygroundRN-release.apk"
+    if [[ ! -f "$default_apk" && -x scripts/rn-playground.sh ]]; then
+        print_info "Building the React Native playground APK..."
+        scripts/rn-playground.sh build-android
+    fi
+    if [[ ! -f "$default_apk" ]]; then
+        print_error "Set OFFSIDER_ANDROID_APK to the React Native playground's release APK."
+        exit 1
+    fi
+    OFFSIDER_ANDROID_APK="$PWD/$default_apk"
+}
+
+run_android_tests() {
+    print_header "Running Android E2E Tests"
+
+    if [[ -z "${OFFSIDER_ANDROID_DEVICE:-}" ]]; then
+        print_error "Set OFFSIDER_ANDROID_DEVICE to the E2E emulator's serial or AVD name, for example Offsider_E2E."
+        exit 1
+    fi
+    resolve_android_apk
+    ensure_test_framework_rpaths
+
+    export OFFSIDER_ANDROID_E2E=1
+    export OFFSIDER_ANDROID_APK
+    export OFFSIDER_E2E=0
+    export OFFSIDER_LANDSCAPE_E2E=0
+    if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
+        OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
+    fi
+    export OFFSIDER_BIN_PATH
+    print_info "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=${OFFSIDER_ANDROID_E2E_AVD:-Offsider_E2E}, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
+
+    local suites=(
+        "AndroidListDevicesTests"
+        "AndroidDescribeUITests"
+        "AndroidTapTests"
+        "AndroidTouchTests"
+        "AndroidSwipeGestureTests"
+        "AndroidTypeTests"
+        "AndroidKeyTests"
+        "AndroidButtonTests"
+        "AndroidScreenshotE2ETests"
+        "AndroidVideoTests"
+        "AndroidBatchTests"
+        "AndroidVerifyTests"
+        "AndroidFallbackTests"
+        "AndroidJWTTests"
+        "AndroidBootTests"
+        "AndroidLandscapeTests"
+    )
+    local suite
+    for suite in "${suites[@]}"; do
+        print_header "Running $suite"
+        local args=(--skip-build --no-parallel --filter "$suite")
+        [[ "$VERBOSE" == true ]] && args+=(--verbose)
+        if ! run_selected_swift test "${args[@]}"; then
+            print_error "$suite failed"
+            exit 1
+        fi
+    done
+    print_success "All Android suites passed"
+}
+
 # Function to build and install playground app
 build_playground_app() {
     print_header "Building and Installing Playground App"
@@ -486,7 +576,8 @@ run_tests() {
             "KeyComboTests"
             "KeySequenceTests"
             "KeyTests"
-            "ListSimulatorsTests"
+            "ListDevicesTests"
+            "PresentationFixtureTests"
             "RecordVideoTests"
             "StreamVideoDebugTests"
             "StreamVideoTests"
@@ -558,6 +649,15 @@ main() {
 
     # Always check prerequisites
     check_prerequisites
+
+    if [[ "$ANDROID" == true ]]; then
+        if [[ "$TESTS_ONLY" != true ]]; then
+            build_idb_xcframeworks
+            build_offsider
+        fi
+        run_android_tests
+        return
+    fi
 
     if [[ "$UNIT_TESTS" == true ]]; then
         build_idb_xcframeworks
