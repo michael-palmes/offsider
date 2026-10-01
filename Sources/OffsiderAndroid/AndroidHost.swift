@@ -80,6 +80,8 @@ public struct AndroidHost: Sendable {
     var launcher: any EmulatorLaunching
     /// Monotonic time for deadlines; tests advance it with their recorded sleeps.
     var uptime: @Sendable () -> Duration
+    /// The helper dex and manifest; the executable reads its bundle, tests inject bytes, the default has none.
+    var helperDex: @Sendable () throws -> HelperDex
 
     init(
         environment: [String: String],
@@ -92,7 +94,8 @@ public struct AndroidHost: Sendable {
         processPath: @escaping @Sendable (Int32) -> String? = { AndroidHost.executablePath(of: $0) },
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         launcher: any EmulatorLaunching = DetachedProcess(),
-        uptime: @escaping @Sendable () -> Duration = { .seconds(ProcessInfo.processInfo.systemUptime) }
+        uptime: @escaping @Sendable () -> Duration = { .seconds(ProcessInfo.processInfo.systemUptime) },
+        helperDex: @escaping @Sendable () throws -> HelperDex = AndroidHost.noHelper
     ) {
         self.environment = environment
         self.homeDirectory = homeDirectory
@@ -105,13 +108,20 @@ public struct AndroidHost: Sendable {
         self.sleep = sleep
         self.launcher = launcher
         self.uptime = uptime
+        self.helperDex = helperDex
     }
 
+    /// The library's default: no bundle, so tests and other hosts never start a helper by accident.
+    public static let noHelper: @Sendable () throws -> HelperDex = { throw HelperDexError.notBundled("no helper was given") }
+
     /// `HOME` wins over the account's home folder, so a test run with an empty `HOME` sees no SDK or AVDs.
-    public static func live(environment: [String: String] = ProcessInfo.processInfo.environment) -> AndroidHost {
+    public static func live(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        helperDex: @escaping @Sendable () throws -> HelperDex = AndroidHost.noHelper
+    ) -> AndroidHost {
         let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
             ?? FileManager.default.homeDirectoryForCurrentUser
-        return AndroidHost(environment: environment, homeDirectory: home)
+        return AndroidHost(environment: environment, homeDirectory: home, helperDex: helperDex)
     }
 
     /// `EPERM` means the process exists but belongs to another user, so it counts as alive.

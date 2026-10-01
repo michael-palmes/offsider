@@ -24,6 +24,11 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case uiautomatorIdle
         case uiautomatorNoWindow
         case uiautomatorFailed
+        case helperUnavailable
+        case helperBusy
+        case helperCrashed
+        case helperTimedOut
+        case helperFailed
         case unsupportedKey
         case unsupportedButton
         case unsupportedControlCharacter
@@ -265,6 +270,48 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     static func uiautomatorFailed(_ serial: String, detail: String) -> AndroidError {
         AndroidError(.uiautomatorFailed, "uiautomator could not read the screen on \(serial) (\(detail)). Retry, or run `adb -s \(serial) shell uiautomator dump` to see why.")
+    }
+
+    static func helperUnavailableForced(_ serial: String, reason: HelperUnavailableReason) -> AndroidError {
+        AndroidError(
+            .helperUnavailable,
+            "The UiAutomation helper is unavailable on \(serial) (\(reason)), and OFFSIDER_ANDROID_TREE is helper. Unset it to fall back to uiautomator."
+        )
+    }
+
+    static func helperBusy(_ serial: String) -> AndroidError {
+        AndroidError(
+            .helperBusy,
+            "Another UiAutomation client is connected to \(serial) (Appium, Maestro, uiautomator, an instrumentation test or Layout Inspector), so Offsider cannot read its screen. Stop that client, then retry."
+        )
+    }
+
+    static func helperBusy(_ serial: String, stalePid pid: Int32) -> AndroidError {
+        AndroidError(
+            .helperBusy,
+            "An earlier Offsider helper (pid \(pid)) still holds UiAutomation on \(serial). It exits within 10 s of losing its command; to free it now, run `adb -s \(serial) shell kill \(pid)`."
+        )
+    }
+
+    static func helperCrashed(_ serial: String, detail: String) -> AndroidError {
+        AndroidError(
+            .helperCrashed,
+            "The UiAutomation helper on \(serial) stopped unexpectedly (\(detail)). Retry; `adb -s \(serial) logcat -d -s OffsiderHelper AndroidRuntime` shows why."
+        )
+    }
+
+    static func helperTimedOut(_ serial: String, op: String, seconds: Int) -> AndroidError {
+        AndroidError(
+            .helperTimedOut,
+            "The UiAutomation helper on \(serial) did not answer `\(op)` within \(seconds) s. The emulator may be overloaded; retry when it responds."
+        )
+    }
+
+    static func helperFailed(_ serial: String, message: String) -> AndroidError {
+        AndroidError(
+            .helperFailed,
+            "The UiAutomation helper could not read the screen of \(serial) (\(message)). Retry, or set OFFSIDER_ANDROID_TREE=uiautomator to read it another way."
+        )
     }
 
     static func unsupportedKey(_ usage: UInt32) -> AndroidError {

@@ -13,6 +13,7 @@ public final class AndroidBackend: DeviceBackend {
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
     private var dumpCounter = 0
+    private var helperSessions: [String: HelperSession] = [:]
 
     public init(host: AndroidHost = .live(), log: @escaping AndroidLog) {
         self.host = host
@@ -285,13 +286,36 @@ public final class AndroidBackend: DeviceBackend {
         }
     }
 
-    /// Closes the command's gRPC clients (removing their signing keys) and forgets per-command state; a second call does nothing.
+    /// The command's helper on `serial`, started on first use; throws `HelperStartFailure` or a device error.
+    func helperSession(for serial: String) async throws -> HelperSession {
+        if let running = helperSessions[serial] {
+            return running
+        }
+        try await prepare()
+        let dex: HelperDex
+        do {
+            dex = try host.helperDex()
+        } catch let error as HelperDexError {
+            log(.debug, "The bundled helper cannot be used: \(error)")
+            throw HelperStartFailure.unavailable(HelperUnavailableReason(error))
+        }
+        let session = try await HelperSession.start(client: try requireClient(), serial: serial, dex: dex, log: log)
+        helperSessions[serial] = session
+        return session
+    }
+
+    /// Stops helpers first (freeing the UiAutomation slot), then gRPC clients and their keys; a second call does nothing.
     public func close() async {
+        let helpers = helperSessions.sorted { $0.key < $1.key }.map(\.value)
         let open = transports.sorted { $0.key < $1.key }.map(\.value)
+        helperSessions = [:]
         transports = [:]
         geometries = [:]
         avdNames = [:]
         warnedAboutOverride = []
+        for helper in helpers {
+            await helper.close()
+        }
         for transport in open {
             if case .grpc(let emulator) = transport {
                 await emulator.close()

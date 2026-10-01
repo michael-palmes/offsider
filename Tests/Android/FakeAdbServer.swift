@@ -186,14 +186,30 @@ final class FakeAdbStream: AdbByteStream, @unchecked Sendable {
     }
 
     func read(upTo count: Int, deadline: ContinuousClock.Instant) async throws -> Data {
-        try lock.withLock {
+        if let chunk = takeOutbound(upTo: count) {
+            return chunk
+        }
+        // Nothing queued: a session may have something to say on its own, such as a `bye` or a late line.
+        if let session = lock.withLock({ self.session }), let later = session.pull(), !later.bytes.isEmpty || later.close {
+            lock.withLock {
+                outbound.append(later.bytes)
+                endOfStream = endOfStream || later.close
+            }
+            if let chunk = takeOutbound(upTo: count) {
+                return chunk
+            }
+        }
+        throw AdbConnectError.timedOut
+    }
+
+    private func takeOutbound(upTo count: Int) -> Data? {
+        lock.withLock {
             if !outbound.isEmpty {
                 let chunk = Data(outbound.prefix(min(count, server.maxReadChunk)))
                 outbound = Data(outbound.dropFirst(chunk.count))
                 return chunk
             }
-            if endOfStream { return Data() }
-            throw AdbConnectError.timedOut
+            return endOfStream ? Data() : nil
         }
     }
 
@@ -211,9 +227,12 @@ protocol FakeServiceSession: AnyObject, Sendable {
     func received(_ bytes: Data) -> (reply: Data, close: Bool)
     /// Offsider closed its end.
     func closed()
+    /// Bytes the device sends unasked when nothing is queued, and whether it then hangs up; nil makes the read time out.
+    func pull() -> (bytes: Data, close: Bool)?
 }
 
 extension FakeServiceSession {
     func opened() -> Data { Data() }
     func closed() {}
+    func pull() -> (bytes: Data, close: Bool)? { nil }
 }

@@ -76,6 +76,51 @@ struct AndroidBackendCloseTests {
         #expect(emulator.calls.isEmpty)
     }
 
+    final class Snapshot: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: [FakeEmulator.Call]?
+        var calls: [FakeEmulator.Call]? { lock.withLock { value } }
+        func take(_ calls: [FakeEmulator.Call]) { lock.withLock { value = calls } }
+    }
+
+    @Test("close() stops the helper, and sees it exit, before it closes the gRPC client")
+    func helperBeforeGrpc() async throws {
+        let device = FakeHelperDevice()
+        let emulator = FakeEmulator()
+        let atQuit = Snapshot()
+        device.answer = { _, op, _ in
+            if op == "quit" { atQuit.take(emulator.calls) }
+            return nil
+        }
+        device.other = { service in
+            if service.hasSuffix(AndroidDisplayGeometry.probeScript) { return FakeAdbServer.shell(stdout: AndroidBackendTests.geometryOutput) }
+            if service.hasSuffix(AndroidDeviceDirectory.propertiesScript) { return FakeAdbServer.shell(stdout: "Offsider_E2E_Pixel_9\n\n1\n16\n36\n") }
+            return FakeAdbServer.shell()
+        }
+        let home = try AndroidTestHost.homeWithSDK()
+        try AndroidTestHost.write(
+            "avd.id=Offsider_E2E_Pixel_9\nport.serial=5556\ngrpc.port=8556\ngrpc.token=t\n",
+            to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini",
+            in: home
+        )
+        let host = AndroidTestHost.make(
+            home: home, adb: device.server(), emulator: FakeEmulatorConnector(.success(emulator)),
+            liveProcesses: [50144], helperDex: FakeHelperDevice.dex
+        )
+        let backend = AndroidBackend(host: host, log: LogRecorder().log)
+        _ = try await backend.helperSession(for: "emulator-5556")
+        try await backend.perform(.tapAt(x: 10, y: 20), on: Self.device)
+
+        await backend.close()
+        await backend.close()
+
+        #expect(atQuit.calls?.contains(.close) == false)
+        #expect(emulator.calls.filter { $0 == .close }.count == 1)
+        #expect(device.ops == ["hello", "quit"])
+        let timeline = device.timeline
+        #expect(try #require(timeline.firstIndex(of: "exit 1 0")) < (try #require(timeline.firstIndex(of: "shell closed 1"))))
+    }
+
     @Test("after close() the backend connects again instead of reusing the closed client")
     func reconnectsAfterClose() async throws {
         let rig = try AndroidGrpcInputTests.rig()

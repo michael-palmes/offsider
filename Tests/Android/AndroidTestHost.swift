@@ -51,7 +51,8 @@ enum AndroidTestHost {
         liveProcesses: Set<Int32> = [],
         processPaths: [Int32: String] = [:],
         sleeps: SleepRecorder = SleepRecorder(),
-        launcher: FakeLauncher = FakeLauncher()
+        launcher: FakeLauncher = FakeLauncher(),
+        helperDex: HelperDex? = nil
     ) -> AndroidHost {
         let homeDirectory = home ?? URL(fileURLWithPath: "/nonexistent/offsider-test-home", isDirectory: true)
         return AndroidHost(
@@ -65,7 +66,8 @@ enum AndroidTestHost {
             processPath: { pid in processPaths[pid] ?? (liveProcesses.contains(pid) ? emulatorExecutable : nil) },
             sleep: { sleeps.sleep($0) },
             launcher: launcher,
-            uptime: { sleeps.total }
+            uptime: { sleeps.total },
+            helperDex: { try helperDex ?? AndroidHost.noHelper() }
         )
     }
 

@@ -11,14 +11,14 @@ enum DeviceRouter {
         let device: DeviceID
     }
 
-    static func allBackends(logger: OffsiderLogger, host: AndroidHost = .live(), scope: CommandScope = .current) -> [any DeviceBackend] {
+    static func allBackends(logger: OffsiderLogger, host: AndroidHost = .cli(), scope: CommandScope = .current) -> [any DeviceBackend] {
         [scope.adopt(IOSBackend(logger: logger)), scope.adopt(AndroidBackend.make(logger: logger, host: host))]
     }
 
     static func route(
         _ rawID: String,
         logger: OffsiderLogger,
-        host: AndroidHost = .live(),
+        host: AndroidHost = .cli(),
         scope: CommandScope = .current
     ) async throws -> Route {
         let id = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
