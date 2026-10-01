@@ -171,7 +171,7 @@ actor AdbClient {
         }
     }
 
-    private func deviceError(_ error: AdbConnectError, serial: String, command: String, timeout: Duration) -> AndroidError {
+    func deviceError(_ error: AdbConnectError, serial: String, command: String, timeout: Duration) -> AndroidError {
         guard error == .timedOut else { return serverError(error, seconds: Int(connectTimeout.components.seconds)) }
         return .adbCommandFailed(serial: serial, command: command, detail: "no answer within \(timeout.components.seconds) s")
     }

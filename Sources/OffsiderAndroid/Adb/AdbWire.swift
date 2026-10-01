@@ -81,7 +81,7 @@ enum AdbWire {
         }
     }
 
-    private static func printable(_ data: Data) -> String {
+    static func printable(_ data: Data) -> String {
         "\"" + String(decoding: data.prefix(16), as: UTF8.self).unicodeScalars
             .map { $0.isASCII && $0.value >= 0x20 ? String($0) : "?" }
             .joined() + "\""
