@@ -285,6 +285,20 @@ public final class AndroidBackend: DeviceBackend {
         }
     }
 
+    /// Closes the command's gRPC clients (removing their signing keys) and forgets per-command state; a second call does nothing.
+    public func close() async {
+        let open = transports.sorted { $0.key < $1.key }.map(\.value)
+        transports = [:]
+        geometries = [:]
+        avdNames = [:]
+        warnedAboutOverride = []
+        for transport in open {
+            if case .grpc(let emulator) = transport {
+                await emulator.close()
+            }
+        }
+    }
+
     /// Rounded to 0.01 dp, as tree frames are.
     static func dp(_ value: Double) -> Double {
         (value * 100).rounded() / 100
