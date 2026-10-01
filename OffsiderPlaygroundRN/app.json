@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "OffsiderPlaygroundRN",
+    "slug": "OffsiderPlaygroundRN",
+    "version": "1.0.0",
+    "scheme": "offsiderplaygroundrn",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.mpalmes.offsider.playground.rn",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.mpalmes.offsider.playground.rn",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [{ "scheme": "offsiderplaygroundrn", "host": "screen" }]
+        }
+      ]
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": { "enableSceneSupport": true },
+          "android": { "buildArchs": ["arm64-v8a"] }
+        }
+      ]
+    ]
+  }
+}
