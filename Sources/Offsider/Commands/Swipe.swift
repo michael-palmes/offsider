@@ -1,7 +1,6 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
+import OffsiderCore
 
 struct Swipe: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -77,9 +76,10 @@ struct Swipe: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         // Use default values if not provided
         let swipeDuration = duration ?? 1.0  // Default 1 second
@@ -88,10 +88,10 @@ struct Swipe: AsyncParsableCommand {
         logger.info().log("Performing swipe from (\(startX), \(startY)) to (\(endX), \(endY))")
         logger.info().log("Duration: \(swipeDuration)s, Delta: \(swipeDelta)px")
 
-        let physicalPoints = try await OrientationAwareCoordinates.translateBatch(
-            points: [(x: startX, y: startY), (x: endX, y: endY)],
-            for: simulatorUDID,
-            logger: logger
+        let physicalPoints = try await backend.deviceCoordinates(
+            for: [(x: startX, y: startY), (x: endX, y: endY)],
+            roots: nil,
+            on: device
         )
         let physicalStart = physicalPoints[0]
         let physicalEnd = physicalPoints[1]
@@ -110,17 +110,14 @@ struct Swipe: AsyncParsableCommand {
             ]
         )
 
-        // Create swipe events with timing controls
-        var events: [FBSimulatorHIDEvent] = []
-        
-        // Add pre-delay if specified
         if let preDelay = preDelay, preDelay > 0 {
             logger.info().log("Pre-delay: \(preDelay)s")
-            events.append(FBSimulatorHIDEvent.delay(preDelay))
         }
-        
-        // Create main swipe HID event
-        let swipeEvent = FBSimulatorHIDEvent.swipe(
+        if let postDelay = postDelay, postDelay > 0 {
+            logger.info().log("Post-delay: \(postDelay)s")
+        }
+
+        let swipeEvent = InputEvent.swipe(
             physicalStart.x,
             yStart: physicalStart.y,
             xEnd: physicalEnd.x,
@@ -128,24 +125,9 @@ struct Swipe: AsyncParsableCommand {
             delta: swipeDelta,
             duration: swipeDuration
         )
-        events.append(swipeEvent)
-        
-        // Add post-delay if specified
-        if let postDelay = postDelay, postDelay > 0 {
-            logger.info().log("Post-delay: \(postDelay)s")
-            events.append(FBSimulatorHIDEvent.delay(postDelay))
-        }
-        
-        // Execute the swipe sequence
-        let finalEvent = events.count == 1 ? events[0] : FBSimulatorHIDEvent.composite(events)
-        
-        // Perform the swipe event
-        try await HIDInteractor
-            .performHIDEvent(
-                finalEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        let finalEvent = InputEvent.delayed(swipeEvent, pre: preDelay, post: postDelay)
+
+        try await backend.perform(finalEvent, on: device)
         
         logger.info().log("Swipe gesture completed successfully")
     }

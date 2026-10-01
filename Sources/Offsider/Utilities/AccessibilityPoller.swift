@@ -4,7 +4,8 @@ import Foundation
 struct AccessibilityPoller {
     static func resolveWithPolling(
         query: AccessibilityQuery,
-        simulatorUDID: String,
+        on backend: any DeviceBackend,
+        device: DeviceID,
         waitTimeout: TimeInterval,
         pollInterval: TimeInterval,
         elementType: String? = nil,
@@ -18,13 +19,14 @@ struct AccessibilityPoller {
             logger: logger,
             resolver: AccessibilityTargetResolver.resolveTap
         ) {
-            try await AccessibilityFetcher.fetchAccessibilityElements(for: simulatorUDID, logger: logger)
+            try await backend.accessibilityRoots(for: device)
         }
     }
 
     static func resolveElementWithPolling(
         query: AccessibilityQuery,
-        simulatorUDID: String,
+        on backend: any DeviceBackend,
+        device: DeviceID,
         waitTimeout: TimeInterval,
         pollInterval: TimeInterval,
         elementType: String? = nil,
@@ -38,7 +40,7 @@ struct AccessibilityPoller {
             logger: logger,
             resolver: AccessibilityTargetResolver.resolveElement
         ) {
-            try await AccessibilityFetcher.fetchAccessibilityElements(for: simulatorUDID, logger: logger)
+            try await backend.accessibilityRoots(for: device)
         }
     }
 

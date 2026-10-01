@@ -1,26 +1,10 @@
 import ArgumentParser
 import Foundation
-import FBSimulatorControl
+import OffsiderCore
 
 @MainActor
 protocol BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive]
-}
-
-private func buildDelayedEvent(
-    preDelay: Double?,
-    mainEvent: FBSimulatorHIDEvent,
-    postDelay: Double?
-) -> FBSimulatorHIDEvent {
-    var events: [FBSimulatorHIDEvent] = []
-    if let preDelay, preDelay > 0 {
-        events.append(.delay(preDelay))
-    }
-    events.append(mainEvent)
-    if let postDelay, postDelay > 0 {
-        events.append(.delay(postDelay))
-    }
-    return events.count == 1 ? events[0] : FBSimulatorHIDEvent.composite(events)
 }
 
 private func resolveBatchTapPoint(
@@ -40,7 +24,7 @@ private func resolveBatchTapPoint(
     ) {
         let forceRefresh = !isFirstFetch
         isFirstFetch = false
-        let roots = try await context.accessibilityRoots(logger: logger, forceRefresh: forceRefresh)
+        let roots = try await context.accessibilityRoots(forceRefresh: forceRefresh)
         latestRoots = roots
         return roots
     }
@@ -104,29 +88,19 @@ extension Tap: BatchConvertible {
             resolvedRoots = resolved.roots
         }
 
-        let physicalPoint: (x: Double, y: Double)
-        if let resolvedRoots {
-            physicalPoint = try await OrientationAwareCoordinates.translate(
-                point: resolution.point,
-                roots: resolvedRoots,
-                for: context.simulatorUDID,
-                logger: logger
-            )
-        } else {
-            physicalPoint = try await OrientationAwareCoordinates.translate(
-                point: resolution.point,
-                for: context.simulatorUDID,
-                logger: logger
-            )
-        }
+        let physicalPoint = try await context.backend.deviceCoordinates(
+            for: [resolution.point],
+            roots: resolvedRoots,
+            on: context.device
+        )[0]
 
         let style = resolvedTapStyle(for: resolution, context: context)
         switch style {
         case .physical:
             return [.physicalTap(point: physicalPoint, preDelay: preDelay, postDelay: postDelay)]
         case .simulator:
-            let tapEvent = FBSimulatorHIDEvent.tapAt(x: physicalPoint.x, y: physicalPoint.y)
-            return [.hidMergeable(buildDelayedEvent(preDelay: preDelay, mainEvent: tapEvent, postDelay: postDelay))]
+            let tapEvent = InputEvent.tapAt(x: physicalPoint.x, y: physicalPoint.y)
+            return [.hidMergeable(InputEvent.delayed(tapEvent, pre: preDelay, post: postDelay))]
         case .automatic:
             throw CLIError(errorDescription: "Unexpected tap style resolution.")
         }
@@ -137,15 +111,15 @@ extension Swipe: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let swipeDuration = duration ?? 1.0
         let swipeDelta = delta ?? 50.0
-        let physicalPoints = try await OrientationAwareCoordinates.translateBatch(
-            points: [(x: startX, y: startY), (x: endX, y: endY)],
-            for: context.simulatorUDID,
-            logger: logger
+        let physicalPoints = try await context.backend.deviceCoordinates(
+            for: [(x: startX, y: startY), (x: endX, y: endY)],
+            roots: nil,
+            on: context.device
         )
         let physicalStart = physicalPoints[0]
         let physicalEnd = physicalPoints[1]
 
-        let swipeEvent = FBSimulatorHIDEvent.swipe(
+        let swipeEvent = InputEvent.swipe(
             physicalStart.x,
             yStart: physicalStart.y,
             xEnd: physicalEnd.x,
@@ -153,7 +127,7 @@ extension Swipe: BatchConvertible {
             delta: swipeDelta,
             duration: swipeDuration
         )
-        return [.hidMergeable(buildDelayedEvent(preDelay: preDelay, mainEvent: swipeEvent, postDelay: postDelay))]
+        return [.hidMergeable(InputEvent.delayed(swipeEvent, pre: preDelay, post: postDelay))]
     }
 }
 
@@ -165,7 +139,7 @@ extension Gesture: BatchConvertible {
         let gestureDuration = duration ?? preset.defaultDuration
         let gestureDelta = delta ?? preset.defaultDelta
 
-        let gestureEvent = FBSimulatorHIDEvent.swipe(
+        let gestureEvent = InputEvent.swipe(
             coords.startX,
             yStart: coords.startY,
             xEnd: coords.endX,
@@ -174,20 +148,20 @@ extension Gesture: BatchConvertible {
             duration: gestureDuration
         )
 
-        return [.hidMergeable(buildDelayedEvent(preDelay: preDelay, mainEvent: gestureEvent, postDelay: postDelay))]
+        return [.hidMergeable(InputEvent.delayed(gestureEvent, pre: preDelay, post: postDelay))]
     }
 }
 
 extension Touch: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let physicalPoint = try await OrientationAwareCoordinates.translate(
-            point: (x: pointX, y: pointY),
-            for: context.simulatorUDID,
-            logger: logger
-        )
+        let physicalPoint = try await context.backend.deviceCoordinates(
+            for: [(x: pointX, y: pointY)],
+            roots: nil,
+            on: context.device
+        )[0]
 
-        let touchDownEvent = FBSimulatorHIDEvent.touch(direction: .down, x: physicalPoint.x, y: physicalPoint.y)
-        let touchUpEvent = FBSimulatorHIDEvent.touch(direction: .up, x: physicalPoint.x, y: physicalPoint.y)
+        let touchDownEvent = InputEvent.touch(direction: .down, x: physicalPoint.x, y: physicalPoint.y)
+        let touchUpEvent = InputEvent.touch(direction: .up, x: physicalPoint.x, y: physicalPoint.y)
 
         if touchDown && touchUp {
             let holdDelay = delay ?? TapTiming.defaultHoldDuration
@@ -209,22 +183,22 @@ extension Touch: BatchConvertible {
 extension Button: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         if let duration {
-            let composite = FBSimulatorHIDEvent.composite([
-                .button(direction: .down, button: buttonType.hidButton),
+            let composite = InputEvent.composite([
+                .button(direction: .down, button: buttonType.hardwareButton),
                 .delay(duration),
-                .button(direction: .up, button: buttonType.hidButton)
+                .button(direction: .up, button: buttonType.hardwareButton)
             ])
             return [.hidMergeable(composite)]
         }
 
-        return [.hidMergeable(.shortButtonPress(buttonType.hidButton))]
+        return [.hidMergeable(.shortButtonPress(buttonType.hardwareButton))]
     }
 }
 
 extension Key: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         if let duration {
-            let composite = FBSimulatorHIDEvent.composite([
+            let composite = InputEvent.composite([
                 .keyboard(direction: .down, keyCode: UInt32(keycode)),
                 .delay(duration),
                 .keyboard(direction: .up, keyCode: UInt32(keycode))
@@ -240,7 +214,7 @@ extension KeySequence: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
         let keyDelay = delay ?? 0.1
-        var events: [FBSimulatorHIDEvent] = []
+        var events: [InputEvent] = []
 
         for (index, keycode) in parsedKeycodes.enumerated() {
             events.append(.shortKeyPress(UInt32(keycode)))
@@ -249,7 +223,7 @@ extension KeySequence: BatchConvertible {
             }
         }
 
-        return [.hidMergeable(FBSimulatorHIDEvent.composite(events))]
+        return [.hidMergeable(InputEvent.composite(events))]
     }
 }
 
@@ -257,7 +231,7 @@ extension KeyCombo: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let parsedModifiers = try parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")
 
-        var events: [FBSimulatorHIDEvent] = []
+        var events: [InputEvent] = []
         for modifier in parsedModifiers {
             events.append(.keyboard(direction: .down, keyCode: UInt32(modifier)))
         }
@@ -266,7 +240,7 @@ extension KeyCombo: BatchConvertible {
             events.append(.keyboard(direction: .up, keyCode: UInt32(modifier)))
         }
 
-        return [.hidMergeable(FBSimulatorHIDEvent.composite(events))]
+        return [.hidMergeable(InputEvent.composite(events))]
     }
 }
 
@@ -299,7 +273,7 @@ extension Type: BatchConvertible {
 
         switch context.typeSubmissionMode {
         case .composite:
-            return [.hidMergeable(FBSimulatorHIDEvent.composite(hidEvents))]
+            return [.hidMergeable(InputEvent.composite(hidEvents))]
         case .chunked:
             let chunkSize = max(1, context.typeChunkSize)
             var primitives: [BatchPrimitive] = []
@@ -307,7 +281,7 @@ extension Type: BatchConvertible {
             while start < hidEvents.count {
                 let end = min(start + chunkSize, hidEvents.count)
                 let chunkEvents = Array(hidEvents[start..<end])
-                primitives.append(.hidBarrier(FBSimulatorHIDEvent.composite(chunkEvents)))
+                primitives.append(.hidBarrier(InputEvent.composite(chunkEvents)))
                 start = end
             }
             return primitives

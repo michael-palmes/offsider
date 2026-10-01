@@ -130,16 +130,13 @@ struct Verifier {
 }
 
 extension Verifier.Dependencies {
-    static func live(session: HIDInteractor.Session, logger: OffsiderLogger) -> Self {
+    static func live(backend: any DeviceBackend, device: DeviceID) -> Self {
         Self(
             snapshot: {
-                let data = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
-                    for: session.simulatorUDID,
-                    logger: logger
-                )
+                let data = try await backend.accessibilityJSON(for: device, point: nil)
                 return try AccessibilitySnapshot(jsonData: data)
             },
-            screenshot: { try await VideoFrameUtilities.captureScreenshotData(from: session.simulator) },
+            screenshot: { try await backend.screenshotPNG(for: device) },
             sleep: { duration in try await Task.sleep(for: duration) },
             now: { ProcessInfo.processInfo.systemUptime }
         )
