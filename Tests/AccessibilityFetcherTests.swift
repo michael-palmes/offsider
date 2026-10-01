@@ -306,24 +306,54 @@ struct AccessibilityFetcherTests {
         #expect(waits == [.milliseconds(250)])
     }
 
-    @Test("Cancelling recovery process polling terminates promptly")
+    @Test("Cancelling recovery process polling terminates the child before its timeout")
     func cancellationStopsRecoveryProcess() async throws {
+        let timeout: TimeInterval = 10
+        let pidURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offsider-recovery-child-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidURL) }
+
         let startedAt = ContinuousClock.now
         let task = Task {
             try await AccessibilityFetcher.runProcess(
-                executableURL: URL(fileURLWithPath: "/bin/sleep"),
-                arguments: ["10"],
-                timeout: 10
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "echo $$ > \"$1\"; exec /bin/sleep 60", "sh", pidURL.path],
+                timeout: timeout
             )
         }
+        defer { task.cancel() }
 
-        try await Task.sleep(for: .milliseconds(50))
+        let pid = try #require(
+            await childProcessIdentifier(writtenTo: pidURL, before: startedAt + .seconds(timeout)),
+            "The recovery child process should start"
+        )
         task.cancel()
 
         await #expect(throws: CancellationError.self) {
             try await task.value
         }
-        #expect(startedAt.duration(to: .now) < .seconds(1))
+        #expect(
+            startedAt.duration(to: .now) < .seconds(timeout),
+            "Cancellation must not wait out the \(timeout) s process timeout"
+        )
+        let childExited = kill(pid, 0) == -1 && errno == ESRCH
+        #expect(childExited, "Cancellation must terminate the recovery child process")
+        if !childExited { kill(pid, SIGKILL) }
+    }
+
+    private func childProcessIdentifier(
+        writtenTo url: URL,
+        before deadline: ContinuousClock.Instant
+    ) async throws -> pid_t? {
+        while ContinuousClock.now < deadline {
+            if let contents = try? String(contentsOf: url, encoding: .utf8),
+               contents.hasSuffix("\n"),
+               let pid = pid_t(contents.dropLast()) {
+                return pid
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return nil
     }
 
     @Test("Classifies only confirmed accessibility channel failures as recoverable")
