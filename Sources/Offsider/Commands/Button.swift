@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
 import OffsiderCore
 
 enum ButtonType: String, CaseIterable, ExpressibleByArgument {
@@ -11,18 +9,18 @@ enum ButtonType: String, CaseIterable, ExpressibleByArgument {
     case sideButton = "side-button"
     case siri = "siri"
     
-    var hidButton: FBSimulatorHIDButton {
+    var hardwareButton: HardwareButton {
         switch self {
         case .applePay:
-            return FBSimulatorHIDButton(rawValue: 1)! // FBSimulatorHIDButtonApplePay
+            return .applePay
         case .home:
-            return FBSimulatorHIDButton(rawValue: 2)! // FBSimulatorHIDButtonHomeButton
+            return .home
         case .lock:
-            return FBSimulatorHIDButton(rawValue: 3)! // FBSimulatorHIDButtonLock
+            return .lock
         case .sideButton:
-            return FBSimulatorHIDButton(rawValue: 4)! // FBSimulatorHIDButtonSideButton
+            return .sideButton
         case .siri:
-            return FBSimulatorHIDButton(rawValue: 5)! // FBSimulatorHIDButtonSiri
+            return .siri
         }
     }
     
@@ -91,32 +89,25 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
 
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         logger.info().log("Pressing \(buttonType.description)")
         if let duration = duration {
             logger.info().log("Duration: \(duration) seconds")
         }
 
-        // Create button HID event
-        let buttonEvent: FBSimulatorHIDEvent
-        
+        let buttonEvent: InputEvent
         if let duration = duration {
-            // For duration-based presses, we need to create separate down/up events with delay
-            let buttonDownEvent = FBSimulatorHIDEvent.button(direction: .down, button: buttonType.hidButton)
-            let delayEvent = FBSimulatorHIDEvent.delay(duration)
-            let buttonUpEvent = FBSimulatorHIDEvent.button(direction: .up, button: buttonType.hidButton)
-
-            buttonEvent = FBSimulatorHIDEvent.composite([
-                buttonDownEvent,
-                delayEvent,
-                buttonUpEvent
+            buttonEvent = .composite([
+                .button(direction: .down, button: buttonType.hardwareButton),
+                .delay(duration),
+                .button(direction: .up, button: buttonType.hardwareButton)
             ])
         } else {
-            // Simple short button press
-            buttonEvent = FBSimulatorHIDEvent.shortButtonPress(buttonType.hidButton)
+            buttonEvent = .shortButtonPress(buttonType.hardwareButton)
         }
         
         if let progress {
@@ -124,23 +115,19 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
                 command: "button",
                 subject: buttonType.description,
                 target: buttonType.rawValue,
-                simulatorUDID: simulatorUDID,
+                backend: backend,
+                device: device,
                 options: verification,
                 styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
             )
-            try await VerifyOutput.perform(request, progress: progress, logger: logger) { _, session in
-                try await HIDInteractor.performHIDEvent(buttonEvent, in: session, logger: logger)
+            try await VerifyOutput.perform(request, progress: progress) { _, session in
+                try await session.perform(buttonEvent)
             }
             return
         }
 
         // Perform the button event
-        try await HIDInteractor
-            .performHIDEvent(
-                buttonEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        try await backend.perform(buttonEvent, on: device)
         
         logger.info().log("\(buttonType.description) press completed successfully")
     }

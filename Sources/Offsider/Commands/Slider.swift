@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderCore
 
 struct Slider: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -67,15 +68,17 @@ struct Slider: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let target = SliderTarget(backend: route.backend, device: route.device)
+        try await target.backend.prepare()
 
         let query = try accessibilityQuery()
         let targetNormalized = value / 100.0
 
         let match = try await AccessibilityPoller.resolveElementWithPolling(
             query: query,
-            simulatorUDID: simulatorUDID,
+            on: target.backend,
+            device: target.device,
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,
             elementType: elementType,
@@ -86,6 +89,7 @@ struct Slider: AsyncParsableCommand {
             initialMatch: match,
             query: query,
             targetNormalized: targetNormalized,
+            target: target,
             logger: logger
         )
 
@@ -148,6 +152,7 @@ struct Slider: AsyncParsableCommand {
         initialMatch: AccessibilityMatch,
         query: AccessibilityQuery,
         targetNormalized: Double,
+        target: SliderTarget,
         logger: OffsiderLogger
     ) async throws -> String {
         let dragPlan = try makeDragPlan(
@@ -160,13 +165,13 @@ struct Slider: AsyncParsableCommand {
         )
 
         if abs(dragPlan.currentNormalized - targetNormalized) > Self.alreadyAtTargetTolerance {
-            try await performSliderDrag(dragPlan, logger: logger)
+            try await performSliderDrag(dragPlan, on: target)
         }
 
         let observedValue = try await pollObservedSliderValue(
             query: query,
             targetNormalized: targetNormalized,
-            logger: logger
+            on: target
         )
         guard observedValue.isWithinTolerance else {
             throw CLIError(
@@ -176,29 +181,28 @@ struct Slider: AsyncParsableCommand {
         return observedValue.rawValue ?? formatNormalized(observedValue.normalizedValue)
     }
 
-    private func performSliderDrag(_ dragPlan: SliderDragPlan, logger: OffsiderLogger) async throws {
-        let physicalPoints = try await OrientationAwareCoordinates.translateBatch(
-            points: [dragPlan.logicalStart, dragPlan.logicalEnd],
-            for: simulatorUDID,
-            logger: logger
+    private func performSliderDrag(_ dragPlan: SliderDragPlan, on target: SliderTarget) async throws {
+        let physicalPoints = try await target.backend.deviceCoordinates(
+            for: [dragPlan.logicalStart, dragPlan.logicalEnd],
+            roots: nil,
+            on: target.device
         )
         let physicalStart = physicalPoints[0]
         let physicalEnd = physicalPoints[1]
 
-        try await HIDInteractor.performCompositeDrag(
+        let dragEvent = try InputEvent.compositeDrag(
             from: physicalStart,
             to: physicalEnd,
             duration: Self.directDragDuration,
             steps: Self.directDragSteps,
             initialHold: Self.directDragInitialHold,
-            finalHold: Self.directDragFinalHold,
-            for: simulatorUDID,
-            logger: logger
+            finalHold: Self.directDragFinalHold
         )
+        try await target.backend.perform(dragEvent, on: target.device)
     }
 
-    private func resolveSliderElement(query: AccessibilityQuery, logger: OffsiderLogger) async throws -> AccessibilityMatch {
-        let roots = try await AccessibilityFetcher.fetchAccessibilityElements(for: simulatorUDID, logger: logger)
+    private func resolveSliderElement(query: AccessibilityQuery, on target: SliderTarget) async throws -> AccessibilityMatch {
+        let roots = try await target.backend.accessibilityRoots(for: target.device)
         let match = try AccessibilityTargetResolver.resolveElement(
             roots: roots,
             query: query,
@@ -213,14 +217,14 @@ struct Slider: AsyncParsableCommand {
     private func pollObservedSliderValue(
         query: AccessibilityQuery,
         targetNormalized: Double,
-        logger: OffsiderLogger
+        on target: SliderTarget
     ) async throws -> SliderObservedValue {
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(Self.verificationTimeout)
         var lastObservedValue: SliderObservedValue?
 
         repeat {
-            let match = try await resolveSliderElement(query: query, logger: logger)
+            let match = try await resolveSliderElement(query: query, on: target)
             let rawValue = match.element.normalizedValue
             let normalizedValue = try parseNormalizedAXValue(rawValue)
             let observedValue = SliderObservedValue(
@@ -234,7 +238,7 @@ struct Slider: AsyncParsableCommand {
                 if clock.now >= deadline {
                     return observedValue
                 }
-                let stableMatch = try await resolveSliderElement(query: query, logger: logger)
+                let stableMatch = try await resolveSliderElement(query: query, on: target)
                 let stableRawValue = stableMatch.element.normalizedValue
                 let stableNormalizedValue = try parseNormalizedAXValue(stableRawValue)
                 let stableObservedValue = SliderObservedValue(
@@ -327,6 +331,11 @@ struct Slider: AsyncParsableCommand {
     private func formatNormalized(_ value: Double) -> String {
         String(format: "%.3f", value)
     }
+}
+
+private struct SliderTarget {
+    let backend: any DeviceBackend
+    let device: DeviceID
 }
 
 private struct SliderDragPlan {

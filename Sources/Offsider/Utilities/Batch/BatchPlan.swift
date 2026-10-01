@@ -1,9 +1,9 @@
 import Foundation
-import FBSimulatorControl
+import OffsiderCore
 
 enum BatchPrimitive {
-    case hidMergeable(FBSimulatorHIDEvent)
-    case hidBarrier(FBSimulatorHIDEvent)
+    case hidMergeable(InputEvent)
+    case hidBarrier(InputEvent)
     case hostSleep(TimeInterval)
     case physicalTap(point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?)
 }
@@ -11,4 +11,3 @@ enum BatchPrimitive {
 struct BatchPlan {
     let primitives: [BatchPrimitive]
 }
-

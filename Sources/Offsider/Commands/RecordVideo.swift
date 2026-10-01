@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBSimulatorControl
-@preconcurrency import FBControlCore
 import AVFoundation
 
 struct RecordVideo: AsyncParsableCommand {
@@ -41,26 +39,13 @@ struct RecordVideo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        try await performGlobalSetup(logger: logger)
-
-        let trimmedUDID = simulatorUDID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedUDID.isEmpty else {
-            throw CLIError(errorDescription: "Simulator UDID cannot be empty. Use --udid to specify a simulator.")
-        }
-
-        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
-        guard let targetSimulator = simulatorSet.allSimulators.first(where: { $0.udid == trimmedUDID }) else {
-            throw CLIError(errorDescription: "Simulator with UDID \(trimmedUDID) not found.")
-        }
-
-        guard targetSimulator.state == .booted else {
-            let stateDescription = FBiOSTargetStateStringFromState(targetSimulator.state)
-            throw CLIError(errorDescription: "Simulator \(trimmedUDID) is not booted. Current state: \(stateDescription)")
-        }
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        try await backend.prepare()
+        let booted = try await backend.requireBootedDevice(route.device)
 
         let outputURL = try prepareOutputURL()
-        FileHandle.standardError.write(Data("Recording simulator \(targetSimulator.udid) to \(outputURL.path)\n".utf8))
+        FileHandle.standardError.write(Data("Recording simulator \(booted.id.rawValue) to \(outputURL.path)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop recording\n".utf8))
 
         let cancellationFlag = CancellationFlag()
@@ -73,7 +58,8 @@ struct RecordVideo: AsyncParsableCommand {
 
         do {
             try await recordVideo(
-                simulator: targetSimulator,
+                backend: backend,
+                device: booted.id,
                 outputURL: outputURL,
                 fps: fps,
                 quality: quality,
@@ -88,14 +74,15 @@ struct RecordVideo: AsyncParsableCommand {
     }
 
     private func recordVideo(
-        simulator: FBSimulator,
+        backend: any DeviceBackend,
+        device: DeviceID,
         outputURL: URL,
         fps: Int,
         quality: Int,
         scale: Double,
         cancellationFlag: CancellationFlag
     ) async throws {
-        let initialFrameData = try await VideoFrameUtilities.captureScreenshotData(from: simulator)
+        let initialFrameData = try await backend.screenshotPNG(for: device)
         guard let initialImage = VideoFrameUtilities.makeCGImage(from: initialFrameData) else {
             throw CLIError(errorDescription: "Failed to decode simulator screenshot")
         }
@@ -130,7 +117,7 @@ struct RecordVideo: AsyncParsableCommand {
             let frameStart = Date()
 
             do {
-                let frameData = try await VideoFrameUtilities.captureScreenshotData(from: simulator)
+                let frameData = try await backend.screenshotPNG(for: device)
                 guard let cgImage = VideoFrameUtilities.makeCGImage(from: frameData) else {
                     FileHandle.standardError.write(Data("Unable to decode screenshot frame\n".utf8))
                     continue

@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBSimulatorControl
-@preconcurrency import FBControlCore
 
 struct Screenshot: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -17,26 +15,14 @@ struct Screenshot: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        try await backend.prepare()
+        let booted = try await backend.requireBootedDevice(route.device)
 
-        let trimmedUDID = simulatorUDID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedUDID.isEmpty else {
-            throw CLIError(errorDescription: "Simulator UDID cannot be empty. Use --udid to specify a simulator.")
-        }
+        let outputURL = try prepareOutputURL(deviceName: booted.name)
 
-        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
-        guard let targetSimulator = simulatorSet.allSimulators.first(where: { $0.udid == trimmedUDID }) else {
-            throw CLIError(errorDescription: "Simulator with UDID \(trimmedUDID) not found.")
-        }
-
-        guard targetSimulator.state == .booted else {
-            let stateDescription = FBiOSTargetStateStringFromState(targetSimulator.state)
-            throw CLIError(errorDescription: "Simulator \(trimmedUDID) is not booted. Current state: \(stateDescription)")
-        }
-
-        let outputURL = try prepareOutputURL(simulator: targetSimulator)
-
-        let screenshotData = try await VideoFrameUtilities.captureScreenshotData(from: targetSimulator)
+        let screenshotData = try await backend.screenshotPNG(for: booted.id)
 
         try screenshotData.write(to: outputURL)
 
@@ -44,7 +30,7 @@ struct Screenshot: AsyncParsableCommand {
         print(outputURL.path)
     }
 
-    private func prepareOutputURL(simulator: FBSimulator) throws -> URL {
+    private func prepareOutputURL(deviceName: String) throws -> URL {
         let fileManager = FileManager.default
 
         let providedPath = output?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -53,7 +39,7 @@ struct Screenshot: AsyncParsableCommand {
             resolvedPath = (providedPath as NSString).expandingTildeInPath
         } else {
             let timestamp = Self.formatTimestamp(Date())
-            resolvedPath = "Simulator Screenshot - \(simulator.name) - \(timestamp).png"
+            resolvedPath = "Simulator Screenshot - \(deviceName) - \(timestamp).png"
         }
 
         let baseURL: URL
@@ -66,7 +52,7 @@ struct Screenshot: AsyncParsableCommand {
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: baseURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
             let timestamp = Self.formatTimestamp(Date())
-            let filename = "Simulator Screenshot - \(simulator.name) - \(timestamp).png"
+            let filename = "Simulator Screenshot - \(deviceName) - \(timestamp).png"
             let directoryURL = baseURL
             if !fileManager.fileExists(atPath: directoryURL.path) {
                 try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)

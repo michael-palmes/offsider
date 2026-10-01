@@ -1,7 +1,6 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
+import OffsiderCore
 
 struct Touch: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -66,43 +65,40 @@ struct Touch: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         logger.info().log("Performing touch events at (\(pointX), \(pointY))")
 
-        let physicalPoint = try await OrientationAwareCoordinates.translate(
-            point: (x: pointX, y: pointY),
-            for: simulatorUDID,
-            logger: logger
-        )
+        let physicalPoint = try await backend.deviceCoordinates(for: [(x: pointX, y: pointY)], roots: nil, on: device)[0]
 
-        var primitives: [HIDBrokerPrimitive] = []
+        var steps: [DetachedTouchStep] = []
         if touchDown && touchUp {
             // Send down and up as separate HID submissions so iOS recognizers
             // observe a real hold duration for long-press gestures.
             let touchDelay = delay ?? TapTiming.defaultHoldDuration
 
             logger.info().log("Touch down")
-            primitives.append(.touch(.down, x: physicalPoint.x, y: physicalPoint.y))
+            steps.append(.down(x: physicalPoint.x, y: physicalPoint.y))
 
             if touchDelay > 0 {
                 logger.info().log("Delay: \(touchDelay) seconds")
-                primitives.append(.delay(touchDelay))
+                steps.append(.hold(touchDelay))
             }
 
             logger.info().log("Touch up")
-            primitives.append(.touch(.up, x: physicalPoint.x, y: physicalPoint.y))
+            steps.append(.up(x: physicalPoint.x, y: physicalPoint.y))
         } else if touchDown {
             logger.info().log("Touch down")
-            primitives.append(.touch(.down, x: physicalPoint.x, y: physicalPoint.y))
+            steps.append(.down(x: physicalPoint.x, y: physicalPoint.y))
         } else {
             logger.info().log("Touch up")
-            primitives.append(.touch(.up, x: physicalPoint.x, y: physicalPoint.y))
+            steps.append(.up(x: physicalPoint.x, y: physicalPoint.y))
         }
 
-        try HIDBroker.sendTouchPrimitives(primitives, simulatorUDID: simulatorUDID)
+        try await backend.sendDetachedTouch(steps, to: device)
         
         logger.info().log("Touch events completed successfully")
     }

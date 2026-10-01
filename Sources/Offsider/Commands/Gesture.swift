@@ -1,7 +1,6 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
+import OffsiderCore
 
 enum GesturePreset: String, CaseIterable, ExpressibleByArgument {
     case scrollUp = "scroll-up"
@@ -165,9 +164,10 @@ struct Gesture: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         // Use provided dimensions or defaults
         let width = screenWidth ?? 390.0
@@ -185,17 +185,14 @@ struct Gesture: AsyncParsableCommand {
         logger.info().log("Coordinates: (\(coords.startX), \(coords.startY)) to (\(coords.endX), \(coords.endY))")
         logger.info().log("Duration: \(gestureDuration)s, Delta: \(gestureDelta)px")
         
-        // Create gesture events with timing controls
-        var events: [FBSimulatorHIDEvent] = []
-        
-        // Add pre-delay if specified
         if let preDelay = preDelay, preDelay > 0 {
             logger.info().log("Pre-delay: \(preDelay)s")
-            events.append(FBSimulatorHIDEvent.delay(preDelay))
         }
-        
-        // Add the main gesture
-        let gestureEvent = FBSimulatorHIDEvent.swipe(
+        if let postDelay = postDelay, postDelay > 0 {
+            logger.info().log("Post-delay: \(postDelay)s")
+        }
+
+        let gestureEvent = InputEvent.swipe(
             coords.startX,
             yStart: coords.startY,
             xEnd: coords.endX,
@@ -203,23 +200,9 @@ struct Gesture: AsyncParsableCommand {
             delta: gestureDelta,
             duration: gestureDuration
         )
-        events.append(gestureEvent)
-        
-        // Add post-delay if specified
-        if let postDelay = postDelay, postDelay > 0 {
-            logger.info().log("Post-delay: \(postDelay)s")
-            events.append(FBSimulatorHIDEvent.delay(postDelay))
-        }
-        
-        // Execute the gesture sequence
-        let finalEvent = events.count == 1 ? events[0] : FBSimulatorHIDEvent.composite(events)
-        
-        try await HIDInteractor
-            .performHIDEvent(
-                finalEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        let finalEvent = InputEvent.delayed(gestureEvent, pre: preDelay, post: postDelay)
+
+        try await backend.perform(finalEvent, on: device)
         
         logger.info().log("Gesture completed successfully")
     }

@@ -1,7 +1,6 @@
 import ArgumentParser
 import Foundation
-import FBControlCore
-import FBSimulatorControl
+import OffsiderCore
 
 struct KeyCombo: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -62,9 +61,10 @@ struct KeyCombo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-
-        try await performGlobalSetup(logger: logger)
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        let device = route.device
+        try await backend.prepare()
 
         let parsedModifiers = try parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")
 
@@ -72,29 +72,17 @@ struct KeyCombo: AsyncParsableCommand {
 
         // Build composite event:
         //   modifierDown1, modifierDown2, ..., shortKeyPress(key), ..., modifierUp2, modifierUp1
-        var events: [FBSimulatorHIDEvent] = []
-
-        // Press modifiers down in order
+        var events: [InputEvent] = []
         for modifier in parsedModifiers {
-            events.append(FBSimulatorHIDEvent.keyboard(direction: .down, keyCode: UInt32(modifier)))
+            events.append(.keyboard(direction: .down, keyCode: UInt32(modifier)))
         }
-
-        // Press and release the target key
-        events.append(FBSimulatorHIDEvent.shortKeyPress(UInt32(key)))
-
-        // Release modifiers in reverse order
+        events.append(.shortKeyPress(UInt32(key)))
         for modifier in parsedModifiers.reversed() {
-            events.append(FBSimulatorHIDEvent.keyboard(direction: .up, keyCode: UInt32(modifier)))
+            events.append(.keyboard(direction: .up, keyCode: UInt32(modifier)))
         }
+        let comboEvent = InputEvent.composite(events)
 
-        let comboEvent = FBSimulatorHIDEvent.composite(events)
-
-        try await HIDInteractor
-            .performHIDEvent(
-                comboEvent,
-                for: simulatorUDID,
-                logger: logger
-            )
+        try await backend.perform(comboEvent, on: device)
 
         logger.info().log("Key combo completed successfully")
     }

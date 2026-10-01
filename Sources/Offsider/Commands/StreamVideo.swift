@@ -1,7 +1,5 @@
 import ArgumentParser
 import Foundation
-import FBSimulatorControl
-@preconcurrency import FBControlCore
 
 struct StreamVideo: AsyncParsableCommand {
     enum OutputFormat: String, ExpressibleByArgument {
@@ -47,23 +45,10 @@ struct StreamVideo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await setup(logger: logger)
-        try await performGlobalSetup(logger: logger)
-
-        let trimmedUDID = simulatorUDID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedUDID.isEmpty else {
-            throw CLIError(errorDescription: "Simulator UDID cannot be empty. Use --udid to specify a simulator.")
-        }
-
-        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
-        guard let targetSimulator = simulatorSet.allSimulators.first(where: { $0.udid == trimmedUDID }) else {
-            throw CLIError(errorDescription: "Simulator with UDID \(trimmedUDID) not found.")
-        }
-
-        guard targetSimulator.state == .booted else {
-            let stateDescription = FBiOSTargetStateStringFromState(targetSimulator.state)
-            throw CLIError(errorDescription: "Simulator \(trimmedUDID) is not booted. Current state: \(stateDescription)")
-        }
+        let route = try await DeviceRouter.route(simulatorUDID, logger: logger)
+        let backend = route.backend
+        try await backend.prepare()
+        let booted = try await backend.requireBootedDevice(route.device)
 
         let cancellationFlag = CancellationFlag()
         let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
@@ -75,20 +60,21 @@ struct StreamVideo: AsyncParsableCommand {
 
         switch format {
         case .bgra:
-            try await streamBGRA(to: targetSimulator, cancellationFlag: cancellationFlag)
+            try await streamBGRA(from: backend, device: booted.id, cancellationFlag: cancellationFlag)
         default:
-            try await streamCompressedFrames(from: targetSimulator, format: format, cancellationFlag: cancellationFlag)
+            try await streamCompressedFrames(from: backend, device: booted.id, format: format, cancellationFlag: cancellationFlag)
         }
     }
 
     // MARK: - Screenshot-based streaming
 
     private func streamCompressedFrames(
-        from simulator: FBSimulator,
+        from backend: any DeviceBackend,
+        device: DeviceID,
         format: OutputFormat,
         cancellationFlag: CancellationFlag
     ) async throws {
-        FileHandle.standardError.write(Data("Starting screenshot-based video stream from simulator \(simulator.udid)...\n".utf8))
+        FileHandle.standardError.write(Data("Starting screenshot-based video stream from simulator \(device.rawValue)...\n".utf8))
         FileHandle.standardError.write(Data("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
@@ -115,7 +101,7 @@ struct StreamVideo: AsyncParsableCommand {
             let frameStartTime = Date()
 
             do {
-                let screenshotData = try await VideoFrameUtilities.captureScreenshotData(from: simulator)
+                let screenshotData = try await backend.screenshotPNG(for: device)
                 let processedData = try await VideoFrameUtilities.processJPEGData(screenshotData, scale: scale, quality: quality)
 
                 switch format {
@@ -168,55 +154,27 @@ struct StreamVideo: AsyncParsableCommand {
     // MARK: - BGRA streaming
 
     private func streamBGRA(
-        to simulator: FBSimulator,
+        from backend: any DeviceBackend,
+        device: DeviceID,
         cancellationFlag: CancellationFlag
     ) async throws {
-        FileHandle.standardError.write(Data("Starting BGRA video stream from simulator \(simulator.udid)...\n".utf8))
+        guard let streamer = backend as? any RawVideoStreaming else {
+            throw CLIError(errorDescription: "BGRA streaming is not supported for device \(device.rawValue).")
+        }
+
+        FileHandle.standardError.write(Data("Starting BGRA video stream from simulator \(device.rawValue)...\n".utf8))
         FileHandle.standardError.write(Data("Format: bgra, Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Note: This is raw pixel data. Use ffmpeg to convert:\n".utf8))
         FileHandle.standardError.write(Data("  offsider stream-video --format bgra --udid <UDID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
-        let config = FBVideoStreamConfiguration(
-            format: .bgra(),
-            framesPerSecond: NSNumber(value: fps),
-            rateControl: .quality(NSNumber(value: Double(quality) / 100.0)),
-            scaleFactor: NSNumber(value: scale),
-            keyFrameRate: nil
+        try await streamer.streamBGRA(
+            from: device,
+            fps: fps,
+            quality: quality,
+            scale: scale,
+            to: STDOUT_FILENO,
+            isCancelled: { await cancellationFlag.isCancelled() }
         )
-
-        let stdoutConsumer = FBFileWriter.syncWriter(withFileDescriptor: STDOUT_FILENO, closeOnEndOfFile: false)
-        var videoStream: (any FBVideoStream)?
-        var isStreaming = false
-
-        do {
-            let stream = try await simulator.createStream(configuration: config)
-            videoStream = stream
-            try await stream.startStreamingAsync(stdoutConsumer)
-            isStreaming = true
-            try await Task.sleep(nanoseconds: 1_000_000_000)
-            FileHandle.standardError.write(Data("BGRA stream is now running...\n".utf8))
-
-            while true {
-                if Task.isCancelled {
-                    break
-                }
-                if await cancellationFlag.isCancelled() {
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-
-            FileHandle.standardError.write(Data("\nStopping BGRA stream...\n".utf8))
-            isStreaming = false
-            try await stream.stopStreamingAsync()
-            FileHandle.standardError.write(Data("BGRA stream stopped\n".utf8))
-        } catch {
-            if isStreaming, let videoStream {
-                isStreaming = false
-                try? await videoStream.stopStreamingAsync()
-            }
-            throw CLIError(errorDescription: "Failed to stream BGRA video: \(error.localizedDescription)")
-        }
     }
 }

@@ -1,0 +1,114 @@
+import Foundation
+import OffsiderCore
+import Testing
+@testable import Offsider
+
+struct FakeInputSessionError: Error, Equatable {}
+
+@MainActor
+final class RecordingInputSession: InputSession {
+    enum Call: Equatable {
+        case perform(InputEvent)
+        case physicalTap(x: Double, y: Double, preDelay: Double?, postDelay: Double?)
+    }
+
+    let device = DeviceID(rawValue: "recording", platform: .ios)
+    private let failingEvent: InputEvent?
+    private(set) var calls: [Call] = []
+    private(set) var isClosed = false
+
+    init(failingOn failingEvent: InputEvent? = nil) {
+        self.failingEvent = failingEvent
+    }
+
+    func perform(_ event: InputEvent) async throws {
+        calls.append(.perform(event))
+        if event == failingEvent {
+            throw FakeInputSessionError()
+        }
+    }
+
+    func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+        calls.append(.physicalTap(x: point.x, y: point.y, preDelay: preDelay, postDelay: postDelay))
+    }
+
+    func close() async {
+        isClosed = true
+    }
+}
+
+@Suite("Batch Plan Runner Tests")
+@MainActor
+struct BatchPlanRunnerTests {
+    private let first = InputEvent.tapAt(x: 10, y: 20)
+    private let second = InputEvent.shortKeyPress(40)
+    private let third = InputEvent.delay(0.5)
+
+    private func run(_ primitives: [BatchPrimitive], on session: RecordingInputSession) async throws {
+        try await BatchPlanRunner(session: session, logger: OffsiderLogger()).run(BatchPlan(primitives: primitives))
+    }
+
+    @Test("a lone mergeable event is sent bare")
+    func loneMergeableEventIsSentBare() async throws {
+        let session = RecordingInputSession()
+
+        try await run([.hidMergeable(first)], on: session)
+
+        #expect(session.calls == [.perform(first)])
+    }
+
+    @Test("consecutive mergeable events are sent as one composite")
+    func consecutiveMergeableEventsAreSentAsOneComposite() async throws {
+        let session = RecordingInputSession()
+
+        try await run([.hidMergeable(first), .hidMergeable(second), .hidMergeable(third)], on: session)
+
+        #expect(session.calls == [.perform(.composite([first, second, third]))])
+    }
+
+    @Test("a barrier flushes pending events before it is sent alone")
+    func barrierFlushesPendingEventsFirst() async throws {
+        let session = RecordingInputSession()
+
+        try await run([.hidMergeable(first), .hidBarrier(second), .hidMergeable(third)], on: session)
+
+        #expect(session.calls == [.perform(first), .perform(second), .perform(third)])
+    }
+
+    @Test("a host sleep flushes pending events")
+    func hostSleepFlushesPendingEvents() async throws {
+        let session = RecordingInputSession()
+
+        try await run([.hidMergeable(first), .hostSleep(0), .hidMergeable(second)], on: session)
+
+        #expect(session.calls == [.perform(first), .perform(second)])
+    }
+
+    @Test("a physical tap flushes pending events and taps once")
+    func physicalTapFlushesThenTapsOnce() async throws {
+        let session = RecordingInputSession()
+
+        try await run([
+            .hidMergeable(first),
+            .physicalTap(point: (x: 30, y: 40), preDelay: 0.25, postDelay: nil),
+            .hidMergeable(second)
+        ], on: session)
+
+        #expect(session.calls == [
+            .perform(first),
+            .physicalTap(x: 30, y: 40, preDelay: 0.25, postDelay: nil),
+            .perform(second)
+        ])
+    }
+
+    @Test("a failure stops the plan without resending earlier events")
+    func failureStopsPlanWithoutResending() async throws {
+        let session = RecordingInputSession(failingOn: second)
+
+        await #expect(throws: FakeInputSessionError.self) {
+            try await run([.hidBarrier(first), .hidBarrier(second), .hidMergeable(third)], on: session)
+        }
+
+        #expect(session.calls == [.perform(first), .perform(second)])
+    }
+}
