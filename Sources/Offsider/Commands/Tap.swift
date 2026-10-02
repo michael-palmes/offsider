@@ -40,6 +40,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active (default: 0.25).")
     var pollInterval: Double = 0.25
 
+    @Flag(name: .customLong("allow-offscreen"), help: "Resolve elements whose frame is outside the screen (off by default: selectors prefer on-screen matches).")
+    var allowOffscreen: Bool = false
+
     @OptionGroup
     var verification: VerificationOptions
 
@@ -118,16 +121,24 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        try await execute(on: route, progress: progress, logger: logger)
+    }
+
+    /// Resolves and sends the tap on `route`; tests pass a fake backend here.
+    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger) async throws {
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
 
         let resolution: TapResolution
         let resolvedDescription: String
+        let resolvedTree: UITree?
 
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
             resolvedDescription = VerifyOutput.pointDescription(x: pointX, y: pointY)
+            resolvedTree = nil
+            await warnIfOffScreen(x: pointX, y: pointY, on: route)
         } else {
             let query: AccessibilityQuery
             if let elementID {
@@ -140,28 +151,26 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.")
             }
 
-            do {
-                resolution = try await AccessibilityPoller.resolveWithPolling(
-                    query: query,
-                    on: backend,
-                    device: device,
-                    waitTimeout: waitTimeout,
-                    pollInterval: pollInterval,
-                    transientGrace: progress == nil ? 0 : verification.resolvedTimeout,
-                    elementType: elementType,
-                    logger: logger
-                )
-            } catch let error as ElementResolutionError {
-                print("Warning: \(error.localizedDescription) No tap performed.", to: &standardError)
-                throw error
-            }
+            let polled = try await AccessibilityPoller.resolveWithPolling(
+                query: query,
+                on: backend,
+                device: device,
+                waitTimeout: waitTimeout,
+                pollInterval: pollInterval,
+                transientGrace: progress == nil ? 0 : verification.resolvedTimeout,
+                elementType: elementType,
+                allowOffscreen: allowOffscreen,
+                logger: logger
+            )
+            resolution = polled.value
+            resolvedTree = polled.tree
 
             resolvedDescription = "\(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y))"
         }
 
         logger.info().log("Tapping \(resolvedDescription)")
 
-        let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: nil, on: device)[0]
+        let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: resolvedTree, on: device)[0]
 
         let style = resolvedTapStyle(for: resolution)
         if let progress {
@@ -194,6 +203,18 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
         logger.info().log("Tap completed successfully")
         print(Self.completionLine(selector: pointX == nil ? verifyTarget : nil, at: resolution.point))
+    }
+
+    /// Warns, never refuses: an iPad app in a window can be smaller than the screen. `-x/-y` and `screenInfo` share points or dp.
+    private func warnIfOffScreen(x: Double, y: Double, on route: DeviceRouter.Route) async {
+        guard let screen = try? await route.backend.screenInfo(for: route.device), screen.width > 0, screen.height > 0 else {
+            return
+        }
+        let bounds = UIFrame(x: 0, y: 0, width: screen.width, height: screen.height)
+        guard !bounds.contains(UIPoint(x: x, y: y)) else {
+            return
+        }
+        print("Warning: \(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing.", to: &standardError)
     }
 
     /// `✓ Tap at (x, y) ...` for coordinates; `✓ Tap on id=X at (x, y) ...` for a selector.

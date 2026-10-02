@@ -1,6 +1,12 @@
 import Foundation
 import OffsiderCore
 
+/// A resolution and the tree it came from, so callers reuse that tree instead of reading another.
+struct Polled<T> {
+    let value: T
+    let tree: UITree
+}
+
 @MainActor
 struct AccessibilityPoller {
     /// `transientGrace` retries a transient tree failure for that long even without `--wait-timeout` (for `--verify`).
@@ -12,16 +18,17 @@ struct AccessibilityPoller {
         pollInterval: TimeInterval,
         transientGrace: TimeInterval = 0,
         elementType: String? = nil,
+        allowOffscreen: Bool = false,
         logger: OffsiderLogger
-    ) async throws -> TapResolution {
+    ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
             query: query,
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,
             transientGrace: transientGrace,
             elementType: elementType,
-            logger: logger,
-            resolver: AccessibilityTargetResolver.resolveTap
+            allowOffscreen: allowOffscreen,
+            logger: logger
         ) {
             try await backend.accessibilityTree(for: device)
         }
@@ -34,19 +41,21 @@ struct AccessibilityPoller {
         waitTimeout: TimeInterval,
         pollInterval: TimeInterval,
         elementType: String? = nil,
+        allowOffscreen: Bool = false,
         logger: OffsiderLogger
-    ) async throws -> AccessibilityMatch {
-        try await pollForResolution(
-            query: query,
+    ) async throws -> Polled<AccessibilityMatch> {
+        try await poll(
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,
             transientGrace: 0,
-            elementType: elementType,
             logger: logger,
-            resolver: AccessibilityTargetResolver.resolveElement
-        ) {
-            try await backend.accessibilityTree(for: device)
-        }
+            resolver: { roots in
+                try AccessibilityTargetResolver.resolveElement(
+                    roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
+                )
+            },
+            treeFetcher: { try await backend.accessibilityTree(for: device) }
+        )
     }
 
     static func pollForResolution(
@@ -55,32 +64,33 @@ struct AccessibilityPoller {
         pollInterval: TimeInterval,
         transientGrace: TimeInterval = 0,
         elementType: String?,
+        allowOffscreen: Bool = false,
         logger: OffsiderLogger,
         treeFetcher: () async throws -> UITree
-    ) async throws -> TapResolution {
-        try await pollForResolution(
-            query: query,
+    ) async throws -> Polled<TapResolution> {
+        try await poll(
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,
             transientGrace: transientGrace,
-            elementType: elementType,
             logger: logger,
-            resolver: AccessibilityTargetResolver.resolveTap,
+            resolver: { roots in
+                try AccessibilityTargetResolver.resolveTap(
+                    roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
+                )
+            },
             treeFetcher: treeFetcher
         )
     }
 
-    /// Missing elements retry until `waitTimeout`; transient read failures until the larger window, and at least once.
-    private static func pollForResolution<T>(
-        query: AccessibilityQuery,
+    /// Missing or off-screen elements retry until `waitTimeout`; transient read failures until the larger window, and at least once.
+    private static func poll<T>(
         waitTimeout: TimeInterval,
         pollInterval: TimeInterval,
         transientGrace: TimeInterval,
-        elementType: String?,
         logger: OffsiderLogger,
-        resolver: ([UINode], AccessibilityQuery, String?) throws -> T,
+        resolver: ([UINode]) throws -> T,
         treeFetcher: () async throws -> UITree
-    ) async throws -> T {
+    ) async throws -> Polled<T> {
         let clock = ContinuousClock()
         let start = clock.now
         let findDeadline = start + .seconds(waitTimeout)
@@ -99,9 +109,10 @@ struct AccessibilityPoller {
                 continue
             }
             do {
-                return try resolver(tree.roots, query, elementType)
-            } catch let error as ElementResolutionError where error.isNotFound && clock.now < findDeadline {
-                logger.info().log("Element not found, retrying in \(pollInterval)s…")
+                return Polled(value: try resolver(tree.roots), tree: tree)
+            } catch let error as ElementResolutionError where error.isRetryable && clock.now < findDeadline {
+                let reason = error.isOffScreen ? "Element off screen" : "Element not found"
+                logger.info().log("\(reason), retrying in \(pollInterval)s…")
                 try await Task.sleep(for: .seconds(pollInterval))
             }
         }

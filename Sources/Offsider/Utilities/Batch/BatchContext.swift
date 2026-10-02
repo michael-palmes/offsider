@@ -3,8 +3,10 @@ import Foundation
 import OffsiderCore
 
 enum AXCachePolicy: String, CaseIterable, ExpressibleByArgument {
+    /// Reuses the latest tree until a step sends input or sleeps.
     case perBatch
     case perStep
+    /// An alias of `perStep`, kept for existing scripts.
     case none
 }
 
@@ -48,9 +50,7 @@ final class BatchContext {
 
     func accessibilityTree(forceRefresh: Bool = false) async throws -> UITree {
         switch axCachePolicy {
-        case .none:
-            return try await backend.accessibilityTree(for: device)
-        case .perStep:
+        case .perStep, .none:
             return try await backend.accessibilityTree(for: device)
         case .perBatch:
             if !forceRefresh, let cachedTree {
@@ -60,6 +60,17 @@ final class BatchContext {
             cachedTree = tree
             return tree
         }
+    }
+
+    /// Drops the cached tree; a step that sent input or slept may have changed the screen.
+    func invalidateTree() {
+        cachedTree = nil
+    }
+
+    /// Caches a tree a step read itself, so the next selector step can reuse it under `perBatch`.
+    func remember(_ tree: UITree) {
+        guard axCachePolicy == .perBatch else { return }
+        cachedTree = tree
     }
 }
 

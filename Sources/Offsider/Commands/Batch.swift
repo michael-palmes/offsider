@@ -34,7 +34,7 @@ struct Batch: AsyncParsableCommand {
     @Flag(name: .customLong("stdin"), help: "Read steps from stdin (one step per line).")
     var useStdin: Bool = false
 
-    @Option(name: .customLong("ax-cache"), help: "Accessibility snapshot cache policy for selector-based taps.")
+    @Option(name: .customLong("ax-cache"), help: "Accessibility tree reuse for selector steps: perBatch reuses the latest read until a step sends input or sleeps; perStep reads fresh for every selector step; none is an alias of perStep.")
     var axCachePolicy: AXCachePolicy = .perBatch
 
     @Option(name: .customLong("type-submission"), help: "Type step submission mode.")
@@ -148,6 +148,12 @@ struct Batch: AsyncParsableCommand {
             do {
                 let tokens = try ShellTokenizer.tokenize(line)
                 stepName = tokens.first ?? "<empty>"
+                // Also after a failure: a step can send input before it fails.
+                defer {
+                    if BatchStepKind(rawValue: stepName)?.mayChangeScreen == true {
+                        context.invalidateTree()
+                    }
+                }
                 let primitives = try await BatchStepParser.parseStepTokens(
                     tokens,
                     deviceID: context.device.rawValue,

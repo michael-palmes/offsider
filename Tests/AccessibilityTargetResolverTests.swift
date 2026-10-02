@@ -361,6 +361,203 @@ struct AccessibilityTargetResolverTests {
         }
     }
 
+    // MARK: On-screen preference
+
+    private static func screen(width: Double = 393, height: Double = 852, _ children: [UINode]) -> [UINode] {
+        FakeUI.tree(width: width, height: height, children).roots
+    }
+
+    private static func save(id: String? = nil, y: Double, height: Double = 44) -> UINode {
+        FakeUI.node(.button, id: id, label: "Save", frame: FakeUI.frame(20, y, 350, height))
+    }
+
+    private static func resolutionError(_ body: () throws -> Void) -> ElementResolutionError? {
+        do {
+            try body()
+            return nil
+        } catch {
+            return error as? ElementResolutionError
+        }
+    }
+
+    @Test("a parked duplicate off screen does not make an on-screen label ambiguous")
+    func parkedDuplicateIgnored() throws {
+        let roots = Self.screen([Self.save(y: 700), Self.save(y: 10700)])
+
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: roots, query: .label("Save"))
+
+        #expect(point.x == 195 && point.y == 722)
+    }
+
+    @Test("a single off-screen match fails with its frame and the screen size")
+    func singleOffScreenMatchFails() {
+        let roots = Self.screen([Self.save(id: "parked-sheet-test-apply", y: 10700)])
+
+        let error = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("parked-sheet-test-apply"))
+        }
+
+        #expect(error?.isOffScreen == true)
+        let message = error?.userFacingDescription ?? ""
+        #expect(message.hasPrefix("Matched --id 'parked-sheet-test-apply' is off screen: its frame (20, 10700) 350x44 is outside the 393x852 screen"))
+        #expect(message.contains("--allow-offscreen"))
+        #expect(message.hasSuffix(AccessibilityTargetResolver.describeUITip))
+    }
+
+    @Test("several off-screen matches are all listed")
+    func severalOffScreenMatchesListed() {
+        let roots = Self.screen([Self.save(y: 10700), Self.save(y: 11200)])
+
+        let message = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"))
+        }?.userFacingDescription ?? ""
+
+        #expect(message.hasPrefix("All 2 matches for --label 'Save' are off screen: (20, 10700) 350x44, (20, 11200) 350x44"))
+        #expect(message.contains("393x852"))
+    }
+
+    @Test("--allow-offscreen restores matching off-screen elements")
+    func allowOffscreenRestoresOldBehaviour() throws {
+        let both = Self.screen([Self.save(y: 700), Self.save(y: 10700)])
+        let ambiguous = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: both, query: .label("Save"), allowOffscreen: true)
+        }
+        guard case .multipleMatches(let count, _, _, _, _, _, _)? = ambiguous else {
+            Issue.record("expected multipleMatches, got \(String(describing: ambiguous))")
+            return
+        }
+        #expect(count == 2)
+
+        let parked = Self.screen([Self.save(y: 10700)])
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: parked, query: .label("Save"), allowOffscreen: true)
+        #expect(point.y == 10722)
+    }
+
+    @Test("a tree without an application root skips the screen check")
+    func noApplicationRootSkipsCheck() throws {
+        let roots = [Self.save(y: 10700)]
+
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: roots, query: .label("Save"))
+
+        #expect(point.y == 10722)
+    }
+
+    @Test("a key inside an Android keyboard root is on screen")
+    func keyboardRootIsOnScreen() throws {
+        let key = FakeUI.node(.button, label: "q", frame: FakeUI.frame(0, 650, 41, 50), platform: .android)
+        let app = FakeUI.node(.application, frame: FakeUI.frame(0, 0, 412, 600), platform: .android)
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 600, 412, 315), platform: .android, children: [key])
+
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: [app, keyboard], query: .label("q"))
+
+        #expect(point.x == 20.5 && point.y == 675)
+    }
+
+    @Test("a landscape viewport judges frames by its own width and height")
+    func landscapeViewport() throws {
+        let roots = Self.screen(width: 852, height: 393, [
+            FakeUI.node(.button, label: "Inside", frame: FakeUI.frame(550, 180, 100, 40)),
+            FakeUI.node(.button, label: "Below", frame: FakeUI.frame(550, 580, 100, 40)),
+        ])
+
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: roots, query: .label("Inside"))
+        #expect(point.x == 600 && point.y == 200)
+
+        let error = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Below"))
+        }
+        #expect(error?.isOffScreen == true)
+    }
+
+    @Test("a partly visible frame whose centre is off screen fails")
+    func partlyVisibleCentreOffScreen() {
+        let roots = Self.screen([Self.save(y: 830)])
+
+        let error = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"))
+        }
+
+        #expect(error?.isOffScreen == true)
+    }
+
+    @Test("ambiguous on-screen matches list each candidate and the ignored off-screen ones")
+    func multipleMatchesListCandidates() {
+        let roots = Self.screen([Self.save(id: "save-a", y: 700), Self.save(y: 760), Self.save(y: 10700)])
+
+        let message = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"))
+        }?.userFacingDescription ?? ""
+
+        #expect(message.hasPrefix("Multiple (2) accessibility elements matched --label 'Save' on screen: button id=save-a (20, 700) 350x44; button (20, 760) 350x44 (1 more off screen ignored). Use --id when labels are not unique."))
+    }
+
+    // MARK: Folding and suggestions
+
+    @Test("a straight apostrophe matches a curly one")
+    func straightApostropheMatchesCurly() throws {
+        let roots = Self.screen([FakeUI.node(.button, label: "Don\u{2019}t Allow", frame: FakeUI.frame(20, 400, 200, 44))])
+
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: roots, query: .label("Don't Allow"))
+
+        #expect(point.y == 422)
+    }
+
+    @Test("an exact label wins over a folded one without ambiguity")
+    func exactBeatsFolded() throws {
+        let roots = Self.screen([
+            FakeUI.node(.button, label: "Don\u{2019}t Allow", frame: FakeUI.frame(20, 400, 200, 44)),
+            FakeUI.node(.button, label: "Don't Allow", frame: FakeUI.frame(20, 500, 200, 44)),
+        ])
+
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: roots, query: .label("Don't Allow"))
+
+        #expect(point.y == 522)
+    }
+
+    @Test("ids are never folded")
+    func idsAreExact() {
+        let roots = Self.screen([FakeUI.node(.button, id: "don\u{2019}t", frame: FakeUI.frame(20, 400, 200, 44))])
+
+        let error = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("don't"))
+        }
+
+        guard case .notFound? = error else {
+            Issue.record("expected notFound, got \(String(describing: error))")
+            return
+        }
+    }
+
+    @Test("a missing label suggests close labels on the screen")
+    func notFoundSuggestsLabels() {
+        let roots = Self.screen([
+            FakeUI.node(.button, label: "Sign In", frame: FakeUI.frame(20, 400, 200, 44)),
+            FakeUI.node(.button, label: "Sign in with Apple", frame: FakeUI.frame(20, 500, 200, 44)),
+            FakeUI.node(.button, label: "Cancel", frame: FakeUI.frame(20, 600, 200, 44)),
+        ])
+
+        let message = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Sign in"))
+        }?.userFacingDescription ?? ""
+
+        #expect(message.hasPrefix("No accessibility element matched --label 'Sign in'. Did you mean 'Sign In' or 'Sign in with Apple'? "))
+        #expect(message.hasSuffix(AccessibilityTargetResolver.describeUITip))
+    }
+
+    @Test("a label removed by --element-type says which roles have it")
+    func elementTypeHint() {
+        let roots = Self.screen([
+            FakeUI.node(.text, label: "Save", frame: FakeUI.frame(20, 400, 200, 44)),
+            FakeUI.node(.text, label: "Save", frame: FakeUI.frame(20, 500, 200, 44)),
+        ])
+
+        let message = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"), elementType: "button")
+        }?.userFacingDescription ?? ""
+
+        #expect(message.hasPrefix("No accessibility element matched --label 'Save' with --element-type button: 2 elements have that label (roles: text)."))
+    }
+
     private func decodeElements(_ json: String) throws -> [UINode] {
         try IOSAccessibilityMapping.roots(fromJSON: Data(json.utf8))
     }

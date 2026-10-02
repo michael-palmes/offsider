@@ -7,12 +7,16 @@ description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator 
 1. Identify the target device ID first with `offsider list-devices` (iOS simulators, running Android emulators by serial and shut-down AVDs by name; watchOS, tvOS and visionOS are not listed), or `offsider list-devices --json` for `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType}]}`. `--platform ios|android` filters. Simulator IDs are case-insensitive; Android IDs are serials (`emulator-5554`) or the name of a running AVD.
    - To start an Android emulator, run `DEVICE=$(offsider boot <AVD>)`: it waits until Android has booted and prints the serial (add `--headless` to hide the window). It never starts a second instance of a running AVD, so it is safe to call first. Never start emulators with `emulator -port` or `-grpc` yourself: Offsider then falls back to slower adb-only input.
 2. For iOS simulators, run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint`. `offsider doctor --device <DEVICE_ID> --fix` opens Device Hub or the device window and removes a stale HID broker directory, then checks again. `doctor --device` does not check Android emulators yet (exit 64); use `list-devices` and `describe-ui` instead.
+   - Offsider uses the Xcode that `DEVELOPER_DIR` or `xcode-select` selects, and doctor prints which. When the project builds with a different Xcode from the selected one, set the same `DEVELOPER_DIR` on every `offsider` call. If doctor reports Simulator.app running from another Xcode, follow its `DEVELOPER_DIR=...` hint before quitting anything.
 3. Device-interaction Offsider commands require `--device <DEVICE_ID>`. Commands like `list-devices`, `boot`, `init` and `doctor` do not. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.
-4. Run `offsider describe-ui --device <DEVICE_ID>` to inspect the full current screen. Use `offsider describe-ui --point <X,Y> --device <DEVICE_ID>` to inspect the element at a specific coordinate. Use the output to discover available `--id` and `--label` values for selector taps and slider setting, and to confirm coordinates for coordinate-based taps.
-   - The output is `{"version": 1, "platform", "device", "screen", "roots": [...]}`. Each node has `role`, `id`, `label`, `value`, `frame`, `enabled`, `state` (`checked`, `selected`, `focused`), `native` and `children`; every key is present, with `null` when unknown. `--point` returns the same envelope with the hit element as the only root.
+4. Run `offsider describe-ui --summary --device <DEVICE_ID>` to scan the current screen: one line per on-screen node that has a label, id or value, such as `button "Save" id=save-button (170.7,313.3 61x34.3)` (role, label, id, value, then x,y and size). Use `offsider describe-ui --point <X,Y> --device <DEVICE_ID>` to inspect the element at a specific coordinate. Use the output to discover available `--id` and `--label` values for selector taps and slider setting, and to confirm coordinates for coordinate-based taps.
+   - `--summary` is `--flat --on-screen --labelled --format text`. Combine the parts yourself when you need more: `--flat` (no nesting; each node has `index`, `parent` and `depth`, under `nodes`), `--on-screen`, `--labelled`, `--actionable` (controls only), `--fields role,id,label,value,frame`, `--format json|ndjson|text` and `--compact` (one-line JSON). A full screen can hold hundreds of nodes, many of them off screen, so reach for plain `describe-ui` only when you need the whole tree.
+   - Without those flags the output is `{"version": 1, "platform", "device", "screen", "roots": [...]}`. Each node has `role`, `id`, `label`, `value`, `frame`, `enabled`, `state` (`checked`, `selected`, `focused`), `native` and `children`; every key is present, with `null` when unknown. `--point` returns the same envelope with the hit element as the only root.
    - `--id`, `--label` and `--value` match a node's `id`, `label` and `value`. In React Native apps, `testID` appears as `id`.
    - `role` is one of `application`, `window`, `group`, `other`, `button`, `link`, `menuItem`, `tab`, `tabBar`, `segmentedControl`, `text`, `header`, `image`, `progress`, `textField`, `secureTextField`, `searchField`, `textArea`, `switch`, `checkbox`, `radioButton`, `slider`, `picker`, `cell`, `list`, `scrollView` or `keyboard`. `native` keeps the platform attributes, such as the iOS `type` (`TextField`, `RadioButton`), `role` (`AXButton`) and `roleDescription`.
    - `--element-type` narrows selector matches by `role` in any case (`button`, `switch`, `slider`) or by the exact native type (`RadioButton`, `TextEditor`).
+   - Selectors prefer matches that are on screen. Apps often keep views mounted off screen (a closed bottom sheet parked below the screen, rows below the fold), so a match whose frame is outside the screen fails with an "is off screen" error naming its frame instead of tapping nothing. Scroll it into view or open the sheet first; `--wait-timeout` waits for it to come on screen. `--allow-offscreen` on `tap` and `slider` resolves it anyway.
+   - Copy `--label` and `--value` text from `describe-ui`. Typographic quotes and odd spaces fold to their plain forms when nothing matches exactly (`--label "Don't Allow"` finds `Don’t Allow`), and a miss suggests the closest labels ("Did you mean ...?").
 5. Prefer selectors (`tap --id` / `tap --label`, `slider --id` / `slider --label`) over raw coordinates. Selectors are resilient to layout changes, work across device sizes, and support element waiting where documented. For UIKit `UISwitch` and SwiftUI `Toggle` rows, selector taps activate the contained switch/toggle when the match contains exactly one such control. Default tap style is `automatic`: switches and toggles use physical touch down and up, while other taps send a single tap event.
 
 ## Step 2: Choose the right command
@@ -34,9 +38,10 @@ offsider tap -x <X> -y <Y> --device <DEVICE_ID>
 offsider tap --id <identifier> --verify --json --device <DEVICE_ID>
 offsider type 'text' --device <DEVICE_ID>
 offsider type --replace 'new text' --device <DEVICE_ID>
-offsider describe-ui --device <DEVICE_ID>
+offsider describe-ui --summary --device <DEVICE_ID>
 offsider describe-ui --point <X,Y> --device <DEVICE_ID>
-offsider screenshot --device <DEVICE_ID> --output screenshot.png
+offsider screenshot --device <DEVICE_ID> --output screenshot.png --scale points
+offsider screenshot --device <DEVICE_ID> --region <X,Y,W,H> --compare before.png
 offsider boot <AVD> --headless
 offsider button back --device <DEVICE_ID>
 ```
@@ -50,12 +55,13 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 - `--verify-timeout <seconds>` (0.5 to 30, default 2) is the wait per attempt. `--retries <n>` (0 to 3, default 1) repeats the input when nothing changed; tap retries switch between simulator and physical tap style. Use `--retries 0` for non-idempotent actions such as submit, send or delete, because a late effect plus a retry can act twice.
 - `--json` (requires `--verify`) prints one object to stdout with `verified`, `dispatched`, `attempts`, `change` (`accessibility-tree`, `screenshot` or `none`) and `style` (tap only); human text goes to stderr. A `screenshot` change can be animation or the status bar clock in landscape, so confirm with `describe-ui`. `button lock` only shows as a black screen.
 - Without `--verify`, verify outcomes separately with `describe-ui` or `screenshot` when app behavior matters beyond the direct command result.
-- Use `--wait-timeout` in batch to wait for tap elements to appear, and `sleep` steps or `--pre-delay` / `--post-delay` to allow animations to settle.
+- Use `--wait-timeout` in batch to wait for tap elements to come on screen, and `sleep` steps or `--pre-delay` / `--post-delay` to allow animations to settle.
 
 ## Step 4: Apply timing and input best practices
 - Use `--pre-delay` / `--post-delay` on tap, swipe, and gesture commands for fixed delays around actions.
 - Use `--duration` to control how long a swipe, gesture, button press, or key press lasts.
-- Coordinate-based `tap`, `swipe`, `drag`, and `touch` accept coordinates from `describe-ui` directly; Offsider detects rotated landscape simulator orientation and letterboxed landscape-only app layouts automatically.
+- Coordinate-based `tap`, `swipe`, `drag`, and `touch` accept coordinates from `describe-ui` directly; Offsider detects rotated landscape simulator orientation and letterboxed landscape-only app layouts automatically. A coordinate `tap` outside the screen prints a warning.
+- Screenshots are in pixels by default; taps and `describe-ui` frames are in points. Capture with `screenshot --scale points` so image coordinates are tap coordinates, and crop with `--region <x,y,w,h>` (points, from `describe-ui`) instead of reading a full screen. `--scale <0.1-1>`, `--format jpeg` and `--quality` shrink the file; `--json` prints `path`, `width`, `height`, `pixelsPerPoint`, `region` and `orientation`. On iOS, `--region` needs a portrait screen for now.
 - `gesture` presets are sized to the foreground app's frame and go through the same orientation handling, so they fit any device and landscape. `--screen-width` and `--screen-height` override that size, in points (dp on Android) as the screen is currently oriented.
 - Use `offsider slider --id <identifier> --value <0-100>` for sliders instead of approximating with raw swipe coordinates. On iOS it uses one calibrated low-level HID drag from the resolved slider frame and current `value`, through the same composite touch-move path as `drag`; on Android it uses the accessibility progress action (Step 4a). Either way it verifies the result within tolerance and fails clearly if the observed `value` remains outside tolerance.
 - `type` adds to whatever the focused field holds. To set a field to exact text, tap the field, then run `offsider type --replace 'new text' --device <DEVICE_ID>`; `--replace ''` clears it. It works with `--stdin`, `--file`, `--verify` and as a batch step. iOS selects all with Command-A and deletes, then types (secure fields included); Android sets the text in one step (Step 4a). A trailing newline is pressed as Return on both platforms, so `$'query\n'` submits.
@@ -93,9 +99,9 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 - You need `--verify`; batch steps reject `--verify`, `--verify-timeout`, `--retries` and `--json`. Run that input on its own with `--verify`, or check with `describe-ui` after the batch.
 
 **Handling animations and transitions in batch:**
-- Use `--wait-timeout <seconds>` so selector taps (`--id` / `--label`) poll the accessibility tree until the element appears or the timeout expires. This is the primary mechanism for multi-screen flows.
+- Use batch-level `--wait-timeout <seconds>` so selector taps (`--id` / `--label`) poll the accessibility tree until the element is on screen, not merely mounted, or the timeout expires. This is the primary mechanism for multi-screen flows and sheets that slide in.
 - Use `--poll-interval <seconds>` to control polling frequency during waiting (default 0.25s).
-- Use `--ax-cache perStep` when *not* using `--wait-timeout` but the UI still changes between steps; this ensures each selector tap gets a fresh accessibility snapshot rather than a stale cached one.
+- Batch reuses an accessibility snapshot only until a step sends input or sleeps, so a selector step after a tap reads the new screen. A read straight after input can still see the old screen while the app reacts: add `--wait-timeout`. `--ax-cache perStep` reads fresh for every selector step.
 - Insert explicit `sleep <seconds>` steps when coordinate-based taps need the UI to be stable (selectors with `--wait-timeout` are preferred over sleep where possible).
 - Keep batch output quiet by default. Add `--verbose` only when troubleshooting.
 - Selector taps in batch share direct `tap` semantics, including switch/toggle activation-point handling and `--tap-style automatic` behavior. Use batch-level `--tap-style physical|simulator` as the default for tap steps, or step-level `tap --tap-style ...` to override one step.
@@ -113,11 +119,13 @@ Batch and commands without `--verify` are execution-focused, not assertion-focus
 Exit 5 from a `--verify` command means the input was dispatched but nothing observable changed. Run `describe-ui` to check the target is on screen and interactive, then, on an iOS simulator, `offsider doctor --device <DEVICE_ID>` if input seems ignored. Read the `change` field of the JSON result to see how the change was detected.
 
 ```bash
-offsider describe-ui --device <DEVICE_ID>
+offsider describe-ui --summary --device <DEVICE_ID>
 offsider describe-ui --point <X,Y> --device <DEVICE_ID>
 # or
-offsider screenshot --device <DEVICE_ID> --output post-state.png
+offsider screenshot --device <DEVICE_ID> --output post-state.png --scale points
 ```
+
+Content the accessibility tree cannot see (charts, maps, canvases, WebViews) changes pixels only, and `--verify` can report a change caused by something else on screen. Check that region itself: save a baseline with `screenshot --region <x,y,w,h> --output before.png`, act, then run `screenshot --region <x,y,w,h> --compare before.png`. It exits 0 when the region changed and 5 when it did not, and prints the changed share; `--threshold <0-1>` ignores small changes. Use the same `--region` and `--scale` for both captures.
 
 ## Step 7: Exit criteria
 Before finalising guidance, verify:
@@ -125,3 +133,5 @@ Before finalising guidance, verify:
 - Only valid Offsider commands and flags are used.
 - Shell quoting is correct (single quotes for literals, `--stdin`/`--file` for complex text).
 - Verification is suggested as a separate step when results matter.
+- Labels were copied from `describe-ui`, and selector targets were on screen when tapped.
+- Coordinates read from a screenshot came from a `--scale points` capture.

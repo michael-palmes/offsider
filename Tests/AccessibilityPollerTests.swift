@@ -35,7 +35,7 @@ struct AccessibilityPollerTests {
             transientGrace: grace,
             elementType: nil,
             logger: OffsiderLogger()
-        ) { try reads.next() }
+        ) { try reads.next() }.value
     }
 
     @Test("a transient read failure is retried within the verify grace")
@@ -86,6 +86,42 @@ struct AccessibilityPollerTests {
                 return empty
             }
         }
+        #expect(count == 1)
+    }
+
+    private static func sheet(buttonY: Double) -> UITree {
+        FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.button, id: "apply", label: "Apply", frame: FakeUI.frame(20, buttonY, 350, 44)),
+        ])
+    }
+
+    @Test("an off-screen element is retried under --wait-timeout until it slides on screen")
+    func offScreenRetriedUnderWait() async throws {
+        var trees = [Self.sheet(buttonY: 10700), Self.sheet(buttonY: 10700), Self.sheet(buttonY: 600)]
+        var count = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("apply"), waitTimeout: 2, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger()
+        ) {
+            count += 1
+            return trees.count > 1 ? trees.removeFirst() : trees[0]
+        }
+        #expect(polled.value.point.y == 622)
+        #expect(polled.tree == Self.sheet(buttonY: 600))
+        #expect(count == 3)
+    }
+
+    @Test("an off-screen element is not retried without --wait-timeout")
+    func offScreenNotRetriedWithoutWait() async {
+        var count = 0
+        let error = await #expect(throws: ElementResolutionError.self) {
+            try await AccessibilityPoller.pollForResolution(
+                query: .id("apply"), waitTimeout: 0, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger()
+            ) {
+                count += 1
+                return Self.sheet(buttonY: 10700)
+            }
+        }
+        #expect(error?.isOffScreen == true)
         #expect(count == 1)
     }
 

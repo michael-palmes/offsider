@@ -12,6 +12,14 @@ enum BatchStepKind: String {
     case keySequence = "key-sequence"
     case keyCombo = "key-combo"
     case sleep
+
+    /// True when the step sends input or sleeps, so the screen may have changed after it.
+    var mayChangeScreen: Bool {
+        switch self {
+        case .tap, .swipe, .gesture, .touch, .type, .button, .key, .keySequence, .keyCombo, .sleep:
+            return true
+        }
+    }
 }
 
 @MainActor

@@ -11,24 +11,22 @@ private func resolveBatchTapPoint(
     query: AccessibilityQuery,
     context: BatchContext,
     elementType: String?,
+    allowOffscreen: Bool,
     logger: OffsiderLogger
-) async throws -> (resolution: TapResolution, tree: UITree?) {
+) async throws -> Polled<TapResolution> {
     var isFirstFetch = true
-    var latestTree: UITree?
-    let resolution = try await AccessibilityPoller.pollForResolution(
+    return try await AccessibilityPoller.pollForResolution(
         query: query,
         waitTimeout: context.waitTimeout,
         pollInterval: context.pollInterval,
         elementType: elementType,
+        allowOffscreen: allowOffscreen,
         logger: logger
     ) {
         let forceRefresh = !isFirstFetch
         isFirstFetch = false
-        let tree = try await context.accessibilityTree(forceRefresh: forceRefresh)
-        latestTree = tree
-        return tree
+        return try await context.accessibilityTree(forceRefresh: forceRefresh)
     }
-    return (resolution, latestTree)
 }
 
 func parseCommaSeparatedIntsStrict(_ rawValue: String, fieldName: String) throws -> [Int] {
@@ -82,9 +80,10 @@ extension Tap: BatchConvertible {
                 query: query,
                 context: context,
                 elementType: elementType,
+                allowOffscreen: allowOffscreen,
                 logger: logger
             )
-            resolution = resolved.resolution
+            resolution = resolved.value
             resolvedTree = resolved.tree
         }
 
