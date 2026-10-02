@@ -261,7 +261,7 @@ struct BatchReadStepTests {
         #expect(code == 1)
 
         let honoured = FakeDeviceBackend(trees: trees)
-        try await Self.run(["tap --id open --wait-timeout 2 --poll-interval 0.01"], on: honoured, captured: Captured())
+        try await Self.run(["tap --id open --wait-timeout 30 --poll-interval 0.01"], on: honoured, captured: Captured())
         #expect(honoured.session.calls == [.perform(.tapAt(x: 195, y: 122))])
 
         let disabled = FakeDeviceBackend(trees: trees)

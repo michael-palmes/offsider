@@ -49,10 +49,16 @@ struct AccessibilityPoller {
             pollInterval: pollInterval,
             transientGrace: 0,
             logger: logger,
+            clock: .live,
             resolver: { roots in
                 try AccessibilityTargetResolver.resolveElement(
                     roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
                 )
+            },
+            position: { match in
+                let frame = match.element.frame
+                let centre = frame.map { UIPoint(x: $0.x + $0.width / 2, y: $0.y + $0.height / 2) } ?? UIPoint(x: 0, y: 0)
+                return ElementPosition(point: centre, frame: frame)
             },
             treeFetcher: { try await backend.accessibilityTree(for: device) }
         )
@@ -66,6 +72,7 @@ struct AccessibilityPoller {
         elementType: String?,
         allowOffscreen: Bool = false,
         logger: OffsiderLogger,
+        clock: PollClock = .live,
         treeFetcher: () async throws -> UITree
     ) async throws -> Polled<TapResolution> {
         try await poll(
@@ -73,47 +80,66 @@ struct AccessibilityPoller {
             pollInterval: pollInterval,
             transientGrace: transientGrace,
             logger: logger,
+            clock: clock,
             resolver: { roots in
                 try AccessibilityTargetResolver.resolveTap(
                     roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
+                )
+            },
+            position: { resolution in
+                ElementPosition(
+                    point: UIPoint(x: resolution.point.x, y: resolution.point.y),
+                    frame: (resolution.target ?? resolution.matched)?.frame
                 )
             },
             treeFetcher: treeFetcher
         )
     }
 
-    /// Missing or off-screen elements retry until `waitTimeout`; transient read failures until the larger window, and at least once.
+    /// Missing or off-screen elements retry until `waitTimeout` and then until two reads agree; transient read failures until the larger window, and at least once.
     private static func poll<T>(
         waitTimeout: TimeInterval,
         pollInterval: TimeInterval,
         transientGrace: TimeInterval,
         logger: OffsiderLogger,
+        clock: PollClock,
         resolver: ([UINode]) throws -> T,
+        position: (T) -> ElementPosition,
         treeFetcher: () async throws -> UITree
     ) async throws -> Polled<T> {
-        let clock = ContinuousClock()
-        let start = clock.now
-        let findDeadline = start + .seconds(waitTimeout)
+        let start = clock.now()
+        let findDeadline = start + waitTimeout
         let transientWindow = max(waitTimeout, transientGrace)
-        let transientDeadline = start + .seconds(transientWindow)
+        let transientDeadline = start + transientWindow
         var transientRetries = 0
+        var waitedForElement = false
+        var lastPosition: ElementPosition?
 
         while true {
             let tree: UITree
             do {
                 tree = try await treeFetcher()
-            } catch where error.isTransientFailure && transientWindow > 0 && (transientRetries == 0 || clock.now < transientDeadline) {
+            } catch where error.isTransientFailure && transientWindow > 0 && (transientRetries == 0 || clock.now() < transientDeadline) {
                 transientRetries += 1
                 logger.info().log("\(error.localizedDescription) Retrying in \(pollInterval)s…")
-                try await Task.sleep(for: .seconds(pollInterval))
+                try await clock.sleep(.seconds(pollInterval))
                 continue
             }
             do {
-                return Polled(value: try resolver(tree.roots), tree: tree)
-            } catch let error as ElementResolutionError where error.isRetryable && clock.now < findDeadline {
+                let polled = Polled(value: try resolver(tree.roots), tree: tree)
+                guard waitedForElement else { return polled }
+                let current = position(polled.value)
+                if let lastPosition, ElementMotion.hasSettled(previous: lastPosition, current: current) { return polled }
+                guard clock.now() < findDeadline else { return polled }
+                if lastPosition != nil { logger.info().log("Element still moving, checking again in \(pollInterval)s…") }
+                lastPosition = current
+                try await clock.sleep(.seconds(pollInterval))
+            } catch let error as ElementResolutionError where error.isRetryable && clock.now() < findDeadline {
+                waitedForElement = true
+                lastPosition = nil
                 let reason = error.isOffScreen ? "Element off screen" : "Element not found"
                 logger.info().log("\(reason), retrying in \(pollInterval)s…")
-                try await Task.sleep(for: .seconds(pollInterval))
+                try await clock.sleep(.seconds(pollInterval))
             }
         }
     }
