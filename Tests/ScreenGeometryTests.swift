@@ -58,4 +58,20 @@ struct ScreenGeometryTests {
             "\(error)" == "--region 10,900,50,50 lies outside the 402 x 874 pt screen. Take coordinates from describe-ui."
         }
     }
+
+    @Test("An absurdly large region fails as outside the screen instead of trapping", arguments: ["1e300,0,10,10", "0,1e300,10,10", "1e308,1e308,1e308,1e308"])
+    func hugeRegionThrows(text: String) throws {
+        let region = try PointRegion.parse(text)
+        #expect(throws: ScreenRegionError.self) {
+            try ScreenGeometry.pixelRect(for: region, pixelsPerPoint: 3, imageWidth: 1206, imageHeight: 2622)
+        }
+    }
+
+    @Test("A huge size from a valid origin is clamped to the image")
+    func hugeSizeClamps() throws {
+        let rect = try ScreenGeometry.pixelRect(
+            for: try PointRegion.parse("0,0,1e300,1e300"), pixelsPerPoint: 3, imageWidth: 1206, imageHeight: 2622
+        )
+        #expect(rect == PixelRect(x: 0, y: 0, width: 1206, height: 2622))
+    }
 }

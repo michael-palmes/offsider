@@ -7,7 +7,9 @@ struct AppearanceCommand: AsyncParsableCommand {
         commandName: "appearance",
         abstract: "Read or set the system appearance (light or dark).",
         discussion: """
-        Without a value, prints the current appearance. On Android this is night mode (`cmd uimode night`).
+        Without a value, prints the current appearance. On Android this is night mode (`cmd uimode night`), \
+        which can also read auto or custom when it follows a schedule; setting light or dark replaces that \
+        schedule, and the result then shows no previous value.
 
         Examples:
           offsider appearance --device DEVICE_ID
@@ -46,15 +48,29 @@ struct AppearanceCommand: AsyncParsableCommand {
             throw CLIError(errorDescription: "appearance is not available for \(deviceOption.id).")
         }
 
-        let current = try await settings.appearance(on: device)
+        print(try await Self.report(target, json: json, on: device, settings: settings))
+    }
+
+    /// Reads, or sets `target`; when setting, a previous value that is not light or dark is unknown rather than an error.
+    @MainActor
+    static func report(_ target: Appearance?, json: Bool, on device: DeviceID, settings: any DeviceSettingsControlling) async throws -> String {
         guard let target else {
-            print(json ? DeviceSettingsReport.appearance(current, previous: nil) : "Appearance: \(current.rawValue)")
-            return
+            let current = try await settings.appearance(on: device)
+            return json ? DeviceSettingsReport.appearance(current, previous: nil) : line(current)
         }
-        if target != current {
+        let previous = (try? await settings.appearance(on: device))?.appearance
+        if target != previous {
             try await settings.setAppearance(target, on: device)
         }
-        print(json ? DeviceSettingsReport.appearance(target, previous: current) : Self.line(target, previous: current))
+        return json ? DeviceSettingsReport.appearance(target, previous: previous) : line(target, previous: previous)
+    }
+
+    static func line(_ reading: AppearanceReading) -> String {
+        switch reading {
+        case .fixed(let appearance): return line(appearance, previous: nil)
+        case .scheduled("auto"): return "Appearance: auto (follows the system schedule)"
+        case .scheduled(let mode): return "Appearance: \(mode) (follows a custom schedule)"
+        }
     }
 
     static func line(_ current: Appearance, previous: Appearance?) -> String {

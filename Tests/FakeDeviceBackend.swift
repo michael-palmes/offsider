@@ -12,6 +12,8 @@ final class FakeDeviceBackend: DeviceBackend {
     let session: RecordingInputSession
     let advanceTreeOnInput: Bool
     var bands = ScreenBands(top: 0, bottom: 0)
+    /// Called on every tree read, before the tree is served.
+    var onTreeRead: (() -> Void)?
 
     private(set) var treeIndex = 0
     private(set) var screenshotIndex = 0
@@ -50,6 +52,7 @@ final class FakeDeviceBackend: DeviceBackend {
     }
 
     private func readTree(for id: DeviceID) -> UITree {
+        onTreeRead?()
         treeReads += 1
         let tree = currentTree ?? UITree(platform: platform, device: id.rawValue, roots: [])
         if !advanceTreeOnInput {

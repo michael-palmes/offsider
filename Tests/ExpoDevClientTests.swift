@@ -29,6 +29,11 @@ struct ExpoDevClientTests {
         ])
     }
 
+    @Test("iOS stops the app with simctl terminate before writing")
+    func iosTerminates() {
+        #expect(ExpoDevClient.iosTerminateArguments(udid: "UDID", bundleID: "com.example.app") == ["simctl", "terminate", "UDID", "com.example.app"])
+    }
+
     @Test("iOS read-back needs the intro finished and the launch menu off")
     func iosConfirmation() {
         #expect(ExpoDevClient.iosDefaultsConfirmed("{\n    EXDevMenuIsOnboardingFinished = 1;\n    EXDevMenuShowsAtLaunch = 0;\n}\n"))

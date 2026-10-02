@@ -145,7 +145,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
             resolvedDescription = VerifyOutput.pointDescription(x: pointX, y: pointY)
             resolvedTree = nil
-            await warnIfOffScreen(x: pointX, y: pointY, on: route)
+            await Self.warnIfOffScreen(x: pointX, y: pointY, backend: backend, device: device)
         } else {
             let query: AccessibilityQuery
             if let elementID {
@@ -215,15 +215,23 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// Warns, never refuses: an iPad app in a window can be smaller than the screen. `-x/-y` and `screenInfo` share points or dp.
-    private func warnIfOffScreen(x: Double, y: Double, on route: DeviceRouter.Route) async {
-        guard let screen = try? await route.backend.screenInfo(for: route.device), screen.width > 0, screen.height > 0 else {
-            return
+    /// Warns on stderr when a coordinate tap lands outside the screen the device reports.
+    @MainActor
+    static func warnIfOffScreen(x: Double, y: Double, backend: any DeviceBackend, device: DeviceID) async {
+        if let warning = offScreenWarning(x: x, y: y, screen: try? await backend.screenInfo(for: device)) {
+            print(warning, to: &standardError)
+        }
+    }
+
+    static func offScreenWarning(x: Double, y: Double, screen: UIScreenInfo?) -> String? {
+        guard let screen, screen.width > 0, screen.height > 0 else {
+            return nil
         }
         let bounds = UIFrame(x: 0, y: 0, width: screen.width, height: screen.height)
         guard !bounds.contains(UIPoint(x: x, y: y)) else {
-            return
+            return nil
         }
-        print("Warning: \(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing.", to: &standardError)
+        return "Warning: \(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing."
     }
 
     /// Warns when a selector's point is outside the screen, which only `--allow-offscreen` lets through.

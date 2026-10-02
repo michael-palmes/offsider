@@ -54,6 +54,11 @@ public enum ExpoDevClient {
         ["simctl", "get_app_container", udid, bundleID, container]
     }
 
+    /// Stops a running app, which would otherwise write its old preferences back; simctl fails harmlessly when it is not running.
+    public static func iosTerminateArguments(udid: String, bundleID: String) -> [String] {
+        ["simctl", "terminate", udid, bundleID]
+    }
+
     /// `defaults` addresses the app's own plist by path, as a simctl spawn of the bundle ID would write the device-wide domain instead.
     public static func iosDefaultsWriteArguments(udid: String, dataContainer: String, bundleID: String) -> [[String]] {
         let domain = iosPreferencesDomain(dataContainer: dataContainer, bundleID: bundleID)

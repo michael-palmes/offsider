@@ -19,6 +19,14 @@ struct TapCommandTests {
             .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: nil, logger: OffsiderLogger())
     }
 
+    @Test("a coordinate outside the reported screen gets a warning; one inside, or with no screen, does not")
+    func coordinateOffScreenWarning() {
+        let screen = UIScreenInfo(width: 402, height: 874)
+        #expect(Tap.offScreenWarning(x: 500, y: 100, screen: screen) == "Warning: (500, 100) is outside the 402x874 screen; the tap may do nothing.")
+        #expect(Tap.offScreenWarning(x: 200, y: 100, screen: screen) == nil)
+        #expect(Tap.offScreenWarning(x: 500, y: 100, screen: nil) == nil)
+    }
+
     @Test("a selector tap on iOS reads the tree once and converts the point with that tree")
     func selectorTapReadsTreeOnce() async throws {
         let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 600)])

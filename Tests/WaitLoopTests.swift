@@ -143,6 +143,29 @@ struct WaitLoopTests {
         #expect(script.treeReads == 3)
     }
 
+    @Test("settled by tree on a tree that is never readable fails with a pointer to --settle-by screen")
+    func unreadableTreeFails() async throws {
+        let script = Script()
+        script.trees = [.success(UITree(platform: .ios, device: "fake", roots: []))]
+
+        let error = await #expect(throws: WaitUnreadableError.self) {
+            try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 1, interval: 0.25, sources: script.sources)
+        }
+        #expect(error?.message.contains("--settle-by screen") == true)
+        #expect(script.treeReads == 5)
+    }
+
+    @Test("settled by tree that was readable at least once still times out as unmet")
+    func partlyReadableTreeTimesOut() async throws {
+        let script = Script()
+        script.trees = [.success(Self.screen([Self.save])), .success(UITree(platform: .ios, device: "fake", roots: []))]
+
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 1, interval: 0.25, sources: script.sources)
+
+        #expect(!outcome.met)
+        #expect(outcome.reason == "accessibility tree not readable")
+    }
+
     @Test("a tree change mid-way restarts the quiet window")
     func treeChangeResetsQuiet() async throws {
         var moved = Self.save

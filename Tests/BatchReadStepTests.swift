@@ -84,6 +84,26 @@ struct BatchReadStepTests {
         }
     }
 
+    @Test("wait and assert steps read the tree with the hung-device watchdog armed, and disarm it after")
+    func readStepsArmWatchdog() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        let watchdog = DeviceWatchdog(fire: { _ in Issue.record("the watchdog fired") })
+        var armedOnRead: [Bool] = []
+        backend.onTreeRead = { armedOnRead.append(watchdog.isArmed) }
+        let context = BatchContext(
+            backend: backend, device: Self.device, axCachePolicy: .perStep, typeSubmissionMode: .chunked, typeChunkSize: 200, watchdog: watchdog
+        )
+        let output = BatchOutput(json: true, write: { _ in }, writeError: { _ in })
+
+        try await Batch.runSteps(
+            ["wait --id open --timeout 1", "assert --id state --has-value Closed"],
+            context: context, session: backend.session, continueOnError: false, output: output, logger: OffsiderLogger()
+        )
+
+        #expect(armedOnRead == [true, true])
+        #expect(!watchdog.isArmed)
+    }
+
     @Test("one batch taps, waits, asserts, captures and reads the tree, with one NDJSON line per step and a summary")
     func wholeCaseAsNDJSON() async throws {
         let directory = try Self.temporaryDirectory()

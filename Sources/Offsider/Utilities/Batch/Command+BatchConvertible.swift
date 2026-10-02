@@ -65,6 +65,7 @@ extension Tap: BatchConvertible {
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
             resolvedTree = nil
+            await Self.warnIfOffScreen(x: pointX, y: pointY, backend: context.backend, device: context.device)
         } else {
             let query: AccessibilityQuery
             if let elementID {

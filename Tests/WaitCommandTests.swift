@@ -62,6 +62,21 @@ struct WaitCommandTests {
         #expect(backend.treeReads == 1)
     }
 
+    @Test("a zero-size or frameless match has no usable frame rather than being off screen")
+    func zeroSizeMatchHasNoUsableFrame() async throws {
+        let screen = FakeUI.tree([
+            FakeUI.node(.button, id: "apply", label: "Apply", frame: FakeUI.frame(20, 600, 0, 0)),
+            FakeUI.node(.button, id: "apply", label: "Apply"),
+        ])
+        let backend = FakeDeviceBackend(trees: [screen])
+        let wait = try Self.command(["--id", "apply", "--timeout", "0"])
+
+        let outcome = try await Self.evaluate(wait, on: backend)
+
+        #expect(!outcome.met)
+        #expect(outcome.reason == "has no usable frame (and 1 more)")
+    }
+
     @Test("a timeout names the selector and the last reason")
     func timeoutLine() async throws {
         let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 10700)])

@@ -3,10 +3,10 @@ import Foundation
 import OffsiderCore
 
 extension IOSBackend: DeviceSettingsControlling {
-    func appearance(on id: DeviceID) async throws -> Appearance {
+    func appearance(on id: DeviceID) async throws -> AppearanceReading {
         let simulator = try await simulator(for: id)
         return try await settingsCall("read the appearance of", id) {
-            try await simulator.currentAppearance() == .dark ? .dark : .light
+            .fixed(try await simulator.currentAppearance() == .dark ? .dark : .light)
         }
     }
 
@@ -22,7 +22,15 @@ extension IOSBackend: DeviceSettingsControlling {
         let raw = try await settingsCall("read the content size of", id) {
             try await simulator.currentContentSizeCategory().rawValue
         }
-        return ContentSizeReading(category: ContentSizeCategory(iosIndex: raw) ?? .large, fontScale: nil)
+        return try Self.contentSizeReading(iosIndex: raw, on: id)
+    }
+
+    /// The simulator's index as a category; an index outside 1 to 12 is an error, never a guess.
+    static func contentSizeReading(iosIndex: Int, on id: DeviceID) throws -> ContentSizeReading {
+        guard let category = ContentSizeCategory(iosIndex: iosIndex) else {
+            throw CLIError(errorDescription: "Offsider could not read the content size of simulator \(id.rawValue): it reported \(iosIndex), which is not a known size. Set one with `offsider content-size large --device \(id.rawValue)`.")
+        }
+        return ContentSizeReading(category: category, fontScale: nil)
     }
 
     func setContentSize(_ category: ContentSizeCategory, on id: DeviceID) async throws {

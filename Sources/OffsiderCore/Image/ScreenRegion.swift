@@ -73,10 +73,14 @@ public enum ScreenGeometry {
 
     /// Rounds outward (floor the origin, ceil the far edge) and clamps to the image; throws when nothing is left.
     public static func pixelRect(for region: PointRegion, pixelsPerPoint: Double, imageWidth: Int, imageHeight: Int) throws -> PixelRect {
-        let left = max(0, Int((region.x * pixelsPerPoint).rounded(.down)))
-        let top = max(0, Int((region.y * pixelsPerPoint).rounded(.down)))
-        let right = min(imageWidth, Int(((region.x + region.width) * pixelsPerPoint).rounded(.up)))
-        let bottom = min(imageHeight, Int(((region.y + region.height) * pixelsPerPoint).rounded(.up)))
+        func pixel(_ points: Double, _ rule: FloatingPointRoundingRule, limit: Int) -> Int {
+            let value = (points * pixelsPerPoint).rounded(rule)
+            return value.isNaN ? 0 : Int(min(Double(limit), max(0, value)))
+        }
+        let left = pixel(region.x, .down, limit: imageWidth)
+        let top = pixel(region.y, .down, limit: imageHeight)
+        let right = pixel(region.x + region.width, .up, limit: imageWidth)
+        let bottom = pixel(region.y + region.height, .up, limit: imageHeight)
         guard pixelsPerPoint > 0, right > left, bottom > top else {
             let width = format(Double(imageWidth) / pixelsPerPoint)
             let height = format(Double(imageHeight) / pixelsPerPoint)

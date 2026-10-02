@@ -12,7 +12,8 @@ struct Wait: AsyncParsableCommand {
         Choose one condition: a selector (--id, --label or --value, with --gone to wait for it to leave), --settled, \
         --region with --changed or --stable, or --seconds. Selectors count only on-screen matches unless --allow-offscreen. \
         --region watches pixels in points as describe-ui prints them, for content the accessibility tree cannot see such as charts \
-        or web views. Exits 0 when the condition is met and 5 when --timeout passes first.
+        or web views. Exits 0 when the condition is met and 5 when --timeout passes first; --settled exits 1 when the \
+        accessibility tree was never readable, where --settle-by screen still works.
         """
     )
 

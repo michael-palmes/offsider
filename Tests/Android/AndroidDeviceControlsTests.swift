@@ -9,10 +9,14 @@ struct AndroidDeviceControlsTests {
     /// Answers the settings commands from a mutable emulator state, as the real shell would.
     final class Emulator: @unchecked Sendable {
         private let lock = NSLock()
-        private var _night = "no"
+        private var _night: String
         private var _fontScale = "null"
         private var _rotation = 0
         var night: String { lock.withLock { _night } }
+
+        init(night: String = "no") {
+            _night = night
+        }
         var fontScale: String { lock.withLock { _fontScale } }
 
         func reply(to service: String) -> FakeAdbServer.Reply {
@@ -51,8 +55,8 @@ struct AndroidDeviceControlsTests {
         }
     }
 
-    static func setUp() throws -> (AndroidBackend, FakeAdbServer, Emulator) {
-        let emulator = Emulator()
+    static func setUp(night: String = "no") throws -> (AndroidBackend, FakeAdbServer, Emulator) {
+        let emulator = Emulator(night: night)
         let server = FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556"],
             host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
@@ -63,13 +67,14 @@ struct AndroidDeviceControlsTests {
 
     static let device = AndroidBackendTests.device
 
-    @Test("night mode output parses to an appearance; auto and junk do not", arguments: [
-        ("Night mode: yes\n", Appearance.dark),
-        ("Night mode: no", .light),
-        ("Night mode: auto\n", nil),
+    @Test("night mode output parses to an appearance, auto and custom to a schedule, and junk to nothing", arguments: [
+        ("Night mode: yes\n", AppearanceReading.fixed(.dark)),
+        ("Night mode: no", .fixed(.light)),
+        ("Night mode: auto\n", .scheduled("auto")),
+        ("Night mode: custom_schedule\n", .scheduled("custom")),
         ("cmd: Can't find service: uimode", nil),
-    ] as [(String, Appearance?)])
-    func nightMode(output: String, expected: Appearance?) {
+    ] as [(String, AppearanceReading?)])
+    func nightMode(output: String, expected: AppearanceReading?) {
         #expect(AndroidDeviceSettings.parseNightMode(output) == expected)
     }
 
@@ -88,12 +93,12 @@ struct AndroidDeviceControlsTests {
     func appearance() async throws {
         let (backend, server, emulator) = try Self.setUp()
 
-        #expect(try await backend.appearance(on: Self.device) == .light)
+        #expect(try await backend.appearance(on: Self.device) == .fixed(.light))
         try await backend.setAppearance(.dark, on: Self.device)
 
         #expect(server.services.contains("shell,v2,raw:cmd uimode night yes"))
         #expect(emulator.night == "yes")
-        #expect(try await backend.appearance(on: Self.device) == .dark)
+        #expect(try await backend.appearance(on: Self.device) == .fixed(.dark))
     }
 
     @Test("content size writes the category's font scale and reads the nearest category back")

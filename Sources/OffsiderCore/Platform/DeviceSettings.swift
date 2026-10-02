@@ -5,6 +5,24 @@ public enum Appearance: String, CaseIterable, Sendable {
     case dark
 }
 
+/// What the device reports: light or dark, or an Android night mode such as `auto` or `custom` that follows a schedule.
+public enum AppearanceReading: Equatable, Sendable {
+    case fixed(Appearance)
+    case scheduled(String)
+
+    public var appearance: Appearance? {
+        guard case .fixed(let appearance) = self else { return nil }
+        return appearance
+    }
+
+    public var name: String {
+        switch self {
+        case .fixed(let appearance): return appearance.rawValue
+        case .scheduled(let mode): return mode
+        }
+    }
+}
+
 /// Dynamic Type sizes on iOS; on Android, a font scale for each.
 public enum ContentSizeCategory: String, CaseIterable, Sendable {
     case extraSmall = "extra-small"
@@ -146,7 +164,7 @@ public struct DeviceSettingsError: Error, CustomStringConvertible, LocalizedErro
 /// Optional capability: system appearance and text size.
 @MainActor
 public protocol DeviceSettingsControlling: DeviceBackend {
-    func appearance(on id: DeviceID) async throws -> Appearance
+    func appearance(on id: DeviceID) async throws -> AppearanceReading
     func setAppearance(_ appearance: Appearance, on id: DeviceID) async throws
     func contentSize(on id: DeviceID) async throws -> ContentSizeReading
     func setContentSize(_ category: ContentSizeCategory, on id: DeviceID) async throws
@@ -208,8 +226,12 @@ public enum DeviceSettingsReport {
     }
 
     public static func appearance(_ current: Appearance, previous: Appearance?) -> String {
+        appearance(.fixed(current), previous: previous)
+    }
+
+    public static func appearance(_ current: AppearanceReading, previous: Appearance?) -> String {
         OrderedJSON.object([
-            ("appearance", .string(current.rawValue)),
+            ("appearance", .string(current.name)),
             ("previous", .optional(previous) { .string($0.rawValue) }),
         ]).rendered(compact: true)
     }

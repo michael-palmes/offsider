@@ -43,7 +43,9 @@ extension BatchContext {
 extension Wait: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
         let readsTree = selector.query != nil || (settled && settleBy != .screen)
-        let outcome = try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
+        let outcome = try await context.watchdog.guarding(bound: watchdogBound, device: context.device.rawValue) {
+            try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
+        }
         if !readsTree {
             // Time passed without a tree read, so the cached tree may be stale.
             context.invalidateTree()
@@ -54,7 +56,9 @@ extension Wait: BatchReadable {
 
 extension Assert: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
-        let outcome = try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
+        let outcome = try await context.watchdog.guarding(bound: 0, device: context.device.rawValue) {
+            try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
+        }
         return BatchReadResult(outcome, success: successLine(outcome), failure: failureLine(outcome))
     }
 }

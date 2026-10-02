@@ -16,7 +16,8 @@ struct Batch: AsyncParsableCommand {
         Read steps:
           wait, assert, screenshot, describe-ui
 
-        Read steps print their usual output as they run; input steps print nothing. Steps cannot take --device, \
+        Read steps print their usual output as they run; input steps print nothing to stdout, though warnings \
+        such as an off-screen or covered tap still go to stderr. Steps cannot take --device, \
         --json, --verify, --verify-timeout or --retries. A step's own --wait-timeout or --poll-interval \
         overrides the batch-level value.
 

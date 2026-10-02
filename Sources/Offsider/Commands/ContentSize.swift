@@ -51,11 +51,12 @@ struct ContentSizeCommand: AsyncParsableCommand {
             throw CLIError(errorDescription: "content-size is not available for \(deviceOption.id).")
         }
 
-        let previous = try await settings.contentSize(on: device)
         guard let target else {
-            print(json ? DeviceSettingsReport.contentSize(previous, previous: nil) : Self.line(previous, previous: nil))
+            let current = try await settings.contentSize(on: device)
+            print(json ? DeviceSettingsReport.contentSize(current, previous: nil) : Self.line(current, previous: nil))
             return
         }
+        let previous = try? await settings.contentSize(on: device)
         try await settings.setContentSize(target, on: device)
         let current = try await settings.contentSize(on: device)
         print(json ? DeviceSettingsReport.contentSize(current, previous: previous) : Self.line(current, previous: previous))

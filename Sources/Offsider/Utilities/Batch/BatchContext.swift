@@ -25,6 +25,8 @@ final class BatchContext {
     let tapStyle: TapStyle
     let waitTimeout: TimeInterval
     let pollInterval: TimeInterval
+    /// Armed around each wait and assert step, as the standalone commands arm it.
+    let watchdog: DeviceWatchdog
 
     private var cachedTree: UITree?
 
@@ -36,7 +38,8 @@ final class BatchContext {
         typeChunkSize: Int,
         tapStyle: TapStyle = .automatic,
         waitTimeout: TimeInterval = 0,
-        pollInterval: TimeInterval = 0.25
+        pollInterval: TimeInterval = 0.25,
+        watchdog: DeviceWatchdog = DeviceWatchdog()
     ) {
         self.backend = backend
         self.device = device
@@ -46,6 +49,7 @@ final class BatchContext {
         self.tapStyle = tapStyle
         self.waitTimeout = waitTimeout
         self.pollInterval = pollInterval
+        self.watchdog = watchdog
     }
 
     func accessibilityTree(forceRefresh: Bool = false) async throws -> UITree {
@@ -75,12 +79,6 @@ final class BatchContext {
     /// Drops the cached tree; a step that sent input or slept may have changed the screen.
     func invalidateTree() {
         cachedTree = nil
-    }
-
-    /// Caches a tree a step read itself, so the next selector step can reuse it under `perBatch`.
-    func remember(_ tree: UITree) {
-        guard axCachePolicy == .perBatch else { return }
-        cachedTree = tree
     }
 }
 

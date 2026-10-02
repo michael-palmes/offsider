@@ -60,6 +60,18 @@ public struct WaitOutcome: Equatable, Sendable {
     }
 }
 
+/// A wait that could never be met because every read it compared was unreadable.
+public struct WaitUnreadableError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
+    public let message: String
+
+    public var errorDescription: String? { message }
+    public var description: String { message }
+
+    static let settledTree = WaitUnreadableError(
+        message: "--settled could not read the accessibility tree: every read was empty or unreadable, so it cannot tell when the screen settles. Use --settle-by screen to compare screenshots instead."
+    )
+}
+
 @MainActor
 public enum WaitLoop {
     /// Reads at least once; with `timeout` 0 exactly once. Transient read failures count as not yet met.
@@ -102,6 +114,9 @@ public enum WaitLoop {
         if !succeededOnce, let lastTransient {
             throw lastTransient
         }
+        if state.treeReads >= 2, !state.readableTree {
+            throw WaitUnreadableError.settledTree
+        }
         return WaitOutcome(met: false, elapsed: sources.now() - start, reason: lastReason)
     }
 
@@ -126,6 +141,8 @@ public enum WaitLoop {
         var fingerprint: ImageFingerprint?
         var quietSince: TimeInterval?
         var reads = 0
+        var treeReads = 0
+        var readableTree = false
     }
 
     private static func evaluate(_ condition: WaitCondition, state: inout State, sources: WaitSources) async throws -> Step {
@@ -142,6 +159,8 @@ public enum WaitLoop {
             var change: String?
             if source != .screen {
                 let snapshot = AccessibilitySnapshot(tree: try await sources.tree())
+                state.treeReads += 1
+                state.readableTree = state.readableTree || snapshot.isKnown
                 if let previous = state.snapshot {
                     switch ChangeDetector().compare(previous, snapshot) {
                     case .unchanged: break

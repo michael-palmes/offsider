@@ -2,6 +2,7 @@ import Foundation
 import OffsiderCore
 
 extension IOSBackend: ExpoDevClientPreparing {
+    /// Stops the app first: a running app keeps its preferences in memory and would write the old values back.
     func prepareExpoDevClient(_ appID: String, on id: DeviceID) async throws {
         let udid = id.rawValue
         let bundleID = try ExpoDevClient.validate(appID: appID)
@@ -18,6 +19,7 @@ extension IOSBackend: ExpoDevClientPreparing {
         guard let data = try await Self.appContainer(udid: udid, bundleID: bundleID, kind: "data") else {
             throw ExpoDevClient.iosNotInstalled(bundleID: bundleID, udid: udid)
         }
+        _ = try? await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: ExpoDevClient.iosTerminateArguments(udid: udid, bundleID: bundleID), timeout: 15)
         for arguments in ExpoDevClient.iosDefaultsWriteArguments(udid: udid, dataContainer: data, bundleID: bundleID) {
             let result = try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: arguments, timeout: 15)
             guard result.status == 0 else {

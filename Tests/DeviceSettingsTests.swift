@@ -3,6 +3,7 @@ import FBSimulatorControl
 import Foundation
 import OffsiderCore
 import Testing
+@testable import OffsiderAndroid
 @testable import Offsider
 
 @Suite("Device settings")
@@ -103,6 +104,26 @@ struct DeviceSettingsTests {
             == "Orientation: landscape-right (874 x 402 pt)")
         #expect(OrientationCommand.line(.portrait, screen: UIScreenInfo(width: 411.43, height: 923.43), platform: .android)
             == "Orientation: portrait (411.43 x 923.43 dp)")
+    }
+
+    @Test("an Android night mode of auto reads as a schedule, and setting dark still works with no previous value")
+    @MainActor
+    func scheduledNightMode() async throws {
+        let (backend, _, emulator) = try AndroidDeviceControlsTests.setUp(night: "auto")
+        let device = AndroidDeviceControlsTests.device
+
+        #expect(try await AppearanceCommand.report(nil, json: false, on: device, settings: backend) == "Appearance: auto (follows the system schedule)")
+        #expect(try await AppearanceCommand.report(nil, json: true, on: device, settings: backend) == #"{"appearance":"auto","previous":null}"#)
+        #expect(try await AppearanceCommand.report(.dark, json: false, on: device, settings: backend) == "Appearance: dark")
+        #expect(emulator.night == "yes")
+        #expect(try await AppearanceCommand.report(.light, json: true, on: device, settings: backend) == #"{"appearance":"light","previous":"dark"}"#)
+    }
+
+    @Test("an iOS content size index outside the known sizes is an error, not large", arguments: [0, 13])
+    func unknownIOSContentSize(index: Int) throws {
+        let device = DeviceID(rawValue: "SIM", platform: .ios)
+        #expect(throws: CLIError.self) { try IOSBackend.contentSizeReading(iosIndex: index, on: device) }
+        #expect(try IOSBackend.contentSizeReading(iosIndex: 4, on: device).category == .large)
     }
 
     @Test("bad values are usage errors naming the choices", arguments: [
