@@ -354,6 +354,10 @@ struct AccessibilityTargetResolver {
         if related.contains(where: { $0.isSameElement(as: hit) || $0.isSameTarget(as: hit) }) {
             return nil
         }
+        // A node drawn wholly inside the target is its own content, such as a control's text listed as a sibling.
+        if let targetFrame = resolution.target?.frame, let hitFrame = hit.frame, targetFrame.encloses(hitFrame) {
+            return nil
+        }
         if resolution.coverCandidates.contains(where: { $0.isSameTarget(as: hit) }) {
             return hit
         }

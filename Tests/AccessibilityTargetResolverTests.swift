@@ -605,6 +605,18 @@ struct AccessibilityTargetResolverTests {
         #expect(resolution.coverCandidates.map(\.id) == ["banner"])
     }
 
+    @Test("a control's own text, listed as a sibling inside its frame, is not a cover")
+    func siblingTextInsideTargetIsNotCover() throws {
+        let text = FakeUI.node(.text, label: "Dismiss", frame: FakeUI.frame(40, 800, 60, 20))
+        let roots = Self.screen(width: 402, height: 874, [
+            FakeUI.node(.other, label: "Dismiss", frame: FakeUI.frame(0, 790, 134, 49)),
+            text,
+        ])
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Dismiss"), elementType: "other")
+
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: text, resolution: resolution, roots: roots) == nil)
+    }
+
     @Test("tapping the banner itself lists the tab under its centre as a candidate")
     func tapsUnderBannerAreCandidates() throws {
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: Self.bannerBeforeTabs(), query: .id("banner"))
