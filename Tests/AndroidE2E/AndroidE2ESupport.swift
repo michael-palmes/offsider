@@ -108,51 +108,35 @@ enum AndroidE2E {
         _ = try await waitForNode(timeout: 40) { $0["id"] as? String == id }
     }
 
-    static func tree() async throws -> [String: Any] {
-        let result = try await run("describe-ui")
-        guard let object = try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any] else {
-            throw AndroidE2EError(description: "describe-ui printed no JSON object")
+    /// describe-ui on the guarded emulator; a miss answers a starved app's ANR dialog with Wait.
+    static let describeUI = DescribeUITree(
+        read: { try DescribeUITree.parse(try await run("describe-ui").stdout) },
+        onMiss: { nodes in
+            if nodes.contains(where: { ($0["id"] as? String)?.hasSuffix(":id/aerr_wait") == true }) {
+                try await run("tap --id aerr_wait")
+            }
         }
-        return object
+    )
+
+    static func tree() async throws -> [String: Any] {
+        try await describeUI.tree()
     }
 
     static func nodes(in tree: [String: Any]) -> [[String: Any]] {
-        func walk(_ node: [String: Any]) -> [[String: Any]] {
-            [node] + ((node["children"] as? [[String: Any]]) ?? []).flatMap(walk)
-        }
-        return ((tree["roots"] as? [[String: Any]]) ?? []).flatMap(walk)
+        DescribeUITree.nodes(in: tree)
     }
 
     static func label(of id: String) async throws -> String? {
-        nodes(in: try await tree()).first { $0["id"] as? String == id }?["label"] as? String
+        try await describeUI.label(of: id)
     }
 
     /// Polls describe-ui until a node matches, retrying failed reads and answering a starved app's ANR dialog with Wait.
     static func waitForNode(timeout: TimeInterval = 20, where predicate: ([String: Any]) -> Bool) async throws -> [String: Any] {
-        let deadline = Date().addingTimeInterval(timeout)
-        var lastError: (any Error)?
-        repeat {
-            do {
-                let found = nodes(in: try await tree())
-                if let node = found.first(where: predicate) {
-                    return node
-                }
-                if found.contains(where: { ($0["id"] as? String)?.hasSuffix(":id/aerr_wait") == true }) {
-                    try await run("tap --id aerr_wait")
-                }
-            } catch {
-                lastError = error
-            }
-            try await Task.sleep(for: .milliseconds(500))
-        } while Date() < deadline
-        throw AndroidE2EError(description: "no matching node within \(Int(timeout)) s" + (lastError.map { " (last error: \($0))" } ?? ""))
+        try await describeUI.waitForNode(timeout: timeout, where: predicate)
     }
 
     static func waitForLabel(of id: String, timeout: TimeInterval = 20, _ predicate: @escaping (String) -> Bool) async throws -> String {
-        let node = try await waitForNode(timeout: timeout) { node in
-            node["id"] as? String == id && (node["label"] as? String).map(predicate) == true
-        }
-        return node["label"] as? String ?? ""
+        try await describeUI.waitForLabel(of: id, timeout: timeout, predicate)
     }
 }
 
@@ -195,12 +179,7 @@ actor GuardedEmulator {
 extension AndroidE2E {
     /// The centre of a node's frame, in dp, for coordinate commands.
     static func centre(of id: String) async throws -> (x: Int, y: Int) {
-        let node = try await waitForNode { $0["id"] as? String == id }
-        guard let frame = node["frame"] as? [String: Double],
-              let x = frame["x"], let y = frame["y"], let width = frame["width"], let height = frame["height"] else {
-            throw AndroidE2EError(description: "\(id) has no frame")
-        }
-        return (Int((x + width / 2).rounded()), Int((y + height / 2).rounded()))
+        try await describeUI.centre(of: id)
     }
 
     /// `Physical size`, or `Override size` when set, from `wm size`.
