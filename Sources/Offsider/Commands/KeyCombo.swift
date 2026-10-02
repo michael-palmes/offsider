@@ -4,7 +4,7 @@ import OffsiderCore
 
 struct KeyCombo: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Press a key while holding one or more modifier keys on the simulator.",
+        abstract: "Press a key while holding one or more modifier keys on the device.",
         discussion: """
         Hold modifier keys and press another key as a single atomic operation.
         Modifier keys are held down, the target key is pressed and released,

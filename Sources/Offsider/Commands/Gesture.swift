@@ -6,7 +6,7 @@ extension GesturePreset: ExpressibleByArgument {}
 
 struct Gesture: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Perform preset gesture patterns on the simulator.",
+        abstract: "Perform preset gesture patterns on the device.",
         discussion: """
         Execute common gesture patterns without specifying coordinates.
         
@@ -16,7 +16,7 @@ struct Gesture: AsyncParsableCommand {
           swipe-from-top-edge, swipe-from-bottom-edge
 
         Presets are sized to the foreground app's frame from the accessibility
-        tree and follow the simulator's orientation, like swipe coordinates.
+        tree and follow the device's orientation, like swipe coordinates.
         --screen-width and --screen-height override that size, in points as
         the screen is currently oriented.
 

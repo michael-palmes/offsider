@@ -4,7 +4,7 @@ import OffsiderCore
 
 struct Batch: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Execute ordered interaction steps using one simulator/HID session.",
+        abstract: "Execute ordered interaction steps using one device session.",
         discussion: """
         Batch executes multiple interaction steps in one command to reduce overhead.
         Steps are executed in order.
