@@ -12,39 +12,56 @@ enum BatchStepKind: String {
     case keySequence = "key-sequence"
     case keyCombo = "key-combo"
     case sleep
+    case wait
+    case assert
+    case screenshot
+    case describeUI = "describe-ui"
 
     /// True when the step sends input or sleeps, so the screen may have changed after it.
     var mayChangeScreen: Bool {
         switch self {
         case .tap, .swipe, .gesture, .touch, .type, .button, .key, .keySequence, .keyCombo, .sleep:
             return true
+        case .wait, .assert, .screenshot, .describeUI:
+            return false
         }
     }
 }
 
+/// A parsed step: input to send through the shared session, or a read that reports a result.
+enum BatchStep {
+    case input([BatchPrimitive])
+    case read(any BatchReadable)
+}
+
 @MainActor
 struct BatchStepParser {
-    nonisolated static let unsupportedFlags = ["--verify", "--verify-timeout", "--retries", "--json"]
+    nonisolated static let unsupportedFlags = ["--verify", "--verify-timeout", "--retries"]
     nonisolated static let unsupportedFlagsMessage = "Batch steps do not support --verify. Run the command on its own with --verify, or check with describe-ui after the batch."
+    nonisolated static let stepJSONMessage = "Batch steps do not take --json. Use batch --json for one JSON line per step."
 
     nonisolated static func rejectUnsupportedFlags(_ tokens: [String]) throws {
         let arguments = tokens.dropFirst()
-        let found = arguments.contains { token in
-            unsupportedFlags.contains { token == $0 || token.hasPrefix($0 + "=") }
+        func has(_ flag: String) -> Bool {
+            arguments.contains { $0 == flag || $0.hasPrefix(flag + "=") }
         }
-        if found {
+        if has("--json") {
+            throw ValidationError(stepJSONMessage)
+        }
+        if unsupportedFlags.contains(where: has) {
             throw ValidationError(unsupportedFlagsMessage)
         }
     }
 
-    static func parseStepTokens(
+    /// Parses a step; input steps also resolve their targets now, reads run later through `BatchReadable`.
+    static func parseStep(
         _ tokens: [String],
         deviceID: String,
         context: BatchContext,
         logger: OffsiderLogger
-    ) async throws -> [BatchPrimitive] {
+    ) async throws -> BatchStep {
         guard let firstToken = tokens.first else {
-            return []
+            return .input([])
         }
 
         guard let kind = BatchStepKind(rawValue: firstToken) else {
@@ -52,35 +69,52 @@ struct BatchStepParser {
         }
 
         if kind == .sleep {
-            return try parseSleep(tokens)
+            return .input(try parseSleep(tokens))
         }
 
+        try rejectUnsupportedFlags(tokens)
         let stepArguments = Array(tokens.dropFirst())
         try rejectPerStepDevice(stepArguments)
         let arguments = stepArguments + ["--device", deviceID]
 
         switch kind {
         case .tap:
-            return try await parseCommand(Tap.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(Tap.self, arguments: arguments, context: context, logger: logger))
         case .swipe:
-            return try await parseCommand(Swipe.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(Swipe.self, arguments: arguments, context: context, logger: logger))
         case .gesture:
-            return try await parseCommand(Gesture.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(Gesture.self, arguments: arguments, context: context, logger: logger))
         case .touch:
-            return try await parseCommand(Touch.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(Touch.self, arguments: arguments, context: context, logger: logger))
         case .type:
-            return try await parseCommand(Type.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(Type.self, arguments: arguments, context: context, logger: logger))
         case .button:
-            return try await parseCommand(Button.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(Button.self, arguments: arguments, context: context, logger: logger))
         case .key:
-            return try await parseCommand(Key.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(Key.self, arguments: arguments, context: context, logger: logger))
         case .keySequence:
-            return try await parseCommand(KeySequence.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(KeySequence.self, arguments: arguments, context: context, logger: logger))
         case .keyCombo:
-            return try await parseCommand(KeyCombo.self, arguments: arguments, context: context, logger: logger)
+            return .input(try await parseCommand(KeyCombo.self, arguments: arguments, context: context, logger: logger))
+        case .wait:
+            return .read(try parseRead(Wait.self, arguments: arguments))
+        case .assert:
+            return .read(try parseRead(Assert.self, arguments: arguments))
+        case .screenshot:
+            return .read(try parseRead(Screenshot.self, arguments: arguments))
+        case .describeUI:
+            return .read(try parseRead(DescribeUI.self, arguments: arguments))
         case .sleep:
-            return []
+            return .input([])
         }
+    }
+
+    private static func parseRead<C: AsyncParsableCommand & BatchReadable>(_ type: C.Type, arguments: [String]) throws -> C {
+        guard var parsed = try C.parseAsRoot(arguments) as? C else {
+            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))")
+        }
+        try parsed.validate()
+        return parsed
     }
 
     private static func parseCommand<C: AsyncParsableCommand & BatchConvertible>(

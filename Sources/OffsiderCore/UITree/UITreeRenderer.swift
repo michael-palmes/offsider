@@ -86,7 +86,7 @@ public enum UITreeRenderer {
         ]
     }
 
-    private static func json(_ tree: UITree, _ options: UITreeRenderOptions, fields: Set<UIField>?) -> OrderedJSON {
+    static func json(_ tree: UITree, _ options: UITreeRenderOptions, fields: Set<UIField>?) -> OrderedJSON {
         if options.flat {
             let nodes = tree.flatEntries(options.filter).map { flatJSON($0, fields: fields) }
             return .object(envelope(tree) + [("nodes", .array(nodes))])

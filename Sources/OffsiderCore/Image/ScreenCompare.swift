@@ -90,6 +90,10 @@ public struct ScreenshotReport: Equatable, Sendable {
     }
 
     public func jsonLine() -> String {
+        OrderedJSON.object(jsonMembers).rendered(compact: true)
+    }
+
+    var jsonMembers: [(String, OrderedJSON)] {
         var members: [(String, OrderedJSON)] = [
             ("path", .optional(path, OrderedJSON.string)),
             ("width", .integer(width)),
@@ -115,7 +119,7 @@ public struct ScreenshotReport: Equatable, Sendable {
                 ("changedFraction", .number((comparison.changedFraction * 10_000).rounded() / 10_000)),
             ]
         }
-        return OrderedJSON.object(members).rendered(compact: true)
+        return members
     }
 
     private static func rounded(_ value: Double) -> Double {

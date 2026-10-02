@@ -62,6 +62,16 @@ final class BatchContext {
         }
     }
 
+    /// Reads for one polling step: the first read may reuse the cache, later reads are fresh and become the cache.
+    func pollingTreeSource() -> Wait.TreeSource {
+        var isFirstFetch = true
+        return { [self] in
+            let forceRefresh = !isFirstFetch
+            isFirstFetch = false
+            return try await accessibilityTree(forceRefresh: forceRefresh)
+        }
+    }
+
     /// Drops the cached tree; a step that sent input or slept may have changed the screen.
     func invalidateTree() {
         cachedTree = nil

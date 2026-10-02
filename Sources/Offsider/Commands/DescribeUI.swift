@@ -31,12 +31,19 @@ struct DescribeUI: AsyncParsableCommand {
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         try await route.backend.prepare()
 
-        var tree = try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint())
-        tree.screen = try? await route.backend.screenInfo(for: route.device)
-        print(String(decoding: try output.render(tree), as: UTF8.self), terminator: "")
+        let tree = try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint())
+        print(String(decoding: try output.render(await Self.withScreen(tree, on: route)), as: UTF8.self), terminator: "")
     }
 
-    private func parsedPoint() throws -> UIPoint? {
+    /// The tree with the screen the envelope reports, when the device can say.
+    @MainActor
+    static func withScreen(_ tree: UITree, on route: DeviceRouter.Route) async -> UITree {
+        var tree = tree
+        tree.screen = try? await route.backend.screenInfo(for: route.device)
+        return tree
+    }
+
+    func parsedPoint() throws -> UIPoint? {
         guard let point else {
             return nil
         }

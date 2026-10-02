@@ -7,25 +7,26 @@ protocol BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive]
 }
 
+@MainActor
 private func resolveBatchTapPoint(
     query: AccessibilityQuery,
     context: BatchContext,
+    waitTimeout: TimeInterval,
+    pollInterval: TimeInterval,
     elementType: String?,
     allowOffscreen: Bool,
     logger: OffsiderLogger
 ) async throws -> Polled<TapResolution> {
-    var isFirstFetch = true
+    let fetchTree = context.pollingTreeSource()
     return try await AccessibilityPoller.pollForResolution(
         query: query,
-        waitTimeout: context.waitTimeout,
-        pollInterval: context.pollInterval,
+        waitTimeout: waitTimeout,
+        pollInterval: pollInterval,
         elementType: elementType,
         allowOffscreen: allowOffscreen,
         logger: logger
     ) {
-        let forceRefresh = !isFirstFetch
-        isFirstFetch = false
-        return try await context.accessibilityTree(forceRefresh: forceRefresh)
+        try await fetchTree()
     }
 }
 
@@ -76,15 +77,25 @@ extension Tap: BatchConvertible {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.")
             }
 
+            // A step's own --wait-timeout and --poll-interval override the batch-level values.
+            let waitTimeout = self.waitTimeout ?? context.waitTimeout
+            let pollInterval = self.pollInterval ?? context.pollInterval
+            if waitTimeout > 0, pollInterval <= 0 {
+                throw ValidationError("--poll-interval must be greater than 0 when --wait-timeout is active.")
+            }
             let resolved = try await resolveBatchTapPoint(
                 query: query,
                 context: context,
+                waitTimeout: waitTimeout,
+                pollInterval: pollInterval,
                 elementType: elementType,
                 allowOffscreen: allowOffscreen,
                 logger: logger
             )
             resolution = resolved.value
             resolvedTree = resolved.tree
+            Self.warnIfOffScreen(subject: query.selectorDescription, at: resolution.point, in: resolved.tree)
+            try await checkCover(resolution, selector: query.selectorDescription, tree: resolved.tree, backend: context.backend, device: context.device)
         }
 
         let physicalPoint = try await context.backend.deviceCoordinates(
