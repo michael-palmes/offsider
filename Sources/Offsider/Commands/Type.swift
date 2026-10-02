@@ -77,42 +77,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let device = route.device
         try await backend.prepare()
         
-        // Determine input source and get text
-        let inputText: String
-        
-        // Check if we have multiple input sources
-        let sourceCount = [text != nil, useStdin, inputFile != nil].filter { $0 }.count
-        if sourceCount > 1 {
-            throw ValidationError("Please specify only one input source: text argument, --stdin, or --file.")
-        }
-        
-        switch (text, useStdin, inputFile) {
-        case (let positionalText?, false, nil):
-            // Positional argument
-            inputText = positionalText
-            logger.info().log("Using positional text input: '\(inputText)'")
-            
-        case (nil, true, nil):
-            // Read from stdin
-            logger.info().log("Reading text from standard input...")
-            inputText = readFromStdin()
-            logger.info().log("Read from stdin: '\(inputText)'")
-            
-        case (nil, false, let file?):
-            // Read from file
-            logger.info().log("Reading text from file: \(file)")
-            inputText = try readFromFile(file)
-            logger.info().log("Read from file: '\(inputText)'")
-            
-        case (nil, false, nil):
-            // No input provided
-            throw ValidationError("No input provided. Provide text as argument, or use --stdin, or --file.")
-            
-        default:
-            // This shouldn't happen due to earlier check
-            throw ValidationError("Invalid input configuration.")
-        }
-        
+        let inputText = try resolvedText()
+        logger.info().log("Typing text: '\(inputText)'")
+
         if device.platform == .android {
             try await typeOnAndroid(inputText, backend: backend, device: device, progress: progress)
             return
@@ -211,7 +178,25 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     }
 
     // MARK: - Input Methods
-    
+
+    /// The argument, stdin or file text, in Unicode NFC, so a decomposed `e` plus U+0301 types as one `é`.
+    func resolvedText(readStandardInput: (() -> String)? = nil) throws -> String {
+        let source: String
+        switch (text, useStdin, inputFile) {
+        case (let positionalText?, false, nil):
+            source = positionalText
+        case (nil, true, nil):
+            source = (readStandardInput ?? readFromStdin)()
+        case (nil, false, let file?):
+            source = try readFromFile(file)
+        case (nil, false, nil):
+            throw ValidationError("No input provided. Provide text as argument, or use --stdin, or --file.")
+        default:
+            throw ValidationError("Please specify only one input source: text argument, --stdin, or --file.")
+        }
+        return source.precomposedStringWithCanonicalMapping
+    }
+
     func readFromStdin() -> String {
         var input = ""
         while let line = readLine() {

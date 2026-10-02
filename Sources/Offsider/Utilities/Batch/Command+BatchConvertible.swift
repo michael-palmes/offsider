@@ -238,17 +238,7 @@ extension KeyCombo: BatchConvertible {
 
 extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let inputText: String
-        switch (text, useStdin, inputFile) {
-        case (let positionalText?, false, nil):
-            inputText = positionalText
-        case (nil, true, nil):
-            inputText = readFromStdin()
-        case (nil, false, let file?):
-            inputText = try readFromFile(file)
-        default:
-            throw CLIError(errorDescription: "Invalid input configuration.")
-        }
+        let inputText = try resolvedText()
 
         if context.device.platform == .android {
             return inputText.isEmpty ? [] : [.text(inputText)]

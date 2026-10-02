@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--verify` leaves each platform's system bars out of screenshot comparisons: the status bar on iOS as before, and the status and navigation bars on Android. A command that changed nothing suggests `doctor` only for simulators.
 - A `button` that the device's platform does not have exits 64 before touching the device.
 - Tap summaries round points to 0.01, for example `resolved tap point at (217.15, 272.2)`.
+- `type` normalises text to Unicode NFC, so an `e` followed by a combining acute accent types as one `é`.
 - `record-video` and `stream-video` call their source a device, and their frame errors no longer mention a simulator.
 
 ### Fixed
