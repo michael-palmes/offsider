@@ -35,7 +35,7 @@ struct AndroidJWTTests {
     func jwtSession() async throws {
         try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
         try await AndroidE2E.run("tap --id text-input-field", environment: jwt)
-        try await AndroidE2E.type("jwt \u{F1}", environment: jwt)
+        try await AndroidE2E.run("type 'jwt \u{F1}'", environment: jwt)
         _ = try await AndroidE2E.waitForLabel(of: "character-count") { $0 == "Characters: 5" }
         try await AndroidE2E.run("key 42", environment: jwt)
         _ = try await AndroidE2E.waitForLabel(of: "character-count") { $0 == "Characters: 4" }
