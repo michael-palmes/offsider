@@ -43,7 +43,7 @@ struct Batch: AsyncParsableCommand {
     @Option(name: .customLong("type-chunk-size"), help: "Maximum HID events per chunk when type-submission is chunked.")
     var typeChunkSize: Int = 200
 
-    @Option(name: .customLong("tap-style"), help: "Default tap event style for tap steps: automatic uses physical touch for switches/toggles and simulator tap for other targets; simulator always uses FBSimulator tapAt; physical uses touch down/up.")
+    @Option(name: .customLong("tap-style"), help: "Default tap event style for tap steps: automatic uses physical touch for switches and a single tap event for other targets; simulator always sends a single tap event; physical uses touch down and up.")
     var tapStyle: TapStyle = .automatic
 
     @Flag(name: .customLong("continue-on-error"), help: "Continue executing later steps even if one step fails.")

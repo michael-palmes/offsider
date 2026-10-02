@@ -22,7 +22,7 @@ struct Swipe: AsyncParsableCommand {
     @Option(name: .customLong("duration"), help: "Duration of the swipe in seconds.")
     var duration: Double?
     
-    @Option(name: .customLong("delta"), help: "Distance between touch points in pixels.")
+    @Option(name: .customLong("delta"), help: "Distance in points (dp on Android) between touch points.")
     var delta: Double?
     
     @Option(name: .customLong("pre-delay"), help: "Delay before starting the swipe in seconds.")
@@ -83,10 +83,10 @@ struct Swipe: AsyncParsableCommand {
 
         // Use default values if not provided
         let swipeDuration = duration ?? 1.0  // Default 1 second
-        let swipeDelta = delta ?? 50.0       // Default 50 pixels
+        let swipeDelta = delta ?? 50.0
         
         logger.info().log("Performing swipe from (\(startX), \(startY)) to (\(endX), \(endY))")
-        logger.info().log("Duration: \(swipeDuration)s, Delta: \(swipeDelta)px")
+        logger.info().log("Duration: \(swipeDuration)s, Delta: \(swipeDelta)")
 
         let physicalPoints = try await backend.deviceCoordinates(
             for: [(x: startX, y: startY), (x: endX, y: endY)],
