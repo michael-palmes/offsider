@@ -365,7 +365,7 @@ extension HIDBroker {
             SO_SNDTIMEO,
             &writeTimeout,
             socklen_t(MemoryLayout<timeval>.size)
-        ) == 0 else {
+        ) == 0 || peerAlreadyClosed else {
             throw posixError("setsockopt(SO_SNDTIMEO)")
         }
     }
@@ -378,10 +378,13 @@ extension HIDBroker {
             SO_RCVTIMEO,
             &readTimeout,
             socklen_t(MemoryLayout<timeval>.size)
-        ) == 0 else {
+        ) == 0 || peerAlreadyClosed else {
             throw posixError("setsockopt(SO_RCVTIMEO)")
         }
     }
+
+    /// XNU refuses socket options with EINVAL once the peer has closed; the next read or write then reports the close.
+    private static var peerAlreadyClosed: Bool { errno == EINVAL }
 
     static func monotonicTimeNanoseconds() -> UInt64 {
         DispatchTime.now().uptimeNanoseconds
