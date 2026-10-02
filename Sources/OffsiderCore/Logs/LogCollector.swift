@@ -4,17 +4,20 @@ import Foundation
 public struct LogCollector {
     public let maxLines: Int
     public let keepsANSI: Bool
+    /// False for `--follow`, which prints entries as they arrive and never reads them back.
+    public let retainsEntries: Bool
     private let grep: NSRegularExpression?
     private var kept: [LogEntry] = []
     private var matched = 0
 
     /// `maxLines` 0 keeps everything; `grep` is a case-insensitive regular expression matched against the stripped message.
-    public init(maxLines: Int, grep: String?, keepsANSI: Bool) throws {
+    public init(maxLines: Int, grep: String?, keepsANSI: Bool, retainsEntries: Bool = true) throws {
         guard maxLines >= 0 else {
             throw LogOptionError("--max-lines must be 0 (no limit) or more; got \(maxLines).")
         }
         self.maxLines = maxLines
         self.keepsANSI = keepsANSI
+        self.retainsEntries = retainsEntries
         self.grep = try grep.map(Self.compile)
     }
 
@@ -44,6 +47,7 @@ public struct LogCollector {
     public mutating func add(_ entry: LogEntry) -> LogEntry? {
         guard let shown = filter(entry) else { return nil }
         matched += 1
+        guard retainsEntries else { return shown }
         kept.append(shown)
         if maxLines > 0, kept.count >= maxLines * 2 {
             kept.removeFirst(kept.count - maxLines)

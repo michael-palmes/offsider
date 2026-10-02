@@ -108,7 +108,7 @@ struct Logs: AsyncParsableCommand {
     }
 
     func collector() throws -> LogCollector {
-        try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, keepsANSI: raw)
+        try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, keepsANSI: raw, retainsEntries: !follow)
     }
 
     func run() async throws {

@@ -43,6 +43,15 @@ struct LogsCommandTests {
         #expect(collector.truncated == 0)
     }
 
+    @Test("--follow passes matching entries through without keeping them")
+    func followKeepsNothing() throws {
+        var collector = try Self.command(["--follow", "--grep", "line 1"]).collector()
+        let shown = Self.entries(5000).compactMap { collector.add($0) }
+
+        #expect(shown.count == 1111)
+        #expect(collector.entries.isEmpty)
+    }
+
     @Test("--grep matches case-insensitively after colour codes are removed, and only matches count")
     func grepAfterStripping() throws {
         var collector = try LogCollector(maxLines: 1, grep: "log +tapped", keepsANSI: false)
@@ -64,6 +73,41 @@ struct LogsCommandTests {
     @Test("an invalid --grep pattern names the pattern")
     func invalidGrep() {
         #expect(Self.validationMessage(["--grep", "("])?.hasPrefix("Invalid --grep pattern: (.") == true)
+    }
+
+    // MARK: Live stream
+
+    private struct StreamFailed: Error {}
+
+    @Test("a live stream that exits on its own ends the wait with its status and points at --predicate")
+    @MainActor
+    func liveStreamExitFails() async throws {
+        let clock = ScriptedClock()
+        let error = await #expect(throws: CLIError.self) {
+            try await LiveLogStream.run(
+                for: nil, predicate: "messageType ==", clock: clock.poll,
+                wait: { throw StreamFailed() }, exitStatus: { 64 }
+            )
+        }
+        #expect(error?.userFacingDescription == "The simulator's log command exited with status 64. Check the --predicate syntax.")
+    }
+
+    @Test("a live window ends at its deadline without an error while the stream keeps running")
+    @MainActor
+    func liveWindowEndsAtDeadline() async throws {
+        let clock = ScriptedClock()
+        try await LiveLogStream.run(
+            for: .seconds(5), predicate: nil, clock: clock.poll,
+            wait: { try await Task.sleep(for: .seconds(3600)) }, exitStatus: { nil }
+        )
+        #expect(clock.now >= 5)
+        #expect(clock.now < 6)
+    }
+
+    @Test("without --predicate the stream's failure names the status only")
+    func failureWithoutPredicate() {
+        let error = LiveLogStream.failure(StreamFailed(), status: 1, predicate: nil)
+        #expect(error.userFacingDescription == "The simulator's log command exited with status 1.")
     }
 
     // MARK: JSON

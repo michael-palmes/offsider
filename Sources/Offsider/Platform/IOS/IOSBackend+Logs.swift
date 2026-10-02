@@ -30,32 +30,34 @@ extension IOSBackend: LogReading {
 
         do {
             let operation = try await simulator.tailLog(arguments: arguments, consumer: consumer)
+            let box = OperationBox(operation)
+            let exitStatus: @Sendable () async -> Int32? = {
+                guard let process = (box.operation as? FBProcessLogOperation)?.process else { return nil }
+                return try? await awaitExitCode(of: process)
+            }
             if case .live(let duration) = query.window {
-                try await Self.runLive(operation, for: duration)
+                try await LiveLogStream.run(
+                    for: duration,
+                    predicate: query.predicate,
+                    wait: { try await box.operation.waitUntilCompleted() },
+                    exitStatus: exitStatus
+                )
             } else {
-                try await operation.waitUntilCompleted()
+                do {
+                    try await operation.waitUntilCompleted()
+                } catch {
+                    throw await LiveLogStream.failure(error, status: exitStatus(), predicate: query.predicate)
+                }
             }
         } catch {
             continuation.finish()
             await reader.value
+            if let error = error as? CLIError { throw error }
             throw CLIError(errorDescription: "Failed to read logs from simulator \(id.rawValue): \(error.localizedDescription)")
         }
         await Self.drain(consumer)
         continuation.finish()
         await reader.value
-    }
-
-    /// Waits for `duration` or cancellation, then stops the stream; `log stream` exits on SIGTERM with a non-zero status.
-    private static func runLive(_ operation: any AsyncLogOperation, for duration: Duration?) async throws {
-        let box = OperationBox(operation)
-        let waiter = Task { try await box.operation.waitUntilCompleted() }
-        let end = duration.map { ContinuousClock.now + $0 }
-        while !Task.isCancelled {
-            if let end, ContinuousClock.now >= end { break }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        waiter.cancel()
-        _ = await waiter.result
     }
 
     /// Lets the consumer hand over lines it already read; gives up after two seconds.
@@ -88,6 +90,57 @@ extension IOSBackend: LogReading {
             throw CLIError.deviceNotFound(id: id.rawValue)
         }
         return simulator
+    }
+}
+
+/// Runs `log stream` for a window, ending early and failing when the stream itself exits.
+enum LiveLogStream {
+    /// Waits for `duration`, cancellation or the stream's end, then stops it; `log stream` exits on SIGTERM with a non-zero status.
+    @MainActor
+    static func run(
+        for duration: Duration?,
+        predicate: String?,
+        clock: PollClock = .live,
+        wait: @escaping @Sendable () async throws -> Void,
+        exitStatus: @escaping @Sendable () async -> Int32?
+    ) async throws {
+        let ended = Outcome()
+        let waiter = Task { @MainActor in
+            do {
+                try await wait()
+                ended.result = .success(())
+            } catch {
+                ended.result = .failure(error)
+            }
+        }
+        let end = duration.map { clock.now() + Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 }
+        while !Task.isCancelled, ended.result == nil {
+            if let end, clock.now() >= end { break }
+            try? await clock.sleep(.milliseconds(100))
+            await Task.yield()
+        }
+        guard let outcome = ended.result else {
+            waiter.cancel()
+            await waiter.value
+            return
+        }
+        if case .failure(let error) = outcome {
+            throw failure(error, status: await exitStatus(), predicate: predicate)
+        }
+    }
+
+    @MainActor
+    private final class Outcome {
+        var result: Result<Void, any Error>?
+    }
+
+    /// The error for a `log` process that failed on its own, pointing at `--predicate` when one was given.
+    static func failure(_ error: any Error, status: Int32?, predicate: String?) -> CLIError {
+        let hint = predicate == nil ? "" : " Check the --predicate syntax."
+        guard let status else {
+            return CLIError(errorDescription: "The simulator's log command stopped: \(error.localizedDescription).\(hint)")
+        }
+        return CLIError(errorDescription: "The simulator's log command exited with status \(status).\(hint)")
     }
 }
 

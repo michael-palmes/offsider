@@ -1,20 +1,12 @@
 import Foundation
 import OffsiderCore
 
-/// `logcat -v threadtime` lines as entries: `MM-DD HH:MM:SS.mmm  PID  TID L TAG: message`.
+/// `logcat -v threadtime -v epoch` lines as entries: `SECONDS.mmm  PID  TID L TAG: message`, with Unix times so no zone is involved.
 struct LogcatParser {
-    /// Supplies the year logcat leaves out, and the zone its times are in.
-    let reference: Date
-    let timeZone: TimeZone
     private var previous: LogEntry?
 
-    init(reference: Date = Date(), timeZone: TimeZone = .current) {
-        self.reference = reference
-        self.timeZone = timeZone
-    }
-
     private static let header = try! NSRegularExpression(
-        pattern: #"^(\d\d)-(\d\d)\s+(\d\d):(\d\d):(\d\d)\.(\d{3})\s+(\d+)\s+\d+\s+([VDIWEFAS])\s(.*?)\s*:(?: (.*))?$"#
+        pattern: #"^\s*(\d+)\.(\d{3,9})\s+(\d+)\s+\d+\s+([VDIWEFAS])\s(.*?)\s*:(?: (.*))?$"#
     )
 
     static let levels: [String: String] = [
@@ -37,29 +29,16 @@ struct LogcatParser {
         func group(_ index: Int) -> String? {
             Range(match.range(at: index), in: line).map { String(line[$0]) }
         }
-        let numbers = (1...7).map { group($0).flatMap { Int($0) } ?? 0 }
+        let timestamp = group(1).flatMap { seconds in group(2).flatMap { Double("\(seconds).\($0)") } }
         let entry = LogEntry(
-            timestamp: date(month: numbers[0], day: numbers[1], hour: numbers[2], minute: numbers[3], second: numbers[4], millisecond: numbers[5]),
-            level: group(8).flatMap { Self.levels[$0] },
-            pid: numbers[6],
-            tag: group(9).flatMap { $0.isEmpty ? nil : $0 },
-            message: group(10) ?? ""
+            timestamp: timestamp.map { Date(timeIntervalSince1970: $0) },
+            level: group(4).flatMap { Self.levels[$0] },
+            pid: group(3).flatMap { Int($0) },
+            tag: group(5).flatMap { $0.isEmpty ? nil : $0 },
+            message: group(6) ?? ""
         )
         previous = entry
         return entry
-    }
-
-    /// In the reference year, or the year before when that would put the entry more than a day ahead.
-    private func date(month: Int, day: Int, hour: Int, minute: Int, second: Int, millisecond: Int) -> Date? {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
-        let year = calendar.component(.year, from: reference)
-        func make(_ year: Int) -> Date? {
-            calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute, second: second))?
-                .addingTimeInterval(Double(millisecond) / 1000)
-        }
-        guard let date = make(year) else { return nil }
-        return date.timeIntervalSince(reference) > 86_400 ? make(year - 1) : date
     }
 }
 
@@ -72,11 +51,11 @@ enum LogcatCommand {
         var words = ["logcat"]
         switch window {
         case .last(let duration):
-            words += ["-d", "-v", "threadtime", "-T", "\"$(($(date +%s)-\(duration.wholeSecondsRoundedUp))).000\""]
+            words += ["-d", "-v", "threadtime", "-v", "epoch", "-T", "\"$(($(date +%s)-\(duration.wholeSecondsRoundedUp))).000\""]
         case .since(let date):
-            words += ["-d", "-v", "threadtime", "-T", AdbShellQuoting.quote(String(format: "%.3f", date.timeIntervalSince1970))]
+            words += ["-d", "-v", "threadtime", "-v", "epoch", "-T", AdbShellQuoting.quote(String(format: "%.3f", date.timeIntervalSince1970))]
         case .live:
-            words += ["-v", "threadtime", "-T", "\"$(date +%s).000\""]
+            words += ["-v", "threadtime", "-v", "epoch", "-T", "\"$(date +%s).000\""]
         }
         if let pid {
             words.append("--pid=\(pid)")

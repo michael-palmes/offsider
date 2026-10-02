@@ -10,9 +10,9 @@ struct AndroidLogsTests {
 
     nonisolated static let dump = """
     --------- beginning of main
-    10-02 22:17:18.399  4100  4120 I ReactNativeJS: \u{1B}[32mLOG\u{1B}[39m tapped save
-    10-02 22:17:18.512  4100  4120 W ReactNativeJS: careful: slow
-    10-02 22:17:18.600  4100  4133 E ReactNative: Exception in native call
+             1790945238.399  4100  4120 I ReactNativeJS: \u{1B}[32mLOG\u{1B}[39m tapped save
+             1790945238.512  4100  4120 W ReactNativeJS: careful: slow
+             1790945238.600  4100  4133 E ReactNative: Exception in native call
     --------- beginning of crash
 
     """
@@ -44,10 +44,9 @@ struct AndroidLogsTests {
 
     // MARK: Parser
 
-    @Test("threadtime lines become entries with level names, pid and tag; separators are skipped")
+    @Test("epoch threadtime lines become entries with exact Unix times, level names, pid and tag; separators are skipped")
     func parsesThreadtime() throws {
-        let adelaide = try #require(TimeZone(identifier: "Australia/Adelaide"))
-        var parser = LogcatParser(reference: Date(timeIntervalSince1970: 1_790_945_300), timeZone: adelaide)
+        var parser = LogcatParser()
         let entries = Self.dump.split(separator: "\n", omittingEmptySubsequences: false).compactMap { parser.parse(String($0)) }
 
         #expect(entries.count == 3)
@@ -56,6 +55,7 @@ struct AndroidLogsTests {
         #expect(entries[0].level == "Info")
         #expect(entries[0].pid == 4100)
         #expect(entries[0].tag == "ReactNativeJS")
+        #expect(entries[0].message == "\u{1B}[32mLOG\u{1B}[39m tapped save")
         #expect(entries[1].level == "Warning")
         #expect(entries[1].message == "careful: slow")
         #expect(entries[2].tag == "ReactNative")
@@ -65,7 +65,7 @@ struct AndroidLogsTests {
     @Test("a padded tag is trimmed and an empty message is kept empty")
     func paddedTag() {
         var parser = LogcatParser()
-        let entry = parser.parse("10-02 22:17:18.399  1234  1250 D Zygote  :")
+        let entry = parser.parse("1790945238.399  1234  1250 D Zygote  :")
         #expect(entry?.tag == "Zygote")
         #expect(entry?.message == "")
     }
@@ -73,7 +73,7 @@ struct AndroidLogsTests {
     @Test("a line without a header continues the previous entry")
     func continuationLine() {
         var parser = LogcatParser()
-        _ = parser.parse("10-02 22:17:18.399  4100  4120 E ReactNativeJS: TypeError: undefined is not a function")
+        _ = parser.parse("1790945238.399  4100  4120 E ReactNativeJS: TypeError: undefined is not a function")
         let continuation = parser.parse("    at onPress (index.bundle:1:2)")
 
         #expect(continuation?.message == "    at onPress (index.bundle:1:2)")
@@ -82,24 +82,16 @@ struct AndroidLogsTests {
         #expect(continuation?.level == "Error")
     }
 
-    @Test("a date ahead of the reference by more than a day belongs to the year before")
-    func yearRollover() throws {
-        let utc = try #require(TimeZone(identifier: "UTC"))
-        var parser = LogcatParser(reference: Date(timeIntervalSince1970: 1_767_225_600), timeZone: utc)
-        let entry = parser.parse("12-31 23:59:59.000  1  1 I init: last of the year")
-        #expect(entry?.timestamp == Date(timeIntervalSince1970: 1_767_225_599))
-    }
-
     // MARK: Commands
 
     @Test("history dumps from a start the device computes, live starts at the device's clock")
     func scripts() {
         #expect(LogcatCommand.script(window: .last(.seconds(30)), pid: nil, reactNative: false)
-            == #"logcat -d -v threadtime -T "$(($(date +%s)-30)).000""#)
+            == #"logcat -d -v threadtime -v epoch -T "$(($(date +%s)-30)).000""#)
         #expect(LogcatCommand.script(window: .since(Date(timeIntervalSince1970: 1_790_945_238.25)), pid: 4100, reactNative: false)
-            == "logcat -d -v threadtime -T '1790945238.250' --pid=4100")
+            == "logcat -d -v threadtime -v epoch -T '1790945238.250' --pid=4100")
         #expect(LogcatCommand.script(window: .live(nil), pid: nil, reactNative: true)
-            == #"logcat -v threadtime -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#)
+            == #"logcat -v threadtime -v epoch -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#)
     }
 
     @Test("--rn reads history with React Native filterspecs and parses the dump")
@@ -107,7 +99,7 @@ struct AndroidLogsTests {
         let server = Self.server()
         let entries = try await Self.read(LogQuery(source: .reactNative, window: .last(.seconds(30))), from: server)
 
-        #expect(Self.shellCommands(server) == [#"logcat -d -v threadtime -T "$(($(date +%s)-30)).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#])
+        #expect(Self.shellCommands(server) == [#"logcat -d -v threadtime -v epoch -T "$(($(date +%s)-30)).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#])
         #expect(entries.map(\.tag) == ["ReactNativeJS", "ReactNativeJS", "ReactNative"])
     }
 
@@ -118,7 +110,7 @@ struct AndroidLogsTests {
 
         #expect(Self.shellCommands(server) == [
             "pidof -s 'com.example.app'",
-            #"logcat -d -v threadtime -T "$(($(date +%s)-5)).000" --pid=4100"#,
+            #"logcat -d -v threadtime -v epoch -T "$(($(date +%s)-5)).000" --pid=4100"#,
         ])
         #expect(entries.allSatisfy { $0.process == "com.example.app" })
     }
@@ -158,7 +150,7 @@ struct AndroidLogsTests {
         let server = Self.server()
         let entries = try await Self.read(LogQuery(source: .reactNative, window: .live(.seconds(5))), from: server)
 
-        #expect(Self.shellCommands(server) == [#"logcat -v threadtime -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#])
+        #expect(Self.shellCommands(server) == [#"logcat -v threadtime -v epoch -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#])
         #expect(entries.count == 3)
         #expect(server.closedStreams >= 1)
     }
