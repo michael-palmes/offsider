@@ -21,6 +21,7 @@ export function OverlayTestScreen() {
   const [swallowed, setSwallowed] = useState(0);
   const [hiddenTaps, setHiddenTaps] = useState(0);
   const warnings = useRef(0);
+  const errors = useRef(0);
   const scrimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -107,6 +108,15 @@ export function OverlayTestScreen() {
           onPress={() => {
             fixtureLog('overlay-test', 'clear logs');
             logBox.clearAllLogs();
+          }}
+        />
+        <Target
+          id="overlay-test-log-error"
+          label="Log Error"
+          onPress={() => {
+            errors.current += 1;
+            fixtureLog('overlay-test', `log error ${errors.current}`);
+            console.error(`OffsiderFixture error ${errors.current}`);
           }}
         />
       </ScrollView>

@@ -6,6 +6,38 @@ let isRNIOSE2EEnabled = {
     return raw == "1" || raw == "true" || raw == "yes"
 }()
 
+/// Debug builds that load JavaScript from Metro on 8742 replace the Release app on both platforms.
+let isRNDebugE2EEnabled = {
+    let raw = ProcessInfo.processInfo.environment["OFFSIDER_RN_DEBUG_E2E"]?.lowercased() ?? ""
+    return raw == "1" || raw == "true" || raw == "yes"
+}()
+
+/// The Metro that `scripts/rn-playground.sh metro start` runs for the Debug builds.
+enum RNMetro {
+    static let port = 8742
+    static let url = "http://127.0.0.1:\(port)"
+    /// The dev client's own link to load a bundle URL, as `expo start --dev-client` prints it.
+    static let devClientURL = "exp+offsiderplaygroundrn://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A\(port)"
+}
+
+/// Around a debug suite: points the Android emulator's 127.0.0.1:8742 at Metro on the Mac, and removes it afterwards.
+struct RNDebugSession: SuiteTrait, TestScoping {
+    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+        guard isAndroidE2EEnabled else {
+            try await function()
+            return
+        }
+        try await AndroidE2E.reverseMetro()
+        do {
+            try await function()
+        } catch {
+            try? await AndroidE2E.removeMetroReverse()
+            throw error
+        }
+        try await AndroidE2E.removeMetroReverse()
+    }
+}
+
 enum RNPlatform: String, Sendable, CustomTestStringConvertible {
     case ios
     case android
@@ -38,7 +70,9 @@ struct RNApp: Sendable {
     }
 
     /// Launches `route` and waits for `id`, by default the `<route>-screen` marker; refuses a landscape device first.
+    /// A Debug build's first bundle from Metro can take minutes, so it gets at least 180 s.
     func open(_ route: String, waitingFor id: String? = nil, timeout: TimeInterval = 40) async throws {
+        let timeout = isRNDebugE2EEnabled ? max(timeout, 180) : timeout
         let size = try await screenSize()
         guard size.width <= size.height else {
             throw DescribeUIError(description: "The \(platform.rawValue) device is in landscape (\(Int(size.width)) x \(Int(size.height))); rotate it to portrait before running the React Native fixtures.")

@@ -97,4 +97,99 @@ struct ReactNativeOffscreenTests {
         try await app.run("tap --id stack-test-mark")
         _ = try await app.waitForLabel(of: "stack-test-state") { $0 == "Stack State: Page 2 marked" }
     }
+
+    @Test("assert sees a parked sheet as gone, and wait sees it arrive and leave", arguments: RNPlatform.enabled)
+    func assertAndWaitOnParkedSheet(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("parked-sheet-test")
+
+        let present = try await app.offsider("assert --id parked-sheet-test-apply")
+        #expect(present.exitCode == 5)
+        switch platform {
+        case .ios:
+            #expect(present.stderr.contains("off screen"), "iOS keeps the parked sheet in the tree: \(present.stderr)")
+        case .android:
+            #expect(present.stderr.contains("not found"), "Android's helper omits invisible nodes: \(present.stderr)")
+        }
+        let gone = try await app.offsider("assert --id parked-sheet-test-apply --gone")
+        #expect(gone.exitCode == 0, "\(gone.stderr)")
+
+        try await app.run("tap --id parked-sheet-test-open-slow")
+        let arrived = try await app.offsider("wait --id parked-sheet-test-apply --timeout 6")
+        #expect(arrived.exitCode == 0, "\(arrived.stderr)")
+
+        _ = try await app.waitForLabel(of: "parked-sheet-test-position") { $0 == "Sheet Position: Open" }
+        try await app.run("tap --id parked-sheet-test-close")
+        let left = try await app.offsider("wait --id parked-sheet-test-apply --gone")
+        #expect(left.exitCode == 0, "\(left.stderr)")
+        _ = try await app.waitForLabel(of: "parked-sheet-test-position") { $0 == "Sheet Position: Parked" }
+        if platform == .ios {
+            #expect(try await app.label(of: "parked-sheet-test-apply") == "Apply Filters", "iOS keeps the closed sheet mounted off screen")
+        }
+    }
+
+    struct BatchLine: Decodable {
+        let step: Int?
+        let kind: String
+        let ok: Bool
+        let exitCode: Int32?
+        let steps: Int?
+        let failed: Int?
+    }
+
+    static func batchLines(_ stdout: String) throws -> [BatchLine] {
+        try stdout.split(separator: "\n").map { try JSONDecoder().decode(BatchLine.self, from: Data($0.utf8)) }
+    }
+
+    @Test("one batch --json runs a whole sheet case as NDJSON", arguments: RNPlatform.enabled)
+    func batchJSONCase(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("parked-sheet-test")
+        let shot = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-rn-batch-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: shot) }
+
+        // assert reads once, so a wait covers the render after the tap (about 300 ms on Android).
+        let steps = [
+            "tap --id parked-sheet-test-open",
+            "wait --id parked-sheet-test-apply",
+            "wait --settled",
+            "tap --id parked-sheet-test-apply",
+            "wait --label 'Parked Sheet State: Filters applied'",
+            "assert --label 'Parked Sheet State: Filters applied'",
+            "screenshot --output \(shot.path) --scale points",
+            "describe-ui --summary",
+        ]
+        let result = try await app.offsider("batch --json " + steps.map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " "))
+
+        #expect(result.exitCode == 0, "\(result.stderr)")
+        let lines = try Self.batchLines(result.stdout)
+        #expect(lines.map { $0.step } == Array(1...steps.count).map(Optional.some) + [nil])
+        #expect(lines.dropLast().allSatisfy { $0.ok })
+        let summary = try #require(lines.last)
+        #expect(summary.kind == "batch")
+        #expect(summary.ok)
+        #expect(summary.steps == steps.count)
+        #expect(summary.failed == 0)
+        #expect(FileManager.default.fileExists(atPath: shot.path))
+    }
+
+    @Test("a failing assert in a batch exits 5 with its NDJSON line marked", arguments: RNPlatform.enabled)
+    func batchFailingAssert(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("parked-sheet-test")
+
+        let result = try await app.offsider("batch --json --step \"assert --label 'Parked Sheet State: Nope'\" --step 'describe-ui --summary'")
+
+        #expect(result.exitCode == 5, "\(result.stderr)")
+        let lines = try Self.batchLines(result.stdout)
+        let failed = try #require(lines.first)
+        #expect(failed.kind == "assert")
+        #expect(!failed.ok)
+        #expect(failed.exitCode == 5)
+        let summary = try #require(lines.last)
+        #expect(lines.count == 2, "the failure stops the batch before describe-ui")
+        #expect(!summary.ok)
+        #expect(summary.steps == 2)
+        #expect(summary.failed == 1)
+    }
 }

@@ -79,27 +79,75 @@ enum AndroidE2E {
         return result
     }
 
-    /// Installs OFFSIDER_ANDROID_APK unless the emulator already has this exact APK (its SHA-256 in a marker file).
+    /// OFFSIDER_ANDROID_APK, or OFFSIDER_ANDROID_DEBUG_APK with OFFSIDER_RN_DEBUG_E2E.
+    static func apkPath() throws -> String {
+        let (variable, kind) = isRNDebugE2EEnabled ? ("OFFSIDER_ANDROID_DEBUG_APK", "debug") : ("OFFSIDER_ANDROID_APK", "release")
+        guard let apk = ProcessInfo.processInfo.environment[variable], !apk.isEmpty else {
+            throw AndroidE2EError(description: "\(variable) must name the React Native playground's \(kind) APK.")
+        }
+        return apk
+    }
+
+    /// Installs the APK unless the emulator already has this exact one (its SHA-256 in a marker file).
+    /// The debug and release APKs share the package, so each records its own digest and the other reinstalls.
     static func ensurePlaygroundInstalled() async throws {
         try await GuardedEmulator.shared.installOnce {
-            guard let apk = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_APK"], !apk.isEmpty else {
-                throw AndroidE2EError(description: "OFFSIDER_ANDROID_APK must name the React Native playground's release APK.")
-            }
-            let data = try Data(contentsOf: URL(fileURLWithPath: apk), options: .mappedIfSafe)
-            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            let apk = try apkPath()
+            let digest = try apkDigest(apk)
             let installed = (try? await shell("cat \(marker) 2>/dev/null; pm path \(package)")) ?? ""
-            if installed.contains(digest), installed.contains("package:") {
-                return
+            if !(installed.contains(digest) && installed.contains("package:")) {
+                try await install(apk, digest: digest)
             }
-            try await adb("install -r \(quote(apk))", timeout: 300)
-            try await shell("echo \(digest) > \(marker)")
+            if isRNDebugE2EEnabled {
+                try await run("rn prepare --bundle-id \(package)")
+            }
         }
     }
 
+    /// Uninstalls and installs the APK, leaving the dev client's first-launch state as a new user would see it.
+    static func installFresh() async throws {
+        let apk = try apkPath()
+        _ = try? await adb("uninstall \(package)", timeout: 120)
+        try await install(apk, digest: try apkDigest(apk))
+    }
+
+    private static func apkDigest(_ apk: String) throws -> String {
+        let data = try Data(contentsOf: URL(fileURLWithPath: apk), options: .mappedIfSafe)
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// A signature mismatch with the installed build (debug over release or the reverse) needs an uninstall first.
+    private static func install(_ apk: String, digest: String) async throws {
+        do {
+            try await adb("install -r \(quote(apk))", timeout: 300)
+        } catch let error as AndroidE2EError where error.description.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+            try await adb("uninstall \(package)", timeout: 120)
+            try await adb("install \(quote(apk))", timeout: 300)
+        }
+        try await shell("echo \(digest) > \(marker)")
+    }
+
     /// Restarts the playground on a screen by deep link, without waiting for the screen to render.
+    /// The debug app first loads its bundle from Metro by the dev client's link, then follows the screen link.
     static func launch(_ screen: String) async throws {
         try await ensurePlaygroundInstalled()
-        try await shell("am start -S -W -a android.intent.action.VIEW -d offsiderplaygroundrn://screen/\(screen) \(package)")
+        guard isRNDebugE2EEnabled else {
+            try await shell("am start -S -W -a android.intent.action.VIEW -d offsiderplaygroundrn://screen/\(screen) \(package)")
+            return
+        }
+        try await shell("am force-stop \(package)")
+        try await shell("am start -W -a android.intent.action.VIEW -d \(quote(RNMetro.devClientURL)) \(package)")
+        _ = try await waitForNode(timeout: 180) { $0["id"] as? String == "menu-title" }
+        try await shell("am start -W -a android.intent.action.VIEW -d offsiderplaygroundrn://screen/\(screen) \(package)")
+    }
+
+    /// Lets the emulator reach Metro on the Mac at its own 127.0.0.1:8742.
+    static func reverseMetro() async throws {
+        try await adb("reverse tcp:\(RNMetro.port) tcp:\(RNMetro.port)")
+    }
+
+    static func removeMetroReverse() async throws {
+        try await adb("reverse --remove tcp:\(RNMetro.port)")
     }
 
     /// Opens a playground screen by deep link and waits until describe-ui shows `id`.

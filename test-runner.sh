@@ -199,7 +199,7 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
-        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListDevicesTests|PresentationFixtureTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests|VerifyTests)
+        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DeviceControlTests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListDevicesTests|LogsTests|ParkedSheetTests|PresentationFixtureTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests|VerifyTests)
             TEST_FILTER="$1"
             shift
             ;;
@@ -770,6 +770,7 @@ run_tests() {
             "ButtonTests"
             "CommandNamingTests"
             "DescribeUITests"
+            "DeviceControlTests"
             "DoctorTests"
             "GestureTests"
             "InitTests"
@@ -777,6 +778,8 @@ run_tests() {
             "KeySequenceTests"
             "KeyTests"
             "ListDevicesTests"
+            "LogsTests"
+            "ParkedSheetTests"
             "PresentationFixtureTests"
             "RecordVideoTests"
             "StreamVideoDebugTests"

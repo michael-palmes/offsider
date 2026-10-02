@@ -72,7 +72,13 @@ struct ReactNativeOverlayTests {
     func silentScrimIsNotDetected(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("overlay-test")
-        let result = try await app.run("batch --step 'tap --id overlay-test-show-scrim' --step 'tap --id overlay-test-tab-search --fail-if-covered'")
+        // The hidden scrim leaves the tree unchanged, so only its readout shows that it has mounted.
+        let steps = [
+            "tap --id overlay-test-show-scrim",
+            "wait --label 'Scrim: Shown'",
+            "tap --id overlay-test-tab-search --fail-if-covered",
+        ]
+        let result = try await app.run("batch " + steps.map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " "))
 
         #expect(!result.stderr.contains("may be covered"), "\(result.stderr)")
         _ = try await app.waitForLabel(of: "overlay-test-swallowed") { $0 == "Swallowed Taps: 1" }

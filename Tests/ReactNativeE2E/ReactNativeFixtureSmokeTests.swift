@@ -29,6 +29,7 @@ struct ReactNativeFixtureSmokeTests {
         let search = try await app.centre(of: "overlay-test-tab-search")
 
         try await app.run("tap --id overlay-test-toggle-banner")
+        _ = try await app.waitForNode { $0["id"] as? String == "overlay-test-banner" }
         try await app.run("tap -x \(search.x) -y \(search.y)")
 
         _ = try await app.waitForLabel(of: "overlay-test-swallowed") { $0 == "Swallowed Taps: 1" }
