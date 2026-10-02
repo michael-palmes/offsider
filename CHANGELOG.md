@@ -9,8 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `describe-ui --summary` prints one line per on-screen node that has a label, id or value. `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json|ndjson|text` and `--compact` shape the output; without them it is unchanged.
-- `screenshot --scale points|<factor>`, `--region x,y,w,h` (in points), `--format png|jpeg`, `--quality` and `--json`. On iOS, `--region` needs a portrait screen for now.
+- `screenshot --scale points|<factor>`, `--region x,y,w,h` (in points), `--format png|jpeg`, `--quality` and `--json`. With these options, iOS landscape captures are turned upright.
 - `screenshot --compare <baseline>` with `--threshold` reports how much of the capture changed and exits 0 when it changed, 5 when it did not.
+- `wait` waits until an element is on screen or `--gone`, the screen is `--settled`, a `--region` is `--changed` or `--stable`, or `--seconds` pass, and exits 5 on timeout. `assert` checks once and exits 5 when the element is not on screen, is not gone, or lacks `--has-value`.
+- `batch` runs `wait`, `assert`, `screenshot` and `describe-ui` as steps, and `batch --json` prints one NDJSON line per step and a summary line. A batch whose only failures are unmet conditions exits 5.
+- `tap` warns when another element may cover its target, and `--fail-if-covered` fails instead of tapping.
+- `logs` prints recent device log entries or collects live ones, with `--rn` for React Native output, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw` and `--json`.
+- `appearance`, `content-size` and `orientation` read or set the device's appearance, text size and interface orientation on iOS and Android; `shake` sends the shake gesture on iOS.
 - `--allow-offscreen` on `tap`, `slider` and batch tap steps resolves an element whose frame is outside the screen.
 - When no `--label` or `--value` matches exactly, typographic quotes and unusual spaces are folded, so `--label "Don't Allow"` finds `Don’t Allow`. A selector that matches nothing suggests the closest labels.
 - `doctor` names the Xcode a running Simulator.app belongs to and, when it is not the selected one, suggests `DEVELOPER_DIR` before quitting it.
@@ -22,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Selectors prefer on-screen matches. A match whose frame lies outside the screen now fails with an error naming its frame, where `tap` used to report success, and `--wait-timeout` waits for it to come on screen. A duplicate label on a hidden view no longer counts as a second match.
 - `batch` reads the screen again after any step that sends input or sleeps, so a selector step sees the screen its previous step opened. `--ax-cache none` is an alias of `perStep`.
 - A multiple-match error lists each candidate's role, id and frame.
+- A `--wait-timeout` or `--poll-interval` on a batch tap step overrides the batch-level value for that step; it used to be ignored.
+- `gesture` help says which way each scroll preset moves the content.
 - `tap -x -y` outside the screen prints a warning.
 - `screenshot` prints the image size on its "saved" line.
 

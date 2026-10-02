@@ -116,7 +116,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--device` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes. Android checks are not in this release |
 | `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text` and `--compact` shape the output |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
-| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--tap-style`, delays and `--verify, --retries, --json` |
+| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--tap-style`, delays and `--verify, --retries, --json` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`), then verify the result |
 | `type` | Type text from an argument, `--stdin` or `--file` (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; supports `--verify, --retries, --json` |
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
@@ -127,8 +127,15 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `key` | Press one HID keycode (0 to 255), optionally held for `--duration`; supports `--verify, --retries, --json` |
 | `key-sequence` | Press comma-separated `--keycodes` in order, with an optional `--delay` |
 | `key-combo` | Press `--key` while holding comma-separated `--modifiers` |
-| `batch` | Run ordered steps in one device session from `--step`, `--file` or `--stdin`; supports `--wait-timeout`, `--ax-cache`, `--continue-on-error` and `sleep` steps. Selector steps read the screen again after any step that sends input |
+| `wait` | Wait until an element is on screen (`--id`, `--label`, `--value`, `--has-value`) or `--gone`, the screen is `--settled`, a `--region x,y,w,h` is `--changed` or `--stable`, or `--seconds` pass; `--timeout`, `--json`. Exits 5 on timeout |
+| `assert` | Check once that an element is on screen, optionally with `--has-value`, or `--gone`; exits 5 when it is not |
+| `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin`: input steps, `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`; supports `--wait-timeout`, `--ax-cache`, `--continue-on-error` and `--json` (one NDJSON line per step). Selector steps read the screen again after any step that sends input |
 | `screenshot` | Save a PNG or JPEG of the device display (`--output`, `--format`, `--quality`); `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, `--json` prints the image's size and scale, and `--compare <baseline>` (`--threshold`) exits 0 when the capture changed and 5 when it did not |
+| `logs` | Print recent device log entries (`--last 30s` by default, or `--since`), or collect live ones with `--duration` or `--follow`; `--rn` for React Native, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw`, `--json` |
+| `appearance` | Read or set light or dark appearance |
+| `content-size` | Read or set the text size: a Dynamic Type category on iOS, the matching font scale on Android; `reset` restores `large` |
+| `orientation` | Read or set the interface orientation (`portrait`, `landscape-left`, `landscape-right`, `portrait-upside-down`), waiting until the device has turned |
+| `shake` | Send the shake gesture (iOS only) |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
 
@@ -187,6 +194,34 @@ application "Playground" (0,0 402x874)
 
 `--id`, `--label` and `--value` match `id`, `label` and `value`. Selectors prefer matches that are on screen: apps often keep views mounted off screen (a closed bottom sheet parked below the screen, rows below the fold), and a match whose frame lies outside the screen fails with an error naming its frame instead of tapping nothing. `--wait-timeout` waits for it to come on screen, and `--allow-offscreen` resolves it anyway. When no label or value matches exactly, typographic quotes and unusual spaces are folded (`--label "Don't Allow"` finds `Don’t Allow`), and a miss suggests the closest labels. On Android, `--id alert_title` also matches `com.example:id/alert_title` when no id matches exactly. `--element-type` matches `role` in any case or the native `type` exactly, so `button`, `Button` and `RadioButton` all work.
 
+### Conditions and whole cases
+
+`wait` and `assert` exit 0 when their condition holds and 5 when it does not, so a script can branch on them. Only on-screen matches count unless `--allow-offscreen` is passed. `wait --region x,y,w,h --changed` (or `--stable`) watches pixels, for content the accessibility tree cannot see, such as charts, maps and web views.
+
+`batch` takes the same commands as steps, so one call can run a whole case:
+
+```bash
+offsider batch --device "$DEVICE" --json \
+  --step "tap --id open-filters" \
+  --step "wait --id apply-filters" \
+  --step "tap --id apply-filters" \
+  --step "assert --id filter-state --has-value Applied" \
+  --step "screenshot --output after.png --scale points" \
+  --step "describe-ui --summary"
+```
+
+With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `ms`, plus `exitCode` and `error` on failure and each read step's own result), then a summary line; human text goes to stderr. The batch exits 1 when a step failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0.
+
+`tap` warns when another element may cover its target, for example a banner over a tab bar, and `--fail-if-covered` stops instead of tapping. An overlay that is hidden from accessibility cannot be detected this way.
+
+### React Native notes
+
+- `testID` is `id` and `accessibilityLabel` is `label` on both platforms. A pressable row with neither takes its children's text as its label (`Inbox, 3 unread`), live values included, so prefer a `testID`.
+- Views often stay mounted while off screen: a closed bottom sheet parked below the screen, or the previous screen of a JavaScript stack. On iOS they stay in the tree with off-screen frames; on Android nodes the user cannot see are left out. Selectors, `wait`, `assert` and `describe-ui --on-screen` count only what is on screen. A previous screen that is still partly on screen under the current one keeps its ids, so a duplicated id there needs `--element-type` or coordinates.
+- Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` is not in the tree but still takes taps.
+- `offsider logs --rn` prints `console.log`, `console.warn` and `console.error` output, in release builds too.
+- `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off.
+
 ### Android notes
 
 - IDs are emulator serials (`emulator-5554`) or the names of running AVDs; `list-devices` shows both. `boot` starts an AVD with its window (`--headless` hides it), passes only `-no-metrics` to the emulator, writes the emulator's output to `$TMPDIR/offsider-boot-<avd>.log` and never starts a second instance of an AVD that is already running.
@@ -212,7 +247,7 @@ application "Playground" (0,0 402x874)
 | 1 | The command failed; the error is printed to stderr |
 | 3 | `doctor` found warnings |
 | 4 | `doctor` found failures |
-| 5 | `--verify`: the input was dispatched but nothing observable changed; `screenshot --compare`: the capture did not change |
+| 5 | A condition was not met: `--verify` saw no change after the input, `wait` timed out, `assert` failed, `screenshot --compare` found no change, or a `batch` had only such failures |
 | 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, a `button` the device's platform lacks and `boot` with a simulator UDID |
 
 ## Privacy
@@ -231,6 +266,8 @@ make e2e          # rebuild everything and run the simulator end-to-end suites
 make e2e-android  # run the Android emulator end-to-end suites (see ./test-runner.sh --help)
 make e2e-rn-ios   # run the React Native playground suites on a simulator (needs pnpm)
 ```
+
+`make e2e-rn-debug-ios` and `make e2e-rn-debug-android` build the React Native debug app, run Metro on loopback port 8742 and run the debug smoke suite.
 
 `OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines.
 
