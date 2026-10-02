@@ -97,4 +97,14 @@ struct RNApp: Sendable {
     func screenSize() async throws -> (width: Double, height: Double) {
         try await describeUI.screenSize()
     }
+
+    /// A node's frame in points or dp, waiting for the node to appear.
+    func frame(of id: String) async throws -> (x: Double, y: Double, width: Double, height: Double) {
+        let node = try await waitForNode { $0["id"] as? String == id }
+        guard let frame = node["frame"] as? [String: Double],
+              let x = frame["x"], let y = frame["y"], let width = frame["width"], let height = frame["height"] else {
+            throw DescribeUIError(description: "\(id) has no frame")
+        }
+        return (x, y, width, height)
+    }
 }
