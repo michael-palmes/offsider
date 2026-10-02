@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-02
+
 ### Added
 
 - `list-devices` command: one row per device with PLATFORM, STATE, ID, NAME and OS columns.
@@ -91,6 +93,7 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/michael-palmes/offsider/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/michael-palmes/offsider/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/michael-palmes/offsider/releases/tag/v0.1.0
