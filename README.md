@@ -114,10 +114,10 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `list-devices` | List iOS simulators (iPhone and iPad), running Android emulators and shut-down AVDs with their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
 | `boot` | Start an Android emulator by AVD name and wait until it has booted, then print its serial (`--headless`, `--timeout`); an AVD that is already running is not started again |
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--device` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes. Android checks are not in this release |
-| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y` |
+| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text` and `--compact` shape the output |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
-| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--tap-style`, delays and `--verify, --retries, --json` |
-| `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label`, then verify the result |
+| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--tap-style`, delays and `--verify, --retries, --json` |
+| `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`), then verify the result |
 | `type` | Type text from an argument, `--stdin` or `--file` (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; supports `--verify, --retries, --json` |
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
 | `drag` | Low-level point-to-point drag using explicit touch moves (`--duration`, `--steps`) |
@@ -127,8 +127,8 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `key` | Press one HID keycode (0 to 255), optionally held for `--duration`; supports `--verify, --retries, --json` |
 | `key-sequence` | Press comma-separated `--keycodes` in order, with an optional `--delay` |
 | `key-combo` | Press `--key` while holding comma-separated `--modifiers` |
-| `batch` | Run ordered steps in one device session from `--step`, `--file` or `--stdin`; supports `--wait-timeout`, `--ax-cache`, `--continue-on-error` and `sleep` steps |
-| `screenshot` | Save a PNG of the device display (`--output`) |
+| `batch` | Run ordered steps in one device session from `--step`, `--file` or `--stdin`; supports `--wait-timeout`, `--ax-cache`, `--continue-on-error` and `sleep` steps. Selector steps read the screen again after any step that sends input |
+| `screenshot` | Save a PNG or JPEG of the device display (`--output`, `--format`, `--quality`); `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, `--json` prints the image's size and scale, and `--compare <baseline>` (`--threshold`) exits 0 when the capture changed and 5 when it did not |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
 
@@ -173,7 +173,19 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 
 When Offsider falls back to `uiautomator` on Android (see [Android notes](#android-notes)), the tree has one unlabelled `application` root and no keyboard root, and sliders and progress bars have no `value`.
 
-`--id`, `--label` and `--value` match `id`, `label` and `value`; on Android, `--id alert_title` also matches `com.example:id/alert_title` when no id matches exactly. `--element-type` matches `role` in any case or the native `type` exactly, so `button`, `Button` and `RadioButton` all work.
+For a screen scan, `describe-ui --summary` prints one line per on-screen node that has a label, id or value, which is usually a small fraction of the full tree:
+
+```text
+# ios <ID> 402x874 @3x portrait
+application "Playground" (0,0 402x874)
+  button "Save" id=save-button (170.7,313.3 61x34.3)
+```
+
+`--summary` is short for `--flat --on-screen --labelled --format text`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes whose frame is at least partly on screen; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
+
+### Selectors
+
+`--id`, `--label` and `--value` match `id`, `label` and `value`. Selectors prefer matches that are on screen: apps often keep views mounted off screen (a closed bottom sheet parked below the screen, rows below the fold), and a match whose frame lies outside the screen fails with an error naming its frame instead of tapping nothing. `--wait-timeout` waits for it to come on screen, and `--allow-offscreen` resolves it anyway. When no label or value matches exactly, typographic quotes and unusual spaces are folded (`--label "Don't Allow"` finds `Don’t Allow`), and a miss suggests the closest labels. On Android, `--id alert_title` also matches `com.example:id/alert_title` when no id matches exactly. `--element-type` matches `role` in any case or the native `type` exactly, so `button`, `Button` and `RadioButton` all work.
 
 ### Android notes
 
@@ -200,7 +212,7 @@ When Offsider falls back to `uiautomator` on Android (see [Android notes](#andro
 | 1 | The command failed; the error is printed to stderr |
 | 3 | `doctor` found warnings |
 | 4 | `doctor` found failures |
-| 5 | `--verify`: the input was dispatched but nothing observable changed |
+| 5 | `--verify`: the input was dispatched but nothing observable changed; `screenshot --compare`: the capture did not change |
 | 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, a `button` the device's platform lacks and `boot` with a simulator UDID |
 
 ## Privacy
@@ -217,7 +229,10 @@ swift build       # build the offsider executable
 swift test        # unit tests; simulator suites are skipped
 make e2e          # rebuild everything and run the simulator end-to-end suites
 make e2e-android  # run the Android emulator end-to-end suites (see ./test-runner.sh --help)
+make e2e-rn-ios   # run the React Native playground suites on a simulator (needs pnpm)
 ```
+
+`OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines.
 
 The simulator frameworks come from [michael-palmes/idb](https://github.com/michael-palmes/idb), a mirror of facebook/idb with Cameron Cooke's Xcode 27 changes on the `offsider/xcode27` branch (tag `offsider-idb-v0.2.0`). `scripts/build.sh` pins the exact revision and verifies it before building.
 

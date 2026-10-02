@@ -43,8 +43,11 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
 | `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites (needs `OFFSIDER_ANDROID_DEVICE`) |
+| `./test-runner.sh --rn-ios` or `make e2e-rn-ios` | Build Offsider and the RN playground, run the React Native suites on a simulator (needs pnpm) |
+| `./test-runner.sh --rn-ios --rn-debug` or `--android --rn-debug` | Build the RN debug app, start Metro on 8742 and run the debug smoke suite (`make e2e-rn-debug-ios`, `make e2e-rn-debug-android`) |
 | `scripts/generate-emulator-grpc.sh [--check]` or `make grpc-generate` | Regenerate the emulator gRPC client from the vendored proto; `--check` compares with the checked-in code |
-| `scripts/rn-playground.sh build-ios` or `build-android` | Build the RN playground Release app or arm64 APK (`help` lists install and launch) |
+| `scripts/rn-playground.sh build-ios` or `build-android` | Build the RN playground Release app or arm64 APK; `--debug` builds the debug app, `--if-changed` skips an up-to-date build (`help` lists install, launch and paths) |
+| `scripts/rn-playground.sh metro start\|stop\|status` | Run Metro for the RN debug app on loopback port 8742 |
 | `pnpm --dir OffsiderPlaygroundRN typecheck` | Typecheck the RN playground |
 | `pnpm --dir OffsiderPlaygroundRN android <serial>` or `ios <udid>` | RN debug build with Metro on 8742 (Android also takes an AVD name); refuses to run without a named device |
 | `bash -n <script>` | Syntax-check a changed shell script |
@@ -57,6 +60,10 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_REUSE_IDB=1` | `test-runner.sh` skips the idb rebuild when existing XCFrameworks verify |
 | `SIMULATOR_UDID` | Pins E2E runs to one simulator |
 | `OFFSIDER_SIGNING_IDENTITY` | Developer ID identity for `scripts/release.sh`; set it in git-ignored `.env` (copy `.env.example`) |
+| `OFFSIDER_RN_E2E=1` | Enables the React Native suites on iOS (`test-runner.sh --rn-ios` sets it) |
+| `OFFSIDER_RN_IOS_APP` | The React Native playground's Release `.app` the iOS suites install |
+| `OFFSIDER_RN_DEBUG_E2E=1` | Enables the RN debug smoke suite (`--rn-debug` sets it; needs Metro on 8742) |
+| `OFFSIDER_RN_IOS_DEBUG_APP`, `OFFSIDER_ANDROID_DEBUG_APK` | The RN playground's debug builds for the debug smoke suite |
 | `OFFSIDER_ANDROID_E2E=1` | Enables the Android E2E suites in `swift test` (`test-runner.sh --android` sets it) |
 | `OFFSIDER_ANDROID_DEVICE` | The E2E emulator's serial or AVD name (required for Android E2E) |
 | `OFFSIDER_ANDROID_APK` | The React Native playground's release APK the Android suites install |
@@ -66,6 +73,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
+| `OFFSIDER_TIMINGS=1` | Prints phase timings to stderr (`offsider timing: <phase> <n> ms`) |
 | `OFFSIDER_HELPER_JDK` | JDK 17 home for `scripts/build.sh helper` (else `JAVA_HOME`, then `/usr/libexec/java_home -v 17`) |
 
 ## Layout
@@ -80,6 +88,8 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` |
 | Version string | `Plugins/VersionPlugin` (generates git-ignored `Version.swift`) |
 | Tests | `Tests/<Name>Tests.swift`; E2E fixture screens in `OffsiderPlaygroundApp/` |
+| RN suites (iOS and Android) | `Tests/ReactNativeE2E/`; one test body runs on each enabled platform through `RNApp` |
+| Test fakes | `Tests/FakeDeviceBackend.swift` (scripted trees and screenshots, read counts) |
 | RN fixture screens | `OffsiderPlaygroundRN/src/screens/` (one per file); `Readout`, `Target` and the header marker in `src/fixtures.tsx` |
 | Build, release, goldens | `scripts/` |
 | CI and releases | `.github/workflows/ci.yml`, `.github/workflows/release.yml` |
