@@ -69,6 +69,19 @@ extension AndroidBackend {
         return session
     }
 
+    /// The running helper's `display` when no dump has measured the screen yet; nil leaves it to the shell probe.
+    func helperGeometry(_ serial: String) async throws -> AndroidDisplayGeometry? {
+        guard let session = runningHelper(for: serial), session.display == nil else { return nil }
+        do {
+            return AndroidDisplayGeometry(display: try await session.refreshDisplay())
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            log(.debug, "The helper on \(serial) could not read the display (\(error)); probing it instead")
+            return nil
+        }
+    }
+
     /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, then `noWindow`.
     func helperRoots(_ serial: String, session: HelperSession) async throws -> [UINode] {
         var dump = try await helperDump(serial, session: session)

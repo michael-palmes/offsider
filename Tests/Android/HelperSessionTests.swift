@@ -112,7 +112,7 @@ struct HelperSessionTests {
         #expect(device.ops == ["hello", "dump", "quit"])
     }
 
-    @Test("close() sends quit and waits for the exit, so the slot is free; a second close does nothing")
+    @Test("close() sends quit and, once it is acknowledged, closes both streams with no exit wait; a second close does nothing")
     func closes() async throws {
         let device = FakeHelperDevice()
         let session = try await Self.start(device)
@@ -121,22 +121,46 @@ struct HelperSessionTests {
         await session.close()
 
         #expect(device.ops == ["hello", "quit"])
-        let timeline = device.timeline
-        let exited = try #require(timeline.firstIndex(of: "exit 1 0"))
-        let closed = try #require(timeline.firstIndex(of: "shell closed 1"))
-        #expect(exited < closed)
+        #expect(device.timeline.contains("socket closed 1"))
+        #expect(device.timeline.contains("shell closed 1"))
+        #expect(!device.timeline.contains("exit packet 1"))
         #expect(device.kills.isEmpty)
     }
 
-    @Test("a helper that does not exit after quit is killed by pid")
-    func killsWithoutExit() async throws {
+    @Test("an acknowledged quit frees the slot, so a helper still running when it answers is not killed")
+    func acknowledgedQuitNeedsNoKill() async throws {
         let device = FakeHelperDevice()
         device.exitOnQuit = false
         let session = try await Self.start(device)
 
         await session.close()
 
+        #expect(device.kills.isEmpty)
+        #expect(!device.timeline.contains("exit packet 1"))
+        #expect(device.timeline.contains("shell closed 1"))
+    }
+
+    @Test("a helper that never answers quit gets the exit wait, then is killed by pid")
+    func killsSilentHelper() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "quit" ? .silence : nil }
+        let session = try await Self.start(device)
+
+        await session.close()
+
         #expect(device.kills == [4001])
+    }
+
+    @Test("a helper that ends without answering quit is waited for, and its exit spares it the kill")
+    func waitsForUnansweredExit() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "quit" ? .hangUp : nil }
+        let session = try await Self.start(device)
+
+        await session.close()
+
+        #expect(device.timeline.contains("exit packet 1"))
+        #expect(device.kills.isEmpty)
     }
 
     @Test("a hello reply with another protocol is a handshake failure, and both streams close")

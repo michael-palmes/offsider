@@ -194,7 +194,7 @@ final class HelperSession {
         }
     }
 
-    /// `quit`, then the shell's exit; `kill <pid>` only when no exit was seen. A second call does nothing.
+    /// `quit`; without an `ok` reply, the shell's exit, then `kill <pid>` when none came. A second call does nothing.
     func close() async {
         guard !isClosed else { return }
         isClosed = true
@@ -206,7 +206,12 @@ final class HelperSession {
         self.connection = nil
         let id = nextID
         nextID += 1
-        _ = try? await connection.exchange(.quit, id: id, timeout: Self.quitTimeout)
+        // The helper frees the UiAutomation slot before it answers `quit`, then halts.
+        if case .reply(let frame)? = try? await connection.exchange(.quit, id: id, timeout: Self.quitTimeout),
+           (try? Self.decodeReply(frame, as: HelperEmpty.self)) != nil {
+            await connection.close()
+            return
+        }
         let status = await connection.shell.exitStatus(deadline: ContinuousClock.now + Self.exitTimeout)
         await connection.close()
         guard status == nil else { return }
