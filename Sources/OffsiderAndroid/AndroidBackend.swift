@@ -3,16 +3,19 @@ import OffsiderCore
 
 /// Android emulators over the adb server; lives for one command run, so its caches do too.
 @MainActor
-public final class AndroidBackend: DeviceBackend {
+public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming, AccessibilityChangeWaiting {
     let host: AndroidHost
     let log: AndroidLog
     private var sdk: AndroidSDK?
     private var client: AdbClient?
-    private var geometries: [String: AndroidDisplayGeometry] = [:]
+    var geometries: [String: AndroidDisplayGeometry] = [:]
     private var avdNames: [String: String] = [:]
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
     private var dumpCounter = 0
+    var treeSources: [String: AndroidTreeSource] = [:]
+    var announcedFallbacks: Set<String> = []
+    var warnedAboutTruncation: Set<String> = []
 
     public init(host: AndroidHost = .live(), log: @escaping AndroidLog) {
         self.host = host
@@ -71,9 +74,22 @@ public final class AndroidBackend: DeviceBackend {
         return try await directory().serial(forAVDNamed: name)
     }
 
-    /// `uiautomator dump --compressed` mapped to dp; with `point`, the deepest node there as the only root.
+    /// The helper's dump (else `uiautomator dump --compressed`) mapped to dp; with `point`, the deepest node there as the only root.
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         let serial = id.rawValue
+        let roots: [UINode]
+        switch try await treeSource(for: serial) {
+        case .helper(let session):
+            roots = try await helperRoots(serial, session: session)
+        case .uiautomator:
+            roots = try await uiautomatorRoots(serial)
+        }
+        let tree = UITree(platform: .android, device: serial, roots: roots)
+        guard let point else { return tree }
+        return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
+    }
+
+    private func uiautomatorRoots(_ serial: String) async throws -> [UINode] {
         let geometry = try await geometry(for: serial)
         let xml: String
         if let first = try await dumpHierarchy(serial) {
@@ -95,10 +111,7 @@ public final class AndroidBackend: DeviceBackend {
         if let rotation = hierarchy.rotation {
             geometries[serial] = geometry.rotated(to: rotation)
         }
-
-        let tree = UITree(platform: .android, device: serial, roots: AndroidTreeMapping.roots(from: hierarchy, scale: geometry.scale))
-        guard let point else { return tree }
-        return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
+        return AndroidTreeMapping.roots(from: hierarchy, scale: geometry.scale)
     }
 
     /// The hierarchy XML, or nil when uiautomator found no window, which lasts a moment while an activity starts.
@@ -156,6 +169,7 @@ public final class AndroidBackend: DeviceBackend {
             avdName: { await self.avdName(for: serial) },
             clipboard: clipboard,
             adbReason: adbReason,
+            replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             sleep: host.sleep,
             log: log
         )
@@ -240,9 +254,14 @@ public final class AndroidBackend: DeviceBackend {
         }
     }
 
-    /// The status bar with its cutout (54 dp on a Pixel 9) and the navigation bar, until the tree reports window bounds.
+    /// The bars the running helper measured in its latest window list; 60 and 48 dp when no helper runs.
     public func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
-        ScreenBands(top: 60, bottom: 48)
+        guard let session = runningHelper(for: id.rawValue), let display = session.display else {
+            return SystemBars.fallback
+        }
+        let bands = SystemBars.bands(windows: session.windows, display: display)
+        log(.debug, "System bars on \(id.rawValue) from the helper's windows: top \(bands.top) dp, bottom \(bands.bottom) dp")
+        return bands
     }
 
     /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.
@@ -282,6 +301,30 @@ public final class AndroidBackend: DeviceBackend {
             let stderrLine = result.stderrText.split(whereSeparator: \.isNewline).first.map(String.init)
             let detail = result.stdoutText.isEmpty ? stderrLine ?? error.firstLine : error.firstLine
             throw AndroidError.displayProbeUnparseable(serial, firstLine: detail)
+        }
+    }
+
+    /// Stops helpers first (freeing the UiAutomation slot), then gRPC clients and their keys; a second call does nothing.
+    public func close() async {
+        let helpers = treeSources.sorted { $0.key < $1.key }.compactMap { _, source -> HelperSession? in
+            guard case .helper(let session) = source else { return nil }
+            return session
+        }
+        let open = transports.sorted { $0.key < $1.key }.map(\.value)
+        treeSources = [:]
+        announcedFallbacks = []
+        warnedAboutTruncation = []
+        transports = [:]
+        geometries = [:]
+        avdNames = [:]
+        warnedAboutOverride = []
+        for helper in helpers {
+            await helper.close()
+        }
+        for transport in open {
+            if case .grpc(let emulator) = transport {
+                await emulator.close()
+            }
         }
     }
 

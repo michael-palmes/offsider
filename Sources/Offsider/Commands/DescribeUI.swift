@@ -4,7 +4,7 @@ import OffsiderCore
 
 struct DescribeUI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Describes the UI hierarchy of a booted simulator using accessibility information."
+        abstract: "Describes the UI hierarchy of a booted simulator or a running emulator using accessibility information."
     )
 
     @OptionGroup

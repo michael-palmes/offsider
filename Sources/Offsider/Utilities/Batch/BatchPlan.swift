@@ -6,8 +6,8 @@ enum BatchPrimitive {
     case hidBarrier(InputEvent)
     case hostSleep(TimeInterval)
     case physicalTap(point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?)
-    /// A barrier typed through `TextInputSession`, for backends that choose key events or a paste themselves.
-    case text(String)
+    /// A barrier through `TextInputSession` (the backend picks keys or a paste); `replace` sets the focused field instead.
+    case text(String, replace: Bool)
 }
 
 struct BatchPlan {

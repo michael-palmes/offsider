@@ -21,6 +21,7 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
     private let frames: [EmulatorFrame]
     private var bootedAnswers: [Bool]
     private let failure: @Sendable (Call) -> AndroidError?
+    private var auths: [EmulatorAuth] = []
 
     /// `booted` scripts `getStatus` answers in order; the last one repeats.
     init(clipboard: String = "", frames: [EmulatorFrame] = [], booted: [Bool] = [true], failing: @escaping @Sendable (Call) -> AndroidError? = { _ in nil }) {
@@ -75,8 +76,20 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
         lock.withLock { clipboardText = text }
     }
 
+    /// As the real client does, closing removes the signing keys it was connected with.
     func close() async {
-        lock.withLock { recorded.append(.close) }
+        let credentials = lock.withLock { () -> [EmulatorAuth] in
+            recorded.append(.close)
+            defer { auths = [] }
+            return auths
+        }
+        for auth in credentials {
+            auth.close()
+        }
+    }
+
+    fileprivate func connected(with auth: EmulatorAuth) {
+        lock.withLock { auths.append(auth) }
     }
 }
 
@@ -96,7 +109,9 @@ final class FakeEmulatorConnector: EmulatorConnecting, @unchecked Sendable {
 
     func connect(discovery: EmulatorDiscovery, auth: EmulatorAuth) async throws -> any EmulatorControlling {
         lock.withLock { recorded.append((discovery.grpcPort, auth.issuer)) }
-        return try outcome.get()
+        let emulator = try outcome.get()
+        emulator.connected(with: auth)
+        return emulator
     }
 }
 

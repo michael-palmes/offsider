@@ -4,7 +4,7 @@ import OffsiderCore
 
 struct Batch: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Execute ordered interaction steps using one simulator/HID session.",
+        abstract: "Execute ordered interaction steps using one device session.",
         discussion: """
         Batch executes multiple interaction steps in one command to reduce overhead.
         Steps are executed in order.
@@ -43,7 +43,7 @@ struct Batch: AsyncParsableCommand {
     @Option(name: .customLong("type-chunk-size"), help: "Maximum HID events per chunk when type-submission is chunked.")
     var typeChunkSize: Int = 200
 
-    @Option(name: .customLong("tap-style"), help: "Default tap event style for tap steps: automatic uses physical touch for switches/toggles and simulator tap for other targets; simulator always uses FBSimulator tapAt; physical uses touch down/up.")
+    @Option(name: .customLong("tap-style"), help: "Default tap event style for tap steps: automatic uses physical touch for switches and a single tap event for other targets; simulator always sends a single tap event; physical uses touch down and up.")
     var tapStyle: TapStyle = .automatic
 
     @Flag(name: .customLong("continue-on-error"), help: "Continue executing later steps even if one step fails.")

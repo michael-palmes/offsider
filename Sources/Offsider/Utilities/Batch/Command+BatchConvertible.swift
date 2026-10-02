@@ -238,20 +238,13 @@ extension KeyCombo: BatchConvertible {
 
 extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let inputText: String
-        switch (text, useStdin, inputFile) {
-        case (let positionalText?, false, nil):
-            inputText = positionalText
-        case (nil, true, nil):
-            inputText = readFromStdin()
-        case (nil, false, let file?):
-            inputText = try readFromFile(file)
-        default:
-            throw CLIError(errorDescription: "Invalid input configuration.")
-        }
+        let inputText = try resolvedText()
 
         if context.device.platform == .android {
-            return inputText.isEmpty ? [] : [.text(inputText)]
+            if replace {
+                return [.text(inputText, replace: true)]
+            }
+            return inputText.isEmpty ? [] : [.text(inputText, replace: false)]
         }
 
         guard TextToHIDEvents.validateText(inputText) else {
@@ -263,16 +256,17 @@ extension Type: BatchConvertible {
         }
 
         let hidEvents = try TextToHIDEvents.convertTextToHIDEvents(inputText)
-        guard !hidEvents.isEmpty else {
+        let clear = replace ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey) : nil
+        guard !hidEvents.isEmpty || clear != nil else {
             return []
         }
 
         switch context.typeSubmissionMode {
         case .composite:
-            return [.hidMergeable(InputEvent.composite(hidEvents))]
+            return [.hidMergeable(InputEvent.composite((clear.map { [$0] } ?? []) + hidEvents))]
         case .chunked:
             let chunkSize = max(1, context.typeChunkSize)
-            var primitives: [BatchPrimitive] = []
+            var primitives: [BatchPrimitive] = clear.map { [.hidBarrier($0)] } ?? []
             var start = 0
             while start < hidEvents.count {
                 let end = min(start + chunkSize, hidEvents.count)

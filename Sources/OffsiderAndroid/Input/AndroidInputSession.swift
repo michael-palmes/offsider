@@ -22,6 +22,12 @@ enum AndroidInputExecutor: Sendable {
     case grpc(GrpcInputDriver)
 }
 
+/// How `type --replace` went: the helper set the text, or the session must clear the field with keys and type.
+enum TextReplacement: Equatable, Sendable {
+    case replaced
+    case useKeys(warning: String?)
+}
+
 /// One command's input on one emulator; keeps finger state so a failed gesture can be lifted on close.
 @MainActor
 final class AndroidInputSession: InputSession, TextInputSession {
@@ -37,6 +43,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private let sleep: @Sendable (Duration) async throws -> Void
     /// Looked up only when a message needs it, so ordinary input costs no extra adb call.
     private let avdName: @MainActor () async -> String?
+    private let replaceFocusedText: @MainActor (String) async throws -> TextReplacement
     private let log: AndroidLog
     private var touchIsDown = false
     private var lastTouch: AndroidPoint?
@@ -49,6 +56,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         avdName: @escaping @MainActor () async -> String?,
         clipboard: (any EmulatorControlling)?,
         adbReason: AdbReason,
+        replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
         sleep: @escaping @Sendable (Duration) async throws -> Void,
         log: @escaping AndroidLog
     ) {
@@ -59,6 +67,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.avdName = avdName
         self.clipboard = clipboard
         self.adbReason = adbReason
+        self.replaceFocusedText = replaceFocusedText
         self.sleep = sleep
         self.log = log
     }
@@ -96,6 +105,25 @@ final class AndroidInputSession: InputSession, TextInputSession {
             }
             guard !commands.isEmpty else { return }
             try await shell.run(commands.joined(separator: " && "))
+        }
+    }
+
+    /// One accessibility action, then Return for a trailing newline; without it, Ctrl+A, Delete and the text as keys.
+    func replaceText(_ text: String) async throws {
+        let submits = text.hasSuffix("\n")
+        switch try await replaceFocusedText(submits ? String(text.dropLast()) : text) {
+        case .replaced:
+            if submits {
+                try await typeText("\n")
+            }
+        case .useKeys(let warning):
+            if let warning {
+                log(.warning, warning)
+            }
+            try await perform(InputEvent.selectAllAndDelete(modifier: InputEvent.controlKey))
+            if !text.isEmpty {
+                try await typeText(text)
+            }
         }
     }
 

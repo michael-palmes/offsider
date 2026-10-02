@@ -1,6 +1,6 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", or "interact with an iOS, Android or React Native app". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, screenshots, video, and batch workflows.
+description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", or "interact with an iOS, Android or React Native app". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, screenshots, video, and batch workflows.
 ---
 
 ## Step 1: Confirm runtime context
@@ -33,6 +33,7 @@ offsider tap -x <X> -y <Y> --tap-style physical --device <DEVICE_ID>
 offsider tap -x <X> -y <Y> --device <DEVICE_ID>
 offsider tap --id <identifier> --verify --json --device <DEVICE_ID>
 offsider type 'text' --device <DEVICE_ID>
+offsider type --replace 'new text' --device <DEVICE_ID>
 offsider describe-ui --device <DEVICE_ID>
 offsider describe-ui --point <X,Y> --device <DEVICE_ID>
 offsider screenshot --device <DEVICE_ID> --output screenshot.png
@@ -44,7 +45,7 @@ offsider button back --device <DEVICE_ID>
 
 ## Step 3: Understand the execution model
 
-Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-forget: Offsider confirms the event was dispatched to the simulator but cannot verify the app actually processed it. A tap may land before a view is interactive, or during a transition. `slider` is the exception: it performs one selector-resolved low-level HID drag, re-reads the matched slider's `value`, and fails if the observed 0-100 value is outside tolerance. iOS slider controls quantize values to their rendered track resolution, so Offsider does not retry correction gestures to chase unreachable decimals. This means:
+Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-forget: Offsider confirms the event was dispatched to the simulator but cannot verify the app actually processed it. A tap may land before a view is interactive, or during a transition. `slider` is the exception: it sets the matched slider (one selector-resolved low-level HID drag on iOS, the accessibility progress action on Android), re-reads its `value`, and fails if the observed 0-100 value is outside tolerance. iOS slider controls quantize values to their rendered track resolution, so Offsider does not retry correction gestures to chase unreachable decimals. This means:
 - Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change after the input. Offsider compares the accessibility tree (ignoring elements that were already changing), then falls back to screenshots; it exits 0 when something changed and 5 when nothing did. "Verified" means something changed, not that the right thing changed: check the new state when it matters.
 - `--verify-timeout <seconds>` (0.5 to 30, default 2) is the wait per attempt. `--retries <n>` (0 to 3, default 1) repeats the input when nothing changed; tap retries switch between simulator and physical tap style. Use `--retries 0` for non-idempotent actions such as submit, send or delete, because a late effect plus a retry can act twice.
 - `--json` (requires `--verify`) prints one object to stdout with `verified`, `dispatched`, `attempts`, `change` (`accessibility-tree`, `screenshot` or `none`) and `style` (tap only); human text goes to stderr. A `screenshot` change can be animation or the status bar clock in landscape, so confirm with `describe-ui`. `button lock` only shows as a black screen.
@@ -55,20 +56,28 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 - Use `--pre-delay` / `--post-delay` on tap, swipe, and gesture commands for fixed delays around actions.
 - Use `--duration` to control how long a swipe, gesture, button press, or key press lasts.
 - Coordinate-based `tap`, `swipe`, `drag`, and `touch` accept coordinates from `describe-ui` directly; Offsider detects rotated landscape simulator orientation and letterboxed landscape-only app layouts automatically.
-- `gesture` presets are sized to the foreground app's frame and go through the same orientation handling, so they fit any device and landscape. `--screen-width` and `--screen-height` override that size, in points as the screen is currently oriented.
-- Use `offsider slider --id <identifier> --value <0-100>` for sliders instead of approximating with raw swipe coordinates; it uses one calibrated low-level HID drag from the resolved slider frame and current `value`, through the same composite touch-move path as `drag`, verifies the result within tolerance, and fails clearly if the observed `value` remains outside tolerance.
+- `gesture` presets are sized to the foreground app's frame and go through the same orientation handling, so they fit any device and landscape. `--screen-width` and `--screen-height` override that size, in points (dp on Android) as the screen is currently oriented.
+- Use `offsider slider --id <identifier> --value <0-100>` for sliders instead of approximating with raw swipe coordinates. On iOS it uses one calibrated low-level HID drag from the resolved slider frame and current `value`, through the same composite touch-move path as `drag`; on Android it uses the accessibility progress action (Step 4a). Either way it verifies the result within tolerance and fails clearly if the observed `value` remains outside tolerance.
+- `type` adds to whatever the focused field holds. To set a field to exact text, tap the field, then run `offsider type --replace 'new text' --device <DEVICE_ID>`; `--replace ''` clears it. It works with `--stdin`, `--file`, `--verify` and as a batch step. iOS selects all with Command-A and deletes, then types (secure fields included); Android sets the text in one step (Step 4a). A trailing newline is pressed as Return on both platforms, so `$'query\n'` submits.
 - For text with shell-sensitive characters, prefer `--stdin` or `--file` over inline quotes.
 - Use single quotes for inline text arguments to avoid shell expansion issues.
 
 ## Step 4a: Android emulators and React Native
 - Coordinates, frames and `--delta` are in dp on Android (points on iOS); take them from `describe-ui` as usual.
-- `describe-ui` reads the screen through `uiautomator`: about 3 seconds per read, so `--wait-timeout` polls slowly and a verified tap takes about 6 to 10 seconds. Batch several steps rather than reading the tree between each one. A "found no window" error while an activity starts is retried by `--wait-timeout` and `tap --verify`; "Another UiAutomation client" means Appium, Maestro or similar holds the screen reader, so stop it.
+- Screen reads (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `slider`, `type --replace`) go through a small UiAutomation helper that Offsider starts on the emulator for one command: about 0.3 s per `describe-ui` and 1 to 1.5 s per verified tap on a quiet Mac, slower when the Mac is busy. Poll and verify as on iOS. While a command reads the screen, the emulator reports an accessibility service as enabled, which some apps react to.
+- A "found no window" error while an activity starts is retried by `--wait-timeout` and `tap --verify`.
+- "Another UiAutomation client is connected" means Appium, Maestro, `uiautomator`, an instrumentation test or Layout Inspector holds Android's single UiAutomation connection. Offsider never reads around it: ask the user to stop that client, then retry.
+- "An earlier Offsider helper (pid N) still holds UiAutomation" usually means another Offsider command is still running on the same emulator. Run commands on one emulator one at a time; the helper exits within 10 s, or run the `adb -s <serial> shell kill <pid>` command the message gives.
+- A `Warning:` that the UiAutomation helper is unavailable means Offsider fell back to `uiautomator`: reads take about 2 s, the tree has no keyboard root and no slider values, and `slider` fails. Pass the reason in the warning on to the user.
+- Roots: the app window is `application`, labelled with its window title (such as `Settings`); while the keyboard is up, a second root with role `keyboard` follows it. Status and navigation bars are not in the tree.
+- Sliders and progress bars report `value` as a percentage of their range (`"25%"`, `"39.95%"`), and a partly checked checkbox reports `"2"`. A Jetpack Compose `testTag` is the `id` when the node has no resource id.
+- `slider` sets the value through the accessibility progress action, falling back to a drag. A control with coarse steps stops at the nearest step and says so, for example `Slider set to 78 (the nearest step to 78.25)`. Apps that act only when a drag ends (React Native `onSlidingComplete`) may miss the change: then `drag` on the track and read the app's own readout with `describe-ui`.
 - `type` sends ASCII as key events; text with any other character is pasted through the emulator's clipboard, which Offsider restores afterwards. On an emulator without gRPC, `type` accepts ASCII only.
-- `slider` does not support Android yet: drag on the track with `swipe` or `drag`, then read the app's own value readout with `describe-ui`.
+- `type --replace` sets the focused field's text in one accessibility action: any Unicode works, even without gRPC, but key handlers such as `onKeyPress` do not run. A single trailing newline is pressed as Return afterwards; other newlines become line breaks. "type --replace needs a focused text field" means nothing has input focus: tap the field first. A `Warning:` that Offsider clears the field with Ctrl+A and Delete means it could not set the text in one step; it then clears the field with keys and types the text as `type` would.
 - `stream-video --format bgra` sends a frame only when the screen changes.
 - React Native on Android: `testID` is `id` and `accessibilityLabel` is `label` (from `content-desc`), as on iOS. A `View` with neither `accessible` nor `testID` can be flattened away, so ask for a `testID` when a target is missing. A `Pressable` without a label takes its children's text as its label.
 - Android alerts show upper-case button text (`DELETE`, `CANCEL`) with ids `android:id/button1` and `android:id/button2`; `--id button1` matches through the `:id/` suffix. A `Modal` is its own window, so only the modal is in the tree while it is open.
-- Radio segments are `radioButton` on Android but `other` on iOS, so select them by `--id` or `--label` rather than `--element-type`. `SeekBar` reports no value in this release; read the app's readout instead.
+- Radio segments are `radioButton` on Android but `other` on iOS, so select them by `--id` or `--label` rather than `--element-type`.
 - `offsider button back` pops React Navigation and custom stacks, like the hardware back button.
 
 ## Step 5: Batch vs discrete commands

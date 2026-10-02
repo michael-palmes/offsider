@@ -13,6 +13,12 @@ struct AdbShellResult: Equatable, Sendable {
     }
 }
 
+/// An open device service; `pending` holds bytes that arrived with its `OKAY`, which come before anything read from `stream`.
+struct AdbServiceStream: Sendable {
+    let stream: any AdbByteStream
+    let pending: Data
+}
+
 /// A client of the adb server: one connection per service, as the protocol requires.
 actor AdbClient {
     let endpoint: LoopbackEndpoint
@@ -79,14 +85,10 @@ actor AdbClient {
         }
     }
 
-    /// The raw stream after `OKAY` for any device service, for later `sync:` and `localabstract:` use.
-    func openService(_ service: String, on serial: String, timeout: Duration) async throws -> any AdbByteStream {
+    /// The raw stream after `OKAY` for any device service; the caller owns it and must close it.
+    func openService(_ service: String, on serial: String, timeout: Duration) async throws -> AdbServiceStream {
         let connection = try await openDevice(serial, service: service, label: service, timeout: timeout)
-        guard connection.takeBuffered().isEmpty else {
-            await connection.stream.close()
-            throw AndroidError.adbProtocol("\(service) sent data before Offsider read it")
-        }
-        return connection.stream
+        return AdbServiceStream(stream: connection.stream, pending: connection.takeBuffered())
     }
 
     private func hostQuery(_ service: String) async throws -> String {
@@ -169,7 +171,7 @@ actor AdbClient {
         }
     }
 
-    private func deviceError(_ error: AdbConnectError, serial: String, command: String, timeout: Duration) -> AndroidError {
+    func deviceError(_ error: AdbConnectError, serial: String, command: String, timeout: Duration) -> AndroidError {
         guard error == .timedOut else { return serverError(error, seconds: Int(connectTimeout.components.seconds)) }
         return .adbCommandFailed(serial: serial, command: command, detail: "no answer within \(timeout.components.seconds) s")
     }

@@ -118,7 +118,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--tap-style`, delays and `--verify, --retries, --json` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label`, then verify the result |
-| `type` | Type US keyboard text from an argument, `--stdin` or `--file`; supports `--verify, --retries, --json` |
+| `type` | Type text from an argument, `--stdin` or `--file` (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; supports `--verify, --retries, --json` |
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
 | `drag` | Low-level point-to-point drag using explicit touch moves (`--duration`, `--steps`) |
 | `gesture` | Run a preset: `scroll-up`, `scroll-down`, `scroll-left`, `scroll-right`, `swipe-from-left-edge`, `swipe-from-right-edge`, `swipe-from-top-edge`, `swipe-from-bottom-edge`. Presets fit the foreground app's frame in the current orientation; `--screen-width` and `--screen-height` override the size |
@@ -160,15 +160,18 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 
 `role` is one of `application`, `window`, `group`, `other`, `button`, `link`, `menuItem`, `tab`, `tabBar`, `segmentedControl`, `text`, `header`, `image`, `progress`, `textField`, `secureTextField`, `searchField`, `textArea`, `switch`, `checkbox`, `radioButton`, `slider`, `picker`, `cell`, `list`, `scrollView` or `keyboard`.
 
-| Field | iOS source | Android source (`uiautomator`) |
+| Field | iOS source | Android source (UiAutomation helper) |
 | --- | --- | --- |
-| `id` | `AXUniqueId` (`accessibilityIdentifier`, or `testID` in React Native), else `AXIdentifier` | `resource-id` (`testID` in React Native) |
+| `roots` | The frontmost app's `application` element | The active window as `application`, labelled with its title (such as `Settings`), then the keyboard as `keyboard`, labelled with its title, while it is shown. The status and navigation bars are left out |
+| `id` | `AXUniqueId` (`accessibilityIdentifier`, or `testID` in React Native), else `AXIdentifier` | `resource-id` (`testID` in React Native), else a Jetpack Compose `testTag` |
 | `label` | `AXLabel` | `content-desc`, else the text of a non-editable node; a clickable node with neither takes its children's text |
-| `value` | `AXValue`, as a string | A text field's text; `1` or `0` for switches, checkboxes and radio buttons |
+| `value` | `AXValue`, as a string | A text field's text; `1` or `0` for switches, checkboxes and radio buttons, and `2` for a partly checked checkbox; a slider's or progress bar's position in its range as a percentage with up to two decimals, such as `25%` or `39.95%` |
 | `frame`, `enabled` | The same keys | `bounds` over density / 160, `enabled` |
-| `state.checked` | `switch` and `checkbox` only: `AXValue` `1` or `0` | `checked` for checkable nodes |
+| `state.checked` | `switch` and `checkbox` only: `AXValue` `1` or `0` | `checked` for checkable nodes; `null` when partly checked |
 | `state.selected`, `state.focused` | Always `null` on iOS | `selected`, `focused` |
-| `native` | `type`, `role`, `subrole`, `roleDescription`, `title`, `help`, `customActions`, `contentRequired`, `pid`, `axFrame` | `className`, `resourceId`, `package`, `pixelFrame`, `text`, `contentDescription`, `hint`, `stateDescription`, `roleDescription`, `testTag` |
+| `native` | `type`, `role`, `subrole`, `roleDescription`, `title`, `help`, `customActions`, `contentRequired`, `pid`, `axFrame` | `className`, `resourceId`, `package`, `pixelFrame`, `text`, `contentDescription`, `hint`, `stateDescription` (the spoken state, such as `25%`), `roleDescription`, `testTag` |
+
+When Offsider falls back to `uiautomator` on Android (see [Android notes](#android-notes)), the tree has one unlabelled `application` root and no keyboard root, and sliders and progress bars have no `value`.
 
 `--id`, `--label` and `--value` match `id`, `label` and `value`; on Android, `--id alert_title` also matches `com.example:id/alert_title` when no id matches exactly. `--element-type` matches `role` in any case or the native `type` exactly, so `button`, `Button` and `RadioButton` all work.
 
@@ -176,13 +179,18 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 
 - IDs are emulator serials (`emulator-5554`) or the names of running AVDs; `list-devices` shows both. `boot` starts an AVD with its window (`--headless` hides it), passes only `-no-metrics` to the emulator, writes the emulator's output to `$TMPDIR/offsider-boot-<avd>.log` and never starts a second instance of an AVD that is already running.
 - Coordinates, frames and `--delta` are in dp, the Android equivalent of points.
-- `describe-ui` reads the screen through `uiautomator` in this release: about 3 seconds per read, so `--wait-timeout` and `--verify` are slower than on iOS (a verified tap takes about 6 to 10 seconds). Another UiAutomation client, such as Appium or Maestro, makes it fail with a message saying so.
-- `--verify` ignores the status bar and the navigation bar in screenshots. `--tap-style` and the `style` field keep their names: `simulator` is a single tap and `physical` a timed touch down and up.
+- Every screen read (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `gesture` presets, `slider` and `type --replace`) goes through a small helper that Offsider pushes to `/data/local/tmp/offsider-helper-<hash>.dex` when that copy is missing, and runs with `app_process` as the shell user for the length of one command. A `describe-ui` takes about 0.3 s and a verified tap 1 to 1.5 s on a quiet Mac; both are slower while the Mac running the emulator is busy, because Android then starts the helper more slowly. Commands that only send input, such as `tap -x -y`, `swipe`, `key` and plain `type`, never start it.
+- While the helper runs it holds Android's single UiAutomation connection, and the emulator reports an accessibility service as enabled (`accessibility_enabled`), which some apps notice. Both end with the command.
+- Another UiAutomation client, such as Appium, Maestro, `uiautomator` or Layout Inspector, makes these commands fail with a message saying so: stop that client, then retry. An earlier Offsider helper that still holds the connection after 2 s (usually a command running in parallel) is named with its pid: it exits within 10 s of losing its command, or `adb -s <serial> shell kill <pid>` stops it at once.
+- If the helper cannot run (for example the push fails, or the Android version lacks the API it uses), Offsider prints one `Warning:` line saying why and reads the screen with `uiautomator` instead, at about 2 s per read. `slider` then fails, as `uiautomator` reports no slider values.
+- `--verify` leaves the status and navigation bars, as the helper measures them, out of screenshot comparisons; with gesture navigation there is no navigation bar to leave out. `--tap-style` and the `style` field keep their names: `simulator` is a single tap and `physical` a timed touch down and up.
+- `slider` sets the value through Android's accessibility progress action, and drags when the control does not take it. A control whose steps cannot show the value stops at the nearest step, and the success line says so, for example `Slider set to 78 (the nearest step to 78.25)`. Apps that act only when a drag ends, such as React Native's `onSlidingComplete`, may not see the change; use `drag` on the track for those.
 - `type` sends ASCII text as key events. Text with any other character is pasted through the emulator's clipboard, which Offsider saves first and restores afterwards.
-- Offsider talks to the adb server and to the emulator's gRPC endpoint on loopback. An emulator started with `-port` has no gRPC endpoint, so Offsider falls back to adb: screenshots are slower, `type` accepts ASCII only and `stream-video --format bgra` is unavailable.
+- `type --replace` sets the focused field's text in one accessibility action, so any Unicode text works without gRPC, but key handlers such as `onKeyPress` do not run. A trailing newline is then pressed as Return, so `type --replace $'query\n'` submits a search field; other newlines become line breaks. A field that refuses the action, or an emulator where the helper cannot run, gets Ctrl+A, Delete and typing instead, with a warning. With nothing focused it fails: tap the field first.
+- Offsider talks to the adb server and to the emulator's gRPC endpoint on loopback. An emulator started with `-port` has no gRPC endpoint, so Offsider falls back to adb: screenshots are slower, `type` accepts ASCII only (`type --replace` still takes any text) and `stream-video --format bgra` is unavailable.
 - `stream-video --format bgra` sends a frame when the screen changes, not at a fixed rate, so a still screen sends one frame.
-- `slider` and `doctor --device` do not support Android emulators yet.
-- For troubleshooting, `OFFSIDER_ANDROID_TRANSPORT=adb` (or `grpc`) forces one transport, and `OFFSIDER_ANDROID_GRPC_AUTH=jwt` makes Offsider sign in to gRPC with a short-lived key instead of the emulator's token.
+- `doctor --device` does not support Android emulators yet.
+- For troubleshooting, `OFFSIDER_ANDROID_TRANSPORT=adb` (or `grpc`) forces one transport, `OFFSIDER_ANDROID_GRPC_AUTH=jwt` makes Offsider sign in to gRPC with a short-lived key instead of the emulator's token, and `OFFSIDER_ANDROID_TREE=uiautomator` (or `helper`) forces one way of reading the screen: `uiautomator` never starts the helper, and `helper` makes an unavailable helper an error instead of a fallback.
 
 ### Exit codes
 
@@ -212,6 +220,8 @@ make e2e-android  # run the Android emulator end-to-end suites (see ./test-runne
 ```
 
 The simulator frameworks come from [michael-palmes/idb](https://github.com/michael-palmes/idb), a mirror of facebook/idb with Cameron Cooke's Xcode 27 changes on the `offsider/xcode27` branch (tag `offsider-idb-v0.2.0`). `scripts/build.sh` pins the exact revision and verifies it before building.
+
+The Android helper's Java source is in `AndroidHelper/`, and its compiled dex is committed, so `swift build` needs no JDK. Only when you change `AndroidHelper/`, rebuild it with `scripts/build.sh helper` (or `make helper`), which needs JDK 17 (`OFFSIDER_HELPER_JDK`, `JAVA_HOME` or `/usr/libexec/java_home -v 17`) and the Android SDK's build-tools 37.0.0 and android-37.0 platform, and commit the dex and manifest with the source. `scripts/build.sh helper --check` (or `make helper-check`) rebuilds it and compares it with the committed dex, as CI does.
 
 ## Contributing and security
 

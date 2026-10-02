@@ -156,10 +156,10 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw error
             }
 
-            resolvedDescription = "resolved tap point at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y))"
+            resolvedDescription = "\(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y))"
         }
 
-        logger.info().log("Tapping at \(resolvedDescription)")
+        logger.info().log("Tapping \(resolvedDescription)")
 
         let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: nil, on: device)[0]
 
@@ -193,7 +193,16 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         await session.close()
 
         logger.info().log("Tap completed successfully")
-        print("✓ Tap at \(resolvedDescription) completed successfully")
+        print(Self.completionLine(selector: pointX == nil ? verifyTarget : nil, at: resolution.point))
+    }
+
+    /// `✓ Tap at (x, y) ...` for coordinates; `✓ Tap on id=X at (x, y) ...` for a selector.
+    static func completionLine(selector: String?, at point: (x: Double, y: Double)) -> String {
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        guard let selector else {
+            return "✓ Tap at \(pointText) completed successfully"
+        }
+        return "✓ Tap on \(selector) at \(pointText) completed successfully"
     }
 
     private func dispatchTap(

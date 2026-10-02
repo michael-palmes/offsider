@@ -94,6 +94,45 @@ struct AdbClientTests {
         #expect(error?.message == "`uiautomator dump` failed on emulator-5556: no answer within 20 s.")
     }
 
+    @Test("bytes that arrive with a service's OKAY are handed over in pending, and the stream carries on after them", arguments: [Int.max, 3])
+    func earlyBytesArePending(maxReadChunk: Int) async throws {
+        let early = Data("exit packet and more".utf8)
+        let server = FakeAdbServer(maxReadChunk: maxReadChunk, handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in
+            .bytes(Data("OKAY".utf8) + early, thenClose: true)
+        })
+        let opened = try await Self.client(server).openService("shell,v2,raw:exit 90", on: "emulator-5556", timeout: .seconds(2))
+
+        var received = opened.pending
+        while case let chunk = try await opened.stream.read(upTo: 64, deadline: .now + .seconds(1)), !chunk.isEmpty {
+            received.append(chunk)
+        }
+        await opened.stream.close()
+
+        #expect(!opened.pending.isEmpty)
+        #expect(received == early)
+    }
+
+    @Test("a quiet service opens with nothing pending and stays open for the caller")
+    func quietServiceStaysOpen() async throws {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in FakeAdbServer.okay })
+        let opened = try await Self.client(server).openService("sync:", on: "emulator-5556", timeout: .seconds(2))
+
+        #expect(opened.pending.isEmpty)
+        #expect(server.services == ["host:transport:emulator-5556", "sync:"])
+        #expect(server.closedStreams == 0)
+        await opened.stream.close()
+    }
+
+    @Test("a refused service is an error naming it, and its connection is closed")
+    func refusedService() async {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in FakeAdbServer.fail("closed") })
+        let error = await #expect(throws: AndroidError.self) {
+            _ = try await Self.client(server).openService("localabstract:offsider-x", on: "emulator-5556", timeout: .seconds(2))
+        }
+        #expect(error?.message == "`localabstract:offsider-x` failed on emulator-5556: closed.")
+        #expect(server.closedStreams == 1)
+    }
+
     @Test("every service connection is closed, on success and on failure")
     func connectionsAreClosed() async throws {
         let server = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in FakeAdbServer.shell() })

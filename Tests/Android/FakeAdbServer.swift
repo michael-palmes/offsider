@@ -6,6 +6,8 @@ final class FakeAdbServer: AdbConnecting, @unchecked Sendable {
     enum Reply {
         case bytes(Data, thenClose: Bool)
         case hang
+        /// `OKAY`, then every later write on the connection goes to the session.
+        case session(any FakeServiceSession)
     }
 
     enum ConnectBehaviour {
@@ -125,53 +127,112 @@ final class FakeAdbStream: AdbByteStream, @unchecked Sendable {
     private var outbound = Data()
     private var endOfStream = false
     private var transportSerial: String?
+    private var session: (any FakeServiceSession)?
 
     init(server: FakeAdbServer) {
         self.server = server
     }
 
     func write(_ data: Data, deadline: ContinuousClock.Instant) async throws {
-        var requests: [FakeAdbServer.Request] = []
-        lock.withLock {
-            inbound.append(data)
-            while inbound.count >= 4,
-                  let length = Int(String(decoding: inbound.prefix(4), as: UTF8.self), radix: 16),
-                  inbound.count >= 4 + length {
-                let service = String(decoding: inbound.dropFirst(4).prefix(length), as: UTF8.self)
-                inbound = Data(inbound.dropFirst(4 + length))
-                requests.append(FakeAdbServer.Request(serial: transportSerial, service: service))
-                if service.hasPrefix("host:transport:") {
-                    transportSerial = String(service.dropFirst("host:transport:".count))
-                }
-            }
+        if let session = lock.withLock({ self.session }) {
+            deliver(data, to: session)
+            return
         }
-        for request in requests {
-            let reply = server.record(request)
-            lock.withLock {
-                switch reply {
-                case .bytes(let bytes, let thenClose):
+        lock.withLock { inbound.append(data) }
+        while let request = lock.withLock({ nextRequest() }) {
+            switch server.record(request) {
+            case .bytes(let bytes, let thenClose):
+                lock.withLock {
                     outbound.append(bytes)
                     endOfStream = endOfStream || thenClose
-                case .hang:
-                    break
                 }
+            case .hang:
+                break
+            case .session(let session):
+                let rest = lock.withLock { () -> Data in
+                    outbound.append(Data("OKAY".utf8) + session.opened())
+                    self.session = session
+                    defer { inbound = Data() }
+                    return inbound
+                }
+                if !rest.isEmpty {
+                    deliver(rest, to: session)
+                }
+                return
             }
         }
     }
 
+    /// The next whole smart-socket request in `inbound`; call with the lock held.
+    private func nextRequest() -> FakeAdbServer.Request? {
+        guard inbound.count >= 4,
+              let length = Int(String(decoding: inbound.prefix(4), as: UTF8.self), radix: 16),
+              inbound.count >= 4 + length else { return nil }
+        let service = String(decoding: inbound.dropFirst(4).prefix(length), as: UTF8.self)
+        inbound = Data(inbound.dropFirst(4 + length))
+        let request = FakeAdbServer.Request(serial: transportSerial, service: service)
+        if service.hasPrefix("host:transport:") {
+            transportSerial = String(service.dropFirst("host:transport:".count))
+        }
+        return request
+    }
+
+    private func deliver(_ bytes: Data, to session: any FakeServiceSession) {
+        let answer = session.received(bytes)
+        lock.withLock {
+            outbound.append(answer.reply)
+            endOfStream = endOfStream || answer.close
+        }
+    }
+
     func read(upTo count: Int, deadline: ContinuousClock.Instant) async throws -> Data {
-        try lock.withLock {
+        if let chunk = takeOutbound(upTo: count) {
+            return chunk
+        }
+        // Nothing queued: a session may have something to say on its own, such as a `bye` or a late line.
+        if let session = lock.withLock({ self.session }), let later = session.pull(), !later.bytes.isEmpty || later.close {
+            lock.withLock {
+                outbound.append(later.bytes)
+                endOfStream = endOfStream || later.close
+            }
+            if let chunk = takeOutbound(upTo: count) {
+                return chunk
+            }
+        }
+        throw AdbConnectError.timedOut
+    }
+
+    private func takeOutbound(upTo count: Int) -> Data? {
+        lock.withLock {
             if !outbound.isEmpty {
                 let chunk = Data(outbound.prefix(min(count, server.maxReadChunk)))
                 outbound = Data(outbound.dropFirst(chunk.count))
                 return chunk
             }
-            if endOfStream { return Data() }
-            throw AdbConnectError.timedOut
+            return endOfStream ? Data() : nil
         }
     }
 
     func close() async {
         server.noteClosed()
+        lock.withLock { session }?.closed()
     }
+}
+
+/// A device service that keeps talking after its `OKAY`, such as `sync:` or `localabstract:`.
+protocol FakeServiceSession: AnyObject, Sendable {
+    /// Bytes the device sends with the `OKAY`, before Offsider writes anything.
+    func opened() -> Data
+    /// The device's answer to bytes Offsider wrote, and whether it then hangs up.
+    func received(_ bytes: Data) -> (reply: Data, close: Bool)
+    /// Offsider closed its end.
+    func closed()
+    /// Bytes the device sends unasked when nothing is queued, and whether it then hangs up; nil makes the read time out.
+    func pull() -> (bytes: Data, close: Bool)?
+}
+
+extension FakeServiceSession {
+    func opened() -> Data { Data() }
+    func closed() {}
+    func pull() -> (bytes: Data, close: Bool)? { nil }
 }

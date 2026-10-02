@@ -39,9 +39,13 @@ public protocol DeviceBackend: AnyObject {
     func screenshotPNG(for id: DeviceID) async throws -> Data
     /// Portrait bands `--verify` leaves out of screenshot comparisons.
     func volatileScreenBands(for id: DeviceID) async -> ScreenBands
+    /// Ends what the backend started for the command, once, after success or failure; returns within a few seconds.
+    func close() async
 }
 
 extension DeviceBackend {
+    public func close() async {}
+
     public func accessibilityTree(for id: DeviceID) async throws -> UITree {
         try await accessibilityTree(for: id, point: nil)
     }

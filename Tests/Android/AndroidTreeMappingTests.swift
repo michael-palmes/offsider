@@ -139,6 +139,71 @@ struct AndroidTreeMappingTests {
         #expect(AndroidTreeMapping.role(for: raw) == role)
     }
 
+    static func ranged(_ className: String, type: String = "int", min: String, max: String, current: String) -> RawAndroidNode {
+        RawAndroidNode(attributes: [
+            "class": className, "bounds": "[0,0][10,10]", "range-type": type, "range-min": min, "range-max": max, "range-current": current,
+        ])
+    }
+
+    @Test("sliders and progress bars report their position in the range as a percentage with up to two decimals", arguments: [
+        ("android.widget.SeekBar", "int", "0", "10000", "2500", "25%"),
+        ("android.widget.SeekBar", "int", "0", "10000", "3995", "39.95%"),
+        ("android.widget.SeekBar", "int", "0", "15", "5", "33.33%"),
+        ("android.widget.SeekBar", "int", "1", "15", "1", "0%"),
+        ("com.google.android.material.slider.Slider", "float", "0.0", "1.0", "0.25", "25%"),
+        ("android.widget.ProgressBar", "percent", "0.0", "100.0", "40.5", "40.5%"),
+    ])
+    func rangePercent(className: String, type: String, min: String, max: String, current: String, value: String) {
+        let node = AndroidTreeMapping.node(from: Self.ranged(className, type: type, min: min, max: max, current: current), scale: 1)
+        #expect(node.value == value)
+    }
+
+    @Test("an indeterminate or empty range has no value")
+    func noRangeValue() {
+        #expect(AndroidTreeMapping.node(from: Self.ranged("android.widget.ProgressBar", type: "indeterminate", min: "0", max: "1", current: "0.5"), scale: 1).value == nil)
+        #expect(AndroidTreeMapping.node(from: Self.ranged("android.widget.SeekBar", min: "5", max: "5", current: "5"), scale: 1).value == nil)
+    }
+
+    @Test("a partly checked checkbox reports value 2 and no checked state; checked and unchecked keep 1 and 0")
+    func checkedStates() {
+        func node(_ state: String, checked: String) -> UINode {
+            AndroidTreeMapping.node(from: RawAndroidNode(attributes: [
+                "class": "android.widget.CheckBox", "checkable": "true", "checked": checked, "checked-state": state,
+            ]), scale: 1)
+        }
+        #expect(node("partial", checked: "false").value == "2")
+        #expect(node("partial", checked: "false").state.checked == nil)
+        #expect(node("checked", checked: "true").value == "1")
+        #expect(node("checked", checked: "true").state.checked == true)
+        #expect(node("unchecked", checked: "false").value == "0")
+    }
+
+    @Test("stateDescription, roleDescription and a Compose testTag fill native; the testTag is the id only without a resource id")
+    func nativeFields() {
+        let attributes = [
+            "class": "android.view.View", "state-description": "33%", "role-description": "Schieberegler", "test-tag": "volume",
+        ]
+        let tagged = AndroidTreeMapping.node(from: RawAndroidNode(attributes: attributes), scale: 1)
+        #expect(tagged.id == "volume")
+        #expect(tagged.native == .android(AndroidNativeAttributes(
+            className: "android.view.View", stateDescription: "33%", roleDescription: "Schieberegler", testTag: "volume"
+        )))
+        #expect(tagged.label == nil)
+        #expect(tagged.role == .group)
+
+        var both = attributes
+        both["resource-id"] = "com.example:id/volume_row"
+        #expect(AndroidTreeMapping.node(from: RawAndroidNode(attributes: both), scale: 1).id == "com.example:id/volume_row")
+    }
+
+    @Test("a window root takes the given role and title instead of a label from its attributes")
+    func windowRoot() {
+        let raw = RawAndroidNode(attributes: ["class": "android.widget.FrameLayout", "content-desc": "ignored"])
+        let root = AndroidTreeMapping.node(from: raw, scale: 1, rootRole: .keyboard, rootLabel: "Gboard")
+        #expect(root.role == .keyboard)
+        #expect(root.label == "Gboard")
+    }
+
     @Test("inverted bounds from clipped rows become a zero-height frame")
     func invertedBounds() {
         #expect(AndroidTreeMapping.pixelFrame("[42,2424][1038,2380]") == UIFrame(x: 42, y: 2424, width: 996, height: 0))

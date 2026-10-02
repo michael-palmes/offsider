@@ -4,7 +4,7 @@ import OffsiderCore
 
 extension AndroidBackend {
     /// Debug and info go to the Offsider logger; warnings print one `Warning:` line on stderr.
-    static func make(logger: OffsiderLogger, host: AndroidHost = .live()) -> AndroidBackend {
+    static func make(logger: OffsiderLogger, host: AndroidHost = .cli()) -> AndroidBackend {
         AndroidBackend(host: host, log: logBridge(logger: logger))
     }
 

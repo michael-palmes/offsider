@@ -13,8 +13,12 @@ private final class FakeSimulator {
     var trees: [AccessibilitySnapshot]
     var screens: [Data]
     var bands = ScreenBands(top: 60, bottom: 0)
+    /// Gives the verifier a change wait, as a backend with accessibility events does.
+    var waitsForChange = false
     private(set) var treeReads = 0
     private(set) var screenReads = 0
+    private(set) var sleeps: [Duration] = []
+    private(set) var waits: [Duration] = []
 
     init(trees: [AccessibilitySnapshot], screens: [Data] = []) {
         self.trees = trees
@@ -34,10 +38,15 @@ private final class FakeSimulator {
                 return screens.count > 1 ? screens.removeFirst() : screens[0]
             },
             sleep: { [unowned self] duration in
+                sleeps.append(duration)
                 clock += Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
             },
             now: { [unowned self] in clock },
-            bands: { [unowned self] in bands }
+            bands: { [unowned self] in bands },
+            waitForChange: waitsForChange ? { [unowned self] duration in
+                waits.append(duration)
+                clock += Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+            } : nil
         )
     }
 }
@@ -136,6 +145,30 @@ struct VerifierTests {
         #expect(outcome.summary?.contains("tap-count") == true)
         #expect(actions.count == 1)
         #expect(retries.isEmpty)
+    }
+
+    @Test("With a change wait, polls after the action wait on it, while the gap between the baseline reads stays a sleep")
+    func changeWaitReplacesPollSleeps() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), tree(count: "1")])
+        fake.waitsForChange = true
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.verified)
+        #expect(fake.sleeps == [.milliseconds(200)])
+        #expect(fake.waits == [.milliseconds(200), .milliseconds(200)])
+    }
+
+    @Test("Without a change wait, every poll sleeps the interval")
+    func pollsSleepWithoutChangeWait() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), tree(count: "1")])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        _ = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(fake.sleeps == [.milliseconds(200), .milliseconds(200), .milliseconds(200)])
+        #expect(fake.waits.isEmpty)
     }
 
     @Test("An unchanged tree with a changed screen verifies by screenshot")
@@ -278,7 +311,7 @@ struct VerifierTests {
         #expect(line(DeviceID(rawValue: "emulator-5556", platform: .android)).hasSuffix("Check the target with describe-ui."))
     }
 
-    @Test("The backends' bands: iOS keeps the status bar only, Android adds the navigation bar")
+    @Test("The backends' bands: iOS keeps the status bar only; Android with no helper running keeps 60 and 48 dp")
     func backendBands() async {
         let device = DeviceID(rawValue: UUID().uuidString, platform: .ios)
         #expect(await IOSBackend(logger: OffsiderLogger()).volatileScreenBands(for: device) == ScreenBands(top: 60, bottom: 0))

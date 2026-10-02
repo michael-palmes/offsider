@@ -4,7 +4,7 @@ import OffsiderCore
 
 struct KeySequence: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Press a sequence of keys by their keycodes on the simulator.",
+        abstract: "Press a sequence of keys by their keycodes on the device.",
         discussion: """
         Press multiple keys in sequence using their HID keycode values.
         Each key will be pressed and released before the next key is pressed.

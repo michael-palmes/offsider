@@ -6,7 +6,7 @@ extension GesturePreset: ExpressibleByArgument {}
 
 struct Gesture: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Perform preset gesture patterns on the simulator.",
+        abstract: "Perform preset gesture patterns on the device.",
         discussion: """
         Execute common gesture patterns without specifying coordinates.
         
@@ -16,9 +16,9 @@ struct Gesture: AsyncParsableCommand {
           swipe-from-top-edge, swipe-from-bottom-edge
 
         Presets are sized to the foreground app's frame from the accessibility
-        tree and follow the simulator's orientation, like swipe coordinates.
-        --screen-width and --screen-height override that size, in points as
-        the screen is currently oriented.
+        tree and follow the device's orientation, like swipe coordinates.
+        --screen-width and --screen-height override that size, in points
+        (dp on Android) as the screen is currently oriented.
 
         Examples:
           offsider gesture scroll-up --device DEVICE_ID
@@ -30,16 +30,16 @@ struct Gesture: AsyncParsableCommand {
     @Argument(help: "The gesture preset to perform.")
     var preset: GesturePreset
 
-    @Option(name: .customLong("screen-width"), help: "Screen width in points in the current orientation (default: the app's frame width).")
+    @Option(name: .customLong("screen-width"), help: "Screen width in points (dp on Android) in the current orientation (default: the app's frame width).")
     var screenWidth: Double?
 
-    @Option(name: .customLong("screen-height"), help: "Screen height in points in the current orientation (default: the app's frame height).")
+    @Option(name: .customLong("screen-height"), help: "Screen height in points (dp on Android) in the current orientation (default: the app's frame height).")
     var screenHeight: Double?
     
     @Option(name: .customLong("duration"), help: "Duration of the gesture in seconds (uses preset default if not specified).")
     var duration: Double?
     
-    @Option(name: .customLong("delta"), help: "Distance between touch points in pixels (uses preset default if not specified).")
+    @Option(name: .customLong("delta"), help: "Distance in points (dp on Android) between touch points (uses preset default if not specified).")
     var delta: Double?
     
     @Option(name: .customLong("pre-delay"), help: "Delay before starting the gesture in seconds.")
@@ -55,13 +55,13 @@ struct Gesture: AsyncParsableCommand {
         // Validate screen dimensions if provided
         if let screenWidth = screenWidth {
             guard screenWidth > 0 && screenWidth <= 2000 else {
-                throw ValidationError("Screen width must be between 1 and 2000 points.")
+                throw ValidationError("Screen width must be between 1 and 2000 points (dp on Android).")
             }
         }
         
         if let screenHeight = screenHeight {
             guard screenHeight > 0 && screenHeight <= 3000 else {
-                throw ValidationError("Screen height must be between 1 and 3000 points.")
+                throw ValidationError("Screen height must be between 1 and 3000 points (dp on Android).")
             }
         }
         
@@ -75,7 +75,7 @@ struct Gesture: AsyncParsableCommand {
         // Validate delta if provided
         if let delta = delta {
             guard delta > 0 && delta <= 200 else {
-                throw ValidationError("Delta must be between 1 and 200 pixels.")
+                throw ValidationError("Delta must be between 1 and 200 points (dp on Android).")
             }
         }
         
