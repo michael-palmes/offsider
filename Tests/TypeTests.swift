@@ -258,4 +258,46 @@ struct TypeTests {
         }
         #expect(textFieldElement?.value == textToType, "Text from file should be typed correctly")
     }
+
+    @Test("--replace leaves the field holding only the new text")
+    func replaceText() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "text-input")
+        try await TestHelpers.runOffsiderCommand("type \"hello world\"", simulatorUDID: defaultSimulatorUDID)
+        #expect(try await waitForFieldValue("hello world") == "hello world")
+
+        try await TestHelpers.runOffsiderCommand("type --replace \"bye\"", simulatorUDID: defaultSimulatorUDID)
+
+        #expect(try await waitForFieldValue("bye") == "bye")
+    }
+
+    @Test("--replace with empty text empties the field")
+    func replaceWithEmptyText() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "text-input")
+        try await TestHelpers.runOffsiderCommand("type \"hello world\"", simulatorUDID: defaultSimulatorUDID)
+        #expect(try await waitForFieldValue("hello world") == "hello world")
+        let typedState = try await TestHelpers.getUIState()
+        #expect(UIStateParser.findElementContainingLabel(in: typedState, containing: "Characters:") != nil)
+
+        try await TestHelpers.runOffsiderCommand("type --replace \"\"", simulatorUDID: defaultSimulatorUDID)
+
+        // The playground reports an empty field as "empty" and hides its character count.
+        #expect(try await waitForFieldValue("empty") == "empty")
+        let clearedState = try await TestHelpers.getUIState()
+        #expect(UIStateParser.findElementContainingLabel(in: clearedState, containing: "Characters:") == nil)
+    }
+
+    /// The text field's value once it equals `expected`, or its last value after 5 s.
+    private func waitForFieldValue(_ expected: String) async throws -> String? {
+        let deadline = Date().addingTimeInterval(5)
+        var value: String?
+        repeat {
+            let uiState = try await TestHelpers.getUIState()
+            value = UIStateParser.findElement(in: uiState) { $0.type == "TextField" }?.value
+            if value == expected {
+                return value
+            }
+            try await Task.sleep(nanoseconds: 300_000_000)
+        } while Date() < deadline
+        return value
+    }
 }

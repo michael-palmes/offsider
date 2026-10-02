@@ -96,10 +96,15 @@ enum AndroidE2E {
         }
     }
 
-    /// Opens a playground screen by deep link and waits until describe-ui shows `id`.
-    static func open(_ screen: String, waitingFor id: String) async throws {
+    /// Restarts the playground on a screen by deep link, without waiting for the screen to render.
+    static func launch(_ screen: String) async throws {
         try await ensurePlaygroundInstalled()
         try await shell("am start -S -W -a android.intent.action.VIEW -d offsiderplaygroundrn://screen/\(screen) \(package)")
+    }
+
+    /// Opens a playground screen by deep link and waits until describe-ui shows `id`.
+    static func open(_ screen: String, waitingFor id: String) async throws {
+        try await launch(screen)
         _ = try await waitForNode(timeout: 40) { $0["id"] as? String == id }
     }
 
@@ -213,12 +218,25 @@ extension AndroidE2E {
 }
 
 extension AndroidE2E {
-    /// `type --file`, because Foundation decomposes non-ASCII process arguments (é becomes e plus U+0301).
-    @discardableResult
-    static func type(_ text: String, environment: [String: String]? = nil) async throws -> SeparatedCommandOutput {
-        let file = temporaryFile("type.txt")
-        defer { try? FileManager.default.removeItem(at: file) }
-        try Data(text.utf8).write(to: file)
-        return try await run("type --file \(quote(file.path))", environment: environment)
+    /// Polls `check` until it holds; false when `timeout` passes first.
+    static func eventually(timeout: TimeInterval, every interval: Duration = .milliseconds(300), _ check: () async throws -> Bool) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if try await check() { return true }
+            try await Task.sleep(for: interval)
+        } while Date() < deadline
+        return false
+    }
+
+    /// The text field's value once it equals `text` (an empty `text` also accepts no value).
+    static func waitForFieldValue(_ text: String, id: String = "text-input-field", timeout: TimeInterval = 20) async throws -> [String: Any] {
+        try await waitForNode(timeout: timeout) { node in
+            node["id"] as? String == id && ((node["value"] as? String) ?? "") == text
+        }
+    }
+
+    /// Whether describe-ui lists the on-screen keyboard as a root.
+    static func keyboardShown() async throws -> Bool {
+        ((try await tree()["roots"] as? [[String: Any]]) ?? []).contains { $0["role"] as? String == "keyboard" }
     }
 }

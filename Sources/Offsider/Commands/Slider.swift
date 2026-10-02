@@ -69,12 +69,13 @@ struct Slider: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        guard route.device.platform != .android else {
-            throw CLIError(
-                errorDescription: "slider is not supported on Android emulators yet: the uiautomator tree does not report slider values. Use swipe or drag on the track, and read the result with describe-ui."
-            )
-        }
-        let target = SliderTarget(backend: route.backend, device: route.device)
+        let line = try await setSlider(on: SliderTarget(backend: route.backend, device: route.device), logger: logger)
+        logger.info().log("Slider set completed successfully")
+        print(line)
+    }
+
+    /// Resolves, sets and verifies the slider, and returns the success line.
+    func setSlider(on target: SliderTarget, logger: OffsiderLogger) async throws -> String {
         try await target.backend.prepare()
 
         let query = try accessibilityQuery()
@@ -90,7 +91,7 @@ struct Slider: AsyncParsableCommand {
             logger: logger
         )
 
-        let observedValue = try await setAndVerifySliderValue(
+        let result = try await setAndVerifySliderValue(
             initialMatch: match,
             query: query,
             targetNormalized: targetNormalized,
@@ -98,8 +99,10 @@ struct Slider: AsyncParsableCommand {
             logger: logger
         )
 
-        logger.info().log("Slider set completed successfully")
-        print("✓ Slider set to \(formatPercent(value)) successfully (value: \(observedValue))")
+        guard let nearestStep = result.nearestStep else {
+            return "✓ Slider set to \(formatPercent(value)) successfully (value: \(result.observed))"
+        }
+        return "✓ Slider set to \(formatPercent(nearestStep)) (the nearest step to \(formatPercent(value))) successfully (value: \(result.observed))"
     }
 
     private func accessibilityQuery() throws -> AccessibilityQuery {
@@ -112,15 +115,19 @@ struct Slider: AsyncParsableCommand {
         throw CLIError(errorDescription: "Unexpected state: no slider selector.")
     }
 
+    private func requireSlider(_ element: UINode) throws {
+        guard element.isSlider else {
+            let typeDescription = element.native.typeName ?? element.role.rawValue
+            throw CLIError(errorDescription: "Matched element is not a slider (type: \(typeDescription)). Use --element-type slider or a more specific --id/--label selector.")
+        }
+    }
+
     private func makeDragPlan(
         for element: UINode,
         applicationFrame: UIFrame?,
         targetNormalized: Double
     ) throws -> SliderDragPlan {
-        guard element.isSlider else {
-            let typeDescription = element.native.typeName ?? element.role.rawValue
-            throw CLIError(errorDescription: "Matched element is not a slider (type: \(typeDescription)). Use --element-type slider or a more specific --id/--label selector.")
-        }
+        try requireSlider(element)
         guard let frame = element.frame else {
             throw ElementResolutionError.invalidFrame(reason: "Matched slider has no frame.")
         }
@@ -159,7 +166,26 @@ struct Slider: AsyncParsableCommand {
         targetNormalized: Double,
         target: SliderTarget,
         logger: OffsiderLogger
-    ) async throws -> String {
+    ) async throws -> SliderResult {
+        var initialMatch = initialMatch
+        if let actions = target.backend as? any AccessibilityActionPerforming {
+            try requireSlider(initialMatch.element)
+            var outcome = try await actions.setRangeValue(targetNormalized, of: initialMatch.element, on: target.device)
+            if outcome == .stale {
+                logger.info().log("Slider \(initialMatch.selectorDescription) changed before it could be set; finding it again")
+                initialMatch = try await resolveSliderElement(query: query, on: target)
+                outcome = try await actions.setRangeValue(targetNormalized, of: initialMatch.element, on: target.device)
+            }
+            switch outcome {
+            case .performed(let reachable):
+                return try await verifyActionResult(reachable: reachable, targetNormalized: targetNormalized, query: query, target: target, logger: logger)
+            case .stale:
+                throw CLIError(errorDescription: "The slider matched by \(selectorArgument) changed while Offsider was setting it. Retry when the screen is still.")
+            case .unsupported(let reason):
+                logger.info().log("Slider \(initialMatch.selectorDescription) cannot be set through accessibility (\(reason)); dragging it instead")
+            }
+        }
+
         let dragPlan = try makeDragPlan(
             for: initialMatch.element,
             applicationFrame: initialMatch.applicationFrame,
@@ -183,7 +209,31 @@ struct Slider: AsyncParsableCommand {
                 errorDescription: "Slider value did not reach requested value \(formatPercent(value)) after direct drag. Observed value: \(observedValue.rawValue ?? "none")."
             )
         }
-        return observedValue.rawValue ?? formatNormalized(observedValue.normalizedValue)
+        return SliderResult(observed: observedValue.rawValue ?? formatNormalized(observedValue.normalizedValue), nearestStep: nil)
+    }
+
+    /// After the device's own range action: verify against the step it can show, which may differ from the request.
+    private func verifyActionResult(
+        reachable: Double,
+        targetNormalized: Double,
+        query: AccessibilityQuery,
+        target: SliderTarget,
+        logger: OffsiderLogger
+    ) async throws -> SliderResult {
+        logger.info().log("Set the slider to \(formatNormalized(reachable)) through its accessibility action")
+        let observedValue = try await pollObservedSliderValue(query: query, targetNormalized: reachable, on: target)
+        guard observedValue.isWithinTolerance else {
+            throw CLIError(
+                errorDescription: "Slider value did not reach requested value \(formatPercent(value)) after its accessibility action. Observed value: \(observedValue.rawValue ?? "none")."
+            )
+        }
+        let nearestStep = abs(reachable - targetNormalized) > Self.valueTolerance ? (reachable * 10_000).rounded() / 100 : nil
+        return SliderResult(observed: observedValue.rawValue ?? formatNormalized(observedValue.normalizedValue), nearestStep: nearestStep)
+    }
+
+    private var selectorArgument: String {
+        if let elementID { return "--id '\(elementID)'" }
+        return "--label '\(elementLabel ?? "")'"
     }
 
     private func performSliderDrag(_ dragPlan: SliderDragPlan, on target: SliderTarget) async throws {
@@ -338,9 +388,15 @@ struct Slider: AsyncParsableCommand {
     }
 }
 
-private struct SliderTarget {
+struct SliderTarget {
     let backend: any DeviceBackend
     let device: DeviceID
+}
+
+private struct SliderResult {
+    let observed: String
+    /// The percentage reached when the control's steps cannot show the requested value.
+    let nearestStep: Double?
 }
 
 private struct SliderDragPlan {

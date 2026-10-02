@@ -45,6 +45,18 @@ struct OffsiderCommand: AsyncParsableCommand {
             FileHandle.standardError.write(Data("Error: \(message)\n".utf8))
             Darwin.exit(OffsiderExitCode.usage.rawValue)
         }
-        await main(nil)
+        // ArgumentParser's own `main(nil)`, with the command's backends closed before the process exits.
+        do {
+            var command = try parseAsRoot(nil)
+            try await CommandScope.current.run {
+                if var asyncCommand = command as? any AsyncParsableCommand {
+                    try await asyncCommand.run()
+                } else {
+                    try command.run()
+                }
+            }
+        } catch {
+            exit(withError: error)
+        }
     }
 }

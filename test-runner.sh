@@ -418,9 +418,12 @@ run_android_tests() {
     local suites=(
         "AndroidListDevicesTests"
         "AndroidDescribeUITests"
+        "AndroidHelperTests"
         "AndroidTapTests"
+        "AndroidSelectorTests"
         "AndroidTouchTests"
         "AndroidSwipeGestureTests"
+        "AndroidSliderTests"
         "AndroidTypeTests"
         "AndroidKeyTests"
         "AndroidButtonTests"

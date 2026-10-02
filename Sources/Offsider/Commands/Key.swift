@@ -4,7 +4,7 @@ import OffsiderCore
 
 struct Key: AsyncParsableCommand, VerifiableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Press a single key by keycode on the simulator.",
+        abstract: "Press a single key by keycode on the device.",
         discussion: """
         Press individual keys using their HID keycode values.
         

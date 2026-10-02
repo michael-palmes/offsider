@@ -44,6 +44,7 @@ final class RecordingTextInputSession: TextInputSession {
     enum Call: Equatable {
         case perform(InputEvent)
         case typeText(String)
+        case replaceText(String)
     }
 
     let device = DeviceID(rawValue: "emulator-5556", platform: .android)
@@ -55,6 +56,10 @@ final class RecordingTextInputSession: TextInputSession {
 
     func typeText(_ text: String) async throws {
         calls.append(.typeText(text))
+    }
+
+    func replaceText(_ text: String) async throws {
+        calls.append(.replaceText(text))
     }
 
     func close() async {}
@@ -140,9 +145,19 @@ struct BatchPlanRunnerTests {
         let session = RecordingTextInputSession()
 
         try await BatchPlanRunner(session: session, logger: OffsiderLogger())
-            .run(BatchPlan(primitives: [.hidMergeable(first), .text("héllo world"), .hidMergeable(second)]))
+            .run(BatchPlan(primitives: [.hidMergeable(first), .text("héllo world", replace: false), .hidMergeable(second)]))
 
         #expect(session.calls == [.perform(first), .typeText("héllo world"), .perform(second)])
+    }
+
+    @Test("a replacing text step flushes pending events, then replaces the field's text once")
+    func replacingTextStepFlushesAndReplacesOnce() async throws {
+        let session = RecordingTextInputSession()
+
+        try await BatchPlanRunner(session: session, logger: OffsiderLogger())
+            .run(BatchPlan(primitives: [.hidMergeable(first), .text("bye", replace: true), .text("", replace: true)]))
+
+        #expect(session.calls == [.perform(first), .replaceText("bye"), .replaceText("")])
     }
 
     @Test("a text step on a session that cannot type text fails without sending it as keys")
@@ -150,7 +165,7 @@ struct BatchPlanRunnerTests {
         let session = RecordingInputSession()
 
         await #expect(throws: CLIError.self) {
-            try await run([.hidMergeable(first), .text("hello")], on: session)
+            try await run([.hidMergeable(first), .text("hello", replace: false)], on: session)
         }
         #expect(session.calls == [.perform(first)])
     }

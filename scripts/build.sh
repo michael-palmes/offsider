@@ -700,6 +700,165 @@ function verify_release_architectures() {
   print_success "Release artifacts include the arm64 slice"
 }
 
+# Android helper: Java 8 source compiled to a committed dex with a pinned JDK, d8 and android.jar.
+HELPER_SOURCE_DIR="${REPO_ROOT}/AndroidHelper/src"
+HELPER_OUTPUT_DIR="${REPO_ROOT}/Sources/Offsider/Resources/helper"
+HELPER_BUILD_DIR="${REPO_ROOT}/.build/offsider-helper"
+HELPER_MAIN_SOURCE="com/mpalmes/offsider/helper/OffsiderHelper.java"
+HELPER_JDK_MAJOR="17"
+HELPER_BUILD_TOOLS="37.0.0"
+HELPER_D8_VERSION="9.2.4-dev"
+HELPER_D8_SHA256="a26ee56252adcff6752c379ae255a0ad538ebec60189e078ec6855487107637d"
+HELPER_PLATFORM="android-37.0"
+HELPER_ANDROID_JAR_SHA256="bf1b4387cc7ca94fc6ef684f040d9d16fbf16248e181819f020736ea2053f177"
+HELPER_MIN_API="26"
+
+function helper_fail() {
+  echo "❌ Error: $*" >&2
+  exit 1
+}
+
+function helper_sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$@" | awk '{ print $1 }'
+  else
+    sha256sum "$@" | awk '{ print $1 }'
+  fi
+}
+
+function helper_source_paths() {
+  (cd "$HELPER_SOURCE_DIR" && find . -type f -name '*.java' | sed 's|^\./||' | LC_ALL=C sort)
+}
+
+# SHA-256 over each source's path relative to src, a NUL, its bytes and a NUL, in byte order of the paths.
+function helper_sources_sha256() {
+  helper_source_paths | while IFS= read -r path; do
+    printf '%s\0' "$path"
+    cat "${HELPER_SOURCE_DIR}/${path}"
+    printf '\0'
+  done | helper_sha256
+}
+
+function helper_resolve_toolchain() {
+  local sdk javac_version
+  HELPER_JDK="${OFFSIDER_HELPER_JDK:-${JAVA_HOME:-}}"
+  if [[ -z "$HELPER_JDK" && -x /usr/libexec/java_home ]]; then
+    HELPER_JDK="$(/usr/libexec/java_home -v "$HELPER_JDK_MAJOR" 2>/dev/null || true)"
+  fi
+  [[ -n "$HELPER_JDK" && -x "${HELPER_JDK}/bin/javac" && -x "${HELPER_JDK}/bin/java" ]] \
+    || helper_fail "No JDK ${HELPER_JDK_MAJOR} found: set OFFSIDER_HELPER_JDK to a JDK ${HELPER_JDK_MAJOR} home."
+  sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
+  HELPER_D8_JAR="${sdk}/build-tools/${HELPER_BUILD_TOOLS}/lib/d8.jar"
+  HELPER_ANDROID_JAR="${sdk}/platforms/${HELPER_PLATFORM}/android.jar"
+  [[ -f "$HELPER_D8_JAR" ]] \
+    || helper_fail "Missing ${HELPER_D8_JAR}: install build-tools ${HELPER_BUILD_TOOLS} with sdkmanager, or set ANDROID_HOME."
+  [[ -f "$HELPER_ANDROID_JAR" ]] \
+    || helper_fail "Missing ${HELPER_ANDROID_JAR}: install ${HELPER_PLATFORM} with sdkmanager, or set ANDROID_HOME."
+  javac_version="$("${HELPER_JDK}/bin/javac" -version 2>&1 | awk '{ print $2 }')"
+  [[ "${javac_version%%.*}" == "$HELPER_JDK_MAJOR" ]] \
+    || helper_fail "javac ${javac_version} in ${HELPER_JDK} is not JDK ${HELPER_JDK_MAJOR}: set OFFSIDER_HELPER_JDK to a JDK ${HELPER_JDK_MAJOR} home."
+  [[ "$(helper_sha256 "$HELPER_D8_JAR")" == "$HELPER_D8_SHA256" ]] \
+    || helper_fail "${HELPER_D8_JAR} is not d8 ${HELPER_D8_VERSION} from build-tools ${HELPER_BUILD_TOOLS} (sha256 ${HELPER_D8_SHA256})."
+  if [[ "$(helper_sha256 "$HELPER_ANDROID_JAR")" != "$HELPER_ANDROID_JAR_SHA256" ]]; then
+    print_warning "${HELPER_ANDROID_JAR} is not the pinned ${HELPER_PLATFORM} (sha256 ${HELPER_ANDROID_JAR_SHA256}); the dex comparison still decides."
+  fi
+  print_info "JDK ${javac_version} in ${HELPER_JDK}, d8 ${HELPER_D8_VERSION}, ${HELPER_PLATFORM}"
+}
+
+function helper_manifest() {
+  local dex="$1" file_count="$2" main version protocol
+  main="${HELPER_SOURCE_DIR}/${HELPER_MAIN_SOURCE}"
+  version="$(sed -n 's/^ *static final String VERSION = "\([^"]*\)";$/\1/p' "$main" | head -1)"
+  protocol="$(sed -n 's/^ *static final int PROTOCOL = \([0-9][0-9]*\);$/\1/p' "$main" | head -1)"
+  [[ -n "$version" && -n "$protocol" ]] || helper_fail "Could not read VERSION and PROTOCOL from ${main}"
+  printf '{\n'
+  printf '  "helper": "offsider-helper",\n'
+  printf '  "helperVersion": "%s",\n' "$version"
+  printf '  "protocol": %s,\n' "$protocol"
+  printf '  "dex": {"file": "offsider-helper.dex", "bytes": %s, "sha256": "%s"},\n' \
+    "$(wc -c < "$dex" | tr -d ' ')" "$(helper_sha256 "$dex")"
+  printf '  "sources": {"files": %s, "sha256": "%s"},\n' "$file_count" "$(helper_sources_sha256)"
+  printf '  "jdkMajor": %s,\n' "$HELPER_JDK_MAJOR"
+  printf '  "d8": {"buildTools": "%s", "version": "%s", "sha256": "%s"},\n' \
+    "$HELPER_BUILD_TOOLS" "$HELPER_D8_VERSION" "$HELPER_D8_SHA256"
+  printf '  "androidJar": {"platform": "%s", "sha256": "%s"},\n' "$HELPER_PLATFORM" "$HELPER_ANDROID_JAR_SHA256"
+  printf '  "minApi": %s\n' "$HELPER_MIN_API"
+  printf '}\n'
+}
+
+# Builds into .build/offsider-helper/ only: classes, dex, offsider-helper.dex and manifest.json.
+function helper_build() {
+  local work="$HELPER_BUILD_DIR" path
+  local sources=() classes=()
+  while IFS= read -r path; do sources+=("$path"); done < <(helper_source_paths)
+  [[ ${#sources[@]} -gt 0 ]] || helper_fail "No Java sources under ${HELPER_SOURCE_DIR}"
+  rm -rf "$work"
+  mkdir -p "${work}/classes" "${work}/dex"
+  (cd "$HELPER_SOURCE_DIR" && LC_ALL=C TZ=UTC "${HELPER_JDK}/bin/javac" --release 8 -encoding UTF-8 \
+    -Xlint:all,-options -Werror -implicit:none -cp "$HELPER_ANDROID_JAR" -d "${work}/classes" "${sources[@]}")
+  while IFS= read -r path; do classes+=("$path"); done \
+    < <(cd "${work}/classes" && find . -type f -name '*.class' | sed 's|^\./||' | LC_ALL=C sort)
+  (cd "${work}/classes" && LC_ALL=C TZ=UTC "${HELPER_JDK}/bin/java" -cp "$HELPER_D8_JAR" com.android.tools.r8.D8 \
+    --release --min-api "$HELPER_MIN_API" --lib "$HELPER_ANDROID_JAR" --output "${work}/dex" "${classes[@]}")
+  [[ -f "${work}/dex/classes.dex" ]] || helper_fail "d8 wrote no classes.dex"
+  cp "${work}/dex/classes.dex" "${work}/offsider-helper.dex"
+  helper_manifest "${work}/offsider-helper.dex" "${#sources[@]}" > "${work}/manifest.json"
+}
+
+function cmd_helper() {
+  local check=0 summary current_sources committed_sources
+  local committed_dex="${HELPER_OUTPUT_DIR}/offsider-helper.dex"
+  local committed_manifest="${HELPER_OUTPUT_DIR}/manifest.json"
+  local built_dex="${HELPER_BUILD_DIR}/offsider-helper.dex"
+  local built_manifest="${HELPER_BUILD_DIR}/manifest.json"
+  local differs=()
+  case "${1:-}" in
+    "") ;;
+    --check) check=1 ;;
+    *) helper_fail "Unknown option for helper: $1 (use --check)" ;;
+  esac
+  [[ $# -le 1 ]] || helper_fail "helper takes at most one option (--check)"
+  print_section "☕" "Building the Android Helper"
+  helper_resolve_toolchain
+  helper_build
+  summary="offsider-helper.dex $(wc -c < "$built_dex" | tr -d ' ') bytes sha256 $(helper_sha256 "$built_dex")"
+
+  if [[ "$check" == 1 ]]; then
+    cmp -s "$built_dex" "$committed_dex" || differs+=("offsider-helper.dex")
+    cmp -s "$built_manifest" "$committed_manifest" || differs+=("manifest.json")
+    if [[ ${#differs[@]} -gt 0 ]]; then
+      echo "❌ Error: the rebuilt helper differs from the committed ${differs[*]} in ${HELPER_OUTPUT_DIR}" >&2
+      echo "   Rebuilt: ${summary}" >&2
+      diff "$committed_manifest" "$built_manifest" >&2 || true
+      echo "   Rebuild with scripts/build.sh helper (JDK ${HELPER_JDK_MAJOR}, build-tools ${HELPER_BUILD_TOOLS}, d8 ${HELPER_D8_VERSION}) and commit the dex and manifest with the Java source." >&2
+      exit 1
+    fi
+    print_success "${summary} matches the committed dex and manifest"
+    return 0
+  fi
+
+  current_sources="$(helper_sources_sha256)"
+  committed_sources=""
+  if [[ -f "$committed_manifest" ]]; then
+    committed_sources="$(sed -n 's/^  "sources": {"files": [0-9]*, "sha256": "\([0-9a-f]*\)"},$/\1/p' "$committed_manifest")"
+  fi
+  if [[ -f "$committed_dex" && "$committed_sources" == "$current_sources" ]]; then
+    cmp -s "$built_dex" "$committed_dex" \
+      || helper_fail "The rebuilt helper differs from the committed dex although the Java source is unchanged: use JDK ${HELPER_JDK_MAJOR} and build-tools ${HELPER_BUILD_TOOLS} (d8 ${HELPER_D8_VERSION})."
+    if cmp -s "$built_manifest" "$committed_manifest"; then
+      print_success "${summary} (unchanged)"
+    else
+      cp "$built_manifest" "$committed_manifest"
+      print_success "${summary} (manifest updated)"
+    fi
+    return 0
+  fi
+  mkdir -p "$HELPER_OUTPUT_DIR"
+  cp "$built_dex" "$committed_dex"
+  cp "$built_manifest" "$committed_manifest"
+  print_success "${summary} (updated)"
+}
+
 # Function to print usage information
 function print_usage() {
 cat <<EOF
@@ -743,6 +902,11 @@ Commands:
   verify-arches
     Verify the executable and frameworks include the arm64 slice.
 
+  helper [--check]
+    Rebuild the Android helper dex from AndroidHelper/src with JDK 17, build-tools 37.0.0 (d8) and android-37.0
+    in .build/offsider-helper/, then update Sources/Offsider/Resources/helper/ when the Java source changed.
+    --check rebuilds and compares with the committed dex and manifest without writing them.
+
 Environment Variables:
   IDB_CHECKOUT_DIR       Directory for IDB repository (default: ./idb_checkout)
   IDB_GIT_URL            IDB fork URL (default: https://github.com/michael-palmes/idb.git)
@@ -750,11 +914,14 @@ Environment Variables:
   IDB_UPSTREAM_BASE_REF  Verified upstream base (default: e682506725e9efefb9c43b8b917c0b12eb2a5939)
   BUILD_OUTPUT_DIR       Directory for build outputs (default: ./build_products)
   DERIVED_DATA_PATH      Directory for derived data (default: ./build_derived_data)
+  OFFSIDER_HELPER_JDK    JDK 17 home for helper (default: JAVA_HOME, then /usr/libexec/java_home -v 17)
+  ANDROID_HOME           Android SDK for helper (default: ANDROID_SDK_ROOT, then ~/Library/Android/sdk)
 
 Examples:
   ./build.sh dev                # Build the IDB frameworks and XCFrameworks
   ./build.sh executable         # Build build_products/offsider
   ./build.sh verify-arches      # Check the built payload
+  ./build.sh helper --check     # Rebuild the Android helper and compare it with the committed dex
 EOF
 }
 
@@ -872,6 +1039,9 @@ case $COMMAND in
     cmd_verify_xcframeworks;;
   verify-arches)
     cmd_verify_arches;;
+  helper)
+    shift
+    cmd_helper "$@";;
   *)
     echo "Unknown command: $COMMAND"
     echo ""

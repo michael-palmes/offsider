@@ -11,6 +11,8 @@ struct Verifier {
         var sleep: @MainActor (Duration) async throws -> Void
         var now: @MainActor () -> TimeInterval
         var bands: @MainActor () async -> ScreenBands = { ScreenBands(top: 60, bottom: 0) }
+        /// Between tree polls after the action, returning early when the screen may have changed; nil sleeps the interval.
+        var waitForChange: (@MainActor (Duration) async throws -> Void)? = nil
     }
 
     struct Attempt: Equatable {
@@ -60,7 +62,11 @@ struct Verifier {
             var lastUnchanged: AccessibilitySnapshot?
             if baseline.isKnown {
                 repeat {
-                    try await dependencies.sleep(pollInterval)
+                    if let waitForChange = dependencies.waitForChange {
+                        try await waitForChange(pollInterval)
+                    } else {
+                        try await dependencies.sleep(pollInterval)
+                    }
                     let current = await read(dependencies)
                     switch detector.compare(baseline, current, ignoring: volatile) {
                     case .unknown:
@@ -135,12 +141,18 @@ struct Verifier {
 
 extension Verifier.Dependencies {
     static func live(backend: any DeviceBackend, device: DeviceID) -> Self {
-        Self(
+        var dependencies = Self(
             snapshot: { AccessibilitySnapshot(tree: try await backend.accessibilityTree(for: device)) },
             screenshot: { try await backend.screenshotPNG(for: device) },
             sleep: { duration in try await Task.sleep(for: duration) },
             now: { ProcessInfo.processInfo.systemUptime },
             bands: { await backend.volatileScreenBands(for: device) }
         )
+        if let waiting = backend as? any AccessibilityChangeWaiting {
+            dependencies.waitForChange = { duration in
+                _ = try await waiting.waitForAccessibilityChange(on: device, timeout: duration)
+            }
+        }
+        return dependencies
     }
 }

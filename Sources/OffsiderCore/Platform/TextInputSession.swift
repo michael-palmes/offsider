@@ -4,4 +4,6 @@ import Foundation
 @MainActor
 public protocol TextInputSession: InputSession {
     func typeText(_ text: String) async throws
+    /// Replaces the text of the field with input focus; an empty `text` clears it.
+    func replaceText(_ text: String) async throws
 }

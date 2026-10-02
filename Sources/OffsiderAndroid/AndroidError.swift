@@ -24,6 +24,14 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case uiautomatorIdle
         case uiautomatorNoWindow
         case uiautomatorFailed
+        case helperUnavailable
+        case helperBusy
+        case helperCrashed
+        case helperTimedOut
+        case helperFailed
+        case noWindow
+        case noFocusedField
+        case fieldNotEditable
         case unsupportedKey
         case unsupportedButton
         case unsupportedControlCharacter
@@ -267,6 +275,81 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(.uiautomatorFailed, "uiautomator could not read the screen on \(serial) (\(detail)). Retry, or run `adb -s \(serial) shell uiautomator dump` to see why.")
     }
 
+    static func helperUnavailableForced(_ serial: String, reason: HelperUnavailableReason) -> AndroidError {
+        AndroidError(
+            .helperUnavailable,
+            "The UiAutomation helper is unavailable on \(serial) (\(reason)), and OFFSIDER_ANDROID_TREE is helper. Unset it to fall back to uiautomator."
+        )
+    }
+
+    static func sliderNeedsHelper(_ serial: String, reason: HelperUnavailableReason) -> AndroidError {
+        guard reason != .forcedOff else {
+            return AndroidError(
+                .helperUnavailable,
+                "slider on Android reads slider values through the UiAutomation helper, and OFFSIDER_ANDROID_TREE is uiautomator. Unset it, then retry."
+            )
+        }
+        return AndroidError(
+            .helperUnavailable,
+            "slider on Android reads slider values through the UiAutomation helper, which is unavailable on \(serial) (\(reason))."
+        )
+    }
+
+    static func helperBusy(_ serial: String) -> AndroidError {
+        AndroidError(
+            .helperBusy,
+            "Another UiAutomation client is connected to \(serial) (Appium, Maestro, uiautomator, an instrumentation test or Layout Inspector), so Offsider cannot read its screen. Stop that client, then retry."
+        )
+    }
+
+    static func helperBusy(_ serial: String, stalePid pid: Int32) -> AndroidError {
+        AndroidError(
+            .helperBusy,
+            "An earlier Offsider helper (pid \(pid)) still holds UiAutomation on \(serial). It exits within 10 s of losing its command; to free it now, run `adb -s \(serial) shell kill \(pid)`."
+        )
+    }
+
+    static func helperCrashed(_ serial: String, detail: String) -> AndroidError {
+        AndroidError(
+            .helperCrashed,
+            "The UiAutomation helper on \(serial) stopped unexpectedly (\(detail)). Retry; `adb -s \(serial) logcat -d -s OffsiderHelper AndroidRuntime` shows why."
+        )
+    }
+
+    static func helperTimedOut(_ serial: String, op: String, seconds: Int) -> AndroidError {
+        AndroidError(
+            .helperTimedOut,
+            "The UiAutomation helper on \(serial) did not answer `\(op)` within \(seconds) s. The emulator may be overloaded; retry when it responds."
+        )
+    }
+
+    static func helperFailed(_ serial: String, message: String) -> AndroidError {
+        AndroidError(
+            .helperFailed,
+            "The UiAutomation helper could not read the screen of \(serial) (\(message)). Retry, or set OFFSIDER_ANDROID_TREE=uiautomator to read it another way."
+        )
+    }
+
+    static func noWindow(_ serial: String) -> AndroidError {
+        AndroidError(.noWindow, "Offsider found no window on \(serial). Unlock the emulator and bring an app to the front.")
+    }
+
+    static func noFocusedField(_ serial: String) -> AndroidError {
+        AndroidError(
+            .noFocusedField,
+            "type --replace needs a focused text field on \(serial), and nothing has input focus. Tap the field first, for example `offsider tap --id <field> --device \(serial)`."
+        )
+    }
+
+    static func fieldNotEditable(_ serial: String, className: String?, resourceId: String?) -> AndroidError {
+        let parts = [className.map { "`\($0)`" }, resourceId.map { "id `\($0)`" }].compactMap { $0 }
+        let element = parts.isEmpty ? "" : " (\(parts.joined(separator: ", ")))"
+        return AndroidError(
+            .fieldNotEditable,
+            "The element with input focus on \(serial)\(element) is not a text field, so type --replace cannot set its text. Tap the text field first."
+        )
+    }
+
     static func unsupportedKey(_ usage: UInt32) -> AndroidError {
         AndroidError(
             .unsupportedKey,
@@ -341,7 +424,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 }
 
-/// uiautomator finds no window for a moment while an activity starts or restarts; polling callers retry it.
+/// Android shows no window for a moment while an activity starts or restarts; polling callers retry it.
 extension AndroidError: TransientFailure {
-    public var isTransient: Bool { kind == .uiautomatorNoWindow }
+    public var isTransient: Bool { kind == .uiautomatorNoWindow || kind == .noWindow }
 }

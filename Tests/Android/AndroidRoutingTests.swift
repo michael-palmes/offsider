@@ -80,6 +80,35 @@ struct AndroidRoutingTests {
         #expect(server.connectionAttempts == 0)
     }
 
+    @Test("every backend the router builds is adopted by the command scope")
+    func routerAdoptsWhatItBuilds() async throws {
+        let server = Self.server(["emulator-5556": "Offsider_E2E\n\n1\n16\n36\n"])
+        let host = Self.host(server, home: try AndroidTestHost.homeWithSDK())
+        let scope = CommandScope()
+
+        let ios = try await DeviceRouter.route("abcdef00-0000-4000-8000-00000000abcd", logger: OffsiderLogger(), host: host, scope: scope)
+        let serial = try await DeviceRouter.route("emulator-5556", logger: OffsiderLogger(), host: host, scope: scope)
+        let avd = try await DeviceRouter.route("Offsider_E2E", logger: OffsiderLogger(), host: host, scope: scope)
+        let listing = DeviceRouter.allBackends(logger: OffsiderLogger(), host: host, scope: scope)
+
+        let built = [ios.backend, serial.backend, avd.backend] + listing
+        #expect(scope.adopted.count == built.count)
+        #expect(zip(scope.adopted, built).allSatisfy { $0 === $1 })
+    }
+
+    @Test("closing the command scope closes the routed Android backend's gRPC client")
+    func scopeClosesRoutedBackend() async throws {
+        let rig = try AndroidGrpcInputTests.rig()
+        let scope = CommandScope()
+        let route = try await DeviceRouter.route("emulator-5556", logger: OffsiderLogger(), host: rig.backend.host, scope: scope)
+
+        try await scope.run {
+            try await route.backend.perform(.tapAt(x: 10, y: 20), on: route.device)
+        }
+
+        #expect(rig.emulator.calls.last == .close)
+    }
+
     @Test("in a batch, type on Android becomes one text step instead of HID key events")
     func batchTypeIsText() async throws {
         let device = DeviceID(rawValue: "emulator-5556", platform: .android)
@@ -92,7 +121,7 @@ struct AndroidRoutingTests {
         )
         let primitives = try await Type.parse(["héllo world", "--device", device.rawValue]).toBatchPrimitives(context: context, logger: OffsiderLogger())
 
-        guard primitives.count == 1, case .text(let text) = primitives[0] else {
+        guard primitives.count == 1, case .text(let text, replace: false) = primitives[0] else {
             Issue.record("expected one text step, got \(primitives)")
             return
         }
@@ -109,10 +138,11 @@ struct AndroidCommandRefusalTests {
         #expect(result.stderr.contains("doctor checks iOS simulators in this build; Android checks come later. Run `offsider doctor` for host checks."))
     }
 
-    @Test("slider on Android is refused with a way forward")
-    func sliderRefusesAndroid() async throws {
+    @Test("slider on Android is no longer refused: it goes to the emulator, here failing for want of an SDK")
+    func sliderReachesAndroid() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("slider --id volume --value 50 --device emulator-5556")
         #expect(result.exitCode == 1)
-        #expect(result.stderr.contains("slider is not supported on Android emulators yet: the uiautomator tree does not report slider values."))
+        #expect(result.stderr.contains(ListDevicesPlatformFilterTests.sdkNotFound))
+        #expect(!result.stderr.contains("not supported"))
     }
 }

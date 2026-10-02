@@ -6,22 +6,23 @@ enum AndroidTreeMapping {
     /// The dump's first node is the app window: role `application`, so gesture presets and verify see its frame.
     static func roots(from hierarchy: UIAutomatorHierarchy, scale: Double) -> [UINode] {
         guard let root = hierarchy.nodes.first else { return [] }
-        return [node(from: root, scale: scale, isRoot: true)]
+        return [node(from: root, scale: scale, rootRole: .application, rootLabel: nil)]
     }
 
-    static func node(from raw: RawAndroidNode, scale: Double, isRoot: Bool = false) -> UINode {
-        let role = isRoot ? .application : self.role(for: raw)
+    /// A root takes `rootRole` and `rootLabel` (a window and its title); other nodes map from their attributes.
+    static func node(from raw: RawAndroidNode, scale: Double, rootRole: UIRole? = nil, rootLabel: String? = nil) -> UINode {
+        let role = rootRole ?? self.role(for: raw)
         let pixels = pixelFrame(raw["bounds"])
-        let checkable = raw.flag("checkable")
+        let partial = raw["checked-state"] == "partial"
         return UINode(
             role: role,
-            id: nonEmpty(raw["resource-id"]),
-            label: isRoot ? nil : label(for: raw),
+            id: nonEmpty(raw["resource-id"]) ?? nonEmpty(raw["test-tag"]),
+            label: rootRole == nil ? label(for: raw) : rootLabel.flatMap(nonEmpty),
             value: value(for: raw, role: role),
             frame: pixels.map { dp($0, scale: scale) },
             enabled: raw.flag("enabled"),
             state: UIState(
-                checked: checkable ? raw.flag("checked") : nil,
+                checked: raw.flag("checkable") && !partial ? raw.flag("checked") : nil,
                 selected: raw.flag("selected"),
                 focused: raw.flag("focused")
             ),
@@ -32,7 +33,10 @@ enum AndroidTreeMapping {
                 pixelFrame: pixels,
                 text: nonEmpty(raw["text"]),
                 contentDescription: nonEmpty(raw["content-desc"]),
-                hint: nonEmpty(raw["hint"])
+                hint: nonEmpty(raw["hint"]),
+                stateDescription: nonEmpty(raw["state-description"]),
+                roleDescription: nonEmpty(raw["role-description"]),
+                testTag: nonEmpty(raw["test-tag"])
             )),
             children: raw.children.map { node(from: $0, scale: scale) }
         )
@@ -57,15 +61,34 @@ enum AndroidTreeMapping {
         return (own.map { [$0] } ?? []) + raw.children.flatMap(descendantLabels)
     }
 
+    /// Text for fields, `1`, `0` or `2` (partial) for toggles, and the range position as a percentage for sliders.
     static func value(for raw: RawAndroidNode, role: UIRole) -> String? {
         switch role {
         case .textField, .secureTextField:
             return nonEmpty(raw["text"])
         case .switch, .checkbox, .radioButton:
+            if raw["checked-state"] == "partial" {
+                return "2"
+            }
             return raw.flag("checkable") ? (raw.flag("checked") ? "1" : "0") : nil
+        case .slider, .progress:
+            return rangePercent(raw)
         default:
             return nil
         }
+    }
+
+    /// (current - min) / (max - min) with up to two decimals: "25%", "39.95%"; nil when indeterminate or empty.
+    static func rangePercent(_ raw: RawAndroidNode) -> String? {
+        guard raw["range-type"] != "indeterminate",
+              let min = Double(raw["range-min"]), let max = Double(raw["range-max"]), let current = Double(raw["range-current"]),
+              min.isFinite, max.isFinite, current.isFinite, max != min else {
+            return nil
+        }
+        var text = String(format: "%.2f", (current - min) / (max - min) * 100)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return (text == "-0" ? "0" : text) + "%"
     }
 
     private static let classRoles: [(suffix: String, role: UIRole)] = [

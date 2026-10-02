@@ -56,6 +56,32 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -color
 
+  helper:
+    name: Android helper (rebuild and compare)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      HELPER_BUILD_TOOLS: "37.0.0"
+      HELPER_PLATFORM: "android-37.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: zulu
+          java-version: "17.0.20"
+
+      - name: Install the pinned build-tools and platform
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager" --install "build-tools;${HELPER_BUILD_TOOLS}" "platforms;${HELPER_PLATFORM}" > /dev/null
+
+      - name: Rebuild the helper dex and compare it with the committed one
+        run: OFFSIDER_HELPER_JDK="$JAVA_HOME" ANDROID_HOME="$ANDROID_HOME" scripts/build.sh helper --check
+
   build-test:
     name: Build, unit tests, release rehearsal (ad-hoc)
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}

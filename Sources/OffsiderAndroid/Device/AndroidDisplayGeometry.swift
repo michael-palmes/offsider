@@ -107,3 +107,27 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
         return (rotation, width, height)
     }
 }
+
+extension AndroidDisplayGeometry {
+    /// From the helper's display; nil when it had no rotation (its fallback read), so the shell probe runs instead.
+    init?(display: HelperDisplay) {
+        guard let rotation = display.rotation, (0...3).contains(rotation), display.densityDpi > 0,
+              display.logicalWidthPx > 0, display.logicalHeightPx > 0 else {
+            return nil
+        }
+        let quarter = rotation % 2 == 1
+        let unrotatedWidth = quarter ? display.logicalHeightPx : display.logicalWidthPx
+        let unrotatedHeight = quarter ? display.logicalWidthPx : display.logicalHeightPx
+        let naturalWidth = display.physicalWidthPx ?? unrotatedWidth
+        let naturalHeight = display.physicalHeightPx ?? unrotatedHeight
+        self.init(
+            naturalWidth: naturalWidth,
+            naturalHeight: naturalHeight,
+            logicalWidth: display.logicalWidthPx,
+            logicalHeight: display.logicalHeightPx,
+            rotation: rotation,
+            densityDpi: display.densityDpi,
+            hasSizeOverride: unrotatedWidth != naturalWidth || unrotatedHeight != naturalHeight
+        )
+    }
+}

@@ -27,10 +27,16 @@ struct AndroidBackendTreeTests {
 
     static let device = DeviceID(rawValue: "emulator-5556", platform: .android)
 
+    /// These tests cover the uiautomator path on purpose, not as the helper's fallback.
+    static func backend(_ server: FakeAdbServer) throws -> AndroidBackend {
+        let host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"], adb: server)
+        return AndroidBackend(host: host) { _, _ in }
+    }
+
     @Test("the tree comes from a uniquely named uiautomator dump, mapped to dp")
     func tree() async throws {
         let server = Self.server(dump: FakeAdbServer.shell(stdout: Self.dump(rotation: 0)))
-        let tree = try await AndroidBackendTests.backend(server).accessibilityTree(for: Self.device, point: nil)
+        let tree = try await Self.backend(server).accessibilityTree(for: Self.device, point: nil)
 
         #expect(tree.platform == .android)
         #expect(tree.screen == nil)
@@ -42,13 +48,13 @@ struct AndroidBackendTreeTests {
     @Test("with a point, the deepest node there is the only root")
     func point() async throws {
         let server = Self.server(dump: FakeAdbServer.shell(stdout: Self.dump(rotation: 0)))
-        let tree = try await AndroidBackendTests.backend(server).accessibilityTree(for: Self.device, point: UIPoint(x: 20, y: 70))
+        let tree = try await Self.backend(server).accessibilityTree(for: Self.device, point: UIPoint(x: 20, y: 70))
         #expect(tree.roots.map(\.id) == ["BackButton"])
     }
 
     @Test("a busy UiAutomation slot is an actionable error")
     func busy() async throws {
-        let backend = try AndroidBackendTests.backend(Self.server(dump: FakeAdbServer.shell(status: 137)))
+        let backend = try Self.backend(Self.server(dump: FakeAdbServer.shell(status: 137)))
         let error = await #expect(throws: AndroidError.self) { try await backend.accessibilityTree(for: Self.device, point: nil) }
         #expect(error?.kind == .uiautomatorBusy)
         #expect(error?.message.contains("Another UiAutomation client") == true)
@@ -60,7 +66,7 @@ struct AndroidBackendTreeTests {
     @Test("a screen with no window is read once more, then reported as transient so polling callers retry it")
     func noWindowIsTransient() async throws {
         let server = Self.server(dump: Self.noWindow)
-        let backend = try AndroidBackendTests.backend(server)
+        let backend = try Self.backend(server)
         let error = await #expect(throws: AndroidError.self) { try await backend.accessibilityTree(for: Self.device, point: nil) }
         #expect(error?.kind == .uiautomatorNoWindow)
         #expect(error?.isTransientFailure == true)
@@ -77,7 +83,7 @@ struct AndroidBackendTreeTests {
             }
             return server.handler(request)
         })
-        let tree = try await AndroidBackendTests.backend(flaky).accessibilityTree(for: Self.device, point: nil)
+        let tree = try await Self.backend(flaky).accessibilityTree(for: Self.device, point: nil)
         #expect(tree.roots.first?.children.first?.id == "BackButton")
         #expect(reads.count == 2)
     }
@@ -92,7 +98,7 @@ struct AndroidBackendTreeTests {
     @Test("the dump's rotation refreshes the cached geometry without another probe")
     func rotationRefresh() async throws {
         let server = Self.server(dump: FakeAdbServer.shell(stdout: Self.dump(rotation: 1)))
-        let backend = try AndroidBackendTests.backend(server)
+        let backend = try Self.backend(server)
         _ = try await backend.accessibilityTree(for: Self.device, point: nil)
         let info = try await backend.screenInfo(for: Self.device)
 
@@ -102,7 +108,7 @@ struct AndroidBackendTreeTests {
 
     @Test("a dump that never answers names uiautomator, not the whole script")
     func dumpTimeout() async throws {
-        let backend = try AndroidBackendTests.backend(Self.server(dump: FakeAdbServer.okay))
+        let backend = try Self.backend(Self.server(dump: FakeAdbServer.okay))
         let error = await #expect(throws: AndroidError.self) { try await backend.accessibilityTree(for: Self.device, point: nil) }
         #expect(error?.message == "`uiautomator dump` failed on emulator-5556: no answer within 20 s.")
     }

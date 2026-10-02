@@ -15,6 +15,8 @@ EXPECTED_AUTHORITY="${EXPECTED_AUTHORITY:-Developer ID Application: Michael Palm
 
 EXE=offsider
 BUNDLE=Offsider_Offsider.bundle
+HELPER_DIR="${BUNDLE}/Contents/Resources/helper"
+HELPER_MANIFEST_SOURCE="${REPO_ROOT}/Sources/Offsider/Resources/helper/manifest.json"
 BUNDLE_ID=com.mpalmes.offsider
 FRAMEWORKS="FBControlCore XCTestBootstrap FBSimulatorControl FBDeviceControl"
 LICENCE_FILES="LICENSE THIRD_PARTY_LICENSES"
@@ -241,6 +243,18 @@ verify_tree() {
   done
 }
 
+# The bundled Android helper must be the committed dex, byte for byte as its manifest describes.
+verify_helper() {
+  local root="$1" manifest dex want have
+  manifest="${root}/${HELPER_DIR}/manifest.json"
+  dex="${root}/${HELPER_DIR}/offsider-helper.dex"
+  if [ ! -f "$dex" ] || [ ! -f "$manifest" ]; then die "${HELPER_DIR}: helper dex or manifest missing"; fi
+  cmp -s "$manifest" "$HELPER_MANIFEST_SOURCE" || die "${HELPER_DIR}/manifest.json differs from the committed manifest"
+  want="$(plutil -extract dex.sha256 raw -o - "$manifest")"
+  have="$(shasum -a 256 "$dex" | cut -d' ' -f1)"
+  [ "$want" = "$have" ] || die "${HELPER_DIR}/offsider-helper.dex has sha256 ${have}, its manifest says ${want}"
+}
+
 render_formula() {  # version url sha256 [explicit]
   local version_line=""
   if [ "${4:-}" = explicit ]; then version_line="  version \"$1\""$'\n'; fi
@@ -299,6 +313,7 @@ cmd_stage() {
   done
   for lf in $LICENCE_FILES; do cp "${REPO_ROOT}/${lf}" "${STAGE}/${lf}"; done
   sanitise "$STAGE"
+  verify_helper "$STAGE"
   normalise_executable_rpaths "${STAGE}/${EXE}"
   macho_files "${STAGE}/Frameworks" | while IFS= read -r f; do sanitise_library_rpaths "$f"; done
   log "staged ${STAGE}"
@@ -382,6 +397,7 @@ cmd_verify() {
   if grep -Eq '(^|/)\._' "$listing"; then die "archive contains AppleDouble entries"; fi
   /usr/bin/tar -xzf "$ARCHIVE" -C "$x"
   verify_tree "$x"
+  verify_helper "$x"
   verify_signatures "$x"
   if [ -f "${DIST}/notarised-cdhashes.txt" ]; then
     diff <(cdhashes "$x") "${DIST}/notarised-cdhashes.txt" || die "shipped code differs from the notarised submission"

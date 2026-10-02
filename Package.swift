@@ -77,7 +77,8 @@ let package = Package(
             ],
             path: "Sources/Offsider",
             resources: [
-                .copy("Resources/skills")
+                .copy("Resources/skills"),
+                .copy("Resources/helper")
             ],
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"] + idbPrivateHeaderSearchFlags)
