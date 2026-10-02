@@ -151,28 +151,29 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
 
     public func openInputSession(for id: DeviceID) async throws -> any InputSession {
         let serial = id.rawValue
-        let geometry = try await geometry(for: serial)
+        try await prepare()
         let shell = AdbDeviceShell(client: try requireClient(), serial: serial)
-        let executor = try await inputExecutor(for: serial, geometry: geometry, shell: shell)
-        let transport = try await transport(for: serial)
-        var clipboard: (any EmulatorControlling)?
-        var adbReason = AdbReason.forced
-        switch transport {
-        case .grpc(let emulator): clipboard = emulator
-        case .adb(let reason): adbReason = reason
-        }
         return AndroidInputSession(
             device: id,
-            executor: executor,
             shell: shell,
-            geometry: geometry,
+            route: { try await self.inputRoute(for: serial, shell: shell) },
             avdName: { await self.avdName(for: serial) },
-            clipboard: clipboard,
-            adbReason: adbReason,
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             sleep: host.sleep,
             log: log
         )
+    }
+
+    /// The display geometry, then the transport, when the session's first input needs them.
+    private func inputRoute(for serial: String, shell: AdbDeviceShell) async throws -> AndroidInputRoute {
+        let geometry = try await geometry(for: serial)
+        let executor = try await inputExecutor(for: serial, geometry: geometry, shell: shell)
+        switch try await transport(for: serial) {
+        case .grpc(let emulator):
+            return AndroidInputRoute(executor: executor, scale: geometry.scale, clipboard: emulator, adbReason: .forced)
+        case .adb(let reason):
+            return AndroidInputRoute(executor: executor, scale: geometry.scale, clipboard: nil, adbReason: reason)
+        }
     }
 
     /// For messages: the cached name, else the live discovery file, else one `getprop` on this serial only.
@@ -290,6 +291,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     func geometry(for serial: String) async throws -> AndroidDisplayGeometry {
         if let cached = geometries[serial] {
             return cached
+        }
+        if let measured = try await helperGeometry(serial) {
+            geometries[serial] = measured
+            return measured
         }
         try await prepare()
         let result = try await requireClient().shell(AndroidDisplayGeometry.probeScript, on: serial, label: "wm size; wm density; dumpsys input")

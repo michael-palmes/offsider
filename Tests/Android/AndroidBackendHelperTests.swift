@@ -33,6 +33,35 @@ struct AndroidBackendHelperTests {
         #expect(rig.device.kills.isEmpty)
     }
 
+    @Test("type --replace makes one server check, one start shell and one socket: hello and setText, then quit, and no display probe")
+    func replaceSequence() async throws {
+        let rig = try AndroidReplaceTextTests.rig()
+        try await AndroidReplaceTextTests.replace("abc", on: rig)
+        await rig.backend.close()
+
+        #expect(rig.server.services == [
+            "host:version",
+            "host:transport:emulator-5556", "shell,v2,raw:" + HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil),
+            "host:transport:emulator-5556", "localabstract:offsider-fake-1",
+        ])
+        #expect(rig.device.ops == ["hello", "setText", "quit"])
+    }
+
+    @Test("type --replace with a trailing newline takes the display from the helper before pressing Return, with no probe")
+    func replaceSubmitSequence() async throws {
+        let rig = try AndroidReplaceTextTests.rig()
+        try await AndroidReplaceTextTests.replace("abc\n", on: rig)
+        await rig.backend.close()
+
+        #expect(rig.server.services == [
+            "host:version",
+            "host:transport:emulator-5556", "shell,v2,raw:" + HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil),
+            "host:transport:emulator-5556", "localabstract:offsider-fake-1",
+            "host:transport:emulator-5556", "shell,v2,raw:input keyevent 66",
+        ])
+        #expect(rig.device.ops == ["hello", "setText", "display", "quit"])
+    }
+
     @Test("later reads in the command reuse the same helper")
     func reuse() async throws {
         let rig = try HelperRig()
