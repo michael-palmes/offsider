@@ -75,6 +75,10 @@ struct ContentView: View {
             ModalNavigationTestView()
         case "long-scroll-test":
             LongScrollTestView()
+        case "parked-sheet-test":
+            ParkedSheetTestView()
+        case "environment-test":
+            EnvironmentTestView()
             
         // Input & Text
         case "text-input":
@@ -126,14 +130,16 @@ struct MainMenuView: View {
         ("Accessibility", [
             ("slider-value-test", "Slider Value Test", "Numeric AXValue with selector tap"),
             ("searchable-test", "Searchable Test", "Navigation search field targeting"),
-            ("toolbar-picker-test", "Toolbar Picker Test", "Toolbar segmented picker targeting")
+            ("toolbar-picker-test", "Toolbar Picker Test", "Toolbar segmented picker targeting"),
+            ("environment-test", "Environment Test", "Colour scheme, content size and orientation")
         ]),
         ("Presentation", [
             ("alert-test", "Alert Test", "Alert presentation and button targeting"),
             ("sheet-test", "Sheet Test", "Sheet presentation and actions"),
             ("context-menu-test", "Context Menu Test", "Long press menu targeting"),
             ("modal-navigation-test", "Modal Navigation Test", "Modal route and nested navigation refresh"),
-            ("long-scroll-test", "Long Scroll Test", "Dedicated long scroll coverage")
+            ("long-scroll-test", "Long Scroll Test", "Dedicated long scroll coverage"),
+            ("parked-sheet-test", "Parked Sheet Test", "Closed sheet parked off screen")
         ])
     ]
     

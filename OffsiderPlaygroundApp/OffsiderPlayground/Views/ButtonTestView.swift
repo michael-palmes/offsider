@@ -11,6 +11,7 @@ struct ButtonTestView: View {
     @State private var lastButtonPressed: String?
     @State private var buttonPressCount = 0
     @State private var pressHistory: [ButtonPress] = []
+    @State private var shakeState = "None"
     
     var body: some View {
         VStack(spacing: 20) {
@@ -42,6 +43,11 @@ struct ButtonTestView: View {
                     .foregroundColor(.green)
                     .accessibilityIdentifier("button-press-count")
                     .accessibilityValue("\(buttonPressCount)")
+
+                Text("Shake: \(shakeState)")
+                    .font(.subheadline)
+                    .accessibilityIdentifier("button-test-shake")
+                    .accessibilityValue(shakeState)
             }
             .padding()
             .background(Color.white.opacity(0.9))
@@ -102,6 +108,9 @@ struct ButtonTestView: View {
         .navigationTitle("Button Test")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("button-test-screen")
+        .onReceive(NotificationCenter.default.publisher(for: .playgroundDidShake)) { _ in
+            shakeState = "Detected"
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             // This would be where we'd detect actual hardware button events
             // For now, we'll simulate based on app lifecycle events
@@ -112,6 +121,19 @@ struct ButtonTestView: View {
         lastButtonPressed = button
         buttonPressCount += 1
         pressHistory.append(ButtonPress(button: button, timestamp: Date()))
+    }
+}
+
+extension Notification.Name {
+    static let playgroundDidShake = Notification.Name("playgroundDidShake")
+}
+
+extension UIWindow {
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake {
+            NotificationCenter.default.post(name: .playgroundDidShake, object: nil)
+        }
+        super.motionEnded(motion, with: event)
     }
 }
 
