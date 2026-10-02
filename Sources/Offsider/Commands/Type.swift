@@ -10,6 +10,10 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         1. Direct text: offsider type "Hello World" --device DEVICE_ID
         2. From stdin: echo "Hello World!" | offsider type --stdin --device DEVICE_ID
         3. From file: offsider type --file text.txt --device DEVICE_ID
+
+        Replacing a field's text:
+        • offsider type --replace "new text" --device DEVICE_ID sets the focused field to exactly "new text"
+        • offsider type --replace "" --device DEVICE_ID clears it
         
         Examples:
         • Simple text: offsider type "Hello World" --device DEVICE_ID
@@ -30,7 +34,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         Note: iOS may apply smart punctuation spacing to some characters.
 
         Android emulators: printable ASCII, newlines and tabs are typed as key events. Text with any other
-        character needs the emulator's gRPC endpoint.
+        character needs the emulator's gRPC endpoint. --replace sets the text in one accessibility action
+        (any Unicode, no gRPC needed); a trailing newline is then pressed as Return.
         """
     )
     
@@ -42,6 +47,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     
     @Option(name: .customLong("file"), help: "Read text from the specified file.")
     var inputFile: String?
+
+    @Flag(name: .customLong("replace"), help: "Replace the focused field's text instead of adding to it (an empty TEXT clears it).")
+    var replace = false
     
     @OptionGroup
     var verification: VerificationOptions
@@ -105,7 +113,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         // Convert text to HID events using the new utility
         let hidEvents: [InputEvent]
         do {
-            hidEvents = try TextToHIDEvents.convertTextToHIDEvents(inputText)
+            hidEvents = try Self.iosEvents(for: inputText, replacing: replace)
             logger.info().log("Successfully converted text to \(hidEvents.count) HID events")
         } catch let error as TextToHIDEvents.TextConversionError {
             logger.error().log("Text conversion failed: \(error.localizedDescription)")
@@ -149,7 +157,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             guard let textSession = session as? any TextInputSession else {
                 throw CLIError(errorDescription: "This device's input session cannot type text.")
             }
-            try await textSession.typeText(inputText)
+            if replace {
+                try await textSession.replaceText(inputText)
+            } else {
+                try await textSession.typeText(inputText)
+            }
         }
         guard let progress else {
             let session = try await backend.openInputSession(for: device)
@@ -175,6 +187,12 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         try await VerifyOutput.perform(request, progress: progress) { _, session in
             try await typeText(session)
         }
+    }
+
+    /// iOS key events: with `replacing`, Command-A and Backspace first, in the same composite as the typing.
+    static func iosEvents(for text: String, replacing: Bool) throws -> [InputEvent] {
+        let typed = try TextToHIDEvents.convertTextToHIDEvents(text)
+        return replacing ? [InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey)] + typed : typed
     }
 
     // MARK: - Input Methods

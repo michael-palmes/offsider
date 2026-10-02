@@ -14,6 +14,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming 
     private var warnedAboutOverride: Set<String> = []
     private var dumpCounter = 0
     var treeSources: [String: AndroidTreeSource] = [:]
+    var announcedFallbacks: Set<String> = []
     var warnedAboutTruncation: Set<String> = []
 
     public init(host: AndroidHost = .live(), log: @escaping AndroidLog) {
@@ -168,6 +169,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming 
             avdName: { await self.avdName(for: serial) },
             clipboard: clipboard,
             adbReason: adbReason,
+            replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             sleep: host.sleep,
             log: log
         )
@@ -305,6 +307,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming 
         }
         let open = transports.sorted { $0.key < $1.key }.map(\.value)
         treeSources = [:]
+        announcedFallbacks = []
         warnedAboutTruncation = []
         transports = [:]
         geometries = [:]

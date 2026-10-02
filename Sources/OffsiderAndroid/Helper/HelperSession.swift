@@ -93,6 +93,11 @@ final class HelperSession {
         try await request(.setProgress(node, value: value, expecting: range), as: HelperProgressResult.self, timeout: Self.requestTimeout)
     }
 
+    /// `ACTION_SET_TEXT` on the field with input focus; an error reply throws `HelperErrorBody`.
+    func setText(_ text: String) async throws -> HelperTextResult {
+        try await request(.setText(text), as: HelperTextResult.self, timeout: Self.requestTimeout)
+    }
+
     private func screenRequest<Reply: Decodable>(_ request: HelperRequest, as type: Reply.Type, timeout: Duration) async throws -> Reply {
         do {
             return try await self.request(request, as: type, timeout: timeout)

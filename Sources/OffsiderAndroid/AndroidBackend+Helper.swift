@@ -2,9 +2,10 @@ import Foundation
 import OffsiderCore
 
 extension AndroidBackend {
-    /// How this command reads `serial`'s screen, chosen on its first tree read: the helper, else uiautomator with a warning.
-    func treeSource(for serial: String) async throws -> AndroidTreeSource {
+    /// How this command reads `serial`'s screen, chosen once: the helper, else uiautomator, announced on the first screen read.
+    func treeSource(for serial: String, announcingFallback: Bool = true) async throws -> AndroidTreeSource {
         if let chosen = treeSources[serial] {
+            if announcingFallback { announceFallback(chosen, on: serial) }
             return chosen
         }
         let mode = try AndroidTreeMode.mode(host: host)
@@ -19,12 +20,47 @@ extension AndroidBackend {
                 guard mode == .auto else {
                     throw AndroidError.helperUnavailableForced(serial, reason: reason)
                 }
-                log(.warning, AndroidTreeSource.fallbackWarning(serial: serial, reason: reason))
                 chosen = .uiautomator(reason)
             }
         }
         treeSources[serial] = chosen
+        if announcingFallback { announceFallback(chosen, on: serial) }
         return chosen
+    }
+
+    private func announceFallback(_ source: AndroidTreeSource, on serial: String) {
+        guard case .uiautomator(let reason) = source, reason != .forcedOff, announcedFallbacks.insert(serial).inserted else { return }
+        log(.warning, AndroidTreeSource.fallbackWarning(serial: serial, reason: reason))
+    }
+
+    /// For `type --replace`: one `setText` on the focused field, else `.useKeys` (with a warning unless uiautomator was forced).
+    func replaceFocusedText(_ text: String, on serial: String) async throws -> TextReplacement {
+        let session: HelperSession
+        switch try await treeSource(for: serial, announcingFallback: false) {
+        case .helper(let running):
+            session = running
+        case .uiautomator(.forcedOff):
+            return .useKeys(warning: nil)
+        case .uiautomator(let reason):
+            return .useKeys(warning: "type --replace could not use the UiAutomation helper on \(serial) (\(reason)), so Offsider clears the field with Ctrl+A and Delete, then types.")
+        }
+        let refusal: String
+        do {
+            let result = try await session.setText(text)
+            log(.debug, "The helper set the text of \(result.className ?? "the focused field") on \(serial)")
+            return .replaced
+        } catch let error as HelperErrorBody {
+            switch error.code {
+            case "no-focus": throw AndroidError.noFocusedField(serial)
+            case "not-editable": throw AndroidError.fieldNotEditable(serial, className: error.className, resourceId: error.resourceId)
+            default: refusal = error.message
+            }
+        } catch let error as HelperProtocolError {
+            refusal = error.detail
+        } catch HelperStartFailure.busy {
+            throw await busyError(serial)
+        }
+        return .useKeys(warning: "The focused field on \(serial) does not accept replacement text (\(refusal)), so Offsider clears it with Ctrl+A and Delete, then types.")
     }
 
     /// The helper this command already started on `serial`, for callers that must never start one.

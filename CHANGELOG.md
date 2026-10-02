@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Android `describe-ui` and every tree read go through a small UiAutomation helper that Offsider pushes to the emulator and runs for one command (about 0.5 s per `describe-ui`); `uiautomator` remains the fallback, with a warning.
 - `OFFSIDER_ANDROID_TREE` (`helper` or `uiautomator`) for troubleshooting Android screen reads.
 - `slider` works on Android emulators through the accessibility progress action, falling back to a drag; a control whose steps cannot show the requested value reports the nearest step it reached.
+- `type --replace` replaces the focused field's text on both platforms, and an empty text clears it. iOS selects all with Command-A and deletes, then types; Android sets the text in one accessibility action (any Unicode, no gRPC needed) and presses Return for a trailing newline, falling back to Ctrl+A, Delete and typing.
 - React Native playground (`OffsiderPlaygroundRN`) for shared iOS and Android fixtures.
 
 ### Changed

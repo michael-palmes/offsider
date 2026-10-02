@@ -30,7 +30,8 @@ final class FakeHelperDevice: @unchecked Sendable {
     enum Answer {
         /// `"ok": true` with these fields, a JSON object.
         case ok(String)
-        case error(code: String, message: String)
+        /// The focused element's class and id ride along, as `setText` errors carry them.
+        case error(code: String, message: String, className: String? = nil, resourceId: String? = nil)
         /// A `bye` frame instead of a reply, then the helper exits.
         case bye(String)
         /// The socket closes with no reply: the helper died.
@@ -327,8 +328,9 @@ final class FakeHelperSocket: FakeServiceSession, @unchecked Sendable {
                     device.exit(process, status: 0)
                     return (out, true)
                 }
-            case .error(let code, let message):
-                out += Self.frame(#"{"id":\#(id),"ok":false,"error":{"code":"\#(code)","message":"\#(message)","detail":null},"eventSeq":7}"#)
+            case .error(let code, let message, let className, let resourceId):
+                let node = [className.map { #","className":"\#($0)""# }, resourceId.map { #","resourceId":"\#($0)""# }].compactMap { $0 }.joined()
+                out += Self.frame(#"{"id":\#(id),"ok":false,"error":{"code":"\#(code)","message":"\#(message)","detail":null\#(node)},"eventSeq":7}"#)
             case .bye(let reason):
                 out += Self.frame(Self.bye(reason, detail: "no request within 10000 ms"))
                 device.exit(process, status: 0)

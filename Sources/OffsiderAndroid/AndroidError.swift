@@ -30,6 +30,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case helperTimedOut
         case helperFailed
         case noWindow
+        case noFocusedField
+        case fieldNotEditable
         case unsupportedKey
         case unsupportedButton
         case unsupportedControlCharacter
@@ -330,6 +332,22 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     static func noWindow(_ serial: String) -> AndroidError {
         AndroidError(.noWindow, "Offsider found no window on \(serial). Unlock the emulator and bring an app to the front.")
+    }
+
+    static func noFocusedField(_ serial: String) -> AndroidError {
+        AndroidError(
+            .noFocusedField,
+            "type --replace needs a focused text field on \(serial), and nothing has input focus. Tap the field first, for example `offsider tap --id <field> --device \(serial)`."
+        )
+    }
+
+    static func fieldNotEditable(_ serial: String, className: String?, resourceId: String?) -> AndroidError {
+        let parts = [className.map { "`\($0)`" }, resourceId.map { "id `\($0)`" }].compactMap { $0 }
+        let element = parts.isEmpty ? "" : " (\(parts.joined(separator: ", ")))"
+        return AndroidError(
+            .fieldNotEditable,
+            "The element with input focus on \(serial)\(element) is not a text field, so type --replace cannot set its text. Tap the text field first."
+        )
     }
 
     static func unsupportedKey(_ usage: UInt32) -> AndroidError {

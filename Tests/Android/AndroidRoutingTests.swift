@@ -121,7 +121,7 @@ struct AndroidRoutingTests {
         )
         let primitives = try await Type.parse(["héllo world", "--device", device.rawValue]).toBatchPrimitives(context: context, logger: OffsiderLogger())
 
-        guard primitives.count == 1, case .text(let text) = primitives[0] else {
+        guard primitives.count == 1, case .text(let text, replace: false) = primitives[0] else {
             Issue.record("expected one text step, got \(primitives)")
             return
         }

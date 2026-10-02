@@ -47,6 +47,11 @@ struct HelperRequest: Equatable, Sendable {
         ])
     }
 
+    /// `ACTION_SET_TEXT` on the field with input focus.
+    static func setText(_ text: String) -> HelperRequest {
+        HelperRequest(op: "setText", fields: ["text": .string(text)])
+    }
+
     /// The JSON payload with sorted keys, so the same request always encodes the same way.
     func payload(id: Int) throws -> Data {
         var object = fields
@@ -300,6 +305,13 @@ struct HelperDump: Decodable, Equatable, Sendable {
 /// The `setProgress` reply: the range as the node reads after the action, nil when it no longer reports one.
 struct HelperProgressResult: Decodable, Equatable, Sendable {
     let range: HelperRange?
+}
+
+/// The `setText` reply: the field that took the text and its new length in UTF-16 units (nil for passwords).
+struct HelperTextResult: Decodable, Equatable, Sendable {
+    let className: String?
+    let resourceId: String?
+    let length: Int?
 }
 
 /// The `display` op's reply: the display and the window list without trees.
