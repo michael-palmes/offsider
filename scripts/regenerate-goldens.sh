@@ -178,8 +178,8 @@ capture_case version --version
 capture_case help --help
 
 SUBCOMMANDS=(
-  batch boot button describe-ui doctor drag gesture init key key-combo key-sequence
-  list-devices record-video screenshot slider stream-video swipe tap touch type
+  appearance assert batch boot button content-size describe-ui doctor drag gesture init key key-combo key-sequence
+  list-devices logs orientation record-video screenshot shake slider stream-video swipe tap touch type wait
 )
 for subcommand in "${SUBCOMMANDS[@]}"; do
   capture_case "help-$subcommand" "$subcommand" --help
@@ -192,9 +192,12 @@ for subcommand in "${SUBCOMMANDS[@]}"; do
 done
 
 VALIDATION_CASES=(
+  "appearance-value|appearance|dim|--device|invalid"
+  "assert-selector|assert|--device|invalid"
   "batch-source|batch|--device|invalid|--step|tap -x 1 -y 1|--stdin"
   "boot-timeout|boot|Pixel_9|--timeout|5"
   "button-value|button|invalid-button|--device|invalid"
+  "content-size-value|content-size|xl|--device|invalid"
   "describe-ui-point|describe-ui|--device|invalid|--point|nope"
   "drag-duration|drag|--start-x|0|--start-y|0|--end-x|1|--end-y|1|--duration|-1|--device|invalid"
   "gesture-value|gesture|invalid-gesture|--device|invalid"
@@ -204,14 +207,17 @@ VALIDATION_CASES=(
   "key-sequence-value|key-sequence|--keycodes|invalid|--device|invalid"
   "list-devices-value|list-devices|unexpected"
   "list-devices-platform|list-devices|--platform|invalid"
+  "orientation-value|orientation|sideways|--device|invalid"
   "record-video-fps|record-video|--device|invalid|--fps|0"
   "screenshot-output|screenshot|--device|invalid|--output"
+  "shake-platform|shake|--device|emulator-5554"
   "slider-value|slider|--id|slider|--value|101|--device|invalid"
   "stream-video-format|stream-video|--device|invalid|--format|invalid"
   "swipe-duration|swipe|--start-x|0|--start-y|0|--end-x|1|--end-y|1|--duration|-1|--device|invalid"
   "tap-coordinates|tap|-x|not-a-number|-y|1|--device|invalid"
   "touch-mode|touch|-x|1|-y|1|--device|invalid"
   "type-source|type|literal|--stdin|--device|invalid"
+  "wait-condition|wait|--settled|--seconds|1|--device|invalid"
 )
 for row in "${VALIDATION_CASES[@]}"; do
   IFS='|' read -r -a fields <<< "$row"

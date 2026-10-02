@@ -57,17 +57,42 @@ struct ScreenshotCompareTests {
         #expect(try rendered.encoded(as: .png) == screen.untouchedPNG)
     }
 
-    @Test("iOS landscape captures still scale to points but refuse a region")
-    func landscapeRegionRefused() throws {
+    @Test("iOS landscape captures are turned upright and accept a region")
+    func landscapeRegion() throws {
         let screen = try capture(TestImages.make(width: 1206, height: 2622), screen: landscape)
+        #expect(screen.upright)
+        #expect(screen.image.width == 2622 && screen.image.height == 1206)
+        #expect(screen.pixelsPerPoint == 3)
+        #expect(screen.untouchedPNG == nil)
+        let rendered = try ScreenCapture.render(screen, request: ScreenshotRequest(region: PointRegion(x: 800, y: 0, width: 74, height: 10)))
+        #expect(rendered.image.width == 222 && rendered.image.height == 30)
+    }
+
+    @Test("Turning an iOS capture upright brings each physical pixel back to its logical point", arguments: OrientationCoordinateMath.Orientation.allCases)
+    func uprightRotationMatchesCoordinateMath(orientation: OrientationCoordinateMath.Orientation) throws {
+        let portraitWidth = 40
+        let portraitHeight = 60
+        let logical = (x: 7, y: 3)
+        let physical = OrientationCoordinateMath.translateToPhysical(
+            x: Double(logical.x) + 0.5, y: Double(logical.y) + 0.5,
+            orientation: orientation, portraitWidth: Double(portraitWidth), portraitHeight: Double(portraitHeight)
+        )
+        let image = TestImages.make(width: portraitWidth, height: portraitHeight, marked: [(x: Int(physical.x), y: Int(physical.y))])
+        let size = orientation.isLandscape ? (portraitHeight, portraitWidth) : (portraitWidth, portraitHeight)
+        let screen = try capture(image, screen: UIScreenInfo(width: Double(size.0), height: Double(size.1), scale: 1, orientation: orientation))
+
+        let marked = TestImages.markedPixels(screen.image)
+        #expect(marked.count == 1)
+        #expect(marked.first?.x == logical.x && marked.first?.y == logical.y)
+    }
+
+    @Test("An iOS capture whose shape disagrees with the screen is not upright and refuses a region")
+    func unreadOrientationRefusesRegion() throws {
+        let screen = try capture(TestImages.make(width: 1206, height: 2622), screen: UIScreenInfo(width: 874, height: 402, scale: 3, orientation: nil))
         #expect(!screen.upright)
-        let scaled = try ScreenCapture.render(screen, request: ScreenshotRequest(scale: .points))
-        #expect(scaled.image.width == 402 && scaled.image.height == 874)
         #expect {
             try ScreenCapture.render(screen, request: ScreenshotRequest(region: PointRegion(x: 0, y: 0, width: 100, height: 100)))
-        } throws: { error in
-            "\(error)" == "--region needs a portrait iOS screen for now: iOS screenshots are not rotated in landscape. Rotate the device to portrait, or capture the whole screen."
-        }
+        } throws: { "\($0)".contains("--region needs the screen's orientation") }
     }
 
     @Test("Android landscape captures are upright and accept a region")

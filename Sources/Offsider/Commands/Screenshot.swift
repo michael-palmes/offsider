@@ -10,7 +10,7 @@ struct Screenshot: AsyncParsableCommand {
         --scale points makes one image pixel one point, so image coordinates are tap coordinates. \
         --region takes points as describe-ui prints them; the crop happens before scaling. \
         --compare captures, applies the same --region and --scale, and exits 0 when more than \
-        --threshold of the screen's tiles changed, or 5 when not. On iOS, --region needs a portrait screen for now.
+        --threshold of the screen's tiles changed, or 5 when not.
         """
     )
 
@@ -53,7 +53,7 @@ struct Screenshot: AsyncParsableCommand {
         }
     }
 
-    private func request() throws -> ScreenshotRequest {
+    func request() throws -> ScreenshotRequest {
         ScreenshotRequest(
             scale: try scale.map(ScreenshotScale.parse) ?? .native,
             region: try region.map(PointRegion.parse),
@@ -65,6 +65,30 @@ struct Screenshot: AsyncParsableCommand {
         let request = try request()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let report = try await take(request, on: route)
+
+        guard let comparison = report.comparison else {
+            if json {
+                print(report.jsonLine())
+            } else if let path = report.path {
+                print(path)
+            }
+            return
+        }
+        if json {
+            Self.writeError(comparison.summary)
+            print(report.jsonLine())
+        } else {
+            print(comparison.summary)
+        }
+        if comparison.outcome == .unchanged {
+            throw ExitCode(OffsiderExitCode.unverified.rawValue)
+        }
+    }
+
+    /// Captures, writes the image when asked and compares; prints only the stderr notes.
+    @MainActor
+    func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route) async throws -> ScreenshotReport {
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
@@ -83,12 +107,7 @@ struct Screenshot: AsyncParsableCommand {
         }
 
         guard let compare, let baseline else {
-            if json {
-                print(rendered.report(path: path, format: request.format, capture: capture).jsonLine())
-            } else if let path {
-                print(path)
-            }
-            return
+            return rendered.report(path: path, format: request.format, capture: capture)
         }
 
         if ScreenImage.isJPEG(baseline) {
@@ -98,16 +117,7 @@ struct Screenshot: AsyncParsableCommand {
         let result = try ScreenCapture.compare(
             rendered, capture: capture, baseline: baseline, baselinePath: compare, bands: bands, threshold: threshold ?? 0
         )
-        if json {
-            Self.writeError(result.summary)
-            let report = rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result)
-            print(report.jsonLine())
-        } else {
-            print(result.summary)
-        }
-        if result.outcome == .unchanged {
-            throw ExitCode(OffsiderExitCode.unverified.rawValue)
-        }
+        return rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result)
     }
 
     private static func writeError(_ line: String) {

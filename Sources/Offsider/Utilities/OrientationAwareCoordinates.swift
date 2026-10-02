@@ -8,11 +8,11 @@ import FBSimulatorControl
 
 /// Logical UI orientation of a simulator as reported by its accessibility tree.
 ///
-/// Matches UIInterfaceOrientation semantics:
-///   - `portrait`            — home button at the bottom (default)
-///   - `portraitUpsideDown`  — home button at the top (180°)
-///   - `landscape`           — home button to the right (90° CW from portrait)
-///   - `landscapeFlipped`    — home button to the left (90° CCW from portrait)
+/// Measured against UIKit's interface orientation on iOS 27 (see `DeviceOrientation`):
+///   - `portrait`           : home edge at the bottom (default)
+///   - `portraitUpsideDown`: home edge at the top (180°)
+///   - `landscape`          : UIKit landscape-left: home edge on the left, SimulatorKit `uiOrientation` 3
+///   - `landscapeFlipped`   : UIKit landscape-right: home edge on the right, SimulatorKit `uiOrientation` 4
 enum SimulatorOrientation: String, CaseIterable {
     case portrait
     case portraitUpsideDown

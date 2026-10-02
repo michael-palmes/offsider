@@ -129,7 +129,7 @@ struct OrientationAwareCoordinatesTests {
         #expect(y == cy)
     }
 
-    // MARK: Landscape — 90° CW (home button right)
+    // MARK: Landscape: UIKit landscape-left (home edge on the left)
 
     @Test("Landscape: formula is px=ly, py=ph-lx")
     func landscapeFormula() {
@@ -187,7 +187,7 @@ struct OrientationAwareCoordinatesTests {
         }
     }
 
-    // MARK: Landscape Flipped — 90° CCW (home button left)
+    // MARK: Landscape Flipped: UIKit landscape-right (home edge on the right)
 
     @Test("LandscapeFlipped: formula is px=pw-ly, py=lx")
     func landscapeFlippedFormula() {

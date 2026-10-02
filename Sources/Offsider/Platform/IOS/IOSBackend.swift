@@ -143,7 +143,7 @@ final class IOSBackend: DeviceBackend {
         ScreenBands(top: 60, bottom: 0)
     }
 
-    private func simulator(for id: DeviceID) async throws -> FBSimulator {
+    func simulator(for id: DeviceID) async throws -> FBSimulator {
         if let simulator = simulators[id.rawValue] {
             return simulator
         }

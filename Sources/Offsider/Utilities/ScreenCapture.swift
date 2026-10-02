@@ -17,7 +17,7 @@ struct CapturedScreen {
     let screen: UIScreenInfo?
     /// Pixels per point of `image`; nil when the device did not report its screen size.
     let pixelsPerPoint: Double?
-    /// False when the image is not in the orientation the screen's points describe (iOS in landscape).
+    /// False when the image's shape disagrees with the screen's points (an iOS orientation that could not be read).
     let upright: Bool
     /// The device's PNG, while `image` is still exactly what it decodes to.
     let untouchedPNG: Data?
@@ -81,14 +81,19 @@ enum ScreenCapture {
         return try make(png: png, platform: device.platform, screen: screen)
     }
 
-    /// Where a future rotation of iOS landscape captures belongs: Android frames arrive upright already.
+    /// iOS framebuffers stay portrait-native when the screen turns, so they are rotated here; Android frames arrive upright.
     nonisolated static func make(png: Data, platform: DevicePlatform, screen: UIScreenInfo?) throws -> CapturedScreen {
-        let image = try ScreenImage.decode(png)
-        let upright = platform == .android || screen?.orientation == nil || screen?.orientation == .portrait
+        let decoded = try ScreenImage.decode(png)
+        let turns = platform == .ios ? (screen?.orientation?.uprightQuarterTurnsCounterclockwise ?? 0) : 0
+        let image = try ScreenImage.rotated(decoded, quarterTurnsCounterclockwise: turns)
         let pixelsPerPoint = screen.flatMap {
             ScreenGeometry.pixelsPerPoint(imageWidth: image.width, imageHeight: image.height, screenWidth: $0.width, screenHeight: $0.height)
         }
-        return CapturedScreen(image: image, platform: platform, screen: screen, pixelsPerPoint: pixelsPerPoint, upright: upright, untouchedPNG: png)
+        let upright = screen.map { (image.width >= image.height) == ($0.width >= $0.height) } ?? true
+        return CapturedScreen(
+            image: image, platform: platform, screen: screen, pixelsPerPoint: pixelsPerPoint, upright: upright,
+            untouchedPNG: turns == 0 ? png : nil
+        )
     }
 
     /// Crops to the region first, then scales.
@@ -97,8 +102,7 @@ enum ScreenCapture {
         var region: PointRegion?
         if let requested = request.region {
             guard capture.upright else {
-                let state = capture.screen?.orientation == .portraitUpsideDown ? "upside down" : "in landscape"
-                throw CLIError(errorDescription: "--region needs a portrait iOS screen for now: iOS screenshots are not rotated \(state). Rotate the device to portrait, or capture the whole screen.")
+                throw CLIError(errorDescription: "--region needs the screen's orientation, which the device did not report, so the capture may not be upright. Check with `offsider orientation`, or capture the whole screen.")
             }
             let pixelsPerPoint = try requirePixelsPerPoint(capture, for: "--region")
             let rect = try ScreenGeometry.pixelRect(for: requested, pixelsPerPoint: pixelsPerPoint, imageWidth: image.width, imageHeight: image.height)

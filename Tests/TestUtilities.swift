@@ -228,49 +228,30 @@ struct TestHelpers {
     }
 
     static func setSimulatorOrientationPortrait() async throws {
-        try await setSimulatorOrientation(menuItem: "Portrait")
+        try await setSimulatorOrientation("portrait")
     }
 
+    /// Simulator.app's device-orientation names: turning the device left puts the UI in landscape-right.
     static func setSimulatorOrientationLandscapeLeft() async throws {
-        try await setSimulatorOrientation(menuItem: "Landscape Left")
+        try await setSimulatorOrientation("landscape-right")
     }
 
     static func setSimulatorOrientationLandscapeRight() async throws {
-        try await setSimulatorOrientation(menuItem: "Landscape Right")
+        try await setSimulatorOrientation("landscape-left")
     }
 
     static func rotateSimulatorLeft() async throws {
-        try await selectSimulatorDeviceMenuItem("Rotate Left")
+        let udid = try requireSimulatorUDID()
+        let current = try await runOffsiderCommand("orientation", simulatorUDID: udid).output
+        let next = current.contains("landscape-right") ? "portrait-upside-down"
+            : current.contains("portrait-upside-down") ? "landscape-left"
+            : current.contains("landscape-left") ? "portrait"
+            : "landscape-right"
+        try await setSimulatorOrientation(next)
     }
 
-    private static func setSimulatorOrientation(menuItem: String) async throws {
-        let script = """
-        tell application "Simulator" to activate
-        delay 0.5
-        tell application "System Events"
-            tell process "Simulator"
-                click menu item "\(menuItem)" of menu "Orientation" of menu item "Orientation" of menu "Device" of menu bar 1
-            end tell
-        end tell
-        """
-        let escapedScript = script.replacingOccurrences(of: "'", with: "'\\''")
-        _ = try await CommandRunner.run("osascript -e '\(escapedScript)'", timeout: 10)
-        try await Task.sleep(nanoseconds: 1_500_000_000)
-    }
-
-    private static func selectSimulatorDeviceMenuItem(_ menuItem: String) async throws {
-        let script = """
-        tell application "Simulator" to activate
-        delay 0.5
-        tell application "System Events"
-            tell process "Simulator"
-                click menu item "\(menuItem)" of menu "Device" of menu bar 1
-            end tell
-        end tell
-        """
-        let escapedScript = script.replacingOccurrences(of: "'", with: "'\\''")
-        _ = try await CommandRunner.run("osascript -e '\(escapedScript)'", timeout: 10)
-        try await Task.sleep(nanoseconds: 1_500_000_000)
+    private static func setSimulatorOrientation(_ orientation: String) async throws {
+        try await runOffsiderCommand("orientation \(orientation) --timeout 10", simulatorUDID: try requireSimulatorUDID())
     }
 
     static func getUIState(simulatorUDID: String? = nil) async throws -> UIElement {

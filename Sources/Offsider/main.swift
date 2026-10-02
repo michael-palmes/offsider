@@ -27,6 +27,10 @@ struct OffsiderCommand: AsyncParsableCommand {
             Swipe.self,
             Drag.self,
             Button.self,
+            Shake.self,
+            OrientationCommand.self,
+            AppearanceCommand.self,
+            ContentSizeCommand.self,
             Key.self,
             KeySequence.self,
             KeyCombo.self,
@@ -35,6 +39,9 @@ struct OffsiderCommand: AsyncParsableCommand {
             StreamVideo.self,
             RecordVideo.self,
             Screenshot.self,
+            Logs.self,
+            Wait.self,
+            Assert.self,
             Batch.self,
             HIDBrokerCommand.self
         ]
