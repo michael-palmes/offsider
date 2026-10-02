@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Tap summaries round points to 0.01 and name the selector, for example `Tap on id=BackButton at (22.1, 76.2)`.
 - `type` normalises text to Unicode NFC, so an `e` followed by a combining acute accent types as one `é`.
 - `record-video` and `stream-video` call their source a device, and their frame errors no longer mention a simulator.
+- `describe-ui --help` names emulators as well as simulators.
 
 ### Fixed
 
