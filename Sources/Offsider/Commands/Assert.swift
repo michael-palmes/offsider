@@ -32,8 +32,10 @@ struct Assert: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        let outcome = try await evaluate(on: route, logger: logger)
+        let outcome = try await DeviceWatchdog().guarding(bound: 0, device: deviceOption.id) {
+            let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+            return try await evaluate(on: route, logger: logger)
+        }
         try Wait.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
     }
 

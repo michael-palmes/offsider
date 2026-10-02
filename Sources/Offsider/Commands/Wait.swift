@@ -111,16 +111,21 @@ struct Wait: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        let outcome = try await evaluate(on: route, logger: logger)
+        let outcome = try await DeviceWatchdog().guarding(bound: watchdogBound, device: deviceOption.id) {
+            let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+            return try await evaluate(on: route, logger: logger)
+        }
         try Self.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
     }
 
+    /// The longest this wait may legitimately take before the watchdog's grace.
+    var watchdogBound: TimeInterval { seconds ?? timeout }
+
     /// Waits on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree reads.
     @MainActor
-    func evaluate(on route: DeviceRouter.Route, logger: OffsiderLogger, tree: TreeSource? = nil) async throws -> WaitOutcome {
+    func evaluate(on route: DeviceRouter.Route, logger: OffsiderLogger, tree: TreeSource? = nil, clock: PollClock = .live) async throws -> WaitOutcome {
         try await route.backend.prepare()
-        let sources = try await liveSources(on: route, tree: tree)
+        let sources = try await liveSources(on: route, tree: tree, clock: clock)
         logger.info().log("Waiting for \(target)")
         return try await WaitLoop.run(condition, timeout: timeout, interval: pollInterval, sources: sources)
     }
@@ -171,21 +176,21 @@ struct Wait: AsyncParsableCommand {
     typealias TreeSource = @MainActor () async throws -> UITree
 
     @MainActor
-    private func liveSources(on route: DeviceRouter.Route, tree: TreeSource?) async throws -> WaitSources {
+    private func liveSources(on route: DeviceRouter.Route, tree: TreeSource?, clock: PollClock) async throws -> WaitSources {
         let backend = route.backend
         let device = route.device
         if let region {
             let request = ScreenshotRequest(region: try PointRegion.parse(region))
-            return Self.sources(on: route, tree: tree) {
+            return Self.sources(on: route, tree: tree, clock: clock) {
                 let capture = try await ScreenCapture.capture(backend, device: device)
                 return try Self.fingerprint(try ScreenCapture.render(capture, request: request))
             }
         }
         guard settled, settleBy ?? .tree != .tree else {
-            return Self.sources(on: route, tree: tree)
+            return Self.sources(on: route, tree: tree, clock: clock)
         }
         let bands = await backend.volatileScreenBands(for: device)
-        return Self.sources(on: route, tree: tree) {
+        return Self.sources(on: route, tree: tree, clock: clock) {
             let capture = try await ScreenCapture.capture(backend, device: device)
             let rendered = try ScreenCapture.render(capture, request: ScreenshotRequest())
             let exclusion = ScreenCapture.bandPixels(rendered, capture: capture, bands: bands)
@@ -193,18 +198,19 @@ struct Wait: AsyncParsableCommand {
         }
     }
 
-    /// Real time and the device's tree (or `tree`); `fingerprint` defaults to a failure for conditions that never read the screen.
+    /// The device's tree (or `tree`) on real time unless `clock` says otherwise; `fingerprint` defaults to a failure for conditions that never read the screen.
     @MainActor
     static func sources(
         on route: DeviceRouter.Route,
         tree: TreeSource? = nil,
+        clock: PollClock = .live,
         fingerprint: @escaping @MainActor () async throws -> ImageFingerprint = { throw CLIError(errorDescription: "This condition does not read the screen.") }
     ) -> WaitSources {
         WaitSources(
             tree: tree ?? { try await route.backend.accessibilityTree(for: route.device) },
             fingerprint: fingerprint,
-            sleep: { duration in try await Task.sleep(for: duration) },
-            now: { ProcessInfo.processInfo.systemUptime }
+            sleep: clock.sleep,
+            now: clock.now
         )
     }
 

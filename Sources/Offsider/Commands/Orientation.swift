@@ -49,6 +49,10 @@ struct OrientationCommand: AsyncParsableCommand {
     }
 
     func run() async throws {
+        try await DeviceWatchdog().guarding(bound: timeout, device: deviceOption.id) { try await turn() }
+    }
+
+    private func turn() async throws {
         let target = try target()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)

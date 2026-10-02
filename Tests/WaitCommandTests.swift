@@ -21,7 +21,7 @@ struct WaitCommandTests {
     }
 
     private static func evaluate(_ command: Wait, on backend: FakeDeviceBackend) async throws -> WaitOutcome {
-        try await command.evaluate(on: DeviceRouter.Route(backend: backend, device: device), logger: OffsiderLogger())
+        try await command.evaluate(on: DeviceRouter.Route(backend: backend, device: device), logger: OffsiderLogger(), clock: ScriptedClock().poll)
     }
 
     private static func validationMessage(_ arguments: [String]) -> String? {
@@ -124,6 +124,7 @@ struct WaitCommandTests {
 
         #expect(!outcome.met)
         #expect(outcome.reason == "region unchanged")
+        #expect(backend.screenshotReads >= 2)
     }
 
     @Test("--region on a landscape iOS screen watches the turned capture", arguments: [
@@ -143,6 +144,7 @@ struct WaitCommandTests {
         let outcome = try await Self.evaluate(wait, on: backend)
 
         #expect(outcome.met == inside)
+        #expect(backend.screenshotReads >= 3)
     }
 
     @Test("conflicting or incomplete conditions are rejected", arguments: [
