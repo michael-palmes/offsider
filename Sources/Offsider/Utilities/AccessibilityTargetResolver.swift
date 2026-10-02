@@ -113,6 +113,9 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
                 head += ": " + Self.listed(candidates.map(\.text), separator: "; ", total: count)
             }
             if offScreenIgnored > 0 { head += " (\(offScreenIgnored) more off screen ignored)" }
+            if kind == "--id" {
+                return "\(head). The id is not unique on this screen: narrow with --element-type, or tap one by coordinates (tap -x/-y) using the frames above. \(tip)"
+            }
             if hasUniqueIDs {
                 return "\(head). Use --id when labels are not unique. \(tip)"
             }
@@ -301,7 +304,96 @@ struct AccessibilityTargetResolver {
             throw ElementResolutionError.offScreen(selector: match.selectorDescription, frames: [frame], viewport: viewport)
         }
 
-        return TapResolution(point: point, isSwitchLikeControl: activationElement.isSwitch)
+        let candidates = allowOffscreen ? [] : UITree.viewport(in: roots).map { viewport in
+            coverCandidates(of: activationElement, matched: match.element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, roots: roots)
+        } ?? []
+        return TapResolution(
+            point: point,
+            isSwitchLikeControl: activationElement.isSwitch,
+            target: activationElement,
+            matched: match.element,
+            coverCandidates: candidates
+        )
+    }
+
+    /// Plausible occluders whose frame holds `point`; tree order is not z-order on iOS, so a real hit-test must confirm one.
+    static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, roots: [UINode]) -> [UINode] {
+        let related = family(of: target, in: roots) + family(of: matched, in: roots)
+        var found: [UINode] = []
+        func visit(_ node: UINode, underKeyboard: Bool) {
+            let underKeyboard = underKeyboard || node.role == .keyboard
+            if let frame = node.frame, frame.contains(point), frame.isVisible(in: viewport),
+               isPlausibleOccluder(node, underKeyboard: underKeyboard),
+               !related.contains(where: { $0.isSameElement(as: node) }) {
+                found.append(node)
+            }
+            for child in node.children {
+                visit(child, underKeyboard: underKeyboard)
+            }
+        }
+        for root in roots {
+            visit(root, underKeyboard: false)
+        }
+        return found
+    }
+
+    /// The cover once a hit-test at the tap point found `hit`: nil when the hit is the target or its kin.
+    /// Without a hit, the first candidate not lying wholly inside the target, which is more likely underneath it.
+    static func confirmedCover(hit: UINode?, resolution: TapResolution, roots: [UINode]) -> UINode? {
+        guard !resolution.coverCandidates.isEmpty else {
+            return nil
+        }
+        guard let hit else {
+            let targetFrame = resolution.target?.frame
+            return resolution.coverCandidates.first { candidate in
+                guard let targetFrame, let frame = candidate.frame else { return true }
+                return !targetFrame.encloses(frame)
+            }
+        }
+        let related = [resolution.target, resolution.matched].compactMap { $0 }.flatMap { family(of: $0, in: roots) }
+        if related.contains(where: { $0.isSameElement(as: hit) || $0.isSameTarget(as: hit) }) {
+            return nil
+        }
+        if resolution.coverCandidates.contains(where: { $0.isSameTarget(as: hit) }) {
+            return hit
+        }
+        return isPlausibleOccluder(hit, underKeyboard: hit.role == .keyboard) ? hit : nil
+    }
+
+    /// `element` with its ancestors and descendants, none of which can cover it.
+    private static func family(of element: UINode, in roots: [UINode]) -> [UINode] {
+        ancestors(of: element, in: roots) + element.flattened()
+    }
+
+    private static let containerRoles: Set<UIRole> = [.window, .application, .scrollView, .list]
+
+    /// Unlabelled groups never count: they wrap content rather than draw over it. A labelled one can be a banner on Android.
+    private static func isPlausibleOccluder(_ node: UINode, underKeyboard: Bool) -> Bool {
+        if node.role.isActionable || underKeyboard {
+            return true
+        }
+        return node.normalizedLabel != nil && !containerRoles.contains(node.role)
+    }
+
+    private static func ancestors(of element: UINode, in roots: [UINode]) -> [UINode] {
+        for root in roots {
+            if let path = path(to: element, from: root) {
+                return Array(path.dropLast())
+            }
+        }
+        return []
+    }
+
+    private static func path(to element: UINode, from node: UINode) -> [UINode]? {
+        if node.isSameElement(as: element) {
+            return [node]
+        }
+        for child in node.children {
+            if let path = path(to: element, from: child) {
+                return [node] + path
+            }
+        }
+        return nil
     }
 
     private static func exactMatches(in elements: [UINode], query: AccessibilityQuery) -> [UINode] {
@@ -477,7 +569,7 @@ struct AccessibilityTargetResolver {
         in currentElement: UINode,
         parent: UINode?
     ) -> UINode? {
-        if sameElement(currentElement, matchedElement) {
+        if currentElement.isSameElement(as: matchedElement) {
             return parent
         }
 
@@ -488,18 +580,6 @@ struct AccessibilityTargetResolver {
         }
         return nil
     }
-
-    /// The matched node is a copy from this tree, so every field but the children identifies it.
-    private static func sameElement(_ lhs: UINode, _ rhs: UINode) -> Bool {
-        lhs.role == rhs.role
-            && lhs.id == rhs.id
-            && lhs.label == rhs.label
-            && lhs.value == rhs.value
-            && lhs.frame == rhs.frame
-            && lhs.enabled == rhs.enabled
-            && lhs.state == rhs.state
-            && lhs.native == rhs.native
-    }
 }
 
 extension UINode {
@@ -508,6 +588,11 @@ extension UINode {
     var normalizedValue: String? { Self.trimmed(value) }
     var isSwitch: Bool { role == .switch }
     var isSlider: Bool { role == .slider }
+
+    /// A hit-test reads the element afresh, so only the fields a separate read keeps stable identify it.
+    func isSameTarget(as other: UINode) -> Bool {
+        role == other.role && id == other.id && label == other.label && frame == other.frame
+    }
 
     /// A frame with a positive size, the only kind that can be judged on or off screen.
     var hasPositiveFrame: Bool {
@@ -525,5 +610,11 @@ extension UINode {
             return nil
         }
         return trimmed
+    }
+}
+
+extension UIFrame {
+    func encloses(_ other: UIFrame) -> Bool {
+        other.x >= x && other.y >= y && other.x + other.width <= x + width && other.y + other.height <= y + height
     }
 }

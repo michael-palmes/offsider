@@ -363,7 +363,7 @@ struct AccessibilityTargetResolverTests {
 
     // MARK: On-screen preference
 
-    private static func screen(width: Double = 393, height: Double = 852, _ children: [UINode]) -> [UINode] {
+    static func screen(width: Double = 393, height: Double = 852, _ children: [UINode]) -> [UINode] {
         FakeUI.tree(width: width, height: height, children).roots
     }
 
@@ -556,6 +556,166 @@ struct AccessibilityTargetResolverTests {
         }?.userFacingDescription ?? ""
 
         #expect(message.hasPrefix("No accessibility element matched --label 'Save' with --element-type button: 2 elements have that label (roles: text)."))
+    }
+
+    @Test("a duplicate --id suggests --element-type or coordinates, not --id")
+    func duplicateIDAdvice() {
+        let roots = Self.screen([Self.save(id: "save", y: 700), Self.save(id: "save", y: 760)])
+
+        let message = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
+        }?.userFacingDescription ?? ""
+
+        #expect(message.contains("on screen: button id=save (20, 700) 350x44; button id=save (20, 760) 350x44. The id is not unique on this screen: narrow with --element-type, or tap one by coordinates (tap -x/-y) using the frames above."))
+        #expect(!message.contains("Use --id"))
+    }
+
+    // MARK: Cover detection
+
+    static let bannerLabel = "Connection lost. Can’t reach the server."
+
+    static let banner = FakeUI.node(.other, id: "banner", label: bannerLabel, frame: FakeUI.frame(0, 767, 402, 107))
+
+    static func tabBar() -> UINode {
+        FakeUI.node(.tabBar, frame: FakeUI.frame(0, 790, 402, 84), children: [
+            FakeUI.node(.button, id: "tab-home", label: "Home", frame: FakeUI.frame(0, 790, 134, 49)),
+            FakeUI.node(.button, id: "tab-search", label: "Search", frame: FakeUI.frame(134, 790, 134, 49)),
+        ])
+    }
+
+    /// The iOS shape: the banner is listed before the tabs it is drawn over.
+    static func bannerBeforeTabs() -> [UINode] {
+        screen(width: 402, height: 874, [banner, tabBar()])
+    }
+
+    @Test("a labelled banner listed before the tabs it covers is a candidate")
+    func bannerBeforeTabsIsCandidate() throws {
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: Self.bannerBeforeTabs(), query: .id("tab-search"))
+
+        #expect(resolution.point.x == 201 && resolution.point.y == 814.5)
+        #expect(resolution.coverCandidates.map(\.id) == ["banner"])
+    }
+
+    @Test("a labelled banner listed after the tabs is a candidate too")
+    func bannerAfterTabsIsCandidate() throws {
+        let roots = Self.screen(width: 402, height: 874, [Self.tabBar(), Self.banner])
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("tab-search"))
+
+        #expect(resolution.coverCandidates.map(\.id) == ["banner"])
+    }
+
+    @Test("tapping the banner itself lists the tab under its centre as a candidate")
+    func tapsUnderBannerAreCandidates() throws {
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: Self.bannerBeforeTabs(), query: .id("banner"))
+
+        #expect(resolution.coverCandidates.map(\.id) == ["tab-search"])
+    }
+
+    @Test("--allow-offscreen skips the cover check")
+    func allowOffscreenSkipsCoverCheck() throws {
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: Self.bannerBeforeTabs(), query: .id("tab-search"), allowOffscreen: true)
+
+        #expect(resolution.coverCandidates.isEmpty)
+    }
+
+    @Test("a tree without a screen skips the cover check")
+    func noViewportSkipsCoverCheck() throws {
+        let roots = Self.bannerBeforeTabs()[0].children
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("tab-search"))
+
+        #expect(resolution.coverCandidates.isEmpty)
+    }
+
+    @Test("a text label inside the target button is not a candidate")
+    func labelInsideTargetIsNotCandidate() throws {
+        let roots = Self.screen([
+            FakeUI.node(.button, id: "save", frame: FakeUI.frame(20, 700, 350, 44), children: [
+                FakeUI.node(.text, label: "Save", frame: FakeUI.frame(150, 710, 90, 24)),
+            ]),
+        ])
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
+
+        #expect(resolution.coverCandidates.isEmpty)
+    }
+
+    @Test("an unlabelled full-screen group over the point is not a candidate")
+    func unlabelledGroupIsNotCandidate() throws {
+        let roots = Self.screen([
+            Self.save(id: "save", y: 700),
+            FakeUI.node(.group, frame: FakeUI.frame(0, 0, 393, 852)),
+        ])
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
+
+        #expect(resolution.coverCandidates.isEmpty)
+    }
+
+    @Test("a labelled group over the point is a candidate, as Android maps a labelled banner")
+    func labelledGroupIsCandidate() throws {
+        let roots = Self.screen([
+            FakeUI.node(.group, label: Self.bannerLabel, frame: FakeUI.frame(0, 650, 393, 202)),
+            Self.save(id: "save", y: 700),
+        ])
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
+
+        #expect(resolution.coverCandidates.map(\.label) == [Self.bannerLabel])
+    }
+
+    @Test("the labelled container holding the target is not a candidate")
+    func ancestorIsNotCandidate() throws {
+        let roots = Self.screen([
+            FakeUI.node(.other, label: "Settings panel", frame: FakeUI.frame(0, 600, 393, 252), children: [
+                Self.save(id: "save", y: 700),
+            ]),
+        ])
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
+
+        #expect(resolution.coverCandidates.isEmpty)
+    }
+
+    @Test("a keyboard root over the point is a candidate, wherever it is listed")
+    func keyboardRootIsCandidate() throws {
+        let app = Self.screen([Self.save(id: "save", y: 700)])[0]
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 560, 393, 292))
+
+        let after = try AccessibilityTargetResolver.resolveTap(roots: [app, keyboard], query: .id("save"))
+        let before = try AccessibilityTargetResolver.resolveTap(roots: [keyboard, app], query: .id("save"))
+
+        #expect(after.coverCandidates.map(\.role) == [.keyboard])
+        #expect(before.coverCandidates.map(\.role) == [.keyboard])
+    }
+
+    @Test("a hit-test that finds the target, or the label inside it, confirms no cover")
+    func hitOnTargetIsNoCover() throws {
+        let roots = Self.bannerBeforeTabs()
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("banner"))
+
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: Self.banner, resolution: resolution, roots: roots) == nil)
+    }
+
+    @Test("a hit-test that finds a candidate confirms it, and a failed read falls back to the first candidate")
+    func hitOnCandidateIsCover() throws {
+        let roots = Self.bannerBeforeTabs()
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("tab-search"))
+
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: Self.banner, resolution: resolution, roots: roots)?.id == "banner")
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots)?.id == "banner")
+        let tab = Self.tabBar().children[1]
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: tab, resolution: resolution, roots: roots) == nil)
+    }
+
+    @Test("without a hit-test, a candidate lying wholly inside the target is taken to be underneath it")
+    func unconfirmedCandidateInsideTargetIsNoCover() throws {
+        let roots = Self.bannerBeforeTabs()
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("banner"))
+
+        #expect(resolution.coverCandidates.map(\.id) == ["tab-search"])
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots) == nil)
     }
 
     private func decodeElements(_ json: String) throws -> [UINode] {

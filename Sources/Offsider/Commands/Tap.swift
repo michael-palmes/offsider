@@ -35,13 +35,16 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     var tapStyle: TapStyle?
 
     @Option(name: .customLong("wait-timeout"), help: "Maximum seconds to poll for the element before failing (0 = no waiting, default). Only applies to --id/--label/--value targeting.")
-    var waitTimeout: Double = 0
+    var waitTimeout: Double?
 
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active (default: 0.25).")
-    var pollInterval: Double = 0.25
+    var pollInterval: Double?
 
     @Flag(name: .customLong("allow-offscreen"), help: "Resolve elements whose frame is outside the screen (off by default: selectors prefer on-screen matches).")
     var allowOffscreen: Bool = false
+
+    @Flag(name: .customLong("fail-if-covered"), help: "Fail instead of warning when another element may cover the tap point.")
+    var failIfCovered: Bool = false
 
     @OptionGroup
     var verification: VerificationOptions
@@ -90,16 +93,20 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             }
         }
 
-        guard waitTimeout >= 0 else {
+        guard resolvedWaitTimeout >= 0 else {
             throw ValidationError("--wait-timeout must be non-negative.")
         }
 
-        if waitTimeout > 0 {
-            guard pollInterval > 0 else {
+        if resolvedWaitTimeout > 0 {
+            guard resolvedPollInterval > 0 else {
                 throw ValidationError("--poll-interval must be greater than 0 when --wait-timeout is active.")
             }
         }
     }
+
+    /// Optional so a batch step can tell an explicit value from the batch-level default.
+    var resolvedWaitTimeout: Double { waitTimeout ?? 0 }
+    var resolvedPollInterval: Double { pollInterval ?? 0.25 }
 
     func run() async throws {
         guard verification.verify else {
@@ -155,8 +162,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 query: query,
                 on: backend,
                 device: device,
-                waitTimeout: waitTimeout,
-                pollInterval: pollInterval,
+                waitTimeout: resolvedWaitTimeout,
+                pollInterval: resolvedPollInterval,
                 transientGrace: progress == nil ? 0 : verification.resolvedTimeout,
                 elementType: elementType,
                 allowOffscreen: allowOffscreen,
@@ -164,6 +171,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             )
             resolution = polled.value
             resolvedTree = polled.tree
+            Self.warnIfOffScreen(subject: query.selectorDescription, at: resolution.point, in: polled.tree)
+            try await checkCover(resolution, selector: query.selectorDescription, tree: polled.tree, backend: backend, device: device)
 
             resolvedDescription = "\(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y))"
         }
@@ -215,6 +224,58 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             return
         }
         print("Warning: \(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing.", to: &standardError)
+    }
+
+    /// Warns when a selector's point is outside the screen, which only `--allow-offscreen` lets through.
+    static func warnIfOffScreen(subject: String, at point: (x: Double, y: Double), in tree: UITree) {
+        guard let viewport = tree.viewport, !viewport.contains(UIPoint(x: point.x, y: point.y)) else {
+            return
+        }
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        print("Warning: \(subject) at \(pointText) is outside the \(viewport.sizeSummary) screen; the tap may do nothing.", to: &standardError)
+    }
+
+    /// Confirms a cover candidate with one hit-test at the tap point, then warns on stderr or, with `--fail-if-covered`, throws.
+    func checkCover(
+        _ resolution: TapResolution,
+        selector: String,
+        tree: UITree,
+        backend: any DeviceBackend,
+        device: DeviceID
+    ) async throws {
+        guard !resolution.coverCandidates.isEmpty else {
+            return
+        }
+        let hit = tree.platform == .ios ? await Self.hitTest(at: resolution.point, backend: backend, device: device) : nil
+        guard let cover = AccessibilityTargetResolver.confirmedCover(hit: hit, resolution: resolution, roots: tree.roots) else {
+            return
+        }
+        let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover)
+        if failIfCovered {
+            throw CLIError(errorDescription: message)
+        }
+        print("Warning: \(message) Pass --fail-if-covered to stop instead.", to: &standardError)
+    }
+
+    /// iOS asks the accessibility service what is at the point; Android's point read only walks tree order, which is not z-order.
+    private static func hitTest(at point: (x: Double, y: Double), backend: any DeviceBackend, device: DeviceID) async -> UINode? {
+        (try? await backend.accessibilityTree(for: device, point: UIPoint(x: point.x, y: point.y)))?.roots.first
+    }
+
+    static let maxCoverLabelLength = 60
+
+    /// `--id 'save' at (196, 700) may be covered by button 'Dismiss' (20, 650) 350x120; the tap may land on it.`
+    static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode) -> String {
+        var parts = [cover.role.rawValue]
+        if let name = cover.normalizedLabel ?? cover.normalizedID {
+            let shown = name.count > maxCoverLabelLength ? String(name.prefix(maxCoverLabelLength - 1)) + "…" : name
+            parts.append("'\(shown)'")
+        }
+        if let frame = cover.frame {
+            parts.append(frame.summary)
+        }
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        return "\(selector) at \(pointText) may be covered by \(parts.joined(separator: " ")); the tap may land on it."
     }
 
     /// `✓ Tap at (x, y) ...` for coordinates; `✓ Tap on id=X at (x, y) ...` for a selector.
