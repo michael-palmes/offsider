@@ -33,7 +33,7 @@ enum AndroidE2E {
         "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// OFFSIDER_ANDROID_DEVICE resolved through `list-devices`; any AVD but the E2E one is refused before any input.
+    /// OFFSIDER_ANDROID_DEVICE checked through its console when a serial, else through `list-devices`; any AVD but the E2E one is refused before any input.
     static func serial() async throws -> String {
         try await GuardedEmulator.shared.serial()
     }
@@ -167,6 +167,35 @@ actor GuardedEmulator {
         guard let requested = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_DEVICE"], !requested.isEmpty else {
             throw AndroidE2EError(description: "OFFSIDER_ANDROID_DEVICE must name the E2E emulator (a serial or AVD name).")
         }
+        let serial = requested.wholeMatch(of: #/emulator-\d+/#) != nil
+            ? try await Self.checkedSerial(requested)
+            : try await Self.listedSerial(requested)
+        resolved = serial
+        return serial
+    }
+
+    /// Asks that emulator's console alone for its AVD name, so no other emulator is queried, then checks it finished booting.
+    private static func checkedSerial(_ serial: String) async throws -> String {
+        let adb = AndroidE2E.quote(try AndroidE2E.adbPath())
+        let named = try await CommandRunner.runSeparated("\(adb) -s \(serial) emu avd name", timeout: 30)
+        let name = named.stdout.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+        guard named.exitCode == 0, !name.isEmpty else {
+            let output = (named.stderr + named.stdout).split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
+            throw AndroidE2EError(description: "Refusing \(serial): `adb -s \(serial) emu avd name` exited \(named.exitCode) without an AVD name (\(output)).")
+        }
+        guard name == AndroidE2E.expectedAVD else {
+            throw AndroidE2EError(description: "Refusing \(serial): `adb -s \(serial) emu avd name` printed \(name), and Android E2E only drives \(AndroidE2E.expectedAVD) (OFFSIDER_ANDROID_E2E_AVD).")
+        }
+        let booted = try await CommandRunner.runSeparated("\(adb) -s \(serial) shell getprop sys.boot_completed", timeout: 30)
+        let flag = booted.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard booted.exitCode == 0, flag == "1" else {
+            throw AndroidE2EError(description: "\(name) (\(serial)) has not finished booting: sys.boot_completed is '\(flag)'. Wait, or start it with `offsider boot \(name)`.")
+        }
+        return serial
+    }
+
+    /// An AVD name is resolved through `list-devices`, which asks every running emulator for its name.
+    private static func listedSerial(_ requested: String) async throws -> String {
         let listing = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform android --json")
         guard listing.exitCode == 0,
               let object = try JSONSerialization.jsonObject(with: Data(listing.stdout.utf8)) as? [String: Any],
@@ -181,7 +210,6 @@ actor GuardedEmulator {
         guard row["state"] as? String == "Booted", let serial = row["id"] as? String, serial.hasPrefix("emulator-") else {
             throw AndroidE2EError(description: "\(name) is not booted; start it with `offsider boot \(name)`.")
         }
-        resolved = serial
         return serial
     }
 

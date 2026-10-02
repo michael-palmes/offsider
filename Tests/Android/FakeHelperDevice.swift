@@ -89,7 +89,7 @@ final class FakeHelperDevice: @unchecked Sendable {
 
     var frames: [Received] { lock.withLock { recordedFrames } }
     var ops: [String] { frames.map(\.op) }
-    /// Starts, pushes, frames, closes, kills and exits in the order they happened.
+    /// Starts, pushes, frames, closes, kills, exits and exit packets Offsider read, in the order they happened.
     var timeline: [String] { lock.withLock { recordedTimeline } }
     var kills: [Int32] { lock.withLock { recordedKills } }
     var pidofCalls: Int { lock.withLock { pidofCount } }
@@ -205,6 +205,7 @@ final class FakeHelperDevice: @unchecked Sendable {
             }
             if let status = process.exitStatus, !process.exitSent {
                 process.exitSent = true
+                recordedTimeline.append("exit packet \(process.number)")
                 return (FakeAdbServer.packet(3, Data([status])), true)
             }
             return nil
