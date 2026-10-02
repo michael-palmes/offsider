@@ -8,6 +8,7 @@ import OffsiderCore
 final class IOSBackend: DeviceBackend {
     let logger: OffsiderLogger
     private var simulators: [String: FBSimulator] = [:]
+    private static var isPrepared = false
 
     init(logger: OffsiderLogger) {
         self.logger = logger
@@ -16,12 +17,16 @@ final class IOSBackend: DeviceBackend {
     var platform: DevicePlatform { .ios }
 
     func prepare() async throws {
-        try await setup(logger: logger)
-        try await performGlobalSetup(logger: logger)
+        guard !Self.isPrepared else { return }
+        try await Timings.measure("prepare") {
+            try await setup(logger: logger)
+            try await performGlobalSetup(logger: logger)
+        }
+        Self.isPrepared = true
     }
 
     func listDevices() async throws -> [DeviceSummary] {
-        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
+        let simulatorSet = try await getSimulatorSet(logger: logger)
         let iosSimulators = simulatorSet.allSimulators.filter { simulator in
             SimulatorRuntime.isIOS(
                 runtimeIdentifier: Self.runtimeIdentifier(of: simulator),
@@ -56,8 +61,7 @@ final class IOSBackend: DeviceBackend {
             throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.")
         }
 
-        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
-        guard let simulator = simulatorSet.allSimulators.first(where: { $0.udid == udid }) else {
+        guard let simulator = try await cachedSimulator(udid: udid, logger: logger) else {
             throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.")
         }
 
@@ -72,7 +76,7 @@ final class IOSBackend: DeviceBackend {
 
     func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
-            for: id.rawValue,
+            from: try await simulator(for: id),
             point: point.map { AccessibilityPoint(x: $0.x, y: $0.y) },
             logger: logger
         )
@@ -81,11 +85,12 @@ final class IOSBackend: DeviceBackend {
 
     /// Device pixels over scale, swapped when SimulatorKit reports a landscape orientation.
     func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
-        guard let info = try await simulator(for: id).screenInfo, info.scale > 0 else {
+        let simulator = try await simulator(for: id)
+        guard let info = await Timings.measure("screen-info", { simulator.screenInfo }), info.scale > 0 else {
             return nil
         }
         let scale = Double(info.scale)
-        let orientation = await SimulatorOrientationReader.currentOrientation(simulatorUDID: id.rawValue, logger: logger)
+        let orientation = SimulatorOrientationReader.currentOrientation(of: simulator, logger: logger)
         let portraitWidth = Double(info.widthPixels) / scale
         let portraitHeight = Double(info.heightPixels) / scale
         let isLandscape = orientation?.isLandscape == true
@@ -114,7 +119,9 @@ final class IOSBackend: DeviceBackend {
     }
 
     func openInputSession(for id: DeviceID) async throws -> any InputSession {
-        let hidSession = try await HIDInteractor.makeSession(for: id.rawValue, logger: logger)
+        let hidSession = try await Timings.measure("hid-session") {
+            try await HIDInteractor.makeSession(for: id.rawValue, logger: logger)
+        }
         simulators[id.rawValue] = hidSession.simulator
         return IOSInputSession(hidSession: hidSession, logger: logger)
     }
@@ -125,7 +132,10 @@ final class IOSBackend: DeviceBackend {
     }
 
     func screenshotPNG(for id: DeviceID) async throws -> Data {
-        try await VideoFrameUtilities.captureScreenshotData(from: try await simulator(for: id))
+        let simulator = try await simulator(for: id)
+        return try await Timings.measure("capture") {
+            try await VideoFrameUtilities.captureScreenshotData(from: simulator)
+        }
     }
 
     /// The status bar; the home indicator does not change on its own.
@@ -137,8 +147,7 @@ final class IOSBackend: DeviceBackend {
         if let simulator = simulators[id.rawValue] {
             return simulator
         }
-        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
-        guard let simulator = simulatorSet.allSimulators.first(where: { $0.udid == id.rawValue }) else {
+        guard let simulator = try await cachedSimulator(udid: id.rawValue, logger: logger) else {
             throw CLIError.deviceNotFound(id: id.rawValue)
         }
         simulators[id.rawValue] = simulator

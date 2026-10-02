@@ -41,6 +41,7 @@ struct OffsiderCommand: AsyncParsableCommand {
     )
 
     static func main() async {
+        Timings.installTotal()
         if let message = LegacyArguments.migrationMessage(for: Array(CommandLine.arguments.dropFirst())) {
             FileHandle.standardError.write(Data("Error: \(message)\n".utf8))
             Darwin.exit(OffsiderExitCode.usage.rawValue)

@@ -8,29 +8,30 @@ struct SimulatorOrientationReader {
         logger: OffsiderLogger
     ) async -> SimulatorOrientation? {
         do {
-            let frameworkLoader = FBSimulatorControlFrameworkLoader.xcodeFrameworks
-            try frameworkLoader.loadPrivateFrameworks(logger)
-
-            let simulatorSet = try await getSimulatorSet(
-                deviceSetPath: nil,
-                logger: logger,
-                reporter: EmptyEventReporter.shared
-            )
-
-            guard let simulator = simulatorSet.allSimulators.first(where: { $0.udid == simulatorUDID }) else {
+            guard let simulator = try await cachedSimulator(udid: simulatorUDID, logger: logger) else {
                 logger.info().log("Orientation probe: simulator \(simulatorUDID) not found")
                 return nil
             }
+            return currentOrientation(of: simulator, logger: logger)
+        } catch {
+            logger.info().log("Orientation probe failed: \(error)")
+            return nil
+        }
+    }
 
+    static func currentOrientation(of simulator: FBSimulator, logger: OffsiderLogger) -> SimulatorOrientation? {
+        Timings.measure("orientation") {
+            do {
+                try FBSimulatorControlFrameworkLoader.xcodeFrameworks.loadPrivateFrameworks(logger)
+            } catch {
+                logger.info().log("Orientation probe failed: \(error)")
+                return nil
+            }
             guard let device = sendObject(simulator, selector: "device") else {
                 logger.info().log("Orientation probe: simulator device unavailable")
                 return nil
             }
-
             return readOrientation(from: device, logger: logger)
-        } catch {
-            logger.info().log("Orientation probe failed: \(error)")
-            return nil
         }
     }
 
