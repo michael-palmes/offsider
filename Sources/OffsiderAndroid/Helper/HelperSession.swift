@@ -93,6 +93,16 @@ final class HelperSession {
         try await request(.setProgress(node, value: value, expecting: range), as: HelperProgressResult.self, timeout: Self.requestTimeout)
     }
 
+    /// Events after the cursor (the latest dump, or the last event returned), waiting up to `timeout`; advances the cursor.
+    func events(waitingUpTo timeout: Duration) async throws -> [HelperEvent] {
+        let waitMs = max(0, Int((timeout / .milliseconds(1)).rounded()))
+        let reply = try await request(.events(since: eventCursor, waitMs: waitMs), as: HelperEvents.self, timeout: timeout + .seconds(2))
+        if let last = reply.events.last {
+            eventCursor = max(eventCursor, last.seq)
+        }
+        return reply.events
+    }
+
     /// `ACTION_SET_TEXT` on the field with input focus; an error reply throws `HelperErrorBody`.
     func setText(_ text: String) async throws -> HelperTextResult {
         try await request(.setText(text), as: HelperTextResult.self, timeout: Self.requestTimeout)

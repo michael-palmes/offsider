@@ -47,6 +47,11 @@ struct HelperRequest: Equatable, Sendable {
         ])
     }
 
+    /// Relevant events after `since`, waiting up to `waitMs` for the first.
+    static func events(since: Int64, waitMs: Int) -> HelperRequest {
+        HelperRequest(op: "events", fields: ["since": .int(Int(since)), "waitMs": .int(waitMs)])
+    }
+
     /// `ACTION_SET_TEXT` on the field with input focus.
     static func setText(_ text: String) -> HelperRequest {
         HelperRequest(op: "setText", fields: ["text": .string(text)])
@@ -305,6 +310,30 @@ struct HelperDump: Decodable, Equatable, Sendable {
 /// The `setProgress` reply: the range as the node reads after the action, nil when it no longer reports one.
 struct HelperProgressResult: Decodable, Equatable, Sendable {
     let range: HelperRange?
+}
+
+/// One accessibility event the helper kept: window and content changes, focus, clicks and scrolls, but not the status bar.
+struct HelperEvent: Decodable, Equatable, Sendable {
+    let seq: Int64
+    let type: Int
+    let package: String?
+    let windowId: Int?
+}
+
+/// The `events` reply: the events after the request's `since`, oldest first, at most 64.
+struct HelperEvents: Decodable, Equatable, Sendable {
+    let events: [HelperEvent]
+    let eventSeq: Int64?
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        events = try c.decodeIfPresent([HelperEvent].self, forKey: .events) ?? []
+        eventSeq = try c.decodeIfPresent(Int64.self, forKey: .eventSeq)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case events, eventSeq
+    }
 }
 
 /// The `setText` reply: the field that took the text and its new length in UTF-16 units (nil for passwords).

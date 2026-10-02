@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--id` also matches the part of an Android resource id after `:id/` when no id matches exactly.
 - Android trees add the keyboard window as a `keyboard` root, label the application root with the window title, report slider and progress values as percentages and tri-state checkboxes as `2`, and fill `stateDescription`, `roleDescription` and `testTag` (a Compose `testTag` is the `id` when there is no resource id).
 - `--verify` leaves each platform's system bars out of screenshot comparisons: the status bar on iOS as before, and the status and navigation bars on Android. A command that changed nothing suggests `doctor` only for simulators.
+- `--verify` on Android reads the screen again as soon as an accessibility event follows the action, instead of waiting out each 200 ms poll; events only prompt the read, never decide the result.
 - A `button` that the device's platform does not have exits 64 before touching the device.
 - Tap summaries round points to 0.01 and name the selector, for example `Tap on id=BackButton at (22.1, 76.2)`.
 - `type` normalises text to Unicode NFC, so an `e` followed by a combining acute accent types as one `é`.

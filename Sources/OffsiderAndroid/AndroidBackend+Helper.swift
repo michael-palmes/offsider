@@ -127,6 +127,22 @@ extension AndroidBackend {
         return .performed(reachable: target.reachable)
     }
 
+    /// Wakes on the first relevant event after the latest dump; with no helper running, or when the wait fails, sleeps `timeout`.
+    public func waitForAccessibilityChange(on id: DeviceID, timeout: Duration) async throws -> Bool {
+        let serial = id.rawValue
+        if let session = runningHelper(for: serial) {
+            do {
+                return try await !session.events(waitingUpTo: timeout).isEmpty
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                log(.debug, "Waiting for accessibility events on \(serial) failed (\(error)); waiting \(timeout) instead")
+            }
+        }
+        try await host.sleep(timeout)
+        return false
+    }
+
     private func helperDump(_ serial: String, session: HelperSession) async throws -> HelperDump {
         do {
             return try await session.dump()
