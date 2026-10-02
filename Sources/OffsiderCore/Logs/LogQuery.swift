@@ -1,0 +1,131 @@
+import Foundation
+
+/// A `logs` option the parser accepted but whose value is unusable; the message names the option and the fix.
+public struct LogOptionError: Error, Equatable, Sendable {
+    public let message: String
+
+    public init(_ message: String) {
+        self.message = message
+    }
+}
+
+/// Which stretch of the log `logs` reads.
+public enum LogWindow: Equatable, Sendable {
+    /// History ending now.
+    case last(Duration)
+    /// History from an absolute time to now.
+    case since(Date)
+    /// Output that arrives from now on, for `Duration` or, when nil, until interrupted.
+    case live(Duration?)
+
+    /// `500ms`, `30s`, `2m` or `1h`; a bare number is seconds.
+    public static func parseDuration(_ text: String) throws -> Duration {
+        let trimmed = text.trimmingCharacters(in: .whitespaces).lowercased()
+        let units: [(suffix: String, seconds: Double)] = [("ms", 0.001), ("s", 1), ("m", 60), ("h", 3600)]
+        var number = trimmed
+        var scale = 1.0
+        if let unit = units.first(where: { trimmed.hasSuffix($0.suffix) }) {
+            number = String(trimmed.dropLast(unit.suffix.count))
+            scale = unit.seconds
+        }
+        guard let value = Double(number), value.isFinite, value > 0, !number.hasPrefix("+") else {
+            throw LogOptionError("Invalid duration '\(text)'. Use a positive number with ms, s, m or h, such as 500ms, 30s, 2m or 1h.")
+        }
+        return .milliseconds(Int64((value * scale * 1000).rounded()))
+    }
+
+    /// ISO 8601 (with or without a zone, which then means the Mac's) or seconds since 1970.
+    public static func parseTime(_ text: String, timeZone: TimeZone = .current) throws -> Date {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if let seconds = Double(trimmed), seconds.isFinite, seconds >= 0 {
+            return Date(timeIntervalSince1970: seconds)
+        }
+        let withZone = ISO8601DateFormatter()
+        for options: ISO8601DateFormatter.Options in [[.withInternetDateTime, .withFractionalSeconds], [.withInternetDateTime]] {
+            withZone.formatOptions = options
+            if let date = withZone.date(from: trimmed.replacingOccurrences(of: " ", with: "T")) {
+                return date
+            }
+        }
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.timeZone = timeZone
+        for format in ["yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm"] {
+            local.dateFormat = format
+            if let date = local.date(from: trimmed.replacingOccurrences(of: " ", with: "T")) {
+                return date
+            }
+        }
+        throw LogOptionError("Invalid --since time '\(text)'. Use ISO 8601, such as 2026-10-02T14:30:00 or 2026-10-02T14:30:00+10:00, or seconds since 1970.")
+    }
+
+    /// The oldest time an entry may have, for history windows.
+    public func cutoff(now: Date) -> Date? {
+        switch self {
+        case .last(let duration): return now.addingTimeInterval(-duration.timeInterval)
+        case .since(let date): return date
+        case .live: return nil
+        }
+    }
+}
+
+/// Whose logs to read.
+public enum LogSource: Equatable, Sendable {
+    case all
+    /// React Native's JavaScript console and native messages.
+    case reactNative
+    /// An app by bundle identifier (iOS) or package (Android).
+    case app(String)
+    /// A process by name.
+    case process(String)
+}
+
+public struct LogQuery: Equatable, Sendable {
+    public var source: LogSource
+    public var window: LogWindow
+    /// An extra NSPredicate, combined with the source by AND; iOS only.
+    public var predicate: String?
+
+    public init(source: LogSource = .all, window: LogWindow, predicate: String? = nil) {
+        self.source = source
+        self.window = window
+        self.predicate = predicate
+    }
+}
+
+public struct LogEntry: Equatable, Sendable {
+    public var timestamp: Date?
+    public var level: String?
+    public var process: String?
+    public var pid: Int?
+    /// The Android tag, or the iOS subsystem and category.
+    public var tag: String?
+    public var message: String
+
+    public init(timestamp: Date? = nil, level: String? = nil, process: String? = nil, pid: Int? = nil, tag: String? = nil, message: String) {
+        self.timestamp = timestamp
+        self.level = level
+        self.process = process
+        self.pid = pid
+        self.tag = tag
+        self.message = message
+    }
+}
+
+/// Optional capability: reading the device's log for `logs`.
+@MainActor
+public protocol LogReading: DeviceBackend {
+    /// Delivers entries oldest first; returns when the window ends or the task is cancelled.
+    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws
+}
+
+extension Duration {
+    public var timeInterval: TimeInterval {
+        Double(components.seconds) + Double(components.attoseconds) / 1e18
+    }
+
+    /// Whole seconds, rounded up, at least 1: what `log show --last` and `logcat -T` take.
+    public var wholeSecondsRoundedUp: Int {
+        max(1, Int(timeInterval.rounded(.up)))
+    }
+}
