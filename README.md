@@ -136,6 +136,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `content-size` | Read or set the text size: a Dynamic Type category on iOS, the matching font scale on Android; `reset` restores `large` |
 | `orientation` | Read or set the interface orientation (`portrait`, `landscape-left`, `landscape-right`, `portrait-upside-down`), waiting until the device has turned |
 | `shake` | Send the shake gesture (iOS only) |
+| `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`) |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
 
@@ -220,7 +221,8 @@ With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `
 - Views often stay mounted while off screen: a closed bottom sheet parked below the screen, or the previous screen of a JavaScript stack. On iOS they stay in the tree with off-screen frames; on Android nodes the user cannot see are left out. Selectors, `wait`, `assert` and `describe-ui --on-screen` count only what is on screen. A previous screen that is still partly on screen under the current one keeps its ids, so a duplicated id there needs `--element-type` or coordinates.
 - Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` is not in the tree but still takes taps.
 - `offsider logs --rn` prints `console.log`, `console.warn` and `console.error` output, in release builds too.
-- `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off.
+- `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off. `orientation` uses UIKit's names; `describe-ui` and `screenshot --json` report the same states as `landscape` (landscape-left) and `landscapeFlipped` (landscape-right).
+- Debug builds: `rn prepare` skips an Expo dev client's first-launch intro. A LogBox error banner sits over the bottom of the screen and swallows taps; `tap` warns about it on iOS, and on Android `tap --verify` shows the tap had no effect.
 
 ### Android notes
 

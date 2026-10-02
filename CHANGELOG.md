@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `tap` warns when another element may cover its target, and `--fail-if-covered` fails instead of tapping.
 - `logs` prints recent device log entries or collects live ones, with `--rn` for React Native output, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw` and `--json`.
 - `appearance`, `content-size` and `orientation` read or set the device's appearance, text size and interface orientation on iOS and Android; `shake` sends the shake gesture on iOS.
+- `rn prepare --bundle-id <id>` marks an Expo dev client's first-launch dev menu intro as seen and stops the menu opening at launch, so a fresh debug install opens straight into the app (iOS simulators; Android debuggable builds through `run-as`).
 - `--allow-offscreen` on `tap`, `slider` and batch tap steps resolves an element whose frame is outside the screen.
 - When no `--label` or `--value` matches exactly, typographic quotes and unusual spaces are folded, so `--label "Don't Allow"` finds `Don’t Allow`. A selector that matches nothing suggests the closest labels.
 - `doctor` names the Xcode a running Simulator.app belongs to and, when it is not the selected one, suggests `DEVELOPER_DIR` before quitting it.
@@ -26,7 +27,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Selectors prefer on-screen matches. A match whose frame lies outside the screen now fails with an error naming its frame, where `tap` used to report success, and `--wait-timeout` waits for it to come on screen. A duplicate label on a hidden view no longer counts as a second match.
 - `batch` reads the screen again after any step that sends input or sleeps, so a selector step sees the screen its previous step opened. `--ax-cache none` is an alias of `perStep`.
-- A multiple-match error lists each candidate's role, id and frame.
+- A multiple-match error lists each candidate's role, id and frame, and for a duplicated `--id` suggests `--element-type` or coordinates.
+- A selector `tap` or `slider` that had to wait for its element also waits until the element stops moving, so a tap no longer lands on a sheet that is still sliding in.
+- `tap --allow-offscreen` warns when its point is outside the screen.
 - A `--wait-timeout` or `--poll-interval` on a batch tap step overrides the batch-level value for that step; it used to be ignored.
 - `gesture` help says which way each scroll preset moves the content.
 - `tap -x -y` outside the screen prints a warning.
@@ -34,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `wait`, `assert` and `orientation` stop with an error when the device does not answer, where a hung simulator used to hang the command.
+- A HID broker that exits just after accepting a connection is replaced, where the client used to fail with a socket error.
 - A selector `tap` or `slider` on iOS reads the accessibility tree once, not twice.
 - A failed selector `tap` prints its error once.
 
