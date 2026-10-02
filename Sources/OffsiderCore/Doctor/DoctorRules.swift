@@ -15,7 +15,12 @@ public enum DeviceHubState: Equatable, Sendable {
     case runningFromOtherXcode(path: String)
 }
 
-public enum DeviceWindowState: Equatable, Sendable {
+public enum SimulatorAppState: Equatable, Sendable {
+    case notRunning
+    case running(xcodePath: String?)
+}
+
+public enum DeviceWindowState:Equatable, Sendable {
     case found
     case notFound
     case titlesUnavailable
@@ -94,14 +99,45 @@ public enum DoctorRules {
 
     // MARK: Host
 
-    public static func simulatorApp(isRunning: Bool, xcodeMajor: Int?) -> Verdict {
+    /// The Xcode bundle that holds `path`, for a developer directory or anything inside it; nil when `path` is not inside one.
+    public static func xcodeBundle(containing path: String) -> String? {
+        let components = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        guard let index = components.indices.first(where: { index in
+            components[index].hasSuffix(".app")
+                && components.count > index + 2
+                && components[index + 1] == "Contents"
+                && components[index + 2] == "Developer"
+        }) else { return nil }
+        return NSString.path(withComponents: Array(components[...index]))
+    }
+
+    static func standardisedBundle(_ path: String) -> String? {
+        let standardised = URL(fileURLWithPath: path).standardizedFileURL.path
+        return standardised.hasSuffix(".app") ? standardised : nil
+    }
+
+    /// `xcodePath` is the Xcode bundle hosting Simulator.app and `selectedDeveloperDirectory` the one Offsider uses, both with symlinks resolved.
+    public static func simulatorApp(_ state: SimulatorAppState, selectedDeveloperDirectory: String?, xcodeMajor: Int?) -> Verdict {
         guard isDeviceHubEra(xcodeMajor: xcodeMajor) else {
             return (.skip, "Only checked with Xcode 27 or later", nil)
         }
-        guard !isRunning else {
-            return (.fail, "Simulator.app is running", "Quit Simulator.app; Xcode 27 runs simulators under Device Hub.")
+        guard case .running(let xcodePath) = state else {
+            return (.pass, "Simulator.app is not running", nil)
         }
-        return (.pass, "Simulator.app is not running", nil)
+        let quitHint = "Quit Simulator.app; Xcode 27 runs simulators under Device Hub."
+        guard
+            let xcodePath,
+            let owner = xcodeBundle(containing: xcodePath) ?? standardisedBundle(xcodePath),
+            let selected = selectedDeveloperDirectory.flatMap(xcodeBundle(containing:)),
+            owner != selected
+        else {
+            return (.fail, "Simulator.app is running", quitHint)
+        }
+        return (
+            .fail,
+            "Simulator.app from \(owner) is running.",
+            "If this project uses that Xcode, run Offsider with DEVELOPER_DIR=\(owner)/Contents/Developer. Otherwise quit Simulator.app; Xcode 27 runs simulators under Device Hub."
+        )
     }
 
     public static func deviceHub(_ state: DeviceHubState, appPath: String, xcodeMajor: Int?) -> Verdict {

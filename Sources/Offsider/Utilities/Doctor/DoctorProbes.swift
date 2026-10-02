@@ -62,8 +62,18 @@ enum DoctorProbes {
 
     // MARK: Host
 
-    static func isSimulatorAppRunning() -> Bool {
-        !NSRunningApplication.runningApplications(withBundleIdentifier: simulatorAppBundleIdentifier).isEmpty
+    static func simulatorAppState() -> SimulatorAppState {
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: simulatorAppBundleIdentifier)
+        guard !running.isEmpty else { return .notRunning }
+        let appPath = running.lazy.compactMap { $0.bundleURL?.path }.first
+            ?? FBProcessFetcher().processes(withProcessName: "Simulator").lazy
+                .map(\.launchPath)
+                .first { $0.contains("/Simulator.app/Contents/MacOS/") }
+        return .running(xcodePath: appPath.flatMap { DoctorRules.xcodeBundle(containing: resolvedPath($0)) })
+    }
+
+    static func resolvedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
     static func deviceHubAppPath(developerDirectory: String) -> String {
@@ -122,7 +132,7 @@ enum DoctorProbes {
     // MARK: Simulators
 
     static func simulators(logger: OffsiderLogger) async throws -> [FBSimulator] {
-        try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared).allSimulators
+        try await getSimulatorSet(logger: logger).allSimulators
     }
 
     static func bootedSimulator(_ simulator: FBSimulator) -> BootedSimulator {
