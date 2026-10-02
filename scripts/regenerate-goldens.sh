@@ -179,11 +179,14 @@ capture_case help --help
 
 SUBCOMMANDS=(
   appearance assert batch boot button content-size describe-ui doctor drag gesture init key key-combo key-sequence
-  list-devices logs orientation record-video screenshot shake slider stream-video swipe tap touch type wait
+  list-devices logs orientation record-video rn screenshot shake slider stream-video swipe tap touch type wait
 )
 for subcommand in "${SUBCOMMANDS[@]}"; do
   capture_case "help-$subcommand" "$subcommand" --help
 done
+# Nested subcommands take their parent's name as the first argument.
+capture_case help-rn-prepare rn prepare --help
+capture_case error-rn-prepare-unknown-option rn prepare --offsider-invalid-option
 
 # Every public subcommand gets the same parser-level unknown-option contract.
 # Command-specific validation cases below cover typed values, stdin, and output paths.
@@ -208,6 +211,7 @@ VALIDATION_CASES=(
   "list-devices-value|list-devices|unexpected"
   "list-devices-platform|list-devices|--platform|invalid"
   "orientation-value|orientation|sideways|--device|invalid"
+  "rn-prepare-bundle-id|rn|prepare|--bundle-id|not-a-bundle|--device|invalid"
   "record-video-fps|record-video|--device|invalid|--fps|0"
   "screenshot-output|screenshot|--device|invalid|--output"
   "shake-platform|shake|--device|emulator-5554"

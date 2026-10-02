@@ -43,6 +43,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             Wait.self,
             Assert.self,
             Batch.self,
+            RN.self,
             HIDBrokerCommand.self
         ]
     )
