@@ -14,10 +14,38 @@ enum OrderedJSON {
         value.map(wrap) ?? .null
     }
 
-    func rendered() -> String {
+    /// Pretty-printed with two-space indents, or on one line with no spaces when `compact`.
+    func rendered(compact: Bool = false) -> String {
         var output = ""
-        write(to: &output, indent: 0)
+        if compact {
+            writeCompact(to: &output)
+        } else {
+            write(to: &output, indent: 0)
+        }
         return output
+    }
+
+    private func writeCompact(to output: inout String) {
+        switch self {
+        case .object(let members):
+            output += "{"
+            for (index, member) in members.enumerated() {
+                if index > 0 { output += "," }
+                Self.writeString(member.0, to: &output)
+                output += ":"
+                member.1.writeCompact(to: &output)
+            }
+            output += "}"
+        case .array(let elements):
+            output += "["
+            for (index, element) in elements.enumerated() {
+                if index > 0 { output += "," }
+                element.writeCompact(to: &output)
+            }
+            output += "]"
+        default:
+            write(to: &output, indent: 0)
+        }
     }
 
     private func write(to output: inout String, indent: Int) {
@@ -71,7 +99,7 @@ enum OrderedJSON {
         return String(value)
     }
 
-    private static func writeString(_ value: String, to output: inout String) {
+    static func writeString(_ value: String, to output: inout String) {
         output += "\""
         for scalar in value.unicodeScalars {
             switch scalar {

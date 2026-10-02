@@ -80,7 +80,12 @@ extension UIFrame {
 
 extension UINode {
     var jsonValue: OrderedJSON {
-        .object([
+        .object(jsonFields + [("children", .array(children.map(\.jsonValue)))])
+    }
+
+    /// Every neutral key except `children`, in schema order.
+    var jsonFields: [(String, OrderedJSON)] {
+        [
             ("role", .string(role.rawValue)),
             ("id", .optional(id, OrderedJSON.string)),
             ("label", .optional(label, OrderedJSON.string)),
@@ -93,8 +98,7 @@ extension UINode {
                 ("focused", .optional(state.focused, OrderedJSON.bool)),
             ])),
             ("native", native.jsonValue),
-            ("children", .array(children.map(\.jsonValue))),
-        ])
+        ]
     }
 }
 

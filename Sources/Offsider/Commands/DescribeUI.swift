@@ -19,6 +19,9 @@ struct DescribeUI: AsyncParsableCommand {
     )
     var point: String?
 
+    @OptionGroup(title: "Output")
+    var output: DescribeUIOutputOptions
+
     func validate() throws {
         _ = try parsedPoint()
     }
@@ -30,7 +33,7 @@ struct DescribeUI: AsyncParsableCommand {
 
         var tree = try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint())
         tree.screen = try? await route.backend.screenInfo(for: route.device)
-        print(String(decoding: tree.jsonData(), as: UTF8.self), terminator: "")
+        print(String(decoding: try output.render(tree), as: UTF8.self), terminator: "")
     }
 
     private func parsedPoint() throws -> UIPoint? {
