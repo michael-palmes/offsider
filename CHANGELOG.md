@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `OFFSIDER_ANDROID_TRANSPORT` (`adb` or `grpc`) and `OFFSIDER_ANDROID_GRPC_AUTH` (`jwt`) for troubleshooting Android transports.
 - Android `describe-ui` and every tree read go through a small UiAutomation helper that Offsider pushes to the emulator and runs for one command (about 0.5 s per `describe-ui`); `uiautomator` remains the fallback, with a warning.
 - `OFFSIDER_ANDROID_TREE` (`helper` or `uiautomator`) for troubleshooting Android screen reads.
+- `slider` works on Android emulators through the accessibility progress action, falling back to a drag; a control whose steps cannot show the requested value reports the nearest step it reached.
 - React Native playground (`OffsiderPlaygroundRN`) for shared iOS and Android fixtures.
 
 ### Changed

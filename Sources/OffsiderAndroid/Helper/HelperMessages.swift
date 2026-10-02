@@ -35,6 +35,18 @@ struct HelperRequest: Equatable, Sendable {
         ])
     }
 
+    /// `ACTION_SET_PROGRESS` in the node's own units; `expect` is the range as dumped, so a changed range is refused as stale.
+    static func setProgress(_ node: HelperNodeRef, value: Double, expecting range: HelperRange) -> HelperRequest {
+        var ref: [String: HelperValue] = ["generation": .int(node.generation), "index": .int(node.index)]
+        ref["className"] = node.className.map(HelperValue.string)
+        ref["resourceId"] = node.resourceId.map(HelperValue.string)
+        return HelperRequest(op: "setProgress", fields: [
+            "node": .object(ref),
+            "value": .double(value),
+            "expect": .object(["min": .double(range.min), "max": .double(range.max)]),
+        ])
+    }
+
     /// The JSON payload with sorted keys, so the same request always encodes the same way.
     func payload(id: Int) throws -> Data {
         var object = fields
@@ -283,6 +295,11 @@ struct HelperDump: Decodable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case generation, idle, eventSeq, display, windows, truncated
     }
+}
+
+/// The `setProgress` reply: the range as the node reads after the action, nil when it no longer reports one.
+struct HelperProgressResult: Decodable, Equatable, Sendable {
+    let range: HelperRange?
 }
 
 /// The `display` op's reply: the display and the window list without trees.

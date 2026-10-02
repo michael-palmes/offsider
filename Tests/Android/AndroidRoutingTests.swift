@@ -138,10 +138,11 @@ struct AndroidCommandRefusalTests {
         #expect(result.stderr.contains("doctor checks iOS simulators in this build; Android checks come later. Run `offsider doctor` for host checks."))
     }
 
-    @Test("slider on Android is refused with a way forward")
-    func sliderRefusesAndroid() async throws {
+    @Test("slider on Android is no longer refused: it goes to the emulator, here failing for want of an SDK")
+    func sliderReachesAndroid() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("slider --id volume --value 50 --device emulator-5556")
         #expect(result.exitCode == 1)
-        #expect(result.stderr.contains("slider is not supported on Android emulators yet: the uiautomator tree does not report slider values."))
+        #expect(result.stderr.contains(ListDevicesPlatformFilterTests.sdkNotFound))
+        #expect(!result.stderr.contains("not supported"))
     }
 }

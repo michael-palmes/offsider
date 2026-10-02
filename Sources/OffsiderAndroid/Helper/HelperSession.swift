@@ -88,6 +88,11 @@ final class HelperSession {
         return reply.display
     }
 
+    /// `ACTION_SET_PROGRESS` on a node of the latest dump; an error reply throws `HelperErrorBody`.
+    func setProgress(_ node: HelperNodeRef, value: Double, expecting range: HelperRange) async throws -> HelperProgressResult {
+        try await request(.setProgress(node, value: value, expecting: range), as: HelperProgressResult.self, timeout: Self.requestTimeout)
+    }
+
     private func screenRequest<Reply: Decodable>(_ request: HelperRequest, as type: Reply.Type, timeout: Duration) async throws -> Reply {
         do {
             return try await self.request(request, as: type, timeout: timeout)

@@ -280,6 +280,19 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func sliderNeedsHelper(_ serial: String, reason: HelperUnavailableReason) -> AndroidError {
+        guard reason != .forcedOff else {
+            return AndroidError(
+                .helperUnavailable,
+                "slider on Android reads slider values through the UiAutomation helper, and OFFSIDER_ANDROID_TREE is uiautomator. Unset it, then retry."
+            )
+        }
+        return AndroidError(
+            .helperUnavailable,
+            "slider on Android reads slider values through the UiAutomation helper, which is unavailable on \(serial) (\(reason))."
+        )
+    }
+
     static func helperBusy(_ serial: String) -> AndroidError {
         AndroidError(
             .helperBusy,

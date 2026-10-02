@@ -3,7 +3,7 @@ import OffsiderCore
 
 /// Android emulators over the adb server; lives for one command run, so its caches do too.
 @MainActor
-public final class AndroidBackend: DeviceBackend {
+public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming {
     let host: AndroidHost
     let log: AndroidLog
     private var sdk: AndroidSDK?

@@ -59,6 +59,38 @@ extension AndroidBackend {
         return mapped.roots
     }
 
+    /// `ACTION_SET_PROGRESS` on `node` from this command's latest dump; a node that moved since is `.stale`.
+    public func setRangeValue(_ fraction: Double, of node: UINode, on id: DeviceID) async throws -> RangeActionOutcome {
+        let serial = id.rawValue
+        let session: HelperSession
+        switch try await treeSource(for: serial) {
+        case .helper(let running): session = running
+        case .uiautomator(let reason): throw AndroidError.sliderNeedsHelper(serial, reason: reason)
+        }
+        guard let index = session.index, index.pid == session.ready.pid,
+              let entry = index.entries.first(where: { $0.node == node }) else {
+            log(.debug, "The slider is not in the latest helper dump of \(serial)")
+            return .stale
+        }
+        guard let range = entry.range, range.type != "indeterminate", range.min.isFinite, range.max.isFinite, range.max > range.min else {
+            return .unsupported(reason: "\(entry.ref.className ?? "the element") reports no range")
+        }
+        let target = SliderMath.target(fraction: fraction, range: range)
+        do {
+            _ = try await session.setProgress(entry.ref, value: target.value, expecting: range)
+        } catch let error as HelperErrorBody where error.code == "stale-node" {
+            log(.debug, "The helper on \(serial) refused a stale slider: \(error.message)")
+            return .stale
+        } catch let error as HelperErrorBody {
+            return .unsupported(reason: error.message)
+        } catch let error as HelperProtocolError {
+            return .unsupported(reason: error.detail)
+        } catch HelperStartFailure.busy {
+            throw await busyError(serial)
+        }
+        return .performed(reachable: target.reachable)
+    }
+
     private func helperDump(_ serial: String, session: HelperSession) async throws -> HelperDump {
         do {
             return try await session.dump()
