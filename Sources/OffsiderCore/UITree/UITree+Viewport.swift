@@ -35,6 +35,16 @@ extension UIFrame {
         return overlapWidth >= 1 && overlapHeight >= 1
     }
 
+    /// The overlap with `other`, or nil when they do not overlap.
+    public func intersection(_ other: UIFrame) -> UIFrame? {
+        let minX = max(x, other.x)
+        let minY = max(y, other.y)
+        let maxX = min(x + width, other.x + other.width)
+        let maxY = min(y + height, other.y + other.height)
+        guard maxX > minX, maxY > minY else { return nil }
+        return UIFrame(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     /// `(20, 10700) 350x44`: whole numbers without a fraction, others to 1 decimal.
     public var summary: String {
         "(\(Self.format(x)), \(Self.format(y))) \(sizeSummary)"

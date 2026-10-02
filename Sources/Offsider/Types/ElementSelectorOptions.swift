@@ -55,9 +55,9 @@ struct ElementSelectorOptions: ParsableArguments {
             }
             var pool = allowOffscreen || found.viewport == nil ? found.matches : found.onScreen
             guard !pool.isEmpty else {
-                let place = first.frame.map { "off screen at \($0.summary)" } ?? "off screen with no frame"
+                let place = first.hasPositiveFrame ? first.frame.map { "off screen at \($0.summary)" } : nil
                 let more = found.matches.count > 1 ? " (and \(found.matches.count - 1) more)" : ""
-                return .absent(reason: place + more)
+                return .absent(reason: (place ?? "has no usable frame") + more)
             }
             if let hasValue {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }

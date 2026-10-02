@@ -404,6 +404,25 @@ struct AccessibilityTargetResolverTests {
         #expect(message.hasSuffix(AccessibilityTargetResolver.describeUITip))
     }
 
+    @Test("a partly visible element whose centre is off screen is tapped at the centre of its visible part")
+    func partlyVisibleTapsVisiblePart() throws {
+        let roots = Self.screen([Self.save(id: "save", y: 832, height: 60)])
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
+
+        #expect(resolution.point.x == 195 && resolution.point.y == 842)
+    }
+
+    @Test("a wide switch whose trailing edge is off screen falls back to the centre of its visible part")
+    func partlyVisibleSwitchFallsBack() throws {
+        let toggle = FakeUI.node(.switch, id: "wifi", label: "Wi-Fi", frame: FakeUI.frame(200, 400, 393, 44))
+        let roots = Self.screen([toggle])
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("wifi"))
+
+        #expect(resolution.point.x == 296.5 && resolution.point.y == 422)
+    }
+
     @Test("several off-screen matches are all listed")
     func severalOffScreenMatchesListed() {
         let roots = Self.screen([Self.save(y: 10700), Self.save(y: 11200)])
@@ -466,17 +485,6 @@ struct AccessibilityTargetResolverTests {
         let error = Self.resolutionError {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Below"))
         }
-        #expect(error?.isOffScreen == true)
-    }
-
-    @Test("a partly visible frame whose centre is off screen fails")
-    func partlyVisibleCentreOffScreen() {
-        let roots = Self.screen([Self.save(y: 830)])
-
-        let error = Self.resolutionError {
-            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"))
-        }
-
         #expect(error?.isOffScreen == true)
     }
 
@@ -728,6 +736,34 @@ struct AccessibilityTargetResolverTests {
 
         #expect(resolution.coverCandidates.map(\.id) == ["tab-search"])
         #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots) == nil)
+    }
+
+    /// The Android shape of a bottom sheet: a labelled, clickable scrim fills the screen behind the sheet's buttons.
+    static func sheetOverScrim(banner: UINode? = nil) -> [UINode] {
+        let scrim = FakeUI.node(.button, label: "Dismiss", frame: FakeUI.frame(0, 0, 412, 915), platform: .android)
+        let sheet = FakeUI.node(.other, frame: FakeUI.frame(0, 600, 412, 315), platform: .android, children: [
+            FakeUI.node(.button, id: "apply", label: "Apply", frame: FakeUI.frame(16, 840, 380, 48), platform: .android),
+        ])
+        let app = FakeUI.node(.application, frame: FakeUI.frame(0, 0, 412, 915), platform: .android, children: [scrim, sheet] + (banner.map { [$0] } ?? []))
+        return [app]
+    }
+
+    @Test("without a hit-test, a full-screen scrim behind a sheet's button is not a cover")
+    func scrimIsNotCover() throws {
+        let roots = Self.sheetOverScrim()
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("apply"))
+
+        #expect(resolution.coverCandidates.map(\.label) == ["Dismiss"])
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots) == nil)
+    }
+
+    @Test("without a hit-test, a banner over a sheet's button is still a cover when a scrim lies behind both")
+    func bannerOverScrimIsCover() throws {
+        let banner = FakeUI.node(.other, label: Self.bannerLabel, frame: FakeUI.frame(0, 800, 412, 110), platform: .android)
+        let roots = Self.sheetOverScrim(banner: banner)
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("apply"))
+
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots)?.label == Self.bannerLabel)
     }
 
     private func decodeElements(_ json: String) throws -> [UINode] {

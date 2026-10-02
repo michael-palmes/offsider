@@ -153,6 +153,22 @@ struct AccessibilityPollerTests {
         #expect(count >= 2)
     }
 
+    @Test("a centred element whose width keeps changing settles once its activation point holds")
+    func resizingElementSettlesOnPoint() async throws {
+        var widths = [0.0, 120, 160, 200, 240, 280]
+        var count = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("status"), waitTimeout: 2, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) {
+            count += 1
+            let width = widths.count > 1 ? widths.removeFirst() : widths[0]
+            let frame = width == 0 ? FakeUI.frame(146, 10600, 100, 44) : FakeUI.frame(196 - width / 2, 600, width, 44)
+            return FakeUI.tree(width: 393, height: 852, [FakeUI.node(.button, id: "status", label: "Syncing", frame: frame)])
+        }
+        #expect(polled.value.point.x == 196 && polled.value.point.y == 622)
+        #expect(count == 3)
+    }
+
     @Test("an element that disappears during the settle check keeps polling")
     func disappearingDuringSettleKeepsPolling() async throws {
         let (polled, reads) = try await pollSheet([10700, 800, 10700, 600, 600])
@@ -160,18 +176,11 @@ struct AccessibilityPollerTests {
         #expect(reads == 5)
     }
 
-    @Test("element positions settle within one point of each other")
+    @Test("element positions settle within one point of each other, whatever the frame's size does")
     func settleTolerance() {
-        let frame = UIFrame(x: 20, y: 600, width: 350, height: 44)
-        let still = ElementPosition(point: UIPoint(x: 195, y: 622), frame: frame)
-        var nudged = still
-        nudged.point.y += 0.9
-        nudged.frame?.y += 0.9
-        var moved = still
-        moved.frame?.y += 3
-        #expect(ElementMotion.hasSettled(previous: still, current: nudged))
-        #expect(!ElementMotion.hasSettled(previous: still, current: moved))
-        #expect(!ElementMotion.hasSettled(previous: still, current: ElementPosition(point: still.point, frame: nil)))
+        let still = UIPoint(x: 195, y: 622)
+        #expect(ElementMotion.hasSettled(previous: still, current: UIPoint(x: 195.9, y: 622.9)))
+        #expect(!ElementMotion.hasSettled(previous: still, current: UIPoint(x: 195, y: 625)))
     }
 
     @Test("an off-screen element is not retried without --wait-timeout")

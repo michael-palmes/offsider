@@ -139,4 +139,28 @@ struct UITreeQueryTests {
         #expect(noScreen.visibleRect == app)
         #expect(tree.visibleRect == UIFrame(x: 0, y: 0, width: 400, height: 800))
     }
+
+    @Test("on-screen uses the selectors' viewport, application and keyboard roots, over the reported screen")
+    func onScreenUsesViewport() {
+        let tree = UITree(platform: .android, device: "emulator-5554", screen: UIScreenInfo(width: 400, height: 800), roots: [
+            Self.node(.application, frame: UIFrame(x: 0, y: 0, width: 400, height: 700), children: [
+                Self.node(.button, label: "Inside", frame: UIFrame(x: 10, y: 600, width: 100, height: 40)),
+                Self.node(.button, label: "Under the navigation bar", frame: UIFrame(x: 10, y: 720, width: 100, height: 40)),
+            ]),
+        ])
+
+        #expect(tree.visibleRect == UIFrame(x: 0, y: 0, width: 400, height: 700))
+        #expect(labels(tree.flatEntries(UITreeFilter(onScreen: true, labelled: true))) == ["Inside"])
+    }
+
+    @Test("a sliver under 1 pt is not on screen, as selectors judge it")
+    func sliverIsOffScreen() {
+        let tree = UITree(platform: .ios, device: "D", screen: UIScreenInfo(width: 400, height: 800), roots: [
+            Self.node(.application, frame: UIFrame(x: 0, y: 0, width: 400, height: 800), children: [
+                Self.node(.button, label: "Sliver", frame: UIFrame(x: 10, y: 799.5, width: 100, height: 40)),
+            ]),
+        ])
+
+        #expect(labels(tree.flatEntries(UITreeFilter(onScreen: true, labelled: true))).isEmpty)
+    }
 }

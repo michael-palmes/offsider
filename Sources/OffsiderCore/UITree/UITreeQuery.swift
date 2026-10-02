@@ -17,9 +17,10 @@ public struct UITreeFilter: Equatable, Sendable {
     }
 
     /// Whether `node` itself passes; a nil `visibleRect` makes `onScreen` keep everything.
+    /// On screen means at least 1 pt visible on both axes, the rule selectors, `wait` and `assert` use.
     public func matches(_ node: UINode, visibleRect: UIFrame?) -> Bool {
         if onScreen, let visibleRect {
-            guard let frame = node.frame, frame.overlaps(visibleRect) else {
+            guard let frame = node.frame, frame.isVisible(in: visibleRect) else {
                 return false
             }
         }
@@ -67,18 +68,12 @@ extension UINode {
     }
 }
 
-extension UIFrame {
-    /// True when the two frames share an area larger than zero.
-    public func overlaps(_ other: UIFrame) -> Bool {
-        let width = min(x + width, other.x + other.width) - max(x, other.x)
-        let height = min(y + height, other.y + other.height) - max(y, other.y)
-        return width > 0 && height > 0
-    }
-}
-
 extension UITree {
-    /// The screen in the tree's coordinates when known, else the application frame.
+    /// The viewport selectors use, else the screen in the tree's coordinates, else the application frame.
     public var visibleRect: UIFrame? {
+        if let viewport {
+            return viewport
+        }
         if let screen {
             return UIFrame(x: 0, y: 0, width: screen.width, height: screen.height)
         }

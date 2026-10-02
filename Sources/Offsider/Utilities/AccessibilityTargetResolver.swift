@@ -299,9 +299,12 @@ struct AccessibilityTargetResolver {
             throw ElementResolutionError.invalidFrame(reason: "Matched element has an invalid frame size (\(frame.width)x\(frame.height)).")
         }
 
-        let point = activationPoint(for: activationElement, frame: frame)
+        var point = activationPoint(for: activationElement, frame: frame)
         if !allowOffscreen, let viewport = UITree.viewport(in: roots), !viewport.contains(UIPoint(x: point.x, y: point.y)) {
-            throw ElementResolutionError.offScreen(selector: match.selectorDescription, frames: [frame], viewport: viewport)
+            guard frame.isVisible(in: viewport), let visible = frame.intersection(viewport) else {
+                throw ElementResolutionError.offScreen(selector: match.selectorDescription, frames: [frame], viewport: viewport)
+            }
+            point = (x: visible.center.x, y: visible.center.y)
         }
 
         let candidates = allowOffscreen ? [] : UITree.viewport(in: roots).map { viewport in
@@ -338,15 +341,19 @@ struct AccessibilityTargetResolver {
     }
 
     /// The cover once a hit-test at the tap point found `hit`: nil when the hit is the target or its kin.
-    /// Without a hit, the first candidate not lying wholly inside the target, which is more likely underneath it.
+    /// Without a hit, the first candidate not lying wholly inside the target, which is more likely underneath it,
+    /// and not a backdrop such as a sheet's scrim, which sits behind the content it surrounds.
     static func confirmedCover(hit: UINode?, resolution: TapResolution, roots: [UINode]) -> UINode? {
         guard !resolution.coverCandidates.isEmpty else {
             return nil
         }
         guard let hit else {
             let targetFrame = resolution.target?.frame
+            let viewport = UITree.viewport(in: roots)
             return resolution.coverCandidates.first { candidate in
-                guard let targetFrame, let frame = candidate.frame else { return true }
+                guard let frame = candidate.frame else { return true }
+                if let viewport, isBackdrop(frame, in: viewport) { return false }
+                guard let targetFrame else { return true }
                 return !targetFrame.encloses(frame)
             }
         }
@@ -362,6 +369,12 @@ struct AccessibilityTargetResolver {
             return hit
         }
         return isPlausibleOccluder(hit, underKeyboard: hit.role == .keyboard) ? hit : nil
+    }
+
+    /// Covers at least 80 percent of the viewport, as a modal backdrop or scrim does; a banner covers far less.
+    static func isBackdrop(_ frame: UIFrame, in viewport: UIFrame) -> Bool {
+        guard let visible = frame.intersection(viewport), viewport.width > 0, viewport.height > 0 else { return false }
+        return visible.width * visible.height >= 0.8 * viewport.width * viewport.height
     }
 
     /// `element` with its ancestors and descendants, none of which can cover it.

@@ -55,11 +55,7 @@ struct AccessibilityPoller {
                     roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
                 )
             },
-            position: { match in
-                let frame = match.element.frame
-                let centre = frame.map { UIPoint(x: $0.x + $0.width / 2, y: $0.y + $0.height / 2) } ?? UIPoint(x: 0, y: 0)
-                return ElementPosition(point: centre, frame: frame)
-            },
+            position: { match in match.element.frame?.center ?? UIPoint(x: 0, y: 0) },
             treeFetcher: { try await backend.accessibilityTree(for: device) }
         )
     }
@@ -86,12 +82,7 @@ struct AccessibilityPoller {
                     roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
                 )
             },
-            position: { resolution in
-                ElementPosition(
-                    point: UIPoint(x: resolution.point.x, y: resolution.point.y),
-                    frame: (resolution.target ?? resolution.matched)?.frame
-                )
-            },
+            position: { resolution in UIPoint(x: resolution.point.x, y: resolution.point.y) },
             treeFetcher: treeFetcher
         )
     }
@@ -104,7 +95,7 @@ struct AccessibilityPoller {
         logger: OffsiderLogger,
         clock: PollClock,
         resolver: ([UINode]) throws -> T,
-        position: (T) -> ElementPosition,
+        position: (T) -> UIPoint,
         treeFetcher: () async throws -> UITree
     ) async throws -> Polled<T> {
         let start = clock.now()
@@ -113,7 +104,7 @@ struct AccessibilityPoller {
         let transientDeadline = start + transientWindow
         var transientRetries = 0
         var waitedForElement = false
-        var lastPosition: ElementPosition?
+        var lastPosition: UIPoint?
 
         while true {
             let tree: UITree
