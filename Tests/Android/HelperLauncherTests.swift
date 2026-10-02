@@ -40,11 +40,11 @@ struct HelperLauncherTests {
         """)
     }
 
-    @Test("after a push the script renames the temporary copy and removes every other helper copy before starting")
+    @Test("after a push the script renames the temporary copy, makes it read-only for other users and removes every other copy before starting")
     func startScriptAfterPush() {
         let script = HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: Self.devicePath + ".777.tmp")
         #expect(script.hasPrefix("""
-        f='\(Self.devicePath)'; mv -f '\(Self.devicePath).777.tmp' "$f" && \
+        f='\(Self.devicePath)'; mv -f '\(Self.devicePath).777.tmp' "$f" && chmod 644 "$f" && \
         for o in /data/local/tmp/offsider-helper-*.dex; do [ "$o" = "$f" ] || rm -f "$o"; done; [ "$(stat -c %s
         """))
         #expect(script.contains(#"= 3 ] || exit 90; CLASSPATH="$f" exec app_process"#))

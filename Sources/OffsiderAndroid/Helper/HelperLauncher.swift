@@ -61,11 +61,11 @@ struct HelperLauncher {
     let log: AndroidLog
     var hostPid: Int32 = getpid()
 
-    /// Exits 90 unless the dex has the right size; `exec` lets adbd's hang-up reach the helper; a push renames and prunes first.
+    /// Exits 90 unless the dex has the right size; `exec` lets adbd's hang-up reach the helper; a push renames, drops adbd's 0666 to 644 and prunes first.
     static func startScript(_ dex: HelperDex, pushedFrom temporaryPath: String?) -> String {
         var script = "f=\(AdbShellQuoting.quote(dex.devicePath)); "
         if let temporaryPath {
-            script += "mv -f \(AdbShellQuoting.quote(temporaryPath)) \"$f\" && "
+            script += "mv -f \(AdbShellQuoting.quote(temporaryPath)) \"$f\" && chmod 644 \"$f\" && "
                 + "for o in /data/local/tmp/offsider-helper-*.dex; do [ \"$o\" = \"$f\" ] || rm -f \"$o\"; done; "
         }
         return script
