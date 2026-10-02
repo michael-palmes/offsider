@@ -254,9 +254,14 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         }
     }
 
-    /// The status bar with its cutout (54 dp on a Pixel 9) and the navigation bar, until the tree reports window bounds.
+    /// The bars the running helper measured in its latest window list; 60 and 48 dp when no helper runs.
     public func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
-        ScreenBands(top: 60, bottom: 48)
+        guard let session = runningHelper(for: id.rawValue), let display = session.display else {
+            return SystemBars.fallback
+        }
+        let bands = SystemBars.bands(windows: session.windows, display: display)
+        log(.debug, "System bars on \(id.rawValue) from the helper's windows: top \(bands.top) dp, bottom \(bands.bottom) dp")
+        return bands
     }
 
     /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.

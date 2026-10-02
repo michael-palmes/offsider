@@ -311,7 +311,7 @@ struct VerifierTests {
         #expect(line(DeviceID(rawValue: "emulator-5556", platform: .android)).hasSuffix("Check the target with describe-ui."))
     }
 
-    @Test("The backends' bands: iOS keeps the status bar only, Android adds the navigation bar")
+    @Test("The backends' bands: iOS keeps the status bar only; Android with no helper running keeps 60 and 48 dp")
     func backendBands() async {
         let device = DeviceID(rawValue: UUID().uuidString, platform: .ios)
         #expect(await IOSBackend(logger: OffsiderLogger()).volatileScreenBands(for: device) == ScreenBands(top: 60, bottom: 0))
