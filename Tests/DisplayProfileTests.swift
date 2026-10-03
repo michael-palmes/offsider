@@ -110,12 +110,9 @@ struct DevicectlDisplaysTests {
 
     @Test("the hinge angle comes from the first Angle reading")
     func hinge() {
-        let output = """
-        Hinge angle monitoring started. 1 seconds remaining:
-        ? +0.000s : Angle:  92.5  Mech:  92.5  Velocity:+0.0/s  AngleValid:Y  VelocityValid:N  Range:0-180
-        ? +0.100s : Angle:  180.0  Mech:  180.0
-        """
-        #expect(DevicectlDisplays.hingeAngle(in: output) == 92.5)
+        let output = "Hinge angle monitoring started. 3 seconds remaining:\r\n\u{2022} +0.000s : Angle:120.0\u{00B0}  Mech:120.0\u{00B0}  Velocity:+0.0\u{00B0}/s  AngleValid:Y  VelocityValid:N  Range:0-180\u{00B0}\r\n\u{2022} +0.100s : Angle:180.0\u{00B0}\r\n"
+        #expect(DevicectlDisplays.hingeAngle(in: output) == 120)
+        #expect(DevicectlDisplays.hingeAngle(in: "? +0.000s : Angle:  92.5  Mech:  92.5") == 92.5)
         #expect(DevicectlDisplays.hingeAngle(in: "Hinge angle monitoring started.") == nil)
     }
 
@@ -136,10 +133,9 @@ struct ActiveDisplayTests {
         #expect(active.posture == .closed)
         #expect(active.rotationDegrees == 0)
         #expect(active.source == .devicectl)
-        #expect(active.rotations == ["1": 0, "3": 90, "5": 0])
     }
 
-    @Test("devicectl's active inner display means open, at its rotation")
+    @Test("devicectl's active inner display means open; its clockwise rot90 is landscape-right on the panel, 270 anticlockwise")
     func unfolded() throws {
         let active = try #require(ActiveDisplay.resolve(
             profile: DuoFixtures.profile,
@@ -148,7 +144,12 @@ struct ActiveDisplayTests {
         ))
         #expect(active.descriptor == DuoFixtures.inner)
         #expect(active.posture == .open)
-        #expect(active.rotationDegrees == 90)
+        #expect(active.rotationDegrees == 270)
+    }
+
+    @Test("devicectl's clockwise quarter turns read anticlockwise", arguments: [(0, 0), (90, 270), (180, 180), (270, 90)])
+    func anticlockwise(clockwise: Int, anticlockwise: Int) {
+        #expect(DevicectlDisplays.anticlockwise(clockwise) == anticlockwise)
     }
 
     @Test("without devicectl, the application frame picks the display of its size in either orientation", arguments: [
@@ -185,7 +186,7 @@ struct DisplayReportTests {
     static let folded = DisplayList(
         displays: [
             DisplayInfo(descriptor: DuoFixtures.cover, pointWidth: 466, pointHeight: 678, rotationDegrees: 0, active: true),
-            DisplayInfo(descriptor: DuoFixtures.inner, pointWidth: 669, pointHeight: 951, rotationDegrees: 90, active: false),
+            DisplayInfo(descriptor: DuoFixtures.inner, pointWidth: 669, pointHeight: 951, rotationDegrees: nil, active: false),
         ],
         posture: .closed
     )
@@ -208,7 +209,7 @@ struct DisplayReportTests {
         #expect(DisplayReport.table(Self.folded, platform: .ios) == """
         ID     PLATFORM ID  SIZE        SCALE  ROTATION  ACTIVE
         cover  1            466x678 pt  3      0         yes
-        inner  3            669x951 pt  3      90        no
+        inner  3            669x951 pt  3      -         no
         Posture: closed
         """)
     }
@@ -226,11 +227,11 @@ struct DisplayReportTests {
 
     @Test("the JSON keeps its key order")
     func json() {
-        #expect(DisplayReport.json(Self.folded) == #"{"displays":[{"id":"cover","platformId":"1","name":"LCD","width":466,"height":678,"scale":3,"rotation":0,"active":true},{"id":"inner","platformId":"3","name":"LCD-1","width":669,"height":951,"scale":3,"rotation":90,"active":false}],"posture":"closed"}"#)
+        #expect(DisplayReport.json(Self.folded) == #"{"displays":[{"id":"cover","platformId":"1","name":"LCD","width":466,"height":678,"scale":3,"rotation":0,"active":true},{"id":"inner","platformId":"3","name":"LCD-1","width":669,"height":951,"scale":3,"rotation":null,"active":false}],"posture":"closed"}"#)
     }
 
     @Test("describe-ui on a display that is not active says how to make it active", arguments: [
-        (DevicePlatform.ios, "describe-ui reads the active display only, and inner is not active (posture closed). Unfold the simulator in Device Hub, then retry."),
+        (DevicePlatform.ios, "describe-ui reads the active display only, and inner is not active (posture closed). Unfold the simulator with `offsider posture open --device D`, then retry."),
         (.android, "describe-ui reads the active display only, and inner is not active (posture closed). Unfold the emulator with `offsider posture open --device D`, then retry."),
     ])
     func inactive(platform: DevicePlatform, message: String) {

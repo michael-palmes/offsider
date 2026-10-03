@@ -16,6 +16,20 @@ extension UITree {
     public var viewport: UIFrame? {
         Self.viewport(in: roots)
     }
+
+    /// iOS gives an app on a sideways-mounted panel (the iPhone Duo's inner display) the panel's portrait frame while laying it out landscape, so a frame that is exactly the screen turned is given the screen's size.
+    public static func correctingSidewaysApplicationFrame(in roots: [UINode], screenWidth: Double, screenHeight: Double) -> [UINode] {
+        let close = { (a: Double, b: Double) in abs(a - b) <= 1 }
+        return roots.map { root in
+            guard root.role == .application, let frame = root.frame, !close(screenWidth, screenHeight),
+                  close(frame.width, screenHeight), close(frame.height, screenWidth) else {
+                return root
+            }
+            var corrected = root
+            corrected.frame = UIFrame(x: frame.x, y: frame.y, width: screenWidth, height: screenHeight)
+            return corrected
+        }
+    }
 }
 
 extension UIFrame {

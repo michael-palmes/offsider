@@ -71,13 +71,9 @@ public enum DisplayReport {
         let role = requested.descriptor.role.rawValue
         let state = "describe-ui reads the active display only, and \(role) is not active (posture \(posture?.rawValue ?? "unknown"))."
         let verb = requested.descriptor.role == .cover ? "Fold" : "Unfold"
-        switch platform {
-        case .ios:
-            return "\(state) \(verb) the simulator in Device Hub, then retry."
-        case .android:
-            let target = requested.descriptor.role == .cover ? "closed" : "open"
-            return "\(state) \(verb) the emulator with `offsider posture \(target) --device \(device)`, then retry."
-        }
+        let target = requested.descriptor.role == .cover ? "closed" : "open"
+        let noun = platform == .ios ? "simulator" : "emulator"
+        return "\(state) \(verb) the \(noun) with `offsider posture \(target) --device \(device)`, then retry."
     }
 
     private static func number(_ value: Double) -> String {

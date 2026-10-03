@@ -12,7 +12,7 @@ struct DisplayCommandTests {
         display: ScreenDisplay(id: "cover", platformId: "1"), posture: .closed
     )
     static let innerScreen = UIScreenInfo(
-        width: 951, height: 669, scale: 3, rotation: .portrait, rotationDegrees: 90,
+        width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 270,
         display: ScreenDisplay(id: "inner", platformId: "3"), posture: .open
     )
 
@@ -23,11 +23,11 @@ struct DisplayCommandTests {
     }
 
     private func posture(
-        _ target: Posture?, json: Bool = false, timeout: TimeInterval = 10, on backend: FakeDeviceBackend, clock: ScriptedClock? = nil
+        _ target: Posture?, angle: Int? = nil, json: Bool = false, timeout: TimeInterval = 10, on backend: FakeDeviceBackend, clock: ScriptedClock? = nil
     ) async throws -> String {
         let poll = (clock ?? ScriptedClock()).poll
         return try await PostureCommand.report(
-            target, json: json, timeout: timeout, on: Self.device, backend: backend, deviceName: "SIM", sleep: poll.sleep, now: poll.now
+            target, angle: angle, json: json, timeout: timeout, on: Self.device, backend: backend, deviceName: "SIM", sleep: poll.sleep, now: poll.now
         )
     }
 
@@ -66,14 +66,14 @@ struct DisplayCommandTests {
         #expect(backend.requestedPostures.isEmpty)
     }
 
-    @Test("iOS refuses to set the posture and says how to fold the simulator")
+    @Test("a simulator without the hinge service refuses to set the posture and says how to fold it")
     func iosRefuses() async {
         let backend = Self.folded()
         backend.postureRequestError = CLIError(errorDescription: IOSBackend.postureUnavailable(device: "SIM"))
         await #expect {
             try await posture(.open, on: backend)
         } throws: {
-            "\($0)" == "Setting the posture is not available on iOS simulators: no simulator tool folds the device. Fold or unfold it in Device Hub, then check with `offsider posture --device SIM`."
+            "\($0)" == "Setting the posture is not available on this iOS simulator: its runtime has no hinge service Offsider can reach. Fold or unfold it in Device Hub, then check with `offsider posture --device SIM`."
         }
         #expect(backend.requestedPostures == [.open])
     }
@@ -92,9 +92,36 @@ struct DisplayCommandTests {
         let clock = ScriptedClock()
         await #expect {
             try await posture(.open, timeout: 1, on: backend, clock: clock)
-        } throws: { "\($0)" == "The emulator did not report open within 1 s. Check with `offsider posture --device SIM`." }
+        } throws: { "\($0)" == "The simulator did not report open within 1 s. Check with `offsider posture --device SIM`." }
         #expect(backend.requestedPostures == [.open, .open])
         #expect(clock.now >= 1)
+    }
+
+    @Test("--angle moves the hinge, waits for the reading, then reports the posture once it settles")
+    func angle() async throws {
+        let backend = Self.folded(screen: Self.innerScreen)
+        backend.hingeAngles = [180, 150, 121, 120]
+        backend.postures = [.open, .halfOpened, .halfOpened]
+        #expect(try await posture(nil, angle: 120, json: true, on: backend) == #"{"posture":"half-opened","previous":"open","display":"inner","screen":{"width":951,"height":669}}"#)
+        #expect(backend.requestedAngles == [120])
+        #expect(backend.requestedPostures.isEmpty)
+    }
+
+    @Test("--angle that the hinge never reads times out naming the angle")
+    func angleTimesOut() async {
+        let backend = Self.folded()
+        backend.hingeAngles = [0]
+        await #expect {
+            try await posture(nil, angle: 90, timeout: 1, on: backend)
+        } throws: { "\($0)" == "The hinge did not reach 90 degrees within 1 s. Check with `offsider posture --device SIM`." }
+        #expect(backend.requestedAngles == [90, 90])
+    }
+
+    @Test("posture --angle validates its range and refuses a posture name too")
+    func angleValidation() throws {
+        #expect(throws: (any Error).self) { try PostureCommand.parse(["--angle", "181", "--device", "SIM"]) }
+        #expect(throws: (any Error).self) { try PostureCommand.parse(["open", "--angle", "90", "--device", "SIM"]) }
+        #expect(try PostureCommand.parse(["--angle", "0", "--device", "SIM"]).angle == 0)
     }
 
     @Test("describe-ui --display accepts the active display and refuses one that is not active")
@@ -105,7 +132,7 @@ struct DisplayCommandTests {
         await #expect {
             try await DescribeUI.requireActive(try DisplayOption.parse(["--display", "3"]), on: route, deviceName: "SIM")
         } throws: {
-            "\($0)" == "describe-ui reads the active display only, and inner is not active (posture closed). Unfold the simulator in Device Hub, then retry."
+            "\($0)" == "describe-ui reads the active display only, and inner is not active (posture closed). Unfold the simulator with `offsider posture open --device SIM`, then retry."
         }
         await #expect {
             try await DescribeUI.requireActive(try DisplayOption.parse(["--display", "external"]), on: route, deviceName: "SIM")
@@ -121,7 +148,7 @@ struct DisplayCommandTests {
         let report = try ScreenCapture.render(capture, request: ScreenshotRequest(scale: .points)).report(path: nil, format: nil, capture: capture)
 
         #expect(backend.capturedDisplays == ["3"])
-        #expect(report.jsonLine() == #"{"path":null,"width":669,"height":951,"pixelsPerPoint":1,"region":null,"orientation":"portrait","rotation":90,"display":{"id":"inner","platformId":"3"},"posture":"closed","upright":true,"format":null}"#)
+        #expect(report.jsonLine() == #"{"path":null,"width":669,"height":951,"pixelsPerPoint":1,"region":null,"orientation":"portrait","rotation":null,"display":{"id":"inner","platformId":"3"},"posture":"closed","upright":true,"format":null}"#)
     }
 
     @Test("screenshot --display on the active display uses the device's screen")

@@ -34,6 +34,9 @@ final class FakeDeviceBackend: DeviceBackend {
     var postures: [Posture?] = []
     var postureRequestError: (any Error)?
     private(set) var requestedPostures: [Posture] = []
+    /// Hinge readings in order; the last repeats.
+    var hingeAngles: [Double] = []
+    private(set) var requestedAngles: [Int] = []
     private(set) var capturedDisplays: [String?] = []
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
@@ -123,7 +126,16 @@ final class FakeDeviceBackend: DeviceBackend {
     func volatileScreenBands(for id: DeviceID) async -> ScreenBands { bands }
 }
 
-extension FakeDeviceBackend: DisplayControlling, PostureControlling, DisplayCapturing {
+extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeControlling, DisplayCapturing {
+    func hingeAngle(of id: DeviceID) async throws -> Double? {
+        guard !hingeAngles.isEmpty else { return nil }
+        return hingeAngles.count > 1 ? hingeAngles.removeFirst() : hingeAngles[0]
+    }
+
+    func requestHingeAngle(_ degrees: Int, on id: DeviceID) async throws {
+        requestedAngles.append(degrees)
+    }
+
     func displays(of id: DeviceID) async throws -> DisplayList { displayList }
 
     func posture(of id: DeviceID) async throws -> Posture? {

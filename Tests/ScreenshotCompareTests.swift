@@ -209,22 +209,19 @@ struct ScreenshotCompareTests {
         #expect(line == #"{"path":null,"width":1398,"height":2034,"pixelsPerPoint":3,"region":null,"orientation":"portrait","rotation":0,"display":{"id":"cover","platformId":"1"},"posture":"closed","upright":true,"format":null}"#)
     }
 
-    @Test("A sideways-native framebuffer is turned by its native orientation, as input maps points onto it", arguments: OrientationCoordinateMath.Orientation.allCases)
-    func sidewaysNative(orientation: OrientationCoordinateMath.Orientation) throws {
-        let (nativeWidth, nativeHeight) = (40, 60)
-        let logical = (x: 7, y: 3)
-        let turned = OrientationCoordinateMath.Orientation(uprightQuarterTurnsCounterclockwise: orientation.uprightQuarterTurnsCounterclockwise(nativeDegrees: 270))
-        let physical = OrientationCoordinateMath.translateToPhysical(
-            x: Double(logical.x) + 0.5, y: Double(logical.y) + 0.5,
-            orientation: turned, portraitWidth: Double(nativeWidth), portraitHeight: Double(nativeHeight)
+    @Test("simctl's capture of the unfolded Duo's inner display arrives upright: 2853 x 2007 px for a 951 x 669 pt screen, not turned")
+    func innerDisplayCapture() throws {
+        let inner = UIScreenInfo(
+            width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 270,
+            display: ScreenDisplay(id: "inner", platformId: "3"), posture: .open, captureArrivesUpright: true
         )
-        let image = TestImages.make(width: nativeWidth, height: nativeHeight, marked: [(x: Int(physical.x), y: Int(physical.y))])
-        let size = turned.isLandscape ? (nativeHeight, nativeWidth) : (nativeWidth, nativeHeight)
-        let screen = try capture(image, screen: UIScreenInfo(
-            width: Double(size.0), height: Double(size.1), scale: 1, rotation: orientation, nativeOrientationDegrees: 270
-        ))
+        let image = TestImages.make(width: 2853, height: 2007, marked: [(x: 2700, y: 100)])
+        let screen = try capture(image, screen: inner)
+        let report = try ScreenCapture.render(screen, request: ScreenshotRequest(scale: .points)).report(path: nil, format: nil, capture: screen)
 
         #expect(screen.upright)
-        #expect(TestImages.markedPixels(screen.image).map { [$0.x, $0.y] } == [[logical.x, logical.y]])
+        #expect(screen.untouchedPNG != nil)
+        #expect(TestImages.markedPixels(screen.image).map { [$0.x, $0.y] } == [[2700, 100]])
+        #expect(report.jsonLine() == #"{"path":null,"width":951,"height":669,"pixelsPerPoint":1,"region":null,"orientation":"landscape","rotation":270,"display":{"id":"inner","platformId":"3"},"posture":"open","upright":true,"format":null}"#)
     }
 }

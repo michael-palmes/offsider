@@ -167,11 +167,6 @@ extension OrientationCoordinateMath.Orientation {
         }
     }
 
-    /// Counterclockwise quarter turns for a framebuffer whose display's native orientation is `nativeDegrees`.
-    public func uprightQuarterTurnsCounterclockwise(nativeDegrees: Int) -> Int {
-        ((uprightQuarterTurnsCounterclockwise - nativeDegrees / 90) % 4 + 4) % 4
-    }
-
     /// The device orientation's degrees: landscape-left (`landscapeFlipped`) is 90.
     public var rotationDegrees: Int { DeviceOrientation(coordinateOrientation: self).rotationDegrees }
 }

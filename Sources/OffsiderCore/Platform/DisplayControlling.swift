@@ -120,6 +120,15 @@ public protocol PostureControlling: DeviceBackend {
     func requestPosture(_ posture: Posture, on id: DeviceID) async throws
 }
 
+/// Optional capability: moving a foldable's hinge to an angle.
+@MainActor
+public protocol HingeControlling: PostureControlling {
+    /// Degrees from 0 (closed) to 180 (open); nil when the device cannot say.
+    func hingeAngle(of id: DeviceID) async throws -> Double?
+    /// Dispatch only; poll `hingeAngle(of:)` to see it take effect.
+    func requestHingeAngle(_ degrees: Int, on id: DeviceID) async throws
+}
+
 /// Optional capability: capturing a chosen display.
 @MainActor
 public protocol DisplayCapturing: DeviceBackend {

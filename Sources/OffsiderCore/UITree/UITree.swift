@@ -43,8 +43,8 @@ public struct UIScreenInfo: Equatable, Sendable {
     public var display: ScreenDisplay?
     /// Nil on a device with one display.
     public var posture: Posture?
-    /// The display's native orientation in degrees, which its framebuffer arrives in; not printed.
-    public var nativeOrientationDegrees: Int
+    /// True when the capture already follows the UI (simctl's), so it is not turned; not printed.
+    public var captureArrivesUpright: Bool
 
     public init(
         width: Double,
@@ -54,7 +54,7 @@ public struct UIScreenInfo: Equatable, Sendable {
         rotationDegrees: Int? = nil,
         display: ScreenDisplay? = nil,
         posture: Posture? = nil,
-        nativeOrientationDegrees: Int = 0
+        captureArrivesUpright: Bool = false
     ) {
         self.width = width
         self.height = height
@@ -63,7 +63,7 @@ public struct UIScreenInfo: Equatable, Sendable {
         self.rotationDegrees = rotationDegrees
         self.display = display
         self.posture = posture
-        self.nativeOrientationDegrees = nativeOrientationDegrees
+        self.captureArrivesUpright = captureArrivesUpright
     }
 
     public var shape: ScreenShape { height >= width ? .portrait : .landscape }

@@ -79,12 +79,18 @@ final class IOSBackend: DeviceBackend {
     }
 
     func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+        let simulator = try await simulator(for: id)
         let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
-            from: try await simulator(for: id),
+            from: simulator,
             point: point.map { AccessibilityPoint(x: $0.x, y: $0.y) },
             logger: logger
         )
-        let tree = UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+        var tree = UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+        if displayCatalog.isFoldable(simulator),
+           let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: tree.applicationFrame),
+           let geometry = panelGeometry(on: active, of: simulator) {
+            tree.roots = UITree.correctingSidewaysApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
+        }
         if point == nil, let frame = tree.applicationFrame {
             applicationFrames[id.rawValue] = frame
         }
@@ -114,31 +120,30 @@ final class IOSBackend: DeviceBackend {
         )
     }
 
-    /// The display's points turned by its native orientation, then by the interface orientation.
+    /// The active display's UI as laid out on its panel; simctl captures it upright.
     func screenInfo(on active: ActiveDisplay, of simulator: FBSimulator) -> UIScreenInfo {
         let display = active.descriptor
-        let orientation = interfaceOrientation(on: active, of: simulator)
-        let sideways = (display.nativeOrientation / 90 % 2 == 1) != (orientation?.isLandscape == true)
+        let geometry = panelGeometry(on: active, of: simulator)
         return UIScreenInfo(
-            width: sideways ? display.pointHeight : display.pointWidth,
-            height: sideways ? display.pointWidth : display.pointHeight,
+            width: geometry?.width ?? display.pointWidth,
+            height: geometry?.height ?? display.pointHeight,
             scale: display.scale,
-            rotation: orientation,
-            rotationDegrees: active.rotationDegrees,
+            rotation: geometry?.orientation,
+            rotationDegrees: geometry?.rotationDegrees,
             display: display.screenDisplay,
             posture: active.posture,
-            nativeOrientationDegrees: display.nativeOrientation
+            captureArrivesUpright: true
         )
     }
 
-    /// SimulatorKit's reading for the display, else devicectl's display rotation turned back by the display's native orientation.
-    func interfaceOrientation(on active: ActiveDisplay, of simulator: FBSimulator) -> OrientationCoordinateMath.Orientation? {
+    /// SimulatorKit's reading for the display's screen, else devicectl's rotation; both are the UI's turn on the panel, not the device's.
+    func panelGeometry(on active: ActiveDisplay, of simulator: FBSimulator) -> PanelGeometry? {
         let display = active.descriptor
         if let read = SimulatorOrientationReader.currentOrientation(of: simulator, screenID: Int(display.platformId) ?? 1, logger: logger) {
-            return read.coreOrientation
+            return PanelGeometry(display: display, orientation: read.coreOrientation)
         }
-        guard let degrees = active.rotationDegrees else { return nil }
-        return DeviceOrientation(rotationDegrees: (degrees + display.nativeOrientation) % 360)?.coordinateOrientation
+        guard let degrees = active.rotationDegrees, let orientation = DeviceOrientation(rotationDegrees: degrees) else { return nil }
+        return PanelGeometry(display: display, orientation: orientation.coordinateOrientation)
     }
 
     func deviceCoordinates(
@@ -161,6 +166,9 @@ final class IOSBackend: DeviceBackend {
     }
 
     func openInputSession(for id: DeviceID) async throws -> any InputSession {
+        if let session = try await displayInputSession(for: id) {
+            return session
+        }
         let hidSession = try await Timings.measure("hid-session") {
             try await HIDInteractor.makeSession(for: id.rawValue, logger: logger)
         }
@@ -168,8 +176,32 @@ final class IOSBackend: DeviceBackend {
         return IOSInputSession(hidSession: hidSession, logger: logger)
     }
 
-    /// Nonisolated so the blocking broker exchange stays off the main actor, as when `touch` called it directly.
-    nonisolated func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
+    /// The broker keeps idb's main-screen digitizer between commands; another display's touches only live as long as this command.
+    func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
+        guard let session = try await displayInputSession(for: id) else {
+            try await Self.sendThroughBroker(steps, to: id)
+            return
+        }
+        guard case .down = steps.first, case .up = steps.last else {
+            throw CLIError(errorDescription: "touch --down or --up alone is not supported on the iPhone Duo's inner display yet; pass --down and --up together, or fold the simulator to use the cover display.")
+        }
+        do {
+            for step in steps {
+                switch step {
+                case let .down(x, y): try await session.perform(.touch(direction: .down, x: x, y: y))
+                case let .up(x, y): try await session.perform(.touch(direction: .up, x: x, y: y))
+                case let .hold(seconds): try await Task.sleep(for: .seconds(seconds))
+                }
+            }
+        } catch {
+            await session.close()
+            throw error
+        }
+        await session.close()
+    }
+
+    /// Nonisolated so the blocking broker exchange stays off the main actor.
+    nonisolated private static func sendThroughBroker(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         try HIDBroker.sendTouchPrimitives(steps.map(\.brokerPrimitive), simulatorUDID: id.rawValue)
     }
 

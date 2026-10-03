@@ -99,11 +99,11 @@ enum ScreenCapture {
         return try make(png: png, platform: device.platform, screen: screen)
     }
 
-    /// iOS framebuffers stay in the display's native orientation when the screen turns, so they are rotated here; Android frames arrive upright.
+    /// idb's iOS framebuffer stays in the display's native orientation when the screen turns, so it is rotated here; simctl and Android captures arrive upright.
     nonisolated static func make(png: Data, platform: DevicePlatform, screen: UIScreenInfo?) throws -> CapturedScreen {
         let decoded = try ScreenImage.decode(png)
-        let turns = platform == .ios
-            ? (screen?.rotation?.uprightQuarterTurnsCounterclockwise(nativeDegrees: screen?.nativeOrientationDegrees ?? 0) ?? 0)
+        let turns = platform == .ios && screen?.captureArrivesUpright != true
+            ? (screen?.rotation?.uprightQuarterTurnsCounterclockwise ?? 0)
             : 0
         let image = try ScreenImage.rotated(decoded, quarterTurnsCounterclockwise: turns)
         let pixelsPerPoint = screen.flatMap {

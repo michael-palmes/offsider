@@ -14,11 +14,12 @@ extension IOSBackend: DisplayControlling {
         }
         let screen = screenInfo(on: active, of: simulator)
         let posture = await displayCatalog.posture(of: simulator, applicationFrame: frame)
+        // An inactive display shows no UI, so it has no rotation to report.
         let displays = (displayCatalog.profile(of: simulator) ?? []).map { descriptor in
             guard descriptor.platformId == active.descriptor.platformId else {
                 return DisplayInfo(
                     descriptor: descriptor, pointWidth: descriptor.pointWidth, pointHeight: descriptor.pointHeight,
-                    rotationDegrees: active.rotations[descriptor.platformId], active: false
+                    rotationDegrees: nil, active: false
                 )
             }
             return DisplayInfo(
@@ -47,7 +48,7 @@ extension IOSBackend: DisplayControlling {
         return DisplayList(displays: [display], posture: nil)
     }
 
-    /// On a foldable, the active display's coordinates; nil leaves a one-display simulator to the usual mapping.
+    /// On a foldable, the active display's coordinates in idb's main-screen points; nil leaves a one-display simulator to the usual mapping.
     func foldableCoordinates(
         for points: [(x: Double, y: Double)],
         tree: UITree?,
@@ -63,35 +64,46 @@ extension IOSBackend: DisplayControlling {
         }
         let frame = resolvedTree.applicationFrame
         guard let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: frame, preferFrame: true),
-              let main = simulator.screenInfo, main.scale > 0 else {
+              let main = mainScreenPoints(of: simulator) else {
             return nil
         }
         let display = active.descriptor
-        let screenID = Int(display.platformId) ?? 1
-        if display.pixelWidth == Int(main.widthPixels), display.pixelHeight == Int(main.heightPixels) {
+        if Self.isMainScreen(display, main: main) {
             return try await OrientationAwareCoordinates.translateBatch(
-                points: points, applicationFrame: frame, for: id.rawValue, screenID: screenID, logger: logger
+                points: points, applicationFrame: frame, for: id.rawValue, screenID: Int(display.platformId) ?? 1, logger: logger
             )
         }
-        let orientation = interfaceOrientation(on: active, of: simulator) ?? .portrait
-        let turned = OrientationCoordinateMath.Orientation(
-            uprightQuarterTurnsCounterclockwise: orientation.uprightQuarterTurnsCounterclockwise(nativeDegrees: display.nativeOrientation)
-        )
-        let mainScale = Double(main.scale)
-        return points.map { point in
-            let physical = OrientationCoordinateMath.translateToPhysical(
-                x: point.x, y: point.y, orientation: turned, portraitWidth: display.pointWidth, portraitHeight: display.pointHeight
-            )
-            return OrientationCoordinateMath.scaleToMainScreen(
-                x: physical.x, y: physical.y,
-                displayWidth: display.pointWidth, displayHeight: display.pointHeight,
-                mainWidth: Double(main.widthPixels) / mainScale, mainHeight: Double(main.heightPixels) / mainScale
-            )
+        guard let geometry = panelGeometry(on: active, of: simulator) else {
+            throw CLIError(errorDescription: "Offsider could not read how the UI is turned on the \(display.role.rawValue) display of \(id.rawValue), so it cannot place input there. Check with `offsider displays --device \(id.rawValue)`, then retry.")
         }
+        return points.map { geometry.mainScreenPoint(x: $0.x, y: $0.y, mainWidth: main.width, mainHeight: main.height) }
+    }
+
+    /// A session for a foldable's display that is not the main screen, whose touchscreen idb cannot reach; nil otherwise.
+    func displayInputSession(for id: DeviceID) async throws -> IOSDisplayInputSession? {
+        let simulator = try await simulator(for: id)
+        guard displayCatalog.isFoldable(simulator),
+              let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: applicationFrames[id.rawValue]),
+              let main = mainScreenPoints(of: simulator),
+              !Self.isMainScreen(active.descriptor, main: main),
+              let screenID = UInt64(active.descriptor.platformId) else {
+            return nil
+        }
+        return IOSDisplayInputSession(device: id, simulator: simulator, screenID: screenID, mainSize: main, logger: logger)
+    }
+
+    /// The device type's main screen, whose points idb turns into touch fractions.
+    private func mainScreenPoints(of simulator: FBSimulator) -> (width: Double, height: Double)? {
+        guard let main = simulator.screenInfo, main.scale > 0 else { return nil }
+        return (Double(main.widthPixels) / Double(main.scale), Double(main.heightPixels) / Double(main.scale))
+    }
+
+    static func isMainScreen(_ display: DisplayDescriptor, main: (width: Double, height: Double)) -> Bool {
+        abs(display.pointWidth - main.width) < 0.5 && abs(display.pointHeight - main.height) < 0.5
     }
 }
 
-extension IOSBackend: PostureControlling {
+extension IOSBackend: PostureControlling, HingeControlling {
     func posture(of id: DeviceID) async throws -> Posture? {
         let simulator = try await simulator(for: id)
         guard displayCatalog.isFoldable(simulator) else { return nil }
@@ -99,10 +111,35 @@ extension IOSBackend: PostureControlling {
     }
 
     func requestPosture(_ posture: Posture, on id: DeviceID) async throws {
-        throw CLIError(errorDescription: Self.postureUnavailable(device: id.rawValue))
+        guard let angle = HingeControl.angle(for: posture) else {
+            throw CLIError(errorDescription: "Posture \(posture.rawValue) cannot be set. Use closed, half-opened or open.")
+        }
+        try await requestHingeAngle(angle, on: id)
+    }
+
+    func hingeAngle(of id: DeviceID) async throws -> Double? {
+        let simulator = try await simulator(for: id)
+        guard displayCatalog.isFoldable(simulator) else { return nil }
+        return await displayCatalog.hingeAngle(of: simulator)
+    }
+
+    /// Sweeps from the hinge's reading, else the last posture's angle: the panels only swap when the hinge moves smoothly. Dispatch only.
+    func requestHingeAngle(_ degrees: Int, on id: DeviceID) async throws {
+        let simulator = try await simulator(for: id)
+        guard displayCatalog.isFoldable(simulator) else {
+            throw CLIError(errorDescription: DisplayReport.notFoldable(device: id.rawValue))
+        }
+        let reading = await displayCatalog.hingeAngle(of: simulator).map { Int($0.rounded()) }
+        let start = reading.flatMap { $0 == degrees ? nil : $0 } ?? HingeControl.start(from: displayCatalog.lastPosture(of: simulator), to: degrees)
+        do {
+            try await HingeInjector.sweep(simulator, from: start, to: degrees, logger: logger)
+        } catch let failure as SimulatorDTUHID.Failure {
+            logger.info().log("Hinge: \(failure)")
+            throw CLIError(errorDescription: Self.postureUnavailable(device: id.rawValue))
+        }
     }
 
     static func postureUnavailable(device: String) -> String {
-        "Setting the posture is not available on iOS simulators: no simulator tool folds the device. Fold or unfold it in Device Hub, then check with `offsider posture --device \(device)`."
+        "Setting the posture is not available on this iOS simulator: its runtime has no hinge service Offsider can reach. Fold or unfold it in Device Hub, then check with `offsider posture --device \(device)`."
     }
 }

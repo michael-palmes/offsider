@@ -10,6 +10,7 @@ final class IOSDisplayCatalog {
     private let logger: OffsiderLogger
     private var profiles: [String: [DisplayDescriptor]] = [:]
     private var actives: [String: ActiveDisplay] = [:]
+    private var postures: [String: Posture] = [:]
 
     init(logger: OffsiderLogger) {
         self.logger = logger
@@ -56,11 +57,23 @@ final class IOSDisplayCatalog {
     /// The posture, refined by a short hinge reading when the inner display is active, as only the hinge can tell half-opened from open.
     func posture(of simulator: FBSimulator, applicationFrame: UIFrame?, refresh: Bool = false) async -> Posture? {
         guard let active = await activeDisplay(of: simulator, applicationFrame: applicationFrame, refresh: refresh) else { return nil }
-        guard active.posture == .open, let angle = await Self.hingeAngle(udid: simulator.udid, logger: logger) else {
-            return active.posture
+        var posture = active.posture
+        if active.posture == .open, let angle = await Self.hingeAngle(udid: simulator.udid, logger: logger) {
+            logger.info().log("Hinge angle: \(angle)")
+            posture = Posture(hingeAngle: angle) == .halfOpened ? .halfOpened : .open
         }
-        logger.info().log("Hinge angle: \(angle)")
-        return Posture(hingeAngle: angle) == .halfOpened ? .halfOpened : .open
+        postures[simulator.udid] = posture
+        return posture
+    }
+
+    /// The posture this command last read, else the cached active display's.
+    func lastPosture(of simulator: FBSimulator) -> Posture? {
+        postures[simulator.udid] ?? actives[simulator.udid]?.posture
+    }
+
+    /// devicectl's hinge reading in degrees; nil when it gives none within a few seconds.
+    func hingeAngle(of simulator: FBSimulator) async -> Double? {
+        await Self.hingeAngle(udid: simulator.udid, logger: logger)
     }
 
     // MARK: - Sources
@@ -112,26 +125,22 @@ final class IOSDisplayCatalog {
         }
     }
 
-    /// `devicectl device motion hinge-angle` streams until its session ends, so read the first angle and stop it.
+    /// `devicectl device motion hinge-angle` streams until its session ends and only flushes a pipe when it exits, so it writes to a terminal and the first angle is read from that.
     private static func hingeAngle(udid: String, logger: OffsiderLogger, timeout: TimeInterval = 5) async -> Double? {
+        var primary: Int32 = -1
+        var secondary: Int32 = -1
+        guard openpty(&primary, &secondary, nil, nil, nil) == 0 else {
+            logger.info().log("Hinge angle: could not open a terminal for devicectl")
+            return nil
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = ["devicectl", "device", "motion", "hinge-angle", "--device", udid, "--session-timeout", "3", "--timeout", "8"]
         process.standardInput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        let pipe = Pipe()
-        process.standardOutput = pipe
+        process.standardOutput = FileHandle(fileDescriptor: secondary, closeOnDealloc: false)
         let buffer = LineBuffer()
-        pipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil
-            } else {
-                buffer.append(chunk)
-            }
-        }
         defer {
-            pipe.fileHandleForReading.readabilityHandler = nil
             if process.isRunning {
                 process.terminate()
                 usleep(100_000)
@@ -142,7 +151,21 @@ final class IOSDisplayCatalog {
             try process.run()
         } catch {
             logger.info().log("Hinge angle: could not run devicectl: \(error)")
+            close(primary)
+            close(secondary)
             return nil
+        }
+        close(secondary)
+        let terminal = primary
+        // A dispatch source never fires for a terminal, so a thread reads it until devicectl exits.
+        Thread.detachNewThread {
+            var bytes = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let count = read(terminal, &bytes, bytes.count)
+                guard count > 0 else { break }
+                buffer.append(Data(bytes[0..<count]))
+            }
+            close(terminal)
         }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

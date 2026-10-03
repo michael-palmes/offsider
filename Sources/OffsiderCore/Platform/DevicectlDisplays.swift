@@ -7,7 +7,7 @@ public struct DevicectlDisplays: Equatable, Sendable {
         public var name: String
         public var active: Bool
         public var primary: Bool
-        /// Degrees from `currentOrientation` (`rot90` is 90); nil when missing or unrecognised.
+        /// Clockwise degrees from `currentOrientation` (`rot90` is 90); nil when missing or unrecognised.
         public var currentRotation: Int?
         public var integrated: Bool
 
@@ -54,12 +54,17 @@ public struct DevicectlDisplays: Equatable, Sendable {
         return value
     }
 
-    /// The first `Angle:` reading in `devicectl device motion hinge-angle` output.
+    /// devicectl turns clockwise; Offsider's rotations are anticlockwise.
+    public static func anticlockwise(_ clockwise: Int) -> Int {
+        (360 - clockwise % 360) % 360
+    }
+
+    /// The first `Angle:` reading in `devicectl device motion hinge-angle` output, whose numbers carry a degree sign.
     public static func hingeAngle(in text: String) -> Double? {
         for line in text.split(whereSeparator: \.isNewline) {
             guard let range = line.range(of: "Angle:") else { continue }
-            let value = line[range.upperBound...].split(separator: " ", omittingEmptySubsequences: true).first
-            if let value, let angle = Double(value) { return angle }
+            let value = line[range.upperBound...].drop { $0 == " " }.prefix { $0.isNumber || $0 == "." || $0 == "-" || $0 == "+" }
+            if let angle = Double(value) { return angle }
         }
         return nil
     }
@@ -75,20 +80,17 @@ public struct ActiveDisplay: Equatable, Sendable {
     }
 
     public var descriptor: DisplayDescriptor
-    /// From devicectl; nil when it did not say.
+    /// Anticlockwise, from devicectl; nil when it did not say.
     public var rotationDegrees: Int?
     /// Nil on a device with one display.
     public var posture: Posture?
     public var source: Source
-    /// devicectl's rotation for each display, by platform id.
-    public var rotations: [String: Int]
 
-    public init(descriptor: DisplayDescriptor, rotationDegrees: Int?, posture: Posture?, source: Source, rotations: [String: Int] = [:]) {
+    public init(descriptor: DisplayDescriptor, rotationDegrees: Int?, posture: Posture?, source: Source) {
         self.descriptor = descriptor
         self.rotationDegrees = rotationDegrees
         self.posture = posture
         self.source = source
-        self.rotations = rotations
     }
 
     /// devicectl first, then the application frame matched against each display's points, then screen 1 with an unknown posture.
@@ -101,25 +103,21 @@ public struct ActiveDisplay: Equatable, Sendable {
         guard profile.count > 1 else {
             return ActiveDisplay(descriptor: first, rotationDegrees: nil, posture: nil, source: .single)
         }
-        var rotations: [String: Int] = [:]
-        for entry in devicectl?.displays ?? [] {
-            if let rotation = entry.currentRotation { rotations[String(entry.displayId)] = rotation }
-        }
         if let entry = devicectl?.displays.first(where: \.active),
            let descriptor = profile.first(where: { $0.platformId == String(entry.displayId) }) {
             return ActiveDisplay(
-                descriptor: descriptor, rotationDegrees: entry.currentRotation, posture: posture(for: descriptor.role),
-                source: .devicectl, rotations: rotations
+                descriptor: descriptor, rotationDegrees: entry.currentRotation.map(DevicectlDisplays.anticlockwise), posture: posture(for: descriptor.role),
+                source: .devicectl
             )
         }
         if let frame = applicationFrame {
             let matches = profile.filter { matches(frame, $0) }
             if matches.count == 1 {
-                return ActiveDisplay(descriptor: matches[0], rotationDegrees: nil, posture: posture(for: matches[0].role), source: .applicationFrame, rotations: rotations)
+                return ActiveDisplay(descriptor: matches[0], rotationDegrees: nil, posture: posture(for: matches[0].role), source: .applicationFrame)
             }
         }
         let fallback = profile.first { $0.platformId == "1" } ?? first
-        return ActiveDisplay(descriptor: fallback, rotationDegrees: nil, posture: .unknown, source: .fallback, rotations: rotations)
+        return ActiveDisplay(descriptor: fallback, rotationDegrees: nil, posture: .unknown, source: .fallback)
     }
 
     /// Closed on the cover, open on the inner display; a half-opened posture needs a hinge reading.
