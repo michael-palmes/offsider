@@ -22,8 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - When no `--label` or `--value` matches exactly, typographic quotes and unusual spaces are folded, so `--label "Don't Allow"` finds `Don’t Allow`. A selector that matches nothing suggests the closest labels.
 - `doctor` names the Xcode a running Simulator.app belongs to and, when it is not the selected one, suggests `DEVELOPER_DIR` before quitting it.
 - `OFFSIDER_TIMINGS=1` prints phase timings to stderr.
-- `orientation --rotation 0|90|180|270` sets the orientation in degrees anticlockwise from the display's natural orientation, and `orientation --json` prints `orientation`, `rotation`, `previous` and `screen`.
-- `describe-ui` `screen` adds `rotation` (degrees anticlockwise from the active display's natural orientation), `display` (`{id, platformId}`: `main`, or `cover` or `inner` on a foldable) and `posture` (null unless the device folds); the `--summary` header adds the rotation, and the display and posture on a foldable. `screenshot --json` adds the same `rotation`, `display` and `posture`.
+- `orientation --rotation 0|90|180|270` sets the orientation as the device's anticlockwise turn from portrait, and `orientation --json` prints `orientation`, `rotation`, `previous` and `screen`.
+- `describe-ui` `screen` adds `rotation` (the device's anticlockwise turn from portrait in degrees, the number `orientation --json` prints, on a landscape-natural Android panel too), `display` (`{id, platformId}`: `main`, or `cover` or `inner` on a foldable) and `posture` (null unless the device folds); the `--summary` header adds the rotation, and the display and posture on a foldable. `screenshot --json` adds the same `rotation`, `display` and `posture`.
 - `displays` lists a device's built-in displays with platform ID, size, scale, rotation and which one is active, then the posture; `--json`.
 - `posture` reads a foldable's posture and active display, and sets `closed`, `half-opened` or `open`: on an Android emulator through the emulator, on the iPhone Duo simulator by driving its hinge (`--angle 0-180`), waiting until the display has swapped. Where an iOS runtime has no hinge service the command says so.
 - On the iPhone Duo's inner display, `tap`, `swipe`, `drag` and `touch --down --up` reach the display through its own touchscreen; a detached `touch --down` or `--up` on it is refused with a message.
@@ -35,7 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - **Breaking, relative to the earlier entries in this section:** `orientation` names the device turn, as Maestro and devicectl do. `landscape-left` now means the device turned 90 degrees anticlockwise, with the home edge on the right (UIKit's interface orientation `landscape-right`), and `landscape-right` the reverse; they used to take UIKit's interface names.
-- **Breaking, relative to the earlier entries in this section:** `describe-ui` `screen.orientation` and `screenshot --json` `orientation` are the shape, `portrait` or `landscape`; the turn is in the new `rotation`.
+- **Breaking:** `describe-ui` JSON `version` is now 2: `screen.orientation` and `screenshot --json` `orientation` are the shape, `portrait` or `landscape`, and `screen.rotation`, `screen.display` and `screen.posture` are new. In 0.3.0, `orientation` was `portrait`, `portraitUpsideDown`, `landscape` or `landscapeFlipped`; read `rotation` for the turn.
+- `posture`, `wait`, `assert` and `batch` give routing and device preparation their own 45 s watchdog allowance, separate from `--timeout`, so a cold emulator is no longer ended with "the device did not answer" before the first read.
 - Selectors prefer on-screen matches. A match whose frame lies outside the screen now fails with an error naming its frame, where `tap` used to report success, and `--wait-timeout` waits for it to come on screen. A duplicate label on a hidden view no longer counts as a second match. A partly visible element whose centre is off screen is tapped at the centre of its visible part.
 - Every iOS landscape screenshot is now upright, with or without the new `screenshot` options.
 - `batch` reads the screen again after any step that sends input or sleeps, so a selector step sees the screen its previous step opened. `--ax-cache none` is an alias of `perStep`.
@@ -55,6 +56,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A HID broker that exits just after accepting a connection is replaced, where the client used to fail with a socket error.
 - A selector `tap` or `slider` on iOS reads the accessibility tree once, not twice.
 - A failed selector `tap` prints its error once.
+- `logs --last` and `--since` refuse values beyond 8760 h or the year 9999 with a clear error instead of crashing.
+- A batch `describe-ui --display` step refuses a display that is not active, as the standalone command does.
+- `posture --angle` and `posture <name>` no longer move the iPhone Duo's hinge when it already reads the target angle and the matching display is active, so an open simulator is not closed and reopened, and a resend cannot refold a closed one; when the hinge reads the target but the other display is still showing, the hinge is swept from the far end so the panels swap.
+- On the iPhone Duo's inner display, and on an Android tablet or other landscape-natural panel, `rotation` in `describe-ui`, `screenshot --json` and `displays` is the device's turn from portrait, matching `orientation --json`; it used to be the UI's turn on the panel, 90 or 270 degrees off.
+- Polling the posture or orientation of a foldable simulator reads devicectl at most once a second instead of on every poll, and orientation retries no longer block the process.
 
 ## [0.3.0] - 2026-10-02
 
