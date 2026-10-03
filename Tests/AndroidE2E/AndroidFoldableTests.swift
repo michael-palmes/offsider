@@ -31,6 +31,12 @@ struct AndroidFoldableTests {
     struct PostureReport: Decodable {
         let posture: String
         let display: String?
+        let screen: Size?
+    }
+
+    struct Size: Decodable {
+        let width: Double
+        let height: Double
     }
 
     struct OrientationReport: Decodable {
@@ -38,16 +44,17 @@ struct AndroidFoldableTests {
         let rotation: Int
     }
 
-    /// The expected dp size, capture size and display for each settable posture.
+    /// The expected dp size, the RN readout (React Native rounds the dp size), capture size and display for each settable posture.
     struct Expected {
         let width: Double
         let height: Double
+        let window: String
         let pixels: (width: Int, height: Int)
         let display: String
     }
 
-    static let open = Expected(width: 852, height: 883, pixels: (2076, 2152), display: "inner")
-    static let closed = Expected(width: 443, height: 994, pixels: (1080, 2424), display: "cover")
+    static let open = Expected(width: 851.69, height: 882.87, window: "Window: 852x883", pixels: (2076, 2152), display: "inner")
+    static let closed = Expected(width: 443.08, height: 994.46, window: "Window: 443x994", pixels: (1080, 2424), display: "cover")
 
     static func requireFoldAVD() throws {
         try #require(AndroidE2E.expectedAVD == AndroidE2E.foldAVD, "Set OFFSIDER_ANDROID_E2E_AVD=\(AndroidE2E.foldAVD) and OFFSIDER_ANDROID_DEVICE to that emulator.")
@@ -67,35 +74,35 @@ struct AndroidFoldableTests {
         return try await decode(Capture.self, "screenshot --json --output \(AndroidE2E.quote(output.path))")
     }
 
-    static func windowSize(_ label: String) -> (width: Double, height: Double)? {
-        let parts = label.replacingOccurrences(of: "Window: ", with: "").split(separator: "x").compactMap { Double($0) }
-        return parts.count == 2 ? (parts[0], parts[1]) : nil
+    /// Folding a Pixel puts "Swipe up to continue" over the app on the cover (its default for apps on fold), so swipe up as a user would.
+    static func continueOnCover() async throws {
+        let window = try await AndroidE2E.shell("dumpsys window | grep isKeyguardShowing || true", timeout: 30)
+        if window.contains("isKeyguardShowing=true") {
+            try await AndroidE2E.run("swipe --start-x 221 --start-y 960 --end-x 221 --end-y 400 --duration 0.3")
+        }
     }
 
-    static func close(_ value: Double, _ expected: Double) -> Bool {
-        abs(value - expected) <= 2
-    }
-
-    /// Sets the posture, then checks the posture report, describe-ui's screen, the app's window readout and a capture.
+    /// Sets the posture, then checks the report, describe-ui's screen, the app's readout (its activity stays open and resizes) and a capture.
     static func fold(to posture: String, expecting expected: Expected) async throws {
         let report = try await decode(PostureReport.self, "posture \(posture) --timeout 30 --json")
         #expect(report.posture == posture)
         #expect(report.display == expected.display)
+        #expect(report.screen.map { ($0.width, $0.height) } ?? (0, 0) == (expected.width, expected.height), "\(posture): posture reports \(String(describing: report.screen))")
 
-        var screen = try await Self.screen()
-        let settled = try await AndroidE2E.eventually(timeout: 20) {
-            screen = try await Self.screen()
-            return close(screen.width, expected.width) && close(screen.height, expected.height)
-        }
-        #expect(settled, "\(posture): describe-ui reports \(screen.width) x \(screen.height), expected about \(expected.width) x \(expected.height)")
+        let screen = try await Self.screen()
+        #expect((screen.width, screen.height) == (expected.width, expected.height), "\(posture): describe-ui reports \(screen.width) x \(screen.height)")
         #expect(screen.display?.id == expected.display)
         #expect(screen.posture == posture)
 
-        let label = try await AndroidE2E.waitForLabel(of: "environment-test-window", timeout: 30) { label in
-            guard let size = windowSize(label) else { return false }
-            return close(size.width, expected.width) && close(size.height, expected.height)
+        var label: String?
+        let shown = try await AndroidE2E.eventually(timeout: 30, every: .seconds(1)) {
+            if posture == "closed" {
+                try await continueOnCover()
+            }
+            label = try? await AndroidE2E.label(of: "environment-test-window")
+            return label == expected.window
         }
-        #expect(label.hasPrefix("Window: "), "\(label)")
+        #expect(shown, "\(posture): the app's window reads \(label ?? "nothing"), expected \(expected.window)")
 
         let capture = try await Self.capture()
         #expect(capture.width == expected.pixels.width && capture.height == expected.pixels.height, "\(posture): \(capture.width) x \(capture.height)")
