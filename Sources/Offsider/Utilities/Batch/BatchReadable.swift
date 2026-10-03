@@ -65,6 +65,7 @@ extension Assert: BatchReadable {
 
 extension DescribeUI: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
+        try await Self.requireActive(displayOption, on: context.route, deviceName: context.device.rawValue)
         let tree: UITree
         if let point = try parsedPoint() {
             tree = try await context.backend.accessibilityTree(for: context.device, point: point)

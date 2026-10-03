@@ -254,6 +254,23 @@ struct BatchReadStepTests {
         #expect(tree == (try JSONSerialization.jsonObject(with: standalone) as? NSDictionary))
     }
 
+    @Test("a describe-ui --display step refuses a display that is not active, as the standalone command does")
+    func describeRefusesInactiveDisplay() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        backend.displayList = DisplayReportTests.folded
+        let captured = Captured()
+
+        let code = try await Self.exitCode(["describe-ui --display inner"], on: backend, captured: captured)
+
+        #expect(code == 1)
+        #expect(captured.err.contains("describe-ui reads the active display only, and inner is not active (posture closed)."))
+        #expect(backend.treeReads == 0)
+
+        let active = Captured()
+        try await Self.run(["describe-ui --display cover --summary"], on: backend, captured: active)
+        #expect(backend.treeReads == 1)
+    }
+
     @Test("an unchanged screenshot --compare fails the step with exit 5")
     func unchangedCompareExitsFive() async throws {
         let directory = try Self.temporaryDirectory()
