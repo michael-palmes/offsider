@@ -32,20 +32,23 @@ struct Assert: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let outcome = try await DeviceWatchdog().guarding(bound: 0, device: deviceOption.id) {
+        let outcome = try await DeviceWatchdog().guarding(setupThen: 0, device: deviceOption.id) { ready in
             let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-            return try await evaluate(on: route, logger: logger)
+            return try await evaluate(on: route, logger: logger, onPrepared: ready)
         }
         try Wait.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
     }
 
     /// One read on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree read.
     @MainActor
-    func evaluate(on route: DeviceRouter.Route, logger: OffsiderLogger, tree: Wait.TreeSource? = nil) async throws -> WaitOutcome {
+    func evaluate(
+        on route: DeviceRouter.Route, logger: OffsiderLogger, tree: Wait.TreeSource? = nil, onPrepared: @Sendable () -> Void = {}
+    ) async throws -> WaitOutcome {
         guard let query = selector.query else {
             throw CLIError(errorDescription: "Unexpected state: no element query.")
         }
         try await route.backend.prepare()
+        onPrepared()
         return try await WaitLoop.run(
             .element(probe: selector.probe(for: query), gone: gone),
             timeout: 0,

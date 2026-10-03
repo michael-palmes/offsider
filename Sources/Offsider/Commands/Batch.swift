@@ -103,14 +103,18 @@ struct Batch: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger(writeToStdErr: verbose)
-        try await run(on: try await DeviceRouter.route(deviceOption.id, logger: logger), logger: logger)
+        let watchdog = DeviceWatchdog()
+        let route = try await watchdog.guardingSetup(device: deviceOption.id) {
+            try await DeviceRouter.route(deviceOption.id, logger: logger)
+        }
+        try await run(on: route, logger: logger, watchdog: watchdog)
     }
 
     /// Every step shares one input session, so an Android batch holds one gRPC client or adb executor throughout.
-    func run(on route: DeviceRouter.Route, logger: OffsiderLogger) async throws {
+    func run(on route: DeviceRouter.Route, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         let backend = route.backend
         let device = route.device
-        try await backend.prepare()
+        try await watchdog.guardingSetup(device: device.rawValue) { try await backend.prepare() }
 
         let stepLines = try loadStepLines()
         if stepLines.isEmpty {
@@ -131,11 +135,12 @@ struct Batch: AsyncParsableCommand {
                 typeChunkSize: typeChunkSize,
                 tapStyle: tapStyle,
                 waitTimeout: waitTimeout,
-                pollInterval: pollInterval
+                pollInterval: pollInterval,
+                watchdog: watchdog
             )
         }
 
-        let session = try await backend.openInputSession(for: device)
+        let session = try await watchdog.guardingSetup(device: device.rawValue) { try await backend.openInputSession(for: device) }
         let output = BatchOutput.console(json: json)
 
         do {

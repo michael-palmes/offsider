@@ -25,7 +25,7 @@ final class BatchContext {
     let tapStyle: TapStyle
     let waitTimeout: TimeInterval
     let pollInterval: TimeInterval
-    /// Armed around each wait and assert step, as the standalone commands arm it.
+    /// Armed for the batch's setup, then around each wait and assert step as the standalone commands arm it.
     let watchdog: DeviceWatchdog
 
     private var cachedTree: UITree?

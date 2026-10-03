@@ -112,9 +112,9 @@ struct Wait: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let outcome = try await DeviceWatchdog().guarding(bound: watchdogBound, device: deviceOption.id) {
+        let outcome = try await DeviceWatchdog().guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
             let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-            return try await evaluate(on: route, logger: logger)
+            return try await evaluate(on: route, logger: logger, onPrepared: ready)
         }
         try Self.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
     }
@@ -124,8 +124,15 @@ struct Wait: AsyncParsableCommand {
 
     /// Waits on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree reads.
     @MainActor
-    func evaluate(on route: DeviceRouter.Route, logger: OffsiderLogger, tree: TreeSource? = nil, clock: PollClock = .live) async throws -> WaitOutcome {
+    func evaluate(
+        on route: DeviceRouter.Route,
+        logger: OffsiderLogger,
+        tree: TreeSource? = nil,
+        clock: PollClock = .live,
+        onPrepared: @Sendable () -> Void = {}
+    ) async throws -> WaitOutcome {
         try await route.backend.prepare()
+        onPrepared()
         let sources = try await liveSources(on: route, tree: tree, clock: clock)
         logger.info().log("Waiting for \(target)")
         return try await WaitLoop.run(condition, timeout: timeout, interval: pollInterval, sources: sources)
