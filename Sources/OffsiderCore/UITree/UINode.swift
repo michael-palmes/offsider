@@ -24,6 +24,17 @@ public struct UIPoint: Equatable, Sendable {
     }
 }
 
+/// Points on iOS, dp on Android, in the current orientation.
+public struct UISize: Equatable, Sendable {
+    public var width: Double
+    public var height: Double
+
+    public init(width: Double, height: Double) {
+        self.width = width
+        self.height = height
+    }
+}
+
 /// Toggle, selection and focus state; `nil` when the platform does not report it.
 public struct UIState: Equatable, Sendable {
     public var checked: Bool?

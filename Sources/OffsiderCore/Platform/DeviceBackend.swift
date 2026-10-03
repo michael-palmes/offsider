@@ -28,6 +28,8 @@ public protocol DeviceBackend: AnyObject {
     func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree
     /// For `describe-ui` only; nil when the platform cannot report it.
     func screenInfo(for id: DeviceID) async throws -> UIScreenInfo?
+    /// The screen's size alone, for a bounds check that does not need the display or posture; nil when the platform cannot report it.
+    func screenSize(for id: DeviceID) async throws -> UISize?
     /// Logical points to input-space points; `tree` reuses an accessibility tree the caller already holds.
     func deviceCoordinates(
         for points: [(x: Double, y: Double)],
@@ -45,6 +47,10 @@ public protocol DeviceBackend: AnyObject {
 
 extension DeviceBackend {
     public func close() async {}
+
+    public func screenSize(for id: DeviceID) async throws -> UISize? {
+        try await screenInfo(for: id).map { UISize(width: $0.width, height: $0.height) }
+    }
 
     public func accessibilityTree(for id: DeviceID) async throws -> UITree {
         try await accessibilityTree(for: id, point: nil)

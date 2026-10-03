@@ -85,6 +85,15 @@ struct AndroidBackendTests {
         ))
     }
 
+    @Test("screen size comes from the display probe alone")
+    func screenSize() async throws {
+        let server = Self.server()
+        let size = try await Self.backend(server).screenSize(for: Self.device)
+
+        #expect(size == UISize(width: 411.43, height: 923.43))
+        #expect(!server.services.contains { $0.contains("device_state") || $0.contains("dumpsys display") })
+    }
+
     @Test("dp become logical pixels, probing the display once per command")
     func deviceCoordinates() async throws {
         let server = Self.server()
