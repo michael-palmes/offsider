@@ -16,16 +16,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `tap` warns when another element may cover its target, and `--fail-if-covered` fails instead of tapping.
 - `tap` treats a React Native LogBox banner as covering the strip beneath it on Android, where the accessibility tree cannot see its touch area.
 - `logs` prints recent device log entries or collects live ones, with `--rn` for React Native output, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw` and `--json`. Live output stops with an error when the device's log stream exits, for example on a bad `--predicate`.
-- `appearance`, `content-size` and `orientation` read or set the device's appearance, text size and interface orientation on iOS and Android; `shake` sends the shake gesture on iOS. On Android, `appearance` reads `auto` or `custom` when night mode follows a schedule, and setting light or dark replaces it.
+- `appearance`, `content-size` and `orientation` read or set the device's appearance, text size and orientation on iOS and Android; `shake` sends the shake gesture on iOS. On Android, `appearance` reads `auto` or `custom` when night mode follows a schedule, and setting light or dark replaces it.
 - `rn prepare --bundle-id <id>` marks an Expo dev client's first-launch dev menu intro as seen and stops the menu opening at launch, so a fresh debug install opens straight into the app (iOS simulators; Android debuggable builds through `run-as`). It stops the app first if it is running, on both platforms.
 - `--allow-offscreen` on `tap`, `slider` and batch tap steps resolves an element whose frame is outside the screen.
 - When no `--label` or `--value` matches exactly, typographic quotes and unusual spaces are folded, so `--label "Don't Allow"` finds `Don’t Allow`. A selector that matches nothing suggests the closest labels.
 - `doctor` names the Xcode a running Simulator.app belongs to and, when it is not the selected one, suggests `DEVELOPER_DIR` before quitting it.
 - `OFFSIDER_TIMINGS=1` prints phase timings to stderr.
+- `orientation --rotation 0|90|180|270` sets the orientation in degrees anticlockwise from the display's natural orientation, and `orientation --json` prints `orientation`, `rotation`, `previous` and `screen`.
+- `describe-ui` `screen` adds `rotation` (degrees anticlockwise from the active display's natural orientation), `display` (`{id, platformId}`: `main`, or `cover` or `inner` on a foldable) and `posture` (null unless the device folds); the `--summary` header adds the rotation, and the display and posture on a foldable. `screenshot --json` adds the same `rotation`, `display` and `posture`.
+- `displays` lists a device's built-in displays with platform ID, size, scale, rotation and which one is active, then the posture; `--json`.
+- `posture` reads a foldable's posture and active display, and sets `closed`, `half-opened` or `open` on an Android emulator, waiting until it reports it. iOS simulators fold only in Device Hub, and setting the posture there explains that.
+- `--display <id>` on `screenshot` captures one display of a foldable; on `describe-ui` it checks that the named display is the active one.
+- Screenshots on the iPhone Duo simulator capture the active display: the cover display while folded, the inner display while open.
+- A foldable E2E suite for the iPhone Duo simulator (`make e2e-foldable`, `OFFSIDER_FOLDABLE_E2E=1`) and one for a Pixel 9 Pro Fold emulator (`make e2e-android-fold`, `OFFSIDER_ANDROID_FOLD_E2E=1`).
 - React Native playground screens for kept-mounted sheets, mounted stacks, overlays, unlabelled rows and environment readouts, with iOS suites (`make e2e-rn-ios`) and a typecheck in CI.
 
 ### Changed
 
+- **Breaking, relative to the earlier entries in this section:** `orientation` names the device turn, as Maestro and devicectl do. `landscape-left` now means the device turned 90 degrees anticlockwise, with the home edge on the right (UIKit's interface orientation `landscape-right`), and `landscape-right` the reverse; they used to take UIKit's interface names.
+- **Breaking, relative to the earlier entries in this section:** `describe-ui` `screen.orientation` and `screenshot --json` `orientation` are the shape, `portrait` or `landscape`; the turn is in the new `rotation`.
 - Selectors prefer on-screen matches. A match whose frame lies outside the screen now fails with an error naming its frame, where `tap` used to report success, and `--wait-timeout` waits for it to come on screen. A duplicate label on a hidden view no longer counts as a second match. A partly visible element whose centre is off screen is tapped at the centre of its visible part.
 - Every iOS landscape screenshot is now upright, with or without the new `screenshot` options.
 - `batch` reads the screen again after any step that sends input or sleeps, so a selector step sees the screen its previous step opened. `--ax-cache none` is an alias of `perStep`.
@@ -40,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Screenshots on the iPhone Duo simulator captured the inactive inner display while it was folded.
 - `wait`, `assert` and `orientation` stop with an error when the device does not answer, where a hung simulator used to hang the command.
 - A HID broker that exits just after accepting a connection is replaced, where the client used to fail with a socket error.
 - A selector `tap` or `slider` on iOS reads the accessibility tree once, not twice.

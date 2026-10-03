@@ -114,7 +114,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `list-devices` | List iOS simulators (iPhone and iPad), running Android emulators and shut-down AVDs with their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
 | `boot` | Start an Android emulator by AVD name and wait until it has booted, then print its serial (`--headless`, `--timeout`); an AVD that is already running is not started again |
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--device` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes. Android checks are not in this release |
-| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text` and `--compact` shape the output |
+| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text` and `--compact` shape the output. `--display <id>` checks that the active display is the one you expect |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--tap-style`, delays and `--verify, --retries, --json` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`), then verify the result |
@@ -130,11 +130,13 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `wait` | Wait until an element is on screen (`--id`, `--label`, `--value`, `--has-value`) or `--gone`, the screen is `--settled`, a `--region x,y,w,h` is `--changed` or `--stable`, or `--seconds` pass; `--timeout`, `--json`. Exits 5 on timeout |
 | `assert` | Check once that an element is on screen, optionally with `--has-value`, or `--gone`; exits 5 when it is not |
 | `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin`: input steps, `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`; supports `--wait-timeout`, `--ax-cache`, `--continue-on-error` and `--json` (one NDJSON line per step). Selector steps read the screen again after any step that sends input |
-| `screenshot` | Save a PNG or JPEG of the device display (`--output`, `--format`, `--quality`); `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, `--json` prints the image's size and scale, and `--compare <baseline>` (`--threshold`) exits 0 when the capture changed and 5 when it did not |
+| `screenshot` | Save a PNG or JPEG of the active display (`--output`, `--format`, `--quality`); `--display <id>` captures another display of a foldable, `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, and `--compare <baseline>` (`--threshold`) exits 0 when the capture changed and 5 when it did not |
 | `logs` | Print recent device log entries (`--last 30s` by default, or `--since`), or collect live ones with `--duration` or `--follow`; `--rn` for React Native, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw`, `--json` |
 | `appearance` | Read or set light or dark appearance; on Android a reading can be `auto` or `custom` when night mode follows a schedule |
 | `content-size` | Read or set the text size: a Dynamic Type category on iOS, the matching font scale on Android; `reset` restores `large` |
-| `orientation` | Read or set the interface orientation (`portrait`, `landscape-left`, `landscape-right`, `portrait-upside-down`), waiting until the device has turned |
+| `orientation` | Read or set the device orientation, waiting until the device has turned: `portrait`, `landscape-left`, `landscape-right`, `portrait-upside-down`, named after how the device is turned, as Maestro and devicectl name them (`landscape-left` is turned 90 degrees anticlockwise, home edge on the right; UIKit calls that interface orientation `landscape-right`), or `--rotation 0\|90\|180\|270` in degrees anticlockwise; `--json` |
+| `displays` | List the device's built-in displays (`main`, or `cover` and `inner` on a foldable) with platform ID, size, scale, rotation and which one is active, then the posture; `--json` |
+| `posture` | Read a foldable's posture (`closed`, `half-opened`, `open`) and its active display, or set it on an Android emulator (`--timeout`, `--json`); iOS simulators fold only in Device Hub |
 | `shake` | Send the shake gesture (iOS only) |
 | `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`); stops the app first if it is running |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
@@ -149,7 +151,12 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
   "version": 1,
   "platform": "ios",
   "device": "<ID>",
-  "screen": { "width": 402, "height": 874, "scale": 3, "orientation": "portrait" },
+  "screen": {
+    "width": 402, "height": 874, "scale": 3,
+    "orientation": "portrait", "rotation": 0,
+    "display": { "id": "main", "platformId": "1" },
+    "posture": null
+  },
   "roots": [
     {
       "role": "button",
@@ -165,6 +172,14 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
   ]
 }
 ```
+
+| `screen` field | Meaning |
+| --- | --- |
+| `width`, `height`, `scale` | The active display in its current orientation, in points (dp on Android), and pixels per point |
+| `orientation` | The shape: `portrait` or `landscape` |
+| `rotation` | Degrees anticlockwise from the active display's natural orientation (`0`, `90`, `180` or `270`), or `null` when the device does not say. `orientation landscape-left` gives `90` |
+| `display` | The active display: `id` is `main`, `cover`, `inner` or `external`, and `platformId` is the simulator's or emulator's own ID for it |
+| `posture` | `closed`, `half-opened`, `open` or `unknown` on a foldable, else `null` |
 
 `role` is one of `application`, `window`, `group`, `other`, `button`, `link`, `menuItem`, `tab`, `tabBar`, `segmentedControl`, `text`, `header`, `image`, `progress`, `textField`, `secureTextField`, `searchField`, `textArea`, `switch`, `checkbox`, `radioButton`, `slider`, `picker`, `cell`, `list`, `scrollView` or `keyboard`.
 
@@ -184,10 +199,12 @@ When Offsider falls back to `uiautomator` on Android (see [Android notes](#andro
 For a screen scan, `describe-ui --summary` prints one line per on-screen node that has a label, id or value, which is usually a small fraction of the full tree:
 
 ```text
-# ios <ID> 402x874 @3x portrait
+# ios <ID> 402x874 @3x portrait 0°
 application "Playground" (0,0 402x874)
   button "Save" id=save-button (170.7,313.3 61x34.3)
 ```
+
+On a foldable the header line ends with the display and posture, such as `inner open`.
 
 `--summary` is short for `--flat --on-screen --labelled --format text`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes with at least 1 point on screen, judged as selectors judge it; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
 
@@ -221,8 +238,15 @@ With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `
 - Views often stay mounted while off screen: a closed bottom sheet parked below the screen, or the previous screen of a JavaScript stack. On iOS they stay in the tree with off-screen frames; on Android nodes the user cannot see are left out. Selectors, `wait`, `assert` and `describe-ui --on-screen` count only what is on screen. A previous screen that is still partly on screen under the current one keeps its ids, so a duplicated id there needs `--element-type` or coordinates.
 - Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` is not in the tree but still takes taps.
 - `offsider logs --rn` prints `console.log`, `console.warn` and `console.error` output, in release builds too.
-- `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off. `orientation` uses UIKit's names; `describe-ui` and `screenshot --json` report the same states as `landscape` (landscape-left) and `landscapeFlipped` (landscape-right).
+- `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off. `orientation` names the device turn, so `landscape-left` is what React Native's and UIKit's interface orientation call landscape-right; `describe-ui` and `screenshot --json` report the shape as `orientation` and the turn as `rotation`.
 - Debug builds: `rn prepare` skips an Expo dev client's first-launch intro. A LogBox error banner sits over the bottom of the screen and swallows taps; `tap` warns about it on both platforms, and `tap --verify` shows the tap had no effect.
+
+### Foldables
+
+A foldable has a `cover` and an `inner` display, and one of them is active at a time. `offsider displays` lists both and marks the active one, and `offsider posture` reads the posture (`closed` uses the cover display, `open` the inner one). `describe-ui`, `tap` and the other input commands use the active display, and `screenshot` captures it unless `--display` names the other one. `describe-ui --display inner` fails with a hint while the inner display is not active, so a script can check it is reading the screen it expects.
+
+- iOS: the iPhone Duo simulator folds and unfolds only in Device Hub; no simulator tool folds it, so `offsider posture open` explains that and exits 1. Folded, the cover display is 466 x 678 pt and the inner display 669 x 951 pt.
+- Android: `offsider posture open` (or `closed`, `half-opened`) folds the emulator through its gRPC endpoint, or `cmd device_state` over adb, and waits until the device reports it. A Pixel 9 Pro Fold emulator's inner display is about 852 x 883 dp and its cover display about 443 x 994 dp.
 
 ### Android notes
 
@@ -267,7 +291,11 @@ swift test        # unit tests; simulator suites are skipped
 make e2e          # rebuild everything and run the simulator end-to-end suites
 make e2e-android  # run the Android emulator end-to-end suites (see ./test-runner.sh --help)
 make e2e-rn-ios   # run the React Native playground suites on a simulator (needs pnpm)
+make e2e-foldable # run the foldable suite on the "Offsider Duo iPhone" simulator
+make e2e-android-fold  # run the foldable suite on the Offsider_E2E_Pixel_9_Pro_Fold AVD
 ```
+
+`make e2e-foldable` sets `OFFSIDER_FOLDABLE_E2E=1` and runs the folded half on an iPhone Duo simulator, then asks you to unfold it in Device Hub and skips the unfolded half after 120 s. `make e2e-android-fold` sets `OFFSIDER_ANDROID_FOLD_E2E=1` and `OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E_Pixel_9_Pro_Fold`; the Android suites drive only that AVD and `Offsider_E2E_Pixel_9`.
 
 `make e2e-rn-debug-ios` and `make e2e-rn-debug-android` build the React Native debug app, run Metro on loopback port 8742 and run the debug smoke suite. `pnpm --dir OffsiderPlaygroundRN ios <udid>` or `android <serial|avd>` installs the debug app and runs it from the same background Metro (`scripts/rn-playground.sh metro stop` ends it).
 
