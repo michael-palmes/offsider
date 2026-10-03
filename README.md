@@ -222,7 +222,7 @@ With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `
 - Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` is not in the tree but still takes taps.
 - `offsider logs --rn` prints `console.log`, `console.warn` and `console.error` output, in release builds too.
 - `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off. `orientation` uses UIKit's names; `describe-ui` and `screenshot --json` report the same states as `landscape` (landscape-left) and `landscapeFlipped` (landscape-right).
-- Debug builds: `rn prepare` skips an Expo dev client's first-launch intro. A LogBox error banner sits over the bottom of the screen and swallows taps; `tap` warns about it on iOS, and on Android `tap --verify` shows the tap had no effect.
+- Debug builds: `rn prepare` skips an Expo dev client's first-launch intro. A LogBox error banner sits over the bottom of the screen and swallows taps; `tap` warns about it on both platforms, and `tap --verify` shows the tap had no effect.
 
 ### Android notes
 
@@ -269,7 +269,7 @@ make e2e-android  # run the Android emulator end-to-end suites (see ./test-runne
 make e2e-rn-ios   # run the React Native playground suites on a simulator (needs pnpm)
 ```
 
-`make e2e-rn-debug-ios` and `make e2e-rn-debug-android` build the React Native debug app, run Metro on loopback port 8742 and run the debug smoke suite.
+`make e2e-rn-debug-ios` and `make e2e-rn-debug-android` build the React Native debug app, run Metro on loopback port 8742 and run the debug smoke suite. `pnpm --dir OffsiderPlaygroundRN ios <udid>` or `android <serial|avd>` installs the debug app and runs it from the same background Metro (`scripts/rn-playground.sh metro stop` ends it).
 
 `OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines.
 

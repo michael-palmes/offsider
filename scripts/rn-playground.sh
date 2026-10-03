@@ -45,8 +45,13 @@ Commands:
   launch-ios <udid> <screen>        Launch straight to a fixture screen (-OffsiderScreen <screen>)
   launch-android <serial> <screen>  Launch straight to a fixture screen (${SCREEN_URL}/<screen>)
   metro start|stop|status           Run Metro for Debug builds in the background on 127.0.0.1:${METRO_PORT}
-  dev-ios <udid>                    Debug build and run with Metro on ${METRO_PORT} (pnpm ios <udid>)
-  dev-android <serial|avd>          Debug build and run with Metro on ${METRO_PORT} (pnpm android <serial|avd>)
+  dev-ios <udid> [--screen <screen>]
+                                    Start Metro (as 'metro start'), build and install the Debug app
+                                    if changed, and launch it from Metro (pnpm ios <udid>)
+  dev-android <serial|avd> [--screen <screen>]
+                                    The same on an emulator, booting an AVD that is not running
+                                    (offsider boot) and setting 'adb reverse tcp:${METRO_PORT} tcp:${METRO_PORT}'
+                                    so it reaches Metro over loopback (pnpm android <serial|avd>)
 
 Options:
   --debug        The Debug configuration, which loads JavaScript from Metro on ${METRO_PORT}
@@ -321,21 +326,119 @@ launch_android() {
   "${adb}" -s "$1" shell am start -S -W -a android.intent.action.VIEW -d "${SCREEN_URL}/$2" "${APP_ID}"
 }
 
+# Parsed by parse_dev_args: DEV_DEVICE and the optional DEV_SCREEN.
+DEV_DEVICE=""
+DEV_SCREEN=""
+
+parse_dev_args() {
+  local usage="$1"
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --screen)
+        [ $# -ge 2 ] || die "--screen needs a fixture screen such as tap-test."
+        require_screen "$2"
+        DEV_SCREEN="$2"
+        shift
+        ;;
+      -*) die "unknown option '$1'. Run 'scripts/rn-playground.sh help'." ;;
+      *)
+        [ -z "${DEV_DEVICE}" ] || die "unexpected argument '$1'. Run 'scripts/rn-playground.sh help'."
+        DEV_DEVICE="$1"
+        ;;
+    esac
+    shift
+  done
+  [ -n "${DEV_DEVICE}" ] || die "${usage} No default device is used."
+}
+
+reset_build_flags() {
+  DEBUG=false
+  IF_CHANGED=false
+  POSITIONAL_ARG=""
+}
+
+offsider_bin() {
+  if [ -x "${REPO_ROOT}/.build/debug/offsider" ]; then
+    echo "${REPO_ROOT}/.build/debug/offsider"
+  elif command -v offsider >/dev/null 2>&1; then
+    command -v offsider
+  else
+    die "offsider not found at .build/debug/offsider or on PATH. Run 'swift build' first."
+  fi
+}
+
+# The serial of the running emulator whose AVD is $1, else nothing.
+running_serial_for_avd() {
+  local adb="$1" avd="$2" devices serial state name
+  devices=$("${adb}" devices)
+  while read -r serial state; do
+    case "${serial}" in emulator-*) ;; *) continue ;; esac
+    [ "${state}" = device ] || continue
+    name=$("${adb}" -s "${serial}" emu avd name </dev/null 2>/dev/null | tr -d '\r' | sed -n 1p) || name=""
+    if [ "${name}" = "${avd}" ]; then
+      echo "${serial}"
+      return
+    fi
+  done <<<"${devices}"
+}
+
+print_metro_help() {
+  echo "Metro runs in the background on 127.0.0.1:${METRO_PORT}. Log: ${METRO_LOG#"${REPO_ROOT}"/}. Stop it with 'scripts/rn-playground.sh metro stop'."
+}
+
 dev_ios() {
-  [ -n "${1:-}" ] || die "a simulator is required: pnpm ios <udid> (UDIDs from 'xcrun simctl list devices'). No default device is used."
-  [[ "$1" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || die "'$1' is not a simulator UDID."
-  (cd "${APP_DIR}" && pnpm exec expo run:ios --device "$1" --port "${METRO_PORT}")
+  parse_dev_args "a simulator is required: pnpm ios <udid> [--screen <screen>] (UDIDs from 'xcrun simctl list devices')." "$@"
+  local udid="${DEV_DEVICE}"
+  [[ "${udid}" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || die "'${udid}' is not a simulator UDID."
+  xcrun simctl list devices booted | grep -qi "${udid}" || die "simulator ${udid} is not booted. Boot it first (xcrun simctl boot ${udid})."
+  metro_start
+  reset_build_flags
+  build_ios "${udid}" --debug --if-changed
+  reset_build_flags
+  install_ios "${udid}" --debug
+  if [ -n "${DEV_SCREEN}" ]; then
+    xcrun simctl launch --terminate-running-process "${udid}" "${APP_ID}" --initialUrl "http://127.0.0.1:${METRO_PORT}" -OffsiderScreen "${DEV_SCREEN}"
+  else
+    xcrun simctl launch --terminate-running-process "${udid}" "${APP_ID}" --initialUrl "http://127.0.0.1:${METRO_PORT}"
+  fi
+  print_metro_help
 }
 
 dev_android() {
-  [ -n "${1:-}" ] || die "an emulator is required: pnpm android <serial|avd> (serials from 'adb devices'). No default device is used."
-  local device="$1" adb
-  if [[ "${device}" =~ ^emulator-[0-9]+$ ]]; then
-    adb=$(adb_bin)
-    device=$("${adb}" -s "$1" emu avd name 2>/dev/null | head -1 | tr -d '\r') || device=""
-    [ -n "${device}" ] || die "$1 is not a running emulator ('adb devices' lists them)."
+  parse_dev_args "an emulator is required: pnpm android <serial|avd> [--screen <screen>] (serials from 'adb devices')." "$@"
+  local adb serial="" offsider
+  adb=$(adb_bin)
+  if [[ "${DEV_DEVICE}" =~ ^emulator-[0-9]+$ ]]; then
+    "${adb}" -s "${DEV_DEVICE}" emu avd name >/dev/null 2>&1 || die "${DEV_DEVICE} is not a running emulator ('adb devices' lists them)."
+    serial="${DEV_DEVICE}"
+  else
+    serial=$(running_serial_for_avd "${adb}" "${DEV_DEVICE}")
+    if [ -z "${serial}" ]; then
+      offsider=$(offsider_bin)
+      echo "Booting ${DEV_DEVICE} with offsider boot"
+      serial=$("${offsider}" boot "${DEV_DEVICE}" | tail -1 | tr -d '\r')
+      [[ "${serial}" =~ ^emulator-[0-9]+$ ]] || die "offsider boot ${DEV_DEVICE} printed no emulator serial."
+    fi
   fi
-  (cd "${APP_DIR}" && pnpm exec expo run:android --device "${device}" --port "${METRO_PORT}")
+  metro_start
+  reset_build_flags
+  build_android --debug --if-changed
+  reset_build_flags
+  install_android "${serial}" --debug ||
+    die "install failed on ${serial}. A release build signed with another key needs 'adb -s ${serial} uninstall ${APP_ID}' first."
+  "${adb}" -s "${serial}" reverse "tcp:${METRO_PORT}" "tcp:${METRO_PORT}" >/dev/null
+  echo "adb reverse: ${serial}'s 127.0.0.1:${METRO_PORT} reaches Metro on this Mac"
+  "${adb}" -s "${serial}" shell am force-stop "${APP_ID}"
+  "${adb}" -s "${serial}" shell am start -W -a android.intent.action.VIEW \
+    -d "'exp+offsiderplaygroundrn://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A${METRO_PORT}'" "${APP_ID}"
+  if [ -n "${DEV_SCREEN}" ]; then
+    offsider=$(offsider_bin)
+    "${offsider}" wait --id menu-title --timeout 180 --device "${serial}" ||
+      die "the app did not show its menu within 180 s. Check ${METRO_LOG}."
+    "${adb}" -s "${serial}" shell am start -W -a android.intent.action.VIEW -d "${SCREEN_URL}/${DEV_SCREEN}" "${APP_ID}"
+  fi
+  print_metro_help
 }
 
 # The process group in the pidfile when it is still alive, else nothing (a stale pidfile is removed).

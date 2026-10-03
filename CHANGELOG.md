@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait` waits until an element is on screen or `--gone`, the screen is `--settled`, a `--region` is `--changed` or `--stable`, or `--seconds` pass, and exits 5 on timeout; `--settled` on a screen whose accessibility tree is never readable fails and suggests `--settle-by screen`. `assert` checks once and exits 5 when the element is not on screen, is not gone, or lacks `--has-value`.
 - `batch` runs `wait`, `assert`, `screenshot` and `describe-ui` as steps, and `batch --json` prints one NDJSON line per step and a summary line. A batch whose only failures are unmet conditions exits 5.
 - `tap` warns when another element may cover its target, and `--fail-if-covered` fails instead of tapping.
+- `tap` treats a React Native LogBox banner as covering the strip beneath it on Android, where the accessibility tree cannot see its touch area.
 - `logs` prints recent device log entries or collects live ones, with `--rn` for React Native output, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw` and `--json`. Live output stops with an error when the device's log stream exits, for example on a bad `--predicate`.
 - `appearance`, `content-size` and `orientation` read or set the device's appearance, text size and interface orientation on iOS and Android; `shake` sends the shake gesture on iOS. On Android, `appearance` reads `auto` or `custom` when night mode follows a schedule, and setting light or dark replaces it.
 - `rn prepare --bundle-id <id>` marks an Expo dev client's first-launch dev menu intro as seen and stops the menu opening at launch, so a fresh debug install opens straight into the app (iOS simulators; Android debuggable builds through `run-as`). It stops the app first if it is running, on both platforms.
@@ -35,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `gesture` help says which way each scroll preset moves the content.
 - `tap -x -y` outside the screen prints a warning, in batch steps too.
 - `screenshot` prints the image size on its "saved" line.
+- The React Native playground's Metro commands listen on loopback only: `pnpm start` passes `--localhost`, and `dev-ios`/`dev-android` run the background `metro start`, install a debug build and set the adb port reverse.
 
 ### Fixed
 

@@ -49,7 +49,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `scripts/rn-playground.sh build-ios` or `build-android` | Build the RN playground Release app or arm64 APK; `--debug` builds the debug app, `--if-changed` skips an up-to-date build (`help` lists install, launch and paths) |
 | `scripts/rn-playground.sh metro start\|stop\|status` | Run Metro for the RN debug app on loopback port 8742 |
 | `pnpm --dir OffsiderPlaygroundRN typecheck` | Typecheck the RN playground |
-| `pnpm --dir OffsiderPlaygroundRN android <serial>` or `ios <udid>` | RN debug build with Metro on 8742 (Android also takes an AVD name); refuses to run without a named device |
+| `pnpm --dir OffsiderPlaygroundRN android <serial>` or `ios <udid>` | Starts Metro on loopback 8742 in the background (`metro stop` ends it), installs the RN debug build if changed and launches it from Metro; Android also takes an AVD name and sets the adb reverse; `--screen <id>` opens a fixture; refuses to run without a named device |
 | `bash -n <script>` | Syntax-check a changed shell script |
 
 | Variable | Effect |
