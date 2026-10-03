@@ -10,7 +10,7 @@ help:
 	@echo "  make e2e-rn-ios     Run the React Native playground suites on an iOS simulator (needs pnpm)"
 	@echo "  make e2e-rn-debug-ios      Run the React Native Debug smoke suite on iOS with Metro on 8742"
 	@echo "  make e2e-rn-debug-android  Run the React Native Debug smoke suite on Android with Metro on 8742"
-	@echo "  make e2e-foldable   Run the foldable suite on the Offsider Duo iPhone simulator"
+	@echo "  make e2e-foldable   Run the foldable suite on the Offsider Duo iPhone simulator, folding it with offsider posture"
 	@echo "  make e2e-android-fold  Run the foldable suite on the Offsider_E2E_Pixel_9_Pro_Fold AVD"
 	@echo "  make rn-typecheck   Typecheck the React Native playground"
 	@echo "  make grpc-generate  Regenerate the emulator gRPC client from the vendored proto"

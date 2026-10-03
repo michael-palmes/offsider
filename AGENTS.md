@@ -108,7 +108,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` and rejects peers running as another user.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
-- The `Offsider Duo iPhone` simulator (iPhone Duo) is the foldable fixture. Only Device Hub folds or unfolds it, so the unfolded half of `FoldableTests` waits 120 s for the owner, then skips.
+- The `Offsider Duo iPhone` simulator (iPhone Duo) is the foldable fixture; `offsider posture` folds and unfolds it through the hinge service, so `FoldableTests` runs unattended. The Duo refuses orientation changes.
 
 ## Android emulator caveats
 
