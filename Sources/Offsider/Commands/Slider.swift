@@ -48,13 +48,7 @@ struct Slider: AsyncParsableCommand {
         guard selectorCount == 1 else {
             throw ValidationError("Use exactly one of --id or --label to target a slider.")
         }
-
-        if let elementID, elementID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ValidationError("--id must not be empty.")
-        }
-        if let elementLabel, elementLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ValidationError("--label must not be empty.")
-        }
+        try SelectorQuery.validate(id: elementID, label: elementLabel, value: nil)
 
         guard value.isFinite, (0...100).contains(value) else {
             throw ValidationError("--value must be a finite number between 0 and 100.")
@@ -111,13 +105,10 @@ struct Slider: AsyncParsableCommand {
     }
 
     private func accessibilityQuery() throws -> AccessibilityQuery {
-        if let elementID {
-            return .id(elementID)
+        guard let query = SelectorQuery.make(id: elementID, label: elementLabel, value: nil) else {
+            throw CLIError(errorDescription: "Unexpected state: no slider selector.")
         }
-        if let elementLabel {
-            return .label(elementLabel)
-        }
-        throw CLIError(errorDescription: "Unexpected state: no slider selector.")
+        return query
     }
 
     private func requireSlider(_ element: UINode) throws {

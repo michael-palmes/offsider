@@ -36,6 +36,15 @@ struct TapCommandTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: x, y: 100))])
     }
 
+    @Test("an empty selector on tap is a validation error, not a not-found run", arguments: ["--id", "--label", "--value"])
+    func emptySelectorRejected(flag: String) {
+        #expect {
+            _ = try Tap.parse([flag, "  ", "--device", Self.device.rawValue])
+        } throws: { error in
+            Tap.message(for: error) == "\(flag) must not be empty."
+        }
+    }
+
     @Test("a selector tap on iOS reads the tree once and converts the point with that tree")
     func selectorTapReadsTreeOnce() async throws {
         let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 600)])

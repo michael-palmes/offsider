@@ -65,4 +65,13 @@ struct SelectorTextTests {
     func distantStrings() {
         #expect(SelectorText.suggestions(for: "Delete account", among: ["Settings", "Profile", "OK"]).isEmpty)
     }
+
+    @Test("text over the limit is cut to the limit with an ellipsis; text at the limit is kept")
+    func truncatedToLimit() {
+        let long = String(repeating: "a", count: 61)
+        #expect(SelectorText.truncated(long) == String(repeating: "a", count: 59) + "…")
+        #expect(SelectorText.truncated(long).count == 60)
+        #expect(SelectorText.truncated(String(long.dropLast())) == String(long.dropLast()))
+        #expect(SelectorText.truncated("Settings", limit: 4) == "Set…")
+    }
 }

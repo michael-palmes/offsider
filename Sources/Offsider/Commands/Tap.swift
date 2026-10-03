@@ -62,24 +62,11 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw ValidationError("Coordinates must be non-negative values.")
             }
         } else {
-            let selectorCount = [elementID != nil, elementLabel != nil, elementValue != nil].filter { $0 }.count
-            if selectorCount == 0 {
+            try SelectorQuery.validate(id: elementID, label: elementLabel, value: elementValue)
+            if query == nil {
                 throw ValidationError("Either provide both -x/-y, or use --id/--label/--value to tap an element.")
             }
-            if selectorCount > 1 {
-                throw ValidationError("Use only one of --id, --label, or --value.")
-            }
-            if let elementID, elementID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                throw ValidationError("--id must not be empty.")
-            }
-            if let elementLabel, elementLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                throw ValidationError("--label must not be empty.")
-            }
-            if let elementValue, elementValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                throw ValidationError("--value must not be empty.")
-            }
         }
-
 
         if let preDelay = preDelay {
             guard preDelay >= 0 && preDelay <= 10.0 else {
@@ -107,6 +94,10 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     /// Optional so a batch step can tell an explicit value from the batch-level default.
     var resolvedWaitTimeout: Double { waitTimeout ?? 0 }
     var resolvedPollInterval: Double { pollInterval ?? 0.25 }
+
+    private var query: AccessibilityQuery? {
+        SelectorQuery.make(id: elementID, label: elementLabel, value: elementValue)
+    }
 
     func run() async throws {
         guard verification.verify else {
@@ -147,14 +138,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             resolvedTree = nil
             await Self.warnIfOffScreen(x: pointX, y: pointY, backend: backend, device: device)
         } else {
-            let query: AccessibilityQuery
-            if let elementID {
-                query = .id(elementID)
-            } else if let elementLabel {
-                query = .label(elementLabel)
-            } else if let elementValue {
-                query = .value(elementValue)
-            } else {
+            guard let query else {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.")
             }
 
@@ -269,14 +253,11 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         (try? await backend.accessibilityTree(for: device, point: UIPoint(x: point.x, y: point.y)))?.roots.first
     }
 
-    static let maxCoverLabelLength = 60
-
     /// `--id 'save' at (196, 700) may be covered by button 'Dismiss' (20, 650) 350x120; the tap may land on it.`
     static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode) -> String {
         var parts = [cover.role.rawValue]
         if let name = cover.normalizedLabel ?? cover.normalizedID {
-            let shown = name.count > maxCoverLabelLength ? String(name.prefix(maxCoverLabelLength - 1)) + "…" : name
-            parts.append("'\(shown)'")
+            parts.append("'\(SelectorText.truncated(name))'")
         }
         if let frame = cover.frame {
             parts.append(frame.summary)

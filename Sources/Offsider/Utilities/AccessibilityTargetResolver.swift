@@ -80,7 +80,6 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
     case multipleSwitchDescendants(count: Int, selectorDescription: String)
 
     static let maxListed = 5
-    static let maxSuggestionLength = 60
 
     var errorDescription: String? {
         let tip = AccessibilityTargetResolver.describeUITip
@@ -89,7 +88,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
             guard !suggestions.isEmpty else {
                 return "No accessibility element matched \(kind) '\(value)'. \(tip)"
             }
-            let quoted = suggestions.map { "'\(Self.truncated($0))'" }
+            let quoted = suggestions.map { "'\(SelectorText.truncated($0))'" }
             return "No accessibility element matched \(kind) '\(value)'. Did you mean \(Self.alternatives(quoted))? \(tip)"
         case .filteredByElementType(let kind, let value, let elementType, let roles):
             let field = kind.hasPrefix("--") ? String(kind.dropFirst(2)) : kind
@@ -156,10 +155,6 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
     private static func alternatives(_ items: [String]) -> String {
         guard items.count > 1 else { return items.first ?? "" }
         return items.dropLast().joined(separator: ", ") + " or " + items[items.count - 1]
-    }
-
-    private static func truncated(_ text: String) -> String {
-        text.count > maxSuggestionLength ? String(text.prefix(maxSuggestionLength - 1)) + "…" : text
     }
 }
 

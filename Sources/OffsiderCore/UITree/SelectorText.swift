@@ -14,6 +14,14 @@ public enum SelectorText {
             .joined(separator: " ")
     }
 
+    /// `text` cut to `limit` characters, the last one an ellipsis, when it is longer.
+    public static func truncated(_ text: String, limit: Int = 60) -> String {
+        guard limit > 0, text.count > limit else {
+            return text
+        }
+        return String(text.prefix(limit - 1)) + "…"
+    }
+
     /// Up to `limit` candidates close to `query`, best first: a case difference, then containment, then a small edit distance.
     public static func suggestions(for query: String, among candidates: [String], limit: Int = 3) -> [String] {
         let target = folded(query).lowercased()

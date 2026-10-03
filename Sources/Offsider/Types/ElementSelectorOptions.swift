@@ -2,6 +2,27 @@ import ArgumentParser
 import Foundation
 import OffsiderCore
 
+/// The `--id`/`--label`/`--value` selector rules shared by `tap`, `slider`, `wait` and `assert`.
+enum SelectorQuery {
+    /// Rejects more than one selector, or an empty one; setting none is left to the caller.
+    static func validate(id: String?, label: String?, value: String?) throws {
+        let selectors = [("--id", id), ("--label", label), ("--value", value)].filter { $0.1 != nil }
+        if selectors.count > 1 {
+            throw ValidationError("Use only one of --id, --label, or --value.")
+        }
+        for (name, text) in selectors where text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+            throw ValidationError("\(name) must not be empty.")
+        }
+    }
+
+    static func make(id: String?, label: String?, value: String?) -> AccessibilityQuery? {
+        if let id { return .id(id) }
+        if let label { return .label(label) }
+        if let value { return .value(value) }
+        return nil
+    }
+}
+
 /// One element selector for commands that check state rather than tap: `wait` and `assert`.
 struct ElementSelectorOptions: ParsableArguments {
     @Option(name: [.customLong("id")], help: "The element whose describe-ui id matches (accessibilityIdentifier, or testID in React Native).")
@@ -23,24 +44,15 @@ struct ElementSelectorOptions: ParsableArguments {
     var allowOffscreen: Bool = false
 
     func validate() throws {
-        let selectors = [("--id", elementID), ("--label", elementLabel), ("--value", elementValue)].filter { $0.1 != nil }
-        if selectors.count > 1 {
-            throw ValidationError("Use only one of --id, --label, or --value.")
-        }
-        for (name, value) in selectors where value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
-            throw ValidationError("\(name) must not be empty.")
-        }
-        guard selectors.isEmpty else { return }
+        try SelectorQuery.validate(id: elementID, label: elementLabel, value: elementValue)
+        guard query == nil else { return }
         for (name, isSet) in [("--element-type", elementType != nil), ("--has-value", hasValue != nil), ("--allow-offscreen", allowOffscreen)] where isSet {
             throw ValidationError("\(name) needs --id, --label or --value.")
         }
     }
 
     var query: AccessibilityQuery? {
-        if let elementID { return .id(elementID) }
-        if let elementLabel { return .label(elementLabel) }
-        if let elementValue { return .value(elementValue) }
-        return nil
+        SelectorQuery.make(id: elementID, label: elementLabel, value: elementValue)
     }
 
     /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen.
