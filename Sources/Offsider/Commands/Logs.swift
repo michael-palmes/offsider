@@ -26,7 +26,7 @@ struct Logs: AsyncParsableCommand {
     @Option(help: ArgumentHelp("iOS only: an NSPredicate for `log`, combined with the source by AND, such as 'messageType == error'.", valueName: "predicate"))
     var predicate: String?
 
-    @Option(help: ArgumentHelp("Entries from this long ago until now: 500ms, 30s, 2m, 1h, or bare seconds (default 30s).", valueName: "duration"))
+    @Option(help: ArgumentHelp("Entries from this long ago until now: 500ms, 30s, 2m, 1h, or bare seconds, up to 8760h (default 30s).", valueName: "duration"))
     var last: String?
 
     @Option(help: ArgumentHelp("Entries from this time until now: ISO 8601 (the Mac's zone unless given) or seconds since 1970.", valueName: "time"))
@@ -56,7 +56,7 @@ struct Logs: AsyncParsableCommand {
     static let defaultLast = "30s"
 
     func validate() throws {
-        try Self.check { try query() }
+        try Self.check { _ = try query() }
         try Self.check { _ = try collector() }
     }
 

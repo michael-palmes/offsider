@@ -163,6 +163,23 @@ struct LogsCommandTests {
         #expect(Self.validationMessage(["--duration", value]) == "--duration must be from 1 to 300 seconds; use --follow to stream until interrupted.")
     }
 
+    @Test("--last beyond 365 days is refused instead of overflowing, while a normal duration still works")
+    func lastUpperBound() throws {
+        #expect(Self.validationMessage(["--last", "1e300"]) == "Duration '1e300' is too long. Use up to 8760h (365 days).")
+        #expect(Self.validationMessage(["--last", "8761h"]) == "Duration '8761h' is too long. Use up to 8760h (365 days).")
+        #expect(try Self.command(["--last", "1h"]).query().window == .last(.seconds(3600)))
+        #expect(try Self.command(["--last", "8760h"]).query().window == .last(.seconds(31_536_000)))
+    }
+
+    @Test("--since past year 9999 is refused instead of overflowing")
+    func sinceUpperBound() throws {
+        let message = "--since time '1e300' is too far in the future. Use a time up to 9999-12-31T23:59:59Z (253402300799 seconds since 1970)."
+        #expect(Self.validationMessage(["--since", "1e300"]) == message)
+        #expect(Self.validationMessage(["--since", "253402300800"]) != nil)
+        let latest = try Self.command(["--since", "9999-12-31T23:59:59Z"]).query().window
+        #expect(LogText.iosLogArguments(window: latest, predicate: nil).prefix(3) == ["show", "--start", "@253402300799"])
+    }
+
     @Test("--max-lines below 0 is rejected")
     func negativeMaxLines() {
         #expect(Self.validationMessage(["--max-lines=-1"]) == "--max-lines must be 0 (no limit) or more; got -1.")

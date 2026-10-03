@@ -18,6 +18,11 @@ public enum LogWindow: Equatable, Sendable {
     /// Output that arrives from now on, for `Duration` or, when nil, until interrupted.
     case live(Duration?)
 
+    /// The longest `--last`: 365 days, in hours.
+    public static let maximumLastHours = 8760
+    /// The latest `--since`: the end of year 9999 UTC, the last time ISO 8601 can write with four digits.
+    public static let latestSince = Date(timeIntervalSince1970: 253_402_300_799)
+
     /// `500ms`, `30s`, `2m` or `1h`; a bare number is seconds.
     public static func parseDuration(_ text: String) throws -> Duration {
         let trimmed = text.trimmingCharacters(in: .whitespaces).lowercased()
@@ -31,11 +36,22 @@ public enum LogWindow: Equatable, Sendable {
         guard let value = Double(number), value.isFinite, value > 0, !number.hasPrefix("+") else {
             throw LogOptionError("Invalid duration '\(text)'. Use a positive number with ms, s, m or h, such as 500ms, 30s, 2m or 1h.")
         }
+        guard value * scale <= Double(maximumLastHours) * 3600 else {
+            throw LogOptionError("Duration '\(text)' is too long. Use up to \(maximumLastHours)h (365 days).")
+        }
         return .milliseconds(Int64((value * scale * 1000).rounded()))
     }
 
     /// ISO 8601 (with or without a zone, which then means the Mac's) or seconds since 1970.
     public static func parseTime(_ text: String, timeZone: TimeZone = .current) throws -> Date {
+        let date = try parseAnyTime(text, timeZone: timeZone)
+        guard date <= latestSince else {
+            throw LogOptionError("--since time '\(text)' is too far in the future. Use a time up to 9999-12-31T23:59:59Z (253402300799 seconds since 1970).")
+        }
+        return date
+    }
+
+    private static func parseAnyTime(_ text: String, timeZone: TimeZone) throws -> Date {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if let seconds = Double(trimmed), seconds.isFinite, seconds >= 0 {
             return Date(timeIntervalSince1970: seconds)
