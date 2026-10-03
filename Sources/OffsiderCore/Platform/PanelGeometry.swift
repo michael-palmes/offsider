@@ -1,7 +1,6 @@
 import Foundation
 
 /// A display's UI as it sits on its panel: the framebuffer and the digitizer keep the panel's native axes, the UI turns on them.
-/// Measured on the iPhone Duo's inner display (2007 x 2853 px, profile native orientation 270): held in portrait, the UI is landscape-right on the panel, 951 x 669 pt.
 public struct PanelGeometry: Equatable, Sendable {
     public var display: DisplayDescriptor
     /// The UI's turn on the panel, as SimulatorKit reads it for the display's screen.
@@ -16,12 +15,12 @@ public struct PanelGeometry: Equatable, Sendable {
     public var width: Double { orientation.isLandscape ? display.pointHeight : display.pointWidth }
     public var height: Double { orientation.isLandscape ? display.pointWidth : display.pointHeight }
 
-    /// Anticlockwise degrees from the panel's natural orientation.
-    public var rotationDegrees: Int { orientation.rotationDegrees }
+    /// The UI's anticlockwise turn on the panel, for input mapping; reports use `deviceOrientation`'s degrees.
+    public var panelRotationDegrees: Int { orientation.rotationDegrees }
 
     /// How the device is held: the UI's turn on the panel less the turn the panel is mounted at.
     public var deviceOrientation: DeviceOrientation? {
-        DeviceOrientation(rotationDegrees: ((rotationDegrees - display.nativeOrientation) % 360 + 360) % 360)
+        DeviceOrientation(rotationDegrees: ((panelRotationDegrees - display.nativeOrientation) % 360 + 360) % 360)
     }
 
     /// A UI point as fractions of the panel's width and height, which is what the digitizer takes.

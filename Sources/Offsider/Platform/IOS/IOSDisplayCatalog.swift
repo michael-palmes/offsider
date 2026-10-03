@@ -11,6 +11,8 @@ final class IOSDisplayCatalog {
     private var profiles: [String: [DisplayDescriptor]] = [:]
     private var actives: [String: ActiveDisplay] = [:]
     private var postures: [String: Posture] = [:]
+    private let displayReadings = FreshReadings<DevicectlDisplays?>()
+    private let hingeReadings = FreshReadings<Double?>()
 
     init(logger: OffsiderLogger) {
         self.logger = logger
@@ -28,7 +30,7 @@ final class IOSDisplayCatalog {
         (profile(of: simulator)?.count ?? 0) > 1
     }
 
-    /// Cached for the command unless `refresh`; `applicationFrame` is the fallback when devicectl cannot say, or the first choice with `preferFrame`.
+    /// Cached for the command unless `refresh`, which reads devicectl at most once a second; `applicationFrame` is the fallback when devicectl cannot say, or the first choice with `preferFrame`.
     func activeDisplay(
         of simulator: FBSimulator,
         applicationFrame: UIFrame?,
@@ -45,7 +47,9 @@ final class IOSDisplayCatalog {
            let matched = ActiveDisplay.resolve(profile: profile, devicectl: nil, applicationFrame: frame), matched.source == .applicationFrame {
             return matched
         }
-        let devicectl = await Self.devicectlDisplays(udid: simulator.udid, logger: logger)
+        let devicectl = await displayReadings.value(for: simulator.udid) {
+            await Self.devicectlDisplays(udid: simulator.udid, logger: logger)
+        }
         let active = ActiveDisplay.resolve(profile: profile, devicectl: devicectl, applicationFrame: frame)
         if let active {
             logger.info().log("Active display: \(active.descriptor.role.rawValue) (screen \(active.descriptor.platformId)) from \(active.source.rawValue)")
@@ -58,7 +62,7 @@ final class IOSDisplayCatalog {
     func posture(of simulator: FBSimulator, applicationFrame: UIFrame?, refresh: Bool = false) async -> Posture? {
         guard let active = await activeDisplay(of: simulator, applicationFrame: applicationFrame, refresh: refresh) else { return nil }
         var posture = active.posture
-        if active.posture == .open, let angle = await Self.hingeAngle(udid: simulator.udid, logger: logger) {
+        if active.posture == .open, let angle = await hingeAngle(of: simulator) {
             logger.info().log("Hinge angle: \(angle)")
             posture = Posture(hingeAngle: angle) == .halfOpened ? .halfOpened : .open
         }
@@ -71,9 +75,17 @@ final class IOSDisplayCatalog {
         postures[simulator.udid] ?? actives[simulator.udid]?.posture
     }
 
-    /// devicectl's hinge reading in degrees; nil when it gives none within a few seconds.
+    /// devicectl's hinge reading in degrees, at most once a second; nil when it gives none within a few seconds.
     func hingeAngle(of simulator: FBSimulator) async -> Double? {
-        await Self.hingeAngle(udid: simulator.udid, logger: logger)
+        await hingeReadings.value(for: simulator.udid) {
+            await Self.hingeAngle(udid: simulator.udid, logger: logger)
+        }
+    }
+
+    /// After moving the hinge or turning the device, so the next devicectl reading is fresh.
+    func forgetReadings(of udid: String) {
+        displayReadings.forget(udid)
+        hingeReadings.forget(udid)
     }
 
     // MARK: - Sources
@@ -174,6 +186,30 @@ final class IOSDisplayCatalog {
             try? await Task.sleep(for: .milliseconds(50))
         }
         return DevicectlDisplays.hingeAngle(in: buffer.text)
+    }
+}
+
+/// The last reading per simulator, served again while younger than `window`, so polling does not spawn devicectl every time.
+@MainActor
+final class FreshReadings<Value> {
+    let window: TimeInterval
+    private var readings: [String: (value: Value, at: TimeInterval)] = [:]
+    private let now: @MainActor () -> TimeInterval
+
+    init(window: TimeInterval = 1, now: @escaping @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        self.window = window
+        self.now = now
+    }
+
+    func value(for udid: String, read: () async -> Value) async -> Value {
+        if let last = readings[udid], now() - last.at < window { return last.value }
+        let value = await read()
+        readings[udid] = (value, now())
+        return value
+    }
+
+    func forget(_ udid: String) {
+        readings[udid] = nil
     }
 }
 

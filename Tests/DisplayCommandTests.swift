@@ -7,12 +7,12 @@ import Testing
 @MainActor
 struct DisplayCommandTests {
     static let device = DeviceID(rawValue: "SIM", platform: .ios)
-    static let coverScreen = UIScreenInfo(
+    nonisolated static let coverScreen = UIScreenInfo(
         width: 466, height: 678, scale: 3, rotation: .portrait, rotationDegrees: 0,
         display: ScreenDisplay(id: "cover", platformId: "1"), posture: .closed
     )
-    static let innerScreen = UIScreenInfo(
-        width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 270,
+    nonisolated static let innerScreen = UIScreenInfo(
+        width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 0,
         display: ScreenDisplay(id: "inner", platformId: "3"), posture: .open
     )
 
@@ -105,6 +105,25 @@ struct DisplayCommandTests {
         #expect(try await posture(nil, angle: 120, json: true, on: backend) == #"{"posture":"half-opened","previous":"open","display":"inner","screen":{"width":951,"height":669}}"#)
         #expect(backend.requestedAngles == [120])
         #expect(backend.requestedPostures.isEmpty)
+    }
+
+    @Test("--angle at the hinge's current reading sends nothing and reports the posture unchanged")
+    func angleAlreadyThere() async throws {
+        let backend = Self.folded(screen: Self.innerScreen)
+        backend.hingeAngles = [180]
+        backend.postures = [.open]
+        #expect(try await posture(nil, angle: 180, json: true, on: backend) == #"{"posture":"open","previous":"open","display":"inner","screen":{"width":951,"height":669}}"#)
+        #expect(backend.requestedAngles.isEmpty)
+        #expect(backend.requestedPostures.isEmpty)
+    }
+
+    @Test("--angle at the hinge's reading still moves it when the other panel is showing")
+    func angleThereButPanelDisagrees() async throws {
+        let backend = Self.folded(screen: Self.innerScreen)
+        backend.hingeAngles = [180]
+        backend.postures = [.closed, .open]
+        #expect(try await posture(nil, angle: 180, json: true, on: backend) == #"{"posture":"open","previous":"closed","display":"inner","screen":{"width":951,"height":669}}"#)
+        #expect(backend.requestedAngles == [180])
     }
 
     @Test("--angle that the hinge never reads times out naming the angle")

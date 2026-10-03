@@ -13,7 +13,7 @@ struct SimulatorOrientationReader {
                 logger.info().log("Orientation probe: simulator \(simulatorUDID) not found")
                 return nil
             }
-            return currentOrientation(of: simulator, screenID: screenID, logger: logger)
+            return await currentOrientation(of: simulator, screenID: screenID, logger: logger)
         } catch {
             logger.info().log("Orientation probe failed: \(error)")
             return nil
@@ -21,8 +21,8 @@ struct SimulatorOrientationReader {
     }
 
     /// `screenID` is the active display's, from the device type profile; 1 on a device with one display.
-    static func currentOrientation(of simulator: FBSimulator, screenID: Int = 1, logger: OffsiderLogger) -> SimulatorOrientation? {
-        Timings.measure("orientation") {
+    static func currentOrientation(of simulator: FBSimulator, screenID: Int = 1, logger: OffsiderLogger) async -> SimulatorOrientation? {
+        await Timings.measure("orientation") {
             do {
                 try FBSimulatorControlFrameworkLoader.xcodeFrameworks.loadPrivateFrameworks(logger)
             } catch {
@@ -39,7 +39,7 @@ struct SimulatorOrientationReader {
                     return orientation
                 }
                 if attempt < screenReadAttempts {
-                    usleep(screenReadRetryMicroseconds)
+                    try? await Task.sleep(for: screenReadRetryDelay)
                 }
             }
             return nil
@@ -47,7 +47,7 @@ struct SimulatorOrientationReader {
     }
 
     private static let screenReadAttempts = 4
-    private static let screenReadRetryMicroseconds: useconds_t = 200_000
+    private static let screenReadRetryDelay: Duration = .milliseconds(200)
 
     private static func readOrientation(from device: AnyObject, screenID: Int, logger: OffsiderLogger) -> SimulatorOrientation? {
         guard let screenClass = NSClassFromString("SimulatorKit.SimDeviceScreen") as? NSObject.Type else {

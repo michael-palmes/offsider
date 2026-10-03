@@ -5,13 +5,7 @@ import FBSimulatorControl
 
 // MARK: - Simulator Orientation
 
-/// How the simulator is turned, as SimulatorKit reports it; the public names are `DeviceOrientation`'s.
-///
-/// Measured on iOS 27, in device terms:
-///   - `portrait`           : upright, home edge at the bottom, `uiOrientation` 1
-///   - `portraitUpsideDown`: turned 180°, home edge at the top, `uiOrientation` 2
-///   - `landscape`          : device landscape-right (turned clockwise), home edge on the left, `uiOrientation` 3
-///   - `landscapeFlipped`   : device landscape-left (turned anticlockwise), home edge on the right, `uiOrientation` 4
+/// SimulatorKit's `uiOrientation` 1 to 4 in case order; `landscape` is the device turned clockwise (landscape-right).
 enum SimulatorOrientation: String, CaseIterable {
     case portrait
     case portraitUpsideDown
@@ -52,7 +46,7 @@ enum SimulatorOrientation: String, CaseIterable {
 /// then fall back to screenshot pixel aspect ratio to distinguish portrait-hardware
 /// letterboxing from a rotated simulator.
 enum CoordinateMapping {
-    /// Portrait device, portrait app — pass coordinates through unchanged.
+    /// Portrait device, portrait app: pass coordinates through unchanged.
     case passthrough
 
     /// Hardware is rotated. Apply rotation math.
@@ -215,7 +209,7 @@ struct OrientationAwareCoordinates {
             throw CLIError(errorDescription: "Unable to determine coordinate mapping because screenshot probing failed for a landscape accessibility frame.")
         }
 
-        // Screenshot is landscape-shaped — hardware is rotated.
+        // Screenshot is landscape-shaped: hardware is rotated.
         logger.info().log(
             "Screenshot \(screenshotDims.width)×\(screenshotDims.height)px is landscape-shaped; using rotation mapping"
         )
@@ -421,7 +415,7 @@ struct OrientationAwareCoordinates {
         return UITree.applicationFrame(in: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
     }
 
-    // MARK: - Orientation Detection (legacy — preserved for callers that need it directly)
+    // MARK: - Orientation Detection (legacy, preserved for callers that need it directly)
 
     /// Determines the current logical orientation by inspecting the accessibility tree.
     ///

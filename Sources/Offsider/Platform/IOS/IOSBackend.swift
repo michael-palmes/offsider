@@ -88,7 +88,7 @@ final class IOSBackend: DeviceBackend {
         var tree = UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
         if displayCatalog.isFoldable(simulator),
            let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: tree.applicationFrame),
-           let geometry = panelGeometry(on: active, of: simulator) {
+           let geometry = await panelGeometry(on: active, of: simulator) {
             tree.roots = UITree.correctingSidewaysApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
         }
         if point == nil, let frame = tree.applicationFrame {
@@ -102,13 +102,13 @@ final class IOSBackend: DeviceBackend {
         let simulator = try await simulator(for: id)
         if displayCatalog.isFoldable(simulator),
            let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: applicationFrames[id.rawValue]) {
-            return screenInfo(on: active, of: simulator)
+            return await screenInfo(on: active, of: simulator)
         }
-        guard let info = await Timings.measure("screen-info", { simulator.screenInfo }), info.scale > 0 else {
+        guard let info = Timings.measure("screen-info", { simulator.screenInfo }), info.scale > 0 else {
             return nil
         }
         let scale = Double(info.scale)
-        let orientation = SimulatorOrientationReader.currentOrientation(of: simulator, logger: logger)
+        let orientation = await SimulatorOrientationReader.currentOrientation(of: simulator, logger: logger)
         let portraitWidth = Double(info.widthPixels) / scale
         let portraitHeight = Double(info.heightPixels) / scale
         let isLandscape = orientation?.isLandscape == true
@@ -120,16 +120,16 @@ final class IOSBackend: DeviceBackend {
         )
     }
 
-    /// The active display's UI as laid out on its panel; simctl captures it upright.
-    func screenInfo(on active: ActiveDisplay, of simulator: FBSimulator) -> UIScreenInfo {
+    /// The active display's UI as laid out on its panel, with the device's turn as its rotation; simctl captures it upright.
+    func screenInfo(on active: ActiveDisplay, of simulator: FBSimulator) async -> UIScreenInfo {
         let display = active.descriptor
-        let geometry = panelGeometry(on: active, of: simulator)
+        let geometry = await panelGeometry(on: active, of: simulator)
         return UIScreenInfo(
             width: geometry?.width ?? display.pointWidth,
             height: geometry?.height ?? display.pointHeight,
             scale: display.scale,
             rotation: geometry?.orientation,
-            rotationDegrees: geometry?.rotationDegrees,
+            rotationDegrees: geometry?.deviceOrientation?.rotationDegrees,
             display: display.screenDisplay,
             posture: active.posture,
             captureArrivesUpright: true
@@ -137,9 +137,9 @@ final class IOSBackend: DeviceBackend {
     }
 
     /// SimulatorKit's reading for the display's screen, else devicectl's rotation; both are the UI's turn on the panel, not the device's.
-    func panelGeometry(on active: ActiveDisplay, of simulator: FBSimulator) -> PanelGeometry? {
+    func panelGeometry(on active: ActiveDisplay, of simulator: FBSimulator) async -> PanelGeometry? {
         let display = active.descriptor
-        if let read = SimulatorOrientationReader.currentOrientation(of: simulator, screenID: Int(display.platformId) ?? 1, logger: logger) {
+        if let read = await SimulatorOrientationReader.currentOrientation(of: simulator, screenID: Int(display.platformId) ?? 1, logger: logger) {
             return PanelGeometry(display: display, orientation: read.coreOrientation)
         }
         guard let degrees = active.rotationDegrees, let orientation = DeviceOrientation(rotationDegrees: degrees) else { return nil }

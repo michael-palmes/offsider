@@ -12,7 +12,7 @@ extension IOSBackend: DisplayControlling {
               let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: frame, refresh: true) else {
             return try await singleDisplay(of: simulator, id: id)
         }
-        let screen = screenInfo(on: active, of: simulator)
+        let screen = await screenInfo(on: active, of: simulator)
         let posture = await displayCatalog.posture(of: simulator, applicationFrame: frame)
         // An inactive display shows no UI, so it has no rotation to report.
         let displays = (displayCatalog.profile(of: simulator) ?? []).map { descriptor in
@@ -73,7 +73,7 @@ extension IOSBackend: DisplayControlling {
                 points: points, applicationFrame: frame, for: id.rawValue, screenID: Int(display.platformId) ?? 1, logger: logger
             )
         }
-        guard let geometry = panelGeometry(on: active, of: simulator) else {
+        guard let geometry = await panelGeometry(on: active, of: simulator) else {
             throw CLIError(errorDescription: "Offsider could not read how the UI is turned on the \(display.role.rawValue) display of \(id.rawValue), so it cannot place input there. Check with `offsider displays --device \(id.rawValue)`, then retry.")
         }
         return points.map { geometry.mainScreenPoint(x: $0.x, y: $0.y, mainWidth: main.width, mainHeight: main.height) }
@@ -123,14 +123,24 @@ extension IOSBackend: PostureControlling, HingeControlling {
         return await displayCatalog.hingeAngle(of: simulator)
     }
 
-    /// Sweeps from the hinge's reading, else the last posture's angle: the panels only swap when the hinge moves smoothly. Dispatch only.
+    /// Sweeps from the hinge's reading, else the last posture's angle: the panels only swap when the hinge moves smoothly. Dispatch only; a hinge already at `degrees` with its panel showing is left alone.
     func requestHingeAngle(_ degrees: Int, on id: DeviceID) async throws {
         let simulator = try await simulator(for: id)
         guard displayCatalog.isFoldable(simulator) else {
             throw CLIError(errorDescription: DisplayReport.notFoldable(device: id.rawValue))
         }
-        let reading = await displayCatalog.hingeAngle(of: simulator).map { Int($0.rounded()) }
-        let start = reading.flatMap { $0 == degrees ? nil : $0 } ?? HingeControl.start(from: displayCatalog.lastPosture(of: simulator), to: degrees)
+        var reading = await displayCatalog.hingeAngle(of: simulator).map { Int($0.rounded()) }
+        if reading == degrees {
+            let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: applicationFrames[id.rawValue], refresh: true)
+            guard let active, !HingeControl.panelMatches(active.posture ?? .unknown, angle: degrees) else {
+                logger.info().log("Hinge: already at \(degrees) degrees, not sweeping")
+                return
+            }
+            logger.info().log("Hinge: at \(degrees) degrees but the \(active.descriptor.role.rawValue) display is active, so sweeping from the far end")
+            reading = HingeControl.start(from: nil, to: degrees)
+        }
+        let start = reading ?? HingeControl.start(from: displayCatalog.lastPosture(of: simulator), to: degrees)
+        defer { displayCatalog.forgetReadings(of: simulator.udid) }
         do {
             try await HingeInjector.sweep(simulator, from: start, to: degrees, logger: logger)
         } catch let failure as SimulatorDTUHID.Failure {

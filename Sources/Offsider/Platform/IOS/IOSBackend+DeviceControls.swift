@@ -64,9 +64,9 @@ extension IOSBackend: OrientationControlling {
         let simulator = try await simulator(for: id)
         if displayCatalog.isFoldable(simulator),
            let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: applicationFrames[id.rawValue], refresh: true) {
-            return panelGeometry(on: active, of: simulator)?.deviceOrientation
+            return await panelGeometry(on: active, of: simulator)?.deviceOrientation
         }
-        return SimulatorOrientationReader.currentOrientation(of: simulator, logger: logger)
+        return await SimulatorOrientationReader.currentOrientation(of: simulator, logger: logger)
             .map { DeviceOrientation(coordinateOrientation: $0.coreOrientation) }
     }
 
@@ -74,6 +74,7 @@ extension IOSBackend: OrientationControlling {
         guard let value = FBSimulatorHIDDeviceOrientation(rawValue: orientation.iosEventValue) else {
             throw CLIError(errorDescription: "Orientation \(orientation.rawValue) has no simulator event.")
         }
+        displayCatalog.forgetReadings(of: id.rawValue)
         try await sendOneEvent(.deviceOrientation(value), to: id)
     }
 

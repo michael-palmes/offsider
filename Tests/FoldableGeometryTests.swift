@@ -13,19 +13,20 @@ struct PanelGeometryTests {
     static let inner = PanelGeometry(display: DuoFixtures.inner, orientation: .landscape)
     static let mainScreen = (width: 466.0, height: 678.0)
 
-    @Test("the unfolded inner display is 951 x 669 pt landscape, 270 degrees anticlockwise on its panel, with the device in portrait")
+    @Test("the unfolded inner display is 951 x 669 pt landscape, its UI 270 degrees anticlockwise on the panel, with the device in portrait at 0")
     func innerSize() {
         #expect(Self.inner.width == 951 && Self.inner.height == 669)
         #expect(UIScreenInfo(width: Self.inner.width, height: Self.inner.height).shape == .landscape)
-        #expect(Self.inner.rotationDegrees == 270)
+        #expect(Self.inner.panelRotationDegrees == 270)
         #expect(Self.inner.deviceOrientation == .portrait)
+        #expect(Self.inner.deviceOrientation?.rotationDegrees == 0)
     }
 
     @Test("the folded cover display is 466 x 678 pt portrait at 0 degrees")
     func coverSize() {
         let cover = PanelGeometry(display: DuoFixtures.cover, orientation: .portrait)
         #expect(cover.width == 466 && cover.height == 678)
-        #expect(cover.rotationDegrees == 0)
+        #expect(cover.panelRotationDegrees == 0)
         #expect(cover.deviceOrientation == .portrait)
     }
 
@@ -130,6 +131,14 @@ struct HingeControlTests {
         #expect(HingeControl.sweep(from: 120, to: 120) == [120])
     }
 
+    @Test("the cover display matches a closed hinge and the inner display any other angle; unknown never disagrees", arguments: [
+        (Posture.closed, 0, true), (.open, 0, false), (.closed, 180, false), (.open, 180, true),
+        (.halfOpened, 120, true), (.closed, 120, false), (.open, 120, true), (.unknown, 0, true),
+    ] as [(Posture, Int, Bool)])
+    func panelMatches(posture: Posture, angle: Int, matches: Bool) {
+        #expect(HingeControl.panelMatches(posture, angle: angle) == matches)
+    }
+
     @Test("a sweep starts at the current posture's angle, else from the far end", arguments: [
         (Posture?.some(.open), 0, 180),
         (.closed, 180, 0),
@@ -140,6 +149,48 @@ struct HingeControlTests {
     ] as [(Posture?, Int, Int)])
     func start(current: Posture?, target: Int, start: Int) {
         #expect(HingeControl.start(from: current, to: target) == start)
+    }
+}
+
+@Suite("Fresh readings")
+@MainActor
+struct FreshReadingsTests {
+    final class Clock {
+        var now: TimeInterval = 0
+    }
+
+    @Test("a reading is served again within the window, and read afresh once it is older or forgotten")
+    func window() async {
+        let clock = Clock()
+        let readings = FreshReadings<Int?>(window: 1, now: { clock.now })
+        var reads = 0
+        let read: () async -> Int? = {
+            reads += 1
+            return reads
+        }
+        #expect(await readings.value(for: "A", read: read) == 1)
+        clock.now = 0.9
+        #expect(await readings.value(for: "A", read: read) == 1)
+        #expect(await readings.value(for: "B", read: read) == 2)
+        clock.now = 1.0
+        #expect(await readings.value(for: "A", read: read) == 3)
+        readings.forget("A")
+        #expect(await readings.value(for: "A", read: read) == 4)
+        #expect(reads == 4)
+    }
+
+    @Test("a missing reading is held for the window too, so a device that cannot say is not asked on every poll")
+    func missing() async {
+        let clock = Clock()
+        let readings = FreshReadings<Int?>(window: 1, now: { clock.now })
+        var reads = 0
+        let read: () async -> Int? = {
+            reads += 1
+            return nil
+        }
+        #expect(await readings.value(for: "A", read: read) == nil)
+        #expect(await readings.value(for: "A", read: read) == nil)
+        #expect(reads == 1)
     }
 }
 

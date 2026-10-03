@@ -128,7 +128,7 @@ struct PostureCommand: AsyncParsableCommand {
         return DisplayReport.postureLine(current, screen: screen, platform: device.platform)
     }
 
-    /// Waits for the hinge to read `angle`, then for the posture to settle: which panel shows depends on the way the hinge moved, not only where it stops.
+    /// Waits for the hinge to read `angle`, then for the posture to settle: which panel shows depends on the way the hinge moved, not only where it stops. A hinge already there with its panel showing is not moved.
     @MainActor
     static func moveHinge(
         to angle: Int,
@@ -143,11 +143,13 @@ struct PostureCommand: AsyncParsableCommand {
         guard let hinge = folder as? any HingeControlling else {
             throw CLIError(errorDescription: "posture --angle is not available for \(deviceName); set a posture by name instead.")
         }
+        let readAngle: @MainActor () async throws -> Int? = { try await hinge.hingeAngle(of: device).map { Int($0.rounded()) } }
+        if try await readAngle() == angle, HingeControl.panelMatches(previous, angle: angle) { return previous }
         try await hinge.requestHingeAngle(angle, on: device)
         let outcome = try await StateWait.run(
             target: angle,
             timeout: timeout,
-            read: { try await hinge.hingeAngle(of: device).map { Int($0.rounded()) } },
+            read: readAngle,
             request: { try await hinge.requestHingeAngle(angle, on: device) },
             sleep: sleep,
             now: now
@@ -158,7 +160,8 @@ struct PostureCommand: AsyncParsableCommand {
         var current = try await folder.posture(of: device) ?? previous
         let settleDeadline = now() + min(timeout, 5)
         while now() < settleDeadline {
-            try await sleep(.milliseconds(500))
+            // At least the iOS catalog's one-second reading window, so each pass reads the device afresh.
+            try await sleep(.seconds(1))
             let next = try await folder.posture(of: device) ?? current
             if next == current { break }
             current = next

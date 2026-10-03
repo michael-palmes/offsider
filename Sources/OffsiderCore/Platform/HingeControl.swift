@@ -38,6 +38,12 @@ public enum HingeControl {
         return target > 90 ? range.lowerBound : range.upperBound
     }
 
+    /// Whether the panel showing (cover for closed, else inner) is the one `angle` should show; unknown cannot disagree.
+    public static func panelMatches(_ posture: Posture, angle: Int) -> Bool {
+        guard posture != .unknown else { return true }
+        return (posture == .closed) == (Posture(hingeAngle: Double(angle)) == .closed)
+    }
+
     /// Whole degrees from `start` to `end`, one every `interval` across `duration`, ending on `end`; consecutive repeats dropped.
     public static func sweep(from start: Int, to end: Int, duration: TimeInterval = sweepDuration, interval: TimeInterval = sweepInterval) -> [Int] {
         let steps = max(1, Int((duration / interval).rounded()))

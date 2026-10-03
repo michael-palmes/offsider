@@ -182,7 +182,7 @@ struct FoldableTests {
 
     // MARK: Unfolded (inner display)
 
-    @Test("unfolded: the inner display is a 951 x 669 pt landscape screen, captured upright, described and tapped where asked")
+    @Test("unfolded: the inner display is a 951 x 669 pt landscape screen at rotation 0 in portrait, captured upright, described and tapped where asked")
     func unfolded() async throws {
         try await Self.requirePosture("open")
         let screen = try await Self.decode(Tree.self, "describe-ui").screen
@@ -190,17 +190,17 @@ struct FoldableTests {
         #expect(screen.posture == "open")
         #expect(screen.width == 951 && screen.height == 669, "\(screen.width) x \(screen.height)")
         #expect(screen.orientation == "landscape")
-        #expect(screen.rotation == 270)
+        #expect(screen.rotation == 0)
 
         let list = try await Self.decode(Displays.self, "displays --json")
         let inner = try #require(list.displays.first { $0.id == "inner" })
-        #expect(inner.active && inner.width == 951 && inner.height == 669 && inner.rotation == 270)
+        #expect(inner.active && inner.width == 951 && inner.height == 669 && inner.rotation == 0)
         #expect(try await Self.offsider("orientation").hasPrefix("Orientation: portrait (951 x 669 pt)"))
 
         let points = try await Self.screenshot("--scale points")
         #expect(points.display?.id == "inner")
         #expect(points.width == 951 && points.height == 669, "capture \(points.width) x \(points.height)")
-        #expect(points.orientation == "landscape" && points.rotation == 270)
+        #expect(points.orientation == "landscape" && points.rotation == 0)
         #expect(points.upright)
 
         let cover = try await TestHelpers.runOffsiderCommandSeparated("describe-ui --display cover", simulatorUDID: try Self.udid())
