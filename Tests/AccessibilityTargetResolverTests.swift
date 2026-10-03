@@ -766,6 +766,47 @@ struct AccessibilityTargetResolverTests {
         #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots)?.label == Self.bannerLabel)
     }
 
+    /// The Android shape of a LogBox banner: its frame ends at 874, above a tab whose centre is at 875.
+    static func logBoxOverTabs(label: String = "!, Request failed") -> [UINode] {
+        let android = DevicePlatform.android
+        let banner = FakeUI.node(.button, label: label, frame: FakeUI.frame(8, 810, 396, 64), platform: android, children: [
+            FakeUI.node(.text, label: "!", frame: FakeUI.frame(20, 826, 32, 32), platform: android),
+            FakeUI.node(.text, label: String(label.drop { $0 != " " }.dropFirst()), frame: FakeUI.frame(60, 826, 300, 32), platform: android),
+            FakeUI.node(.button, frame: FakeUI.frame(364, 826, 32, 32), platform: android),
+        ])
+        let tabs = FakeUI.node(.other, frame: FakeUI.frame(0, 851, 412, 64), platform: android, children: [
+            FakeUI.node(.button, id: "tab-home", label: "Home", frame: FakeUI.frame(0, 851, 137, 48), platform: android),
+            FakeUI.node(.button, id: "tab-search", label: "Search", frame: FakeUI.frame(137, 851, 137, 48), platform: android),
+        ])
+        let above = FakeUI.node(.button, id: "save", label: "Save", frame: FakeUI.frame(16, 700, 380, 48), platform: android)
+        return [FakeUI.node(.application, frame: FakeUI.frame(0, 0, 412, 915), platform: android, children: [above, tabs, banner])]
+    }
+
+    @Test("without a hit-test, a tab just below a LogBox banner's frame is covered by its touch area")
+    func logBoxCoversTabBelowItsFrame() throws {
+        let roots = Self.logBoxOverTabs()
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("tab-search"))
+
+        #expect(resolution.point.y == 875)
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots)?.label == "!, Request failed")
+    }
+
+    @Test("a target above a LogBox banner is not covered by it")
+    func logBoxLeavesTargetAboveIt() throws {
+        let roots = Self.logBoxOverTabs()
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
+
+        #expect(resolution.coverCandidates.isEmpty)
+    }
+
+    @Test("a labelled button that is not a LogBox banner covers only its own frame")
+    func ordinaryBannerCoversOnlyItsFrame() throws {
+        let roots = Self.logBoxOverTabs(label: "3 unread")
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("tab-search"))
+
+        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots) == nil)
+    }
+
     private func decodeElements(_ json: String) throws -> [UINode] {
         try IOSAccessibilityMapping.roots(fromJSON: Data(json.utf8))
     }

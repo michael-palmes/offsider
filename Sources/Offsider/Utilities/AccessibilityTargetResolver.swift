@@ -325,7 +325,7 @@ struct AccessibilityTargetResolver {
         var found: [UINode] = []
         func visit(_ node: UINode, underKeyboard: Bool) {
             let underKeyboard = underKeyboard || node.role == .keyboard
-            if let frame = node.frame, frame.contains(point), frame.isVisible(in: viewport),
+            if let frame = coverArea(of: node, in: viewport), frame.contains(point), frame.isVisible(in: viewport),
                isPlausibleOccluder(node, underKeyboard: underKeyboard),
                !related.contains(where: { $0.isSameElement(as: node) }) {
                 found.append(node)
@@ -338,6 +338,12 @@ struct AccessibilityTargetResolver {
             visit(root, underKeyboard: false)
         }
         return found
+    }
+
+    /// The node's frame, or for a LogBox banner the strip beneath it that its unlisted touch container swallows.
+    private static func coverArea(of node: UINode, in viewport: UIFrame) -> UIFrame? {
+        guard let frame = node.frame else { return nil }
+        return KnownOverlays.isLogBoxBanner(node.label) ? KnownOverlays.logBoxTouchArea(of: frame, in: viewport) : frame
     }
 
     /// The cover once a hit-test at the tap point found `hit`: nil when the hit is the target or its kin.

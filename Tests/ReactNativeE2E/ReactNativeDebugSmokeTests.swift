@@ -57,28 +57,20 @@ struct ReactNativeDebugSmokeTests {
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
     }
 
-    @Test("a LogBox error banner over the tab bar swallows a tab tap, with a cover warning only on iOS", arguments: RNPlatform.enabled)
+    @Test("a LogBox error banner over the tab bar swallows a tab tap, with a cover warning on both platforms", arguments: RNPlatform.enabled)
     func logBoxBannerCoversTabs(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         let banner = try await Self.openWithErrorBanner(app)
         #expect(Self.label(banner) == "!, OffsiderFixture error 1", "\(banner)")
+        #expect(banner["role"] as? String == (platform == .ios ? "other" : "button"))
 
         let firstTap = try await app.offsider("tap --id overlay-test-tab-search --fail-if-covered")
-        switch platform {
-        case .ios:
-            #expect(banner["role"] as? String == "other")
-            #expect(firstTap.exitCode != 0)
-            #expect(firstTap.stderr.contains("may be covered by"), "\(firstTap.stderr)")
-            #expect(firstTap.stderr.contains("OffsiderFixture error 1"), "\(firstTap.stderr)")
-            let warned = try await app.offsider("tap --id overlay-test-tab-search")
-            #expect(warned.exitCode == 0, "\(warned.stderr)")
-            #expect(warned.stderr.contains("may be covered by"), "\(warned.stderr)")
-        case .android:
-            // Known limit: the tab's centre is just below the banner, inside LogBox's safe-area container, which is not in the tree.
-            #expect(banner["role"] as? String == "button")
-            #expect(firstTap.exitCode == 0, "\(firstTap.stderr)")
-            #expect(!firstTap.stderr.contains("may be covered"), "\(firstTap.stderr)")
-        }
+        #expect(firstTap.exitCode != 0)
+        #expect(firstTap.stderr.contains("may be covered by"), "\(firstTap.stderr)")
+        #expect(firstTap.stderr.contains("OffsiderFixture error 1"), "\(firstTap.stderr)")
+        let warned = try await app.offsider("tap --id overlay-test-tab-search")
+        #expect(warned.exitCode == 0, "\(warned.stderr)")
+        #expect(warned.stderr.contains("may be covered by"), "\(warned.stderr)")
         try await Task.sleep(for: .seconds(1))
         #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
     }
