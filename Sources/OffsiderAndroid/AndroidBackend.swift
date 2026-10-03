@@ -136,8 +136,16 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// Logical size over scale, scale = density / 160, orientation from the viewport rotation, and on a foldable its posture.
     public func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
         let serial = id.rawValue
-        let geometry = try await geometry(for: serial)
-        let status = await screenStatus(serial)
+        var geometry = try await geometry(for: serial)
+        var status = await screenStatus(serial)
+        if (knownDeviceStates[serial]?.count ?? 0) >= 2 {
+            let settled = try await settledGeometry(serial)
+            if settled != geometry {
+                geometry = settled
+                screenStatuses[serial] = nil
+                status = await screenStatus(serial)
+            }
+        }
         return UIScreenInfo(
             width: Self.dp(Double(geometry.logicalWidth) / geometry.scale),
             height: Self.dp(Double(geometry.logicalHeight) / geometry.scale),
@@ -161,9 +169,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
 
     public func openInputSession(for id: DeviceID) async throws -> any InputSession {
         let serial = id.rawValue
-        let geometry = try await geometry(for: serial)
+        try await prepare()
         let shell = AdbDeviceShell(client: try requireClient(), serial: serial)
-        let executor = try await inputExecutor(for: serial, geometry: geometry, shell: shell)
+        let (executor, geometry) = try await inputExecutor(for: serial, shell: shell)
         let transport = try await transport(for: serial)
         var clipboard: (any EmulatorControlling)?
         var adbReason = AdbReason.forced
@@ -214,7 +222,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             }
         }
         let shell = AdbDeviceShell(client: try requireClient(), serial: id.rawValue)
-        if case .grpc(let driver) = try await inputExecutor(for: id.rawValue, geometry: try await geometry(for: id.rawValue), shell: shell) {
+        if case .grpc(let driver) = try await inputExecutor(for: id.rawValue, shell: shell).executor {
             try await driver.run(inputSteps)
             return
         }
@@ -234,22 +242,27 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return chosen
     }
 
-    /// A resized display (`wm size` override) no longer maps one to one onto the panel, so its input stays on adb.
-    private func inputExecutor(for serial: String, geometry: AndroidDisplayGeometry, shell: AdbDeviceShell) async throws -> AndroidInputExecutor {
+    /// A resized display (`wm size` override) no longer maps onto the panel, so its input stays on adb; a foldable's gRPC waits for the panel's geometry.
+    private func inputExecutor(for serial: String, shell: AdbDeviceShell) async throws -> (executor: AndroidInputExecutor, geometry: AndroidDisplayGeometry) {
+        var geometry = try await geometry(for: serial)
         guard case .grpc(let emulator) = try await transport(for: serial) else {
-            return .adb(shell)
+            return (.adb(shell), geometry)
+        }
+        let posture = await postureIfFoldable(serial)
+        if posture != nil {
+            geometry = try await settledGeometry(serial)
         }
         guard !geometry.hasSizeOverride else {
             if warnedAboutOverride.insert(serial).inserted {
                 log(.warning, "The display of \(serial) is resized (`wm size` reports an override), so its input goes over adb in this command.")
             }
-            return .adb(shell)
+            return (.adb(shell), geometry)
         }
-        if let posture = await postureIfFoldable(serial), posture != .open, posture != .halfOpened {
+        if let posture, posture != .open, posture != .halfOpened {
             log(.debug, "\(serial) is \(posture.rawValue), so its input goes over adb: gRPC touches land on the unfolded panel")
-            return .adb(shell)
+            return (.adb(shell), geometry)
         }
-        return .grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep))
+        return (.grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep)), geometry)
     }
 
     /// gRPC `getScreenshot`, turned upright when only the guest rotated; else adb's `screencap`.

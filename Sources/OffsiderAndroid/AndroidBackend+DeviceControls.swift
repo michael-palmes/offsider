@@ -95,7 +95,7 @@ extension AndroidBackend: OrientationControlling {
         return try await geometry(for: id.rawValue).deviceOrientation
     }
 
-    /// `user_rotation` counts from the panel's natural orientation, which is landscape on a foldable's inner display.
+    /// `user_rotation` counts from the panel's natural orientation, which is landscape on a panel wider than tall.
     public func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws {
         let natural = try await geometry(for: id.rawValue).naturalIsLandscape
         _ = try await settingsShell(AndroidDeviceSettings.setRotation(orientation, naturalIsLandscape: natural), on: id.rawValue)

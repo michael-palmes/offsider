@@ -16,13 +16,15 @@ struct AndroidFoldableParsingTests {
     @Test("a foldable's states map to postures, and states Offsider cannot name are unknown")
     func foldStates() {
         let states = AndroidDeviceState.parseStates(FoldableFixtures.foldPrintStates)
-        #expect(states.map(\.identifier) == [0, 1, 2, 3, 4])
-        #expect(states.map(\.posture) == [.closed, .halfOpened, .open, .unknown, .unknown])
+        #expect(states.map(\.identifier) == [0, 1, 2, 3])
+        #expect(states.map(\.posture) == [.closed, .halfOpened, .open, .unknown])
+        #expect(AndroidDeviceState.parseReading(FoldableFixtures.foldStateOpen) == .init(committed: State(identifier: 2, name: "OPENED"), base: nil, override: nil))
+        #expect(AndroidDeviceState.parseReading(FoldableFixtures.foldStateClosed)?.committed.posture == .closed)
     }
 
     @Test("an override shows the committed, base and override states")
     func overrideReading() throws {
-        let reading = try #require(AndroidDeviceState.parseReading(FoldableFixtures.foldState(committed: 0, base: 2, override: 0)))
+        let reading = try #require(AndroidDeviceState.parseReading(FoldableFixtures.foldStateClosedOverride))
         #expect(reading.committed == State(identifier: 0, name: "CLOSED"))
         #expect(reading.base == State(identifier: 2, name: "OPENED"))
         #expect(reading.override == State(identifier: 0, name: "CLOSED"))
@@ -40,24 +42,41 @@ struct AndroidFoldableParsingTests {
         let display = try #require(list.displays.first)
         #expect(list.displays.count == 1)
         #expect(display.descriptor == DisplayDescriptor(
-            role: .main, platformId: FoldableFixtures.coverId, name: "Built-in Screen",
+            role: .main, platformId: FoldableFixtures.pixel9Id, name: "Built-in Screen",
             pixelWidth: 1080, pixelHeight: 2424, scale: 2.625, nativeOrientation: 0
         ))
         #expect(display.on)
-        #expect(list.active?.uniqueId == "local:\(FoldableFixtures.coverId)")
+        #expect(list.active?.uniqueId == "local:\(FoldableFixtures.pixel9Id)")
     }
 
-    @Test("a foldable's smaller panel is the cover and the larger the inner; logical display 0 names the active one")
+    @Test("a foldable's smaller panel is the cover and the larger the inner; logical display 0, not the disabled one, names the active panel")
     func foldDisplays() {
-        let open = AndroidDisplayList.parse(dumpsys: FoldableFixtures.foldDumpsys(closed: false))
-        #expect(open.displays.map(\.descriptor.role) == [.cover, .inner])
-        #expect(open.displays.map(\.descriptor.platformId) == [FoldableFixtures.coverId, FoldableFixtures.innerId])
-        #expect(open.displays.map(\.on) == [false, true])
+        let open = AndroidDisplayList.parse(dumpsys: FoldableFixtures.foldDumpsysOpen)
+        #expect(open.displays.map(\.descriptor.role) == [.inner, .cover])
+        #expect(open.displays.map(\.descriptor.platformId) == [FoldableFixtures.innerId, FoldableFixtures.coverId])
+        #expect(open.displays.map(\.on) == [true, false])
         #expect(open.active?.descriptor.role == .inner)
+        #expect(open.active.map { ($0.descriptor.pixelWidth, $0.descriptor.pixelHeight) } ?? (0, 0) == (2076, 2152))
 
-        let closed = AndroidDisplayList.parse(dumpsys: FoldableFixtures.foldDumpsys(closed: true))
+        let closed = AndroidDisplayList.parse(dumpsys: FoldableFixtures.foldDumpsysClosed)
+        #expect(closed.displays.map(\.on) == [false, true])
         #expect(closed.active?.descriptor.role == .cover)
         #expect(closed.active?.descriptor.pointWidth.rounded() == 443)
+    }
+
+    @Test("a probe fits only the panel its sizes describe, so one taken mid-unfold does not fit the inner panel its viewport names")
+    func probeFitsPanel() throws {
+        let open = AndroidDisplayList.parse(dumpsys: FoldableFixtures.foldDumpsysOpen)
+        let inner = try #require(open.displays.first { $0.descriptor.role == .inner }).descriptor
+        let cover = try #require(open.displays.first { $0.descriptor.role == .cover }).descriptor
+        let unfolding = try AndroidDisplayGeometry.parse(FoldableFixtures.foldGeometryUnfolding)
+
+        #expect(try AndroidDisplayGeometry.parse(FoldableFixtures.foldGeometryOpen).fits(inner))
+        #expect(try AndroidDisplayGeometry.parse(FoldableFixtures.foldGeometryClosed).fits(cover))
+        #expect(AndroidDisplayGeometry.viewportUniqueId(in: FoldableFixtures.foldGeometryUnfolding) == "local:\(FoldableFixtures.innerId)")
+        #expect(!unfolding.fits(inner))
+        #expect(try !AndroidDisplayGeometry.parse(FoldableFixtures.foldGeometryClosed).fits(inner))
+        #expect(try AndroidDisplayGeometry.parse(FoldableFixtures.foldGeometryOpen).rotated(to: 1).fits(inner))
     }
 
     @Test("an external display keeps its role beside a single built-in one")
@@ -73,7 +92,7 @@ struct AndroidFoldableParsingTests {
 
     @Test("display 0's viewport names the physical display it shows")
     func viewportUniqueId() {
-        #expect(AndroidDisplayGeometry.viewportUniqueId(in: FoldableFixtures.foldGeometry(closed: false)) == "local:\(FoldableFixtures.innerId)")
+        #expect(AndroidDisplayGeometry.viewportUniqueId(in: FoldableFixtures.foldGeometryOpen) == "local:\(FoldableFixtures.innerId)")
         #expect(AndroidDisplayGeometry.viewportUniqueId(in: "Physical size: 1080x2424\n") == nil)
     }
 

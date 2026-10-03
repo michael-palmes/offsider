@@ -15,7 +15,7 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
 
     var scale: Double { Double(densityDpi) / 160 }
 
-    /// A large inner panel, such as a foldable's, is landscape at rotation 0.
+    /// A panel wider than tall (a tablet, some foldables' inner displays) is landscape at rotation 0.
     var naturalIsLandscape: Bool { naturalWidth > naturalHeight }
 
     /// The device's orientation, named as on iOS for the same physical turn.
@@ -38,6 +38,13 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
             densityDpi: densityDpi,
             hasSizeOverride: hasSizeOverride
         )
+    }
+
+    /// Whether this was probed on `display`: during a fold, `wm size` and the viewport's frame still describe the other panel.
+    func fits(_ display: DisplayDescriptor) -> Bool {
+        let panel = [display.pixelWidth, display.pixelHeight].sorted()
+        guard [naturalWidth, naturalHeight].sorted() == panel else { return false }
+        return hasSizeOverride || [logicalWidth, logicalHeight].sorted() == panel
     }
 
     /// Plain `grep`, not `-m1`: an early exit breaks dumpsys's pipe, which can hold the shell until dumpsys times out.

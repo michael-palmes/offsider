@@ -15,6 +15,7 @@ struct AndroidFoldableBackendTests {
         private let emulator: FakeEmulator?
         private var hinge: Int
         private var override: Int?
+        private var lagging = 0
 
         init(emulator: FakeEmulator?, closed: Bool) {
             self.emulator = emulator
@@ -23,6 +24,9 @@ struct AndroidFoldableBackendTests {
         }
 
         var overrideState: Int? { lock.withLock { override } }
+
+        /// The next `count` display probes still describe the panel the fold is leaving, as `wm size` and the viewport do on the device.
+        func lagProbes(_ count: Int) { lock.withLock { lagging = count } }
 
         private var base: Int {
             guard let emulator else { return hinge }
@@ -55,6 +59,9 @@ struct AndroidFoldableBackendTests {
                         FoldableFixtures.foldState(committed: committed, base: base, override: override),
                         FoldableFixtures.foldDumpsys(closed: closed)
                     ))
+                case AndroidDisplayGeometry.probeScript where lagging > 0:
+                    lagging -= 1
+                    return FakeAdbServer.shell(stdout: closed ? FoldableFixtures.foldGeometryOpen : FoldableFixtures.foldGeometryUnfolding)
                 case AndroidDisplayGeometry.probeScript:
                     return FakeAdbServer.shell(stdout: FoldableFixtures.foldGeometry(closed: closed))
                 case AndroidDeviceDirectory.propertiesScript:
@@ -75,6 +82,7 @@ struct AndroidFoldableBackendTests {
         let server: FakeAdbServer
         let emulator: FakeEmulator?
         let fold: Fold
+        let sleeps: SleepRecorder
 
         var shellCommands: [String] {
             server.services.filter { $0.hasPrefix("shell,v2,raw:") }.map { String($0.dropFirst("shell,v2,raw:".count)) }
@@ -102,8 +110,9 @@ struct AndroidFoldableBackendTests {
             connector = FakeEmulatorConnector(.success(emulator))
             live = [50144]
         }
-        let host = AndroidTestHost.make(home: home, adb: server, emulator: connector, liveProcesses: live)
-        return Rig(backend: AndroidBackend(host: host) { _, _ in }, server: server, emulator: emulator, fold: fold)
+        let sleeps = SleepRecorder()
+        let host = AndroidTestHost.make(home: home, adb: server, emulator: connector, liveProcesses: live, sleeps: sleeps)
+        return Rig(backend: AndroidBackend(host: host) { _, _ in }, server: server, emulator: emulator, fold: fold, sleeps: sleeps)
     }
 
     @Test("closing over gRPC sends setPosture, then device_state reports CLOSED and the screen is the cover's")
@@ -124,6 +133,61 @@ struct AndroidFoldableBackendTests {
         #expect(closed.posture == .closed)
         #expect((closed.width, closed.height) == (443.08, 994.46))
         #expect(rig.shellCommands.filter { $0 == AndroidDisplayGeometry.probeScript }.count == 2)
+    }
+
+    @Test("after a fold, the screen size follows the new panel even while the display probe still describes the old one")
+    func screenFollowsPanelSwap() async throws {
+        let rig = try Self.rig(grpc: false, closed: true)
+        let closed = try #require(try await rig.backend.screenInfo(for: Self.device))
+        #expect((closed.width, closed.height) == (443.08, 994.46))
+
+        try await rig.backend.requestPosture(.open, on: Self.device)
+        rig.fold.lagProbes(2)
+        let open = try #require(try await rig.backend.screenInfo(for: Self.device))
+
+        #expect(open.display == ScreenDisplay(id: "inner", platformId: FoldableFixtures.innerId))
+        #expect((open.width, open.height) == (851.69, 882.87))
+        #expect(rig.sleeps.sleeps.count == 2)
+
+        try await rig.backend.requestPosture(.closed, on: Self.device)
+        rig.fold.lagProbes(1)
+        let refolded = try #require(try await rig.backend.screenInfo(for: Self.device))
+        #expect(refolded.display == ScreenDisplay(id: "cover", platformId: FoldableFixtures.coverId))
+        #expect((refolded.width, refolded.height) == (443.08, 994.46))
+    }
+
+    @Test("a display probe that never catches up is used after 10 s rather than waiting on")
+    func settleGivesUp() async throws {
+        let rig = try Self.rig(grpc: false, closed: true)
+        try await rig.backend.requestPosture(.open, on: Self.device)
+        rig.fold.lagProbes(1000)
+
+        let screen = try #require(try await rig.backend.screenInfo(for: Self.device))
+
+        #expect((screen.width, screen.height) == (443.08, 994.46))
+        #expect(rig.sleeps.total >= .seconds(10) && rig.sleeps.total < .seconds(11))
+    }
+
+    @Test("after unfolding, gRPC taps reach the inner panel's far side instead of clamping to the cover the probe still described")
+    func unfoldedTapUsesNewPanel() async throws {
+        let rig = try Self.rig(grpc: true, closed: true)
+        _ = try await rig.backend.screenInfo(for: Self.device)
+        try await rig.backend.requestPosture(.open, on: Self.device)
+        rig.fold.lagProbes(1)
+
+        try await rig.backend.perform(.tapAt(x: 1950, y: 244), on: Self.device)
+
+        let touches = rig.emulator?.calls.compactMap { call -> PanelTouch? in
+            if case .touch(let touch) = call { return touch } else { return nil }
+        } ?? []
+        #expect(touches.first.map { ($0.x, $0.y) } ?? (0, 0) == (1950, 244))
+    }
+
+    @Test("an unfolded foldable whose probe fits its panel reads the screen without waiting")
+    func settledFoldNeverWaits() async throws {
+        let rig = try Self.rig(grpc: false)
+        _ = try await rig.backend.screenInfo(for: Self.device)
+        #expect(rig.sleeps.sleeps.isEmpty)
     }
 
     @Test("an adb override left on the device is reset before gRPC moves the hinge")
@@ -187,7 +251,7 @@ struct AndroidFoldableBackendTests {
         let unknown = await #expect(throws: AndroidError.self) {
             try await backend.screenshotPNG(for: Self.device, display: "0")
         }
-        #expect(unknown?.message == "Unknown display '0' on emulator-5556. Use one of: cover (\(FoldableFixtures.coverId)), inner (\(FoldableFixtures.innerId)).")
+        #expect(unknown?.message == "Unknown display '0' on emulator-5556. Use one of: inner (\(FoldableFixtures.innerId)), cover (\(FoldableFixtures.coverId)).")
     }
 
     @Test("a folded gRPC screenshot is cropped to the folded view")
@@ -229,7 +293,7 @@ struct AndroidFoldableBackendTests {
 
         #expect(try await backend.posture(of: Self.device) == nil)
         let screen = try #require(try await backend.screenInfo(for: Self.device))
-        #expect(screen.display == ScreenDisplay(id: "main", platformId: FoldableFixtures.coverId))
+        #expect(screen.display == ScreenDisplay(id: "main", platformId: FoldableFixtures.pixel9Id))
         #expect(screen.posture == nil)
         #expect(screen.rotationDegrees == 0)
         #expect(server.services.filter { $0.hasPrefix("shell,v2,raw:") } == [

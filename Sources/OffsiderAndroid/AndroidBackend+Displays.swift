@@ -5,8 +5,12 @@ extension AndroidBackend: DisplayControlling {
     /// The active display in its current rotation; the others at their native size.
     public func displays(of id: DeviceID) async throws -> DisplayList {
         let serial = id.rawValue
-        let geometry = try await geometry(for: serial)
-        let list = try await displayList(serial, refresh: true)
+        var geometry = try await geometry(for: serial)
+        var list = try await displayList(serial, refresh: true)
+        if await isFoldable(serial) {
+            geometry = try await settledGeometry(serial)
+            list = displayLists[serial] ?? list
+        }
         let active = activeDisplay(in: list, serial: serial)
         let displays = list.displays.map { display in
             guard display.uniqueId == active?.uniqueId else {
@@ -35,6 +39,32 @@ extension AndroidBackend: DisplayControlling {
         displayLists[serial] = list
         return list
     }
+
+    /// On a foldable, probes again until the geometry fits the panel logical display 0 shows, for `settleTimeout` at most.
+    func settledGeometry(_ serial: String) async throws -> AndroidDisplayGeometry {
+        var geometry = try await geometry(for: serial)
+        var list = displayLists[serial]
+        let deadline = host.uptime() + Self.settleTimeout
+        while true {
+            if list == nil {
+                list = try? await displayList(serial, refresh: true)
+            }
+            guard let active = list.flatMap({ activeDisplay(in: $0, serial: serial) }), !geometry.fits(active.descriptor) else {
+                return geometry
+            }
+            guard host.uptime() < deadline else {
+                log(.debug, "The display probe of \(serial) did not settle on the active panel within \(Self.settleTimeout); using the latest one")
+                return geometry
+            }
+            log(.debug, "The display probe of \(serial) does not fit the \(active.descriptor.role.rawValue) panel yet; probing again")
+            try await host.sleep(.milliseconds(250))
+            geometries[serial] = nil
+            list = nil
+            geometry = try await self.geometry(for: serial)
+        }
+    }
+
+    static let settleTimeout = Duration.seconds(10)
 
     /// For `screenInfo`: the active display's role and physical id, and a foldable's posture, in one shell call at most.
     func screenStatus(_ serial: String) async -> (display: ScreenDisplay?, posture: Posture?) {

@@ -80,6 +80,7 @@ struct PostureCommand: AsyncParsableCommand {
         }
         var current = previous
         if let target, target != previous {
+            let before = try? await backend.screenInfo(for: device)
             try await folder.requestPosture(target, on: device)
             let outcome = try await StateWait.run(
                 target: target,
@@ -93,12 +94,26 @@ struct PostureCommand: AsyncParsableCommand {
                 throw CLIError(errorDescription: timeoutMessage(target: target, timeout: timeout, device: deviceName))
             }
             current = target
+            // The device state commits before the panel swap, so wait for the screen to follow it.
+            let swapDeadline = now() + min(timeout, 10)
+            while now() < swapDeadline {
+                let screen = try? await backend.screenInfo(for: device)
+                if screen.map({ Self.panelChanged(from: before, to: $0, target: target) }) ?? true { break }
+                try await sleep(.milliseconds(250))
+            }
         }
         let screen = try? await backend.screenInfo(for: device)
         if json {
             return DisplayReport.postureJSON(current, previous: target == nil ? nil : previous, screen: screen, platform: device.platform)
         }
         return DisplayReport.postureLine(current, screen: screen, platform: device.platform)
+    }
+
+    /// Also true once the target's own panel is active, as opening to half-opened keeps the inner display.
+    static func panelChanged(from before: UIScreenInfo?, to after: UIScreenInfo, target: Posture) -> Bool {
+        guard let before else { return true }
+        if let role = after.display?.id, role == (target == .closed ? DisplayRole.cover : DisplayRole.inner).rawValue { return true }
+        return before.display?.id != after.display?.id || before.width != after.width || before.height != after.height
     }
 
     static func timeoutMessage(target: Posture, timeout: TimeInterval, device: String) -> String {
