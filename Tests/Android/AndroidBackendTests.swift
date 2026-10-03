@@ -19,7 +19,7 @@ struct AndroidBackendTests {
 
     """
 
-    static func server(bootCompleted: String = "1") -> FakeAdbServer {
+    static func server(bootCompleted: String = "1", geometry: String = geometryOutput) -> FakeAdbServer {
         FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556", "emulator-5558"],
             host: { service in
@@ -31,7 +31,7 @@ struct AndroidBackendTests {
             },
             device: { serial, service in
                 if service.hasSuffix(AndroidDisplayGeometry.probeScript) {
-                    return FakeAdbServer.shell(stdout: geometryOutput)
+                    return FakeAdbServer.shell(stdout: geometry)
                 }
                 let name = serial == "emulator-5556" ? "Offsider_E2E_Pixel_9" : "Other_AVD"
                 return FakeAdbServer.shell(stdout: "\(name)\n\n\(bootCompleted)\n16\n36\n")
@@ -79,7 +79,40 @@ struct AndroidBackendTests {
     @Test("screen info is the logical size in dp with the density scale and orientation")
     func screenInfo() async throws {
         let info = try await Self.backend(Self.server()).screenInfo(for: Self.device)
-        #expect(info == UIScreenInfo(width: 411.43, height: 923.43, scale: 2.625, orientation: .portrait))
+        #expect(info == UIScreenInfo(
+            width: 411.43, height: 923.43, scale: 2.625, rotation: .portrait, rotationDegrees: 0,
+            display: ScreenDisplay(id: "main", platformId: "1")
+        ))
+    }
+
+    static func probe(natural: String, rotation: Int, frame: String) -> String {
+        """
+        Physical size: \(natural)
+        Physical density: 320
+          Viewport INTERNAL: displayId=0, uniqueId=local:1, port=Optional(0), orientation=\(rotation), logicalFrame=\(frame), isActive=[1]
+        """
+    }
+
+    @Test("rotation is the device's turn from portrait, as orientation reports it, on either panel", arguments: [
+        ("2560x1600", 3, "[0, 0, 1600, 2560]", DeviceOrientation.portrait, 0),
+        ("1080x2424", 1, "[0, 0, 2424, 1080]", .landscapeLeft, 90),
+    ] as [(String, Int, String, DeviceOrientation, Int)])
+    func rotationFromPortrait(natural: String, userRotation: Int, frame: String, orientation: DeviceOrientation, degrees: Int) async throws {
+        let backend = try Self.backend(Self.server(geometry: Self.probe(natural: natural, rotation: userRotation, frame: frame)))
+        let info = try #require(try await backend.screenInfo(for: Self.device))
+
+        #expect(info.rotationDegrees == degrees)
+        #expect(info.rotation == orientation.coordinateOrientation)
+        #expect(try await backend.orientation(of: Self.device) == orientation)
+    }
+
+    @Test("screen size comes from the display probe alone")
+    func screenSize() async throws {
+        let server = Self.server()
+        let size = try await Self.backend(server).screenSize(for: Self.device)
+
+        #expect(size == UISize(width: 411.43, height: 923.43))
+        #expect(!server.services.contains { $0.contains("device_state") || $0.contains("dumpsys display") })
     }
 
     @Test("dp become logical pixels, probing the display once per command")

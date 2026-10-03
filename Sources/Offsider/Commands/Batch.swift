@@ -4,20 +4,39 @@ import OffsiderCore
 
 struct Batch: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Execute ordered interaction steps using one device session.",
+        abstract: "Run ordered input and read steps using one device session.",
         discussion: """
-        Batch executes multiple interaction steps in one command to reduce overhead.
-        Steps are executed in order.
+        Batch runs a whole case (tap, wait, check, capture, read the tree) in one command. Steps run in order \
+        and are written like the standalone commands without --device. Read steps run after the previous step's input is sent.
 
-        Supported step commands:
+        Input steps:
           tap, swipe, gesture, touch, type, button, key, key-sequence, key-combo
-
-        Batch-only pseudo-step:
           sleep <seconds>
 
+        Read steps:
+          wait, assert, screenshot, describe-ui
+
+        Read steps print their usual output as they run; input steps print nothing to stdout, though warnings \
+        such as an off-screen or covered tap still go to stderr. Steps cannot take --device, \
+        --json, --verify, --verify-timeout or --retries. A step's own --wait-timeout or --poll-interval \
+        overrides the batch-level value.
+
+        With --json, stdout is NDJSON: one line per finished step, in this key order: step, kind, line, ok, ms; \
+        a failure adds exitCode and error; wait and assert add met, reason, match; screenshot adds its --json keys; \
+        describe-ui adds tree (json format) or output (ndjson or text). A last line follows: \
+        {"step":null,"kind":"batch","ok":...,"ms":...,"steps":...,"failed":...}, where steps counts every step \
+        in the batch, run or not. Human text goes to stderr.
+
+        Without --continue-on-error the first failure stops the batch. Exit codes: 1 when any step failed to run, \
+        else 5 when a wait, assert or screenshot --compare condition was not met, else 0.
+
         Examples:
-          offsider batch --device DEVICE_ID --step "tap --id BackButton" --step "type 'hello'"
-          offsider batch --device DEVICE_ID --file steps.txt
+          offsider batch --device DEVICE_ID --json \\
+            --step "tap --id open" --step "wait --id sheet-title" \\
+            --step "assert --id state --has-value Open" \\
+            --step "screenshot --output shot.png --scale points" \\
+            --step "describe-ui --summary"
+          offsider batch --device DEVICE_ID --json --file steps.txt
           cat steps.txt | offsider batch --device DEVICE_ID --stdin
         """
     )
@@ -34,7 +53,7 @@ struct Batch: AsyncParsableCommand {
     @Flag(name: .customLong("stdin"), help: "Read steps from stdin (one step per line).")
     var useStdin: Bool = false
 
-    @Option(name: .customLong("ax-cache"), help: "Accessibility snapshot cache policy for selector-based taps.")
+    @Option(name: .customLong("ax-cache"), help: "Accessibility tree reuse for selector steps: perBatch reuses the latest read until a step sends input or sleeps; perStep reads fresh for every selector step; none is an alias of perStep.")
     var axCachePolicy: AXCachePolicy = .perBatch
 
     @Option(name: .customLong("type-submission"), help: "Type step submission mode.")
@@ -54,6 +73,9 @@ struct Batch: AsyncParsableCommand {
 
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active.")
     var pollInterval: Double = 0.25
+
+    @Flag(name: .customLong("json"), help: "Print one NDJSON line per step to stdout, then a summary line; human text goes to stderr.")
+    var json: Bool = false
 
     @Flag(name: .customLong("verbose"), help: "Enable verbose logging to stderr.")
     var verbose: Bool = false
@@ -81,14 +103,18 @@ struct Batch: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger(writeToStdErr: verbose)
-        try await run(on: try await DeviceRouter.route(deviceOption.id, logger: logger), logger: logger)
+        let watchdog = DeviceWatchdog()
+        let route = try await watchdog.guardingSetup(device: deviceOption.id) {
+            try await DeviceRouter.route(deviceOption.id, logger: logger)
+        }
+        try await run(on: route, logger: logger, watchdog: watchdog)
     }
 
     /// Every step shares one input session, so an Android batch holds one gRPC client or adb executor throughout.
-    func run(on route: DeviceRouter.Route, logger: OffsiderLogger) async throws {
+    func run(on route: DeviceRouter.Route, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         let backend = route.backend
         let device = route.device
-        try await backend.prepare()
+        try await watchdog.guardingSetup(device: device.rawValue) { try await backend.prepare() }
 
         let stepLines = try loadStepLines()
         if stepLines.isEmpty {
@@ -109,11 +135,13 @@ struct Batch: AsyncParsableCommand {
                 typeChunkSize: typeChunkSize,
                 tapStyle: tapStyle,
                 waitTimeout: waitTimeout,
-                pollInterval: pollInterval
+                pollInterval: pollInterval,
+                watchdog: watchdog
             )
         }
 
-        let session = try await backend.openInputSession(for: device)
+        let session = try await watchdog.guardingSetup(device: device.rawValue) { try await backend.openInputSession(for: device) }
+        let output = BatchOutput.console(json: json)
 
         do {
             try await Self.runSteps(
@@ -121,6 +149,7 @@ struct Batch: AsyncParsableCommand {
                 context: context,
                 session: session,
                 continueOnError: continueOnError,
+                output: output,
                 logger: logger
             )
         } catch {
@@ -129,46 +158,112 @@ struct Batch: AsyncParsableCommand {
         }
         await session.close()
 
-        print("✓ Batch completed successfully (\(stepLines.count) steps)")
+        output.status("✓ Batch completed successfully (\(stepLines.count) steps)")
     }
 
+    /// Runs every step (or up to the first failure), reporting each through `output`; throws exit 1 or 5 as the help describes.
     @MainActor
+    @discardableResult
     static func runSteps(
         _ stepLines: [String],
         context: BatchContext,
         session: any InputSession,
         continueOnError: Bool,
+        output: BatchOutput = .console(json: false),
         logger: OffsiderLogger
-    ) async throws {
+    ) async throws -> [BatchStepRecord] {
         let runner = BatchPlanRunner(session: session, logger: logger)
-        var failures: [String] = []
+        let clock = ContinuousClock()
+        let batchStart = clock.now
+        var records: [BatchStepRecord] = []
 
         for (index, line) in stepLines.enumerated() {
-            var stepName = "<unparsed>"
-            do {
-                let tokens = try ShellTokenizer.tokenize(line)
-                stepName = tokens.first ?? "<empty>"
-                let primitives = try await BatchStepParser.parseStepTokens(
-                    tokens,
-                    deviceID: context.device.rawValue,
-                    context: context,
-                    logger: logger
-                )
-                try await runner.run(BatchPlan(primitives: primitives))
-            } catch {
-                let reason = message(for: error)
-                if continueOnError {
-                    failures.append("Step \(index + 1) failed: [\(stepName)] -> \(reason)")
-                } else {
-                    throw CLIError(errorDescription: "Step \(index + 1) failed: [\(stepName)]\n\(reason)")
-                }
+            let record = await runStep(index + 1, line: line, context: context, runner: runner, output: output, logger: logger)
+            records.append(record)
+            if output.json {
+                output.write(record.jsonLine() + "\n")
+            }
+            if !record.ok && !continueOnError {
+                break
             }
         }
 
-        if !failures.isEmpty {
-            let failureMessage = failures.joined(separator: "\n")
-            throw CLIError(errorDescription: "Batch completed with \(failures.count) failure(s):\n\(failureMessage)")
+        let failed = records.filter { !$0.ok }
+        if output.json {
+            let elapsed = Self.seconds(clock.now - batchStart)
+            output.write(BatchStepRecord.summaryLine(ok: failed.isEmpty, elapsed: elapsed, steps: stepLines.count, failed: failed.count) + "\n")
         }
+        try finish(failed, continueOnError: continueOnError, output: output)
+        return records
+    }
+
+    @MainActor
+    private static func runStep(
+        _ number: Int,
+        line: String,
+        context: BatchContext,
+        runner: BatchPlanRunner,
+        output: BatchOutput,
+        logger: OffsiderLogger
+    ) async -> BatchStepRecord {
+        let clock = ContinuousClock()
+        let start = clock.now
+        var stepName = "<unparsed>"
+        var detail = BatchStepRecord.Detail.none
+        var failure: BatchStepRecord.Failure?
+        do {
+            let tokens = try ShellTokenizer.tokenize(line)
+            stepName = tokens.first ?? "<empty>"
+            // Also after a failure: a step can send input before it fails.
+            defer {
+                if BatchStepKind(rawValue: stepName)?.mayChangeScreen == true {
+                    context.invalidateTree()
+                }
+            }
+            switch try await BatchStepParser.parseStep(tokens, deviceID: context.device.rawValue, context: context, logger: logger) {
+            case .input(let primitives):
+                try await runner.run(BatchPlan(primitives: primitives))
+            case .read(let step):
+                let result = try await step.runInBatch(context: context, logger: logger)
+                detail = result.detail
+                output.report(result)
+                if let unmet = result.unmet {
+                    failure = .init(exitCode: OffsiderExitCode.unverified.rawValue, message: unmet)
+                }
+            }
+        } catch {
+            failure = .init(exitCode: OffsiderExitCode.failure.rawValue, message: message(for: error))
+        }
+        return BatchStepRecord(
+            step: number, kind: stepName, line: line, elapsed: seconds(clock.now - start), failure: failure, detail: detail
+        )
+    }
+
+    /// Exit 1 (as a `CLIError`) when any step failed to run; else exit 5 when a condition was not met.
+    @MainActor
+    private static func finish(_ failed: [BatchStepRecord], continueOnError: Bool, output: BatchOutput) throws {
+        let failures = failed.compactMap { record in record.failure.map { (record, $0) } }
+        guard !failures.isEmpty else { return }
+
+        let text: String
+        if continueOnError {
+            let lines = failures.map { "Step \($0.0.step) failed: [\($0.0.kind)] -> \($0.1.message)" }
+            text = "Batch completed with \(failures.count) failure(s):\n" + lines.joined(separator: "\n")
+        } else {
+            let (record, failure) = failures[0]
+            text = "Step \(record.step) failed: [\(record.kind)]\n\(failure.message)"
+        }
+
+        if failures.allSatisfy({ $0.1.isConditionNotMet }) {
+            output.writeError(text + "\n")
+            throw ExitCode(OffsiderExitCode.unverified.rawValue)
+        }
+        throw CLIError(errorDescription: text)
+    }
+
+    private static func seconds(_ duration: Duration) -> TimeInterval {
+        let components = duration.components
+        return Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 
     private func loadStepLines() throws -> [String] {

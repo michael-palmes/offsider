@@ -147,8 +147,6 @@ struct DoctorRulesTests {
 
     @Test("Host checks only apply from Xcode 27")
     func deviceHubEra() {
-        #expect(DoctorRules.simulatorApp(isRunning: true, xcodeMajor: 26).status == .skip)
-        #expect(DoctorRules.simulatorApp(isRunning: true, xcodeMajor: 27).status == .fail)
         #expect(DoctorRules.deviceHub(.notRunning, appPath: "/X/DeviceHub.app", xcodeMajor: 26).status == .skip)
         #expect(DoctorRules.deviceHub(.missing, appPath: "/X/DeviceHub.app", xcodeMajor: 27).status == .fail)
         let notRunning = DoctorRules.deviceHub(.notRunning, appPath: "/X/DeviceHub.app", xcodeMajor: 27)
@@ -156,6 +154,45 @@ struct DoctorRulesTests {
         #expect(notRunning.hint?.contains("open -g \"/X/DeviceHub.app\"") == true)
         #expect(DoctorRules.isDeviceHubFixable(.notRunning, xcodeMajor: 27))
         #expect(!DoctorRules.isDeviceHubFixable(.runningFromOtherXcode(path: "/Y"), xcodeMajor: 27))
+    }
+
+    @Test("The Xcode bundle is found from a nested app or a developer directory")
+    func xcodeBundle() {
+        #expect(DoctorRules.xcodeBundle(containing: "/Applications/Xcode-26.4.app/Contents/Developer/Applications/Simulator.app") == "/Applications/Xcode-26.4.app")
+        #expect(DoctorRules.xcodeBundle(containing: "/Applications/Xcode-beta.app/Contents/Developer") == "/Applications/Xcode-beta.app")
+        #expect(DoctorRules.xcodeBundle(containing: "/Library/Developer/CommandLineTools") == nil)
+        #expect(DoctorRules.xcodeBundle(containing: "/Applications/Xcode 26.4.app/Contents/Developer/") == "/Applications/Xcode 26.4.app")
+    }
+
+    @Test("Simulator.app from another Xcode suggests DEVELOPER_DIR before quitting")
+    func simulatorAppFromOtherXcode() {
+        let selected = "/Applications/Xcode-27.app/Contents/Developer"
+        let other = DoctorRules.simulatorApp(.running(xcodePath: "/Applications/Xcode 26.4.app"), selectedDeveloperDirectory: selected, xcodeMajor: 27)
+        #expect(other.status == .fail)
+        #expect(other.detail == "Simulator.app from /Applications/Xcode 26.4.app is running.")
+        #expect(other.hint?.contains("DEVELOPER_DIR=/Applications/Xcode 26.4.app/Contents/Developer") == true)
+        #expect(other.hint?.contains("quit Simulator.app") == true)
+    }
+
+    @Test("Simulator.app from the selected or an unknown Xcode keeps the quit hint")
+    func simulatorAppQuitHint() {
+        let selected = "/Applications/Xcode-27.app/Contents/Developer"
+        let quit = "Quit Simulator.app; Xcode 27 runs simulators under Device Hub."
+        for state in [SimulatorAppState.running(xcodePath: "/Applications/Xcode-27.app"), .running(xcodePath: nil)] {
+            let verdict = DoctorRules.simulatorApp(state, selectedDeveloperDirectory: selected, xcodeMajor: 27)
+            #expect(verdict.status == .fail)
+            #expect(verdict.detail == "Simulator.app is running")
+            #expect(verdict.hint == quit)
+        }
+        let noSelection = DoctorRules.simulatorApp(.running(xcodePath: "/Applications/Xcode-26.4.app"), selectedDeveloperDirectory: nil, xcodeMajor: 27)
+        #expect(noSelection.hint == quit)
+    }
+
+    @Test("Simulator.app is only checked from Xcode 27 and passes when not running")
+    func simulatorAppEra() {
+        let other = SimulatorAppState.running(xcodePath: "/Applications/Xcode-26.4.app")
+        #expect(DoctorRules.simulatorApp(other, selectedDeveloperDirectory: "/Applications/Xcode-26.4.app/Contents/Developer", xcodeMajor: 26).status == .skip)
+        #expect(DoctorRules.simulatorApp(.notRunning, selectedDeveloperDirectory: "/Applications/Xcode-27.app/Contents/Developer", xcodeMajor: 27).status == .pass)
     }
 
     @Test("Missing Screen Recording permission skips the window check instead of warning")

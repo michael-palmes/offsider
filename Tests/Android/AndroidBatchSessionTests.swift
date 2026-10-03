@@ -20,6 +20,7 @@ private final class SessionCountingBackend: DeviceBackend {
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice { try await wrapped.requireBootedDevice(id) }
     func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree { try await wrapped.accessibilityTree(for: id, point: point) }
     func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? { try await wrapped.screenInfo(for: id) }
+    func screenSize(for id: DeviceID) async throws -> UISize? { try await wrapped.screenSize(for: id) }
     func deviceCoordinates(for points: [(x: Double, y: Double)], tree: UITree?, on id: DeviceID) async throws -> [(x: Double, y: Double)] {
         try await wrapped.deviceCoordinates(for: points, tree: tree, on: id)
     }

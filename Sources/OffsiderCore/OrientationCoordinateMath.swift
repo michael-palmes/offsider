@@ -10,6 +10,16 @@ public enum OrientationCoordinateMath {
         public var isLandscape: Bool {
             self == .landscape || self == .landscapeFlipped
         }
+
+        /// The orientation whose upright image needs `quarterTurns` counterclockwise turns of a native framebuffer.
+        public init(uprightQuarterTurnsCounterclockwise quarterTurns: Int) {
+            switch (quarterTurns % 4 + 4) % 4 {
+            case 1: self = .landscapeFlipped
+            case 2: self = .portraitUpsideDown
+            case 3: self = .landscape
+            default: self = .portrait
+            }
+        }
     }
 
     public static func translateToPhysical(
@@ -32,6 +42,18 @@ public enum OrientationCoordinateMath {
         case .landscapeFlipped:
             return (x: portraitWidth - y, y: x)
         }
+    }
+
+    /// From a display's native points to idb's main-screen points, as idb sends touches as fractions of the main screen.
+    public static func scaleToMainScreen(
+        x: Double,
+        y: Double,
+        displayWidth: Double,
+        displayHeight: Double,
+        mainWidth: Double,
+        mainHeight: Double
+    ) -> (x: Double, y: Double) {
+        (x: x * mainWidth / displayWidth, y: y * mainHeight / displayHeight)
     }
 
     public static func letterboxToPhysical(

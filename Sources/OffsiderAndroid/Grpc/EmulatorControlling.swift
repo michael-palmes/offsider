@@ -33,6 +33,14 @@ struct FrameBox: Equatable, Sendable {
     let height: Int
 }
 
+/// The folded view inside a foldable's unfolded framebuffer, in frame pixels.
+struct FoldedRect: Equatable, Sendable {
+    let x: Int
+    let y: Int
+    let width: Int
+    let height: Int
+}
+
 /// One screenshot as the emulator sent it: turned for the emulator's rotation, not necessarily the guest's.
 struct EmulatorFrame: Equatable, Sendable {
     let format: EmulatorImageFormat
@@ -42,6 +50,13 @@ struct EmulatorFrame: Equatable, Sendable {
     let emulatorRotation: Int
     let sequence: UInt32
     let bytes: Data
+    /// `Image.format.foldedDisplay`, set while a foldable is folded.
+    var folded: FoldedRect? = nil
+}
+
+/// `Posture.PostureValue`, the emulator's hinge state.
+enum EmulatorPosture: Int, Equatable, Sendable {
+    case unknown, closed, halfOpened, opened, flipped, tent
 }
 
 /// What Android commands need from the emulator's gRPC endpoint; a protocol so tests never reach a real one.
@@ -54,6 +69,10 @@ protocol EmulatorControlling: AnyObject, Sendable {
     func screenshotStream(_ format: EmulatorImageFormat, fitting box: FrameBox?) -> AsyncThrowingStream<EmulatorFrame, any Error>
     func clipboard() async throws -> String
     func setClipboard(_ text: String) async throws
+    /// Moves the hinge; Android follows a moment later.
+    func setPosture(_ posture: EmulatorPosture) async throws
+    /// The first posture `streamNotification` sends, which it does on subscribe; nil when none arrives in time.
+    func currentPosture(timeout: Duration) async throws -> EmulatorPosture?
     /// Shuts the connection down and removes a registered signing key.
     func close() async
 }

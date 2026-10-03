@@ -58,8 +58,27 @@ extension EmulatorControlClient {
             height: height,
             emulatorRotation: min(3, max(0, image.format.rotation.rotation.rawValue)),
             sequence: image.seq,
-            bytes: image.image
+            bytes: image.image,
+            folded: folded(from: image.format)
         )
+    }
+
+    /// Only a rectangle with both sides set counts: an unfolded frame leaves the message empty or absent.
+    static func folded(from format: Android_Emulation_Control_ImageFormat) -> FoldedRect? {
+        guard format.hasFoldedDisplay else { return nil }
+        let folded = format.foldedDisplay
+        guard folded.width > 0, folded.height > 0 else { return nil }
+        return FoldedRect(x: Int(folded.xOffset), y: Int(folded.yOffset), width: Int(folded.width), height: Int(folded.height))
+    }
+
+    static func postureMessage(_ posture: EmulatorPosture) -> Android_Emulation_Control_Posture {
+        var message = Android_Emulation_Control_Posture()
+        message.value = Android_Emulation_Control_Posture.PostureValue(rawValue: posture.rawValue) ?? .postureUnknown
+        return message
+    }
+
+    static func posture(from message: Android_Emulation_Control_Posture) -> EmulatorPosture {
+        EmulatorPosture(rawValue: message.value.rawValue) ?? .unknown
     }
 
     private static func eventType(_ phase: KeyPhase) -> Android_Emulation_Control_KeyboardEvent.KeyEventType {

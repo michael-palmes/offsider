@@ -105,6 +105,30 @@ actor EmulatorControlClient: EmulatorControlling {
         }
     }
 
+    func setPosture(_ posture: EmulatorPosture) async throws {
+        let message = Self.postureMessage(posture)
+        _ = try await call(.setPosture, timeout: .seconds(2)) { stub, metadata, options in
+            try await stub.setPosture(message, metadata: metadata, options: options)
+        }
+    }
+
+    func currentPosture(timeout: Duration) async throws -> EmulatorPosture? {
+        do {
+            return try await call(.streamNotification, timeout: timeout) { stub, metadata, options in
+                try await stub.streamNotification(Google_Protobuf_Empty(), metadata: metadata, options: options) { response in
+                    for try await notification in response.messages {
+                        if case .posture(let posture) = notification.type {
+                            return EmulatorControlClient.posture(from: posture)
+                        }
+                    }
+                    return nil
+                }
+            }
+        } catch let error as AndroidError where error.kind == .grpcDeadlineExceeded {
+            return nil
+        }
+    }
+
     func close() async {
         shutdown()
         auth.close()

@@ -6,10 +6,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `describe-ui --summary` prints one line per on-screen node that has a label, id or value. `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json|ndjson|text` and `--compact` shape the output; without them it is unchanged.
+- `screenshot --scale points|<factor>`, `--region x,y,w,h` (in points), `--format png|jpeg`, `--quality` and `--json`.
+- `screenshot --compare <baseline>` with `--threshold` reports how much of the capture changed and exits 0 when it changed, 5 when it did not.
+- `wait` waits until an element is on screen or `--gone`, the screen is `--settled`, a `--region` is `--changed` or `--stable`, or `--seconds` pass, and exits 5 on timeout; `--settled` on a screen whose accessibility tree is never readable fails and suggests `--settle-by screen`. `assert` checks once and exits 5 when the element is not on screen, is not gone, or lacks `--has-value`.
+- `batch` runs `wait`, `assert`, `screenshot` and `describe-ui` as steps, and `batch --json` prints one NDJSON line per step and a summary line. A batch whose only failures are unmet conditions exits 5.
+- `tap` warns when another element may cover its target, and `--fail-if-covered` fails instead of tapping.
+- `tap` treats a React Native LogBox banner as covering the strip beneath it on Android, where the accessibility tree cannot see its touch area.
+- `logs` prints recent device log entries or collects live ones, with `--rn` for React Native output, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw` and `--json`. Live output stops with an error when the device's log stream exits, for example on a bad `--predicate`.
+- `appearance`, `content-size` and `orientation` read or set the device's appearance, text size and orientation on iOS and Android; `shake` sends the shake gesture on iOS. On Android, `appearance` reads `auto` or `custom` when night mode follows a schedule, and setting light or dark replaces it.
+- `rn prepare --bundle-id <id>` marks an Expo dev client's first-launch dev menu intro as seen and stops the menu opening at launch, so a fresh debug install opens straight into the app (iOS simulators; Android debuggable builds through `run-as`). It stops the app first if it is running, on both platforms.
+- `--allow-offscreen` on `tap`, `slider` and batch tap steps resolves an element whose frame is outside the screen.
+- When no `--label` or `--value` matches exactly, typographic quotes and unusual spaces are folded, so `--label "Don't Allow"` finds `Don’t Allow`. A selector that matches nothing suggests the closest labels.
+- `doctor` names the Xcode a running Simulator.app belongs to and, when it is not the selected one, suggests `DEVELOPER_DIR` before quitting it.
+- `OFFSIDER_TIMINGS=1` prints phase timings to stderr.
+- `orientation --rotation 0|90|180|270` sets the orientation as the device's anticlockwise turn from portrait, and `orientation --json` prints `orientation`, `rotation`, `previous` and `screen`.
+- `describe-ui` `screen` adds `rotation` (the device's anticlockwise turn from portrait in degrees, the number `orientation --json` prints, on a landscape-natural Android panel too), `display` (`{id, platformId}`: `main`, or `cover` or `inner` on a foldable) and `posture` (null unless the device folds); the `--summary` header adds the rotation, and the display and posture on a foldable. `screenshot --json` adds the same `rotation`, `display` and `posture`.
+- `displays` lists a device's built-in displays with platform ID, size, scale, rotation and which one is active, then the posture; `--json`.
+- `posture` reads a foldable's posture and active display, and sets `closed`, `half-opened` or `open`: on an Android emulator through the emulator, on the iPhone Duo simulator by driving its hinge (`--angle 0-180`), waiting until the display has swapped. Where an iOS runtime has no hinge service the command says so.
+- On the iPhone Duo's inner display, `tap`, `swipe`, `drag` and `touch --down --up` reach the display through its own touchscreen; a detached `touch --down` or `--up` on it is refused with a message.
+- `--display <id>` on `screenshot` captures one display of a foldable; on `describe-ui` it checks that the named display is the active one.
+- Screenshots on the iPhone Duo simulator capture the active display: the cover display while folded, the inner display while open.
+- A foldable E2E suite for the iPhone Duo simulator (`make e2e-foldable`, `OFFSIDER_FOLDABLE_E2E=1`) and one for a Pixel 9 Pro Fold emulator (`make e2e-android-fold`, `OFFSIDER_ANDROID_FOLD_E2E=1`).
+- React Native playground screens for kept-mounted sheets, mounted stacks, overlays, unlabelled rows and environment readouts, with iOS suites (`make e2e-rn-ios`) and a typecheck in CI.
+
 ### Changed
 
+- **Breaking, relative to the earlier entries in this section:** `orientation` names the device turn, as Maestro and devicectl do. `landscape-left` now means the device turned 90 degrees anticlockwise, with the home edge on the right (UIKit's interface orientation `landscape-right`), and `landscape-right` the reverse; they used to take UIKit's interface names.
+- **Breaking:** `describe-ui` JSON `version` is now 2: `screen.orientation` and `screenshot --json` `orientation` are the shape, `portrait` or `landscape`, and `screen.rotation`, `screen.display` and `screen.posture` are new. In 0.3.0, `orientation` was `portrait`, `portraitUpsideDown`, `landscape` or `landscapeFlipped`; read `rotation` for the turn.
+- `posture`, `wait`, `assert` and `batch` give routing and device preparation their own 45 s watchdog allowance, separate from `--timeout`, so a cold emulator is no longer ended with "the device did not answer" before the first read.
+- Selectors prefer on-screen matches. A match whose frame lies outside the screen now fails with an error naming its frame, where `tap` used to report success, and `--wait-timeout` waits for it to come on screen. A duplicate label on a hidden view no longer counts as a second match. A partly visible element whose centre is off screen is tapped at the centre of its visible part.
+- Every iOS landscape screenshot is now upright, with or without the new `screenshot` options.
+- `batch` reads the screen again after any step that sends input or sleeps, so a selector step sees the screen its previous step opened. `--ax-cache none` is an alias of `perStep`.
+- A multiple-match error lists each candidate's role, id and frame, and for a duplicated `--id` suggests `--element-type` or coordinates.
+- A selector `tap` or `slider` that had to wait for its element also waits until the element stops moving, so a tap no longer lands on a sheet that is still sliding in.
+- `tap --allow-offscreen` warns when its point is outside the screen.
+- A `--wait-timeout` or `--poll-interval` on a batch tap step overrides the batch-level value for that step; it used to be ignored.
+- `gesture` help says which way each scroll preset moves the content.
+- `tap -x -y` outside the screen prints a warning, in batch steps too.
+- `screenshot` prints the image size on its "saved" line.
+- The React Native playground's Metro commands listen on loopback only: `pnpm start` passes `--localhost`, and `dev-ios`/`dev-android` run the background `metro start`, install a debug build and set the adb port reverse.
 - Android commands that read the screen finish sooner: once the UiAutomation helper confirms `quit`, Offsider closes it without waiting up to 1 s for its exit or sending `kill`.
 - Android `type --replace` no longer runs a `wm size`, `wm density` and `dumpsys input` shell before the helper sets the text. Input reads the display only when it first needs it, so `--verify` and `batch` reuse what the helper already measured.
+
+### Fixed
+
+- Screenshots on the iPhone Duo simulator captured the inactive inner display while it was folded.
+- `wait`, `assert` and `orientation` stop with an error when the device does not answer, where a hung simulator used to hang the command.
+- A HID broker that exits just after accepting a connection is replaced, where the client used to fail with a socket error.
+- A selector `tap` or `slider` on iOS reads the accessibility tree once, not twice.
+- A failed selector `tap` prints its error once.
+- `logs --last` and `--since` refuse values beyond 8760 h or the year 9999 with a clear error instead of crashing.
+- A batch `describe-ui --display` step refuses a display that is not active, as the standalone command does.
+- `posture --angle` and `posture <name>` no longer move the iPhone Duo's hinge when it already reads the target angle and the matching display is active, so an open simulator is not closed and reopened, and a resend cannot refold a closed one; when the hinge reads the target but the other display is still showing, the hinge is swept from the far end so the panels swap.
+- On the iPhone Duo's inner display, and on an Android tablet or other landscape-natural panel, `rotation` in `describe-ui`, `screenshot --json` and `displays` is the device's turn from portrait, matching `orientation --json`; it used to be the UI's turn on the panel, 90 or 270 degrees off.
+- Polling the posture or orientation of a foldable simulator reads devicectl at most once a second instead of on every poll, and orientation retries no longer block the process.
 
 ## [0.3.0] - 2026-10-02
 

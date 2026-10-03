@@ -17,6 +17,7 @@ final class RecordingInputSession: InputSession {
     private let failure: any Error
     private(set) var calls: [Call] = []
     private(set) var isClosed = false
+    var onPerform: ((InputEvent) -> Void)?
 
     init(failingOn failingEvent: InputEvent? = nil, with failure: any Error = FakeInputSessionError()) {
         self.failingEvent = failingEvent
@@ -28,10 +29,13 @@ final class RecordingInputSession: InputSession {
         if event == failingEvent {
             throw failure
         }
+        onPerform?(event)
     }
 
+    /// Reported to `onPerform` as the tap it stands for.
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
         calls.append(.physicalTap(x: point.x, y: point.y, preDelay: preDelay, postDelay: postDelay))
+        onPerform?(.tapAt(x: point.x, y: point.y))
     }
 
     func close() async {

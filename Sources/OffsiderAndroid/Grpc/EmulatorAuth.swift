@@ -3,7 +3,7 @@ import GRPCCore
 
 /// The RPCs Offsider calls; the path is what a JWT's `aud` names.
 enum EmulatorMethod: String, CaseIterable, Sendable {
-    case getStatus, sendTouch, sendKey, getScreenshot, streamScreenshot, setClipboard, getClipboard
+    case getStatus, sendTouch, sendKey, getScreenshot, streamScreenshot, setClipboard, getClipboard, setPosture, streamNotification
 
     var path: String { "/android.emulation.control.EmulatorController/\(rawValue)" }
 }

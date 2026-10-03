@@ -118,17 +118,17 @@ struct BatchTests {
         #expect(currentState == "State target tapped")
     }
 
-    @Test("Batch with perBatch cache fails after state change")
-    func perBatchCacheCanFailOnStateChange() async throws {
+    @Test("Batch with perBatch cache refreshes after a step that sends input")
+    func perBatchCacheRefreshesAfterInput() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-test")
 
-        let result = try await TestHelpers.runOffsiderCommandAllowFailure(
+        try await TestHelpers.runOffsiderCommand(
             "batch --ax-cache perBatch --step \"tap --label 'Trigger State Change'\" --step \"tap --label 'State Target'\"",
             simulatorUDID: defaultSimulatorUDID
         )
 
-        #expect(result.exitCode != 0)
-        #expect(result.output.contains("Step 2 failed:"))
+        let currentState = try await waitForBatchState(expected: "State target tapped", timeout: 3)
+        #expect(currentState == "State target tapped")
     }
 
     @Test("Batch with perStep cache handles state change")

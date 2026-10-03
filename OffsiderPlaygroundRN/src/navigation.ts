@@ -123,6 +123,36 @@ export const routeInfo = {
     menuTitle: 'Long Scroll Test',
     subtitle: 'Dedicated long scroll coverage',
   },
+  'parked-sheet-test': {
+    section: 'Real-world RN',
+    title: 'Parked Sheet',
+    menuTitle: 'Parked Sheet Test',
+    subtitle: 'Sheet kept mounted and parked off screen',
+  },
+  'stack-test': {
+    section: 'Real-world RN',
+    title: 'Mounted Stack',
+    menuTitle: 'Mounted Stack Test',
+    subtitle: 'Previous pages stay mounted with the same ids',
+  },
+  'overlay-test': {
+    section: 'Real-world RN',
+    title: 'Overlays',
+    menuTitle: 'Overlay Test',
+    subtitle: 'Banners, silent scrims and hidden controls',
+  },
+  'rows-test': {
+    section: 'Real-world RN',
+    title: 'Rows',
+    menuTitle: 'Rows Test',
+    subtitle: 'Merged row labels, live values, long list',
+  },
+  'environment-test': {
+    section: 'Real-world RN',
+    title: 'Environment',
+    menuTitle: 'Environment Test',
+    subtitle: 'Appearance, size, canvas and logging',
+  },
 } satisfies Record<string, RouteInfo>;
 
 export type RouteId = keyof typeof routeInfo;

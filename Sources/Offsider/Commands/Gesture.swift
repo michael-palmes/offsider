@@ -15,6 +15,12 @@ struct Gesture: AsyncParsableCommand {
           swipe-from-left-edge, swipe-from-right-edge
           swipe-from-top-edge, swipe-from-bottom-edge
 
+        Scroll presets are named for the finger's direction, not the content's:
+          scroll-up: swipe up, moving content up to reveal what is below
+          scroll-down: swipe down, moving content down to reveal what is above
+          scroll-left: swipe left, moving content left to reveal what is to the right
+          scroll-right: swipe right, moving content right to reveal what is to the left
+
         Presets are sized to the foreground app's frame from the accessibility
         tree and follow the device's orientation, like swipe coordinates.
         --screen-width and --screen-height override that size, in points
@@ -27,7 +33,7 @@ struct Gesture: AsyncParsableCommand {
         """
     )
 
-    @Argument(help: "The gesture preset to perform.")
+    @Argument(help: "The gesture preset to perform; scroll presets name the finger's direction (scroll-up reveals what is below).")
     var preset: GesturePreset
 
     @Option(name: .customLong("screen-width"), help: "Screen width in points (dp on Android) in the current orientation (default: the app's frame width).")

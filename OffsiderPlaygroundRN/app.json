@@ -4,9 +4,9 @@
     "slug": "OffsiderPlaygroundRN",
     "version": "1.0.0",
     "scheme": "offsiderplaygroundrn",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.mpalmes.offsider.playground.rn",
       "supportsTablet": false

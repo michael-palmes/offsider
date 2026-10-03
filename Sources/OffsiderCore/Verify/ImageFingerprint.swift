@@ -8,6 +8,8 @@ public struct ImageFingerprint: Equatable, Sendable {
     public let height: Int
     public let columns: Int
     public let rows: Int
+    /// Tiles with at least one pixel row outside the excluded bands.
+    public let comparedTileCount: Int
     private let tiles: [UInt64]
 
     public init(
@@ -31,6 +33,7 @@ public struct ImageFingerprint: Equatable, Sendable {
         let columnStarts = (0...columns).map { $0 * width / columns }
         let firstRow = max(0, min(excludingTopPixels, height))
         let endRow = max(firstRow, height - max(0, excludingBottomPixels))
+        comparedTileCount = endRow > firstRow ? ((endRow - 1) * rows / height - firstRow * rows / height + 1) * columns : 0
         guard let base = rgba.baseAddress, width > 0 else {
             self.tiles = tiles
             return
@@ -65,8 +68,20 @@ public struct ImageFingerprint: Equatable, Sendable {
     }
 
     public init?(pngData: Data, columns: Int = 16, rows: Int = 32, excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0) {
-        guard let source = CGImageSourceCreateWithData(pngData as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+        guard let image = try? ScreenImage.decode(pngData) else { return nil }
+        self.init(image: image, columns: columns, rows: rows, excludingTopPixels: excludingTopPixels, excludingBottomPixels: excludingBottomPixels)
+    }
+
+    /// With `region`, only that part of the image is fingerprinted, and the bands count from its top and bottom.
+    public init?(
+        image: CGImage,
+        region: PixelRect? = nil,
+        columns: Int = 16,
+        rows: Int = 32,
+        excludingTopPixels: Int = 0,
+        excludingBottomPixels: Int = 0
+    ) {
+        guard let image = try? region.map({ try ScreenImage.cropped(image, to: $0) }) ?? image,
               let colourSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
             return nil
         }
@@ -75,15 +90,7 @@ public struct ImageFingerprint: Equatable, Sendable {
         let bytesPerRow = width * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(
-                data: buffer.baseAddress,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: bytesPerRow,
-                space: colourSpace,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else {
+            guard let context = ScreenImage.context(width: width, height: height, colourSpace: colourSpace, data: buffer.baseAddress) else {
                 return false
             }
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -110,6 +117,13 @@ public struct ImageFingerprint: Equatable, Sendable {
             return nil
         }
         return Set(tiles.indices.filter { tiles[$0] != other.tiles[$0] })
+    }
+
+    /// Changed tiles over compared tiles; nil when the grids differ.
+    public func changedFraction(comparedTo other: ImageFingerprint) -> Double? {
+        guard let changed = changedTiles(comparedTo: other) else { return nil }
+        let compared = min(comparedTileCount, other.comparedTileCount)
+        return compared == 0 ? 0 : Double(changed.count) / Double(compared)
     }
 }
 

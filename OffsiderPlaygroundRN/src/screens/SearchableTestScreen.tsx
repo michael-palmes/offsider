@@ -17,6 +17,7 @@ export function SearchableTestScreen() {
         <TextInput
           testID="searchable-test-field"
           placeholder="Search Books"
+          placeholderTextColor={colours.secondary}
           onChangeText={setQuery}
           autoCorrect={false}
           autoCapitalize="none"

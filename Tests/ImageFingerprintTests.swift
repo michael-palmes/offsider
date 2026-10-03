@@ -119,4 +119,40 @@ struct ImageFingerprintTests {
         #expect(ScreenChange.detect(before: before, after: [realChange, caretAndChange, realChange]))
         #expect(!ScreenChange.detect(before: before, after: [before, before, before]))
     }
+
+    @Test("A change inside a region is detected and one outside it is not")
+    func regionScopesChanges() throws {
+        let region = PixelRect(x: 10, y: 20, width: 30, height: 40)
+        let before = try #require(ImageFingerprint(image: TestImages.make(width: 64, height: 128), region: region))
+        let inside = try #require(ImageFingerprint(image: TestImages.make(width: 64, height: 128, marked: [(20, 30)]), region: region))
+        let outside = try #require(ImageFingerprint(image: TestImages.make(width: 64, height: 128, marked: [(50, 100)]), region: region))
+        #expect(before.width == 30 && before.height == 40)
+        #expect(before.changedTiles(comparedTo: inside)?.count == 1)
+        #expect(before.changedTiles(comparedTo: outside) == [])
+    }
+
+    @Test("The changed fraction counts only tiles outside the excluded bands")
+    func changedFractionOverComparedTiles() {
+        let before = fingerprint(pixels(), excludingTopPixels: 64)
+        let changed = fingerprint(pixels { setPixel(&$0, x: 5, y: 100) }, excludingTopPixels: 64)
+        #expect(before.comparedTileCount == 16 * 16)
+        #expect(before.changedFraction(comparedTo: changed) == 1.0 / 256)
+        #expect(fingerprint(pixels()).changedFraction(comparedTo: fingerprint(pixels { setPixel(&$0, x: 5, y: 100) })) == 1.0 / 512)
+    }
+
+    @Test("Grids of different sizes have no changed fraction")
+    func changedFractionNeedsMatchingGrids() {
+        let small = [UInt8](repeating: 0, count: 32 * 32 * 4).withUnsafeBytes {
+            ImageFingerprint(rgba: $0, width: 32, height: 32, bytesPerRow: 32 * 4)
+        }
+        #expect(fingerprint(pixels()).changedFraction(comparedTo: small) == nil)
+    }
+
+    @Test("An image and its PNG encoding fingerprint equally")
+    func imageMatchesItsPNG() throws {
+        let image = TestImages.make(width: 64, height: 128, marked: [(3, 4)])
+        let fromImage = try #require(ImageFingerprint(image: image))
+        let fromPNG = try #require(ImageFingerprint(pngData: try ScreenImage.encode(image, as: .png)))
+        #expect(fromImage == fromPNG)
+    }
 }

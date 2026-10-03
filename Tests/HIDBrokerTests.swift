@@ -384,6 +384,18 @@ struct HIDBrokerTests {
         #expect(Date().timeIntervalSince(start) < 1)
     }
 
+    @Test("A broker that closed before the client set its timeouts reads as closed, not as a socket failure")
+    func timeoutsOnClosedPeerLeaveTheCloseToTheRead() throws {
+        var descriptors = [Int32](repeating: -1, count: 2)
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+        defer { Darwin.close(descriptors[0]) }
+        Darwin.close(descriptors[1])
+
+        try HIDBroker.configureSocketTimeouts(descriptors[0], readMilliseconds: 100, writeMilliseconds: 100)
+
+        #expect(throws: CLIError.self) { try HIDBroker.readMessage(from: descriptors[0]) }
+    }
+
     @Test("A client that does not read cannot block a broker write indefinitely")
     func unreadResponseWriteTimesOut() throws {
         var descriptors = [Int32](repeating: -1, count: 2)
