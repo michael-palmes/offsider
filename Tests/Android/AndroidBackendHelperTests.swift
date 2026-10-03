@@ -22,7 +22,7 @@ struct AndroidBackendHelperTests {
             "host:transport:emulator-5556", "localabstract:offsider-fake-1",
         ])
         #expect(rig.device.ops == ["hello", "dump"])
-        #expect(info == UIScreenInfo(width: 411.43, height: 923.43, scale: 2.625, orientation: .portrait))
+        #expect(info == UIScreenInfo(width: 411.43, height: 923.43, scale: 2.625, rotation: .portrait))
         #expect(tree.roots.map(\.label) == ["OffsiderPlaygroundRN"])
         #expect(tree.roots.first?.children.map(\.id) == ["BackButton", "tap-count"])
 

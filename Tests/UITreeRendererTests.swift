@@ -8,7 +8,7 @@ struct UITreeRendererTests {
     private static let iosTree = UITree(
         platform: .ios,
         device: "IOS-UDID",
-        screen: UIScreenInfo(width: 402, height: 874, scale: 3, orientation: .portrait),
+        screen: UIScreenInfo(width: 402, height: 874, scale: 3, rotation: .portrait),
         roots: [
             UINode(
                 role: .application, label: "Playground", frame: UIFrame(x: 0, y: 0, width: 402, height: 874),
@@ -38,7 +38,7 @@ struct UITreeRendererTests {
     private static let androidTree = UITree(
         platform: .android,
         device: "emulator-5554",
-        screen: UIScreenInfo(width: 411.4, height: 914.3, scale: 2.625, orientation: .landscape),
+        screen: UIScreenInfo(width: 411.4, height: 914.3, scale: 2.625, rotation: .landscape),
         roots: [
             UINode(
                 role: .application, frame: UIFrame(x: 0, y: 0, width: 411.4, height: 914.3),
@@ -118,7 +118,7 @@ struct UITreeRendererTests {
         let output = string(Self.iosTree, UITreeRenderOptions(format: .text))
 
         #expect(output == """
-        # ios IOS-UDID 402x874 @3x portrait
+        # ios IOS-UDID 402x874 @3x portrait 0°
         application "Playground" (0,0 402x874)
           scrollView (0,0 402x2000)
             button "1D" id=one-d value="3" (16,769 85x36)
@@ -136,7 +136,7 @@ struct UITreeRendererTests {
         ])
 
         #expect(output == """
-        # android emulator-5554 411.4x914.3 @2.625x landscape
+        # android emulator-5554 411.4x914.3 @2.625x portrait 270°
         application (0,0 411.4x914.3)
           switch "Alerts" id=alerts (no frame) disabled checked
 
@@ -152,7 +152,7 @@ struct UITreeRendererTests {
         let output = string(Self.iosTree, .summary)
 
         #expect(output == """
-        # ios IOS-UDID 402x874 @3x portrait
+        # ios IOS-UDID 402x874 @3x portrait 0°
         application "Playground" (0,0 402x874)
           button "1D" id=one-d value="3" (16,769 85x36)
 

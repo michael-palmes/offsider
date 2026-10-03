@@ -65,7 +65,10 @@ struct RenderedScreenshot {
             height: image.height,
             pixelsPerPoint: pixelsPerPoint,
             region: region,
-            orientation: capture.screen?.orientation?.rawValue,
+            orientation: capture.screen?.shape.rawValue,
+            rotation: capture.screen?.resolvedRotationDegrees,
+            display: capture.screen?.resolvedDisplay(on: capture.platform) ?? .main(on: capture.platform),
+            posture: capture.screen?.posture,
             upright: capture.upright,
             format: format,
             comparison: comparison
@@ -81,10 +84,27 @@ enum ScreenCapture {
         return try make(png: png, platform: device.platform, screen: screen)
     }
 
-    /// iOS framebuffers stay portrait-native when the screen turns, so they are rotated here; Android frames arrive upright.
+    /// One chosen display; a display that is not active is captured as it is, with its native points.
+    static func capture(_ capturer: any DisplayCapturing, device: DeviceID, display: DisplayInfo, posture: Posture?) async throws -> CapturedScreen {
+        let png = try await capturer.screenshotPNG(for: device, display: display.descriptor.platformId)
+        guard !display.active else {
+            let screen = try? await capturer.screenInfo(for: device)
+            return try make(png: png, platform: device.platform, screen: screen)
+        }
+        let descriptor = display.descriptor
+        let screen = UIScreenInfo(
+            width: descriptor.pointWidth, height: descriptor.pointHeight, scale: descriptor.scale,
+            rotationDegrees: display.rotationDegrees, display: descriptor.screenDisplay, posture: posture
+        )
+        return try make(png: png, platform: device.platform, screen: screen)
+    }
+
+    /// iOS framebuffers stay in the display's native orientation when the screen turns, so they are rotated here; Android frames arrive upright.
     nonisolated static func make(png: Data, platform: DevicePlatform, screen: UIScreenInfo?) throws -> CapturedScreen {
         let decoded = try ScreenImage.decode(png)
-        let turns = platform == .ios ? (screen?.orientation?.uprightQuarterTurnsCounterclockwise ?? 0) : 0
+        let turns = platform == .ios
+            ? (screen?.rotation?.uprightQuarterTurnsCounterclockwise(nativeDegrees: screen?.nativeOrientationDegrees ?? 0) ?? 0)
+            : 0
         let image = try ScreenImage.rotated(decoded, quarterTurnsCounterclockwise: turns)
         let pixelsPerPoint = screen.flatMap {
             ScreenGeometry.pixelsPerPoint(imageWidth: image.width, imageHeight: image.height, screenWidth: $0.width, screenHeight: $0.height)

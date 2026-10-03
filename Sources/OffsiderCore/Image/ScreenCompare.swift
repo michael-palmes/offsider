@@ -62,7 +62,11 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var height: Int
     public var pixelsPerPoint: Double?
     public var region: PointRegion?
+    /// The screen's shape, `portrait` or `landscape`.
     public var orientation: String?
+    public var rotation: Int?
+    public var display: ScreenDisplay?
+    public var posture: Posture?
     public var upright: Bool
     public var format: ImageFormat?
     public var comparison: ScreenCompare.Result?
@@ -74,6 +78,9 @@ public struct ScreenshotReport: Equatable, Sendable {
         pixelsPerPoint: Double?,
         region: PointRegion?,
         orientation: String?,
+        rotation: Int? = nil,
+        display: ScreenDisplay? = nil,
+        posture: Posture? = nil,
         upright: Bool,
         format: ImageFormat?,
         comparison: ScreenCompare.Result? = nil
@@ -84,6 +91,9 @@ public struct ScreenshotReport: Equatable, Sendable {
         self.pixelsPerPoint = pixelsPerPoint
         self.region = region
         self.orientation = orientation
+        self.rotation = rotation
+        self.display = display
+        self.posture = posture
         self.upright = upright
         self.format = format
         self.comparison = comparison
@@ -108,6 +118,9 @@ public struct ScreenshotReport: Equatable, Sendable {
                 ])
             }),
             ("orientation", .optional(orientation, OrderedJSON.string)),
+            ("rotation", .optional(rotation, OrderedJSON.integer)),
+            ("display", display.map(\.jsonValue) ?? .null),
+            ("posture", .optional(posture?.rawValue, OrderedJSON.string)),
             ("upright", .bool(upright)),
             ("format", .optional(format?.name, OrderedJSON.string)),
         ]

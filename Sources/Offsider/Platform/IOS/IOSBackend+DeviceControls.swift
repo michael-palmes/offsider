@@ -62,6 +62,10 @@ extension IOSBackend: DeviceShaking {
 extension IOSBackend: OrientationControlling {
     func orientation(of id: DeviceID) async throws -> DeviceOrientation? {
         let simulator = try await simulator(for: id)
+        if displayCatalog.isFoldable(simulator),
+           let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: applicationFrames[id.rawValue], refresh: true) {
+            return interfaceOrientation(on: active, of: simulator).map { DeviceOrientation(coordinateOrientation: $0) }
+        }
         return SimulatorOrientationReader.currentOrientation(of: simulator, logger: logger)
             .map { DeviceOrientation(coordinateOrientation: $0.coreOrientation) }
     }

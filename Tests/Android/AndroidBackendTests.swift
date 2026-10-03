@@ -79,7 +79,7 @@ struct AndroidBackendTests {
     @Test("screen info is the logical size in dp with the density scale and orientation")
     func screenInfo() async throws {
         let info = try await Self.backend(Self.server()).screenInfo(for: Self.device)
-        #expect(info == UIScreenInfo(width: 411.43, height: 923.43, scale: 2.625, orientation: .portrait))
+        #expect(info == UIScreenInfo(width: 411.43, height: 923.43, scale: 2.625, rotation: .portrait))
     }
 
     @Test("dp become logical pixels, probing the display once per command")

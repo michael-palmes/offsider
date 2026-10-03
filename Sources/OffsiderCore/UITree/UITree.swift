@@ -1,17 +1,78 @@
 import Foundation
 
+/// The screen's shape now: portrait when it is at least as tall as it is wide.
+public enum ScreenShape: String, Sendable {
+    case portrait
+    case landscape
+}
+
+/// A foldable's posture; `unknown` when the device has two displays but could not say which is active.
+public enum Posture: String, CaseIterable, Sendable {
+    case closed
+    case halfOpened = "half-opened"
+    case open
+    case unknown
+}
+
+/// Which display a screen belongs to: `id` is `main`, `cover`, `inner` or `external`; `platformId` is the platform's own (the simulator screen ID, the Android display ID).
+public struct ScreenDisplay: Equatable, Sendable {
+    public var id: String
+    public var platformId: String
+
+    public init(id: String, platformId: String) {
+        self.id = id
+        self.platformId = platformId
+    }
+
+    /// The display a backend that names none is on: simulator screen 1, Android display 0.
+    public static func main(on platform: DevicePlatform) -> ScreenDisplay {
+        ScreenDisplay(id: DisplayRole.main.rawValue, platformId: platform == .ios ? "1" : "0")
+    }
+}
+
 public struct UIScreenInfo: Equatable, Sendable {
     /// Points on iOS, dp on Android, in the current orientation.
     public var width: Double
     public var height: Double
     public var scale: Double?
-    public var orientation: OrientationCoordinateMath.Orientation?
+    /// The coordinate orientation input and capture follow; nil when the device could not report it.
+    public var rotation: OrientationCoordinateMath.Orientation?
+    /// Anticlockwise degrees from the display's natural orientation, when the backend reads them directly.
+    public var rotationDegrees: Int?
+    /// Nil means the platform's main display.
+    public var display: ScreenDisplay?
+    /// Nil on a device with one display.
+    public var posture: Posture?
+    /// The display's native orientation in degrees, which its framebuffer arrives in; not printed.
+    public var nativeOrientationDegrees: Int
 
-    public init(width: Double, height: Double, scale: Double? = nil, orientation: OrientationCoordinateMath.Orientation? = nil) {
+    public init(
+        width: Double,
+        height: Double,
+        scale: Double? = nil,
+        rotation: OrientationCoordinateMath.Orientation? = nil,
+        rotationDegrees: Int? = nil,
+        display: ScreenDisplay? = nil,
+        posture: Posture? = nil,
+        nativeOrientationDegrees: Int = 0
+    ) {
         self.width = width
         self.height = height
         self.scale = scale
-        self.orientation = orientation
+        self.rotation = rotation
+        self.rotationDegrees = rotationDegrees
+        self.display = display
+        self.posture = posture
+        self.nativeOrientationDegrees = nativeOrientationDegrees
+    }
+
+    public var shape: ScreenShape { height >= width ? .portrait : .landscape }
+
+    /// The backend's degrees, else the coordinate orientation's.
+    public var resolvedRotationDegrees: Int? { rotationDegrees ?? rotation?.rotationDegrees }
+
+    public func resolvedDisplay(on platform: DevicePlatform) -> ScreenDisplay {
+        display ?? .main(on: platform)
     }
 }
 
@@ -50,20 +111,29 @@ public struct UITree: Equatable, Sendable {
             ("version", .integer(Self.schemaVersion)),
             ("platform", .string(platform.rawValue)),
             ("device", .string(device)),
-            ("screen", screen.map(\.jsonValue) ?? .null),
+            ("screen", screen.map { $0.jsonValue(on: platform) } ?? .null),
             ("roots", .array(roots.map(\.jsonValue))),
         ])
     }
 }
 
 extension UIScreenInfo {
-    var jsonValue: OrderedJSON {
+    func jsonValue(on platform: DevicePlatform) -> OrderedJSON {
         .object([
             ("width", .number(width)),
             ("height", .number(height)),
             ("scale", .optional(scale, OrderedJSON.number)),
-            ("orientation", .optional(orientation?.rawValue, OrderedJSON.string)),
+            ("orientation", .string(shape.rawValue)),
+            ("rotation", .optional(resolvedRotationDegrees, OrderedJSON.integer)),
+            ("display", resolvedDisplay(on: platform).jsonValue),
+            ("posture", .optional(posture?.rawValue, OrderedJSON.string)),
         ])
+    }
+}
+
+extension ScreenDisplay {
+    var jsonValue: OrderedJSON {
+        .object([("id", .string(id)), ("platformId", .string(platformId))])
     }
 }
 

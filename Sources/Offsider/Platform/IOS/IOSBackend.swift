@@ -7,11 +7,15 @@ import OffsiderCore
 @MainActor
 final class IOSBackend: DeviceBackend {
     let logger: OffsiderLogger
+    let displayCatalog: IOSDisplayCatalog
     private var simulators: [String: FBSimulator] = [:]
+    /// The last whole tree's application frame, which tells a foldable's displays apart when devicectl cannot.
+    private(set) var applicationFrames: [String: UIFrame] = [:]
     private static var isPrepared = false
 
     init(logger: OffsiderLogger) {
         self.logger = logger
+        self.displayCatalog = IOSDisplayCatalog(logger: logger)
     }
 
     var platform: DevicePlatform { .ios }
@@ -80,12 +84,20 @@ final class IOSBackend: DeviceBackend {
             point: point.map { AccessibilityPoint(x: $0.x, y: $0.y) },
             logger: logger
         )
-        return UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+        let tree = UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+        if point == nil, let frame = tree.applicationFrame {
+            applicationFrames[id.rawValue] = frame
+        }
+        return tree
     }
 
-    /// Device pixels over scale, swapped when SimulatorKit reports a landscape orientation.
+    /// Device pixels over scale, swapped when SimulatorKit reports a landscape orientation; on a foldable, the active display's.
     func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
         let simulator = try await simulator(for: id)
+        if displayCatalog.isFoldable(simulator),
+           let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: applicationFrames[id.rawValue]) {
+            return screenInfo(on: active, of: simulator)
+        }
         guard let info = await Timings.measure("screen-info", { simulator.screenInfo }), info.scale > 0 else {
             return nil
         }
@@ -98,8 +110,35 @@ final class IOSBackend: DeviceBackend {
             width: isLandscape ? portraitHeight : portraitWidth,
             height: isLandscape ? portraitWidth : portraitHeight,
             scale: scale,
-            orientation: orientation?.coreOrientation
+            rotation: orientation?.coreOrientation
         )
+    }
+
+    /// The display's points turned by its native orientation, then by the interface orientation.
+    func screenInfo(on active: ActiveDisplay, of simulator: FBSimulator) -> UIScreenInfo {
+        let display = active.descriptor
+        let orientation = interfaceOrientation(on: active, of: simulator)
+        let sideways = (display.nativeOrientation / 90 % 2 == 1) != (orientation?.isLandscape == true)
+        return UIScreenInfo(
+            width: sideways ? display.pointHeight : display.pointWidth,
+            height: sideways ? display.pointWidth : display.pointHeight,
+            scale: display.scale,
+            rotation: orientation,
+            rotationDegrees: active.rotationDegrees,
+            display: display.screenDisplay,
+            posture: active.posture,
+            nativeOrientationDegrees: display.nativeOrientation
+        )
+    }
+
+    /// SimulatorKit's reading for the display, else devicectl's display rotation turned back by the display's native orientation.
+    func interfaceOrientation(on active: ActiveDisplay, of simulator: FBSimulator) -> OrientationCoordinateMath.Orientation? {
+        let display = active.descriptor
+        if let read = SimulatorOrientationReader.currentOrientation(of: simulator, screenID: Int(display.platformId) ?? 1, logger: logger) {
+            return read.coreOrientation
+        }
+        guard let degrees = active.rotationDegrees else { return nil }
+        return DeviceOrientation(rotationDegrees: (degrees + display.nativeOrientation) % 360)?.coordinateOrientation
     }
 
     func deviceCoordinates(
@@ -107,6 +146,9 @@ final class IOSBackend: DeviceBackend {
         tree: UITree?,
         on id: DeviceID
     ) async throws -> [(x: Double, y: Double)] {
+        if let mapped = try await foldableCoordinates(for: points, tree: tree, on: id) {
+            return mapped
+        }
         if let tree {
             return try await OrientationAwareCoordinates.translateBatch(
                 points: points,
@@ -132,7 +174,28 @@ final class IOSBackend: DeviceBackend {
     }
 
     func screenshotPNG(for id: DeviceID) async throws -> Data {
+        try await screenshotPNG(for: id, display: nil)
+    }
+
+    /// idb captures the first framebuffer it finds, which on a foldable can be the dark display, so two displays go through simctl.
+    func screenshotPNG(for id: DeviceID, display: String?) async throws -> Data {
         let simulator = try await simulator(for: id)
+        if displayCatalog.isFoldable(simulator) {
+            let screenID: String
+            if let display {
+                screenID = display
+            } else if let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: applicationFrames[id.rawValue]) {
+                screenID = active.descriptor.platformId
+            } else {
+                screenID = "1"
+            }
+            return try await Timings.measure("capture") {
+                try await SimctlScreenshot.capturePNG(udid: id.rawValue, display: screenID, logger: logger)
+            }
+        }
+        if let display, display != "1" {
+            throw CLIError(errorDescription: "Simulator \(id.rawValue) has one display, 1 (main); got \(display). Run `offsider displays --device \(id.rawValue)`.")
+        }
         return try await Timings.measure("capture") {
             try await VideoFrameUtilities.captureScreenshotData(from: simulator)
         }

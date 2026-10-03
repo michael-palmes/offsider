@@ -49,9 +49,9 @@ struct DeviceSettingsTests {
         }
     }
 
-    @Test("the home edge lands on the physical bottom edge, on the side UIKit's name gives", arguments: [
-        (DeviceOrientation.landscapeLeft, (x: 0.0, y: 201.0)),
-        (.landscapeRight, (x: 874.0, y: 201.0)),
+    @Test("the home edge lands on the physical bottom edge, on the side the device name gives", arguments: [
+        (DeviceOrientation.landscapeLeft, (x: 874.0, y: 201.0)),
+        (.landscapeRight, (x: 0.0, y: 201.0)),
         (.portraitUpsideDown, (x: 201.0, y: 0.0)),
         (.portrait, (x: 201.0, y: 874.0)),
     ] as [(DeviceOrientation, (x: Double, y: Double))])
@@ -72,12 +72,44 @@ struct DeviceSettingsTests {
         #expect(orientation.isLandscape == orientation.rawValue.hasPrefix("landscape"))
     }
 
-    @Test("idb's event 3 turns the app to landscape-right and 4 to landscape-left, as measured on iOS 27")
-    func measuredIOSEvents() {
-        #expect(DeviceOrientation.landscapeRight.iosEventValue == 3)
-        #expect(DeviceOrientation.landscapeLeft.iosEventValue == 4)
-        #expect(Set(DeviceOrientation.allCases.map(\.iosEventValue)).count == 4)
-        #expect(Set(DeviceOrientation.allCases.map(\.androidRotation)) == [0, 1, 2, 3])
+    @Test("device names give idb's events, Android rotations and degrees as Maestro and devicectl name them", arguments: [
+        (DeviceOrientation.portrait, Int32(1), 0, 0),
+        (.landscapeLeft, 3, 1, 90),
+        (.portraitUpsideDown, 2, 2, 180),
+        (.landscapeRight, 4, 3, 270),
+    ] as [(DeviceOrientation, Int32, Int, Int)])
+    func deviceNames(orientation: DeviceOrientation, event: Int32, rotation: Int, degrees: Int) {
+        #expect(orientation.iosEventValue == event)
+        #expect(orientation.androidRotation == rotation)
+        #expect(orientation.rotationDegrees == degrees)
+        #expect(DeviceOrientation(rotationDegrees: degrees) == orientation)
+        #expect(orientation.coordinateOrientation.rotationDegrees == degrees)
+    }
+
+    @Test("landscape-left is the interface landscape-right SimulatorKit reports as 4")
+    func landscapeLeftIsInterfaceLandscapeRight() {
+        #expect(DeviceOrientation.landscapeLeft.coordinateOrientation == .landscapeFlipped)
+        #expect(DeviceOrientation.landscapeRight.coordinateOrientation == .landscape)
+    }
+
+    @Test("degrees that are not a quarter turn name no orientation", arguments: [45, -90, 360, 450])
+    func unknownDegrees(degrees: Int) {
+        #expect(DeviceOrientation(rotationDegrees: degrees) == nil)
+    }
+
+    @Test("a landscape-natural display offsets user_rotation by three quarters, and reads back", arguments: DeviceOrientation.allCases)
+    func landscapeNatural(orientation: DeviceOrientation) {
+        let rotation = orientation.androidRotation(naturalIsLandscape: true)
+        #expect(rotation == (orientation.androidRotation + 3) % 4)
+        #expect(DeviceOrientation(androidRotation: rotation, naturalIsLandscape: true) == orientation)
+        #expect(orientation.androidRotation(naturalIsLandscape: false) == orientation.androidRotation)
+    }
+
+    @Test("portrait on a landscape-natural display is user_rotation 3")
+    func landscapeNaturalPortrait() {
+        #expect(DeviceOrientation.portrait.androidRotation(naturalIsLandscape: true) == 3)
+        #expect(DeviceOrientation(androidRotation: 0, naturalIsLandscape: true) == .landscapeLeft)
+        #expect(DeviceOrientation(androidRotation: 4, naturalIsLandscape: true) == nil)
     }
 
     @Test("JSON lines keep their field order and nulls")
@@ -88,8 +120,8 @@ struct DeviceSettingsTests {
             == #"{"contentSize":"accessibility-large","previous":"large","fontScale":null}"#)
         #expect(DeviceSettingsReport.contentSize(ContentSizeReading(category: .extraExtraLarge, fontScale: 1.3), previous: nil)
             == #"{"contentSize":"extra-extra-large","previous":null,"fontScale":1.3}"#)
-        #expect(DeviceSettingsReport.orientation(.landscapeRight, previous: .portrait, screen: UIScreenInfo(width: 874, height: 402))
-            == #"{"orientation":"landscape-right","previous":"portrait","screen":{"width":874,"height":402}}"#)
+        #expect(DeviceSettingsReport.orientation(.landscapeLeft, previous: .portrait, screen: UIScreenInfo(width: 874, height: 402))
+            == #"{"orientation":"landscape-left","rotation":90,"previous":"portrait","screen":{"width":874,"height":402}}"#)
     }
 
     @Test("human lines say what changed")
@@ -131,6 +163,11 @@ struct DeviceSettingsTests {
         (["content-size", "xl"], "Unknown size 'xl'."),
         (["orientation", "sideways"], "Unknown orientation 'sideways'. Use one of: portrait, landscape-left, landscape-right, portrait-upside-down."),
         (["orientation", "portrait", "--timeout", "0"], "--timeout must be from 0.5 to 60 seconds; got 0."),
+        (["orientation", "portrait", "--rotation", "90"], "Give an orientation or --rotation, not both."),
+        (["orientation", "--rotation", "45"], "--rotation takes 0, 90, 180 or 270; got 45."),
+        (["posture", "flat"], "Unknown posture 'flat'. Use one of: closed, half-opened, open."),
+        (["posture", "unknown"], "Unknown posture 'unknown'. Use one of: closed, half-opened, open."),
+        (["posture", "--timeout", "61"], "--timeout must be from 0.5 to 60 seconds; got 61."),
         (["shake"], "shake is iOS only: Android emulators have no shake event."),
     ])
     func validation(arguments: [String], message: String) {
@@ -148,6 +185,11 @@ struct DeviceSettingsTests {
         #expect(try AppearanceCommand.parse(["--device", "x"]).target() == nil)
         #expect(try AppearanceCommand.parse(["Dark", "--device", "x"]).target() == .dark)
         #expect(try OrientationCommand.parse(["Landscape-Left", "--device", "x"]).target() == .landscapeLeft)
+        #expect(try OrientationCommand.parse(["--rotation", "90", "--device", "x"]).target() == .landscapeLeft)
+        #expect(try OrientationCommand.parse(["--rotation", "270", "--device", "x"]).target() == .landscapeRight)
+        #expect(try OrientationCommand.parse(["--rotation", "0", "--device", "x"]).target() == .portrait)
+        #expect(try PostureCommand.parse(["Half-Opened", "--device", "x"]).target() == .halfOpened)
+        #expect(try PostureCommand.parse(["--device", "x"]).target() == nil)
         #expect(try ContentSizeCommand.parse(["reset", "--device", "x", "--json"]).target() == .large)
     }
 
@@ -160,11 +202,10 @@ struct DeviceSettingsTests {
     }
 }
 
-@Suite("Orientation wait")
+@Suite("State wait")
 @MainActor
-struct OrientationWaitTests {
-    final class Clock {
-        var time: TimeInterval = 0
+struct StateWaitTests {
+    final class Device {
         var reads: [DeviceOrientation?]
         var requests = 0
         var readCount = 0
@@ -179,39 +220,55 @@ struct OrientationWaitTests {
         }
     }
 
-    private func run(_ clock: Clock, timeout: TimeInterval = 5) async throws -> OrientationWait.Outcome {
-        try await OrientationWait.run(
-            target: .landscapeRight,
+    private func run(_ device: Device, _ clock: ScriptedClock, timeout: TimeInterval = 5) async throws -> StateWait.Outcome<DeviceOrientation> {
+        let poll = clock.poll
+        return try await StateWait.run(
+            target: .landscapeLeft,
             timeout: timeout,
-            read: { clock.read() },
-            request: { clock.requests += 1 },
-            sleep: { clock.time += Double($0.components.attoseconds) / 1e18 + Double($0.components.seconds) },
-            now: { clock.time }
+            read: { device.read() },
+            request: { device.requests += 1 },
+            sleep: poll.sleep,
+            now: poll.now
         )
     }
 
-    @Test("already turned is reached on the first read, without sending again")
+    @Test("already there is reached on the first read, without sending again")
     func alreadyThere() async throws {
-        let clock = Clock(reads: [.landscapeRight])
-        #expect(try await run(clock) == .reached)
-        #expect(clock.readCount == 1)
-        #expect(clock.requests == 0)
+        let device = Device(reads: [.landscapeLeft])
+        #expect(try await run(device, ScriptedClock()) == .reached)
+        #expect(device.readCount == 1)
+        #expect(device.requests == 0)
     }
 
-    @Test("a turn that lands after a few polls is reached")
+    @Test("a change that lands after a few polls is reached")
     func reachedLater() async throws {
-        let clock = Clock(reads: [.portrait, .portrait, .landscapeRight])
-        #expect(try await run(clock) == .reached)
-        #expect(clock.readCount == 3)
-        #expect(abs(clock.time - 0.2) < 0.0001)
+        let device = Device(reads: [.portrait, .portrait, .landscapeLeft])
+        let clock = ScriptedClock()
+        #expect(try await run(device, clock) == .reached)
+        #expect(device.readCount == 3)
+        #expect(abs(clock.now - 0.2) < 0.0001)
     }
 
-    @Test("a device that never turns times out with its last reading, after one resend halfway")
+    @Test("a device that never changes times out with its last reading, after one resend halfway")
     func timesOut() async throws {
-        let clock = Clock(reads: [.portrait])
-        #expect(try await run(clock, timeout: 1) == .timedOut(last: .portrait))
-        #expect(clock.requests == 1)
-        #expect(clock.time >= 1)
-        #expect(clock.time < 1.2)
+        let device = Device(reads: [.portrait])
+        let clock = ScriptedClock()
+        #expect(try await run(device, clock, timeout: 1) == .timedOut(last: .portrait))
+        #expect(device.requests == 1)
+        #expect(clock.now >= 1)
+        #expect(clock.now < 1.2)
+    }
+
+    @Test("postures wait the same way")
+    func postures() async throws {
+        var reads: [Posture?] = [.closed, .halfOpened, .open]
+        let clock = ScriptedClock()
+        let poll = clock.poll
+        let outcome = try await StateWait.run(
+            target: Posture.open, timeout: 5,
+            read: { reads.removeFirst() }, request: {}, sleep: poll.sleep, now: poll.now
+        )
+        #expect(outcome == .reached)
+        #expect(reads.isEmpty)
     }
 }

@@ -5,6 +5,7 @@ import FBSimulatorControl
 struct SimulatorOrientationReader {
     static func currentOrientation(
         simulatorUDID: String,
+        screenID: Int = 1,
         logger: OffsiderLogger
     ) async -> SimulatorOrientation? {
         do {
@@ -12,14 +13,15 @@ struct SimulatorOrientationReader {
                 logger.info().log("Orientation probe: simulator \(simulatorUDID) not found")
                 return nil
             }
-            return currentOrientation(of: simulator, logger: logger)
+            return currentOrientation(of: simulator, screenID: screenID, logger: logger)
         } catch {
             logger.info().log("Orientation probe failed: \(error)")
             return nil
         }
     }
 
-    static func currentOrientation(of simulator: FBSimulator, logger: OffsiderLogger) -> SimulatorOrientation? {
+    /// `screenID` is the active display's, from the device type profile; 1 on a device with one display.
+    static func currentOrientation(of simulator: FBSimulator, screenID: Int = 1, logger: OffsiderLogger) -> SimulatorOrientation? {
         Timings.measure("orientation") {
             do {
                 try FBSimulatorControlFrameworkLoader.xcodeFrameworks.loadPrivateFrameworks(logger)
@@ -31,11 +33,11 @@ struct SimulatorOrientationReader {
                 logger.info().log("Orientation probe: simulator device unavailable")
                 return nil
             }
-            return readOrientation(from: device, logger: logger)
+            return readOrientation(from: device, screenID: screenID, logger: logger)
         }
     }
 
-    private static func readOrientation(from device: AnyObject, logger: OffsiderLogger) -> SimulatorOrientation? {
+    private static func readOrientation(from device: AnyObject, screenID: Int, logger: OffsiderLogger) -> SimulatorOrientation? {
         guard let screenClass = NSClassFromString("SimulatorKit.SimDeviceScreen") as? NSObject.Type else {
             logger.info().log("Orientation probe: SimulatorKit.SimDeviceScreen unavailable")
             return nil
@@ -53,7 +55,7 @@ struct SimulatorOrientationReader {
 
         typealias InitFunction = @convention(c) (AnyObject, Selector, AnyObject, Int) -> AnyObject
         let initFunction = unsafeBitCast(initMethod, to: InitFunction.self)
-        let screenDevice = initFunction(allocated, initSelector, device, 1)
+        let screenDevice = initFunction(allocated, initSelector, device, screenID)
 
         guard let screen = sendObject(screenDevice, selector: "screen") else {
             logger.info().log("Orientation probe: screen unavailable")
@@ -70,7 +72,7 @@ struct SimulatorOrientationReader {
             return nil
         }
 
-        logger.info().log("Orientation probe: uiOrientation=\(rawOrientation)")
+        logger.info().log("Orientation probe: screen \(screenID) uiOrientation=\(rawOrientation)")
         return mapUIOrientation(rawOrientation)
     }
 

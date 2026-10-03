@@ -82,7 +82,7 @@ public enum UITreeRenderer {
             ("version", .integer(UITree.schemaVersion)),
             ("platform", .string(tree.platform.rawValue)),
             ("device", .string(tree.device)),
-            ("screen", tree.screen.map(\.jsonValue) ?? .null),
+            ("screen", tree.screen.map { $0.jsonValue(on: tree.platform) } ?? .null),
         ]
     }
 
@@ -136,8 +136,9 @@ public enum UITreeRenderer {
             if let scale = screen.scale {
                 parts.append("@\(OrderedJSON.formatNumber(scale))x")
             }
-            if let orientation = screen.orientation {
-                parts.append(orientation.rawValue)
+            parts.append(screen.shape.rawValue + (screen.resolvedRotationDegrees.map { " \($0)°" } ?? ""))
+            if let posture = screen.posture {
+                parts.append("\(screen.resolvedDisplay(on: tree.platform).id) \(posture.rawValue)")
             }
         }
         return parts.joined(separator: " ")

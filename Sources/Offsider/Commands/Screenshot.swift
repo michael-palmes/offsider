@@ -10,12 +10,17 @@ struct Screenshot: AsyncParsableCommand {
         --scale points makes one image pixel one point, so image coordinates are tap coordinates. \
         --region takes points as describe-ui prints them; the crop happens before scaling. \
         --compare captures, applies the same --region and --scale, and exits 0 when more than \
-        --threshold of the screen's tiles changed, or 5 when not.
+        --threshold of the screen's tiles changed, or 5 when not. \
+        --display captures one display of a foldable (see `offsider displays`); a display that is not active \
+        is captured as it is, often dark.
         """
     )
 
     @OptionGroup
     var deviceOption: DeviceOption
+
+    @OptionGroup
+    var displayOption: DisplayOption
 
     @Option(help: "Output file path, or a directory for a generated name. Defaults to 'Simulator Screenshot - <device name> - <timestamp>.png' (iOS) or 'Emulator Screenshot - <AVD> - <timestamp>.png' (Android) in the current directory. With --compare, an image is written only when this is given.")
     var output: String?
@@ -94,7 +99,15 @@ struct Screenshot: AsyncParsableCommand {
         let booted = try await backend.requireBootedDevice(route.device)
 
         let baseline = try compare.map(ScreenCapture.readBaseline)
-        let capture = try await ScreenCapture.capture(backend, device: booted.id)
+        let capture: CapturedScreen
+        if let selected = try await displayOption.resolve(on: backend, device: booted.id, deviceName: deviceOption.id) {
+            guard let capturer = backend as? any DisplayCapturing else {
+                throw CLIError(errorDescription: "--display is not available for \(deviceOption.id) yet. Omit it to capture the active display.")
+            }
+            capture = try await ScreenCapture.capture(capturer, device: booted.id, display: selected.display, posture: selected.list.posture)
+        } else {
+            capture = try await ScreenCapture.capture(backend, device: booted.id)
+        }
         let rendered = try ScreenCapture.render(capture, request: request)
 
         var path: String?

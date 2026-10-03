@@ -29,6 +29,8 @@ struct OffsiderCommand: AsyncParsableCommand {
             Button.self,
             Shake.self,
             OrientationCommand.self,
+            Displays.self,
+            PostureCommand.self,
             AppearanceCommand.self,
             ContentSizeCommand.self,
             Key.self,

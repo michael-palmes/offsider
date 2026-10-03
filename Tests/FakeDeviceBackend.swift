@@ -22,6 +22,19 @@ final class FakeDeviceBackend: DeviceBackend {
     private(set) var coordinateCalls: [(count: Int, hadTree: Bool)] = []
     private(set) var openedSessions: [DeviceID] = []
     private(set) var detachedTouches: [[DetachedTouchStep]] = []
+    /// What `displays(of:)` serves; one main display unless a test sets a foldable's.
+    var displayList = DisplayList(
+        displays: [DisplayInfo(
+            descriptor: DisplayDescriptor(role: .main, platformId: "1", name: "LCD", pixelWidth: 1206, pixelHeight: 2622, scale: 3, nativeOrientation: 0),
+            pointWidth: 402, pointHeight: 874, rotationDegrees: 0, active: true
+        )],
+        posture: nil
+    )
+    /// Posture reads in order, holding the last; empty serves `displayList.posture`.
+    var postures: [Posture?] = []
+    var postureRequestError: (any Error)?
+    private(set) var requestedPostures: [Posture] = []
+    private(set) var capturedDisplays: [String?] = []
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -108,6 +121,25 @@ final class FakeDeviceBackend: DeviceBackend {
     }
 
     func volatileScreenBands(for id: DeviceID) async -> ScreenBands { bands }
+}
+
+extension FakeDeviceBackend: DisplayControlling, PostureControlling, DisplayCapturing {
+    func displays(of id: DeviceID) async throws -> DisplayList { displayList }
+
+    func posture(of id: DeviceID) async throws -> Posture? {
+        guard !postures.isEmpty else { return displayList.posture }
+        return postures.count > 1 ? postures.removeFirst() : postures[0]
+    }
+
+    func requestPosture(_ posture: Posture, on id: DeviceID) async throws {
+        requestedPostures.append(posture)
+        if let postureRequestError { throw postureRequestError }
+    }
+
+    func screenshotPNG(for id: DeviceID, display: String?) async throws -> Data {
+        capturedDisplays.append(display)
+        return try await screenshotPNG(for: id)
+    }
 }
 
 /// Small builders for trees in unit tests.

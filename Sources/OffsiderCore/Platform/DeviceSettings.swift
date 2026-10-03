@@ -93,7 +93,7 @@ public struct ContentSizeReading: Equatable, Sendable {
     }
 }
 
-/// Named after UIKit's interface orientation, as the frontmost app reports it.
+/// Device orientation, named as Maestro and devicectl name it (landscape-left: turned 90 degrees anticlockwise, home edge on the right).
 public enum DeviceOrientation: String, CaseIterable, Sendable {
     case portrait
     case landscapeLeft = "landscape-left"
@@ -101,7 +101,7 @@ public enum DeviceOrientation: String, CaseIterable, Sendable {
     case portraitUpsideDown = "portrait-upside-down"
 
     /// The one table between public names, coordinate math, the idb orientation event and Android's `user_rotation`.
-    /// Measured on iOS 27: idb event 3 turns the app to landscape-right, which SimulatorKit reports as `uiOrientation` 4.
+    /// Measured on iOS 27: idb event 3 turns the device to landscape-left, which SimulatorKit reports as `uiOrientation` 4.
     struct Mapping {
         let orientation: DeviceOrientation
         let coordinate: OrientationCoordinateMath.Orientation
@@ -111,8 +111,8 @@ public enum DeviceOrientation: String, CaseIterable, Sendable {
 
     static let table: [Mapping] = [
         Mapping(orientation: .portrait, coordinate: .portrait, iosEvent: 1, androidRotation: 0),
-        Mapping(orientation: .landscapeLeft, coordinate: .landscape, iosEvent: 4, androidRotation: 3),
-        Mapping(orientation: .landscapeRight, coordinate: .landscapeFlipped, iosEvent: 3, androidRotation: 1),
+        Mapping(orientation: .landscapeLeft, coordinate: .landscapeFlipped, iosEvent: 3, androidRotation: 1),
+        Mapping(orientation: .landscapeRight, coordinate: .landscape, iosEvent: 4, androidRotation: 3),
         Mapping(orientation: .portraitUpsideDown, coordinate: .portraitUpsideDown, iosEvent: 2, androidRotation: 2),
     ]
 
@@ -123,8 +123,11 @@ public enum DeviceOrientation: String, CaseIterable, Sendable {
     /// `FBSimulatorHIDDeviceOrientation`'s raw value, which follows `UIDeviceOrientation`.
     public var iosEventValue: Int32 { mapping.iosEvent }
 
-    /// `Surface.ROTATION_*` for `settings put system user_rotation`.
+    /// `Surface.ROTATION_*` for `settings put system user_rotation` on a portrait-natural display.
     public var androidRotation: Int { mapping.androidRotation }
+
+    /// Anticlockwise degrees from the display's natural orientation: 0, 90, 180 or 270.
+    public var rotationDegrees: Int { mapping.androidRotation * 90 }
 
     public init(coordinateOrientation: OrientationCoordinateMath.Orientation) {
         self = Self.table.first { $0.coordinate == coordinateOrientation }!.orientation
@@ -133,6 +136,21 @@ public enum DeviceOrientation: String, CaseIterable, Sendable {
     public init?(androidRotation: Int) {
         guard let row = Self.table.first(where: { $0.androidRotation == androidRotation }) else { return nil }
         self = row.orientation
+    }
+
+    public init?(rotationDegrees: Int) {
+        guard rotationDegrees % 90 == 0 else { return nil }
+        self.init(androidRotation: rotationDegrees / 90)
+    }
+
+    /// `user_rotation` for a display whose natural orientation is landscape (AOSP's default for a large panel), where rotation 0 is already landscape.
+    public func androidRotation(naturalIsLandscape: Bool) -> Int {
+        (mapping.androidRotation + (naturalIsLandscape ? 3 : 0)) % 4
+    }
+
+    public init?(androidRotation: Int, naturalIsLandscape: Bool) {
+        guard (0...3).contains(androidRotation) else { return nil }
+        self.init(androidRotation: (androidRotation + (naturalIsLandscape ? 1 : 0)) % 4)
     }
 
     public var isLandscape: Bool { coordinateOrientation.isLandscape }
@@ -148,6 +166,14 @@ extension OrientationCoordinateMath.Orientation {
         case .landscape: return 3
         }
     }
+
+    /// Counterclockwise quarter turns for a framebuffer whose display's native orientation is `nativeDegrees`.
+    public func uprightQuarterTurnsCounterclockwise(nativeDegrees: Int) -> Int {
+        ((uprightQuarterTurnsCounterclockwise - nativeDegrees / 90) % 4 + 4) % 4
+    }
+
+    /// The device orientation's degrees: landscape-left (`landscapeFlipped`) is 90.
+    public var rotationDegrees: Int { DeviceOrientation(coordinateOrientation: self).rotationDegrees }
 }
 
 public struct DeviceSettingsError: Error, CustomStringConvertible, LocalizedError, Equatable {
@@ -176,46 +202,13 @@ public protocol DeviceShaking: DeviceBackend {
     func shake(_ id: DeviceID) async throws
 }
 
-/// Optional capability: reading and turning the interface orientation.
+/// Optional capability: reading and turning the device orientation.
 @MainActor
 public protocol OrientationControlling: DeviceBackend {
     /// Nil when the device cannot report it.
     func orientation(of id: DeviceID) async throws -> DeviceOrientation?
     /// Dispatch only; poll `orientation(of:)` to see it take effect.
     func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws
-}
-
-public enum OrientationWait {
-    public enum Outcome: Equatable, Sendable {
-        case reached
-        case timedOut(last: DeviceOrientation?)
-    }
-
-    /// Reads at least once; sends `request` again once, halfway to the deadline, in case the first was dropped.
-    @MainActor
-    public static func run(
-        target: DeviceOrientation,
-        timeout: TimeInterval,
-        interval: Duration = .milliseconds(100),
-        read: @MainActor () async throws -> DeviceOrientation?,
-        request: @MainActor () async throws -> Void,
-        sleep: @MainActor (Duration) async throws -> Void,
-        now: @MainActor () -> TimeInterval
-    ) async throws -> Outcome {
-        let start = now()
-        var resent = false
-        while true {
-            let current = try await read()
-            if current == target { return .reached }
-            let elapsed = now() - start
-            if elapsed >= timeout { return .timedOut(last: current) }
-            if !resent, elapsed >= timeout / 2 {
-                resent = true
-                try await request()
-            }
-            try await sleep(interval)
-        }
-    }
 }
 
 /// The JSON lines `appearance`, `content-size` and `orientation` print with `--json`.
@@ -247,6 +240,7 @@ public enum DeviceSettingsReport {
     public static func orientation(_ current: DeviceOrientation, previous: DeviceOrientation?, screen: UIScreenInfo?) -> String {
         OrderedJSON.object([
             ("orientation", .string(current.rawValue)),
+            ("rotation", .integer(current.rotationDegrees)),
             ("previous", .optional(previous) { .string($0.rawValue) }),
             ("screen", .optional(screen) { .object([("width", .number($0.width)), ("height", .number($0.height))]) }),
         ]).rendered(compact: true)

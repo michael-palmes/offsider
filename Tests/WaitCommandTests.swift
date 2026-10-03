@@ -115,7 +115,7 @@ struct WaitCommandTests {
         let backend = FakeDeviceBackend(
             trees: [],
             screenshots: [try Self.png(), try Self.png(), try Self.png(marked: [(x: 5, y: 5)])],
-            screen: UIScreenInfo(width: 20, height: 20, scale: 2, orientation: .portrait)
+            screen: UIScreenInfo(width: 20, height: 20, scale: 2, rotation: .portrait)
         )
         let wait = try Self.command(["--region", "0,0,10,10", "--changed", "--timeout", "5"])
 
@@ -131,7 +131,7 @@ struct WaitCommandTests {
         let backend = FakeDeviceBackend(
             trees: [],
             screenshots: [try Self.png(), try Self.png(marked: [(x: 35, y: 35)])],
-            screen: UIScreenInfo(width: 20, height: 20, scale: 2, orientation: .portrait)
+            screen: UIScreenInfo(width: 20, height: 20, scale: 2, rotation: .portrait)
         )
         let wait = try Self.command(["--region", "0,0,10,10", "--changed", "--timeout", "0.2"])
 
@@ -147,12 +147,12 @@ struct WaitCommandTests {
         ((x: 10, y: 10), false),
     ])
     func regionLandscape(change: (x: Int, y: Int), inside: Bool) async throws {
-        // Portrait-native 40 x 60 px at 2x; landscape-right puts logical (5, 5) at physical pixel (30, 10).
+        // Portrait-native 40 x 60 px at 2x; device landscape-left puts logical (5, 5) at physical pixel (30, 10).
         let png = { (marked: [(x: Int, y: Int)]) in try ScreenImage.encode(TestImages.make(width: 40, height: 60, marked: marked), as: .png) }
         let backend = FakeDeviceBackend(
             trees: [],
             screenshots: [try png([]), try png([]), try png([change])],
-            screen: UIScreenInfo(width: 30, height: 20, scale: 2, orientation: .landscapeFlipped)
+            screen: UIScreenInfo(width: 30, height: 20, scale: 2, rotation: .landscapeFlipped)
         )
         let wait = try Self.command(["--region", "0,0,10,10", "--changed", "--timeout", inside ? "5" : "0.6"])
 

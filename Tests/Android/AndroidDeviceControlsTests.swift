@@ -123,11 +123,11 @@ struct AndroidDeviceControlsTests {
         let (backend, server, _) = try Self.setUp()
 
         #expect(try await backend.orientation(of: Self.device) == .portrait)
-        try await backend.requestOrientation(.landscapeRight, on: Self.device)
+        try await backend.requestOrientation(.landscapeLeft, on: Self.device)
 
         #expect(server.services.contains("shell,v2,raw:settings put system accelerometer_rotation 0; settings put system user_rotation 1"))
-        #expect(try await backend.orientation(of: Self.device) == .landscapeRight)
-        #expect(try await backend.screenInfo(for: Self.device)?.orientation == .landscapeFlipped)
+        #expect(try await backend.orientation(of: Self.device) == .landscapeLeft)
+        #expect(try await backend.screenInfo(for: Self.device)?.rotation == .landscapeFlipped)
     }
 
     @Test("a failing settings command quotes its stderr")

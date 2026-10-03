@@ -178,8 +178,8 @@ capture_case version --version
 capture_case help --help
 
 SUBCOMMANDS=(
-  appearance assert batch boot button content-size describe-ui doctor drag gesture init key key-combo key-sequence
-  list-devices logs orientation record-video rn screenshot shake slider stream-video swipe tap touch type wait
+  appearance assert batch boot button content-size describe-ui displays doctor drag gesture init key key-combo key-sequence
+  list-devices logs orientation posture record-video rn screenshot shake slider stream-video swipe tap touch type wait
 )
 for subcommand in "${SUBCOMMANDS[@]}"; do
   capture_case "help-$subcommand" "$subcommand" --help

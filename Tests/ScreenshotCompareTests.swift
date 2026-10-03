@@ -6,8 +6,8 @@ import OffsiderCore
 
 @Suite("Screenshot Compare")
 struct ScreenshotCompareTests {
-    private let portrait = UIScreenInfo(width: 402, height: 874, scale: 3, orientation: .portrait)
-    private let landscape = UIScreenInfo(width: 874, height: 402, scale: 3, orientation: .landscape)
+    private let portrait = UIScreenInfo(width: 402, height: 874, scale: 3, rotation: .portrait)
+    private let landscape = UIScreenInfo(width: 874, height: 402, scale: 3, rotation: .landscape)
 
     private func capture(_ image: CGImage, platform: DevicePlatform = .ios, screen: UIScreenInfo?) throws -> CapturedScreen {
         try ScreenCapture.make(png: try ScreenImage.encode(image, as: .png), platform: platform, screen: screen)
@@ -79,7 +79,7 @@ struct ScreenshotCompareTests {
         )
         let image = TestImages.make(width: portraitWidth, height: portraitHeight, marked: [(x: Int(physical.x), y: Int(physical.y))])
         let size = orientation.isLandscape ? (portraitHeight, portraitWidth) : (portraitWidth, portraitHeight)
-        let screen = try capture(image, screen: UIScreenInfo(width: Double(size.0), height: Double(size.1), scale: 1, orientation: orientation))
+        let screen = try capture(image, screen: UIScreenInfo(width: Double(size.0), height: Double(size.1), scale: 1, rotation: orientation))
 
         let marked = TestImages.markedPixels(screen.image)
         #expect(marked.count == 1)
@@ -88,7 +88,7 @@ struct ScreenshotCompareTests {
 
     @Test("An iOS capture whose shape disagrees with the screen is not upright and refuses a region")
     func unreadOrientationRefusesRegion() throws {
-        let screen = try capture(TestImages.make(width: 1206, height: 2622), screen: UIScreenInfo(width: 874, height: 402, scale: 3, orientation: nil))
+        let screen = try capture(TestImages.make(width: 1206, height: 2622), screen: UIScreenInfo(width: 874, height: 402, scale: 3, rotation: nil))
         #expect(!screen.upright)
         #expect {
             try ScreenCapture.render(screen, request: ScreenshotRequest(region: PointRegion(x: 0, y: 0, width: 100, height: 100)))
@@ -195,6 +195,36 @@ struct ScreenshotCompareTests {
         let screen = try capture(TestImages.make(width: 1206, height: 2622), screen: portrait)
         let rendered = try ScreenCapture.render(screen, request: ScreenshotRequest(scale: .points, region: PointRegion(x: 0, y: 100, width: 402, height: 50)))
         let line = rendered.report(path: "/tmp/a.png", format: .png, capture: screen).jsonLine()
-        #expect(line == #"{"path":"/tmp/a.png","width":402,"height":50,"pixelsPerPoint":1,"region":{"x":0,"y":100,"width":402,"height":50},"orientation":"portrait","upright":true,"format":"png"}"#)
+        #expect(line == #"{"path":"/tmp/a.png","width":402,"height":50,"pixelsPerPoint":1,"region":{"x":0,"y":100,"width":402,"height":50},"orientation":"portrait","rotation":0,"display":{"id":"main","platformId":"1"},"posture":null,"upright":true,"format":"png"}"#)
+    }
+
+    @Test("The JSON report names a foldable's display and posture")
+    func foldableReport() throws {
+        let cover = UIScreenInfo(
+            width: 466, height: 678, scale: 3, rotation: .portrait, rotationDegrees: 0,
+            display: ScreenDisplay(id: "cover", platformId: "1"), posture: .closed
+        )
+        let screen = try capture(TestImages.make(width: 1398, height: 2034), screen: cover)
+        let line = try ScreenCapture.render(screen, request: ScreenshotRequest()).report(path: nil, format: nil, capture: screen).jsonLine()
+        #expect(line == #"{"path":null,"width":1398,"height":2034,"pixelsPerPoint":3,"region":null,"orientation":"portrait","rotation":0,"display":{"id":"cover","platformId":"1"},"posture":"closed","upright":true,"format":null}"#)
+    }
+
+    @Test("A sideways-native framebuffer is turned by its native orientation, as input maps points onto it", arguments: OrientationCoordinateMath.Orientation.allCases)
+    func sidewaysNative(orientation: OrientationCoordinateMath.Orientation) throws {
+        let (nativeWidth, nativeHeight) = (40, 60)
+        let logical = (x: 7, y: 3)
+        let turned = OrientationCoordinateMath.Orientation(uprightQuarterTurnsCounterclockwise: orientation.uprightQuarterTurnsCounterclockwise(nativeDegrees: 270))
+        let physical = OrientationCoordinateMath.translateToPhysical(
+            x: Double(logical.x) + 0.5, y: Double(logical.y) + 0.5,
+            orientation: turned, portraitWidth: Double(nativeWidth), portraitHeight: Double(nativeHeight)
+        )
+        let image = TestImages.make(width: nativeWidth, height: nativeHeight, marked: [(x: Int(physical.x), y: Int(physical.y))])
+        let size = turned.isLandscape ? (nativeHeight, nativeWidth) : (nativeWidth, nativeHeight)
+        let screen = try capture(image, screen: UIScreenInfo(
+            width: Double(size.0), height: Double(size.1), scale: 1, rotation: orientation, nativeOrientationDegrees: 270
+        ))
+
+        #expect(screen.upright)
+        #expect(TestImages.markedPixels(screen.image).map { [$0.x, $0.y] } == [[logical.x, logical.y]])
     }
 }

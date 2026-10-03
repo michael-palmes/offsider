@@ -102,7 +102,7 @@ struct AndroidBackendTreeTests {
         _ = try await backend.accessibilityTree(for: Self.device, point: nil)
         let info = try await backend.screenInfo(for: Self.device)
 
-        #expect(info == UIScreenInfo(width: 923.43, height: 411.43, scale: 2.625, orientation: .landscapeFlipped))
+        #expect(info == UIScreenInfo(width: 923.43, height: 411.43, scale: 2.625, rotation: .landscapeFlipped))
         #expect(server.services.filter { $0.hasSuffix(AndroidDisplayGeometry.probeScript) }.count == 1)
     }
 

@@ -8,7 +8,7 @@ import Testing
 @MainActor
 struct BatchReadStepTests {
     private static let device = DeviceID(rawValue: "fake-device", platform: .ios)
-    private static let screen = UIScreenInfo(width: 402, height: 874, scale: 1, orientation: .portrait)
+    private static let screen = UIScreenInfo(width: 402, height: 874, scale: 1, rotation: .portrait)
 
     private static let closed = FakeUI.tree([
         FakeUI.node(.button, id: "open", label: "Open", frame: FakeUI.frame(20, 100, 350, 44)),

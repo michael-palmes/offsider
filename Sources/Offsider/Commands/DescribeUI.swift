@@ -4,11 +4,20 @@ import OffsiderCore
 
 struct DescribeUI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Describes the UI hierarchy of a booted simulator or a running emulator using accessibility information."
+        abstract: "Describes the UI hierarchy of a booted simulator or a running emulator using accessibility information.",
+        discussion: """
+        The envelope's screen gives width and height in points (dp on Android), orientation (the shape, portrait \
+        or landscape), rotation (degrees anticlockwise from the display's natural orientation), display ({id, \
+        platformId}: main, or cover or inner on a foldable) and posture (null unless the device folds). Only the \
+        active display is described; --display checks that it is the one you expect.
+        """
     )
 
     @OptionGroup
     var deviceOption: DeviceOption
+
+    @OptionGroup
+    var displayOption: DisplayOption
 
     @Option(
         name: .customLong("point"),
@@ -30,9 +39,22 @@ struct DescribeUI: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         try await route.backend.prepare()
+        try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
 
         let tree = try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint())
         print(String(decoding: try output.render(await Self.withScreen(tree, on: route)), as: UTF8.self), terminator: "")
+    }
+
+    /// The accessibility tree covers the active display only, so `--display` must name it.
+    @MainActor
+    static func requireActive(_ option: DisplayOption, on route: DeviceRouter.Route, deviceName: String) async throws {
+        guard let selected = try await option.resolve(on: route.backend, device: route.device, deviceName: deviceName),
+              !selected.display.active else {
+            return
+        }
+        throw CLIError(errorDescription: DisplayReport.inactiveDisplay(
+            selected.display, posture: selected.list.posture, platform: route.device.platform, device: deviceName
+        ))
     }
 
     /// The tree with the screen the envelope reports, when the device can say.

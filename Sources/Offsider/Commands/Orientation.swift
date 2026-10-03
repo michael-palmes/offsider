@@ -5,23 +5,30 @@ import OffsiderCore
 struct OrientationCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "orientation",
-        abstract: "Read or set the interface orientation, waiting until the device has turned.",
+        abstract: "Read or set the device orientation, waiting until the device has turned.",
         discussion: """
-        Orientations: portrait, landscape-left, landscape-right, portrait-upside-down, named as UIKit names the \
-        interface orientation (landscape-left has the home edge on the left). Without a value, prints the current one.
+        Orientations: portrait, landscape-left, landscape-right, portrait-upside-down, named after how the device \
+        is turned, as Maestro and devicectl name them: landscape-left is turned 90 degrees anticlockwise, with the \
+        home edge on the right (UIKit calls that interface orientation landscape-right). --rotation 0, 90, 180 or 270 \
+        gives the same turns in degrees anticlockwise from the display's natural orientation; landscape-left is 90. \
+        Without a value, prints the current one.
         iOS reports the frontmost app's orientation, so a portrait-only app or the home screen stays portrait, and \
         iPhones without a home button never turn upside down. On Android this turns auto-rotate off \
         (`accelerometer_rotation 0`) and sets `user_rotation`; auto-rotate stays off afterwards.
 
         Examples:
           offsider orientation --device DEVICE_ID
-          offsider orientation landscape-right --device DEVICE_ID
+          offsider orientation landscape-left --device DEVICE_ID
+          offsider orientation --rotation 90 --device DEVICE_ID
           offsider orientation portrait --timeout 10 --device DEVICE_ID
         """
     )
 
     @Argument(help: ArgumentHelp("The orientation to turn to; omit to read the current one.", valueName: "orientation"))
     var value: String?
+
+    @Option(help: ArgumentHelp("The orientation as degrees anticlockwise from the display's natural orientation: 0, 90, 180 or 270.", valueName: "degrees"))
+    var rotation: Int?
 
     @Option(help: ArgumentHelp("Seconds to wait for the turn, from 0.5 to 60.", valueName: "seconds"))
     var timeout: Double = 5
@@ -40,6 +47,15 @@ struct OrientationCommand: AsyncParsableCommand {
     }
 
     func target() throws -> DeviceOrientation? {
+        if let rotation {
+            guard value == nil else {
+                throw ValidationError("Give an orientation or --rotation, not both.")
+            }
+            guard let orientation = DeviceOrientation(rotationDegrees: rotation) else {
+                throw ValidationError("--rotation takes 0, 90, 180 or 270; got \(rotation).")
+            }
+            return orientation
+        }
         guard let value else { return nil }
         guard let orientation = DeviceOrientation(rawValue: value.trimmingCharacters(in: .whitespaces).lowercased()) else {
             let names = DeviceOrientation.allCases.map(\.rawValue).joined(separator: ", ")
@@ -77,7 +93,7 @@ struct OrientationCommand: AsyncParsableCommand {
         }
 
         try await turner.requestOrientation(target, on: device)
-        let outcome = try await OrientationWait.run(
+        let outcome = try await StateWait.run(
             target: target,
             timeout: timeout,
             read: { try await turner.orientation(of: device) },

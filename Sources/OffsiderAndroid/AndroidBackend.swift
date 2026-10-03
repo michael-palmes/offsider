@@ -135,7 +135,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             width: Self.dp(Double(geometry.logicalWidth) / geometry.scale),
             height: Self.dp(Double(geometry.logicalHeight) / geometry.scale),
             scale: geometry.scale,
-            orientation: geometry.orientation
+            rotation: geometry.orientation
         )
     }
 
