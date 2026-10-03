@@ -1,0 +1,141 @@
+import Foundation
+import OffsiderCore
+import Testing
+@testable import OffsiderAndroid
+
+@Suite("Android device states and displays")
+struct AndroidFoldableParsingTests {
+    typealias State = AndroidDeviceState.State
+
+    @Test("a phone lists one device state, so it is not foldable")
+    func phoneStates() {
+        #expect(AndroidDeviceState.parseStates(FoldableFixtures.pixel9PrintStates) == [State(identifier: 0, name: "DEFAULT")])
+        #expect(AndroidDeviceState.parseReading(FoldableFixtures.pixel9State) == .init(committed: State(identifier: 0, name: "DEFAULT"), base: nil, override: nil))
+    }
+
+    @Test("a foldable's states map to postures, and states Offsider cannot name are unknown")
+    func foldStates() {
+        let states = AndroidDeviceState.parseStates(FoldableFixtures.foldPrintStates)
+        #expect(states.map(\.identifier) == [0, 1, 2, 3, 4])
+        #expect(states.map(\.posture) == [.closed, .halfOpened, .open, .unknown, .unknown])
+    }
+
+    @Test("an override shows the committed, base and override states")
+    func overrideReading() throws {
+        let reading = try #require(AndroidDeviceState.parseReading(FoldableFixtures.foldState(committed: 0, base: 2, override: 0)))
+        #expect(reading.committed == State(identifier: 0, name: "CLOSED"))
+        #expect(reading.base == State(identifier: 2, name: "OPENED"))
+        #expect(reading.override == State(identifier: 0, name: "CLOSED"))
+    }
+
+    @Test("output with no device state parses to nothing")
+    func junk() {
+        #expect(AndroidDeviceState.parseStates("cmd: Can't find service: device_state\n").isEmpty)
+        #expect(AndroidDeviceState.parseReading("Error: unknown command\n") == nil)
+    }
+
+    @Test("the Pixel 9's one built-in display is main, named by its physical id, and active")
+    func phoneDisplays() throws {
+        let list = AndroidDisplayList.parse(dumpsys: FoldableFixtures.pixel9Dumpsys)
+        let display = try #require(list.displays.first)
+        #expect(list.displays.count == 1)
+        #expect(display.descriptor == DisplayDescriptor(
+            role: .main, platformId: FoldableFixtures.coverId, name: "Built-in Screen",
+            pixelWidth: 1080, pixelHeight: 2424, scale: 2.625, nativeOrientation: 0
+        ))
+        #expect(display.on)
+        #expect(list.active?.uniqueId == "local:\(FoldableFixtures.coverId)")
+    }
+
+    @Test("a foldable's smaller panel is the cover and the larger the inner; logical display 0 names the active one")
+    func foldDisplays() {
+        let open = AndroidDisplayList.parse(dumpsys: FoldableFixtures.foldDumpsys(closed: false))
+        #expect(open.displays.map(\.descriptor.role) == [.cover, .inner])
+        #expect(open.displays.map(\.descriptor.platformId) == [FoldableFixtures.coverId, FoldableFixtures.innerId])
+        #expect(open.displays.map(\.on) == [false, true])
+        #expect(open.active?.descriptor.role == .inner)
+
+        let closed = AndroidDisplayList.parse(dumpsys: FoldableFixtures.foldDumpsys(closed: true))
+        #expect(closed.active?.descriptor.role == .cover)
+        #expect(closed.active?.descriptor.pointWidth.rounded() == 443)
+    }
+
+    @Test("an external display keeps its role beside a single built-in one")
+    func externalDisplay() {
+        let output = FoldableFixtures.pixel9Dumpsys.replacingOccurrences(
+            of: "Display Devices: size=1",
+            with: #"Display Devices: size=2"# + "\n" + #"  DisplayDeviceInfo{"HDMI Screen": uniqueId="local:7", 1920 x 1080, density 160, 160.0 x 160.0 dpi, type EXTERNAL, state ON, installOrientation 0}"#
+        )
+        let list = AndroidDisplayList.parse(dumpsys: output)
+        #expect(list.displays.map(\.descriptor.role) == [.main, .external])
+        #expect(list.active?.descriptor.role == .main)
+    }
+
+    @Test("display 0's viewport names the physical display it shows")
+    func viewportUniqueId() {
+        #expect(AndroidDisplayGeometry.viewportUniqueId(in: FoldableFixtures.foldGeometry(closed: false)) == "local:\(FoldableFixtures.innerId)")
+        #expect(AndroidDisplayGeometry.viewportUniqueId(in: "Physical size: 1080x2424\n") == nil)
+    }
+
+    @Test("a folded frame is cropped to the folded view before it is turned")
+    func foldedCrop() throws {
+        let width = 2076
+        let height = 2152
+        var bytes = Data(count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                bytes[offset] = x >= 498 && x < 1578 ? 200 : 10
+                bytes[offset + 3] = 255
+            }
+        }
+        var frame = EmulatorFrame(format: .rgba8888, width: width, height: height, emulatorRotation: 0, sequence: 1, bytes: bytes)
+        frame.folded = FoldedRect(x: 498, y: 0, width: 1080, height: 2152)
+
+        let pixels = try AndroidScreenCapture.upright(frame, guestRotation: 0)
+        #expect(pixels.width == 1080 && pixels.height == 2152)
+        #expect(Set(stride(from: 0, to: pixels.bytes.count, by: 4).map { pixels.bytes[$0] }) == [200])
+        let png = try AndroidScreenCapture.png(from: frame, guestRotation: 1)
+        #expect(try AndroidScreenCaptureTests.labels(ofPNG: png).width == 2152)
+    }
+
+    @Test("a folded rectangle outside the frame is clamped to it")
+    func foldedCropClamped() {
+        let pixels = AndroidScreenCapture.Pixels(width: 3, height: 2, bytes: AndroidScreenCaptureTests.rgba(AndroidScreenCaptureTests.letters))
+        let cropped = AndroidScreenCapture.cropped(pixels, to: FoldedRect(x: 1, y: 1, width: 10, height: 10))
+        #expect(cropped.width == 2 && cropped.height == 1)
+        #expect(stride(from: 0, to: cropped.bytes.count, by: 4).map { cropped.bytes[$0] } == Array("EF".utf8))
+    }
+
+    @Test("the folded rectangle comes from Image.format.foldedDisplay, and an empty one means unfolded")
+    func foldedFromImage() {
+        var image = Android_Emulation_Control_Image()
+        image.format.format = .rgba8888
+        image.format.width = 2
+        image.format.height = 1
+        image.image = Data(count: 8)
+        #expect(EmulatorControlClient.frame(from: image)?.folded == nil)
+        image.format.foldedDisplay.width = 1
+        image.format.foldedDisplay.height = 1
+        image.format.foldedDisplay.xOffset = 1
+        #expect(EmulatorControlClient.frame(from: image)?.folded == FoldedRect(x: 1, y: 0, width: 1, height: 1))
+    }
+
+    @Test("postures go to the wire as PostureValue and come back")
+    func postureMessages() {
+        #expect(EmulatorControlClient.postureMessage(.closed).value == .postureClosed)
+        #expect(EmulatorControlClient.postureMessage(.halfOpened).value == .postureHalfOpened)
+        #expect(EmulatorControlClient.postureMessage(.opened).value == .postureOpened)
+        var message = Android_Emulation_Control_Posture()
+        message.value = .postureTent
+        #expect(EmulatorControlClient.posture(from: message) == .tent)
+    }
+
+    @Test("a notification's other members are skipped as unknown fields, leaving its posture")
+    func notificationUnknownFields() throws {
+        // Field 5 (booted, a BootCompletedNotification with time 7), then field 4 (posture, value 1).
+        let wire = Data([0x2A, 0x02, 0x08, 0x07, 0x22, 0x02, 0x18, 0x01])
+        let notification = try Android_Emulation_Control_Notification(serializedBytes: wire)
+        #expect(notification.posture.value == .postureClosed)
+    }
+}

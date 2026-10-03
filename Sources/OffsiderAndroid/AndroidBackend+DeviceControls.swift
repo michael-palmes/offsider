@@ -15,8 +15,8 @@ enum AndroidDeviceSettings {
     }
 
     /// Auto-rotate goes off first, or the sensor turns the display straight back; it stays off afterwards.
-    static func setRotation(_ orientation: DeviceOrientation) -> String {
-        "settings put system accelerometer_rotation 0; settings put system user_rotation \(orientation.androidRotation)"
+    static func setRotation(_ orientation: DeviceOrientation, naturalIsLandscape: Bool = false) -> String {
+        "settings put system accelerometer_rotation 0; settings put system user_rotation \(orientation.androidRotation(naturalIsLandscape: naturalIsLandscape))"
     }
 
     /// `Night mode: yes`; `auto` and `custom` follow a schedule; nil for anything unexpected.
@@ -76,7 +76,7 @@ extension AndroidBackend: DeviceSettingsControlling {
     }
 
     /// Stdout of a settings command; a non-zero exit is an error quoting stderr.
-    private func settingsShell(_ command: String, on serial: String) async throws -> String {
+    func settingsShell(_ command: String, on serial: String) async throws -> String {
         try await prepare()
         let result = try await requireClient().shell(command, on: serial, label: command)
         guard result.status == 0 else {
@@ -92,11 +92,13 @@ extension AndroidBackend: OrientationControlling {
     /// Probes the display again each time, so a poll sees the turn.
     public func orientation(of id: DeviceID) async throws -> DeviceOrientation? {
         geometries[id.rawValue] = nil
-        return DeviceOrientation(androidRotation: try await geometry(for: id.rawValue).rotation)
+        return try await geometry(for: id.rawValue).deviceOrientation
     }
 
+    /// `user_rotation` counts from the panel's natural orientation, which is landscape on a foldable's inner display.
     public func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws {
-        _ = try await settingsShell(AndroidDeviceSettings.setRotation(orientation), on: id.rawValue)
+        let natural = try await geometry(for: id.rawValue).naturalIsLandscape
+        _ = try await settingsShell(AndroidDeviceSettings.setRotation(orientation, naturalIsLandscape: natural), on: id.rawValue)
         geometries[id.rawValue] = nil
     }
 }

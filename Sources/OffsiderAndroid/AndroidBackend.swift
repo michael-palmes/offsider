@@ -9,6 +9,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     private var sdk: AndroidSDK?
     private var client: AdbClient?
     var geometries: [String: AndroidDisplayGeometry] = [:]
+    /// Display 0's viewport `uniqueId` from the latest shell probe.
+    var activeUniqueIds: [String: String] = [:]
+    var knownDeviceStates: [String: [AndroidDeviceState.State]] = [:]
+    var displayLists: [String: AndroidDisplayList] = [:]
+    var screenStatuses: [String: (display: ScreenDisplay?, posture: Posture?)] = [:]
     private var avdNames: [String: String] = [:]
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
@@ -128,14 +133,19 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         }
     }
 
-    /// Logical size over scale, scale = density / 160, orientation from the viewport rotation.
+    /// Logical size over scale, scale = density / 160, orientation from the viewport rotation, and on a foldable its posture.
     public func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
-        let geometry = try await geometry(for: id.rawValue)
+        let serial = id.rawValue
+        let geometry = try await geometry(for: serial)
+        let status = await screenStatus(serial)
         return UIScreenInfo(
             width: Self.dp(Double(geometry.logicalWidth) / geometry.scale),
             height: Self.dp(Double(geometry.logicalHeight) / geometry.scale),
             scale: geometry.scale,
-            rotation: geometry.orientation
+            rotation: geometry.orientation,
+            rotationDegrees: geometry.rotation * 90,
+            display: status.display,
+            posture: status.posture
         )
     }
 
@@ -235,6 +245,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             }
             return .adb(shell)
         }
+        if let posture = await postureIfFoldable(serial), posture != .open, posture != .halfOpened {
+            log(.debug, "\(serial) is \(posture.rawValue), so its input goes over adb: gRPC touches land on the unfolded panel")
+            return .adb(shell)
+        }
         return .grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep))
     }
 
@@ -264,13 +278,14 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return bands
     }
 
-    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.
-    func adbScreenshot(_ serial: String) async throws -> Data {
-        let png = try await requireClient().exec("screencap -p", on: serial, timeout: .seconds(15))
+    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation; `-d` picks a physical display.
+    func adbScreenshot(_ serial: String, physicalDisplay: String? = nil) async throws -> Data {
+        let command = physicalDisplay.map { "screencap -d \($0) -p" } ?? "screencap -p"
+        let png = try await requireClient().exec(command, on: serial, timeout: .seconds(15))
         guard png.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) else {
             let text = String(decoding: png.prefix(200), as: UTF8.self)
             let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
-            throw AndroidError.adbCommandFailed(serial: serial, command: "screencap -p", detail: firstLine)
+            throw AndroidError.adbCommandFailed(serial: serial, command: command, detail: firstLine)
         }
         return png
     }
@@ -296,6 +311,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         do {
             let geometry = try AndroidDisplayGeometry.parse(result.stdoutText)
             geometries[serial] = geometry
+            activeUniqueIds[serial] = AndroidDisplayGeometry.viewportUniqueId(in: result.stdoutText)
             return geometry
         } catch let error as AndroidDisplayGeometry.Unparseable {
             let stderrLine = result.stderrText.split(whereSeparator: \.isNewline).first.map(String.init)
@@ -316,6 +332,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         warnedAboutTruncation = []
         transports = [:]
         geometries = [:]
+        activeUniqueIds = [:]
+        knownDeviceStates = [:]
+        displayLists = [:]
+        screenStatuses = [:]
         avdNames = [:]
         warnedAboutOverride = []
         for helper in helpers {

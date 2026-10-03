@@ -15,15 +15,15 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
 
     var scale: Double { Double(densityDpi) / 160 }
 
-    /// Named so rotation 1 and 3 match `OrientationCoordinateMath` for the same physical turn on iOS.
-    var orientation: OrientationCoordinateMath.Orientation {
-        switch rotation {
-        case 1: return .landscapeFlipped
-        case 2: return .portraitUpsideDown
-        case 3: return .landscape
-        default: return .portrait
-        }
+    /// A large inner panel, such as a foldable's, is landscape at rotation 0.
+    var naturalIsLandscape: Bool { naturalWidth > naturalHeight }
+
+    /// The device's orientation, named as on iOS for the same physical turn.
+    var deviceOrientation: DeviceOrientation {
+        DeviceOrientation(androidRotation: rotation, naturalIsLandscape: naturalIsLandscape) ?? .portrait
     }
+
+    var orientation: OrientationCoordinateMath.Orientation { deviceOrientation.coordinateOrientation }
 
     /// The same display after the guest turned to `rotation`; the logical size swaps when the turn is a quarter.
     func rotated(to rotation: Int) -> AndroidDisplayGeometry {
@@ -81,6 +81,16 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
             densityDpi: density,
             hasSizeOverride: override
         )
+    }
+
+    /// The `uniqueId=local:<id>` of display 0's viewport, the physical display it shows now.
+    static func viewportUniqueId(in output: String) -> String? {
+        guard let line = output.split(whereSeparator: \.isNewline).first(where: { $0.contains("Viewport INTERNAL") }),
+              let range = line.range(of: "uniqueId=") else {
+            return nil
+        }
+        let value = line[range.upperBound...].prefix { $0 != "," && !$0.isWhitespace }
+        return value.isEmpty ? nil : String(value)
     }
 
     private static func size(after prefix: String, in line: String) -> (Int, Int)? {

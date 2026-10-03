@@ -11,6 +11,8 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
         case stream(EmulatorImageFormat, FrameBox?)
         case getClipboard
         case setClipboard(String)
+        case setPosture(EmulatorPosture)
+        case currentPosture
         case close
     }
 
@@ -22,6 +24,8 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
     private var bootedAnswers: [Bool]
     private let failure: @Sendable (Call) -> AndroidError?
     private var auths: [EmulatorAuth] = []
+    private var posture: EmulatorPosture?
+    private var foldedRect: FoldedRect?
 
     /// `booted` scripts `getStatus` answers in order; the last one repeats.
     init(clipboard: String = "", frames: [EmulatorFrame] = [], booted: [Bool] = [true], failing: @escaping @Sendable (Call) -> AndroidError? = { _ in nil }) {
@@ -33,6 +37,16 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
 
     var calls: [Call] { lock.withLock { recorded } }
     var clipboardNow: String { lock.withLock { clipboardText } }
+    /// What `currentPosture` answers; `setPosture` moves it, nil sends no posture notification.
+    var postureNow: EmulatorPosture? {
+        get { lock.withLock { posture } }
+        set { lock.withLock { posture = newValue } }
+    }
+    /// Attached to every frame, as the emulator does while a foldable is folded.
+    var folded: FoldedRect? {
+        get { lock.withLock { foldedRect } }
+        set { lock.withLock { foldedRect = newValue } }
+    }
 
     private func record(_ call: Call) throws {
         lock.withLock { recorded.append(call) }
@@ -50,14 +64,20 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
 
     func screenshot(_ format: EmulatorImageFormat, fitting box: FrameBox?) async throws -> EmulatorFrame {
         try record(.screenshot(format, box))
-        guard let frame = frames.first(where: { $0.format == format }) ?? frames.first else {
+        guard var frame = frames.first(where: { $0.format == format }) ?? frames.first else {
             throw AndroidError.grpcFailed(endpoint: endpoint, method: "getScreenshot", detail: "no frame scripted")
         }
+        frame.folded = folded
         return frame
     }
 
     func screenshotStream(_ format: EmulatorImageFormat, fitting box: FrameBox?) -> AsyncThrowingStream<EmulatorFrame, any Error> {
-        let frames = self.frames
+        let folded = self.folded
+        let frames = self.frames.map { frame in
+            var copy = frame
+            copy.folded = folded
+            return copy
+        }
         let error = failure(.stream(format, box))
         lock.withLock { recorded.append(.stream(format, box)) }
         return AsyncThrowingStream { continuation in
@@ -74,6 +94,16 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
     func setClipboard(_ text: String) async throws {
         try record(.setClipboard(text))
         lock.withLock { clipboardText = text }
+    }
+
+    func setPosture(_ posture: EmulatorPosture) async throws {
+        try record(.setPosture(posture))
+        postureNow = posture
+    }
+
+    func currentPosture(timeout: Duration) async throws -> EmulatorPosture? {
+        try record(.currentPosture)
+        return postureNow
     }
 
     /// As the real client does, closing removes the signing keys it was connected with.
