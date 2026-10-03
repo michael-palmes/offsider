@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-04
+
 ### Added
 
 - `describe-ui --summary` prints one line per on-screen node that has a label, id or value. `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json|ndjson|text` and `--compact` shape the output; without them it is unchanged.
@@ -16,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `tap` warns when another element may cover its target, and `--fail-if-covered` fails instead of tapping.
 - `tap` treats a React Native LogBox banner as covering the strip beneath it on Android, where the accessibility tree cannot see its touch area.
 - `logs` prints recent device log entries or collects live ones, with `--rn` for React Native output, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw` and `--json`. Live output stops with an error when the device's log stream exits, for example on a bad `--predicate`.
-- `appearance`, `content-size` and `orientation` read or set the device's appearance, text size and orientation on iOS and Android; `shake` sends the shake gesture on iOS. On Android, `appearance` reads `auto` or `custom` when night mode follows a schedule, and setting light or dark replaces it.
+- `appearance`, `content-size` and `orientation` read or set the device's appearance, text size and orientation on iOS and Android; `shake` sends the shake gesture on iOS. `orientation` names the device turn as Maestro and devicectl do: `landscape-left` is the device turned 90 degrees anticlockwise, home edge on the right (UIKit's interface orientation `landscape-right`), and `landscape-right` the reverse. On Android, `appearance` reads `auto` or `custom` when night mode follows a schedule, and setting light or dark replaces it.
 - `rn prepare --bundle-id <id>` marks an Expo dev client's first-launch dev menu intro as seen and stops the menu opening at launch, so a fresh debug install opens straight into the app (iOS simulators; Android debuggable builds through `run-as`). It stops the app first if it is running, on both platforms.
 - `--allow-offscreen` on `tap`, `slider` and batch tap steps resolves an element whose frame is outside the screen.
 - When no `--label` or `--value` matches exactly, typographic quotes and unusual spaces are folded, so `--label "Don't Allow"` finds `Don’t Allow`. A selector that matches nothing suggests the closest labels.
@@ -34,9 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **Breaking, relative to the earlier entries in this section:** `orientation` names the device turn, as Maestro and devicectl do. `landscape-left` now means the device turned 90 degrees anticlockwise, with the home edge on the right (UIKit's interface orientation `landscape-right`), and `landscape-right` the reverse; they used to take UIKit's interface names.
 - **Breaking:** `describe-ui` JSON `version` is now 2: `screen.orientation` and `screenshot --json` `orientation` are the shape, `portrait` or `landscape`, and `screen.rotation`, `screen.display` and `screen.posture` are new. In 0.3.0, `orientation` was `portrait`, `portraitUpsideDown`, `landscape` or `landscapeFlipped`; read `rotation` for the turn.
-- `posture`, `wait`, `assert` and `batch` give routing and device preparation their own 45 s watchdog allowance, separate from `--timeout`, so a cold emulator is no longer ended with "the device did not answer" before the first read.
+- `posture`, `wait`, `assert` and `batch` give routing and device preparation a 45 s watchdog allowance separate from `--timeout`, so a cold emulator's setup is not mistaken for a hang.
 - Selectors prefer on-screen matches. A match whose frame lies outside the screen now fails with an error naming its frame, where `tap` used to report success, and `--wait-timeout` waits for it to come on screen. A duplicate label on a hidden view no longer counts as a second match. A partly visible element whose centre is off screen is tapped at the centre of its visible part.
 - Every iOS landscape screenshot is now upright, with or without the new `screenshot` options.
 - `batch` reads the screen again after any step that sends input or sleeps, so a selector step sees the screen its previous step opened. `--ax-cache none` is an alias of `perStep`.
@@ -151,7 +152,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/michael-palmes/offsider/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/michael-palmes/offsider/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/michael-palmes/offsider/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/michael-palmes/offsider/releases/tag/v0.1.0
