@@ -156,6 +156,9 @@ struct ReactNativeEnvironmentTests {
             _ = try await app.waitForLabel(of: "environment-test-orientation") { $0 == "Orientation: landscape" }
             let screen = try await app.screenSize()
             #expect(screen.width > screen.height, "describe-ui reports \(screen.width) x \(screen.height)")
+            let screenInfo = try await app.tree()["screen"] as? [String: Any]
+            #expect(screenInfo?["orientation"] as? String == "landscape", "\(String(describing: screenInfo))")
+            #expect(screenInfo?["rotation"] as? Int == 90, "\(String(describing: screenInfo))")
 
             // The log buttons sit below the fold in landscape; one preset scroll covers less on Android.
             var scrolls = 0

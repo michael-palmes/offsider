@@ -55,6 +55,8 @@ show_usage() {
     echo "  -a, --android       Build Offsider and run the Android emulator E2E suites, then the React Native suites (no simulator)"
     echo "      --rn-ios        Build Offsider and run the React Native playground suites on an iOS simulator"
     echo "      --rn-debug      With --rn-ios or --android: build the Debug app, start Metro on 8742 and run only ReactNativeDebugSmokeTests"
+    echo "      --foldable      Build Offsider and the playground, then run FoldableTests on the Offsider Duo iPhone"
+    echo "      --android-fold  Build Offsider and run AndroidFoldableTests on the Offsider_E2E_Pixel_9_Pro_Fold AVD"
     echo "  -c, --clean         Clean build before building"
     echo "  -s, --sequential    Run suites one-by-one (single simulator-safe flow)"
     echo "  -v, --verbose       Verbose output"
@@ -70,10 +72,14 @@ show_usage() {
     echo "Android (--android):"
     echo "  OFFSIDER_ANDROID_DEVICE   Required: the E2E emulator's serial or AVD name, for example Offsider_E2E_Pixel_9"
     echo "  OFFSIDER_ANDROID_APK      The React Native playground's release APK (default: OffsiderPlaygroundRN/build/android/OffsiderPlaygroundRN-release.apk)"
-    echo "  OFFSIDER_ANDROID_E2E_AVD  The only AVD the suites may drive (default: Offsider_E2E_Pixel_9)"
+    echo "  OFFSIDER_ANDROID_E2E_AVD  The only AVD the suites may drive: Offsider_E2E_Pixel_9 (default) or Offsider_E2E_Pixel_9_Pro_Fold"
     echo "  OFFSIDER_ANDROID_LANDSCAPE_E2E=1  Also run the landscape suite on Settings"
     echo "  OFFSIDER_ANDROID_BOOT_E2E=1       Also stop and cold-boot the E2E AVD"
     echo "  OFFSIDER_ANDROID_DEBUG_APK        The Debug APK for --rn-debug (default: built by scripts/rn-playground.sh build-android --debug)"
+    echo ""
+    echo "Foldables (--foldable, --android-fold):"
+    echo "  SIMULATOR_UDID            The iPhone Duo simulator for --foldable (default: the one named Offsider Duo iPhone, booted first)"
+    echo "  OFFSIDER_ANDROID_DEVICE   For --android-fold: the fold emulator's serial or AVD name (default: Offsider_E2E_Pixel_9_Pro_Fold)"
     echo ""
     echo "React Native on iOS (--rn-ios, needs pnpm):"
     echo "  OFFSIDER_RN_IOS_APP       The Release simulator app (default: built by scripts/rn-playground.sh build-ios --if-changed)"
@@ -114,6 +120,8 @@ show_usage() {
     echo "  $0 --rn-ios         # Build and run the React Native suites on an iOS simulator"
     echo "  $0 --rn-ios --rn-debug   # Debug build with Metro on 8742, run ReactNativeDebugSmokeTests"
     echo "  $0 --android ReactNativeRowsTests   # Run one React Native suite on the Android emulator"
+    echo "  $0 --foldable       # Run the foldable suite on the Offsider Duo iPhone (unfold it in Device Hub when asked)"
+    echo "  $0 --android-fold   # Run the foldable suite on the Pixel 9 Pro Fold AVD"
     echo "  $0 -b               # Only build, skip tests"
     echo "  $0 -c               # Clean build and run all tests"
 }
@@ -126,6 +134,10 @@ ANDROID=false
 RN_IOS=false
 RN_DEBUG=false
 RN_METRO_STARTED=false
+FOLDABLE=false
+ANDROID_FOLD=false
+FOLDABLE_SIMULATOR_NAME="Offsider Duo iPhone"
+ANDROID_FOLD_AVD="Offsider_E2E_Pixel_9_Pro_Fold"
 CLEAN_BUILD=false
 SEQUENTIAL=true
 VERBOSE=false
@@ -187,6 +199,14 @@ while [[ $# -gt 0 ]]; do
             RN_DEBUG=true
             shift
             ;;
+        --foldable)
+            FOLDABLE=true
+            shift
+            ;;
+        --android-fold)
+            ANDROID_FOLD=true
+            shift
+            ;;
         -c|--clean)
             CLEAN_BUILD=true
             shift
@@ -219,6 +239,17 @@ if [[ "$UNIT_TESTS" == true ]] &&
    [[ "$BUILD_ONLY" == true || "$TESTS_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
     print_error "--unit-tests cannot be combined with build, E2E test, clean, or test-filter options."
     exit 1
+fi
+
+if [[ "$FOLDABLE" == true || "$ANDROID_FOLD" == true ]]; then
+    if [[ "$FOLDABLE" == true && "$ANDROID_FOLD" == true ]]; then
+        print_error "--foldable and --android-fold cannot be combined; run them one at a time."
+        exit 1
+    fi
+    if [[ "$ANDROID" == true || "$RN_IOS" == true || "$RN_DEBUG" == true || "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
+        print_error "--foldable and --android-fold can only be combined with --tests-only and --verbose."
+        exit 1
+    fi
 fi
 
 RN_FILTER=false
@@ -278,7 +309,7 @@ check_prerequisites() {
         exit 1
     fi
 
-    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true ]] && ! command -v jq &> /dev/null; then
+    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true ]] && ! command -v jq &> /dev/null; then
         print_error "jq not found. Install jq to select the matching simulator runtime."
         exit 1
     fi
@@ -288,7 +319,7 @@ check_prerequisites() {
         exit 1
     fi
 
-    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$RN_IOS" != true ]] && ! command -v xcodegen &> /dev/null; then
+    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true && "$RN_IOS" != true ]] && ! command -v xcodegen &> /dev/null; then
         print_error "xcodegen not found. Install it with 'brew install xcodegen' to generate the playground project."
         exit 1
     fi
@@ -644,6 +675,62 @@ run_android_tests() {
     run_rn_suites
 }
 
+run_android_fold_tests() {
+    print_header "Running Android Foldable E2E Tests"
+    ensure_test_framework_rpaths
+
+    export OFFSIDER_ANDROID_DEVICE="${OFFSIDER_ANDROID_DEVICE:-$ANDROID_FOLD_AVD}"
+    export OFFSIDER_ANDROID_E2E_AVD="$ANDROID_FOLD_AVD"
+    export OFFSIDER_ANDROID_FOLD_E2E=1
+    export OFFSIDER_ANDROID_E2E=0
+    export OFFSIDER_E2E=0
+    export OFFSIDER_LANDSCAPE_E2E=0
+    export OFFSIDER_RN_E2E=0
+    export OFFSIDER_RN_DEBUG_E2E=0
+    if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
+        OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
+    fi
+    export OFFSIDER_BIN_PATH
+    resolve_android_apk
+    export OFFSIDER_ANDROID_APK
+    print_info "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=$OFFSIDER_ANDROID_E2E_AVD, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
+    run_suite_list "AndroidFoldableTests"
+    print_success "Android foldable suite passed"
+}
+
+# Picks the Offsider Duo iPhone unless SIMULATOR_UDID already names a simulator.
+select_foldable_simulator() {
+    if [[ -n "$SIMULATOR_UDID" ]]; then
+        return
+    fi
+    SIMULATOR_UDID="$(xcrun simctl list devices available -j | jq -r --arg name "$FOLDABLE_SIMULATOR_NAME" \
+        '[.devices[][] | select(.name == $name)] | .[0].udid // empty')"
+    if [[ -z "$SIMULATOR_UDID" ]]; then
+        print_error "No simulator is named $FOLDABLE_SIMULATOR_NAME. Create an iPhone Duo simulator with that name, or set SIMULATOR_UDID."
+        exit 1
+    fi
+}
+
+run_foldable_tests() {
+    print_header "Running Foldable E2E Tests"
+    ensure_test_framework_rpaths
+
+    export SIMULATOR_UDID
+    export OFFSIDER_FOLDABLE_E2E=1
+    export OFFSIDER_E2E=0
+    export OFFSIDER_LANDSCAPE_E2E=0
+    export OFFSIDER_RN_E2E=0
+    export OFFSIDER_ANDROID_E2E=0
+    if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
+        OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
+    fi
+    export OFFSIDER_BIN_PATH
+    print_info "Environment: SIMULATOR_UDID=$SIMULATOR_UDID, OFFSIDER_FOLDABLE_E2E=1, OFFSIDER_BIN_PATH=$OFFSIDER_BIN_PATH"
+    print_info "The unfolded half asks you to unfold the simulator in Device Hub and skips after 120 s"
+    run_suite_list "FoldableTests"
+    print_success "Foldable suite passed"
+}
+
 # Function to build and install playground app
 build_playground_app() {
     print_header "Building and Installing Playground App"
@@ -852,6 +939,33 @@ main() {
 
     # Always check prerequisites
     check_prerequisites
+
+    if [[ "$ANDROID_FOLD" == true ]]; then
+        if [[ "$TESTS_ONLY" != true ]]; then
+            build_idb_xcframeworks
+            build_offsider
+        fi
+        run_android_fold_tests
+        return
+    fi
+
+    if [[ "$FOLDABLE" == true ]]; then
+        ensure_e2e_runtime_host || {
+            print_error "Could not start the Xcode 27 Device Hub runtime host."
+            exit 1
+        }
+        select_foldable_simulator
+        boot_simulator
+        if [[ "$TESTS_ONLY" != true ]]; then
+            build_idb_xcframeworks
+            generate_playground_project
+            build_offsider
+            ensure_test_framework_rpaths
+            build_playground_app
+        fi
+        run_foldable_tests
+        return
+    fi
 
     if [[ "$ANDROID" == true ]]; then
         if [[ "$TESTS_ONLY" != true ]]; then

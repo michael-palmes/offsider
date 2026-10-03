@@ -80,6 +80,7 @@ struct RNApp: Sendable {
         switch platform {
         case .android:
             try await AndroidE2E.launch(route)
+            try await AndroidE2E.dismissANRDialog()
         case .ios:
             try await IOSRNPlayground.launch(route)
         }
@@ -97,10 +98,11 @@ struct RNApp: Sendable {
         return result
     }
 
-    /// Runs offsider on this platform's device and returns whatever it exits with.
+    /// Runs offsider on this platform's device and returns whatever it exits with; on Android, first answers an ANR dialog.
     func offsider(_ arguments: String, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
         switch platform {
         case .android:
+            try await AndroidE2E.dismissANRDialog()
             return try await AndroidE2E.offsider(arguments, timeout: timeout)
         case .ios:
             return try await TestHelpers.runOffsiderCommandSeparated(arguments, simulatorUDID: try IOSRNPlayground.udid(), timeout: timeout)

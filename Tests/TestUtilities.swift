@@ -231,22 +231,21 @@ struct TestHelpers {
         try await setSimulatorOrientation("portrait")
     }
 
-    /// Simulator.app's device-orientation names: turning the device left puts the UI in landscape-right.
     static func setSimulatorOrientationLandscapeLeft() async throws {
-        try await setSimulatorOrientation("landscape-right")
+        try await setSimulatorOrientation("landscape-left")
     }
 
     static func setSimulatorOrientationLandscapeRight() async throws {
-        try await setSimulatorOrientation("landscape-left")
+        try await setSimulatorOrientation("landscape-right")
     }
 
     static func rotateSimulatorLeft() async throws {
         let udid = try requireSimulatorUDID()
         let current = try await runOffsiderCommand("orientation", simulatorUDID: udid).output
-        let next = current.contains("landscape-right") ? "portrait-upside-down"
-            : current.contains("portrait-upside-down") ? "landscape-left"
-            : current.contains("landscape-left") ? "portrait"
-            : "landscape-right"
+        let next = current.contains("landscape-left") ? "portrait-upside-down"
+            : current.contains("portrait-upside-down") ? "landscape-right"
+            : current.contains("landscape-right") ? "portrait"
+            : "landscape-left"
         try await setSimulatorOrientation(next)
     }
 

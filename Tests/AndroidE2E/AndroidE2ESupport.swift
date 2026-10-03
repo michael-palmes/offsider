@@ -10,6 +10,10 @@ let isAndroidLandscapeE2EEnabled = {
     let raw = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_LANDSCAPE_E2E"]?.lowercased() ?? ""
     return isAndroidE2EEnabled && (raw == "1" || raw == "true" || raw == "yes")
 }()
+let isAndroidFoldE2EEnabled = {
+    let raw = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_FOLD_E2E"]?.lowercased() ?? ""
+    return raw == "1" || raw == "true" || raw == "yes"
+}()
 let isAndroidBootE2EEnabled = {
     let raw = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_BOOT_E2E"]?.lowercased() ?? ""
     return isAndroidE2EEnabled && (raw == "1" || raw == "true" || raw == "yes")
@@ -23,6 +27,10 @@ struct AndroidE2EError: Error, CustomStringConvertible {
 enum AndroidE2E {
     static let package = "com.mpalmes.offsider.playground.rn"
     static let marker = "/data/local/tmp/offsider-e2e-playground.sha256"
+
+    /// The only AVDs any Android suite may drive; OFFSIDER_ANDROID_E2E_AVD picks one of them.
+    static let allowedAVDs: Set<String> = ["Offsider_E2E_Pixel_9", "Offsider_E2E_Pixel_9_Pro_Fold"]
+    static let foldAVD = "Offsider_E2E_Pixel_9_Pro_Fold"
 
     static var expectedAVD: String {
         let value = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_E2E_AVD"] ?? ""
@@ -141,6 +149,14 @@ enum AndroidE2E {
         try await shell("am start -W -a android.intent.action.VIEW -d offsiderplaygroundrn://screen/\(screen) \(package)")
     }
 
+    /// Answers an "isn't responding" dialog with Wait when one has focus; otherwise one cheap focus read.
+    static func dismissANRDialog() async throws {
+        let focus = (try? await shell("dumpsys window | grep mCurrentFocus || true", timeout: 30)) ?? ""
+        guard focus.contains("Not Responding") else { return }
+        _ = try? await offsider("tap --id aerr_wait")
+        try await Task.sleep(for: .seconds(2))
+    }
+
     /// Lets the emulator reach Metro on the Mac at its own 127.0.0.1:8742.
     static func reverseMetro() async throws {
         try await adb("reverse tcp:\(RNMetro.port) tcp:\(RNMetro.port)")
@@ -207,6 +223,9 @@ actor GuardedEmulator {
             throw AndroidE2EError(description: "OFFSIDER_ANDROID_DEVICE \(requested) is not in `offsider list-devices --platform android`.")
         }
         let name = row["name"] as? String ?? ""
+        guard AndroidE2E.allowedAVDs.contains(AndroidE2E.expectedAVD) else {
+            throw AndroidE2EError(description: "OFFSIDER_ANDROID_E2E_AVD \(AndroidE2E.expectedAVD) is not one of the E2E AVDs: \(AndroidE2E.allowedAVDs.sorted().joined(separator: ", ")).")
+        }
         guard name == AndroidE2E.expectedAVD else {
             throw AndroidE2EError(description: "Refusing \(requested): it is AVD \(name), and Android E2E only drives \(AndroidE2E.expectedAVD) (OFFSIDER_ANDROID_E2E_AVD).")
         }

@@ -53,19 +53,23 @@ struct DeviceControlTests {
         }
     }
 
-    @Test("orientation landscape-right turns the app, reads back, and a points screenshot matches the turned screen")
+    @Test("orientation landscape-left turns the device anticlockwise, reads back, and a points screenshot matches the turned screen")
     func orientation() async throws {
         let udid = try TestHelpers.requireSimulatorUDID()
         try await Self.restoring("orientation portrait --timeout 10") {
             try await TestHelpers.launchPlaygroundApp(to: "environment-test")
             try await Self.waitForReadout("Interface Orientation:", "Interface Orientation: portrait")
 
-            try await TestHelpers.runOffsiderCommand("orientation landscape-right --timeout 10", simulatorUDID: udid)
+            try await TestHelpers.runOffsiderCommand("orientation landscape-left --timeout 10", simulatorUDID: udid)
+            // UIKit names the interface orientation after the home edge, so the device's landscape-left reads landscape-right.
             try await Self.waitForReadout("Interface Orientation:", "Interface Orientation: landscape-right")
             let read = try await TestHelpers.runOffsiderCommandSeparated("orientation", simulatorUDID: udid)
-            #expect(read.stdout.contains("landscape-right"), "\(read.stdout)")
+            #expect(read.stdout.contains("landscape-left"), "\(read.stdout)")
 
             let tree = try DescribeUITree.parse(try await TestHelpers.runOffsiderCommandSeparated("describe-ui", simulatorUDID: udid).stdout)
+            let screenInfo = try #require(tree["screen"] as? [String: Any])
+            #expect(screenInfo["orientation"] as? String == "landscape", "\(screenInfo)")
+            #expect(screenInfo["rotation"] as? Int == 90, "\(screenInfo)")
             let screen = try #require(DescribeUITree.screenSize(in: tree))
             let output = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-landscape-\(UUID().uuidString).png")
             defer { try? FileManager.default.removeItem(at: output) }
