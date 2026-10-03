@@ -7,6 +7,9 @@ set -e  # Exit on any error
 
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
 
+# Any adb server the suites start sends no mDNS multicast on the LAN.
+export ADB_MDNS=0
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

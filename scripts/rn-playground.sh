@@ -21,6 +21,8 @@ METRO_STATUS_URL="http://127.0.0.1:${METRO_PORT}/status"
 METRO_START_TIMEOUT=60
 
 export EXPO_NO_TELEMETRY=1
+# An adb server this script starts sends no mDNS multicast on the LAN.
+export ADB_MDNS=0
 export EXPO_OFFLINE=1
 export COCOAPODS_DISABLE_STATS=true
 export LANG=en_US.UTF-8
