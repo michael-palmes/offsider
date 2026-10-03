@@ -33,9 +33,21 @@ struct SimulatorOrientationReader {
                 logger.info().log("Orientation probe: simulator device unavailable")
                 return nil
             }
-            return readOrientation(from: device, screenID: screenID, logger: logger)
+            // SimulatorKit's screen can be briefly unavailable on a busy Mac, so give it a few tries.
+            for attempt in 1...screenReadAttempts {
+                if let orientation = readOrientation(from: device, screenID: screenID, logger: logger) {
+                    return orientation
+                }
+                if attempt < screenReadAttempts {
+                    usleep(screenReadRetryMicroseconds)
+                }
+            }
+            return nil
         }
     }
+
+    private static let screenReadAttempts = 4
+    private static let screenReadRetryMicroseconds: useconds_t = 200_000
 
     private static func readOrientation(from device: AnyObject, screenID: Int, logger: OffsiderLogger) -> SimulatorOrientation? {
         guard let screenClass = NSClassFromString("SimulatorKit.SimDeviceScreen") as? NSObject.Type else {
