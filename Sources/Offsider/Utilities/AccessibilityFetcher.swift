@@ -37,21 +37,34 @@ struct AccessibilityFetcher {
         logger: OffsiderLogger,
         recoveryDependencies: AccessibilityRecoveryDependencies = .live
     ) async throws -> Data {
-        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
-        
-        guard let target = simulatorSet.allSimulators.first(where: { $0.udid == simulatorUDID }) else {
+        guard let target = try await cachedSimulator(udid: simulatorUDID, logger: logger) else {
             throw CLIError.deviceNotFound(id: simulatorUDID)
         }
-
-        return try await retryingAfterTestManagerRecovery(
-            simulatorUDID: simulatorUDID,
+        return try await fetchAccessibilityInfoJSONData(
+            from: target,
+            point: point,
             logger: logger,
-            dependencies: recoveryDependencies
-        ) {
-            if let point {
-                return try await fetchAccessibilityInfoJSONData(from: target, at: point)
+            recoveryDependencies: recoveryDependencies
+        )
+    }
+
+    static func fetchAccessibilityInfoJSONData(
+        from target: FBSimulator,
+        point: AccessibilityPoint? = nil,
+        logger: OffsiderLogger,
+        recoveryDependencies: AccessibilityRecoveryDependencies = .live
+    ) async throws -> Data {
+        try await Timings.measure("accessibility") {
+            try await retryingAfterTestManagerRecovery(
+                simulatorUDID: target.udid,
+                logger: logger,
+                dependencies: recoveryDependencies
+            ) {
+                if let point {
+                    return try await fetchAccessibilityInfoJSONData(from: target, at: point)
+                }
+                return try await fetchFrontmostAccessibilityInfoJSONData(from: target)
             }
-            return try await fetchFrontmostAccessibilityInfoJSONData(from: target)
         }
     }
 

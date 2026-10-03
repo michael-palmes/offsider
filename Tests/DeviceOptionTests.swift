@@ -15,7 +15,13 @@ struct DeviceOptionTests {
         #expect(names.contains("tap"))
         #expect(names.contains("doctor"))
         #expect(!rootHelp.contains("list-simulators"))
+        var commands: [String] = []
         for name in names {
+            let nested = TestHelpers.listedSubcommands(in: try await TestHelpers.runOffsiderCommand("\(name) --help").output)
+            commands += nested.isEmpty ? [name] : nested.map { "\(name) \($0)" }
+        }
+        #expect(commands.contains("rn prepare"))
+        for name in commands {
             let help = try await TestHelpers.runOffsiderCommand("\(name) --help").output
             #expect(help.contains("--device <id>"), "\(name) --help does not show --device <id>")
             #expect(!help.contains("--udid"), "\(name) --help still mentions --udid")

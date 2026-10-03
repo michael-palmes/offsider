@@ -38,10 +38,7 @@ struct HIDInteractor {
             )
         }
 
-        let simulatorSet = try await getSimulatorSet(deviceSetPath: nil, logger: logger, reporter: EmptyEventReporter.shared)
-        logger.info().log("FBSimulatorSet obtained.")
-
-        guard let simulator = simulatorSet.allSimulators.first(where: { $0.udid == simulatorUDID }) else {
+        guard let simulator = try await cachedSimulator(udid: simulatorUDID, logger: logger) else {
             throw CLIError.deviceNotFound(id: simulatorUDID)
         }
 

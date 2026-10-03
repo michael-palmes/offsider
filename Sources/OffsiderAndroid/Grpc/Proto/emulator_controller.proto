@@ -15,6 +15,7 @@
 // Modified for Offsider: trimmed to the RPCs and messages below from the emulator 37.1.11 copy
 // (SHA-256 1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f).
 // Names, field numbers and the package are unchanged. EmulatorStatus drops field 5 (hardwareConfig).
+// Notification keeps only its posture member; the others arrive as unknown fields and are skipped.
 // Regenerate the Swift code with `scripts/generate-emulator-grpc.sh`.
 
 syntax = "proto3";
@@ -134,6 +135,25 @@ service EmulatorController {
     //
     // This method returns `OK` (code 0) and the current `ClipData` upon success.
     rpc getClipboard(google.protobuf.Empty) returns (ClipData) {}
+
+    // Streams notifications from the emulator. This method returns a server-side
+    // streaming reactor, sending the current state of some notifications on subscription.
+    //
+    // Notifications include:
+    // - `Posture`: Reports changes in the device's foldable posture.
+    rpc streamNotification(google.protobuf.Empty)
+            returns (stream Notification) {}
+
+    // Sets the foldable posture of the device. This operation is asynchronous
+    // and executed on the main looper.
+    //
+    // The `Posture` message contains a `PostureValue` enum, defining the desired
+    // physical configuration of the foldable device.
+    //
+    // Returns the following gRPC error codes:
+    // - `OK` (code 0): Upon successful asynchronous scheduling of the operation.
+    // - `FAILED_PRECONDITION` (code 9): If the emulator is unable to set the specified posture.
+    rpc setPosture(Posture) returns (google.protobuf.Empty) {}
 }
 
 // in line with android/emulation/resizable_display_config.h
@@ -523,4 +543,25 @@ message EmulatorStatus {
 
     // Configuration of the emulator hardware
     map<string, string> platformConfig = 8;
+}
+
+message Notification {
+    // Detailed notification information.
+    oneof type {
+        Posture posture = 4;
+    }
+}
+
+// Must follow the definition in "external/qemu/android/hw-sensors.h"
+message Posture {
+    enum PostureValue {
+        POSTURE_UNKNOWN = 0;
+        POSTURE_CLOSED = 1;
+        POSTURE_HALF_OPENED = 2;
+        POSTURE_OPENED = 3;
+        POSTURE_FLIPPED = 4;
+        POSTURE_TENT = 5;
+        POSTURE_MAX = 6;
+    }
+    PostureValue value = 3;
 }

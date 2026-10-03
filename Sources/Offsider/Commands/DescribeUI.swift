@@ -4,11 +4,20 @@ import OffsiderCore
 
 struct DescribeUI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Describes the UI hierarchy of a booted simulator or a running emulator using accessibility information."
+        abstract: "Describes the UI hierarchy of a booted simulator or a running emulator using accessibility information.",
+        discussion: """
+        The envelope's screen gives width and height in points (dp on Android), orientation (the shape, portrait \
+        or landscape), rotation (degrees anticlockwise from the display's natural orientation), display ({id, \
+        platformId}: main, or cover or inner on a foldable) and posture (null unless the device folds). Only the \
+        active display is described; --display checks that it is the one you expect.
+        """
     )
 
     @OptionGroup
     var deviceOption: DeviceOption
+
+    @OptionGroup
+    var displayOption: DisplayOption
 
     @Option(
         name: .customLong("point"),
@@ -19,6 +28,9 @@ struct DescribeUI: AsyncParsableCommand {
     )
     var point: String?
 
+    @OptionGroup(title: "Output")
+    var output: DescribeUIOutputOptions
+
     func validate() throws {
         _ = try parsedPoint()
     }
@@ -27,13 +39,33 @@ struct DescribeUI: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         try await route.backend.prepare()
+        try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
 
-        var tree = try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint())
-        tree.screen = try? await route.backend.screenInfo(for: route.device)
-        print(String(decoding: tree.jsonData(), as: UTF8.self), terminator: "")
+        let tree = try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint())
+        print(String(decoding: try output.render(await Self.withScreen(tree, on: route)), as: UTF8.self), terminator: "")
     }
 
-    private func parsedPoint() throws -> UIPoint? {
+    /// The accessibility tree covers the active display only, so `--display` must name it.
+    @MainActor
+    static func requireActive(_ option: DisplayOption, on route: DeviceRouter.Route, deviceName: String) async throws {
+        guard let selected = try await option.resolve(on: route.backend, device: route.device, deviceName: deviceName),
+              !selected.display.active else {
+            return
+        }
+        throw CLIError(errorDescription: DisplayReport.inactiveDisplay(
+            selected.display, posture: selected.list.posture, platform: route.device.platform, device: deviceName
+        ))
+    }
+
+    /// The tree with the screen the envelope reports, when the device can say.
+    @MainActor
+    static func withScreen(_ tree: UITree, on route: DeviceRouter.Route) async -> UITree {
+        var tree = tree
+        tree.screen = try? await route.backend.screenInfo(for: route.device)
+        return tree
+    }
+
+    func parsedPoint() throws -> UIPoint? {
         guard let point else {
             return nil
         }

@@ -34,8 +34,9 @@ struct AccessibilityPollerTests {
             pollInterval: 0.01,
             transientGrace: grace,
             elementType: nil,
-            logger: OffsiderLogger()
-        ) { try reads.next() }
+            logger: OffsiderLogger(),
+            clock: ScriptedClock().poll
+        ) { try reads.next() }.value
     }
 
     @Test("a transient read failure is retried within the verify grace")
@@ -80,12 +81,120 @@ struct AccessibilityPollerTests {
         var count = 0
         await #expect(throws: ElementResolutionError.self) {
             try await AccessibilityPoller.pollForResolution(
-                query: .id("go"), waitTimeout: 0, pollInterval: 0.01, transientGrace: 2, elementType: nil, logger: OffsiderLogger()
+                query: .id("go"), waitTimeout: 0, pollInterval: 0.01, transientGrace: 2, elementType: nil, logger: OffsiderLogger(), clock: ScriptedClock().poll
             ) {
                 count += 1
                 return empty
             }
         }
+        #expect(count == 1)
+    }
+
+    private static func sheet(buttonY: Double) -> UITree {
+        FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.button, id: "apply", label: "Apply", frame: FakeUI.frame(20, buttonY, 350, 44)),
+        ])
+    }
+
+    @Test("an off-screen element is retried under --wait-timeout until it slides on screen")
+    func offScreenRetriedUnderWait() async throws {
+        var trees = [Self.sheet(buttonY: 10700), Self.sheet(buttonY: 10700), Self.sheet(buttonY: 600)]
+        var count = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("apply"), waitTimeout: 2, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) {
+            count += 1
+            return trees.count > 1 ? trees.removeFirst() : trees[0]
+        }
+        #expect(polled.value.point.y == 622)
+        #expect(polled.tree == Self.sheet(buttonY: 600))
+        #expect(count == 4)
+    }
+
+    /// Serves one tree per scripted y, repeating the last; 10700 is off screen.
+    private func pollSheet(_ ys: [Double], wait: TimeInterval = 2) async throws -> (Polled<TapResolution>, reads: Int) {
+        var ys = ys
+        var count = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("apply"), waitTimeout: wait, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) {
+            count += 1
+            return Self.sheet(buttonY: ys.count > 1 ? ys.removeFirst() : ys[0])
+        }
+        return (polled, count)
+    }
+
+    @Test("an element that slid on screen is tapped only once two reads agree")
+    func slidingElementWaitsUntilStill() async throws {
+        let (polled, reads) = try await pollSheet([10700, 800, 600, 600])
+        #expect(polled.value.point.y == 622)
+        #expect(reads == 4)
+    }
+
+    @Test("an element found on the first read costs exactly one read")
+    func firstReadReturnsImmediately() async throws {
+        let (polled, reads) = try await pollSheet([600, 400, 200])
+        #expect(polled.value.point.y == 622)
+        #expect(reads == 1)
+    }
+
+    @Test("an element still moving at the deadline returns its latest position")
+    func stillMovingAtDeadlineReturnsLatest() async throws {
+        var y = 10700.0
+        var count = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("apply"), waitTimeout: 1, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) {
+            count += 1
+            defer { y = count == 1 ? 800 : y - 5 }
+            return Self.sheet(buttonY: y)
+        }
+        #expect(polled.value.point.y == y + 5 + 22)
+        #expect(count >= 2)
+    }
+
+    @Test("a centred element whose width keeps changing settles once its activation point holds")
+    func resizingElementSettlesOnPoint() async throws {
+        var widths = [0.0, 120, 160, 200, 240, 280]
+        var count = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("status"), waitTimeout: 2, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) {
+            count += 1
+            let width = widths.count > 1 ? widths.removeFirst() : widths[0]
+            let frame = width == 0 ? FakeUI.frame(146, 10600, 100, 44) : FakeUI.frame(196 - width / 2, 600, width, 44)
+            return FakeUI.tree(width: 393, height: 852, [FakeUI.node(.button, id: "status", label: "Syncing", frame: frame)])
+        }
+        #expect(polled.value.point.x == 196 && polled.value.point.y == 622)
+        #expect(count == 3)
+    }
+
+    @Test("an element that disappears during the settle check keeps polling")
+    func disappearingDuringSettleKeepsPolling() async throws {
+        let (polled, reads) = try await pollSheet([10700, 800, 10700, 600, 600])
+        #expect(polled.value.point.y == 622)
+        #expect(reads == 5)
+    }
+
+    @Test("element positions settle within one point of each other, whatever the frame's size does")
+    func settleTolerance() {
+        let still = UIPoint(x: 195, y: 622)
+        #expect(ElementMotion.hasSettled(previous: still, current: UIPoint(x: 195.9, y: 622.9)))
+        #expect(!ElementMotion.hasSettled(previous: still, current: UIPoint(x: 195, y: 625)))
+    }
+
+    @Test("an off-screen element is not retried without --wait-timeout")
+    func offScreenNotRetriedWithoutWait() async {
+        var count = 0
+        let error = await #expect(throws: ElementResolutionError.self) {
+            try await AccessibilityPoller.pollForResolution(
+                query: .id("apply"), waitTimeout: 0, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger(), clock: ScriptedClock().poll
+            ) {
+                count += 1
+                return Self.sheet(buttonY: 10700)
+            }
+        }
+        #expect(error?.isOffScreen == true)
         #expect(count == 1)
     }
 

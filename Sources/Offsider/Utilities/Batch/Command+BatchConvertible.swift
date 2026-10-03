@@ -7,28 +7,27 @@ protocol BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive]
 }
 
+@MainActor
 private func resolveBatchTapPoint(
     query: AccessibilityQuery,
     context: BatchContext,
+    waitTimeout: TimeInterval,
+    pollInterval: TimeInterval,
     elementType: String?,
+    allowOffscreen: Bool,
     logger: OffsiderLogger
-) async throws -> (resolution: TapResolution, tree: UITree?) {
-    var isFirstFetch = true
-    var latestTree: UITree?
-    let resolution = try await AccessibilityPoller.pollForResolution(
+) async throws -> Polled<TapResolution> {
+    let fetchTree = context.pollingTreeSource()
+    return try await AccessibilityPoller.pollForResolution(
         query: query,
-        waitTimeout: context.waitTimeout,
-        pollInterval: context.pollInterval,
+        waitTimeout: waitTimeout,
+        pollInterval: pollInterval,
         elementType: elementType,
+        allowOffscreen: allowOffscreen,
         logger: logger
     ) {
-        let forceRefresh = !isFirstFetch
-        isFirstFetch = false
-        let tree = try await context.accessibilityTree(forceRefresh: forceRefresh)
-        latestTree = tree
-        return tree
+        try await fetchTree()
     }
-    return (resolution, latestTree)
 }
 
 func parseCommaSeparatedIntsStrict(_ rawValue: String, fieldName: String) throws -> [Int] {
@@ -66,6 +65,7 @@ extension Tap: BatchConvertible {
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
             resolvedTree = nil
+            await Self.warnIfOffScreen(x: pointX, y: pointY, backend: context.backend, device: context.device)
         } else {
             let query: AccessibilityQuery
             if let elementID {
@@ -78,14 +78,25 @@ extension Tap: BatchConvertible {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.")
             }
 
+            // A step's own --wait-timeout and --poll-interval override the batch-level values.
+            let waitTimeout = self.waitTimeout ?? context.waitTimeout
+            let pollInterval = self.pollInterval ?? context.pollInterval
+            if waitTimeout > 0, pollInterval <= 0 {
+                throw ValidationError("--poll-interval must be greater than 0 when --wait-timeout is active.")
+            }
             let resolved = try await resolveBatchTapPoint(
                 query: query,
                 context: context,
+                waitTimeout: waitTimeout,
+                pollInterval: pollInterval,
                 elementType: elementType,
+                allowOffscreen: allowOffscreen,
                 logger: logger
             )
-            resolution = resolved.resolution
+            resolution = resolved.value
             resolvedTree = resolved.tree
+            Self.warnIfOffScreen(subject: query.selectorDescription, at: resolution.point, in: resolved.tree)
+            try await checkCover(resolution, selector: query.selectorDescription, tree: resolved.tree, backend: context.backend, device: context.device)
         }
 
         let physicalPoint = try await context.backend.deviceCoordinates(

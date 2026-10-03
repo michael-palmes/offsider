@@ -1,6 +1,12 @@
 import Foundation
 import OffsiderCore
 
+/// A resolution and the tree it came from, so callers reuse that tree instead of reading another.
+struct Polled<T> {
+    let value: T
+    let tree: UITree
+}
+
 @MainActor
 struct AccessibilityPoller {
     /// `transientGrace` retries a transient tree failure for that long even without `--wait-timeout` (for `--verify`).
@@ -12,16 +18,17 @@ struct AccessibilityPoller {
         pollInterval: TimeInterval,
         transientGrace: TimeInterval = 0,
         elementType: String? = nil,
+        allowOffscreen: Bool = false,
         logger: OffsiderLogger
-    ) async throws -> TapResolution {
+    ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
             query: query,
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,
             transientGrace: transientGrace,
             elementType: elementType,
-            logger: logger,
-            resolver: AccessibilityTargetResolver.resolveTap
+            allowOffscreen: allowOffscreen,
+            logger: logger
         ) {
             try await backend.accessibilityTree(for: device)
         }
@@ -34,19 +41,23 @@ struct AccessibilityPoller {
         waitTimeout: TimeInterval,
         pollInterval: TimeInterval,
         elementType: String? = nil,
+        allowOffscreen: Bool = false,
         logger: OffsiderLogger
-    ) async throws -> AccessibilityMatch {
-        try await pollForResolution(
-            query: query,
+    ) async throws -> Polled<AccessibilityMatch> {
+        try await poll(
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,
             transientGrace: 0,
-            elementType: elementType,
             logger: logger,
-            resolver: AccessibilityTargetResolver.resolveElement
-        ) {
-            try await backend.accessibilityTree(for: device)
-        }
+            clock: .live,
+            resolver: { roots in
+                try AccessibilityTargetResolver.resolveElement(
+                    roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
+                )
+            },
+            position: { match in match.element.frame?.center ?? UIPoint(x: 0, y: 0) },
+            treeFetcher: { try await backend.accessibilityTree(for: device) }
+        )
     }
 
     static func pollForResolution(
@@ -55,54 +66,71 @@ struct AccessibilityPoller {
         pollInterval: TimeInterval,
         transientGrace: TimeInterval = 0,
         elementType: String?,
+        allowOffscreen: Bool = false,
         logger: OffsiderLogger,
+        clock: PollClock = .live,
         treeFetcher: () async throws -> UITree
-    ) async throws -> TapResolution {
-        try await pollForResolution(
-            query: query,
+    ) async throws -> Polled<TapResolution> {
+        try await poll(
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,
             transientGrace: transientGrace,
-            elementType: elementType,
             logger: logger,
-            resolver: AccessibilityTargetResolver.resolveTap,
+            clock: clock,
+            resolver: { roots in
+                try AccessibilityTargetResolver.resolveTap(
+                    roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
+                )
+            },
+            position: { resolution in UIPoint(x: resolution.point.x, y: resolution.point.y) },
             treeFetcher: treeFetcher
         )
     }
 
-    /// Missing elements retry until `waitTimeout`; transient read failures until the larger window, and at least once.
-    private static func pollForResolution<T>(
-        query: AccessibilityQuery,
+    /// Missing or off-screen elements retry until `waitTimeout` and then until two reads agree; transient read failures until the larger window, and at least once.
+    private static func poll<T>(
         waitTimeout: TimeInterval,
         pollInterval: TimeInterval,
         transientGrace: TimeInterval,
-        elementType: String?,
         logger: OffsiderLogger,
-        resolver: ([UINode], AccessibilityQuery, String?) throws -> T,
+        clock: PollClock,
+        resolver: ([UINode]) throws -> T,
+        position: (T) -> UIPoint,
         treeFetcher: () async throws -> UITree
-    ) async throws -> T {
-        let clock = ContinuousClock()
-        let start = clock.now
-        let findDeadline = start + .seconds(waitTimeout)
+    ) async throws -> Polled<T> {
+        let start = clock.now()
+        let findDeadline = start + waitTimeout
         let transientWindow = max(waitTimeout, transientGrace)
-        let transientDeadline = start + .seconds(transientWindow)
+        let transientDeadline = start + transientWindow
         var transientRetries = 0
+        var waitedForElement = false
+        var lastPosition: UIPoint?
 
         while true {
             let tree: UITree
             do {
                 tree = try await treeFetcher()
-            } catch where error.isTransientFailure && transientWindow > 0 && (transientRetries == 0 || clock.now < transientDeadline) {
+            } catch where error.isTransientFailure && transientWindow > 0 && (transientRetries == 0 || clock.now() < transientDeadline) {
                 transientRetries += 1
                 logger.info().log("\(error.localizedDescription) Retrying in \(pollInterval)s…")
-                try await Task.sleep(for: .seconds(pollInterval))
+                try await clock.sleep(.seconds(pollInterval))
                 continue
             }
             do {
-                return try resolver(tree.roots, query, elementType)
-            } catch let error as ElementResolutionError where error.isNotFound && clock.now < findDeadline {
-                logger.info().log("Element not found, retrying in \(pollInterval)s…")
-                try await Task.sleep(for: .seconds(pollInterval))
+                let polled = Polled(value: try resolver(tree.roots), tree: tree)
+                guard waitedForElement else { return polled }
+                let current = position(polled.value)
+                if let lastPosition, ElementMotion.hasSettled(previous: lastPosition, current: current) { return polled }
+                guard clock.now() < findDeadline else { return polled }
+                if lastPosition != nil { logger.info().log("Element still moving, checking again in \(pollInterval)s…") }
+                lastPosition = current
+                try await clock.sleep(.seconds(pollInterval))
+            } catch let error as ElementResolutionError where error.isRetryable && clock.now() < findDeadline {
+                waitedForElement = true
+                lastPosition = nil
+                let reason = error.isOffScreen ? "Element off screen" : "Element not found"
+                logger.info().log("\(reason), retrying in \(pollInterval)s…")
+                try await clock.sleep(.seconds(pollInterval))
             }
         }
     }

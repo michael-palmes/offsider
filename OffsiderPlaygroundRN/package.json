@@ -6,6 +6,7 @@
     "@react-native-community/slider": "5.2.0",
     "expo": "~57.0.25",
     "expo-build-properties": "~57.0.22",
+    "expo-dev-client": "~57.0.19",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0"
@@ -15,7 +16,7 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "EXPO_NO_TELEMETRY=1 expo start --port 8742",
+    "start": "EXPO_NO_TELEMETRY=1 NODE_OPTIONS=--dns-result-order=ipv4first expo start --port 8742 --localhost",
     "android": "../scripts/rn-playground.sh dev-android",
     "ios": "../scripts/rn-playground.sh dev-ios",
     "prebuild": "EXPO_NO_TELEMETRY=1 EXPO_OFFLINE=1 COCOAPODS_DISABLE_STATS=true expo prebuild --clean",

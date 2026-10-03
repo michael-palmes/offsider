@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Emulator frames made upright for the guest: a PNG passes through untouched when no turn is needed.
+/// Emulator frames made upright for the guest: a PNG passes through untouched when no crop or turn is needed.
 enum AndroidScreenCapture {
     struct Pixels: Equatable, Sendable {
         let width: Int
@@ -18,21 +18,46 @@ enum AndroidScreenCapture {
 
     static func png(from frame: EmulatorFrame, guestRotation: Int) throws -> Data {
         let turns = PanelRotation.screenshotTurns(guestRotation: guestRotation, emulatorRotation: frame.emulatorRotation)
-        if frame.format == .png, turns == 0 {
+        if frame.format == .png, turns == 0, frame.folded == nil {
             return frame.bytes
         }
-        return try encodePNG(rotated(try rgba(from: frame), quarterTurnsCounterclockwise: turns))
+        return try encodePNG(upright(frame, guestRotation: guestRotation))
     }
 
     static func image(from frame: EmulatorFrame, guestRotation: Int) throws -> CGImage {
-        let turns = PanelRotation.screenshotTurns(guestRotation: guestRotation, emulatorRotation: frame.emulatorRotation)
-        return try cgImage(rotated(try rgba(from: frame), quarterTurnsCounterclockwise: turns))
+        try cgImage(upright(frame, guestRotation: guestRotation))
     }
 
     /// For `stream-video --format bgra`: the frame upright, blue and red swapped.
     static func bgra(from frame: EmulatorFrame, guestRotation: Int) throws -> Pixels {
+        swapRedAndBlue(try upright(frame, guestRotation: guestRotation))
+    }
+
+    /// Cropped to the folded view while a foldable is folded, then turned to match the guest.
+    static func upright(_ frame: EmulatorFrame, guestRotation: Int) throws -> Pixels {
         let turns = PanelRotation.screenshotTurns(guestRotation: guestRotation, emulatorRotation: frame.emulatorRotation)
-        return swapRedAndBlue(rotated(try rgba(from: frame), quarterTurnsCounterclockwise: turns))
+        var pixels = try rgba(from: frame)
+        if let folded = frame.folded {
+            pixels = cropped(pixels, to: folded)
+        }
+        return rotated(pixels, quarterTurnsCounterclockwise: turns)
+    }
+
+    /// The part of `rect` inside the image; the whole image when they do not overlap.
+    static func cropped(_ pixels: Pixels, to rect: FoldedRect) -> Pixels {
+        let left = min(max(rect.x, 0), pixels.width)
+        let top = min(max(rect.y, 0), pixels.height)
+        let right = min(max(rect.x + rect.width, left), pixels.width)
+        let bottom = min(max(rect.y + rect.height, top), pixels.height)
+        guard right > left, bottom > top else { return pixels }
+        if left == 0, top == 0, right == pixels.width, bottom == pixels.height { return pixels }
+        let rowBytes = (right - left) * 4
+        var output = Data(capacity: rowBytes * (bottom - top))
+        for row in top..<bottom {
+            let start = (row * pixels.width + left) * 4
+            output.append(pixels.bytes[pixels.bytes.startIndex + start ..< pixels.bytes.startIndex + start + rowBytes])
+        }
+        return Pixels(width: right - left, height: bottom - top, bytes: output)
     }
 
     static func rgba(from frame: EmulatorFrame) throws -> Pixels {

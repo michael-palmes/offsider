@@ -47,7 +47,7 @@ struct DescribeUITests {
         let screen = try #require(envelope.screen)
         let application = try #require(envelope.roots.first)
 
-        #expect(envelope.version == 1)
+        #expect(envelope.version == 2)
         #expect(envelope.platform == "ios")
         #expect(envelope.device == simulatorUDID)
         #expect(screen.width > 0 && screen.height > 0)
@@ -135,7 +135,7 @@ struct DescribeUITests {
 
         let envelope = try UIStateParser.parseDescribeUIEnvelope(result.output)
         let roots = envelope.roots
-        #expect(envelope.version == 1)
+        #expect(envelope.version == 2)
         #expect(envelope.device == simulatorUDID)
         #expect(roots.count == 1, "Point-based describe-ui should return a single top-level element")
 

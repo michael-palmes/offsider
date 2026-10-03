@@ -82,6 +82,32 @@ jobs:
       - name: Rebuild the helper dex and compare it with the committed one
         run: OFFSIDER_HELPER_JDK="$JAVA_HOME" ANDROID_HOME="$ANDROID_HOME" scripts/build.sh helper --check
 
+  rn-typecheck:
+    name: React Native playground typecheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPO_NO_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      # The repository allows GitHub-owned actions only, so pnpm comes from npm rather than pnpm/action-setup.
+      - name: Install pnpm
+        run: npm install -g pnpm@11.20.0
+
+      - name: Install dependencies (no lifecycle scripts)
+        run: pnpm --dir OffsiderPlaygroundRN install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck
+        run: pnpm --dir OffsiderPlaygroundRN typecheck
+
   build-test:
     name: Build, unit tests, release rehearsal (ad-hoc)
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}

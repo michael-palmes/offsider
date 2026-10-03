@@ -9,6 +9,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     private var sdk: AndroidSDK?
     private var client: AdbClient?
     var geometries: [String: AndroidDisplayGeometry] = [:]
+    /// Display 0's viewport `uniqueId` from the latest shell probe.
+    var activeUniqueIds: [String: String] = [:]
+    var knownDeviceStates: [String: [AndroidDeviceState.State]] = [:]
+    var displayLists: [String: AndroidDisplayList] = [:]
+    var screenStatuses: [String: (display: ScreenDisplay?, posture: Posture?)] = [:]
     private var avdNames: [String: String] = [:]
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
@@ -128,15 +133,34 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         }
     }
 
-    /// Logical size over scale, scale = density / 160, orientation from the viewport rotation.
+    /// Logical size over scale, scale = density / 160, orientation from the viewport rotation, and on a foldable its posture.
     public func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
-        let geometry = try await geometry(for: id.rawValue)
+        let serial = id.rawValue
+        var geometry = try await geometry(for: serial)
+        var status = await screenStatus(serial)
+        if (knownDeviceStates[serial]?.count ?? 0) >= 2 {
+            let settled = try await settledGeometry(serial)
+            if settled != geometry {
+                geometry = settled
+                screenStatuses[serial] = nil
+                status = await screenStatus(serial)
+            }
+        }
         return UIScreenInfo(
             width: Self.dp(Double(geometry.logicalWidth) / geometry.scale),
             height: Self.dp(Double(geometry.logicalHeight) / geometry.scale),
             scale: geometry.scale,
-            orientation: geometry.orientation
+            rotation: geometry.orientation,
+            rotationDegrees: geometry.deviceOrientation.rotationDegrees,
+            display: status.display,
+            posture: status.posture
         )
+    }
+
+    /// The dp size from the display probe alone, without the display and posture reads `screenInfo` adds.
+    public func screenSize(for id: DeviceID) async throws -> UISize? {
+        let geometry = try await geometry(for: id.rawValue)
+        return UISize(width: Self.dp(Double(geometry.logicalWidth) / geometry.scale), height: Self.dp(Double(geometry.logicalHeight) / geometry.scale))
     }
 
     /// dp to logical pixels in the current rotation, the space of uiautomator bounds and adb input; `tree` is unused.
@@ -164,10 +188,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         )
     }
 
-    /// The display geometry, then the transport, when the session's first input needs them.
+    /// The display geometry (settled on a foldable), then the transport, when the session's first input needs them.
     private func inputRoute(for serial: String, shell: AdbDeviceShell) async throws -> AndroidInputRoute {
-        let geometry = try await geometry(for: serial)
-        let executor = try await inputExecutor(for: serial, geometry: geometry, shell: shell)
+        let (executor, geometry) = try await inputExecutor(for: serial, shell: shell)
         switch try await transport(for: serial) {
         case .grpc(let emulator):
             return AndroidInputRoute(executor: executor, scale: geometry.scale, clipboard: emulator, adbReason: .forced)
@@ -205,7 +228,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             }
         }
         let shell = AdbDeviceShell(client: try requireClient(), serial: id.rawValue)
-        if case .grpc(let driver) = try await inputExecutor(for: id.rawValue, geometry: try await geometry(for: id.rawValue), shell: shell) {
+        if case .grpc(let driver) = try await inputExecutor(for: id.rawValue, shell: shell).executor {
             try await driver.run(inputSteps)
             return
         }
@@ -225,18 +248,27 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return chosen
     }
 
-    /// A resized display (`wm size` override) no longer maps one to one onto the panel, so its input stays on adb.
-    private func inputExecutor(for serial: String, geometry: AndroidDisplayGeometry, shell: AdbDeviceShell) async throws -> AndroidInputExecutor {
+    /// A resized display (`wm size` override) no longer maps onto the panel, so its input stays on adb; a foldable's gRPC waits for the panel's geometry.
+    private func inputExecutor(for serial: String, shell: AdbDeviceShell) async throws -> (executor: AndroidInputExecutor, geometry: AndroidDisplayGeometry) {
+        var geometry = try await geometry(for: serial)
         guard case .grpc(let emulator) = try await transport(for: serial) else {
-            return .adb(shell)
+            return (.adb(shell), geometry)
+        }
+        let posture = await postureIfFoldable(serial)
+        if posture != nil {
+            geometry = try await settledGeometry(serial)
         }
         guard !geometry.hasSizeOverride else {
             if warnedAboutOverride.insert(serial).inserted {
                 log(.warning, "The display of \(serial) is resized (`wm size` reports an override), so its input goes over adb in this command.")
             }
-            return .adb(shell)
+            return (.adb(shell), geometry)
         }
-        return .grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep))
+        if let posture, posture != .open, posture != .halfOpened {
+            log(.debug, "\(serial) is \(posture.rawValue), so its input goes over adb: gRPC touches land on the unfolded panel")
+            return (.adb(shell), geometry)
+        }
+        return (.grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep)), geometry)
     }
 
     /// gRPC `getScreenshot`, turned upright when only the guest rotated; else adb's `screencap`.
@@ -265,13 +297,14 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return bands
     }
 
-    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation.
-    func adbScreenshot(_ serial: String) async throws -> Data {
-        let png = try await requireClient().exec("screencap -p", on: serial, timeout: .seconds(15))
+    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation; `-d` picks a physical display.
+    func adbScreenshot(_ serial: String, physicalDisplay: String? = nil) async throws -> Data {
+        let command = physicalDisplay.map { "screencap -d \($0) -p" } ?? "screencap -p"
+        let png = try await requireClient().exec(command, on: serial, timeout: .seconds(15))
         guard png.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) else {
             let text = String(decoding: png.prefix(200), as: UTF8.self)
             let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
-            throw AndroidError.adbCommandFailed(serial: serial, command: "screencap -p", detail: firstLine)
+            throw AndroidError.adbCommandFailed(serial: serial, command: command, detail: firstLine)
         }
         return png
     }
@@ -301,6 +334,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         do {
             let geometry = try AndroidDisplayGeometry.parse(result.stdoutText)
             geometries[serial] = geometry
+            activeUniqueIds[serial] = AndroidDisplayGeometry.viewportUniqueId(in: result.stdoutText)
             return geometry
         } catch let error as AndroidDisplayGeometry.Unparseable {
             let stderrLine = result.stderrText.split(whereSeparator: \.isNewline).first.map(String.init)
@@ -321,6 +355,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         warnedAboutTruncation = []
         transports = [:]
         geometries = [:]
+        activeUniqueIds = [:]
+        knownDeviceStates = [:]
+        displayLists = [:]
+        screenStatuses = [:]
         avdNames = [:]
         warnedAboutOverride = []
         for helper in helpers {

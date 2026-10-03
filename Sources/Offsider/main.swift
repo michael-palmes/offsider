@@ -27,6 +27,12 @@ struct OffsiderCommand: AsyncParsableCommand {
             Swipe.self,
             Drag.self,
             Button.self,
+            Shake.self,
+            OrientationCommand.self,
+            Displays.self,
+            PostureCommand.self,
+            AppearanceCommand.self,
+            ContentSizeCommand.self,
             Key.self,
             KeySequence.self,
             KeyCombo.self,
@@ -35,12 +41,17 @@ struct OffsiderCommand: AsyncParsableCommand {
             StreamVideo.self,
             RecordVideo.self,
             Screenshot.self,
+            Logs.self,
+            Wait.self,
+            Assert.self,
             Batch.self,
+            RN.self,
             HIDBrokerCommand.self
         ]
     )
 
     static func main() async {
+        Timings.installTotal()
         if let message = LegacyArguments.migrationMessage(for: Array(CommandLine.arguments.dropFirst())) {
             FileHandle.standardError.write(Data("Error: \(message)\n".utf8))
             Darwin.exit(OffsiderExitCode.usage.rawValue)
