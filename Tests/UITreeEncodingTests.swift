@@ -25,7 +25,7 @@ struct UITreeEncodingTests {
 
         #expect(render(tree) == """
         {
-          "version": 1,
+          "version": 2,
           "platform": "ios",
           "device": "DEVICE-1",
           "screen": null,
@@ -130,14 +130,14 @@ struct UITreeEncodingTests {
     @Test("the text header gives the shape and degrees, and a foldable's display and posture")
     func textHeader() {
         let folded = UIScreenInfo(
-            width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 270,
+            width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 0,
             display: ScreenDisplay(id: "inner", platformId: "3"), posture: .open
         )
         let header = { (screen: UIScreenInfo) in
             String(decoding: UITreeRenderer.render(UITree(platform: .ios, device: "D", screen: screen, roots: []), .summary), as: UTF8.self)
         }
         #expect(header(UIScreenInfo(width: 402, height: 874, scale: 3, rotation: .portrait)) == "# ios D 402x874 @3x portrait 0°\n")
-        #expect(header(folded) == "# ios D 951x669 @3x landscape 270° inner open\n")
+        #expect(header(folded) == "# ios D 951x669 @3x landscape 0° inner open\n")
     }
 
     @Test("iOS native attributes are written flat under native")

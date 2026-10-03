@@ -88,7 +88,7 @@ struct UITreeRendererTests {
         let text = string(Self.iosTree, options)
 
         #expect(decoded["roots"] == nil)
-        #expect(decoded["version"] as? Int == 1)
+        #expect(decoded["version"] as? Int == 2)
         #expect(nodes.map { $0["role"] as? String } == ["application", "scrollView", "button"])
         #expect(nodes[0]["parent"] is NSNull)
         #expect(nodes[2]["parent"] as? Int == 1)

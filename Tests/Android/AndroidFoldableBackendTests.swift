@@ -329,7 +329,7 @@ struct AndroidFoldableBackendTests {
         #expect(text.contains(#""screen":{"width":443.08,"height":994.46,"scale":2.4375,"orientation":"portrait","rotation":0,"display":{"id":"cover","platformId":"\#(FoldableFixtures.coverId)"},"posture":"closed"}"#))
     }
 
-    @Test("on a landscape-natural panel, rotation 0 is landscape and portrait is user_rotation 3")
+    @Test("on a landscape-natural panel, rotation 0 is landscape and portrait is user_rotation 3 at rotation 0")
     func landscapeNatural() async throws {
         final class Panel: @unchecked Sendable {
             let lock = NSLock()
@@ -362,6 +362,6 @@ struct AndroidFoldableBackendTests {
         try await backend.requestOrientation(.portrait, on: Self.device)
         #expect(server.services.contains("shell,v2,raw:settings put system accelerometer_rotation 0; settings put system user_rotation 3"))
         #expect(try await backend.orientation(of: Self.device) == .portrait)
-        #expect(try await backend.screenInfo(for: Self.device)?.rotationDegrees == 270)
+        #expect(try await backend.screenInfo(for: Self.device)?.rotationDegrees == 0)
     }
 }

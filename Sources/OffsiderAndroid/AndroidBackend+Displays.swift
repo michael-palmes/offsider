@@ -21,7 +21,7 @@ extension AndroidBackend: DisplayControlling {
                 descriptor: display.descriptor,
                 pointWidth: Self.dp(Double(geometry.logicalWidth) / geometry.scale),
                 pointHeight: Self.dp(Double(geometry.logicalHeight) / geometry.scale),
-                rotationDegrees: geometry.rotation * 90,
+                rotationDegrees: geometry.deviceOrientation.rotationDegrees,
                 active: true
             )
         }

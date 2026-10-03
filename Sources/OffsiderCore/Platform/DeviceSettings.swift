@@ -100,8 +100,7 @@ public enum DeviceOrientation: String, CaseIterable, Sendable {
     case landscapeRight = "landscape-right"
     case portraitUpsideDown = "portrait-upside-down"
 
-    /// The one table between public names, coordinate math, the idb orientation event and Android's `user_rotation`.
-    /// Measured on iOS 27: idb event 3 turns the device to landscape-left, which SimulatorKit reports as `uiOrientation` 4.
+    /// The one table between public names, coordinate math, the idb orientation event and portrait-natural `user_rotation`.
     struct Mapping {
         let orientation: DeviceOrientation
         let coordinate: OrientationCoordinateMath.Orientation
@@ -126,7 +125,7 @@ public enum DeviceOrientation: String, CaseIterable, Sendable {
     /// `Surface.ROTATION_*` for `settings put system user_rotation` on a portrait-natural display.
     public var androidRotation: Int { mapping.androidRotation }
 
-    /// Anticlockwise degrees from the display's natural orientation: 0, 90, 180 or 270.
+    /// The device's anticlockwise turn from portrait: 0, 90, 180 or 270.
     public var rotationDegrees: Int { mapping.androidRotation * 90 }
 
     public init(coordinateOrientation: OrientationCoordinateMath.Orientation) {

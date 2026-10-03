@@ -58,6 +58,7 @@ public struct DisplayInfo: Equatable, Sendable {
     /// In the display's current orientation when it is active, else its native one.
     public var pointWidth: Double
     public var pointHeight: Double
+    /// The device's anticlockwise turn from portrait; nil for an inactive display.
     public var rotationDegrees: Int?
     public var active: Bool
 

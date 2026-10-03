@@ -59,13 +59,14 @@ struct AndroidLandscapeTests {
         #expect(value == "1")
     }
 
-    @Test("in both landscape rotations describe-ui, tap and screenshot follow the guest", arguments: [(1, "landscape"), (3, "landscapeFlipped")])
-    func landscape(rotation: Int, orientation: String) async throws {
+    @Test("in both landscape rotations describe-ui, tap and screenshot follow the guest", arguments: [(1, 90), (3, 270)])
+    func landscape(rotation: Int, degrees: Int) async throws {
         try await rotate(to: rotation)
         do {
             let tree = try await AndroidE2E.tree()
             let screen = try #require(tree["screen"] as? [String: Any])
-            #expect(["landscape", "landscapeFlipped"].contains(screen["orientation"] as? String ?? ""), "rotation \(rotation) expected about \(orientation)")
+            #expect(screen["orientation"] as? String == "landscape")
+            #expect(screen["rotation"] as? Int == degrees, "user_rotation \(rotation)")
             #expect((screen["width"] as? Double ?? 0) > (screen["height"] as? Double ?? 0))
 
             _ = try await AndroidE2E.waitForNode(timeout: 40) { $0["label"] as? String == "Network & internet" }

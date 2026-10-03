@@ -151,10 +151,16 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             height: Self.dp(Double(geometry.logicalHeight) / geometry.scale),
             scale: geometry.scale,
             rotation: geometry.orientation,
-            rotationDegrees: geometry.rotation * 90,
+            rotationDegrees: geometry.deviceOrientation.rotationDegrees,
             display: status.display,
             posture: status.posture
         )
+    }
+
+    /// The dp size from the display probe alone, without the display and posture reads `screenInfo` adds.
+    public func screenSize(for id: DeviceID) async throws -> UISize? {
+        let geometry = try await geometry(for: id.rawValue)
+        return UISize(width: Self.dp(Double(geometry.logicalWidth) / geometry.scale), height: Self.dp(Double(geometry.logicalHeight) / geometry.scale))
     }
 
     /// dp to logical pixels in the current rotation, the space of uiautomator bounds and adb input; `tree` is unused.

@@ -212,7 +212,7 @@ struct ScreenshotCompareTests {
     @Test("simctl's capture of the unfolded Duo's inner display arrives upright: 2853 x 2007 px for a 951 x 669 pt screen, not turned")
     func innerDisplayCapture() throws {
         let inner = UIScreenInfo(
-            width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 270,
+            width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 0,
             display: ScreenDisplay(id: "inner", platformId: "3"), posture: .open, captureArrivesUpright: true
         )
         let image = TestImages.make(width: 2853, height: 2007, marked: [(x: 2700, y: 100)])
@@ -222,6 +222,6 @@ struct ScreenshotCompareTests {
         #expect(screen.upright)
         #expect(screen.untouchedPNG != nil)
         #expect(TestImages.markedPixels(screen.image).map { [$0.x, $0.y] } == [[2700, 100]])
-        #expect(report.jsonLine() == #"{"path":null,"width":951,"height":669,"pixelsPerPoint":1,"region":null,"orientation":"landscape","rotation":270,"display":{"id":"inner","platformId":"3"},"posture":"open","upright":true,"format":null}"#)
+        #expect(report.jsonLine() == #"{"path":null,"width":951,"height":669,"pixelsPerPoint":1,"region":null,"orientation":"landscape","rotation":0,"display":{"id":"inner","platformId":"3"},"posture":"open","upright":true,"format":null}"#)
     }
 }

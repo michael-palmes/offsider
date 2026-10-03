@@ -37,7 +37,7 @@ public struct UIScreenInfo: Equatable, Sendable {
     public var scale: Double?
     /// The coordinate orientation input and capture follow; nil when the device could not report it.
     public var rotation: OrientationCoordinateMath.Orientation?
-    /// Anticlockwise degrees from the display's natural orientation, when the backend reads them directly.
+    /// The device's anticlockwise turn from portrait in degrees, when the backend reads it directly.
     public var rotationDegrees: Int?
     /// Nil means the platform's main display.
     public var display: ScreenDisplay?
@@ -78,7 +78,7 @@ public struct UIScreenInfo: Equatable, Sendable {
 
 /// The `describe-ui` envelope, shared by every platform.
 public struct UITree: Equatable, Sendable {
-    public static let schemaVersion = 1
+    public static let schemaVersion = 2
 
     public var platform: DevicePlatform
     public var device: String

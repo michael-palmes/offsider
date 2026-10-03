@@ -54,7 +54,7 @@ struct AndroidBackendHelperTests {
         await rig.backend.close()
     }
 
-    static let noWindowDump = #"{"generation":1,"idle":true,\#(FakeHelperDevice.display),"windows":[\#(FakeHelperDevice.statusBar),{"id":1,"type":"application","layer":0,"title":"X","bounds":[0,0,1080,2424],"active":true,"focused":true,"root":null}],"truncated":false,"eventSeq":1}"#
+    nonisolated static let noWindowDump = #"{"generation":1,"idle":true,\#(FakeHelperDevice.display),"windows":[\#(FakeHelperDevice.statusBar),{"id":1,"type":"application","layer":0,"title":"X","bounds":[0,0,1080,2424],"active":true,"focused":true,"root":null}],"truncated":false,"eventSeq":1}"#
 
     @Test("a dump with no window is read once more after 500 ms, then reported as transient so polling callers retry")
     func noWindow() async throws {
