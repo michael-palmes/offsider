@@ -28,18 +28,25 @@ enum TextReplacement: Equatable, Sendable {
     case useKeys(warning: String?)
 }
 
+/// How input reaches one emulator in this command: its executor, the display scale and the clipboard endpoint.
+struct AndroidInputRoute {
+    let executor: AndroidInputExecutor
+    let scale: Double
+    /// The gRPC endpoint for the clipboard, even when a resized display keeps other input on adb.
+    let clipboard: (any EmulatorControlling)?
+    /// Why there is no gRPC endpoint, for the error when text needs a paste.
+    let adbReason: AdbReason
+}
+
 /// One command's input on one emulator; keeps finger state so a failed gesture can be lifted on close.
 @MainActor
 final class AndroidInputSession: InputSession, TextInputSession {
     let device: DeviceID
-    private let executor: AndroidInputExecutor
     /// adb is always there, whatever carries the input.
     private let shell: AdbDeviceShell
-    private let scale: Double
-    /// The gRPC endpoint for the clipboard, even when a resized display keeps other input on adb.
-    private let clipboard: (any EmulatorControlling)?
-    /// Why there is no gRPC endpoint, for the error when text needs a paste.
-    private let adbReason: AdbReason
+    /// Read on first input, so a replacement the helper completes needs no display probe or transport.
+    private let resolveRoute: @MainActor () async throws -> AndroidInputRoute
+    private var resolvedRoute: AndroidInputRoute?
     private let sleep: @Sendable (Duration) async throws -> Void
     /// Looked up only when a message needs it, so ordinary input costs no extra adb call.
     private let avdName: @MainActor () async -> String?
@@ -50,26 +57,29 @@ final class AndroidInputSession: InputSession, TextInputSession {
 
     init(
         device: DeviceID,
-        executor: AndroidInputExecutor,
         shell: AdbDeviceShell,
-        geometry: AndroidDisplayGeometry,
+        route: @escaping @MainActor () async throws -> AndroidInputRoute,
         avdName: @escaping @MainActor () async -> String?,
-        clipboard: (any EmulatorControlling)?,
-        adbReason: AdbReason,
         replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
         sleep: @escaping @Sendable (Duration) async throws -> Void,
         log: @escaping AndroidLog
     ) {
         self.device = device
-        self.executor = executor
         self.shell = shell
-        self.scale = geometry.scale
+        self.resolveRoute = route
         self.avdName = avdName
-        self.clipboard = clipboard
-        self.adbReason = adbReason
         self.replaceFocusedText = replaceFocusedText
         self.sleep = sleep
         self.log = log
+    }
+
+    private func route() async throws -> AndroidInputRoute {
+        if let resolvedRoute {
+            return resolvedRoute
+        }
+        let route = try await resolveRoute()
+        resolvedRoute = route
+        return route
     }
 
     /// The emulator syncs its clipboard into the guest asynchronously, and the app reads it after the paste key.
@@ -78,22 +88,24 @@ final class AndroidInputSession: InputSession, TextInputSession {
     static let pasteKeyCode = 279
 
     func perform(_ event: InputEvent) async throws {
+        let route = try await route()
         var down = touchIsDown
-        let steps = try AndroidInputLowering.steps(for: event, touchIsDown: &down, scale: scale)
-        try await run(steps)
+        let steps = try AndroidInputLowering.steps(for: event, touchIsDown: &down, scale: route.scale)
+        try await run(steps, through: route.executor)
         touchIsDown = down
     }
 
     /// All-ASCII text as key events (gRPC `text` chunks, or adb `input text`); anything else pasted whole.
     func typeText(_ text: String) async throws {
+        let route = try await route()
         switch try AndroidTextPlan.make(for: text) {
         case .paste(let whole):
-            guard let clipboard else {
-                throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: await avdName(), reason: adbReason)
+            guard let clipboard = route.clipboard else {
+                throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: await avdName(), reason: route.adbReason)
             }
             try await paste(whole, through: clipboard)
         case .keys(let chunks):
-            if case .grpc(let driver) = executor {
+            if case .grpc(let driver) = route.executor {
                 try await type(chunks, on: driver.emulator)
                 return
             }
@@ -163,10 +175,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
     }
 
     func close() async {
-        guard touchIsDown, let point = lastTouch else { return }
+        guard touchIsDown, let point = lastTouch, let route = resolvedRoute else { return }
         touchIsDown = false
         do {
-            switch executor {
+            switch route.executor {
             case .adb(let shell):
                 try await shell.run("input motionevent UP \(Int(point.x.rounded())) \(Int(point.y.rounded()))")
             case .grpc(let driver):
@@ -177,7 +189,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
-    private func run(_ steps: [AndroidInputStep]) async throws {
+    private func run(_ steps: [AndroidInputStep], through executor: AndroidInputExecutor) async throws {
         if let last = steps.last(where: { if case .touch = $0 { return true } else { return false } }), case .touch(_, let point) = last {
             lastTouch = point
         }

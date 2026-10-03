@@ -48,6 +48,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `tap -x -y` outside the screen prints a warning, in batch steps too.
 - `screenshot` prints the image size on its "saved" line.
 - The React Native playground's Metro commands listen on loopback only: `pnpm start` passes `--localhost`, and `dev-ios`/`dev-android` run the background `metro start`, install a debug build and set the adb port reverse.
+- Android commands that read the screen finish sooner: once the UiAutomation helper confirms `quit`, Offsider closes it without waiting up to 1 s for its exit or sending `kill`.
+- Android `type --replace` no longer runs a `wm size`, `wm density` and `dumpsys input` shell before the helper sets the text. Input reads the display only when it first needs it, so `--verify` and `batch` reuse what the helper already measured.
 
 ### Fixed
 
