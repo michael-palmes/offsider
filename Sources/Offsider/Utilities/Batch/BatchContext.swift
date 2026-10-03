@@ -3,8 +3,10 @@ import Foundation
 import OffsiderCore
 
 enum AXCachePolicy: String, CaseIterable, ExpressibleByArgument {
+    /// Reuses the latest tree until a step sends input or sleeps.
     case perBatch
     case perStep
+    /// An alias of `perStep`, kept for existing scripts.
     case none
 }
 
@@ -23,6 +25,8 @@ final class BatchContext {
     let tapStyle: TapStyle
     let waitTimeout: TimeInterval
     let pollInterval: TimeInterval
+    /// Armed for the batch's setup, then around each wait and assert step as the standalone commands arm it.
+    let watchdog: DeviceWatchdog
 
     private var cachedTree: UITree?
 
@@ -34,7 +38,8 @@ final class BatchContext {
         typeChunkSize: Int,
         tapStyle: TapStyle = .automatic,
         waitTimeout: TimeInterval = 0,
-        pollInterval: TimeInterval = 0.25
+        pollInterval: TimeInterval = 0.25,
+        watchdog: DeviceWatchdog = DeviceWatchdog()
     ) {
         self.backend = backend
         self.device = device
@@ -44,13 +49,12 @@ final class BatchContext {
         self.tapStyle = tapStyle
         self.waitTimeout = waitTimeout
         self.pollInterval = pollInterval
+        self.watchdog = watchdog
     }
 
     func accessibilityTree(forceRefresh: Bool = false) async throws -> UITree {
         switch axCachePolicy {
-        case .none:
-            return try await backend.accessibilityTree(for: device)
-        case .perStep:
+        case .perStep, .none:
             return try await backend.accessibilityTree(for: device)
         case .perBatch:
             if !forceRefresh, let cachedTree {
@@ -60,6 +64,21 @@ final class BatchContext {
             cachedTree = tree
             return tree
         }
+    }
+
+    /// Reads for one polling step: the first read may reuse the cache, later reads are fresh and become the cache.
+    func pollingTreeSource() -> Wait.TreeSource {
+        var isFirstFetch = true
+        return { [self] in
+            let forceRefresh = !isFirstFetch
+            isFirstFetch = false
+            return try await accessibilityTree(forceRefresh: forceRefresh)
+        }
+    }
+
+    /// Drops the cached tree; a step that sent input or slept may have changed the screen.
+    func invalidateTree() {
+        cachedTree = nil
     }
 }
 

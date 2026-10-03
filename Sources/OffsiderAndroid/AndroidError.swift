@@ -36,6 +36,11 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case unsupportedButton
         case unsupportedControlCharacter
         case displayProbeUnparseable
+        case displaysUnreadable
+        case unknownDisplay
+        case displayOff
+        case postureUnavailable
+        case postureFailed
         case notSupported
         case inputFailed
         case invalidSetting
@@ -371,6 +376,43 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
             .displayProbeUnparseable,
             "Could not read the display size and rotation of \(serial) (\(firstLine)). Check it with `adb -s \(serial) shell dumpsys input`."
         )
+    }
+
+    static func displaysUnreadable(_ serial: String) -> AndroidError {
+        AndroidError(
+            .displaysUnreadable,
+            "Could not find a built-in display in `dumpsys display` on \(serial). Check it with `adb -s \(serial) shell dumpsys display`."
+        )
+    }
+
+    static func unknownDisplay(_ serial: String, requested: String, available: [DisplayDescriptor]) -> AndroidError {
+        let names = available.map { "\($0.role.rawValue) (\($0.platformId))" }.joined(separator: ", ")
+        return AndroidError(.unknownDisplay, "Unknown display '\(requested)' on \(serial). Use one of: \(names).")
+    }
+
+    static func displayOff(_ serial: String, display: DisplayDescriptor, posture: Posture?) -> AndroidError {
+        let state = "The \(display.role.rawValue) display (\(display.platformId)) of \(serial) is off (posture \(posture?.rawValue ?? "unknown")), so it has nothing to capture."
+        switch display.role {
+        case .cover: return AndroidError(.displayOff, "\(state) Fold the emulator with `offsider posture closed --device \(serial)`, then retry.")
+        case .inner: return AndroidError(.displayOff, "\(state) Unfold the emulator with `offsider posture open --device \(serial)`, then retry.")
+        case .main, .external: return AndroidError(.displayOff, "\(state) Turn it on, then retry.")
+        }
+    }
+
+    static func notFoldable(_ serial: String) -> AndroidError {
+        AndroidError(.postureUnavailable, "\(serial) is not a foldable device; `cmd device_state print-states` lists fewer than two states.")
+    }
+
+    static func postureUnavailable(_ serial: String, posture: Posture, states: [String], reason: AdbReason) -> AndroidError {
+        AndroidError(
+            .postureUnavailable,
+            "Cannot set \(serial) to \(posture.rawValue): its gRPC endpoint \(reason.clause), and `cmd device_state print-states` lists no matching state (\(states.joined(separator: ", "))). Fold it in the emulator's extended controls instead."
+        )
+    }
+
+    static func postureFailed(_ serial: String, path: String, detail: String) -> AndroidError {
+        let trimmed = detail.hasSuffix(".") ? String(detail.dropLast()) : detail
+        return AndroidError(.postureFailed, "Setting the posture of \(serial) over \(path) failed: \(trimmed). Check with `offsider posture --device \(serial)`.")
     }
 
     static func noAVDNamed(_ name: String, available: [String]) -> AndroidError {

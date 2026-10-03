@@ -22,7 +22,7 @@ enum DoctorFixes {
         guard DoctorRules.isDeviceHubEra(xcodeMajor: context.xcodeMajor), let appPath = context.deviceHubAppPath else {
             return result(.skipped, "Only applies to Xcode 27 or later")
         }
-        guard !DoctorProbes.isSimulatorAppRunning() else {
+        guard DoctorProbes.simulatorAppState() == .notRunning else {
             return result(.skipped, "Quit Simulator.app first")
         }
         switch DoctorProbes.deviceHubState(appPath: appPath).state {

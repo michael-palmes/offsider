@@ -5,36 +5,51 @@ import FBSimulatorControl
 struct SimulatorOrientationReader {
     static func currentOrientation(
         simulatorUDID: String,
+        screenID: Int = 1,
         logger: OffsiderLogger
     ) async -> SimulatorOrientation? {
         do {
-            let frameworkLoader = FBSimulatorControlFrameworkLoader.xcodeFrameworks
-            try frameworkLoader.loadPrivateFrameworks(logger)
-
-            let simulatorSet = try await getSimulatorSet(
-                deviceSetPath: nil,
-                logger: logger,
-                reporter: EmptyEventReporter.shared
-            )
-
-            guard let simulator = simulatorSet.allSimulators.first(where: { $0.udid == simulatorUDID }) else {
+            guard let simulator = try await cachedSimulator(udid: simulatorUDID, logger: logger) else {
                 logger.info().log("Orientation probe: simulator \(simulatorUDID) not found")
                 return nil
             }
-
-            guard let device = sendObject(simulator, selector: "device") else {
-                logger.info().log("Orientation probe: simulator device unavailable")
-                return nil
-            }
-
-            return readOrientation(from: device, logger: logger)
+            return await currentOrientation(of: simulator, screenID: screenID, logger: logger)
         } catch {
             logger.info().log("Orientation probe failed: \(error)")
             return nil
         }
     }
 
-    private static func readOrientation(from device: AnyObject, logger: OffsiderLogger) -> SimulatorOrientation? {
+    /// `screenID` is the active display's, from the device type profile; 1 on a device with one display.
+    static func currentOrientation(of simulator: FBSimulator, screenID: Int = 1, logger: OffsiderLogger) async -> SimulatorOrientation? {
+        await Timings.measure("orientation") {
+            do {
+                try FBSimulatorControlFrameworkLoader.xcodeFrameworks.loadPrivateFrameworks(logger)
+            } catch {
+                logger.info().log("Orientation probe failed: \(error)")
+                return nil
+            }
+            guard let device = sendObject(simulator, selector: "device") else {
+                logger.info().log("Orientation probe: simulator device unavailable")
+                return nil
+            }
+            // SimulatorKit's screen can be briefly unavailable on a busy Mac, so give it a few tries.
+            for attempt in 1...screenReadAttempts {
+                if let orientation = readOrientation(from: device, screenID: screenID, logger: logger) {
+                    return orientation
+                }
+                if attempt < screenReadAttempts {
+                    try? await Task.sleep(for: screenReadRetryDelay)
+                }
+            }
+            return nil
+        }
+    }
+
+    private static let screenReadAttempts = 4
+    private static let screenReadRetryDelay: Duration = .milliseconds(200)
+
+    private static func readOrientation(from device: AnyObject, screenID: Int, logger: OffsiderLogger) -> SimulatorOrientation? {
         guard let screenClass = NSClassFromString("SimulatorKit.SimDeviceScreen") as? NSObject.Type else {
             logger.info().log("Orientation probe: SimulatorKit.SimDeviceScreen unavailable")
             return nil
@@ -52,7 +67,7 @@ struct SimulatorOrientationReader {
 
         typealias InitFunction = @convention(c) (AnyObject, Selector, AnyObject, Int) -> AnyObject
         let initFunction = unsafeBitCast(initMethod, to: InitFunction.self)
-        let screenDevice = initFunction(allocated, initSelector, device, 1)
+        let screenDevice = initFunction(allocated, initSelector, device, screenID)
 
         guard let screen = sendObject(screenDevice, selector: "screen") else {
             logger.info().log("Orientation probe: screen unavailable")
@@ -69,7 +84,7 @@ struct SimulatorOrientationReader {
             return nil
         }
 
-        logger.info().log("Orientation probe: uiOrientation=\(rawOrientation)")
+        logger.info().log("Orientation probe: screen \(screenID) uiOrientation=\(rawOrientation)")
         return mapUIOrientation(rawOrientation)
     }
 

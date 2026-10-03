@@ -9,7 +9,7 @@ struct DoctorContext {
     var xcodeMajor: Int?
     var deviceHubAppPath: String?
     var deviceHubState: DeviceHubState?
-    var simulatorAppRunning = false
+    var simulatorAppState: SimulatorAppState = .notRunning
     var brokerRootPath = HIDBroker.brokerRootPath()
     var brokerState: BrokerDirectoryState = .absent
     var simulatorBooted = false
@@ -78,9 +78,13 @@ struct DoctorRunner {
 
         var deviceHubProcessIdentifier: pid_t?
         if let developerDirectory, xcodeMajor != nil {
-            let simulatorAppRunning = DoctorProbes.isSimulatorAppRunning()
-            run.context.simulatorAppRunning = simulatorAppRunning
-            run.checks.append(DoctorCheckResult(id: .simulatorApp, verdict: DoctorRules.simulatorApp(isRunning: simulatorAppRunning, xcodeMajor: xcodeMajor)))
+            let simulatorAppState = DoctorProbes.simulatorAppState()
+            run.context.simulatorAppState = simulatorAppState
+            run.checks.append(DoctorCheckResult(id: .simulatorApp, verdict: DoctorRules.simulatorApp(
+                simulatorAppState,
+                selectedDeveloperDirectory: DoctorProbes.resolvedPath(developerDirectory),
+                xcodeMajor: xcodeMajor
+            )))
 
             let appPath = DoctorProbes.deviceHubAppPath(developerDirectory: developerDirectory)
             let hub = DoctorProbes.deviceHubState(appPath: appPath)

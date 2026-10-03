@@ -74,6 +74,14 @@ struct EmulatorJWTTests {
         #expect(object["exp"] as? Int == 1_120)
     }
 
+    @Test("the posture RPCs are named in aud by their full paths, which the gradle allowlist checks",
+          arguments: [(EmulatorMethod.setPosture, "setPosture"), (.streamNotification, "streamNotification")])
+    func postureAudience(method: EmulatorMethod, name: String) throws {
+        let data = EmulatorJWTFormat.claims(issuer: EmulatorJWTSigner.issuer, method: method, now: Date(timeIntervalSince1970: 1_000))
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["aud"] as? [String] == ["/android.emulation.control.EmulatorController/\(name)"])
+    }
+
     @Test("a signed token verifies with the registered public key and names only its method")
     func signatureVerifies() async throws {
         let folder = try FakeJWKSFolder()

@@ -8,7 +8,7 @@ import Testing
 struct AndroidBackendHelperTests {
     static let device = HelperRig.device
 
-    @Test("describe-ui makes one server check, one start shell and one socket: hello and dump, then quit on close")
+    @Test("describe-ui makes one server check, one start shell, one socket (hello and dump, then quit on close) and one display status shell")
     func describeUISequence() async throws {
         let rig = try HelperRig()
         try await rig.backend.prepare()
@@ -20,16 +20,17 @@ struct AndroidBackendHelperTests {
             "host:version",
             "host:transport:emulator-5556", "shell,v2,raw:" + HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil),
             "host:transport:emulator-5556", "localabstract:offsider-fake-1",
+            "host:transport:emulator-5556", "shell,v2,raw:" + AndroidDisplayStatus.script,
         ])
         #expect(rig.device.ops == ["hello", "dump"])
-        #expect(info == UIScreenInfo(width: 411.43, height: 923.43, scale: 2.625, orientation: .portrait))
+        #expect(info == UIScreenInfo(width: 411.43, height: 923.43, scale: 2.625, rotation: .portrait, rotationDegrees: 0))
         #expect(tree.roots.map(\.label) == ["OffsiderPlaygroundRN"])
         #expect(tree.roots.first?.children.map(\.id) == ["BackButton", "tap-count"])
 
         await rig.backend.close()
 
         #expect(rig.device.ops == ["hello", "dump", "quit"])
-        #expect(rig.server.services.count == 5)
+        #expect(rig.server.services.count == 7)
         #expect(rig.device.kills.isEmpty)
     }
 
@@ -82,7 +83,7 @@ struct AndroidBackendHelperTests {
         await rig.backend.close()
     }
 
-    static let noWindowDump = #"{"generation":1,"idle":true,\#(FakeHelperDevice.display),"windows":[\#(FakeHelperDevice.statusBar),{"id":1,"type":"application","layer":0,"title":"X","bounds":[0,0,1080,2424],"active":true,"focused":true,"root":null}],"truncated":false,"eventSeq":1}"#
+    nonisolated static let noWindowDump = #"{"generation":1,"idle":true,\#(FakeHelperDevice.display),"windows":[\#(FakeHelperDevice.statusBar),{"id":1,"type":"application","layer":0,"title":"X","bounds":[0,0,1080,2424],"active":true,"focused":true,"root":null}],"truncated":false,"eventSeq":1}"#
 
     @Test("a dump with no window is read once more after 500 ms, then reported as transient so polling callers retry")
     func noWindow() async throws {

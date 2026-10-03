@@ -26,6 +26,10 @@ export function formatPoint(point: Point): string {
   return `(${point.x}, ${point.y})`;
 }
 
+export function fixtureLog(id: string, detail: string) {
+  console.log(`OffsiderFixture ${id}: ${detail}`);
+}
+
 export function iosValue(text: string | undefined): { text: string } | undefined {
   return Platform.OS === 'ios' && text !== undefined ? { text } : undefined;
 }

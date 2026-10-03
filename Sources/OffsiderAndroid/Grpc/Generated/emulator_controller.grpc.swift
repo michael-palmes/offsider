@@ -15,6 +15,7 @@
 // Modified for Offsider: trimmed to the RPCs and messages below from the emulator 37.1.11 copy
 // (SHA-256 1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f).
 // Names, field numbers and the package are unchanged. EmulatorStatus drops field 5 (hardwareConfig).
+// Notification keeps only its posture member; the others arrive as unknown fields and are skipped.
 // Regenerate the Swift code with `scripts/generate-emulator-grpc.sh`.
 
 // DO NOT EDIT.
@@ -131,6 +132,32 @@ internal enum Android_Emulation_Control_EmulatorController: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "streamNotification" metadata.
+        internal enum streamNotification: Sendable {
+            /// Request type for "streamNotification".
+            internal typealias Input = SwiftProtobuf.Google_Protobuf_Empty
+            /// Response type for "streamNotification".
+            internal typealias Output = Android_Emulation_Control_Notification
+            /// Descriptor for "streamNotification".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "android.emulation.control.EmulatorController"),
+                method: "streamNotification",
+                type: .serverStreaming
+            )
+        }
+        /// Namespace for "setPosture" metadata.
+        internal enum setPosture: Sendable {
+            /// Request type for "setPosture".
+            internal typealias Input = Android_Emulation_Control_Posture
+            /// Response type for "setPosture".
+            internal typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "setPosture".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "android.emulation.control.EmulatorController"),
+                method: "setPosture",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "android.emulation.control.EmulatorController" service.
         internal static let descriptors: [GRPCCore.MethodDescriptor] = [
             getStatus.descriptor,
@@ -139,7 +166,9 @@ internal enum Android_Emulation_Control_EmulatorController: Sendable {
             getScreenshot.descriptor,
             streamScreenshot.descriptor,
             setClipboard.descriptor,
-            getClipboard.descriptor
+            getClipboard.descriptor,
+            streamNotification.descriptor,
+            setPosture.descriptor
         ]
     }
 }
@@ -410,6 +439,64 @@ extension Android_Emulation_Control_EmulatorController {
             deserializer: some GRPCCore.MessageDeserializer<Android_Emulation_Control_ClipData>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Android_Emulation_Control_ClipData>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "streamNotification" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Streams notifications from the emulator. This method returns a server-side
+        /// > streaming reactor, sending the current state of some notifications on subscription.
+        /// > 
+        /// > Notifications include:
+        /// > - `Posture`: Reports changes in the device's foldable posture.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Android_Emulation_Control_Notification` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func streamNotification<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Android_Emulation_Control_Notification>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Android_Emulation_Control_Notification>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "setPosture" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Sets the foldable posture of the device. This operation is asynchronous
+        /// > and executed on the main looper.
+        /// > 
+        /// > The `Posture` message contains a `PostureValue` enum, defining the desired
+        /// > physical configuration of the foldable device.
+        /// > 
+        /// > Returns the following gRPC error codes:
+        /// > - `OK` (code 0): Upon successful asynchronous scheduling of the operation.
+        /// > - `FAILED_PRECONDITION` (code 9): If the emulator is unable to set the specified posture.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Android_Emulation_Control_Posture` message.
+        ///   - serializer: A serializer for `Android_Emulation_Control_Posture` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setPosture<Result>(
+            request: GRPCCore.ClientRequest<Android_Emulation_Control_Posture>,
+            serializer: some GRPCCore.MessageSerializer<Android_Emulation_Control_Posture>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -756,6 +843,84 @@ extension Android_Emulation_Control_EmulatorController {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "streamNotification" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Streams notifications from the emulator. This method returns a server-side
+        /// > streaming reactor, sending the current state of some notifications on subscription.
+        /// > 
+        /// > Notifications include:
+        /// > - `Posture`: Reports changes in the device's foldable posture.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Android_Emulation_Control_Notification` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func streamNotification<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Android_Emulation_Control_Notification>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Android_Emulation_Control_Notification>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Android_Emulation_Control_EmulatorController.Method.streamNotification.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "setPosture" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Sets the foldable posture of the device. This operation is asynchronous
+        /// > and executed on the main looper.
+        /// > 
+        /// > The `Posture` message contains a `PostureValue` enum, defining the desired
+        /// > physical configuration of the foldable device.
+        /// > 
+        /// > Returns the following gRPC error codes:
+        /// > - `OK` (code 0): Upon successful asynchronous scheduling of the operation.
+        /// > - `FAILED_PRECONDITION` (code 9): If the emulator is unable to set the specified posture.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Android_Emulation_Control_Posture` message.
+        ///   - serializer: A serializer for `Android_Emulation_Control_Posture` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func setPosture<Result>(
+            request: GRPCCore.ClientRequest<Android_Emulation_Control_Posture>,
+            serializer: some GRPCCore.MessageSerializer<Android_Emulation_Control_Posture>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Android_Emulation_Control_EmulatorController.Method.setPosture.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -1034,6 +1199,74 @@ extension Android_Emulation_Control_EmulatorController.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Android_Emulation_Control_ClipData>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "streamNotification" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Streams notifications from the emulator. This method returns a server-side
+    /// > streaming reactor, sending the current state of some notifications on subscription.
+    /// > 
+    /// > Notifications include:
+    /// > - `Posture`: Reports changes in the device's foldable posture.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func streamNotification<Result>(
+        request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Android_Emulation_Control_Notification>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.streamNotification(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Android_Emulation_Control_Notification>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "setPosture" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Sets the foldable posture of the device. This operation is asynchronous
+    /// > and executed on the main looper.
+    /// > 
+    /// > The `Posture` message contains a `PostureValue` enum, defining the desired
+    /// > physical configuration of the foldable device.
+    /// > 
+    /// > Returns the following gRPC error codes:
+    /// > - `OK` (code 0): Upon successful asynchronous scheduling of the operation.
+    /// > - `FAILED_PRECONDITION` (code 9): If the emulator is unable to set the specified posture.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Android_Emulation_Control_Posture` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func setPosture<Result>(
+        request: GRPCCore.ClientRequest<Android_Emulation_Control_Posture>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setPosture(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Android_Emulation_Control_Posture>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
             options: options,
             onResponse: handleResponse
         )
@@ -1342,6 +1575,82 @@ extension Android_Emulation_Control_EmulatorController.ClientProtocol {
             metadata: metadata
         )
         return try await self.getClipboard(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "streamNotification" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Streams notifications from the emulator. This method returns a server-side
+    /// > streaming reactor, sending the current state of some notifications on subscription.
+    /// > 
+    /// > Notifications include:
+    /// > - `Posture`: Reports changes in the device's foldable posture.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func streamNotification<Result>(
+        _ message: SwiftProtobuf.Google_Protobuf_Empty,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Android_Emulation_Control_Notification>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.streamNotification(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "setPosture" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Sets the foldable posture of the device. This operation is asynchronous
+    /// > and executed on the main looper.
+    /// > 
+    /// > The `Posture` message contains a `PostureValue` enum, defining the desired
+    /// > physical configuration of the foldable device.
+    /// > 
+    /// > Returns the following gRPC error codes:
+    /// > - `OK` (code 0): Upon successful asynchronous scheduling of the operation.
+    /// > - `FAILED_PRECONDITION` (code 9): If the emulator is unable to set the specified posture.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func setPosture<Result>(
+        _ message: Android_Emulation_Control_Posture,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Android_Emulation_Control_Posture>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setPosture(
             request: request,
             options: options,
             onResponse: handleResponse

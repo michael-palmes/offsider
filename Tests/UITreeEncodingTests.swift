@@ -25,7 +25,7 @@ struct UITreeEncodingTests {
 
         #expect(render(tree) == """
         {
-          "version": 1,
+          "version": 2,
           "platform": "ios",
           "device": "DEVICE-1",
           "screen": null,
@@ -84,15 +84,60 @@ struct UITreeEncodingTests {
         #expect(decoded == ["x": 16, "y": 62.5, "width": 1.0 / 3.0, "height": 44])
     }
 
-    @Test("screen info writes width, height, scale and orientation")
-    func screenInfo() throws {
-        let screen = UIScreenInfo(width: 402, height: 874, scale: 3, orientation: .portrait)
-        let decoded = try #require(try object(UITree(platform: .ios, device: "D", screen: screen, roots: []))["screen"] as? [String: Any])
+    private func screenJSON(_ screen: UIScreenInfo, platform: DevicePlatform = .ios) -> String {
+        let text = String(decoding: UITreeRenderer.render(
+            UITree(platform: platform, device: "D", screen: screen, roots: []),
+            UITreeRenderOptions(compact: true)
+        ), as: UTF8.self)
+        let start = text.range(of: #""screen":"#)!.upperBound
+        let end = text.range(of: #","roots""#)!.lowerBound
+        return String(text[start..<end])
+    }
 
-        #expect(decoded["width"] as? Double == 402)
-        #expect(decoded["height"] as? Double == 874)
-        #expect(decoded["scale"] as? Double == 3)
-        #expect(decoded["orientation"] as? String == "portrait")
+    @Test("a phone's screen is its shape, rotation and main display, with no posture")
+    func phoneScreen() {
+        let screen = UIScreenInfo(width: 874, height: 402, scale: 3, rotation: .landscapeFlipped)
+        #expect(screenJSON(screen) == #"{"width":874,"height":402,"scale":3,"orientation":"landscape","rotation":90,"display":{"id":"main","platformId":"1"},"posture":null}"#)
+    }
+
+    @Test("a folded foldable's screen names the cover display and the closed posture")
+    func foldedScreen() {
+        let screen = UIScreenInfo(
+            width: 466, height: 678, scale: 3, rotation: .portrait, rotationDegrees: 0,
+            display: ScreenDisplay(id: "cover", platformId: "1"), posture: .closed
+        )
+        #expect(screenJSON(screen) == #"{"width":466,"height":678,"scale":3,"orientation":"portrait","rotation":0,"display":{"id":"cover","platformId":"1"},"posture":"closed"}"#)
+    }
+
+    @Test("Android's main display is display 0, and the backend's degrees win over the coordinate orientation's")
+    func androidScreen() {
+        let screen = UIScreenInfo(width: 411.43, height: 923.43, scale: 2.625, rotation: .portrait, rotationDegrees: 270)
+        #expect(screenJSON(screen, platform: .android) == #"{"width":411.43,"height":923.43,"scale":2.625,"orientation":"portrait","rotation":270,"display":{"id":"main","platformId":"0"},"posture":null}"#)
+    }
+
+    @Test("an unread orientation has a shape but no rotation")
+    func unreadRotation() {
+        #expect(screenJSON(UIScreenInfo(width: 402, height: 874)) == #"{"width":402,"height":874,"scale":null,"orientation":"portrait","rotation":null,"display":{"id":"main","platformId":"1"},"posture":null}"#)
+    }
+
+    @Test("a square screen is portrait, and only a wider one is landscape", arguments: [
+        ((500.0, 500.0), ScreenShape.portrait), ((500, 501), .portrait), ((501, 500), .landscape),
+    ] as [((Double, Double), ScreenShape)])
+    func shapeTie(size: (Double, Double), shape: ScreenShape) {
+        #expect(UIScreenInfo(width: size.0, height: size.1).shape == shape)
+    }
+
+    @Test("the text header gives the shape and degrees, and a foldable's display and posture")
+    func textHeader() {
+        let folded = UIScreenInfo(
+            width: 951, height: 669, scale: 3, rotation: .landscape, rotationDegrees: 0,
+            display: ScreenDisplay(id: "inner", platformId: "3"), posture: .open
+        )
+        let header = { (screen: UIScreenInfo) in
+            String(decoding: UITreeRenderer.render(UITree(platform: .ios, device: "D", screen: screen, roots: []), .summary), as: UTF8.self)
+        }
+        #expect(header(UIScreenInfo(width: 402, height: 874, scale: 3, rotation: .portrait)) == "# ios D 402x874 @3x portrait 0°\n")
+        #expect(header(folded) == "# ios D 951x669 @3x landscape 0° inner open\n")
     }
 
     @Test("iOS native attributes are written flat under native")

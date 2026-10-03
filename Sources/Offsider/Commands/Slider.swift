@@ -37,6 +37,9 @@ struct Slider: AsyncParsableCommand {
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active (default: 0.25).")
     var pollInterval: Double = 0.25
 
+    @Flag(name: .customLong("allow-offscreen"), help: "Resolve elements whose frame is outside the screen (off by default: selectors prefer on-screen matches).")
+    var allowOffscreen: Bool = false
+
     @OptionGroup
     var deviceOption: DeviceOption
 
@@ -45,13 +48,7 @@ struct Slider: AsyncParsableCommand {
         guard selectorCount == 1 else {
             throw ValidationError("Use exactly one of --id or --label to target a slider.")
         }
-
-        if let elementID, elementID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ValidationError("--id must not be empty.")
-        }
-        if let elementLabel, elementLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ValidationError("--label must not be empty.")
-        }
+        try SelectorQuery.validate(id: elementID, label: elementLabel, value: nil)
 
         guard value.isFinite, (0...100).contains(value) else {
             throw ValidationError("--value must be a finite number between 0 and 100.")
@@ -81,18 +78,20 @@ struct Slider: AsyncParsableCommand {
         let query = try accessibilityQuery()
         let targetNormalized = value / 100.0
 
-        let match = try await AccessibilityPoller.resolveElementWithPolling(
+        let polled = try await AccessibilityPoller.resolveElementWithPolling(
             query: query,
             on: target.backend,
             device: target.device,
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,
             elementType: elementType,
+            allowOffscreen: allowOffscreen,
             logger: logger
         )
 
         let result = try await setAndVerifySliderValue(
-            initialMatch: match,
+            initialMatch: polled.value,
+            initialTree: polled.tree,
             query: query,
             targetNormalized: targetNormalized,
             target: target,
@@ -106,13 +105,10 @@ struct Slider: AsyncParsableCommand {
     }
 
     private func accessibilityQuery() throws -> AccessibilityQuery {
-        if let elementID {
-            return .id(elementID)
+        guard let query = SelectorQuery.make(id: elementID, label: elementLabel, value: nil) else {
+            throw CLIError(errorDescription: "Unexpected state: no slider selector.")
         }
-        if let elementLabel {
-            return .label(elementLabel)
-        }
-        throw CLIError(errorDescription: "Unexpected state: no slider selector.")
+        return query
     }
 
     private func requireSlider(_ element: UINode) throws {
@@ -162,18 +158,20 @@ struct Slider: AsyncParsableCommand {
 
     private func setAndVerifySliderValue(
         initialMatch: AccessibilityMatch,
+        initialTree: UITree,
         query: AccessibilityQuery,
         targetNormalized: Double,
         target: SliderTarget,
         logger: OffsiderLogger
     ) async throws -> SliderResult {
         var initialMatch = initialMatch
+        var initialTree = initialTree
         if let actions = target.backend as? any AccessibilityActionPerforming {
             try requireSlider(initialMatch.element)
             var outcome = try await actions.setRangeValue(targetNormalized, of: initialMatch.element, on: target.device)
             if outcome == .stale {
                 logger.info().log("Slider \(initialMatch.selectorDescription) changed before it could be set; finding it again")
-                initialMatch = try await resolveSliderElement(query: query, on: target)
+                (initialMatch, initialTree) = try await resolveSliderElementAndTree(query: query, on: target)
                 outcome = try await actions.setRangeValue(targetNormalized, of: initialMatch.element, on: target.device)
             }
             switch outcome {
@@ -196,7 +194,7 @@ struct Slider: AsyncParsableCommand {
         )
 
         if abs(dragPlan.currentNormalized - targetNormalized) > Self.alreadyAtTargetTolerance {
-            try await performSliderDrag(dragPlan, on: target)
+            try await performSliderDrag(dragPlan, tree: initialTree, on: target)
         }
 
         let observedValue = try await pollObservedSliderValue(
@@ -236,10 +234,11 @@ struct Slider: AsyncParsableCommand {
         return "--label '\(elementLabel ?? "")'"
     }
 
-    private func performSliderDrag(_ dragPlan: SliderDragPlan, on target: SliderTarget) async throws {
+    /// `tree` is the one the slider was resolved from, so iOS needs no second read for the application frame.
+    private func performSliderDrag(_ dragPlan: SliderDragPlan, tree: UITree, on target: SliderTarget) async throws {
         let physicalPoints = try await target.backend.deviceCoordinates(
             for: [dragPlan.logicalStart, dragPlan.logicalEnd],
-            tree: nil,
+            tree: tree,
             on: target.device
         )
         let physicalStart = physicalPoints[0]
@@ -257,16 +256,21 @@ struct Slider: AsyncParsableCommand {
     }
 
     private func resolveSliderElement(query: AccessibilityQuery, on target: SliderTarget) async throws -> AccessibilityMatch {
+        try await resolveSliderElementAndTree(query: query, on: target).match
+    }
+
+    private func resolveSliderElementAndTree(query: AccessibilityQuery, on target: SliderTarget) async throws -> (match: AccessibilityMatch, tree: UITree) {
         let tree = try await target.backend.accessibilityTree(for: target.device)
         let match = try AccessibilityTargetResolver.resolveElement(
             roots: tree.roots,
             query: query,
-            elementType: elementType
+            elementType: elementType,
+            allowOffscreen: allowOffscreen
         )
         guard match.element.isSlider else {
             throw CLIError(errorDescription: "Matched element is no longer a slider.")
         }
-        return match
+        return (match, tree)
     }
 
     private func pollObservedSliderValue(

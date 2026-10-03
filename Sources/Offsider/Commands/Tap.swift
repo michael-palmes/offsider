@@ -35,10 +35,16 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     var tapStyle: TapStyle?
 
     @Option(name: .customLong("wait-timeout"), help: "Maximum seconds to poll for the element before failing (0 = no waiting, default). Only applies to --id/--label/--value targeting.")
-    var waitTimeout: Double = 0
+    var waitTimeout: Double?
 
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active (default: 0.25).")
-    var pollInterval: Double = 0.25
+    var pollInterval: Double?
+
+    @Flag(name: .customLong("allow-offscreen"), help: "Resolve elements whose frame is outside the screen (off by default: selectors prefer on-screen matches).")
+    var allowOffscreen: Bool = false
+
+    @Flag(name: .customLong("fail-if-covered"), help: "Fail instead of warning when another element may cover the tap point.")
+    var failIfCovered: Bool = false
 
     @OptionGroup
     var verification: VerificationOptions
@@ -56,24 +62,11 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw ValidationError("Coordinates must be non-negative values.")
             }
         } else {
-            let selectorCount = [elementID != nil, elementLabel != nil, elementValue != nil].filter { $0 }.count
-            if selectorCount == 0 {
+            try SelectorQuery.validate(id: elementID, label: elementLabel, value: elementValue)
+            if query == nil {
                 throw ValidationError("Either provide both -x/-y, or use --id/--label/--value to tap an element.")
             }
-            if selectorCount > 1 {
-                throw ValidationError("Use only one of --id, --label, or --value.")
-            }
-            if let elementID, elementID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                throw ValidationError("--id must not be empty.")
-            }
-            if let elementLabel, elementLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                throw ValidationError("--label must not be empty.")
-            }
-            if let elementValue, elementValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                throw ValidationError("--value must not be empty.")
-            }
         }
-
 
         if let preDelay = preDelay {
             guard preDelay >= 0 && preDelay <= 10.0 else {
@@ -87,15 +80,23 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             }
         }
 
-        guard waitTimeout >= 0 else {
+        guard resolvedWaitTimeout >= 0 else {
             throw ValidationError("--wait-timeout must be non-negative.")
         }
 
-        if waitTimeout > 0 {
-            guard pollInterval > 0 else {
+        if resolvedWaitTimeout > 0 {
+            guard resolvedPollInterval > 0 else {
                 throw ValidationError("--poll-interval must be greater than 0 when --wait-timeout is active.")
             }
         }
+    }
+
+    /// Optional so a batch step can tell an explicit value from the batch-level default.
+    var resolvedWaitTimeout: Double { waitTimeout ?? 0 }
+    var resolvedPollInterval: Double { pollInterval ?? 0.25 }
+
+    private var query: AccessibilityQuery? {
+        SelectorQuery.make(id: elementID, label: elementLabel, value: elementValue)
     }
 
     func run() async throws {
@@ -118,50 +119,51 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        try await execute(on: route, progress: progress, logger: logger)
+    }
+
+    /// Resolves and sends the tap on `route`; tests pass a fake backend here.
+    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger) async throws {
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
 
         let resolution: TapResolution
         let resolvedDescription: String
+        let resolvedTree: UITree?
 
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
             resolvedDescription = VerifyOutput.pointDescription(x: pointX, y: pointY)
+            resolvedTree = nil
+            await Self.warnIfOffScreen(x: pointX, y: pointY, backend: backend, device: device)
         } else {
-            let query: AccessibilityQuery
-            if let elementID {
-                query = .id(elementID)
-            } else if let elementLabel {
-                query = .label(elementLabel)
-            } else if let elementValue {
-                query = .value(elementValue)
-            } else {
+            guard let query else {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.")
             }
 
-            do {
-                resolution = try await AccessibilityPoller.resolveWithPolling(
-                    query: query,
-                    on: backend,
-                    device: device,
-                    waitTimeout: waitTimeout,
-                    pollInterval: pollInterval,
-                    transientGrace: progress == nil ? 0 : verification.resolvedTimeout,
-                    elementType: elementType,
-                    logger: logger
-                )
-            } catch let error as ElementResolutionError {
-                print("Warning: \(error.localizedDescription) No tap performed.", to: &standardError)
-                throw error
-            }
+            let polled = try await AccessibilityPoller.resolveWithPolling(
+                query: query,
+                on: backend,
+                device: device,
+                waitTimeout: resolvedWaitTimeout,
+                pollInterval: resolvedPollInterval,
+                transientGrace: progress == nil ? 0 : verification.resolvedTimeout,
+                elementType: elementType,
+                allowOffscreen: allowOffscreen,
+                logger: logger
+            )
+            resolution = polled.value
+            resolvedTree = polled.tree
+            Self.warnIfOffScreen(subject: query.selectorDescription, at: resolution.point, in: polled.tree)
+            try await checkCover(resolution, selector: query.selectorDescription, tree: polled.tree, backend: backend, device: device)
 
             resolvedDescription = "\(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y))"
         }
 
         logger.info().log("Tapping \(resolvedDescription)")
 
-        let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: nil, on: device)[0]
+        let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: resolvedTree, on: device)[0]
 
         let style = resolvedTapStyle(for: resolution)
         if let progress {
@@ -194,6 +196,74 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
         logger.info().log("Tap completed successfully")
         print(Self.completionLine(selector: pointX == nil ? verifyTarget : nil, at: resolution.point))
+    }
+
+    /// Warns rather than refuses, since an iPad app in a window can be smaller than the screen.
+    @MainActor
+    static func warnIfOffScreen(x: Double, y: Double, backend: any DeviceBackend, device: DeviceID) async {
+        if let warning = offScreenWarning(x: x, y: y, screen: try? await backend.screenSize(for: device)) {
+            print(warning, to: &standardError)
+        }
+    }
+
+    static func offScreenWarning(x: Double, y: Double, screen: UISize?) -> String? {
+        guard let screen, screen.width > 0, screen.height > 0 else {
+            return nil
+        }
+        let bounds = UIFrame(x: 0, y: 0, width: screen.width, height: screen.height)
+        guard !bounds.contains(UIPoint(x: x, y: y)) else {
+            return nil
+        }
+        return "Warning: \(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing."
+    }
+
+    /// Warns when a selector's point is outside the screen, which only `--allow-offscreen` lets through.
+    static func warnIfOffScreen(subject: String, at point: (x: Double, y: Double), in tree: UITree) {
+        guard let viewport = tree.viewport, !viewport.contains(UIPoint(x: point.x, y: point.y)) else {
+            return
+        }
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        print("Warning: \(subject) at \(pointText) is outside the \(viewport.sizeSummary) screen; the tap may do nothing.", to: &standardError)
+    }
+
+    /// Confirms a cover candidate with one hit-test at the tap point, then warns on stderr or, with `--fail-if-covered`, throws.
+    func checkCover(
+        _ resolution: TapResolution,
+        selector: String,
+        tree: UITree,
+        backend: any DeviceBackend,
+        device: DeviceID
+    ) async throws {
+        guard !resolution.coverCandidates.isEmpty else {
+            return
+        }
+        let hit = tree.platform == .ios ? await Self.hitTest(at: resolution.point, backend: backend, device: device) : nil
+        guard let cover = AccessibilityTargetResolver.confirmedCover(hit: hit, resolution: resolution, roots: tree.roots) else {
+            return
+        }
+        let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover)
+        if failIfCovered {
+            throw CLIError(errorDescription: message)
+        }
+        print("Warning: \(message) Pass --fail-if-covered to stop instead.", to: &standardError)
+    }
+
+    /// iOS asks the accessibility service what is at the point; Android's point read only walks tree order, which is not z-order.
+    private static func hitTest(at point: (x: Double, y: Double), backend: any DeviceBackend, device: DeviceID) async -> UINode? {
+        (try? await backend.accessibilityTree(for: device, point: UIPoint(x: point.x, y: point.y)))?.roots.first
+    }
+
+    /// `--id 'save' at (196, 700) may be covered by button 'Dismiss' (20, 650) 350x120; the tap may land on it.`
+    static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode) -> String {
+        var parts = [cover.role.rawValue]
+        if let name = cover.normalizedLabel ?? cover.normalizedID {
+            parts.append("'\(SelectorText.truncated(name))'")
+        }
+        if let frame = cover.frame {
+            parts.append(frame.summary)
+        }
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        return "\(selector) at \(pointText) may be covered by \(parts.joined(separator: " ")); the tap may land on it."
     }
 
     /// `✓ Tap at (x, y) ...` for coordinates; `✓ Tap on id=X at (x, y) ...` for a selector.

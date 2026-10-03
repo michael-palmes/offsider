@@ -6,14 +6,19 @@ import { BatchLoginFlowScreen } from './BatchLoginFlowScreen';
 import { BatchTestScreen } from './BatchTestScreen';
 import { ButtonTestScreen } from './ButtonTestScreen';
 import { ContextMenuTestScreen } from './ContextMenuTestScreen';
+import { EnvironmentTestScreen } from './EnvironmentTestScreen';
 import { GesturePresetsScreen } from './GesturePresetsScreen';
 import { KeyPressScreen } from './KeyPressScreen';
 import { KeySequenceScreen } from './KeySequenceScreen';
 import { LongScrollTestScreen } from './LongScrollTestScreen';
 import { ModalNavigationTestScreen } from './ModalNavigationTestScreen';
+import { OverlayTestScreen } from './OverlayTestScreen';
+import { ParkedSheetTestScreen } from './ParkedSheetTestScreen';
+import { RowsTestScreen } from './RowsTestScreen';
 import { SearchableTestScreen } from './SearchableTestScreen';
 import { SheetTestScreen } from './SheetTestScreen';
 import { SliderValueTestScreen } from './SliderValueTestScreen';
+import { StackTestScreen } from './StackTestScreen';
 import { SwipeTestScreen } from './SwipeTestScreen';
 import { SwitchTestScreen } from './SwitchTestScreen';
 import { TabViewTestScreen } from './TabViewTestScreen';
@@ -43,4 +48,9 @@ export const screens: Record<RouteId, ComponentType> = {
   'context-menu-test': ContextMenuTestScreen,
   'modal-navigation-test': ModalNavigationTestScreen,
   'long-scroll-test': LongScrollTestScreen,
+  'parked-sheet-test': ParkedSheetTestScreen,
+  'stack-test': StackTestScreen,
+  'overlay-test': OverlayTestScreen,
+  'rows-test': RowsTestScreen,
+  'environment-test': EnvironmentTestScreen,
 };

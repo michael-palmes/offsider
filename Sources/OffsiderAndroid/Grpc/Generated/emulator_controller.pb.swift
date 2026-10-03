@@ -25,6 +25,7 @@
 // Modified for Offsider: trimmed to the RPCs and messages below from the emulator 37.1.11 copy
 // (SHA-256 1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f).
 // Names, field numbers and the package are unchanged. EmulatorStatus drops field 5 (hardwareConfig).
+// Notification keeps only its posture member; the others arrive as unknown fields and are skipped.
 // Regenerate the Swift code with `scripts/generate-emulator-grpc.sh`.
 
 #if canImport(FoundationEssentials)
@@ -881,6 +882,100 @@ nonisolated struct Android_Emulation_Control_EmulatorStatus: Sendable {
   fileprivate var _vmConfig: Android_Emulation_Control_VmConfiguration? = nil
 }
 
+nonisolated struct Android_Emulation_Control_Notification: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Detailed notification information.
+  var type: Android_Emulation_Control_Notification.OneOf_Type? = nil
+
+  var posture: Android_Emulation_Control_Posture {
+    get {
+      if case .posture(let v)? = type {return v}
+      return Android_Emulation_Control_Posture()
+    }
+    set {type = .posture(newValue)}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  /// Detailed notification information.
+  nonisolated enum OneOf_Type: Equatable, Sendable {
+    case posture(Android_Emulation_Control_Posture)
+
+  }
+
+  init() {}
+}
+
+/// Must follow the definition in "external/qemu/android/hw-sensors.h"
+nonisolated struct Android_Emulation_Control_Posture: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var value: Android_Emulation_Control_Posture.PostureValue = .postureUnknown
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  nonisolated enum PostureValue: SwiftProtobuf.Enum, Swift.CaseIterable {
+    typealias RawValue = Int
+    case postureUnknown // = 0
+    case postureClosed // = 1
+    case postureHalfOpened // = 2
+    case postureOpened // = 3
+    case postureFlipped // = 4
+    case postureTent // = 5
+    case postureMax // = 6
+    case UNRECOGNIZED(Int)
+
+    init() {
+      self = .postureUnknown
+    }
+
+    init?(rawValue: Int) {
+      switch rawValue {
+      case 0: self = .postureUnknown
+      case 1: self = .postureClosed
+      case 2: self = .postureHalfOpened
+      case 3: self = .postureOpened
+      case 4: self = .postureFlipped
+      case 5: self = .postureTent
+      case 6: self = .postureMax
+      default: self = .UNRECOGNIZED(rawValue)
+      }
+    }
+
+    var rawValue: Int {
+      switch self {
+      case .postureUnknown: return 0
+      case .postureClosed: return 1
+      case .postureHalfOpened: return 2
+      case .postureOpened: return 3
+      case .postureFlipped: return 4
+      case .postureTent: return 5
+      case .postureMax: return 6
+      case .UNRECOGNIZED(let i): return i
+      }
+    }
+
+    // The compiler won't synthesize support with the UNRECOGNIZED case.
+    static let allCases: [Android_Emulation_Control_Posture.PostureValue] = [
+      .postureUnknown,
+      .postureClosed,
+      .postureHalfOpened,
+      .postureOpened,
+      .postureFlipped,
+      .postureTent,
+      .postureMax,
+    ]
+
+  }
+
+  init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "android.emulation.control"
@@ -1498,4 +1593,84 @@ nonisolated extension Android_Emulation_Control_EmulatorStatus: SwiftProtobuf.Me
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
+}
+
+nonisolated extension Android_Emulation_Control_Notification: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".Notification"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\u{4}posture\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 4: try {
+        var v: Android_Emulation_Control_Posture?
+        var hadOneofValue = false
+        if let current = self.type {
+          hadOneofValue = true
+          if case .posture(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.type = .posture(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if case .posture(let v)? = self.type {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Android_Emulation_Control_Notification, rhs: Android_Emulation_Control_Notification) -> Bool {
+    if lhs.type != rhs.type {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Android_Emulation_Control_Posture: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".Posture"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\u{3}value\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.value) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.value != .postureUnknown {
+      try visitor.visitSingularEnumField(value: self.value, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Android_Emulation_Control_Posture, rhs: Android_Emulation_Control_Posture) -> Bool {
+    if lhs.value != rhs.value {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Android_Emulation_Control_Posture.PostureValue: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0POSTURE_UNKNOWN\0\u{1}POSTURE_CLOSED\0\u{1}POSTURE_HALF_OPENED\0\u{1}POSTURE_OPENED\0\u{1}POSTURE_FLIPPED\0\u{1}POSTURE_TENT\0\u{1}POSTURE_MAX\0")
 }
