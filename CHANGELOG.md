@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `screenshot --mask-secure` and `batch --mask-secure` paint password fields black before writing the image, and withhold it when a password field cannot be located. `OFFSIDER_MASK_SECURE=1` turns masking on by default. `screenshot --json` then adds `masked`, the number of fields painted.
+
+### Changed
+
+- Password fields read as bullets in `describe-ui`, selectors, `wait`, `assert` and `--verify` on both platforms, one per character. `--value` no longer matches them, and `assert --has-value` compares the bullets.
+- A SwiftUI `SecureField`, which iOS reports as a text field with a secure subrole, now has the role `secureTextField`.
+- On Android, non-ASCII text is no longer pasted into a focused password field; use `type --replace`.
+
+### Fixed
+
+- `type` no longer writes the typed text to the system log, and an unsupported character is reported by position.
+- `batch --json` and batch errors no longer print the text of a `type` step.
+- `--verify` no longer quotes a password field's value.
+- On Android, a password field's text no longer appears in `describe-ui --fields native` or in a clickable parent's label, and a password field showing its hint reads as empty.
+
 ## [0.4.0] - 2026-10-04
 
 ### Added

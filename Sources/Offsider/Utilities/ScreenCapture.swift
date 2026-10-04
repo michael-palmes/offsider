@@ -58,7 +58,7 @@ struct RenderedScreenshot {
         return try ScreenImage.encode(image, as: format)
     }
 
-    func report(path: String?, format: ImageFormat?, capture: CapturedScreen, comparison: ScreenCompare.Result? = nil) -> ScreenshotReport {
+    func report(path: String?, format: ImageFormat?, capture: CapturedScreen, comparison: ScreenCompare.Result? = nil, masked: Int? = nil) -> ScreenshotReport {
         ScreenshotReport(
             path: path,
             width: image.width,
@@ -71,7 +71,8 @@ struct RenderedScreenshot {
             posture: capture.screen?.posture,
             upright: capture.upright,
             format: format,
-            comparison: comparison
+            comparison: comparison,
+            masked: masked
         )
     }
 }
@@ -114,6 +115,23 @@ enum ScreenCapture {
             image: image, platform: platform, screen: screen, pixelsPerPoint: pixelsPerPoint, upright: upright,
             untouchedPNG: turns == 0 ? png : nil
         )
+    }
+
+    /// Paints the tree's secure fields black; a capture that is not upright cannot be mapped, so it is withheld.
+    nonisolated static func maskingSecureFields(_ capture: CapturedScreen, tree: UITree) throws -> (capture: CapturedScreen, painted: Int) {
+        let rects = try SecureMask.pixelRects(
+            secureFrames: tree.secureFrames,
+            pixelsPerPoint: capture.upright ? capture.pixelsPerPoint : nil,
+            imageWidth: capture.image.width,
+            imageHeight: capture.image.height
+        )
+        guard !rects.isEmpty else { return (capture, 0) }
+        let image = try ScreenImage.masked(capture.image, pixelRects: rects)
+        let masked = CapturedScreen(
+            image: image, platform: capture.platform, screen: capture.screen, pixelsPerPoint: capture.pixelsPerPoint,
+            upright: capture.upright, untouchedPNG: nil
+        )
+        return (masked, rects.count)
     }
 
     /// Crops to the region first, then scales.

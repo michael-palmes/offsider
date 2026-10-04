@@ -59,7 +59,8 @@ public enum IOSAccessibilityMapping {
         let subrole = text(dictionary["subrole"])
         let roleDescription = text(dictionary["role_description"])
         let role = role(type: type, role: nativeRole, subrole: subrole, roleDescription: roleDescription)
-        let value = text(dictionary["AXValue"])
+        let raw = text(dictionary["AXValue"])
+        let value = role == .secureTextField ? SecureText.masked(raw) : raw
 
         return UINode(
             role: role,
@@ -85,7 +86,7 @@ public enum IOSAccessibilityMapping {
         )
     }
 
-    /// Switch and slider checks run first because SwiftUI reports some switches as CheckBox or Other.
+    /// Switch, slider and secure checks run first: SwiftUI reports some switches as CheckBox or Other, and a SecureField as a TextField with the AXSecureTextField subrole.
     public static func role(type: String?, role: String?, subrole: String?, roleDescription: String?) -> UIRole {
         let description = roleDescription?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         if type == "Switch" || type == "Toggle" || role == "AXSwitch" || subrole == "AXSwitch"
@@ -94,6 +95,9 @@ public enum IOSAccessibilityMapping {
         }
         if type == "Slider" || role == "AXSlider" || subrole == "AXSlider" || description.contains("slider") {
             return .slider
+        }
+        if type == "SecureTextField" || role == "AXSecureTextField" || subrole == "AXSecureTextField" || description == "secure text field" {
+            return .secureTextField
         }
         let typeKey = type ?? role.map { $0.hasPrefix("AX") ? String($0.dropFirst(2)) : $0 }
         return typeKey.flatMap { rolesByType[$0] } ?? .other

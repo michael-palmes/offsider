@@ -107,6 +107,30 @@ public enum ScreenImage {
         return result
     }
 
+    /// Fills each top-left-origin pixel rectangle with opaque black; no blur, so nothing underneath survives.
+    public static func masked(_ image: CGImage, pixelRects: [CGRect]) throws -> CGImage {
+        guard !pixelRects.isEmpty else { return image }
+        let width = image.width
+        let height = image.height
+        guard let context = context(width: width, height: height, colourSpace: colourSpace(of: image)) else {
+            throw ImageFailure(detail: "could not draw a \(width) x \(height) image")
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+        for rect in pixelRects {
+            let rounded = CGRect(
+                x: rect.minX.rounded(.down), y: rect.minY.rounded(.down),
+                width: rect.maxX.rounded(.up) - rect.minX.rounded(.down), height: rect.maxY.rounded(.up) - rect.minY.rounded(.down)
+            ).intersection(CGRect(x: 0, y: 0, width: width, height: height))
+            guard !rounded.isNull, !rounded.isEmpty else { continue }
+            context.fill(CGRect(x: rounded.minX, y: CGFloat(height) - rounded.maxY, width: rounded.width, height: rounded.height))
+        }
+        guard let result = context.makeImage() else {
+            throw ImageFailure(detail: "could not mask the \(width) x \(height) image")
+        }
+        return result
+    }
+
     public static func encode(_ image: CGImage, as format: ImageFormat) throws -> Data {
         let output = NSMutableData()
         let type: UTType

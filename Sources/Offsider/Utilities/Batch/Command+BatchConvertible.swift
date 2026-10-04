@@ -258,13 +258,7 @@ extension Type: BatchConvertible {
             return inputText.isEmpty ? [] : [.text(inputText, replace: false)]
         }
 
-        guard TextToHIDEvents.validateText(inputText) else {
-            let unsupportedChars = inputText.compactMap { char in
-                let keyEvent = KeyEvent.keyCodeForString(String(char))
-                return keyEvent.keyCode == 0 ? char : nil
-            }
-            throw TextToHIDEvents.TextConversionError.unsupportedCharacter(unsupportedChars.first ?? " ")
-        }
+        try TextToHIDEvents.checkSupported(inputText)
 
         let hidEvents = try TextToHIDEvents.convertTextToHIDEvents(inputText)
         let clear = replace ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey) : nil

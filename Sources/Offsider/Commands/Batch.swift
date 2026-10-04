@@ -22,6 +22,7 @@ struct Batch: AsyncParsableCommand {
         overrides the batch-level value.
 
         With --json, stdout is NDJSON: one line per finished step, in this key order: step, kind, line, ok, ms; \
+        a type step's line shows its text as <N characters>, never the text; \
         a failure adds exitCode and error; wait and assert add met, reason, match; screenshot adds its --json keys; \
         describe-ui adds tree (json format) or output (ndjson or text). A last line follows: \
         {"step":null,"kind":"batch","ok":...,"ms":...,"steps":...,"failed":...}, where steps counts every step \
@@ -73,6 +74,9 @@ struct Batch: AsyncParsableCommand {
 
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active.")
     var pollInterval: Double = 0.25
+
+    @Flag(name: .customLong("mask-secure"), help: "Every screenshot step paints password fields black, reusing the cached tree when it is fresh. OFFSIDER_MASK_SECURE=1 turns this on by default.")
+    var maskSecure = false
 
     @Flag(name: .customLong("json"), help: "Print one NDJSON line per step to stdout, then a summary line; human text goes to stderr.")
     var json: Bool = false
@@ -136,7 +140,8 @@ struct Batch: AsyncParsableCommand {
                 tapStyle: tapStyle,
                 waitTimeout: waitTimeout,
                 pollInterval: pollInterval,
-                watchdog: watchdog
+                watchdog: watchdog,
+                maskSecure: maskSecure
             )
         }
 
@@ -211,8 +216,10 @@ struct Batch: AsyncParsableCommand {
         var stepName = "<unparsed>"
         var detail = BatchStepRecord.Detail.none
         var failure: BatchStepRecord.Failure?
+        var parsedTokens: [String]?
         do {
             let tokens = try ShellTokenizer.tokenize(line)
+            parsedTokens = tokens
             stepName = tokens.first ?? "<empty>"
             // Also after a failure: a step can send input before it fails.
             defer {
@@ -232,10 +239,15 @@ struct Batch: AsyncParsableCommand {
                 }
             }
         } catch {
-            failure = .init(exitCode: OffsiderExitCode.failure.rawValue, message: message(for: error))
+            var text = message(for: error)
+            if BatchStepRedaction.isTypeLine(line) {
+                let secrets = [line] + BatchStepRedaction.textTokens(parsedTokens ?? [])
+                text = BatchStepRedaction.scrub(text, removing: secrets)
+            }
+            failure = .init(exitCode: OffsiderExitCode.failure.rawValue, message: text)
         }
         return BatchStepRecord(
-            step: number, kind: stepName, line: line, elapsed: seconds(clock.now - start), failure: failure, detail: detail
+            step: number, kind: stepName, line: BatchStepRedaction.redactedLine(line, tokens: parsedTokens), elapsed: seconds(clock.now - start), failure: failure, detail: detail
         )
     }
 

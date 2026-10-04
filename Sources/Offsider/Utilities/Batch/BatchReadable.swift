@@ -80,7 +80,12 @@ extension DescribeUI: BatchReadable {
 
 extension Screenshot: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
-        let report = try await take(try request(), on: context.route)
+        let report: ScreenshotReport
+        if Self.masksSecure(flag: maskSecure || context.maskSecure) {
+            report = try await take(try request(), on: context.route) { try await context.accessibilityTree() }
+        } else {
+            report = try await take(try request(), on: context.route, secureTree: nil)
+        }
         guard let comparison = report.comparison else {
             return BatchReadResult(detail: .screenshot(report), output: report.path.map { $0 + "\n" })
         }

@@ -27,7 +27,7 @@ struct AndroidGrpcTextTests {
         try await Self.session(rig).typeText("héllo 日本")
 
         #expect(rig.emulator.calls == [.getClipboard, .setClipboard("héllo 日本"), .setClipboard("sentinel")])
-        #expect(rig.adbScripts == ["input keyevent 279"])
+        #expect(rig.adbScripts.filter { $0.hasPrefix("input") } == ["input keyevent 279"])
         #expect(rig.sleeps.sleeps == [.milliseconds(150), .milliseconds(300)])
         #expect(rig.emulator.clipboardNow == "sentinel")
     }
@@ -59,7 +59,7 @@ struct AndroidGrpcTextTests {
         try await session.typeText("ok")
         try await session.typeText("é")
 
-        #expect(rig.adbScripts == ["input text 'ok'", "input keyevent 279"])
+        #expect(rig.adbScripts.filter { $0.hasPrefix("input") } == ["input text 'ok'", "input keyevent 279"])
         #expect(rig.emulator.calls == [.getClipboard, .setClipboard("é"), .setClipboard("x")])
     }
 

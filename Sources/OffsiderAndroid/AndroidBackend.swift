@@ -183,9 +183,26 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             route: { try await self.inputRoute(for: serial, shell: shell) },
             avdName: { await self.avdName(for: serial) },
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
+            focusedSecureField: { await self.hasFocusedSecureField(id) },
             sleep: host.sleep,
             log: log
         )
+    }
+
+    /// Best effort: an unreadable screen does not block typing, since the guard only keeps a password off the clipboard.
+    private func hasFocusedSecureField(_ id: DeviceID) async -> Bool {
+        let serial = id.rawValue
+        do {
+            let roots: [UINode]
+            switch try await treeSource(for: serial, announcingFallback: false) {
+            case .helper(let session): roots = try await helperRoots(serial, session: session)
+            case .uiautomator: roots = try await uiautomatorRoots(serial)
+            }
+            return UITree(platform: .android, device: serial, roots: roots).secureFocus == .secureFocused
+        } catch {
+            log(.debug, "Could not check for a focused password field on \(id.rawValue) before pasting: \((error as? AndroidError)?.message ?? error.localizedDescription)")
+            return false
+        }
     }
 
     /// The display geometry (settled on a foldable), then the transport, when the session's first input needs them.

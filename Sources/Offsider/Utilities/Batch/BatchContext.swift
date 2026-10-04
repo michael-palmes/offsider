@@ -27,6 +27,8 @@ final class BatchContext {
     let pollInterval: TimeInterval
     /// Armed for the batch's setup, then around each wait and assert step as the standalone commands arm it.
     let watchdog: DeviceWatchdog
+    /// `batch --mask-secure`: every screenshot step masks secure fields, reusing the cached tree.
+    let maskSecure: Bool
 
     private var cachedTree: UITree?
 
@@ -39,7 +41,8 @@ final class BatchContext {
         tapStyle: TapStyle = .automatic,
         waitTimeout: TimeInterval = 0,
         pollInterval: TimeInterval = 0.25,
-        watchdog: DeviceWatchdog = DeviceWatchdog()
+        watchdog: DeviceWatchdog = DeviceWatchdog(),
+        maskSecure: Bool = false
     ) {
         self.backend = backend
         self.device = device
@@ -50,6 +53,7 @@ final class BatchContext {
         self.waitTimeout = waitTimeout
         self.pollInterval = pollInterval
         self.watchdog = watchdog
+        self.maskSecure = maskSecure
     }
 
     func accessibilityTree(forceRefresh: Bool = false) async throws -> UITree {

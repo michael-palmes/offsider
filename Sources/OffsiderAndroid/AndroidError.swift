@@ -32,6 +32,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case noWindow
         case noFocusedField
         case fieldNotEditable
+        case securePasteRefused
         case unsupportedKey
         case unsupportedButton
         case unsupportedControlCharacter
@@ -343,6 +344,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(
             .noFocusedField,
             "type --replace needs a focused text field on \(serial), and nothing has input focus. Tap the field first, for example `offsider tap --id <field> --device \(serial)`."
+        )
+    }
+
+    static func securePasteRefused(_ serial: String) -> AndroidError {
+        AndroidError(
+            .securePasteRefused,
+            "Typing this text into the focused password field on \(serial) would paste it through the emulator's clipboard, so Offsider refused. Use `offsider type --replace <full text> --device \(serial)`, which sets the field without the clipboard."
         )
     }
 

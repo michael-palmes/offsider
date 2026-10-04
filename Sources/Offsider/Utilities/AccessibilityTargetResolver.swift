@@ -49,7 +49,7 @@ enum AccessibilityQuery {
         switch self {
         case .id: return node.normalizedID
         case .label: return node.normalizedLabel
-        case .value: return node.normalizedValue
+        case .value: return node.isSecure ? nil : node.normalizedValue
         }
     }
 }
