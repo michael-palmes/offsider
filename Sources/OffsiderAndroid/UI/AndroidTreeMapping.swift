@@ -13,13 +13,18 @@ enum AndroidTreeMapping {
     static func node(from raw: RawAndroidNode, scale: Double, rootRole: UIRole? = nil, rootLabel: String? = nil) -> UINode {
         let role = rootRole ?? self.role(for: raw)
         let pixels = pixelFrame(raw["bounds"])
-        let partial = raw["checked-state"] == "partial"
         let secure = role == .secureTextField || raw.flag("password")
+        var nodeLabel = rootRole == nil ? label(for: raw) : rootLabel.flatMap(nonEmpty)
+        let reactNativeMixed = rootRole == nil && role == .checkbox && nodeLabel?.hasSuffix(mixedSuffix) == true
+        if reactNativeMixed, let full = nodeLabel {
+            nodeLabel = nonEmpty(String(full.dropLast(mixedSuffix.count)))
+        }
+        let partial = raw["checked-state"] == "partial" || reactNativeMixed
         return UINode(
             role: role,
             id: nonEmpty(raw["resource-id"]) ?? nonEmpty(raw["test-tag"]),
-            label: rootRole == nil ? label(for: raw) : rootLabel.flatMap(nonEmpty),
-            value: value(for: raw, role: role),
+            label: nodeLabel,
+            value: reactNativeMixed ? "2" : value(for: raw, role: role),
             frame: pixels.map { dp($0, scale: scale) },
             enabled: raw.flag("enabled"),
             state: UIState(
@@ -42,6 +47,9 @@ enum AndroidTreeMapping {
             children: raw.children.map { node(from: $0, scale: scale) }
         )
     }
+
+    /// React Native marks a mixed checkbox only with this suffix on its description, and drops `checkable`.
+    private static let mixedSuffix = ", mixed"
 
     /// `content-desc`, else `text` unless editable; a clickable node with neither takes its non-clickable descendants' text.
     static func label(for raw: RawAndroidNode) -> String? {

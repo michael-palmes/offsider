@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On Android, a React Native mixed checkbox reads `value` `2` with no `state.checked`, and its label no longer ends in `, mixed`.
 - `type` no longer writes the typed text to the system log, and an unsupported character is reported by position.
 - `batch --json` and batch errors no longer print the text of a `type` step.
 - `--verify` no longer quotes a password field's value.

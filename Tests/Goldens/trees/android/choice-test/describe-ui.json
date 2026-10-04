@@ -233,8 +233,8 @@
         {
           "role": "checkbox",
           "id": "choice-test-checkbox-mixed",
-          "label": "Select All, mixed",
-          "value": null,
+          "label": "Select All",
+          "value": "2",
           "frame": {
             "x": 16,
             "y": 282.29,
