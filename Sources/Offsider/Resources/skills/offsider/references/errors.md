@@ -13,7 +13,7 @@
 - 9: Xcode, adb or the Android SDK is missing. Fix the setup; retrying will not help.
 - 64: bad arguments. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.
 
-Resending is safe after 2, 6, 7, 8, 9 and 64: nothing was sent.
+Resending a single command is safe after 2, 6, 7, 8, 9 and 64: nothing was sent. A batch is different, since its earlier steps may have run: exit 2 or 6 alone does not make a batch resend safe. Check the summary line's `dispatched` first (`Dispatched:` in the text output): resend the whole batch only when it is `no`; otherwise check the screen and resend from the failed step.
 
 ## JSON errors
 
@@ -21,7 +21,8 @@ With `--json`, every failure prints one object on stdout: `exitCode` and `error`
 
 ## The device lock
 
-- One agent per device: input commands, setters and `batch` lock the device for their run (on Android, so do commands that read the screen). Reads on iOS never lock.
+- One agent per device: input commands, setters (`permission`, `status-bar` and `biometric` too, but not their `show` or `status`) and `batch` lock the device for their run (on Android, so do commands that read the screen). Reads on iOS never lock.
+- `--wait-lock` exists only on commands that can lock; `logs`, `displays`, `stream-video` and `record-video` reject it with exit 64.
 - Exit 8 with `device_busy` means another Offsider command holds the device, and the message names its pid and command. Wait for it to finish, or rerun with `--wait-lock <seconds>` (`OFFSIDER_WAIT_LOCK` sets a default). Never resend in a loop, and never kill the holder.
 - Keep a held touch in one command (`touch --down --up`) or one `batch`: separate `touch --down` and `touch --up` commands are not protected from another agent acting in between.
 

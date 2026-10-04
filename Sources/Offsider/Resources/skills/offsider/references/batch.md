@@ -22,7 +22,7 @@ offsider batch --device <DEVICE_ID> --json \
 
 ## Output
 
-`batch --json` prints one JSON line per step to stdout (`step`, `kind`, `line`, `ok`, `ms`; `exitCode` and the `error` object on failure; `met`, `reason`, `match` for `wait` and `assert`; the screenshot fields; `tree` or `output` for `describe-ui`), then a summary line with `steps` and `failed`. Parse it instead of the text output. A `type` step's record shows `type <N characters>`, never the text. The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0. Keep output quiet by default; add `--verbose` only when troubleshooting. `--mask-secure` masks password fields in every screenshot step.
+`batch --json` prints one JSON line per step to stdout (`step`, `kind`, `line`, `ok`, `ms`; `exitCode` and the `error` object on failure; `met`, `reason`, `match` for `wait` and `assert`; the screenshot fields; `tree` or `output` for `describe-ui`), then a summary line with `steps`, `failed` and `dispatched` (`yes`, `no` or `unknown`: whether any step sent input). After a failure, resend the whole batch only when `dispatched` is `no`; otherwise check the screen and resend from the failed step. Parse it instead of the text output. A `type` step's record shows `type <N characters>`, never the text. The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0. Keep output quiet by default; add `--verbose` only when troubleshooting. `--mask-secure` masks password fields in every screenshot step.
 
 ## Animations and transitions
 
