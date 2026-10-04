@@ -14,8 +14,9 @@ struct TapCommandTests {
         ])
     }
 
-    private static func tap(_ arguments: [String], on backend: FakeDeviceBackend) async throws {
-        try await Tap.parse(arguments + ["--device", device.rawValue])
+    /// Without `settle`, the transition guard is off, so read counts show only what the test is about.
+    private static func tap(_ arguments: [String], on backend: FakeDeviceBackend, settle: Bool = false) async throws {
+        try await Tap.parse(arguments + (settle ? [] : ["--no-settle"]) + ["--device", device.rawValue])
             .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: nil, logger: OffsiderLogger())
     }
 
@@ -45,7 +46,7 @@ struct TapCommandTests {
         }
     }
 
-    @Test("a selector tap on iOS reads the tree once and converts the point with that tree")
+    @Test("a selector tap with --no-settle on iOS reads the tree once and converts the point with that tree")
     func selectorTapReadsTreeOnce() async throws {
         let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 600)])
 

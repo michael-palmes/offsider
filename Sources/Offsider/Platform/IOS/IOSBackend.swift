@@ -11,6 +11,7 @@ final class IOSBackend: DeviceBackend {
     private var simulators: [String: FBSimulator] = [:]
     /// The last whole tree's application frame, which tells a foldable's displays apart when devicectl cannot.
     private(set) var applicationFrames: [String: UIFrame] = [:]
+    private var bootMarkers: [String: String] = [:]
     private static var isPrepared = false
 
     init(logger: OffsiderLogger) {
@@ -80,6 +81,7 @@ final class IOSBackend: DeviceBackend {
     }
 
     func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+        let startedAt = Date()
         let simulator = try await simulator(for: id)
         let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
             from: simulator,
@@ -92,8 +94,11 @@ final class IOSBackend: DeviceBackend {
            let geometry = await panelGeometry(on: active, of: simulator) {
             tree.roots = UITree.correctingSidewaysApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
         }
-        if point == nil, let frame = tree.applicationFrame {
-            applicationFrames[id.rawValue] = frame
+        if point == nil {
+            if let frame = tree.applicationFrame {
+                applicationFrames[id.rawValue] = frame
+            }
+            DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
         }
         return tree
     }
@@ -325,5 +330,16 @@ extension DetachedTouchStep {
         case let .hold(duration):
             return .delay(duration)
         }
+    }
+}
+
+extension IOSBackend: BootMarking {
+    /// The device's `launchd_sim` start time, read once per command.
+    func bootMarker(for id: DeviceID) async -> String? {
+        if let marker = bootMarkers[id.rawValue] { return marker }
+        guard let identity = try? HIDBroker.currentBootIdentity(simulatorUDID: id.rawValue) else { return nil }
+        let marker = "launchd_sim \(identity.startSeconds).\(String(format: "%06d", identity.startMicroseconds))"
+        bootMarkers[id.rawValue] = marker
+        return marker
     }
 }

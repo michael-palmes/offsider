@@ -41,10 +41,12 @@ class TrackedInputSession: InputSession {
     var device: DeviceID { base.device }
 
     func perform(_ event: InputEvent) async throws {
+        defer { DeviceActivityLedger.current.recordInput(on: device) }
         try await DispatchTracker.current.sending { try await base.perform(event) }
     }
 
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+        defer { DeviceActivityLedger.current.recordInput(on: device) }
         try await DispatchTracker.current.sending {
             try await base.performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
         }
@@ -65,10 +67,12 @@ final class TrackedTextInputSession: TrackedInputSession, TextInputSession {
     }
 
     func typeText(_ value: String) async throws {
+        defer { DeviceActivityLedger.current.recordInput(on: device) }
         try await DispatchTracker.current.sending { try await text.typeText(value) }
     }
 
     func replaceText(_ value: String) async throws {
+        defer { DeviceActivityLedger.current.recordInput(on: device) }
         try await DispatchTracker.current.sending { try await text.replaceText(value) }
     }
 }

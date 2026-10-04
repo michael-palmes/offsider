@@ -40,6 +40,9 @@ struct Slider: AsyncParsableCommand {
     @Flag(name: .customLong("allow-offscreen"), help: "Resolve elements whose frame is outside the screen (off by default: selectors prefer on-screen matches).")
     var allowOffscreen: Bool = false
 
+    @Flag(name: .customLong("no-settle"), help: "Set the slider at once, without waiting out a transition an input under 500 ms ago may have started.")
+    var noSettle: Bool = false
+
     @OptionGroup
     var deviceOption: DeviceOption
 
@@ -86,6 +89,7 @@ struct Slider: AsyncParsableCommand {
             pollInterval: pollInterval,
             elementType: elementType,
             allowOffscreen: allowOffscreen,
+            settle: noSettle ? .off : .guarded(record: await TreeCache.load(for: target.device, backend: target.backend)),
             logger: logger
         )
 

@@ -119,6 +119,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// The helper's dump (else `uiautomator dump --compressed`) mapped to dp; with `point`, the deepest node there as the only root.
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         let serial = id.rawValue
+        let startedAt = Date()
         let roots: [UINode]
         switch try await treeSource(for: serial) {
         case .helper(let session):
@@ -127,7 +128,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             roots = try await uiautomatorRoots(serial)
         }
         let tree = UITree(platform: .android, device: serial, roots: roots)
-        guard let point else { return tree }
+        guard let point else {
+            DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
+            return tree
+        }
         return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
     }
 

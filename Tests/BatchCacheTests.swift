@@ -18,7 +18,8 @@ struct BatchCacheTests {
             device: device,
             axCachePolicy: cache,
             typeSubmissionMode: .chunked,
-            typeChunkSize: 200
+            typeChunkSize: 200,
+            noSettle: true
         )
         try await Batch.runSteps(steps, context: context, session: backend.session, continueOnError: false, logger: OffsiderLogger())
     }

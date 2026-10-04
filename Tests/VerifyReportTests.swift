@@ -12,7 +12,12 @@ struct VerifyReportTests {
     func jsonKeys() throws {
         let report = VerifyReport(command: "key", target: "keycode 40", dispatched: .yes, verified: true, attempts: 1, change: .accessibilityTree)
         let json = try object(report)
-        #expect(Set(json.keys) == ["version", "command", "target", "dispatched", "verified", "attempts", "change", "style", "exitCode", "error"])
+        #expect(Set(json.keys) == [
+            "version", "command", "target", "dispatched", "verified", "attempts", "change", "changes", "changesTruncated", "note", "style", "exitCode", "error",
+        ])
+        #expect((json["changes"] as? [Any])?.isEmpty == true)
+        #expect(json["changesTruncated"] as? Int == 0)
+        #expect(json["note"] is NSNull)
         #expect(json["version"] as? Int == 2)
         #expect(json["dispatched"] as? String == "yes")
         #expect(json["exitCode"] as? Int == 0)

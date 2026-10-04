@@ -129,7 +129,7 @@ public enum UITreeRenderer {
         return output
     }
 
-    private static func header(_ tree: UITree) -> String {
+    static func header(_ tree: UITree) -> String {
         var parts = ["#", tree.platform.rawValue, tree.device]
         if let screen = tree.screen {
             parts.append("\(number(screen.width))x\(number(screen.height))")
@@ -144,7 +144,7 @@ public enum UITreeRenderer {
         return parts.joined(separator: " ")
     }
 
-    private static func line(_ node: UINode, _ fields: Set<UIField>) -> String {
+    static func line(_ node: UINode, _ fields: Set<UIField>) -> String {
         var parts = [node.role.rawValue]
         if fields.contains(.label), let label = nonEmpty(node.label) {
             parts.append(quoted(label))

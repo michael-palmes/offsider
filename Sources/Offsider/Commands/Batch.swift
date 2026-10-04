@@ -78,6 +78,9 @@ struct Batch: AsyncParsableCommand {
     @Flag(name: .customLong("mask-secure"), help: "Every screenshot step paints password fields black, reusing the cached tree when it is fresh. OFFSIDER_MASK_SECURE=1 turns this on by default.")
     var maskSecure = false
 
+    @Flag(name: .customLong("no-settle"), help: "Tap steps act at once, without waiting out a transition an earlier input may have started.")
+    var noSettle = false
+
     @Flag(name: .customLong("json"), help: "Print one NDJSON line per step to stdout, then a summary line; human text goes to stderr.")
     var json: Bool = false
 
@@ -130,6 +133,7 @@ struct Batch: AsyncParsableCommand {
             }
         }
 
+        let record = noSettle ? nil : await TreeCache.load(for: device, backend: backend)
         let context = await MainActor.run {
             BatchContext(
                 backend: backend,
@@ -141,7 +145,9 @@ struct Batch: AsyncParsableCommand {
                 waitTimeout: waitTimeout,
                 pollInterval: pollInterval,
                 watchdog: watchdog,
-                maskSecure: maskSecure
+                maskSecure: maskSecure,
+                noSettle: noSettle,
+                cachedRecord: record
             )
         }
 
@@ -225,8 +231,8 @@ struct Batch: AsyncParsableCommand {
             stepName = tokens.first ?? "<empty>"
             // Also after a failure: a step can send input before it fails.
             defer {
-                if BatchStepKind(rawValue: stepName)?.mayChangeScreen == true {
-                    context.invalidateTree()
+                if let kind = BatchStepKind(rawValue: stepName), kind.mayChangeScreen {
+                    context.invalidateTree(sentInput: kind != .sleep)
                 }
             }
             switch try await BatchStepParser.parseStep(tokens, deviceID: context.device.rawValue, context: context, logger: logger) {

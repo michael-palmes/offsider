@@ -29,8 +29,15 @@ final class BatchContext {
     let watchdog: DeviceWatchdog
     /// `batch --mask-secure`: every screenshot step masks secure fields, reusing the cached tree.
     let maskSecure: Bool
+    /// `batch --no-settle`: tap steps skip the transition guard.
+    let noSettle: Bool
+    /// The device's cached record from before the batch, for the guard until a step sends input.
+    let cachedRecord: TreeCacheRecord?
 
     private var cachedTree: UITree?
+    /// The latest tree any step read, kept when the cache is dropped so the guard can compare against it.
+    private var lastTree: UITree?
+    private var lastInputAt: Date?
 
     init(
         backend: any DeviceBackend,
@@ -42,7 +49,9 @@ final class BatchContext {
         waitTimeout: TimeInterval = 0,
         pollInterval: TimeInterval = 0.25,
         watchdog: DeviceWatchdog = DeviceWatchdog(),
-        maskSecure: Bool = false
+        maskSecure: Bool = false,
+        noSettle: Bool = false,
+        cachedRecord: TreeCacheRecord? = nil
     ) {
         self.backend = backend
         self.device = device
@@ -54,18 +63,23 @@ final class BatchContext {
         self.pollInterval = pollInterval
         self.watchdog = watchdog
         self.maskSecure = maskSecure
+        self.noSettle = noSettle
+        self.cachedRecord = cachedRecord
     }
 
     func accessibilityTree(forceRefresh: Bool = false) async throws -> UITree {
         switch axCachePolicy {
         case .perStep, .none:
-            return try await backend.accessibilityTree(for: device)
+            let tree = try await backend.accessibilityTree(for: device)
+            lastTree = tree
+            return tree
         case .perBatch:
             if !forceRefresh, let cachedTree {
                 return cachedTree
             }
             let tree = try await backend.accessibilityTree(for: device)
             cachedTree = tree
+            lastTree = tree
             return tree
         }
     }
@@ -81,8 +95,38 @@ final class BatchContext {
     }
 
     /// Drops the cached tree; a step that sent input or slept may have changed the screen.
-    func invalidateTree() {
+    func invalidateTree(sentInput: Bool = false) {
         cachedTree = nil
+        if sentInput {
+            lastInputAt = TreeCacheEnvironment.current.now()
+        }
+    }
+
+    /// What the transition guard compares against: the latest tree this batch read, with the last input from this batch or else the disk record.
+    /// With neither a record nor an input, an earlier read in this batch still lets an unmoved target act at once.
+    func settlePolicy(stepOptedOut: Bool) -> SettlePolicy {
+        guard !noSettle, !stepOptedOut else { return .off }
+        guard let lastTree else { return .guarded(record: lastInputAt == nil ? cachedRecord : record(lastInputAt: lastInputAt, tree: nil)) }
+        if let lastInputAt {
+            return .guarded(record: record(lastInputAt: lastInputAt, tree: lastTree))
+        }
+        if let cachedRecord {
+            return .guarded(record: record(lastInputAt: cachedRecord.lastInputAt, tree: lastTree))
+        }
+        return .guarded(record: record(lastInputAt: TreeCacheEnvironment.current.now(), tree: lastTree))
+    }
+
+    private func record(lastInputAt: Date?, tree: UITree?) -> TreeCacheRecord {
+        TreeCacheRecord(
+            platform: device.platform,
+            device: device.rawValue,
+            command: "batch",
+            writtenAt: TreeCacheEnvironment.current.now(),
+            lastInputAt: lastInputAt,
+            treeRole: tree == nil ? nil : .read,
+            appFrame: tree?.applicationFrame,
+            roots: tree?.roots
+        )
     }
 }
 

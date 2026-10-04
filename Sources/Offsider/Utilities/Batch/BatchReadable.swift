@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import OffsiderCore
 
@@ -65,6 +66,9 @@ extension Assert: BatchReadable {
 
 extension DescribeUI: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
+        if diff {
+            throw ValidationError("Batch describe-ui steps do not take --diff. Run describe-ui --diff after the batch.")
+        }
         try await Self.requireActive(displayOption, on: context.route, deviceName: context.device.rawValue)
         let tree: UITree
         if let point = try parsedPoint() {

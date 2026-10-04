@@ -46,6 +46,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Flag(name: .customLong("fail-if-covered"), help: "Fail instead of warning when another element may cover the tap point.")
     var failIfCovered: Bool = false
 
+    @Flag(name: .customLong("no-settle"), help: "Tap a selector's target at once, without waiting out a transition an input under 500 ms ago may have started.")
+    var noSettle: Bool = false
+
     @OptionGroup
     var verification: VerificationOptions
 
@@ -142,6 +145,10 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.", reason: .internalError)
             }
 
+            // Under --verify the verifier's second read re-resolves the target, so the guard would only add a read.
+            let settle: SettlePolicy = noSettle || progress != nil
+                ? .off
+                : .guarded(record: await TreeCache.load(for: device, backend: backend))
             let polled = try await AccessibilityPoller.resolveWithPolling(
                 query: query,
                 on: backend,
@@ -151,6 +158,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 transientGrace: progress == nil ? 0 : verification.resolvedTimeout,
                 elementType: elementType,
                 allowOffscreen: allowOffscreen,
+                settle: settle,
                 logger: logger
             )
             resolution = polled.value
@@ -163,7 +171,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
         logger.info().log("Tapping \(resolvedDescription)")
 
-        let physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: resolvedTree, on: device)[0]
+        var physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: resolvedTree, on: device)[0]
 
         let style = resolvedTapStyle(for: resolution)
         if let progress {
@@ -176,7 +184,16 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 backend: backend,
                 device: device,
                 options: verification,
-                styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries)
+                styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries),
+                initialTree: resolvedTree,
+                beforeAction: { tree in
+                    guard let query, let moved = try? AccessibilityTargetResolver.resolveTap(
+                        roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false
+                    ), abs(moved.point.x - resolution.point.x) > TransitionGuard.frameTolerance
+                        || abs(moved.point.y - resolution.point.y) > TransitionGuard.frameTolerance else { return }
+                    logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: moved.point.x, y: moved.point.y)) while settling; tapping there")
+                    physicalPoint = try await backend.deviceCoordinates(for: [moved.point], tree: tree, on: device)[0]
+                }
             )
             try await VerifyOutput.perform(request, progress: progress) { attempt, session in
                 let attemptStyle: TapStyle = attempt.style == .physical ? .physical : .simulator

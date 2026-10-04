@@ -44,4 +44,4 @@ extension ListDevices: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Batch: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Displays: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension AppearanceCommand: JSONReportingCommand { var wantsJSON: Bool { json } }
-extension DescribeUI: JSONReportingCommand { var wantsJSON: Bool { output.writesJSON } }
+extension DescribeUI: JSONReportingCommand { var wantsJSON: Bool { !diff && output.writesJSON } }

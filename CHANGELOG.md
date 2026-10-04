@@ -23,9 +23,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `scripts/rn-playground.sh metro stop` removes the `adb reverse` it set on running emulators.
 - `doctor --device <UDID>` adds `simulator.crash-loop`, which reads the last 10 minutes of crash reports for that simulator, warns at one or two crashes of a process, fails at three or more and prints the erase command without running it. Plain `doctor` adds `simulators.crash-loop`, listing every simulator in a crash loop by name. `test-runner.sh` refuses to start on a simulator in a crash loop.
 - `scripts/bench-ab.sh` compares a base build with the branch on one Offsider device in paired, seeded runs, and reports medians, a bootstrap interval and a verdict.
+- `describe-ui --diff` prints the nodes added, changed and removed since the previous command's tree for the device, `unchanged since <command> <n> ms ago` when nothing changed, or the full view when most of the screen changed.
+- Selector `tap`, `slider` and batch tap steps wait out a transition the previous input started (up to 500 ms, 150 ms with no cached tree) and find the target again before acting; `--no-settle` turns this off.
+- `--verify --json` reports up to 10 `changes`, a `changesTruncated` count and `note: "keyboard_closed"`.
+- `OFFSIDER_TIMINGS=1` adds the `tree-cache`, `tree-diff` and `settle` phases.
 
 ### Changed
 
+- Offsider keeps the last accessibility tree read from each device, with password values masked and platform attributes left out, in its private per-user directory for 10 minutes; `OFFSIDER_TREE_CACHE=off` turns it off.
+- `tap --verify` reads the tree once fewer before tapping, and taps the target where the verifier's second read finds it.
 - Password fields read as bullets in `describe-ui`, selectors, `wait`, `assert` and `--verify` on both platforms, one per character. `--value` no longer matches them, and `assert --has-value` compares the bullets.
 - A SwiftUI `SecureField`, which iOS reports as a text field with a secure subrole, now has the role `secureTextField`.
 - On Android, non-ASCII text is no longer pasted into a focused password field; use `type --replace`.

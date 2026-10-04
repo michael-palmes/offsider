@@ -84,12 +84,15 @@ public struct UITree: Equatable, Sendable {
     public var device: String
     public var screen: UIScreenInfo?
     public var roots: [UINode]
+    /// True when the source stopped before the whole tree, so a missing node may still be on screen.
+    public var sourceTruncated: Bool
 
-    public init(platform: DevicePlatform, device: String, screen: UIScreenInfo? = nil, roots: [UINode]) {
+    public init(platform: DevicePlatform, device: String, screen: UIScreenInfo? = nil, roots: [UINode], sourceTruncated: Bool = false) {
         self.platform = platform
         self.device = device
         self.screen = screen
         self.roots = roots
+        self.sourceTruncated = sourceTruncated
     }
 
     public var applicationFrame: UIFrame? {

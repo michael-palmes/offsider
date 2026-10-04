@@ -16,6 +16,9 @@ public struct VerifyReport: Equatable, Sendable {
     public let verified: Bool
     public let attempts: Int
     public let change: ChangeKind
+    public let changes: [VerifyChange]
+    public let changesTruncated: Int
+    public let note: VerifyNote?
     public let style: TapDeliveryStyle?
     public let error: ErrorPayload?
 
@@ -26,6 +29,9 @@ public struct VerifyReport: Equatable, Sendable {
         verified: Bool,
         attempts: Int,
         change: ChangeKind,
+        changes: [VerifyChange] = [],
+        changesTruncated: Int = 0,
+        note: VerifyNote? = nil,
         style: TapDeliveryStyle? = nil,
         error: ErrorPayload? = nil
     ) {
@@ -36,6 +42,9 @@ public struct VerifyReport: Equatable, Sendable {
         self.verified = verified
         self.attempts = attempts
         self.change = change
+        self.changes = changes
+        self.changesTruncated = changesTruncated
+        self.note = note
         self.style = style
         self.error = error
     }
@@ -46,7 +55,7 @@ public struct VerifyReport: Equatable, Sendable {
         return dispatched == .yes ? .unverified : .failure
     }
 
-    /// Keys in order: version, command, target, dispatched, verified, attempts, change, style, exitCode, error.
+    /// Keys in order: version, command, target, dispatched, verified, attempts, change, changes, changesTruncated, note, style, exitCode, error.
     public func jsonData() throws -> Data {
         let members: [(String, OrderedJSON)] = [
             ("version", .integer(version)),
@@ -56,6 +65,9 @@ public struct VerifyReport: Equatable, Sendable {
             ("verified", .bool(verified)),
             ("attempts", .integer(attempts)),
             ("change", .string(change.rawValue)),
+            ("changes", .array(changes.map(\.jsonValue))),
+            ("changesTruncated", .integer(changesTruncated)),
+            ("note", .optional(note?.rawValue, OrderedJSON.string)),
             ("style", .optional(style?.rawValue, OrderedJSON.string)),
             ("exitCode", .integer(Int(exitCode.rawValue))),
             ("error", error.map(\.jsonValue) ?? .null),

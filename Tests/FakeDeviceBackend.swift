@@ -45,6 +45,8 @@ final class FakeDeviceBackend: DeviceBackend {
     /// What an Android permission read serves; nil makes the fake an iOS simulator with no read.
     var packagePermissions: AndroidPackagePermissions?
     var statusBarReading = StatusBarReading(overrides: [:])
+    /// What `bootMarker(for:)` serves.
+    var bootMarkerValue: String?
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -92,6 +94,8 @@ final class FakeDeviceBackend: DeviceBackend {
         var tree = readTree(for: id)
         if let point {
             tree.roots = tree.deepestNode(at: point).map { [$0] } ?? []
+        } else {
+            DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: DeviceActivityLedger.current.now())
         }
         return tree
     }
@@ -248,4 +252,8 @@ extension FakeDeviceBackend: PermissionControlling, StatusBarControlling, Biomet
         stateCalls.append("biometric \(outcome.rawValue) \(modality.rawValue)")
         return BiometricControl.notification(outcome, modality: modality)
     }
+}
+
+extension FakeDeviceBackend: BootMarking {
+    func bootMarker(for id: DeviceID) async -> String? { bootMarkerValue }
 }

@@ -120,10 +120,10 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `list-devices` | List iOS simulators (iPhone and iPad), running Android emulators and shut-down AVDs with their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
 | `boot` | Start an Android emulator by AVD name and wait until it has booted, then print its serial (`--headless`, `--timeout`); an AVD that is already running is not started again |
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings, booted simulators and simulator crash loops, plus the Android SDK and adb server when an SDK is installed; with `--device`, a simulator's state, Resize Mode, dtuhidd, HID transport, accessibility and recent crashes, or an Android emulator's state, image, gRPC endpoint, UiAutomation slot, helper start and Metro reverse (Android host checks only, no Xcode checks); `--json` prints one object, `--fix` applies safe fixes (on Android, only starting an absent adb server with `ADB_MDNS=0`) |
-| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text` and `--compact` shape the output. `--display <id>` checks that the active display is the one you expect |
+| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text` and `--compact` shape the output; `--diff` prints only what changed since the previous command's tree. `--display <id>` checks that the active display is the one you expect |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
-| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--tap-style`, delays and `--verify, --retries, --json` |
-| `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`), then verify the result |
+| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json` |
+| `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`, `--no-settle`), then verify the result |
 | `type` | Type text from an argument, `--stdin` or `--file` (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; supports `--verify, --retries, --json` |
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
 | `drag` | Low-level point-to-point drag using explicit touch moves (`--duration`, `--steps`) |
@@ -135,7 +135,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `key-combo` | Press `--key` while holding comma-separated `--modifiers` |
 | `wait` | Wait until an element is on screen (`--id`, `--label`, `--value`, `--has-value`) or `--gone`, the screen is `--settled`, a `--region x,y,w,h` is `--changed` or `--stable`, or `--seconds` pass; `--timeout`, `--json`. Exits 5 on timeout |
 | `assert` | Check once that an element is on screen, optionally with `--has-value`, or `--gone`; exits 5 when it is not |
-| `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin`: input steps, `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`; supports `--wait-timeout`, `--ax-cache`, `--continue-on-error`, `--mask-secure` (every screenshot step masks password fields) and `--json` (one NDJSON line per step; a `type` step's line shows `<N characters>`, never its text). Selector steps read the screen again after any step that sends input |
+| `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin`: input steps, `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`; supports `--wait-timeout`, `--ax-cache`, `--no-settle`, `--continue-on-error`, `--mask-secure` (every screenshot step masks password fields) and `--json` (one NDJSON line per step; a `type` step's line shows `<N characters>`, never its text). Selector steps read the screen again after any step that sends input |
 | `screenshot` | Save a PNG or JPEG of the active display (`--output`, `--format`, `--quality`); `--display <id>` captures another display of a foldable, `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, `--compare <baseline>` (`--threshold`) exits 0 when the capture changed and 5 when it did not, and `--mask-secure` paints password fields black first |
 | `logs` | Print recent device log entries (`--last 30s` by default, up to `8760h`, or `--since` a time up to the year 9999), or collect live ones with `--duration` or `--follow`; `--rn` for React Native, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw`, `--json` |
 | `appearance` | Read or set light or dark appearance; on Android a reading can be `auto` or `custom` when night mode follows a schedule |
@@ -219,9 +219,22 @@ On a foldable the header line ends with the display and posture, such as `inner 
 
 `--summary` is short for `--flat --on-screen --labelled --format text`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes with at least 1 point on screen, judged as selectors judge it; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
 
+`describe-ui --diff` compares this read with the previous command's tree for the device (see [Privacy](#privacy)) and prints only what changed, in the `--summary` view unless `--format text` and filters are given:
+
+```text
+# ios <ID> 402x874 @3x portrait 0°
+# changes since tap 840 ms ago: 1 added, 1 changed, 0 removed
+changed text "State: Unread" id=filter-state value="Unread" (16,120 370x44) (was: text "State: All" id=filter-state value="All" (16,120 370x44))
+added button "Apply" id=apply-filters (142,640 118x34)
+```
+
+A node is named by its `id` (UUIDs normalised), else by its role, label and position on a 4 pt grid. A screen with no change prints `# unchanged since <command> <n> ms ago (<hash>)`; with no earlier tree, or when 60 or more lines or over half of them changed, the full view follows a comment saying so. After a tap the base is the tree read before the tap, so tap then `--diff` shows what the tap did. `--diff` is text only, and refused with JSON formats, `--compact` and `--point`.
+
 ### Selectors
 
 `--id`, `--label` and `--value` match `id`, `label` and `value`. Selectors prefer matches that are on screen: apps often keep views mounted off screen (a closed bottom sheet parked below the screen, rows below the fold), and a match whose frame lies outside the screen fails with an error naming its frame instead of tapping nothing. `--wait-timeout` waits for it to come on screen, and `--allow-offscreen` resolves it anyway. An element that is only partly on screen is tapped at the centre of its visible part. When no label or value matches exactly, typographic quotes and unusual spaces are folded (`--label "Don't Allow"` finds `Don’t Allow`), and a miss suggests the closest labels. On Android, `--id alert_title` also matches `com.example:id/alert_title` when no id matches exactly. `--element-type` matches `role` in any case or the native `type` exactly, so `button`, `Button` and `RadioButton` all work.
+
+Selector `tap`, `slider` and batch `tap` steps guard against a target still moving from an earlier input, such as a sheet sliding in. They act at once when the last input was 500 ms or more ago, or when the target sits within 1 pt of where the cached tree had it; otherwise they wait out the rest of 500 ms (150 ms when there is no cached tree), read once more and tap the target where it is now. `--no-settle` turns this off, for scripted loops that already wait. Under `tap --verify` the verifier's own second read does the same job, so it reads the tree once fewer than before.
 
 ### Conditions and whole cases
 
@@ -352,6 +365,8 @@ With `--json`, a failure prints one object on stdout, where the success output g
 
 `--verify --json` reports (version 2) and `batch --json` step lines carry the same `error` object in place of their own envelope. `hint` is the next command to run and never repeats typed text. `candidates` lists up to five elements (`id`, `label`, `role`, `frame`, `onScreen`, never a value) for selector errors. `dispatched` says whether input may have reached the device: `no` (nothing was sent, so resending is safe), `unknown` (a send began and failed, so check the screen first) or `yes`; it is null for commands that send no input. A `--json` that is itself the mistake, such as `tap --json` without `--verify`, prints only the usage error.
 
+A verified `--verify --json` report also lists what changed: `changes` holds up to 10 entries, value and state changes first, then added, removed and moved nodes, each as `{"kind": "changed", "node": "text \"State\" id=state", "field": "value", "old": "All", "new": "Unread"}` (`kind` is `added`, `removed` or `changed`; `field`, `old` and `new` are null where they do not apply). `changesTruncated` counts the entries left out, and `note` is `keyboard_closed` when the keyboard left and nothing outside it changed except frames: the input may have been spent closing the keyboard, so repeat it if the control shows no effect. A change seen only in the screenshot gives `changes: []`.
+
 ### Error reasons
 
 | Reason | Exit | When | What to do |
@@ -439,7 +454,7 @@ With `--json`, a failure prints one object on stdout, where the success output g
 
 ## Privacy
 
-Offsider has no telemetry and no accounts. It never connects to non-loopback addresses and never resolves hostnames; it may use Unix sockets and loopback TCP to local developer daemons (the adb server and the Android Emulator), so nothing leaves your Mac. It talks to simulators through Xcode's frameworks and writes only the files you ask for. See [SECURITY.md](SECURITY.md) for what it touches.
+Offsider has no telemetry and no accounts. It never connects to non-loopback addresses and never resolves hostnames; it may use Unix sockets and loopback TCP to local developer daemons (the adb server and the Android Emulator), so nothing leaves your Mac. It talks to simulators through Xcode's frameworks, and beyond the files you ask for it writes only to a private per-user directory, `offsider-<uid>/` under your user temp directory (mode 0700): device locks, and the last accessibility tree read from each device, so `describe-ui --diff` and the tap guard can compare against it. Each tree is one 0600 file per device, named by a hash of the device ID, holding the neutral tree with password values already masked and platform attributes left out, the command that wrote it and when. It is overwritten by the next command, ignored after 10 minutes or a reboot of the device, and capped at 1 MB. `OFFSIDER_TREE_CACHE=off` turns it off. See [SECURITY.md](SECURITY.md) for what it touches.
 
 ### Secure fields
 
@@ -468,7 +483,7 @@ make e2e-android-fold  # run the foldable suite on the Offsider_E2E_Pixel_9_Pro_
 
 Committed, scrubbed trees of the React Native playground live in `Tests/Goldens/trees/`, with a byte budget per screen in `budgets.json`: `swift test` fails when a `--summary` or `--format text` rendering outgrows its budget, or when a budget sits more than 20 percent above it. After a mapping or renderer change, `OFFSIDER_GOLDENS_UPDATE=1 swift test --filter TreeGoldenRefresh` re-renders them offline; `Tests/Goldens/README.md` covers recapturing from a device.
 
-`OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines.
+`OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines; `tree-cache` is a tree cache read or write, `tree-diff` the `--diff` comparison and `settle` the transition guard's wait and second read.
 `OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines. Android commands add `prepare`, `adb-devices`, `adb-shell`, `display-probe`, `helper-launch`, `dex-push`, `helper-hello`, `helper-dump`, `tree-map`, `helper-close`, `grpc-connect`, `grpc-call`, `input` and `capture`; a phase that repeats prints one line each time.
 
 `scripts/bench-ab.sh --device <id> --scenario android-describe` compares a base build (the merge base with `origin/main` by default, built once in a detached worktree under `$TMPDIR`) with this checkout on one Offsider device, in paired runs whose order comes from `--seed`. Pairs whose exit code or output differ are dropped; the summary gives medians per side and per phase, a bootstrap 95% interval of the change and a verdict (`faster`, `slower`, `same` within 5% or 10 ms, or `unresolved`). Records go to `${OFFSIDER_BENCH_DIR:-$TMPDIR/offsider-bench}` as hashes, never output, and only Offsider-named simulators and the Offsider E2E AVDs are driven. `--help` lists the scenarios.

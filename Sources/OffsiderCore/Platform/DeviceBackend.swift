@@ -87,3 +87,9 @@ public protocol RawVideoStreaming: DeviceBackend {
         isCancelled: @escaping @Sendable () async -> Bool
     ) async throws
 }
+
+/// Optional capability: a string that changes when the device boots again, so a cached tree from an earlier boot is ignored.
+@MainActor
+public protocol BootMarking: DeviceBackend {
+    func bootMarker(for id: DeviceID) async -> String?
+}

@@ -80,6 +80,22 @@ struct VerifyTests {
         #expect(field?.value == "hello")
     }
 
+    @Test("tap --verify --json lists the readout change")
+    func tapVerifyListsChanges() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "toolbar-picker-test")
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated(
+            "tap --label Unread --element-type radioButton --verify --json",
+            simulatorUDID: defaultSimulatorUDID
+        )
+        let json = try report(result.stdout)
+        let changes = try #require(json["changes"] as? [[String: Any]])
+
+        #expect(result.exitCode == 0)
+        #expect(changes.contains { $0["node"] as? String == #"text "Toolbar Picker State: Unread" id=toolbar-picker-test-state"# || ($0["new"] as? String) == "Unread" })
+        #expect(json["changesTruncated"] as? Int != nil)
+    }
+
     @Test("A verified key press is delivered once")
     func keyVerifies() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "key-press")

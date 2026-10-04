@@ -11,6 +11,10 @@ struct VerifyRequest {
     let device: DeviceID
     let options: VerificationOptions
     let styles: [TapDeliveryStyle?]
+    /// The tree a selector was resolved on, so the verifier reads one tree fewer.
+    var initialTree: UITree? = nil
+    /// Sees the verifier's last read before the action, so a target that moved since it was resolved is acted on where it is now.
+    var beforeAction: (UITree) async throws -> Void = { _ in }
 }
 
 /// Tracks how far a verified command got, so a failure under --json reports it.
@@ -64,6 +68,8 @@ enum VerifyOutput {
                 styles: request.styles,
                 timeout: .milliseconds(Int((request.options.resolvedTimeout * 1000).rounded())),
                 dependencies: .live(backend: request.backend, device: request.device),
+                initialTree: request.initialTree,
+                beforeAction: request.beforeAction,
                 onRetry: { failed, next in
                     writeError(retryLine(failed: failed, next: next))
                 },
@@ -96,6 +102,9 @@ enum VerifyOutput {
             verified: outcome.verified,
             attempts: outcome.attempts,
             change: outcome.change,
+            changes: outcome.changes,
+            changesTruncated: outcome.changesTruncated,
+            note: outcome.note,
             style: outcome.style
         )
         if json {
@@ -117,7 +126,10 @@ enum VerifyOutput {
             change = "no change"
         }
         let style = outcome.style.map { ", \($0.rawValue) style" } ?? ""
-        return "✓ \(request.subject) verified: \(change), attempt \(outcome.attempts) of \(max(request.styles.count, 1))\(style)"
+        let note = outcome.note == .keyboardClosed
+            ? "; only the keyboard closed: the input may have been spent closing it; repeat it if the control shows no effect"
+            : ""
+        return "✓ \(request.subject) verified: \(change), attempt \(outcome.attempts) of \(max(request.styles.count, 1))\(style)\(note)"
     }
 
     static func unverifiedLine(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> String {

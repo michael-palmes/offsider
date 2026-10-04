@@ -36,9 +36,10 @@ extension PrivateDirectoryError: OffsiderFailure {
     }
 }
 
-/// Offsider's per-user directory, `<user temp>/offsider-<uid>/`, mode 0700; it holds `locks/` and nothing from the screen.
+/// Offsider's per-user directory, `<user temp>/offsider-<uid>/`, mode 0700; it holds `locks/` and the tree cache in `trees/`.
 public enum OffsiderPrivateDirectory {
     public static let locksDirectoryName = "locks"
+    public static let treesDirectoryName = "trees"
 
     public static func rootName(uid: uid_t) -> String {
         "offsider-\(uid)"
@@ -116,6 +117,83 @@ public enum OffsiderPrivateDirectory {
             throw PrivateDirectoryError(.unsafeFile, path: path)
         }
         return descriptor
+    }
+
+    /// Writes a fresh 0600 file beside `name` (never through a symlink), then renames it over `name`, so a reader sees the old or the new file whole.
+    public static func writeAtomically(_ data: Data, named name: String, in directory: String, uid: uid_t = getuid()) throws {
+        let target = (directory as NSString).appendingPathComponent(name)
+        let temporary = (directory as NSString).appendingPathComponent(".\(name).\(getpid()).\(UInt32.random(in: 0...UInt32.max))")
+        let descriptor = Darwin.open(temporary, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw systemError("open", temporary) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == uid,
+              info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
+            Darwin.close(descriptor)
+            unlink(temporary)
+            throw PrivateDirectoryError(.unsafeFile, path: temporary)
+        }
+        let written = data.withUnsafeBytes { buffer -> Bool in
+            var offset = 0
+            while offset < buffer.count {
+                let count = Darwin.write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    return false
+                }
+                offset += count
+            }
+            return true
+        }
+        let failure = written ? nil : systemError("write", temporary)
+        Darwin.close(descriptor)
+        if let failure {
+            unlink(temporary)
+            throw failure
+        }
+        guard Darwin.rename(temporary, target) == 0 else {
+            let error = systemError("rename", target)
+            unlink(temporary)
+            throw error
+        }
+    }
+
+    /// The file's bytes, or nil when it does not exist; refuses a symlink, a file another user owns, one with group or other bits, or one over `maxBytes`.
+    public static func readOwnedFile(named name: String, in directory: String, maxBytes: Int, uid: uid_t = getuid()) throws -> Data? {
+        let path = (directory as NSString).appendingPathComponent(name)
+        let descriptor = Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else {
+            if errno == ENOENT { return nil }
+            if errno == ELOOP { throw PrivateDirectoryError(.unsafeFile, path: path) }
+            throw systemError("open", path)
+        }
+        defer { Darwin.close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0 else { throw systemError("fstat", path) }
+        guard (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == uid, info.st_mode & (S_IRWXG | S_IRWXO) == 0,
+              info.st_size <= off_t(maxBytes) else {
+            throw PrivateDirectoryError(.unsafeFile, path: path)
+        }
+        var data = Data(count: Int(info.st_size))
+        let count = data.withUnsafeMutableBytes { buffer -> Int in
+            guard let base = buffer.baseAddress else { return 0 }
+            var offset = 0
+            while offset < buffer.count {
+                let read = Darwin.read(descriptor, base + offset, buffer.count - offset)
+                if read < 0 {
+                    if errno == EINTR { continue }
+                    return -1
+                }
+                if read == 0 { break }
+                offset += read
+            }
+            return offset
+        }
+        guard count >= 0 else { throw systemError("read", path) }
+        return data.prefix(count)
+    }
+
+    public static func removeFile(named name: String, in directory: String) {
+        unlink((directory as NSString).appendingPathComponent(name))
     }
 
     private static func isPrivateDirectory(_ info: stat, uid: uid_t) -> Bool {
