@@ -1,0 +1,10 @@
+# ios <ios-device> 402x874 @3x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 402x874)
+  button "Offsider Playground" id=BackButton (8,62 44x44)
+  group id=toolbar-picker-test-filter (235.7,66 158.3x36)
+  header "Toolbar Picker" id=toolbar-picker-test-screen (60,74 167.7x20.3)
+  radioButton "All" id=toolbar-picker-test-filter-all value="0" (237.7,68 36.3x32)
+  radioButton "Unread" id=toolbar-picker-test-filter-unread value="1" (274,68 66x32) checked
+  radioButton "Read" id=toolbar-picker-test-filter-read value="0" (340,68 52x32)
+  text "Toolbar Picker State: Unread" id=toolbar-picker-test-state value="Unread" (16,106.3 370x44.7)
+  text "Toolbar Picker Detail Body" id=toolbar-picker-test-body (16,151 370x44.7)

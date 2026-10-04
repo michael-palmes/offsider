@@ -1,0 +1,9 @@
+# ios <ios-device> 402x874 @3x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 402x874)
+  button "Offsider Playground" id=BackButton (8,62 44x44)
+  header "Parked Sheet" id=parked-sheet-test-screen (60,74 282x20.3)
+  text "Parked Sheet State: Initial" id=parked-sheet-test-state value="Initial" (103.7,122.3 194.7x20.3)
+  text "Sheet Position: Parked" id=parked-sheet-test-position value="Parked" (115.7,158.7 171x20.3)
+  button "Open Filters" id=parked-sheet-test-open (137,195 128.3x44)
+  button "Open Filters Slowly" id=parked-sheet-test-open-slow (109,255 184.3x44)
+  button "Save" id=parked-sheet-test-body-save (166,315 70.3x44)

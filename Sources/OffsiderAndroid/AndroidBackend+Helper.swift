@@ -109,6 +109,15 @@ extension AndroidBackend {
         return mapped.roots
     }
 
+    /// The helper's dump reply as it arrived, without its `id` and `ok`; uiautomator has no such reply.
+    public func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
+        let serial = id.rawValue
+        guard case .helper(let session) = try await treeSource(for: serial) else {
+            throw AndroidError.helperFailed(serial, message: "the raw tree needs the UiAutomation helper, which is not running")
+        }
+        return try await session.rawDump()
+    }
+
     /// `ACTION_SET_PROGRESS` on `node` from this command's latest dump; a node that moved since is `.stale`.
     public func setRangeValue(_ fraction: Double, of node: UINode, on id: DeviceID) async throws -> RangeActionOutcome {
         let serial = id.rawValue
@@ -215,3 +224,5 @@ extension AndroidBackend {
         return result.stdoutText.split(whereSeparator: \.isWhitespace).compactMap { Int32($0) }
     }
 }
+
+extension AndroidBackend: RawAccessibilitySource {}

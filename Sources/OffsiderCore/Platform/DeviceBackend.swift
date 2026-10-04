@@ -69,6 +69,12 @@ extension DeviceBackend {
     }
 }
 
+/// Optional capability: the platform's own tree reply before mapping, for the committed tree goldens.
+@MainActor
+public protocol RawAccessibilitySource: DeviceBackend {
+    func rawAccessibilitySource(for id: DeviceID) async throws -> Data
+}
+
 /// Optional capability: raw pixel streaming for `stream-video --format bgra`.
 @MainActor
 public protocol RawVideoStreaming: DeviceBackend {

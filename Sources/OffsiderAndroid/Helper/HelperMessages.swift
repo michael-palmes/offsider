@@ -358,3 +358,46 @@ struct HelperDisplayReply: Decodable, Equatable, Sendable {
         case display, windows
     }
 }
+
+/// Any JSON reply kept as Foundation objects, for passing a reply through unmapped.
+struct HelperRawJSON: Decodable, @unchecked Sendable {
+    let value: Any
+
+    init(from decoder: any Decoder) throws {
+        if var array = try? decoder.unkeyedContainer() {
+            var items: [Any] = []
+            while !array.isAtEnd {
+                items.append(try array.decode(HelperRawJSON.self).value)
+            }
+            value = items
+            return
+        }
+        if let object = try? decoder.container(keyedBy: AnyKey.self) {
+            var items: [String: Any] = [:]
+            for key in object.allKeys {
+                items[key.stringValue] = try object.decode(HelperRawJSON.self, forKey: key).value
+            }
+            value = items
+            return
+        }
+        let single = try decoder.singleValueContainer()
+        if single.decodeNil() {
+            value = NSNull()
+        } else if let flag = try? single.decode(Bool.self) {
+            value = flag
+        } else if let integer = try? single.decode(Int64.self) {
+            value = integer
+        } else if let number = try? single.decode(Double.self) {
+            value = number
+        } else {
+            value = try single.decode(String.self)
+        }
+    }
+
+    private struct AnyKey: CodingKey {
+        let stringValue: String
+        init(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
+    }
+}

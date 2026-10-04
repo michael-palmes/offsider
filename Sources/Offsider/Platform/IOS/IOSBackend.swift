@@ -253,6 +253,12 @@ final class IOSBackend: DeviceBackend {
     }
 }
 
+extension IOSBackend: RawAccessibilitySource {
+    func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
+        try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(from: try await simulator(for: id), logger: logger)
+    }
+}
+
 extension IOSBackend: RawVideoStreaming {
     func streamBGRA(
         from id: DeviceID,

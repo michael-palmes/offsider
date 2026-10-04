@@ -31,6 +31,9 @@ struct DescribeUI: AsyncParsableCommand {
     @OptionGroup(title: "Output")
     var output: DescribeUIOutputOptions
 
+    @Flag(name: .customLong("raw-source"), help: ArgumentHelp(visibility: .private))
+    var rawSource = false
+
     func validate() throws {
         _ = try parsedPoint()
     }
@@ -41,6 +44,10 @@ struct DescribeUI: AsyncParsableCommand {
         try await route.backend.prepare()
         try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
 
+        if rawSource {
+            print(String(decoding: try await Self.rawCapture(on: route), as: UTF8.self))
+            return
+        }
         let tree = try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint())
         print(String(decoding: try output.render(await Self.withScreen(tree, on: route)), as: UTF8.self), terminator: "")
     }
@@ -55,6 +62,17 @@ struct DescribeUI: AsyncParsableCommand {
         throw CLIError(errorDescription: DisplayReport.inactiveDisplay(
             selected.display, posture: selected.list.posture, platform: route.device.platform, device: deviceName
         ), reason: .displayOff)
+    }
+
+    /// The platform's unmapped tree with the screen, for the committed tree goldens.
+    @MainActor
+    static func rawCapture(on route: DeviceRouter.Route) async throws -> Data {
+        guard let source = route.backend as? any RawAccessibilitySource else {
+            throw CLIError(errorDescription: "--raw-source is not supported for device \(route.device.rawValue).", reason: .notSupported)
+        }
+        let raw = try await source.rawAccessibilitySource(for: route.device)
+        let screen = try? await route.backend.screenInfo(for: route.device)
+        return RawTreeCapture.render(platform: route.device.platform, screen: screen, source: raw)
     }
 
     /// The tree with the screen the envelope reports, when the device can say.

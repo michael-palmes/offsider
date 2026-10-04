@@ -76,6 +76,17 @@ final class HelperSession {
         return dump
     }
 
+    /// The dump reply as JSON, for the committed tree goldens.
+    func rawDump() async throws -> Data {
+        let reply = try await screenRequest(.dump(HelperDumpOptions()), as: HelperRawJSON.self, timeout: Self.dumpTimeout)
+        guard var object = reply.value as? [String: Any] else {
+            throw AndroidError.helperFailed(serial, message: "its dump reply was not an object")
+        }
+        object["id"] = nil
+        object["ok"] = nil
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
     func remember(_ index: HelperTreeIndex) {
         self.index = index
     }

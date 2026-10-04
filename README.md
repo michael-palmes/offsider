@@ -416,6 +416,8 @@ make e2e-android-fold  # run the foldable suite on the Offsider_E2E_Pixel_9_Pro_
 
 `make e2e-rn-debug-ios` and `make e2e-rn-debug-android` build the React Native debug app, run Metro on loopback port 8742 and run the debug smoke suite. `pnpm --dir OffsiderPlaygroundRN ios <udid>` or `android <serial|avd>` installs the debug app and runs it from the same background Metro (`scripts/rn-playground.sh metro stop` ends it).
 
+Committed, scrubbed trees of the React Native playground live in `Tests/Goldens/trees/`, with a byte budget per screen in `budgets.json`: `swift test` fails when a `--summary` or `--format text` rendering outgrows its budget, or when a budget sits more than 20 percent above it. After a mapping or renderer change, `OFFSIDER_GOLDENS_UPDATE=1 swift test --filter TreeGoldenRefresh` re-renders them offline; `Tests/Goldens/README.md` covers recapturing from a device.
+
 `OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines.
 
 The simulator frameworks come from [michael-palmes/idb](https://github.com/michael-palmes/idb), a mirror of facebook/idb with Cameron Cooke's Xcode 27 changes on the `offsider/xcode27` branch (tag `offsider-idb-v0.2.0`). `scripts/build.sh` pins the exact revision and verifies it before building.
