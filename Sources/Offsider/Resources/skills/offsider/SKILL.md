@@ -16,7 +16,7 @@ Offsider drives iOS Simulators, Android Emulators and USB Android phones from th
 ## The loop: look, act, verify
 
 1. **Look.** `offsider describe-ui --summary --device <DEVICE_ID>` prints one line per on-screen node with a label, id or value, such as `button "Save" id=save-button (170.7,313.3 61x34.3)` (role, label, id, value, then x,y and size). Copy `--id` and `--label` values from it (`guide describe-ui`).
-2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors survive layout changes, prefer on-screen matches and wait with `--wait-timeout`; fall back to `tap -x <X> -y <Y>` with points from `describe-ui` (`guide selectors`). A Cloudflare Turnstile checkbox's frame includes the words beside the square, so `tap` on that label misses the box: `offsider turnstile` taps the square and waits until the widget passes. On iOS that square is outside the tree, where the green check sits.
+2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors survive layout changes, prefer on-screen matches and wait with `--wait-timeout`; fall back to `tap -x <X> -y <Y>` with points from `describe-ui` (`guide selectors`). A Cloudflare Turnstile checkbox's frame includes the words beside the square, so `tap` on that label misses the box: `offsider turnstile` taps the square and waits until the widget passes. On iOS that square is outside the tree, where the green check sits. The tap does not bypass Turnstile: the widget passes only when Cloudflare accepts the device (`guide turnstile`).
 3. **Verify.** Most input is fire-and-forget. Add `--verify` to `tap`, `type`, `key` or `button` (exit 5 when nothing changed), or check with `wait`, `assert` or `describe-ui --diff`, which prints only what changed since the previous command's tree (`guide verify`).
 4. **Batch.** For three or more steps, run one `offsider batch` call (`guide batch`).
 
@@ -61,6 +61,7 @@ Run `offsider guide <topic>` to print one; `offsider guide` lists them.
 | `errors` | A command exited non-zero, the device is busy, or doctor reports a problem |
 | `android` | The device is an Android emulator or a USB phone |
 | `react-native` | The app is React Native or Expo, debug or release |
+| `turnstile` | You need to tick a Cloudflare Turnstile checkbox, or to know the tap does not bypass the check |
 | `foldables` | The device folds or has more than one display |
 | `batch` | A flow has three or more steps |
 | `screenshots` | You need pixels: charts, maps, web views, masked secure fields or video |

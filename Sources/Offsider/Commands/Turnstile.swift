@@ -17,6 +17,10 @@ struct Turnstile: AsyncParsableCommand {
         the search to one element, such as the app's wrapper around the widget. A visual challenge fails, \
         because a checkbox tap cannot complete an image grid. Exits 0 when the widget passes, 5 when the \
         checkbox is still there at --timeout, and 2 when no widget is on screen.
+
+        This does not bypass Turnstile. It only taps the checkbox. The widget passes only when Cloudflare \
+        accepts the device. The command never mints or submits a token, and a checkbox that stays put, or \
+        a visual challenge, means this device was not accepted.
         """
     )
 

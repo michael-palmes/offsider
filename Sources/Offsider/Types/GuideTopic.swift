@@ -6,6 +6,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
     case errors
     case android
     case reactNative = "react-native"
+    case turnstile
     case foldables
     case batch
     case screenshots
@@ -20,6 +21,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
         case .errors: "A command exited non-zero, the device is busy, or doctor reports a problem"
         case .android: "The device is an Android emulator or a USB phone"
         case .reactNative: "The app is React Native or Expo, debug or release"
+        case .turnstile: "You need to tick a Cloudflare Turnstile checkbox, or to know the tap does not bypass the check"
         case .foldables: "The device folds or has more than one display"
         case .batch: "A flow has three or more steps"
         case .screenshots: "You need pixels: charts, maps, web views, masked secure fields or video"

@@ -19,7 +19,7 @@
 
 ## Cloudflare Turnstile
 
-The checkbox frame includes the words beside the square, so `tap --label "Verify you are human"` lands on the words. `offsider turnstile` taps the square, a few points off its centre, and waits until the widget reads Success or the wait times out (exit 5). It finds a `cf-chl-widget` id, or that checkbox label when the container id is missing. On iOS the web view leaves the checkbox and the Success text out of the tree. The command reads a point in the short web view: Success means it has already passed, and otherwise the tap is the square where the green check sits. `--id` limits the search to one wrapper. A visual challenge fails with a message, because a checkbox tap cannot complete an image grid.
+The checkbox frame includes the words beside the square, so `tap --label "Verify you are human"` lands on the words. `offsider turnstile` taps the square. It does not bypass Turnstile: the widget passes only when Cloudflare accepts the device. Read `offsider guide turnstile` before you rely on it.
 
 ## Logs
 
