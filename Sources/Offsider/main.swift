@@ -74,7 +74,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             await CommandScope.current.configure(command: path)
             await DeviceClaims.current.configure(
                 command: path,
-                waitOption: (command as? any DeviceOptionCommand)?.deviceOption.waitLock
+                waitOption: (command as? any LockingCommand)?.waitLock
             )
             try await CommandScope.current.run {
                 if var asyncCommand = command as? any AsyncParsableCommand {

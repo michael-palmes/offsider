@@ -32,9 +32,12 @@ struct Assert: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let outcome = try await DeviceWatchdog().guarding(setupThen: 0, device: deviceOption.id) { ready in
-            let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-            return try await evaluate(on: route, logger: logger, onPrepared: ready)
+        let watchdog = DeviceWatchdog()
+        // An Android tree read locks the device, so the claim (and any --wait-lock) comes before the watchdog's bound.
+        let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
+        let outcome = try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
+            try await evaluate(on: route, logger: logger, onPrepared: ready)
         }
         try Wait.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
     }

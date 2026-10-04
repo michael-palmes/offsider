@@ -24,7 +24,37 @@ enum DeviceRouter {
         scope: CommandScope = .current,
         claims: DeviceClaims = .current
     ) async throws -> Route {
-        let route = try await route(option.id, logger: logger, host: host, scope: scope)
+        try await routeForInput(option.id, logger: logger, locking: locking, host: host, scope: scope, claims: claims)
+    }
+
+    static func routeForInput(
+        _ rawID: String,
+        logger: OffsiderLogger,
+        locking: Bool = true,
+        host: AndroidHost = .cli(),
+        scope: CommandScope = .current,
+        claims: DeviceClaims = .current
+    ) async throws -> Route {
+        let route = try await route(rawID, logger: logger, host: host, scope: scope)
+        if locking {
+            try await claims.claim(route.device)
+        }
+        return route
+    }
+
+    /// Routes under `watchdog`'s setup bound, then locks with it disarmed, so a `--wait-lock` wait is never taken for a hung device.
+    static func routeForInput(
+        _ rawID: String,
+        logger: OffsiderLogger,
+        watchdog: DeviceWatchdog,
+        locking: Bool = true,
+        host: AndroidHost = .cli(),
+        scope: CommandScope = .current,
+        claims: DeviceClaims = .current
+    ) async throws -> Route {
+        let route = try await watchdog.guardingSetup(device: rawID) {
+            try await route(rawID, logger: logger, host: host, scope: scope)
+        }
         if locking {
             try await claims.claim(route.device)
         }

@@ -10,7 +10,7 @@ struct RecordVideo: AsyncParsableCommand {
     )
 
     @OptionGroup
-    var deviceOption: DeviceOption
+    var deviceOption: ReadDeviceOption
 
     @Option(help: "Frames per second (1-30, default: 10)")
     var fps: Int = 10

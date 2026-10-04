@@ -6,17 +6,22 @@ import Testing
 
 @Suite("Device lock commands")
 struct DeviceLockCommandTests {
-    /// Holds the lock the CLI resolves for a random simulator UDID, as another Offsider process would.
+    /// Holds the lock the CLI resolves for a random simulator UDID, as another Offsider process would; release with `done`.
     private func holdRandomSimulator(command: String = "batch") async throws -> (udid: String, lock: DeviceLock) {
-        let udid = UUID().uuidString
+        let udid = TestDevices.simulatorUDID()
         let lock = try await DeviceLock.acquire(DeviceLockKey(platform: .ios, id: udid), command: command, wait: nil)
         return (udid, lock)
+    }
+
+    private func done(_ udid: String, _ lock: DeviceLock) {
+        lock.release()
+        TestDevices.removePrivateFiles(platform: .ios, id: udid)
     }
 
     @Test("an input command on a held device exits 8, names the holder and reports device_busy in JSON")
     func inputCommandOnHeldDevice() async throws {
         let (udid, lock) = try await holdRandomSimulator()
-        defer { lock.release() }
+        defer { done(udid, lock) }
 
         let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1 --verify --json --device \(udid)")
         #expect(result.exitCode == 8)
@@ -31,7 +36,7 @@ struct DeviceLockCommandTests {
     @Test("agents with different TMPDIR values share one device lock")
     func sharedAcrossTMPDIR() async throws {
         let (udid, lock) = try await holdRandomSimulator()
-        defer { lock.release() }
+        defer { done(udid, lock) }
         let sandbox = "/private/tmp/offsider-sandbox-\(UUID().uuidString)"
         try FileManager.default.createDirectory(atPath: sandbox, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: sandbox) }
@@ -43,6 +48,7 @@ struct DeviceLockCommandTests {
     @Test("--wait-lock proceeds once the holder releases")
     func waitLockProceeds() async throws {
         let (udid, lock) = try await holdRandomSimulator()
+        defer { TestDevices.removePrivateFiles(platform: .ios, id: udid) }
         Task {
             try? await Task.sleep(for: .milliseconds(500))
             lock.release()
@@ -55,6 +61,7 @@ struct DeviceLockCommandTests {
     @Test("OFFSIDER_WAIT_LOCK sets the wait when --wait-lock is absent")
     func environmentWait() async throws {
         let (udid, lock) = try await holdRandomSimulator()
+        defer { TestDevices.removePrivateFiles(platform: .ios, id: udid) }
         Task {
             try? await Task.sleep(for: .milliseconds(500))
             lock.release()
@@ -66,8 +73,8 @@ struct DeviceLockCommandTests {
     @Test("reads on a held iOS device never lock")
     func readsDoNotLock() async throws {
         let (udid, lock) = try await holdRandomSimulator()
-        defer { lock.release() }
-        for command in ["describe-ui", "screenshot --output /dev/null", "orientation", "appearance", "content-size"] {
+        defer { done(udid, lock) }
+        for command in ["describe-ui", "screenshot --output /dev/null", "orientation", "appearance", "content-size", "status-bar show", "biometric status"] {
             let result = try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(udid)")
             #expect(result.exitCode == 7, "\(command): \(result.stderr)")
         }
@@ -76,8 +83,11 @@ struct DeviceLockCommandTests {
     @Test("setting a value on a held device exits 8")
     func settersLock() async throws {
         let (udid, lock) = try await holdRandomSimulator()
-        defer { lock.release() }
-        for command in ["orientation landscape-left", "appearance dark", "content-size large"] {
+        defer { done(udid, lock) }
+        for command in [
+            "orientation landscape-left", "appearance dark", "content-size large",
+            "permission grant photos --app com.example.app", "status-bar override --battery 50", "status-bar clear", "biometric enrol",
+        ] {
             let result = try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(udid)")
             #expect(result.exitCode == 8, "\(command): \(result.stderr)")
         }
@@ -85,7 +95,7 @@ struct DeviceLockCommandTests {
 
     @Test("--wait-lock outside 0 to 600 is a usage error, and batch steps cannot take it")
     func waitLockValidation() async throws {
-        let udid = UUID().uuidString
+        let udid = TestDevices.simulatorUDID()
         let tooLong = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1 --wait-lock 601 --device \(udid)")
         #expect(tooLong.exitCode == 64)
         #expect(throws: (any Error).self) { try BatchStepParser.rejectPerStepDevice(["-x", "1", "--wait-lock", "5"]) }
@@ -134,6 +144,47 @@ struct DeviceClaimsTests {
             #expect(claims.heldKeys.count == 1)
         }
         #expect(claims.heldKeys.isEmpty)
+    }
+
+    private final class Fired: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fired = false
+        func set() { lock.withLock { fired = true } }
+        var value: Bool { lock.withLock { fired } }
+    }
+
+    @Test("the lock wait runs with the watchdog disarmed, so --wait-lock outlasts its bound and a timeout is still device_busy",
+          arguments: [5.0, 1.5])
+    func lockWaitOutlastsWatchdog(wait: Double) async throws {
+        let root = try makePrivateLockRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let udid = UUID().uuidString
+        let holder = try await DeviceLock.acquire(DeviceLockKey(platform: .ios, id: udid), command: "batch", wait: nil, root: root)
+        // The long wait sees the holder go after 2.5 s; the short one never does.
+        let releases = wait > 2.5
+        if releases {
+            Task {
+                try? await Task.sleep(for: .seconds(2.5))
+                holder.release()
+            }
+        }
+        defer { if !releases { holder.release() } }
+        let claims = claims(root: root)
+        claims.configure(command: "tap", waitOption: wait)
+        let fired = Fired()
+        let watchdog = DeviceWatchdog(grace: 0.5, setupBound: 0.5) { _ in fired.set() }
+        let scope = CommandScope(claims: claims)
+        do {
+            let route = try await DeviceRouter.routeForInput(udid, logger: OffsiderLogger(), watchdog: watchdog, scope: scope, claims: claims)
+            #expect(releases)
+            #expect(claims.heldKeys == [DeviceLockKey(platform: .ios, id: route.device.rawValue)])
+        } catch let busy as DeviceBusy {
+            #expect(!releases)
+            #expect(busy.reason.exitCode == .deviceBusy)
+        }
+        #expect(!fired.value)
+        #expect(!watchdog.isArmed)
+        claims.releaseAll()
     }
 
     @Test("--wait-lock wins over OFFSIDER_WAIT_LOCK, and a bad variable is a usage error")

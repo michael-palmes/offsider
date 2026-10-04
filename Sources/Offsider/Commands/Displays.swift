@@ -22,7 +22,7 @@ struct Displays: AsyncParsableCommand {
     var json = false
 
     @OptionGroup
-    var deviceOption: DeviceOption
+    var deviceOption: ReadDeviceOption
 
     func run() async throws {
         let logger = OffsiderLogger()

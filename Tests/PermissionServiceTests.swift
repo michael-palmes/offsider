@@ -1,6 +1,7 @@
 import Foundation
 import OffsiderCore
 import Testing
+@testable import Offsider
 
 @Suite("Permission services")
 struct PermissionServiceTests {
@@ -162,5 +163,21 @@ struct PermissionServiceTests {
         for service in PermissionService.offered(on: .ios) {
             #expect(offered.contains(service.iosName!), "simctl privacy does not list \(service.rawValue)")
         }
+    }
+}
+
+@Suite("iOS permission refusals")
+@MainActor
+struct IOSPermissionRefusalTests {
+    @Test("what iOS simulators cannot do with permissions is not_supported, so an agent does not retry it")
+    func notSupported() async {
+        let backend = IOSBackend(logger: OffsiderLogger())
+        let device = DeviceID(rawValue: UUID().uuidString, platform: .ios)
+        let read = await #expect(throws: CLIError.self) { try await backend.permissions(of: "com.example.app", on: device) }
+        #expect(read?.reason == .notSupported)
+        let change = await #expect(throws: CLIError.self) {
+            try await backend.applyPermission(.grant, [.androidPermission("android.permission.CAMERA")], app: "com.example.app", on: device)
+        }
+        #expect(change?.reason == .notSupported)
     }
 }

@@ -61,11 +61,11 @@ struct BiometricCommand: AsyncParsableCommand {
     func run() async throws {
         let (action, modality) = try plan()
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: action != .status)
         try await route.backend.prepare()
         let id = try await route.backend.requireBootedDevice(route.device).id
         guard let backend = route.backend as? any BiometricControlling else {
-            throw CLIError(errorDescription: "biometric is not available for \(id.rawValue).")
+            throw CLIError(errorDescription: "biometric is not available for \(id.rawValue).", reason: .notSupported)
         }
         let report = try await Self.report(action, modality: modality, fingerID: fingerID, json: json, on: id, backend: backend)
         if let warning = report.warning {

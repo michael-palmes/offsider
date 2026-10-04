@@ -51,7 +51,7 @@ struct Logs: AsyncParsableCommand {
     var json = false
 
     @OptionGroup
-    var deviceOption: DeviceOption
+    var deviceOption: ReadDeviceOption
 
     static let defaultLast = "30s"
 

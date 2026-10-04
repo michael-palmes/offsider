@@ -64,9 +64,9 @@ struct PostureCommand: AsyncParsableCommand {
     func run() async throws {
         let target = try target()
         let watchdog = DeviceWatchdog()
+        let logger = OffsiderLogger()
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: target != nil || angle != nil)
         try await watchdog.guarding(bound: DeviceWatchdog.setupBound, device: deviceOption.id) {
-            let logger = OffsiderLogger()
-            let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: target != nil || angle != nil)
             try await route.backend.prepare()
             let device = try await route.backend.requireBootedDevice(route.device).id
             watchdog.arm(bound: timeout + 10, device: deviceOption.id)

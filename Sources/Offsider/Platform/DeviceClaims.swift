@@ -68,32 +68,42 @@ final class DeviceClaims {
     }
 }
 
-/// A command whose `--device` option carries `--wait-lock`.
-protocol DeviceOptionCommand {
+/// A command that can lock the device, so it takes `--wait-lock`; a test checks this list against every command's help.
+protocol LockingCommand {
+    var waitLock: Double? { get }
+}
+
+protocol DeviceOptionCommand: LockingCommand {
     var deviceOption: DeviceOption { get }
+}
+
+extension DeviceOptionCommand {
+    var waitLock: Double? { deviceOption.waitLock }
+}
+
+extension PermissionCommand: LockingCommand {
+    var waitLock: Double? { lock.waitLock }
 }
 
 extension AppearanceCommand: DeviceOptionCommand {}
 extension Assert: DeviceOptionCommand {}
 extension Batch: DeviceOptionCommand {}
+extension BiometricCommand: DeviceOptionCommand {}
 extension Button: DeviceOptionCommand {}
 extension ContentSizeCommand: DeviceOptionCommand {}
 extension DescribeUI: DeviceOptionCommand {}
-extension Displays: DeviceOptionCommand {}
 extension Drag: DeviceOptionCommand {}
 extension Gesture: DeviceOptionCommand {}
 extension Key: DeviceOptionCommand {}
 extension KeyCombo: DeviceOptionCommand {}
 extension KeySequence: DeviceOptionCommand {}
-extension Logs: DeviceOptionCommand {}
 extension OrientationCommand: DeviceOptionCommand {}
 extension PostureCommand: DeviceOptionCommand {}
-extension RecordVideo: DeviceOptionCommand {}
 extension RNPrepare: DeviceOptionCommand {}
 extension Screenshot: DeviceOptionCommand {}
 extension Shake: DeviceOptionCommand {}
 extension Slider: DeviceOptionCommand {}
-extension StreamVideo: DeviceOptionCommand {}
+extension StatusBarCommand: DeviceOptionCommand {}
 extension Swipe: DeviceOptionCommand {}
 extension Tap: DeviceOptionCommand {}
 extension Touch: DeviceOptionCommand {}

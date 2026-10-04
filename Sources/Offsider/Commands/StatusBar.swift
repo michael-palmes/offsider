@@ -107,11 +107,11 @@ struct StatusBarCommand: AsyncParsableCommand {
     func run() async throws {
         let (action, override) = try plan()
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: action != .show)
         try await route.backend.prepare()
         let id = try await route.backend.requireBootedDevice(route.device).id
         guard let backend = route.backend as? any StatusBarControlling else {
-            throw CLIError(errorDescription: "status-bar is not available for \(id.rawValue).")
+            throw CLIError(errorDescription: "status-bar is not available for \(id.rawValue).", reason: .notSupported)
         }
         print(try await Self.report(action, override: override, json: json, on: id, backend: backend))
     }

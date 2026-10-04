@@ -44,6 +44,9 @@ struct PermissionCommand: AsyncParsableCommand {
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout.")
     var json = false
 
+    @OptionGroup
+    var lock: WaitLockOption
+
     func validate() throws {
         _ = try plan()
     }
@@ -98,11 +101,12 @@ struct PermissionCommand: AsyncParsableCommand {
             return
         }
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(device ?? "", logger: logger)
+        let isChange = if case .change = plan { true } else { false }
+        let route = try await DeviceRouter.routeForInput(device ?? "", logger: logger, locking: isChange)
         try await route.backend.prepare()
         let id = try await route.backend.requireBootedDevice(route.device).id
         guard let backend = route.backend as? any PermissionControlling else {
-            throw CLIError(errorDescription: "permission is not available for \(id.rawValue).")
+            throw CLIError(errorDescription: "permission is not available for \(id.rawValue).", reason: .notSupported)
         }
         print(try await Self.report(plan, json: json, on: id, backend: backend))
     }

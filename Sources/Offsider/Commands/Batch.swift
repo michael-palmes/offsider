@@ -111,9 +111,7 @@ struct Batch: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger(writeToStdErr: verbose)
         let watchdog = DeviceWatchdog()
-        let route = try await watchdog.guardingSetup(device: deviceOption.id) {
-            try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        }
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         try await run(on: route, logger: logger, watchdog: watchdog)
     }
 

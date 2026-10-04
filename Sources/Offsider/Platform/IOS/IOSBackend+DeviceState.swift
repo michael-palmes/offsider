@@ -4,14 +4,14 @@ import OffsiderCore
 
 extension IOSBackend: PermissionControlling {
     func permissions(of app: String, on id: DeviceID) async throws -> AndroidPackagePermissions {
-        throw CLIError(errorDescription: "iOS simulators offer no way to read privacy settings; grant, revoke or reset sets them.")
+        throw CLIError(errorDescription: "iOS simulators offer no way to read privacy settings; grant, revoke or reset sets them.", reason: .notSupported)
     }
 
     /// `simctl privacy` takes one service per call, so several run in turn and the first failure stops the rest.
     func applyPermission(_ action: PermissionAction, _ targets: [PermissionTarget], app: String, on id: DeviceID) async throws -> PermissionChange {
         let services = try targets.map { target -> PermissionService in
             guard case .service(let service) = target, service.iosName != nil else {
-                throw CLIError(errorDescription: "\(target.name) is not offered on iOS simulators. Run `offsider permission services --platform ios` to list them.")
+                throw CLIError(errorDescription: "\(target.name) is not offered on iOS simulators. Run `offsider permission services --platform ios` to list them.", reason: .notSupported)
             }
             return service
         }

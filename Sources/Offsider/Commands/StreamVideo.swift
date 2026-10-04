@@ -16,7 +16,7 @@ struct StreamVideo: AsyncParsableCommand {
     )
 
     @OptionGroup
-    var deviceOption: DeviceOption
+    var deviceOption: ReadDeviceOption
 
     @Option(help: "Output format: mjpeg, raw, ffmpeg, bgra (default: mjpeg)")
     var format: OutputFormat = .mjpeg
