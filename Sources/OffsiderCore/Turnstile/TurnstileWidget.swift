@@ -29,7 +29,7 @@ public enum TurnstilePhase: Equatable, Sendable {
 public enum TurnstileWidget {
     /// Cloudflare's own container. The suffix changes on every load.
     public static let widgetIDPrefix = "cf-chl-widget"
-    /// A checkbox this tall, with no Success label, is an expanded challenge rather than the compact widget.
+    /// A Cloudflare container this tall, with no checkbox or Success label, is an expanded challenge rather than the compact widget.
     public static let visualChallengeHeight = 160.0
     public static let defaultJitter = 3.0
     /// Far enough to leave the square and land on the words beside it.
@@ -145,7 +145,7 @@ public enum TurnstileWidget {
         let checkbox = nodes.first { $0.role == .checkbox && $0.frame != nil }
         let success = nodes.contains { isSuccess($0) }
         let challenge = nodes.contains { isVisualChallenge($0) }
-        let tall = (widget.frame?.height ?? 0) > visualChallengeHeight
+        let tall = widget.id?.hasPrefix(widgetIDPrefix) == true && (widget.frame?.height ?? 0) > visualChallengeHeight
         if challenge || (tall && checkbox == nil && !success) {
             return .visualChallenge
         }
@@ -159,12 +159,18 @@ public enum TurnstileWidget {
     }
 
     /// A checkbox labelled as Turnstile's prompt, for a tree that exposes the control without Cloudflare's container id.
+    /// With no checkbox, the Cloudflare logo marks the widget, so its Success or checking words count.
     private static func fallbackCheckbox(in roots: [UINode], viewport: UIFrame?) -> TurnstilePhase {
         let nodes = roots.flatMap { $0.flattened() }.filter { onScreen($0, viewport: viewport) }
         let boxes = nodes.filter { $0.role == .checkbox && $0.frame != nil && isPrompt($0) }
         if boxes.count > 1 { return .ambiguous(boxes.count) }
-        guard let box = boxes.first, let frame = box.frame else { return .absent }
         let logo = nodes.first { isLogo($0) }?.frame
+        guard let box = boxes.first, let frame = box.frame else {
+            guard logo != nil else { return .absent }
+            if nodes.contains(where: { isSuccess($0) }) { return .passed }
+            if nodes.contains(where: { isChecking($0) }) { return .checking }
+            return .absent
+        }
         let logoOnRight = logo.map { abs($0.center.x - frame.center.x) >= 1 && $0.center.x > frame.center.x } ?? true
         return .ready(TurnstileTarget(frame: frame, logoOnRight: logoOnRight))
     }

@@ -9,7 +9,7 @@ struct Turnstile: AsyncParsableCommand {
         discussion: """
         The checkbox's accessibility frame includes the words beside the square, so tap on that label \
         lands on the words. This command taps the square, a few points off its centre, and waits until \
-        the widget reads Success or the checkbox leaves.
+        the widget reads Success.
 
         It finds a cf-chl-widget container, or a checkbox labelled Verify you are human. On iOS the web \
         view leaves that checkbox out of the tree: the command reads a point in the short web view and, \
@@ -27,7 +27,7 @@ struct Turnstile: AsyncParsableCommand {
     @Option(name: .customLong("id"), help: "Only look inside the element with this id, such as the app's wrapper around the widget.")
     var elementID: String?
 
-    @Option(help: ArgumentHelp("Give up after this many seconds, from 0 to 60, and exit 5. Covers finding the checkbox and waiting for it to pass.", valueName: "seconds"))
+    @Option(help: ArgumentHelp("Give up after this many seconds, from 1 to 60, and exit 5. Covers finding the checkbox and waiting for it to pass.", valueName: "seconds"))
     var timeout: Double = 15
 
     @Option(name: .customLong("poll-interval"), help: ArgumentHelp("Seconds between reads, from 0.05 to 5.", valueName: "seconds"))
@@ -49,8 +49,8 @@ struct Turnstile: AsyncParsableCommand {
         if let elementID, elementID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ValidationError("--id must not be empty.")
         }
-        guard timeout.isFinite, (0...60).contains(timeout) else {
-            throw ValidationError("--timeout must be from 0 to 60 seconds; got \(timeout).")
+        guard timeout.isFinite, (1...60).contains(timeout) else {
+            throw ValidationError("--timeout must be from 1 to 60 seconds; got \(timeout).")
         }
         guard pollInterval.isFinite, (0.05...5).contains(pollInterval) else {
             throw ValidationError("--poll-interval must be from 0.05 to 5 seconds; got \(pollInterval).")
@@ -91,10 +91,12 @@ struct Turnstile: AsyncParsableCommand {
         var generator = makeGenerator()
 
         while true {
+            var justTapped = false
             let tree = try await route.backend.accessibilityTree(for: route.device)
             var phase = TurnstileWidget.phase(in: tree.roots, viewport: tree.viewport, scopeID: elementID)
-            if case .absent = phase {
-                phase = await shellPhase(in: tree, on: route)
+            if phase == .absent || phase == .checking {
+                let shell = await shellPhase(in: tree, on: route)
+                if shell != .absent { phase = shell }
             }
             last = phase
             switch phase {
@@ -108,6 +110,7 @@ struct Turnstile: AsyncParsableCommand {
                     logger.info().log("Tapping Turnstile at (\(point.x), \(point.y))")
                     try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: route.device)
                     tapped = point
+                    justTapped = true
                 }
             case .visualChallenge:
                 throw CLIError(
@@ -126,7 +129,8 @@ struct Turnstile: AsyncParsableCommand {
                 break
             }
 
-            guard Date() < deadline else { break }
+            // A tap always gets one more read, even at the deadline.
+            guard Date() < deadline || justTapped else { break }
             try await Task.sleep(for: .seconds(pollInterval))
         }
 
@@ -160,7 +164,7 @@ struct Turnstile: AsyncParsableCommand {
         )
     }
 
-    /// iOS keeps the checkbox out of the tree. A point in the web view tells Success from a checkbox.
+    /// iOS keeps the checkbox out of the tree, so an app wrapper reads as checking. A point in the web view tells Success from a checkbox.
     private func shellPhase(in tree: UITree, on route: DeviceRouter.Route) async -> TurnstilePhase {
         let shells = TurnstileWidget.iosShells(in: tree.roots, viewport: tree.viewport, scopeID: elementID)
         var samples: [(frame: UIFrame, status: TurnstileReading, logo: TurnstileReading)] = []

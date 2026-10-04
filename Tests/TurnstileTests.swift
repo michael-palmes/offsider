@@ -118,6 +118,50 @@ struct TurnstileTests {
         #expect(TurnstileWidget.aim(target).x < 60)
     }
 
+    @Test("without a checkbox, Success or checking words beside the Cloudflare logo are the widget")
+    func fallbackSuccessAndChecking() {
+        let logo = node(role: .button, label: "Cloudflare, opens in a new tab", frame: UIFrame(x: 306, y: 381, width: 74, height: 31))
+        let success = node(role: .text, label: "Success!", frame: UIFrame(x: 69, y: 389, width: 59, height: 19))
+        let verifying = node(role: .text, label: "Verifying...", frame: UIFrame(x: 69, y: 389, width: 70, height: 19))
+        #expect(TurnstileWidget.phase(in: roots([success, logo]), viewport: screen) == .passed)
+        #expect(TurnstileWidget.phase(in: roots([verifying, logo]), viewport: screen) == .checking)
+        #expect(TurnstileWidget.phase(in: roots([success]), viewport: screen) == .absent)
+    }
+
+    @Test("a tall app wrapper that is still loading is checking, not a visual challenge")
+    func tallWrapperIsNotAChallenge() {
+        let wrapper = node(role: .group, id: "turnstile-widget", frame: UIFrame(x: 16, y: 300, width: 380, height: 220))
+        #expect(TurnstileWidget.phase(in: roots([wrapper]), viewport: screen) == .checking)
+        let expanded = node(role: .group, id: "cf-chl-widget-big", frame: UIFrame(x: 16, y: 300, width: 380, height: 420))
+        #expect(TurnstileWidget.phase(in: roots([expanded]), viewport: screen) == .visualChallenge)
+    }
+
+    @Test("an iOS web view inside a turnstile-widget wrapper is probed and tapped")
+    @MainActor
+    func iosWrapperIsProbedAndTapped() async throws {
+        let shell = UIFrame(x: 16, y: 375, width: 370, height: 80)
+        func page(status: UINode?) -> UITree {
+            let children = [
+                node(role: .group, frame: shell),
+                node(role: .link, label: "Cloudflare, opens in a new tab", frame: UIFrame(x: 296, y: 395, width: 73, height: 26)),
+                node(role: .slider, label: "Vertical scroll bar, 2 pages", frame: UIFrame(x: 353, y: 375, width: 30, height: 80)),
+            ] + [status].compactMap { $0 }
+            let wrapper = node(role: .group, id: "turnstile-widget", frame: shell, children: [
+                node(role: .scrollView, frame: shell, children: children),
+            ])
+            return UITree(platform: .ios, device: "fake-device", roots: roots([wrapper]))
+        }
+        let passed = node(role: .text, value: "Success!", frame: UIFrame(x: 69, y: 406, width: 59, height: 19))
+        let backend = FakeDeviceBackend(trees: [page(status: nil), page(status: passed)], advanceTreeOnInput: true)
+        let route = DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "fake-device", platform: .ios))
+
+        let report = try await Turnstile.parse(["--device", "x", "--jitter", "0", "--timeout", "2", "--poll-interval", "0.05"])
+            .perform(on: route, logger: OffsiderLogger())
+
+        #expect(report.outcome == .tapped)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 48, y: 415))])
+    }
+
     @Test("an off-screen widget is ignored")
     func offScreenIgnored() {
         let parked = node(role: .group, id: "cf-chl-widget-old", frame: UIFrame(x: 24, y: 2000, width: 365, height: 66), children: [
@@ -200,7 +244,8 @@ struct TurnstileTests {
     @Test("jitter outside 0 to 8 and an empty --id are usage errors")
     func rejectsBadOptions() throws {
         #expect(parseMessage(["--jitter", "9"]).contains("--jitter must be from 0 to 8"))
-        #expect(parseMessage(["--timeout", "61"]).contains("--timeout must be from 0 to 60"))
+        #expect(parseMessage(["--timeout", "61"]).contains("--timeout must be from 1 to 60"))
+        #expect(parseMessage(["--timeout", "0"]).contains("--timeout must be from 1 to 60"))
         #expect(parseMessage(["--id", " "]).contains("--id must not be empty"))
         #expect(try Turnstile.parse(["--device", "emulator-5558", "--seed", "1"]).seed == 1)
     }
