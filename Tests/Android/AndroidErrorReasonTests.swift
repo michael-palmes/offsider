@@ -8,7 +8,7 @@ struct AndroidErrorReasonTests {
         (.sdkVariableWithoutAdb, 9), (.nonLoopbackAdbServer, 9), (.invalidAdbServerSetting, 9), (.adbServerNotRunning, 9),
         (.adbServerStartFailed, 9), (.adbServerNoAnswer, 9), (.adbProtocol, 1), (.adbCommandFailed, 1),
         (.serialNotRunning, 7), (.deviceOffline, 7), (.deviceUnauthorised, 7), (.stillBooting, 7), (.avdNotRunning, 7),
-        (.noDeviceNamed, 7), (.avdRunningTwice, 7), (.grpcRequired, 9), (.uiautomatorBusy, 8), (.uiautomatorIdle, 1),
+        (.noDeviceNamed, 7), (.avdRunningTwice, 7), (.ambiguousDeviceName, 7), (.unsupportedDevice, 1), (.appNotInstalled, 1), (.grpcRequired, 9), (.uiautomatorBusy, 8), (.uiautomatorIdle, 1),
         (.uiautomatorNoWindow, 1), (.uiautomatorFailed, 1), (.helperUnavailable, 9), (.helperBusy, 8), (.helperCrashed, 1),
         (.helperTimedOut, 1), (.helperFailed, 1), (.noWindow, 1), (.noFocusedField, 1), (.fieldNotEditable, 1),
         (.securePasteRefused, 1), (.unsupportedKey, 64), (.unsupportedButton, 64), (.unsupportedControlCharacter, 1),
@@ -32,5 +32,8 @@ struct AndroidErrorReasonTests {
         #expect(AndroidError.serialNotRunning("emulator-5554").hint == "offsider list-devices")
         #expect(AndroidError.adbServerNotRunning(endpoint: "tcp:5037").hint == "adb start-server")
         #expect(AndroidError.adbCommandFailed(serial: "emulator-5554", command: "shell input text S3NT1NEL", detail: "").hint == nil)
+        #expect(AndroidError.appNotInstalled("com.example", serial: "emulator-5554").hint == "adb -s emulator-5554 install <path-to-apk>")
+        #expect(AndroidError.ambiguousDeviceName("Pixel", emulatorSerial: "emulator-5554").hint == "offsider list-devices")
+        #expect(AndroidError.networkDevice("192.168.1.2:5555").hint == "offsider list-devices")
     }
 }

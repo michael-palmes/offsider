@@ -174,7 +174,10 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func appNotInstalled(_ package: String, serial: String) -> AndroidError {
-        AndroidError(.appNotInstalled, "\(package) is not installed on \(serial). Check the package name with `adb -s \(serial) shell pm list packages`.")
+        AndroidError(
+            .appNotInstalled,
+            "\(package) is not installed on \(serial). Install it with `adb -s \(serial) install <path-to-apk>`, or check the package name with adb -s \(serial) shell pm list packages."
+        )
     }
 
     /// `feature` works only on emulators; the advice is the alternative, never `offsider boot`.
@@ -552,7 +555,9 @@ extension AndroidError: OffsiderFailure {
         case .avdNotRunning: return .deviceNotBooted
         case .deviceOffline, .stillBooting: return .deviceNotReady
         case .deviceUnauthorised: return .deviceUnauthorised
-        case .avdRunningTwice: return .deviceAmbiguous
+        case .avdRunningTwice, .ambiguousDeviceName: return .deviceAmbiguous
+        case .unsupportedDevice: return .notSupported
+        case .appNotInstalled: return .appNotInstalled
         case .noAVDNamed: return .avdNotFound
         case .grpcRequired: return .emulatorGrpcRequired
         case .uiautomatorBusy, .helperBusy: return .uiautomationBusy

@@ -363,7 +363,7 @@ With `--json`, a failure prints one object on stdout, where the success output g
 | `device_not_booted` | 7 | The device exists but is not running | Boot it (`xcrun simctl boot`, `offsider boot`) |
 | `device_not_ready` | 7 | The emulator is offline or still booting | Wait, or `offsider boot <AVD>` |
 | `device_unauthorised` | 7 | adb is not authorised for the emulator | Accept the prompt, or restart it with `offsider boot` |
-| `device_ambiguous` | 7 | An AVD name matches more than one running emulator | Pass one serial with `--device` |
+| `device_ambiguous` | 7 | An AVD name matches more than one running emulator, or names both a phone and an AVD | Pass one serial with `--device` |
 | `avd_not_found` | 7 | No AVD has that name | Check the name in Android Studio's Device Manager |
 | `device_busy` | 8 | Another Offsider command holds the device; the message names its pid | Wait and retry, or pass `--wait-lock <seconds>` |
 | `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |
@@ -408,14 +408,14 @@ With `--json`, a failure prints one object on stdout, where the success output g
 | `baseline_mismatch` | 1 | The baseline and the capture differ in size | Capture both with the same `--region` and `--scale` |
 | `display_unreadable` | 1 | The display size or turn could not be read | Retry, or check the device |
 | `display_off` | 1 | The requested display is off | Fold or unfold the device with `offsider posture` |
-| `not_supported` | 1 | The device or platform does not support the command or option | Use another device or option |
+| `not_supported` | 1 | The device or platform does not support the command or option, such as a network adb device or an emulator-only feature on a phone | Use another device or option |
 | `posture_failed` | 1 | The posture could not be set | Check it with `offsider posture --device <ID>` |
 | `state_not_reached` | 1 | The posture or orientation did not take effect in time | Check the device, then retry |
 | `orientation_unknown` | 1 | The device did not report its orientation | Check it with `describe-ui` |
 | `device_restarted` | 1 | The simulator restarted while Offsider connected | Retry |
 | `device_unresponsive` | 1 | The device stopped answering | `offsider doctor --device <ID>`, or restart the device |
 | `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
-| `app_not_installed` | 1 | `logs --app` names an app that is not installed | Install it, or drop `--app` |
+| `app_not_installed` | 1 | `logs --app` or an Android permission command names an app that is not installed | Install it (`adb -s <serial> install <apk>` on Android), or drop `--app` |
 | `log_stream_failed` | 1 | The device's log could not be read | Retry |
 | `video_failed` | 1 | Recording or streaming video failed | Check the output path, then retry |
 | `helper_failed` | 1 | The UiAutomation helper stopped or failed | Retry; the `hint` names the log to read |

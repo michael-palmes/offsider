@@ -37,6 +37,7 @@ struct DeviceStateE2ETests {
 
     static let app = "--app com.mpalmes.offsider.playground"
 
+    @discardableResult
     static func offsider(_ command: String) async throws -> SeparatedCommandOutput {
         let result = try await TestHelpers.runOffsiderCommandSeparated(command, simulatorUDID: udid)
         guard result.exitCode == 0 else { throw TestError.unexpectedState("offsider \(command) exited \(result.exitCode): \(result.stderr)") }
