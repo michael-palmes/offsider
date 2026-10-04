@@ -172,7 +172,7 @@ extension HIDBroker {
             guard (info.st_mode & S_IFMT) == S_IFREG,
                   info.st_uid == getuid(),
                   info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
-                throw CLIError(errorDescription: "HID broker " + operation + " is not a private owned file.")
+                throw CLIError(errorDescription: "HID broker " + operation + " is not a private owned file.", reason: .privateDirectoryUnsafe)
             }
             let lockOperation = nonblocking ? LOCK_EX | LOCK_NB : LOCK_EX
             while flock(descriptor, lockOperation) != 0 {
@@ -201,10 +201,10 @@ extension HIDBroker {
             let responseData = try readMessage(from: descriptor)
             response = try JSONDecoder().decode(HIDBrokerResponse.self, from: responseData)
         } catch {
-            throw CLIError(errorDescription: "HID request outcome is unknown and was not replayed: \(error.localizedDescription)")
+            throw CLIError(errorDescription: "HID request outcome is unknown and was not replayed: \(error.localizedDescription)", reason: .inputOutcomeUnknown)
         }
         if let error = response.error {
-            throw CLIError(errorDescription: error)
+            throw CLIError(errorDescription: error, reason: .hidBrokerFailed)
         }
     }
 
@@ -264,14 +264,14 @@ extension HIDBroker {
                 return
             }
         }
-        throw CLIError(errorDescription: "The stale HID broker did not shut down.")
+        throw CLIError(errorDescription: "The stale HID broker did not shut down.", reason: .hidBrokerFailed)
     }
 
     static func socketIdentity(at path: String) throws -> HIDBrokerSocketIdentity {
         var info = stat()
         guard lstat(path, &info) == 0 else { throw posixError("lstat") }
         guard (info.st_mode & S_IFMT) == S_IFSOCK, info.st_uid == getuid() else {
-            throw CLIError(errorDescription: "Refusing to remove an unowned HID broker endpoint.")
+            throw CLIError(errorDescription: "Refusing to remove an unowned HID broker endpoint.", reason: .hidBrokerFailed)
         }
         return HIDBrokerSocketIdentity(device: info.st_dev, inode: info.st_ino)
     }
@@ -303,7 +303,7 @@ extension HIDBroker {
             if count < 0 {
                 if errno == EINTR { continue }
                 if errno == EAGAIN || errno == EWOULDBLOCK {
-                    throw CLIError(errorDescription: "HID broker read timed out.")
+                    throw CLIError(errorDescription: "HID broker read timed out.", reason: .hidBrokerFailed)
                 }
                 throw posixError("read")
             }
@@ -314,7 +314,7 @@ extension HIDBroker {
             }
             data.append(contentsOf: buffer[..<count])
         }
-        throw CLIError(errorDescription: "HID broker message is missing or exceeds the maximum size.")
+        throw CLIError(errorDescription: "HID broker message is missing or exceeds the maximum size.", reason: .hidBrokerFailed)
     }
 
     static func writeResponse(error: String?, to descriptor: Int32) throws {
@@ -337,7 +337,7 @@ extension HIDBroker {
                 if count < 0 {
                     if errno == EINTR { continue }
                     if errno == EAGAIN || errno == EWOULDBLOCK {
-                        throw CLIError(errorDescription: "HID broker write timed out.")
+                        throw CLIError(errorDescription: "HID broker write timed out.", reason: .hidBrokerFailed)
                     }
                     throw posixError("write")
                 }
@@ -407,7 +407,7 @@ extension HIDBroker {
         address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
         let bytes = Array(path.utf8) + [0]
         guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else {
-            throw CLIError(errorDescription: "HID broker socket path is too long.")
+            throw CLIError(errorDescription: "HID broker socket path is too long.", reason: .hidBrokerFailed)
         }
         withUnsafeMutableBytes(of: &address.sun_path) { destination in
             destination.copyBytes(from: bytes)

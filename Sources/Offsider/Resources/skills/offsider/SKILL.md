@@ -60,7 +60,7 @@ offsider button back --device <DEVICE_ID>
 Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-forget: Offsider confirms the event was dispatched to the simulator but cannot verify the app actually processed it. A tap may land before a view is interactive, or during a transition. `slider` is the exception: it sets the matched slider (one selector-resolved low-level HID drag on iOS, the accessibility progress action on Android), re-reads its `value`, and fails if the observed 0-100 value is outside tolerance. iOS slider controls quantize values to their rendered track resolution, so Offsider does not retry correction gestures to chase unreachable decimals. This means:
 - Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change after the input. Offsider compares the accessibility tree (ignoring elements that were already changing), then falls back to screenshots; it exits 0 when something changed and 5 when nothing did. "Verified" means something changed, not that the right thing changed: check the new state when it matters.
 - `--verify-timeout <seconds>` (0.5 to 30, default 2) is the wait per attempt. `--retries <n>` (0 to 3, default 1) repeats the input when nothing changed; tap retries switch between simulator and physical tap style. Use `--retries 0` for non-idempotent actions such as submit, send or delete, because a late effect plus a retry can act twice.
-- `--json` (requires `--verify`) prints one object to stdout with `verified`, `dispatched`, `attempts`, `change` (`accessibility-tree`, `screenshot` or `none`) and `style` (tap only); human text goes to stderr. A `screenshot` change can be animation or the status bar clock in landscape, so confirm with `describe-ui`. `button lock` only shows as a black screen.
+- `--json` (requires `--verify`) prints one object to stdout (version 2) with `verified`, `dispatched` (`yes`, `no` or `unknown`), `attempts`, `change` (`accessibility-tree`, `screenshot` or `none`), `style` (tap only), `exitCode` and `error` (null, or the error object below); human text goes to stderr. A `screenshot` change can be animation or the status bar clock in landscape, so confirm with `describe-ui`. `button lock` only shows as a black screen.
 - Without `--verify`, verify outcomes separately with `describe-ui` or `screenshot` when app behavior matters beyond the direct command result.
 - Use `--wait-timeout` or a `wait` step in batch to wait for elements to come on screen, and `wait --settled` to let animations finish; keep `sleep` steps and `--pre-delay` / `--post-delay` for when nothing observable marks the end.
 
@@ -132,7 +132,7 @@ offsider batch --device <DEVICE_ID> --json \
   --step 'screenshot --output after.png --scale points' --step 'describe-ui --summary'
 ```
 
-`batch --json` prints one JSON line per step to stdout (`step`, `kind`, `line`, `ok`, `ms`; `exitCode` and `error` on failure; `met`, `reason`, `match` for `wait` and `assert`; the screenshot fields; `tree` or `output` for `describe-ui`), then a summary line with `steps` and `failed`. Parse it instead of the text output. The batch exits 1 when a step failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0.
+`batch --json` prints one JSON line per step to stdout (`step`, `kind`, `line`, `ok`, `ms`; `exitCode` and the `error` object on failure; `met`, `reason`, `match` for `wait` and `assert`; the screenshot fields; `tree` or `output` for `describe-ui`), then a summary line with `steps` and `failed`. Parse it instead of the text output. The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0.
 
 **Handling animations and transitions in batch:**
 - Use `--wait-timeout <seconds>` (batch-level, or on one tap step to override it) so selector taps (`--id` / `--label`) poll the accessibility tree until the element is on screen, not merely mounted, or the timeout expires. A selector can resolve while a sheet is still sliding in: put `wait --settled` before the tap when that matters.
@@ -163,6 +163,14 @@ offsider screenshot --device <DEVICE_ID> --output post-state.png --scale points
 ```
 
 Content the accessibility tree cannot see (charts, maps, canvases, WebViews) changes pixels only, and `--verify` can report a change caused by something else on screen. Check that region itself: save a baseline with `screenshot --region <x,y,w,h> --output before.png`, act, then run `screenshot --region <x,y,w,h> --compare before.png`. It exits 0 when the region changed and 5 when it did not, and prints the changed share; `--threshold <0-1>` ignores small changes. Use the same `--region` and `--scale` for both captures.
+
+### Exit codes and errors
+
+Exit codes: 0 done; 2 selector matched nothing (read `candidates`, fix the selector or wait); 6 selector matched several (pick from `candidates`, add `--element-type` or use `--id`); 7 device not found or not booted (`offsider list-devices`, `offsider boot`); 8 device busy (another client is driving it; retry when it finishes); 9 Xcode, adb or the Android SDK is missing (fix the setup, retrying will not help); 5 input sent but nothing changed, or a condition was not met; 64 bad arguments; 1 anything else.
+
+Resending is safe after 2, 6, 7, 8, 9 and 64: nothing was sent. After 5, the input was sent: check the screen before sending again. After 1, read `dispatched`: `no` is safe to resend, `unknown` means check with `describe-ui` first, and never resend `type` text without checking the field.
+
+With `--json`, every failure prints one object on stdout: `exitCode` and `error` with `reason`, `message`, `hint` (the next command), `dispatched` and `candidates`. The README lists every `reason`.
 
 ## Step 7: Exit criteria
 Before finalising guidance, verify:

@@ -78,7 +78,7 @@ struct KeySequence: AsyncParsableCommand {
         }
         let sequenceEvent = InputEvent.composite(events)
 
-        try await backend.perform(sequenceEvent, on: device)
+        try await backend.performTracked(sequenceEvent, on: device)
         
         logger.info().log("Key sequence completed successfully")
     }

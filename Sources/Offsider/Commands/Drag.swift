@@ -94,7 +94,7 @@ struct Drag: AsyncParsableCommand {
             initialHold: Self.initialHold,
             finalHold: Self.finalHold
         )
-        try await backend.perform(dragEvent, on: device)
+        try await backend.performTracked(dragEvent, on: device)
 
         if let postDelay, postDelay > 0 {
             logger.info().log("Post-delay: \(postDelay)s")

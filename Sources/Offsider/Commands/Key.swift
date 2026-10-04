@@ -102,7 +102,7 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
         }
 
         // Perform the key event
-        try await backend.perform(keyEvent, on: device)
+        try await backend.performTracked(keyEvent, on: device)
         
         logger.info().log("Key press completed successfully")
     }

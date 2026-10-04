@@ -50,9 +50,9 @@ struct AccessibilityPoller {
             transientGrace: 0,
             logger: logger,
             clock: .live,
-            resolver: { roots in
+            resolver: { roots, explain in
                 try AccessibilityTargetResolver.resolveElement(
-                    roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
+                    roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, logger: logger
                 )
             },
             position: { match in match.element.frame?.center ?? UIPoint(x: 0, y: 0) },
@@ -77,9 +77,9 @@ struct AccessibilityPoller {
             transientGrace: transientGrace,
             logger: logger,
             clock: clock,
-            resolver: { roots in
+            resolver: { roots, explain in
                 try AccessibilityTargetResolver.resolveTap(
-                    roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger
+                    roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, logger: logger
                 )
             },
             position: { resolution in UIPoint(x: resolution.point.x, y: resolution.point.y) },
@@ -88,13 +88,14 @@ struct AccessibilityPoller {
     }
 
     /// Missing or off-screen elements retry until `waitTimeout` and then until two reads agree; transient read failures until the larger window, and at least once.
+    /// `resolver` explains a miss (suggestions and candidates) only when its second argument is true, for the error finally thrown.
     private static func poll<T>(
         waitTimeout: TimeInterval,
         pollInterval: TimeInterval,
         transientGrace: TimeInterval,
         logger: OffsiderLogger,
         clock: PollClock,
-        resolver: ([UINode]) throws -> T,
+        resolver: ([UINode], Bool) throws -> T,
         position: (T) -> UIPoint,
         treeFetcher: () async throws -> UITree
     ) async throws -> Polled<T> {
@@ -117,7 +118,7 @@ struct AccessibilityPoller {
                 continue
             }
             do {
-                let polled = Polled(value: try resolver(tree.roots), tree: tree)
+                let polled = Polled(value: try resolver(tree.roots, false), tree: tree)
                 guard waitedForElement else { return polled }
                 let current = position(polled.value)
                 if let lastPosition, ElementMotion.hasSettled(previous: lastPosition, current: current) { return polled }
@@ -131,6 +132,8 @@ struct AccessibilityPoller {
                 let reason = error.isOffScreen ? "Element off screen" : "Element not found"
                 logger.info().log("\(reason), retrying in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
+            } catch ElementResolutionError.notFound {
+                return Polled(value: try resolver(tree.roots, true), tree: tree)
             }
         }
     }

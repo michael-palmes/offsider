@@ -140,7 +140,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if !hidEvents.isEmpty {
             // Keep typing in one ordered session. Indigo awaits each send, while DTUHID adds its
             // own keyboard pacing; unconditional delays here would double-pace the DTUHID path.
-            try await backend.perform(InputEvent.composite(hidEvents), on: device)
+            try await backend.performTracked(InputEvent.composite(hidEvents), on: device)
         }
         
         logger.info().log("Text typing completed successfully")
@@ -150,7 +150,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     private func typeOnAndroid(_ inputText: String, backend: any DeviceBackend, device: DeviceID, progress: VerifyProgress?) async throws {
         let typeText: @MainActor (any InputSession) async throws -> Void = { session in
             guard let textSession = session as? any TextInputSession else {
-                throw CLIError(errorDescription: "This device's input session cannot type text.")
+                throw CLIError(errorDescription: "This device's input session cannot type text.", reason: .internalError)
             }
             if replace {
                 try await textSession.replaceText(inputText)
@@ -159,7 +159,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             }
         }
         guard let progress else {
-            let session = try await backend.openInputSession(for: device)
+            let session = try await backend.openTrackedSession(for: device)
             do {
                 try await typeText(session)
             } catch {

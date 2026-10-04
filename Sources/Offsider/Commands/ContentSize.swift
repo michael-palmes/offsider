@@ -48,7 +48,7 @@ struct ContentSizeCommand: AsyncParsableCommand {
         try await route.backend.prepare()
         let device = try await route.backend.requireBootedDevice(route.device).id
         guard let settings = route.backend as? any DeviceSettingsControlling else {
-            throw CLIError(errorDescription: "content-size is not available for \(deviceOption.id).")
+            throw CLIError(errorDescription: "content-size is not available for \(deviceOption.id).", reason: .notSupported)
         }
 
         guard let target else {

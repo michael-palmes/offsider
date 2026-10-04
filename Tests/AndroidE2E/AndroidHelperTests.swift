@@ -131,7 +131,7 @@ struct AndroidHelperTests {
         holder.waitUntilExit()
 
         let result = try outcome.get()
-        #expect(result.exitCode == 1)
+        #expect(result.exitCode == 8)
         #expect(result.stderr.contains("Another UiAutomation client is connected to"), "stderr: \(result.stderr)")
         #expect(!result.stderr.contains("Warning:"), "busy must not fall back to uiautomator: \(result.stderr)")
         #expect(result.stdout.isEmpty)

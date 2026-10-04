@@ -75,7 +75,7 @@ extension Tap: BatchConvertible {
             } else if let elementValue {
                 query = .value(elementValue)
             } else {
-                throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.")
+                throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.", reason: .internalError)
             }
 
             // A step's own --wait-timeout and --poll-interval override the batch-level values.
@@ -113,7 +113,7 @@ extension Tap: BatchConvertible {
             let tapEvent = InputEvent.tapAt(x: physicalPoint.x, y: physicalPoint.y)
             return [.hidMergeable(InputEvent.delayed(tapEvent, pre: preDelay, post: postDelay))]
         case .automatic:
-            throw CLIError(errorDescription: "Unexpected tap style resolution.")
+            throw CLIError(errorDescription: "Unexpected tap style resolution.", reason: .internalError)
         }
     }
 }

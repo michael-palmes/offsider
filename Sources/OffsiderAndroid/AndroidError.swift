@@ -478,3 +478,77 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 extension AndroidError: TransientFailure {
     public var isTransient: Bool { kind == .uiautomatorNoWindow || kind == .noWindow }
 }
+
+extension AndroidError: OffsiderFailure {
+    public var reason: FailureReason {
+        switch kind {
+        case .sdkVariableWithoutAdb: return .androidSdkMissing
+        case .nonLoopbackAdbServer, .invalidAdbServerSetting: return .adbServerMisconfigured
+        case .adbServerNotRunning, .adbServerStartFailed, .adbServerNoAnswer: return .adbServerUnavailable
+        case .adbProtocol: return .adbProtocolError
+        case .adbCommandFailed: return .adbCommandFailed
+        case .serialNotRunning, .noDeviceNamed: return .deviceNotFound
+        case .avdNotRunning: return .deviceNotBooted
+        case .deviceOffline, .stillBooting: return .deviceNotReady
+        case .deviceUnauthorised: return .deviceUnauthorised
+        case .avdRunningTwice: return .deviceAmbiguous
+        case .noAVDNamed: return .avdNotFound
+        case .grpcRequired: return .emulatorGrpcRequired
+        case .uiautomatorBusy, .helperBusy: return .uiautomationBusy
+        case .uiautomatorIdle: return .screenNotIdle
+        case .uiautomatorNoWindow, .noWindow: return .noWindow
+        case .uiautomatorFailed: return .treeReadFailed
+        case .helperUnavailable: return .helperUnavailable
+        case .helperCrashed, .helperFailed: return .helperFailed
+        case .helperTimedOut: return .helperTimedOut
+        case .noFocusedField: return .noFocusedField
+        case .fieldNotEditable: return .fieldNotEditable
+        case .securePasteRefused: return .securePasteRefused
+        case .unsupportedKey: return .unsupportedKey
+        case .unsupportedButton: return .unsupportedButton
+        case .unsupportedControlCharacter: return .unsupportedText
+        case .displayProbeUnparseable, .displaysUnreadable: return .displayUnreadable
+        case .unknownDisplay: return .unknownDisplay
+        case .displayOff: return .displayOff
+        case .postureUnavailable, .notSupported: return .notSupported
+        case .postureFailed: return .postureFailed
+        case .inputFailed: return .inputFailed
+        case .invalidSetting: return .invalidSetting
+        case .grpcNoCredentials, .grpcKeyNotActivated, .grpcUnauthenticated, .grpcPermissionDenied: return .emulatorGrpcAuthFailed
+        case .grpcUnavailable: return .emulatorGrpcUnavailable
+        case .grpcDeadlineExceeded: return .emulatorTimedOut
+        case .grpcFailed: return .emulatorGrpcFailed
+        case .screenshotFailed: return .screenshotFailed
+        case .videoOutputFailed: return .videoFailed
+        case .emulatorMissing: return .emulatorMissing
+        case .emulatorLaunchFailed, .emulatorExited: return .emulatorLaunchFailed
+        case .bootTimeout: return .bootTimedOut
+        }
+    }
+
+    public var failureMessage: String { message }
+
+    /// The message's first backticked Offsider or adb command; never the failed command itself, which can carry typed text.
+    public var hint: String? {
+        switch reason.exitCode {
+        case .deviceUnavailable where kind == .avdNotRunning || kind == .stillBooting || kind == .deviceOffline:
+            return Self.firstCommand(in: message) ?? "offsider list-devices"
+        case .deviceUnavailable:
+            return "offsider list-devices"
+        default:
+            return kind == .adbCommandFailed ? nil : Self.firstCommand(in: message)
+        }
+    }
+
+    private static func firstCommand(in message: String) -> String? {
+        let parts = message.split(separator: "`", omittingEmptySubsequences: false)
+        guard parts.count >= 3 else { return nil }
+        let command = String(parts[1])
+        return command.hasPrefix("offsider ") || command.hasPrefix("adb ") ? command : nil
+    }
+}
+
+extension HelperDexError: OffsiderFailure {
+    public var reason: FailureReason { .helperUnavailable }
+    public var failureMessage: String { description }
+}

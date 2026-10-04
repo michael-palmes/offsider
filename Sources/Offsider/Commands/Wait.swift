@@ -212,7 +212,7 @@ struct Wait: AsyncParsableCommand {
         on route: DeviceRouter.Route,
         tree: TreeSource? = nil,
         clock: PollClock = .live,
-        fingerprint: @escaping @MainActor () async throws -> ImageFingerprint = { throw CLIError(errorDescription: "This condition does not read the screen.") }
+        fingerprint: @escaping @MainActor () async throws -> ImageFingerprint = { throw CLIError(errorDescription: "This condition does not read the screen.", reason: .internalError) }
     ) -> WaitSources {
         WaitSources(
             tree: tree ?? { try await route.backend.accessibilityTree(for: route.device) },

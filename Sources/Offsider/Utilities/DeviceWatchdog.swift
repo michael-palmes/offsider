@@ -74,7 +74,6 @@ final class DeviceWatchdog: @unchecked Sendable {
     }
 
     @Sendable static func exitProcess(_ message: String) {
-        FileHandle.standardError.write(Data("\(message)\n".utf8))
-        exit(1)
+        ErrorReporter.exitUnresponsive(message)
     }
 }

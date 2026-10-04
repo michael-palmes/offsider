@@ -54,26 +54,51 @@ enum AccessibilityQuery {
     }
 }
 
-/// One ambiguous match, as an error lists it.
+/// One candidate element, as an error lists it; never its value.
 struct MatchSummary: Equatable {
     let role: UIRole
     let id: String?
+    let label: String?
     let frame: UIFrame?
     /// Nil when the tree has no screen to compare with.
     let isOnScreen: Bool?
 
+    init(role: UIRole, id: String?, label: String? = nil, frame: UIFrame?, isOnScreen: Bool?) {
+        self.role = role
+        self.id = id
+        self.label = label
+        self.frame = frame
+        self.isOnScreen = isOnScreen
+    }
+
+    init(_ node: UINode, viewport: UIFrame?) {
+        self.init(
+            role: node.role,
+            id: node.normalizedID,
+            label: node.normalizedLabel.map { SelectorText.truncated($0) },
+            frame: node.frame,
+            isOnScreen: viewport.map { node.frame?.isVisible(in: $0) == true }
+        )
+    }
+
     var text: String {
         var parts = [role.rawValue]
         if let id { parts.append("id=\(id)") }
+        if let label { parts.append("label=\"\(label)\"") }
         parts.append(frame?.summary ?? "with no frame")
         if isOnScreen == false { parts.append("off screen") }
         return parts.joined(separator: " ")
     }
+
+    var failureCandidate: FailureCandidate {
+        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen)
+    }
 }
 
-enum ElementResolutionError: LocalizedError, UserFacingError {
-    case notFound(kind: String, value: String, suggestions: [String] = [])
-    case filteredByElementType(kind: String, value: String, elementType: String, roles: [UIRole])
+enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
+    /// `candidates` are the elements behind `suggestions`.
+    case notFound(kind: String, value: String, suggestions: [String] = [], candidates: [MatchSummary] = [])
+    case filteredByElementType(kind: String, value: String, elementType: String, roles: [UIRole], candidates: [MatchSummary] = [])
     case offScreen(selector: String, frames: [UIFrame], viewport: UIFrame)
     case multipleMatches(count: Int, kind: String, value: String, hasUniqueIDs: Bool, candidates: [MatchSummary] = [], onScreenOnly: Bool = false, offScreenIgnored: Int = 0)
     case invalidFrame(reason: String)
@@ -84,13 +109,13 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
     var errorDescription: String? {
         let tip = AccessibilityTargetResolver.describeUITip
         switch self {
-        case .notFound(let kind, let value, let suggestions):
+        case .notFound(let kind, let value, let suggestions, _):
             guard !suggestions.isEmpty else {
                 return "No accessibility element matched \(kind) '\(value)'. \(tip)"
             }
             let quoted = suggestions.map { "'\(SelectorText.truncated($0))'" }
             return "No accessibility element matched \(kind) '\(value)'. Did you mean \(Self.alternatives(quoted))? \(tip)"
-        case .filteredByElementType(let kind, let value, let elementType, let roles):
+        case .filteredByElementType(let kind, let value, let elementType, let roles, _):
             let field = kind.hasPrefix("--") ? String(kind.dropFirst(2)) : kind
             let counted = roles.count == 1 ? "1 element has" : "\(roles.count) elements have"
             var distinctRoles: [String] = []
@@ -143,6 +168,31 @@ enum ElementResolutionError: LocalizedError, UserFacingError {
 
     var userFacingDescription: String {
         errorDescription ?? "Offsider could not resolve the requested accessibility element."
+    }
+
+    var reason: FailureReason {
+        switch self {
+        case .notFound: return .selectorNotFound
+        case .filteredByElementType: return .selectorFilteredByType
+        case .offScreen: return .targetOffScreen
+        case .multipleMatches: return .selectorAmbiguous
+        case .multipleSwitchDescendants: return .selectorAmbiguousSwitch
+        case .invalidFrame: return .targetHasNoFrame
+        }
+    }
+
+    var failureMessage: String { userFacingDescription }
+
+    var hint: String? { "offsider describe-ui --device <DEVICE_ID> --summary" }
+
+    var candidates: [FailureCandidate] {
+        switch self {
+        case .notFound(_, _, _, let candidates), .filteredByElementType(_, _, _, _, let candidates),
+             .multipleMatches(_, _, _, _, let candidates, _, _):
+            return candidates.prefix(Self.maxListed).map(\.failureCandidate)
+        case .offScreen, .invalidFrame, .multipleSwitchDescendants:
+            return []
+        }
     }
 
     private static func listed(_ items: [String], separator: String, total: Int? = nil) -> String {
@@ -221,10 +271,14 @@ struct AccessibilityTargetResolver {
         query: AccessibilityQuery,
         elementType: String? = nil,
         allowOffscreen: Bool = false,
+        explainFailures: Bool = true,
         logger: OffsiderLogger? = nil
     ) throws -> AccessibilityMatch {
         let found = candidates(roots: roots, query: query, elementType: elementType)
         guard !found.matches.isEmpty else {
+            guard explainFailures else {
+                throw ElementResolutionError.notFound(kind: query.kind, value: query.rawValue)
+            }
             throw notFoundError(roots: roots, query: query, elementType: elementType, viewport: found.viewport)
         }
 
@@ -276,9 +330,12 @@ struct AccessibilityTargetResolver {
         query: AccessibilityQuery,
         elementType: String? = nil,
         allowOffscreen: Bool = false,
+        explainFailures: Bool = true,
         logger: OffsiderLogger? = nil
     ) throws -> TapResolution {
-        let match = try resolveElement(roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, logger: logger)
+        let match = try resolveElement(
+            roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explainFailures, logger: logger
+        )
 
         let activationElement = try selectActivationElement(
             from: match.element,
@@ -378,6 +435,11 @@ struct AccessibilityTargetResolver {
         return visible.width * visible.height >= 0.8 * viewport.width * viewport.height
     }
 
+    /// True when `node` is a keyboard or sits inside one.
+    static func isUnderKeyboard(_ node: UINode, in roots: [UINode]) -> Bool {
+        node.role == .keyboard || ancestors(of: node, in: roots).contains { $0.role == .keyboard }
+    }
+
     /// `element` with its ancestors and descendants, none of which can cover it.
     private static func family(of element: UINode, in roots: [UINode]) -> [UINode] {
         ancestors(of: element, in: roots) + element.flattened()
@@ -438,7 +500,8 @@ struct AccessibilityTargetResolver {
                     kind: query.kind,
                     value: query.rawValue,
                     elementType: elementType,
-                    roles: untyped.matches.map(\.role)
+                    roles: untyped.matches.map(\.role),
+                    candidates: untyped.matches.prefix(ElementResolutionError.maxListed).map { MatchSummary($0, viewport: viewport) }
                 )
             }
         }
@@ -446,11 +509,14 @@ struct AccessibilityTargetResolver {
         let elements = roots.flatMap { $0.flattened() }
         let onScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) == true } ?? true }
         let offScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) != true } ?? false }
-        let values = (onScreen + offScreen).compactMap { query.field(of: $0) }
+        let ordered = onScreen + offScreen
+        let suggestions = SelectorText.suggestions(for: query.rawValue, among: ordered.compactMap { query.field(of: $0) })
+        let behind = suggestions.compactMap { suggestion in ordered.first { query.field(of: $0) == suggestion } }
         return .notFound(
             kind: query.kind,
             value: query.rawValue,
-            suggestions: SelectorText.suggestions(for: query.rawValue, among: values)
+            suggestions: suggestions,
+            candidates: behind.map { MatchSummary($0, viewport: viewport) }
         )
     }
 
@@ -486,14 +552,7 @@ struct AccessibilityTargetResolver {
             let hasUniqueIDs = matches.contains {
                 $0.normalizedID != nil
             }
-            let summaries = matches.prefix(ElementResolutionError.maxListed).map { node in
-                MatchSummary(
-                    role: node.role,
-                    id: node.normalizedID,
-                    frame: node.frame,
-                    isOnScreen: ambiguity.viewport.map { node.frame?.isVisible(in: $0) == true }
-                )
-            }
+            let summaries = matches.prefix(ElementResolutionError.maxListed).map { MatchSummary($0, viewport: ambiguity.viewport) }
             throw ElementResolutionError.multipleMatches(
                 count: matches.count,
                 kind: ambiguity.query.kind,

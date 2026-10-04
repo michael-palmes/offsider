@@ -76,13 +76,13 @@ struct OrientationCommand: AsyncParsableCommand {
         try await backend.prepare()
         let device = try await backend.requireBootedDevice(route.device).id
         guard let turner = backend as? any OrientationControlling else {
-            throw CLIError(errorDescription: "orientation is not available for \(deviceOption.id).")
+            throw CLIError(errorDescription: "orientation is not available for \(deviceOption.id).", reason: .notSupported)
         }
 
         let previous = try await turner.orientation(of: device)
         guard let target else {
             guard let previous else {
-                throw CLIError(errorDescription: "Offsider could not read the orientation of \(deviceOption.id). Run `offsider describe-ui --device \(deviceOption.id)` to check the screen size instead.")
+                throw CLIError(errorDescription: "Offsider could not read the orientation of \(deviceOption.id). Run `offsider describe-ui --device \(deviceOption.id)` to check the screen size instead.", reason: .orientationUnknown)
             }
             try await report(previous, previous: nil, backend: backend, device: device)
             return
@@ -102,7 +102,7 @@ struct OrientationCommand: AsyncParsableCommand {
             now: { Date().timeIntervalSinceReferenceDate }
         )
         guard outcome == .reached else {
-            throw CLIError(errorDescription: Self.timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceOption.id))
+            throw CLIError(errorDescription: Self.timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceOption.id), reason: .stateNotReached)
         }
         try await report(target, previous: previous, backend: backend, device: device)
     }

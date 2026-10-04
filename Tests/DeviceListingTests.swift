@@ -200,21 +200,23 @@ struct SimulatorRuntimeTests {
 struct ListDevicesPlatformFilterTests {
     static let sdkNotFound = "Android SDK not found. Set ANDROID_HOME to your SDK (Android Studio installs it in ~/Library/Android/sdk), or put adb on PATH."
 
-    @Test("--platform android without an SDK exits 1 with the install hint")
+    @Test("--platform android without an SDK exits 9 with the install hint")
     func androidWithoutSDKFails() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("list-devices --platform android")
 
-        #expect(result.exitCode == 1)
+        #expect(result.exitCode == 9)
         #expect(result.stdout.isEmpty)
         #expect(result.stderr.contains(Self.sdkNotFound))
     }
 
-    @Test("--platform android --json without an SDK prints no JSON")
+    @Test("--platform android --json without an SDK prints the error envelope, not a device list")
     func androidJSONWithoutSDKFails() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("list-devices --platform android --json")
 
-        #expect(result.exitCode == 1)
-        #expect(result.stdout.isEmpty)
+        #expect(result.exitCode == 9)
+        let envelope = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        #expect(envelope["ok"] as? Bool == false && envelope["exitCode"] as? Int == 9)
+        #expect((envelope["error"] as? [String: Any])?["reason"] as? String == "android_sdk_missing")
         #expect(result.stderr.contains(Self.sdkNotFound))
     }
 

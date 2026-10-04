@@ -40,7 +40,7 @@ struct VerifyTests {
         let json = try report(result.stdout)
 
         #expect(result.exitCode == 5)
-        #expect(json["dispatched"] as? Bool == true)
+        #expect(json["dispatched"] as? String == "yes")
         #expect(json["verified"] as? Bool == false)
         #expect(json["change"] as? String == "none")
         #expect(json["attempts"] as? Int == 1)

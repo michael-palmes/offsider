@@ -204,4 +204,25 @@ struct AccessibilityPollerTests {
         #expect(VerifyOutput.pointDescription(x: 200, y: 400) == "(200, 400)")
         #expect(VerifyOutput.pointDescription(x: 205.72000000000003, y: 477.71) == "(205.72, 477.71)")
     }
+
+    private static let nearMiss = UITree(platform: .android, device: "emulator-5556", roots: [
+        UINode(role: .button, id: "gon", frame: UIFrame(x: 10, y: 10, width: 100, height: 40), native: .android(AndroidNativeAttributes())),
+    ])
+
+    @Test("a wait that ends not found still lists suggestions and candidates")
+    func waitEndingNotFoundExplains() async throws {
+        let clock = ScriptedClock()
+        let error = await #expect(throws: ElementResolutionError.self) {
+            _ = try await AccessibilityPoller.pollForResolution(
+                query: .id("gone"),
+                waitTimeout: 1,
+                pollInterval: 0.25,
+                elementType: nil,
+                logger: OffsiderLogger(),
+                clock: clock.poll
+            ) { Self.nearMiss }
+        }
+        #expect(error?.userFacingDescription.contains("Did you mean 'gon'?") == true)
+        #expect(error?.candidates.map(\.id) == ["gon"])
+    }
 }

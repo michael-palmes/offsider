@@ -25,13 +25,13 @@ extension InputEvent {
         finalHold: TimeInterval
     ) throws -> InputEvent {
         guard duration >= 0 else {
-            throw CLIError(errorDescription: "Drag duration must be non-negative.")
+            throw CLIError(errorDescription: "Drag duration must be non-negative.", reason: .usage)
         }
         guard steps > 0 else {
-            throw CLIError(errorDescription: "Drag steps must be greater than 0.")
+            throw CLIError(errorDescription: "Drag steps must be greater than 0.", reason: .usage)
         }
         guard initialHold >= 0, finalHold >= 0 else {
-            throw CLIError(errorDescription: "Drag hold durations must be non-negative.")
+            throw CLIError(errorDescription: "Drag hold durations must be non-negative.", reason: .usage)
         }
 
         let movePoints = try compositeDragMovePoints(from: start, to: end, steps: steps)
@@ -58,7 +58,7 @@ extension InputEvent {
         steps: Int
     ) throws -> [(x: Double, y: Double)] {
         guard steps > 0 else {
-            throw CLIError(errorDescription: "Drag steps must be greater than 0.")
+            throw CLIError(errorDescription: "Drag steps must be greater than 0.", reason: .usage)
         }
 
         return (1...steps).map { step in

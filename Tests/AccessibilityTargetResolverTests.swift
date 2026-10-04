@@ -488,7 +488,7 @@ struct AccessibilityTargetResolverTests {
         #expect(error?.isOffScreen == true)
     }
 
-    @Test("ambiguous on-screen matches list each candidate and the ignored off-screen ones")
+    @Test("ambiguous on-screen matches name each candidate's label and the ignored off-screen ones")
     func multipleMatchesListCandidates() {
         let roots = Self.screen([Self.save(id: "save-a", y: 700), Self.save(y: 760), Self.save(y: 10700)])
 
@@ -496,7 +496,7 @@ struct AccessibilityTargetResolverTests {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"))
         }?.userFacingDescription ?? ""
 
-        #expect(message.hasPrefix("Multiple (2) accessibility elements matched --label 'Save' on screen: button id=save-a (20, 700) 350x44; button (20, 760) 350x44 (1 more off screen ignored). Use --id when labels are not unique."))
+        #expect(message.hasPrefix("Multiple (2) accessibility elements matched --label 'Save' on screen: button id=save-a label=\"Save\" (20, 700) 350x44; button label=\"Save\" (20, 760) 350x44 (1 more off screen ignored). Use --id when labels are not unique."))
     }
 
     // MARK: Folding and suggestions
@@ -574,7 +574,7 @@ struct AccessibilityTargetResolverTests {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
         }?.userFacingDescription ?? ""
 
-        #expect(message.contains("on screen: button id=save (20, 700) 350x44; button id=save (20, 760) 350x44. The id is not unique on this screen: narrow with --element-type, or tap one by coordinates (tap -x/-y) using the frames above."))
+        #expect(message.contains("on screen: button id=save label=\"Save\" (20, 700) 350x44; button id=save label=\"Save\" (20, 760) 350x44. The id is not unique on this screen: narrow with --element-type, or tap one by coordinates (tap -x/-y) using the frames above."))
         #expect(!message.contains("Use --id"))
     }
 
@@ -809,5 +809,72 @@ struct AccessibilityTargetResolverTests {
 
     private func decodeElements(_ json: String) throws -> [UINode] {
         try IOSAccessibilityMapping.roots(fromJSON: Data(json.utf8))
+    }
+
+    @Test("an ambiguous match lists up to five candidates with id, label, role, frame and on-screen state")
+    func ambiguousCandidates() throws {
+        let roots = Self.screen((0..<7).map { Self.save(id: "save", y: 100 + Double($0) * 60) })
+
+        let error = try #require(Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
+        })
+
+        #expect(error.exitCode == .ambiguousSelector)
+        #expect(error.reason == .selectorAmbiguous)
+        #expect(error.candidates.count == 5)
+        #expect(error.candidates[0] == FailureCandidate(id: "save", label: "Save", role: "button", frame: FakeUI.frame(20, 100, 350, 44), onScreen: true))
+    }
+
+    @Test("not-found candidates are the elements behind the suggestions, and the miss exits 2")
+    func notFoundCandidates() throws {
+        let roots = Self.screen([
+            FakeUI.node(.button, id: "log-in", label: "Log in", frame: FakeUI.frame(16, 620, 361, 50)),
+            FakeUI.node(.text, id: "title", label: "Welcome", frame: FakeUI.frame(16, 100, 361, 30)),
+        ])
+
+        let error = try #require(Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("login"))
+        })
+
+        #expect(error.exitCode == .selectorNotFound)
+        #expect(error.reason == .selectorNotFound)
+        #expect(error.candidates == [FailureCandidate(id: "log-in", label: "Log in", role: "button", frame: FakeUI.frame(16, 620, 361, 50), onScreen: true)])
+        #expect(error.hint == "offsider describe-ui --device <DEVICE_ID> --summary")
+    }
+
+    @Test("candidates never include an element's value, and a secure field is never a --value candidate")
+    func candidatesCarryNoValue() throws {
+        let sentinel = "S3NT1NEL-VALUE"
+        let roots = Self.screen([
+            FakeUI.node(.textField, id: "name", label: "Name", value: sentinel, frame: FakeUI.frame(16, 100, 361, 44)),
+            FakeUI.node(.textField, id: "name", label: "Name", value: sentinel, frame: FakeUI.frame(16, 160, 361, 44)),
+            FakeUI.node(.secureTextField, id: "password", label: "Password", value: "S3NT1NEL-VALUF", frame: FakeUI.frame(16, 220, 361, 44)),
+        ])
+
+        let ambiguous = try #require(Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("name"))
+        })
+        let payload = ErrorPayload(ambiguous, dispatched: .no)
+        #expect(payload.candidates.count == 2)
+        #expect(!payload.jsonLine().contains(sentinel))
+
+        let missing = try #require(Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .value("S3NT1NEL-VALUE!"))
+        })
+        #expect(!missing.candidates.contains { $0.id == "password" })
+    }
+
+    @Test("a target-type filter, off screen and no frame keep their own reasons")
+    func otherReasons() throws {
+        let roots = Self.screen([FakeUI.node(.text, label: "Save", frame: FakeUI.frame(20, 700, 350, 44)), Self.save(id: "far", y: 10700)])
+        let filtered = try #require(Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"), elementType: "switch")
+        })
+        let offScreen = try #require(Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("far"))
+        })
+        #expect(filtered.reason == .selectorFilteredByType && filtered.exitCode == .selectorNotFound)
+        #expect(offScreen.reason == .targetOffScreen && offScreen.exitCode == .selectorNotFound)
+        #expect(ElementResolutionError.invalidFrame(reason: "x").exitCode == .failure)
     }
 }

@@ -177,7 +177,7 @@ struct Batch: AsyncParsableCommand {
         output: BatchOutput = .console(json: false),
         logger: OffsiderLogger
     ) async throws -> [BatchStepRecord] {
-        let runner = BatchPlanRunner(session: session, logger: logger)
+        let runner = BatchPlanRunner(session: TrackedInputSession.wrapping(session), logger: logger)
         let clock = ContinuousClock()
         let batchStart = clock.now
         var records: [BatchStepRecord] = []
@@ -217,6 +217,8 @@ struct Batch: AsyncParsableCommand {
         var detail = BatchStepRecord.Detail.none
         var failure: BatchStepRecord.Failure?
         var parsedTokens: [String]?
+        var sendsInput = true
+        DispatchTracker.current.reset()
         do {
             let tokens = try ShellTokenizer.tokenize(line)
             parsedTokens = tokens
@@ -231,27 +233,28 @@ struct Batch: AsyncParsableCommand {
             case .input(let primitives):
                 try await runner.run(BatchPlan(primitives: primitives))
             case .read(let step):
+                sendsInput = false
                 let result = try await step.runInBatch(context: context, logger: logger)
                 detail = result.detail
                 output.report(result)
                 if let unmet = result.unmet {
-                    failure = .init(exitCode: OffsiderExitCode.unverified.rawValue, message: unmet)
+                    failure = .init(error: ErrorPayload(reason: .conditionNotMet, message: unmet))
                 }
             }
         } catch {
-            var text = message(for: error)
+            var payload = ErrorReporter.payload(for: error, dispatched: sendsInput ? DispatchTracker.current.state : nil)
             if BatchStepRedaction.isTypeLine(line) {
                 let secrets = [line] + BatchStepRedaction.textTokens(parsedTokens ?? [])
-                text = BatchStepRedaction.scrub(text, removing: secrets)
+                payload = payload.scrubbed { BatchStepRedaction.scrub($0, removing: secrets) }
             }
-            failure = .init(exitCode: OffsiderExitCode.failure.rawValue, message: text)
+            failure = .init(error: payload)
         }
         return BatchStepRecord(
             step: number, kind: stepName, line: BatchStepRedaction.redactedLine(line, tokens: parsedTokens), elapsed: seconds(clock.now - start), failure: failure, detail: detail
         )
     }
 
-    /// Exit 1 (as a `CLIError`) when any step failed to run; else exit 5 when a condition was not met.
+    /// The code of the first step that failed to run; else exit 5 when only conditions were not met.
     @MainActor
     private static func finish(_ failed: [BatchStepRecord], continueOnError: Bool, output: BatchOutput) throws {
         let failures = failed.compactMap { record in record.failure.map { (record, $0) } }
@@ -270,7 +273,8 @@ struct Batch: AsyncParsableCommand {
             output.writeError(text + "\n")
             throw ExitCode(OffsiderExitCode.unverified.rawValue)
         }
-        throw CLIError(errorDescription: text)
+        let code = failures.first { !$0.1.isConditionNotMet }?.1.error.exitCode ?? .failure
+        throw ReportedFailure(underlying: CLIError(errorDescription: text), exitCode: code)
     }
 
     private static func seconds(_ duration: Duration) -> TimeInterval {

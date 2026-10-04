@@ -205,12 +205,12 @@ final class H264StreamRecorder: @unchecked Sendable {
         )
 
         guard writer.canAdd(input) else {
-            throw CLIError(errorDescription: "Unable to configure video writer input")
+            throw CLIError(errorDescription: "Unable to configure video writer input", reason: .videoFailed)
         }
         writer.add(input)
 
         if !writer.startWriting() {
-            throw CLIError(errorDescription: "Failed to start asset writer: \(writer.error?.localizedDescription ?? "Unknown error")")
+            throw CLIError(errorDescription: "Failed to start asset writer: \(writer.error?.localizedDescription ?? "Unknown error")", reason: .videoFailed)
         }
         writer.startSession(atSourceTime: .zero)
 
@@ -242,14 +242,14 @@ final class H264StreamRecorder: @unchecked Sendable {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else {
-            throw CLIError(errorDescription: "Failed to create drawing context")
+            throw CLIError(errorDescription: "Failed to create drawing context", reason: .videoFailed)
         }
 
         context.interpolationQuality = .high
         context.draw(image, in: CGRect(x: 0, y: CGFloat(height), width: CGFloat(width), height: -CGFloat(height)))
 
         guard adaptor.append(pixelBuffer, withPresentationTime: presentationTime) else {
-            throw CLIError(errorDescription: "Failed to append frame: \(writer.error?.localizedDescription ?? "Unknown error")")
+            throw CLIError(errorDescription: "Failed to append frame: \(writer.error?.localizedDescription ?? "Unknown error")", reason: .videoFailed)
         }
     }
 

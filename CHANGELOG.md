@@ -9,12 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `screenshot --mask-secure` and `batch --mask-secure` paint password fields black before writing the image, and withhold it when a password field cannot be located. `OFFSIDER_MASK_SECURE=1` turns masking on by default. `screenshot --json` then adds `masked`, the number of fields painted.
+- Every failure has a typed `reason` and a `hint`; with `--json` it prints one object on stdout with `exitCode` and `error` (`reason`, `message`, `hint`, `dispatched`, `candidates`). The README lists every reason.
+- Not-found and ambiguous selector errors list up to five candidates with id, label, role, frame and on-screen state in JSON, and ambiguous errors name each candidate's label.
 
 ### Changed
 
 - Password fields read as bullets in `describe-ui`, selectors, `wait`, `assert` and `--verify` on both platforms, one per character. `--value` no longer matches them, and `assert --has-value` compares the bullets.
 - A SwiftUI `SecureField`, which iOS reports as a text field with a secure subrole, now has the role `secureTextField`.
 - On Android, non-ASCII text is no longer pasted into a focused password field; use `type --replace`.
+- **Breaking:** new exit codes: 2 selector not found (also off screen), 6 ambiguous selector, 7 device not found or not booted, 8 device busy, 9 Xcode, adb or the Android SDK missing; malformed device IDs, unknown displays and unsupported keys exit 64. These exited 1 before.
+- **Breaking:** `batch` exits with the code of its first step that failed to run, and a failed step's `error` is now an object.
+- **Breaking:** `--verify --json` reports are version 2: `dispatched` is `yes`, `no` or `unknown`, `error` is an object and `exitCode` is new.
 
 ### Fixed
 
@@ -22,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `batch --json` and batch errors no longer print the text of a `type` step.
 - `--verify` no longer quotes a password field's value.
 - On Android, a password field's text no longer appears in `describe-ui --fields native` or in a clickable parent's label, and a password field showing its hint reads as empty.
+- A failure while input was being sent no longer reports `dispatched: false`; it reports `unknown`.
+- `--wait-timeout` no longer builds suggestions on every poll.
 
 ## [0.4.0] - 2026-10-04
 

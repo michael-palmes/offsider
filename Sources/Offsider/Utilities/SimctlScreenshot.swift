@@ -16,12 +16,12 @@ enum SimctlScreenshot {
         do {
             result = try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: arguments(udid: udid, display: display, output: output.path), timeout: timeout)
         } catch {
-            throw CLIError(errorDescription: "Offsider could not capture \(target): \(error.localizedDescription). Check it is booted with `offsider list-devices`.")
+            throw CLIError(errorDescription: "Offsider could not capture \(target): \(error.localizedDescription). Check it is booted with `offsider list-devices`.", reason: .screenshotFailed, hint: "offsider list-devices")
         }
         guard result.status == 0, let data = FileManager.default.contents(atPath: output.path), !data.isEmpty else {
             let detail = result.stderr.split(whereSeparator: \.isNewline).first.map(String.init) ?? "simctl exited with \(result.status)"
             logger.info().log("simctl screenshot failed: \(result.stderr)")
-            throw CLIError(errorDescription: "Offsider could not capture \(target): \(detail). Check it is booted with `offsider list-devices`.")
+            throw CLIError(errorDescription: "Offsider could not capture \(target): \(detail). Check it is booted with `offsider list-devices`.", reason: .screenshotFailed, hint: "offsider list-devices")
         }
         return data
     }

@@ -111,7 +111,7 @@ struct BatchStepParser {
 
     private static func parseRead<C: AsyncParsableCommand & BatchReadable>(_ type: C.Type, arguments: [String]) throws -> C {
         guard var parsed = try C.parseAsRoot(arguments) as? C else {
-            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))")
+            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))", reason: .usage)
         }
         try parsed.validate()
         return parsed
@@ -124,7 +124,7 @@ struct BatchStepParser {
         logger: OffsiderLogger
     ) async throws -> [BatchPrimitive] {
         guard var parsed = try C.parseAsRoot(arguments) as? C else {
-            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))")
+            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))", reason: .usage)
         }
         if (parsed as? VerifiableCommand)?.verification.isRequested == true {
             throw ValidationError(unsupportedFlagsMessage)

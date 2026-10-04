@@ -63,7 +63,7 @@ enum HIDBroker {
         var requestData = try JSONEncoder().encode(request)
         requestData.append(0x0A)
         guard requestData.count <= maximumMessageBytes else {
-            throw CLIError(errorDescription: "HID broker request exceeds the maximum size.")
+            throw CLIError(errorDescription: "HID broker request exceeds the maximum size.", reason: .hidBrokerFailed)
         }
 
         // Recovery is limited to broker readiness. Once exchange starts, a lost response has an
@@ -173,7 +173,7 @@ enum HIDBroker {
                 switch primitive.kind {
                 case .down, .up:
                     guard let x = primitive.x, let y = primitive.y else {
-                        throw CLIError(errorDescription: "Touch primitive is missing coordinates.")
+                        throw CLIError(errorDescription: "Touch primitive is missing coordinates.", reason: .hidBrokerFailed)
                     }
                     let direction: FBSimulatorHIDDirection = primitive.kind == .down ? .down : .up
                     do {
@@ -188,7 +188,7 @@ enum HIDBroker {
                     }
                 case .delay:
                     guard let duration = primitive.duration, duration >= 0, duration <= 10 else {
-                        throw CLIError(errorDescription: "HID broker delay is invalid.")
+                        throw CLIError(errorDescription: "HID broker delay is invalid.", reason: .hidBrokerFailed)
                     }
                     try await Task.sleep(for: .seconds(duration))
                 }
@@ -234,7 +234,7 @@ enum HIDBroker {
         )
         let path = URL(fileURLWithPath: root, isDirectory: true).appendingPathComponent(filename).path
         guard path.utf8.count < MemoryLayout.size(ofValue: sockaddr_un().sun_path) else {
-            throw CLIError(errorDescription: "HID broker socket path is too long.")
+            throw CLIError(errorDescription: "HID broker socket path is too long.", reason: .hidBrokerFailed)
         }
         return path
     }
@@ -245,7 +245,7 @@ enum HIDBroker {
             guard (info.st_mode & S_IFMT) == S_IFDIR,
                   info.st_uid == uid,
                   info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
-                throw CLIError(errorDescription: "HID broker directory is not a private owned directory.")
+                throw CLIError(errorDescription: "HID broker directory is not a private owned directory.", reason: .privateDirectoryUnsafe)
             }
             return
         }
@@ -253,20 +253,20 @@ enum HIDBroker {
         guard mkdir(path, S_IRWXU) == 0 || errno == EEXIST else { throw posixError("mkdir") }
         guard lstat(path, &info) == 0 else { throw posixError("lstat") }
         guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else {
-            throw CLIError(errorDescription: "HID broker directory is not a private owned directory.")
+            throw CLIError(errorDescription: "HID broker directory is not a private owned directory.", reason: .privateDirectoryUnsafe)
         }
         guard chmod(path, S_IRWXU) == 0 else { throw posixError("chmod") }
         guard lstat(path, &info) == 0 else { throw posixError("lstat") }
         guard (info.st_mode & S_IFMT) == S_IFDIR,
               info.st_uid == uid,
               info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
-            throw CLIError(errorDescription: "HID broker directory is not a private owned directory.")
+            throw CLIError(errorDescription: "HID broker directory is not a private owned directory.", reason: .privateDirectoryUnsafe)
         }
     }
 
     private static func spawnBroker(simulatorUDID: String) throws {
         guard let executable = Bundle.main.executableURL else {
-            throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.")
+            throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.", reason: .hidBrokerFailed)
         }
         let process = Process()
         process.executableURL = executable

@@ -32,7 +32,7 @@ enum ScreenshotScale: Equatable {
         let trimmed = text.trimmingCharacters(in: .whitespaces).lowercased()
         if trimmed == "points" { return .points }
         guard let factor = Double(trimmed), factor >= 0.1, factor <= 1 else {
-            throw CLIError(errorDescription: "--scale takes points or a factor from 0.1 to 1; got \"\(text)\".")
+            throw CLIError(errorDescription: "--scale takes points or a factor from 0.1 to 1; got \"\(text)\".", reason: .usage)
         }
         return factor == 1 ? .native : .factor(factor)
     }
@@ -140,7 +140,7 @@ enum ScreenCapture {
         var region: PointRegion?
         if let requested = request.region {
             guard capture.upright else {
-                throw CLIError(errorDescription: "--region needs the screen's orientation, which the device did not report, so the capture may not be upright. Check with `offsider orientation`, or capture the whole screen.")
+                throw CLIError(errorDescription: "--region needs the screen's orientation, which the device did not report, so the capture may not be upright. Check with `offsider orientation`, or capture the whole screen.", reason: .orientationUnknown)
             }
             let pixelsPerPoint = try requirePixelsPerPoint(capture, for: "--region")
             let rect = try ScreenGeometry.pixelRect(for: requested, pixelsPerPoint: pixelsPerPoint, imageWidth: image.width, imageHeight: image.height)
@@ -190,10 +190,10 @@ enum ScreenCapture {
         do {
             baselineImage = try ScreenImage.decode(baseline)
         } catch {
-            throw CLIError(errorDescription: "The baseline \(baselinePath) is not a readable image. Pass a PNG saved by offsider screenshot.")
+            throw CLIError(errorDescription: "The baseline \(baselinePath) is not a readable image. Pass a PNG saved by offsider screenshot.", reason: .baselineUnreadable)
         }
         guard baselineImage.width == rendered.image.width, baselineImage.height == rendered.image.height else {
-            throw CLIError(errorDescription: "The baseline is \(baselineImage.width) x \(baselineImage.height) px but this capture is \(rendered.image.width) x \(rendered.image.height) px. Capture the baseline with the same --scale and --region.")
+            throw CLIError(errorDescription: "The baseline is \(baselineImage.width) x \(baselineImage.height) px but this capture is \(rendered.image.width) x \(rendered.image.height) px. Capture the baseline with the same --scale and --region.", reason: .baselineMismatch)
         }
         let exclusion = bandPixels(rendered, capture: capture, bands: bands)
         guard let current = ImageFingerprint(image: rendered.image, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom),
@@ -208,7 +208,7 @@ enum ScreenCapture {
     nonisolated static func readBaseline(at path: String) throws -> Data {
         let expanded = (path as NSString).expandingTildeInPath
         guard let data = FileManager.default.contents(atPath: expanded) else {
-            throw CLIError(errorDescription: "Could not read the baseline image at \(expanded). Check the path, or capture one first with offsider screenshot --output \(path).")
+            throw CLIError(errorDescription: "Could not read the baseline image at \(expanded). Check the path, or capture one first with offsider screenshot --output \(path).", reason: .baselineUnreadable)
         }
         return data
     }
@@ -226,17 +226,17 @@ enum ScreenCapture {
         case "jpeg", "jpg":
             isJPEG = true
         case let other?:
-            throw CLIError(errorDescription: "--format takes png or jpeg; got \"\(other)\".")
+            throw CLIError(errorDescription: "--format takes png or jpeg; got \"\(other)\".", reason: .usage)
         }
         if name != nil, (isJPEG && pathExtension == "png") || (!isJPEG && extensionIsJPEG) {
-            throw CLIError(errorDescription: "--output ends in .\(pathExtension) but --format is \(isJPEG ? "jpeg" : "png"). Change the extension or the format.")
+            throw CLIError(errorDescription: "--output ends in .\(pathExtension) but --format is \(isJPEG ? "jpeg" : "png"). Change the extension or the format.", reason: .usage)
         }
         guard let quality else { return isJPEG ? .jpeg(quality: ImageFormat.defaultJPEGQuality) : .png }
         guard isJPEG else {
-            throw CLIError(errorDescription: "--quality applies to --format jpeg only.")
+            throw CLIError(errorDescription: "--quality applies to --format jpeg only.", reason: .usage)
         }
         guard (1...100).contains(quality) else {
-            throw CLIError(errorDescription: "--quality must be from 1 to 100; got \(quality).")
+            throw CLIError(errorDescription: "--quality must be from 1 to 100; got \(quality).", reason: .usage)
         }
         return .jpeg(quality: quality)
     }
@@ -274,7 +274,7 @@ enum ScreenCapture {
 
     nonisolated private static func requirePixelsPerPoint(_ capture: CapturedScreen, for option: String) throws -> Double {
         guard let pixelsPerPoint = capture.pixelsPerPoint else {
-            throw CLIError(errorDescription: "\(option) needs the screen size in points, which the device did not report. Capture the whole screen, or pass a factor such as --scale 0.5.")
+            throw CLIError(errorDescription: "\(option) needs the screen size in points, which the device did not report. Capture the whole screen, or pass a factor such as --scale 0.5.", reason: .orientationUnknown)
         }
         return pixelsPerPoint
     }

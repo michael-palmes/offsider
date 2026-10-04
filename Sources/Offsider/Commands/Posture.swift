@@ -90,10 +90,10 @@ struct PostureCommand: AsyncParsableCommand {
         now: @MainActor () -> TimeInterval
     ) async throws -> String {
         guard let folder = backend as? any PostureControlling else {
-            throw CLIError(errorDescription: "posture is not available for \(deviceName) yet.")
+            throw CLIError(errorDescription: "posture is not available for \(deviceName) yet.", reason: .notSupported)
         }
         guard let previous = try await folder.posture(of: device) else {
-            throw CLIError(errorDescription: DisplayReport.notFoldable(device: deviceName))
+            throw CLIError(errorDescription: DisplayReport.notFoldable(device: deviceName), reason: .notSupported)
         }
         var current = previous
         if let angle {
@@ -110,7 +110,7 @@ struct PostureCommand: AsyncParsableCommand {
                 now: now
             )
             guard outcome == .reached else {
-                throw CLIError(errorDescription: timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceName))
+                throw CLIError(errorDescription: timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceName), reason: .stateNotReached)
             }
             current = target
             // The device state commits before the panel swap, so wait for the screen to follow it.
@@ -141,7 +141,7 @@ struct PostureCommand: AsyncParsableCommand {
         now: @MainActor () -> TimeInterval
     ) async throws -> Posture {
         guard let hinge = folder as? any HingeControlling else {
-            throw CLIError(errorDescription: "posture --angle is not available for \(deviceName); set a posture by name instead.")
+            throw CLIError(errorDescription: "posture --angle is not available for \(deviceName); set a posture by name instead.", reason: .notSupported)
         }
         let readAngle: @MainActor () async throws -> Int? = { try await hinge.hingeAngle(of: device).map { Int($0.rounded()) } }
         if try await readAngle() == angle, HingeControl.panelMatches(previous, angle: angle) { return previous }
@@ -155,7 +155,7 @@ struct PostureCommand: AsyncParsableCommand {
             now: now
         )
         guard outcome == .reached else {
-            throw CLIError(errorDescription: "The hinge did not reach \(angle) degrees within \(DeviceSettingsReport.number(timeout)) s. Check with `offsider posture --device \(deviceName)`.")
+            throw CLIError(errorDescription: "The hinge did not reach \(angle) degrees within \(DeviceSettingsReport.number(timeout)) s. Check with `offsider posture --device \(deviceName)`.", reason: .postureFailed)
         }
         var current = try await folder.posture(of: device) ?? previous
         let settleDeadline = now() + min(timeout, 5)

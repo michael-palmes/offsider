@@ -82,7 +82,7 @@ struct KeyCombo: AsyncParsableCommand {
         }
         let comboEvent = InputEvent.composite(events)
 
-        try await backend.perform(comboEvent, on: device)
+        try await backend.performTracked(comboEvent, on: device)
 
         logger.info().log("Key combo completed successfully")
     }

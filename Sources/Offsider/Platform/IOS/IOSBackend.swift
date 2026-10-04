@@ -62,16 +62,16 @@ final class IOSBackend: DeviceBackend {
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         let udid = id.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !udid.isEmpty else {
-            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.")
+            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.", reason: .invalidDeviceID, hint: "offsider list-devices")
         }
 
         guard let simulator = try await cachedSimulator(udid: udid, logger: logger) else {
-            throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.")
+            throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.", reason: .deviceNotFound, hint: "offsider list-devices")
         }
 
         guard simulator.state == .booted else {
-            let stateDescription = FBiOSTargetStateStringFromState(simulator.state)
-            throw CLIError(errorDescription: "Simulator \(udid) is not booted. Current state: \(stateDescription)")
+            let stateDescription = FBiOSTargetStateStringFromState(simulator.state).rawValue
+            throw CLIError.deviceNotBooted(id: udid, state: stateDescription)
         }
 
         simulators[udid] = simulator
@@ -183,7 +183,7 @@ final class IOSBackend: DeviceBackend {
             return
         }
         guard case .down = steps.first, case .up = steps.last else {
-            throw CLIError(errorDescription: "touch --down or --up alone is not supported on the iPhone Duo's inner display yet; pass --down and --up together, or fold the simulator to use the cover display.")
+            throw CLIError(errorDescription: "touch --down or --up alone is not supported on the iPhone Duo's inner display yet; pass --down and --up together, or fold the simulator to use the cover display.", reason: .notSupported)
         }
         do {
             for step in steps {
@@ -226,7 +226,7 @@ final class IOSBackend: DeviceBackend {
             }
         }
         if let display, display != "1" {
-            throw CLIError(errorDescription: "Simulator \(id.rawValue) has one display, 1 (main); got \(display). Run `offsider displays --device \(id.rawValue)`.")
+            throw CLIError(errorDescription: "Simulator \(id.rawValue) has one display, 1 (main); got \(display). Run `offsider displays --device \(id.rawValue)`.", reason: .unknownDisplay, hint: "offsider displays --device \(id.rawValue)")
         }
         return try await Timings.measure("capture") {
             try await VideoFrameUtilities.captureScreenshotData(from: simulator)
@@ -244,6 +244,9 @@ final class IOSBackend: DeviceBackend {
         }
         guard let simulator = try await cachedSimulator(udid: id.rawValue, logger: logger) else {
             throw CLIError.deviceNotFound(id: id.rawValue)
+        }
+        guard simulator.state == .booted else {
+            throw CLIError.deviceNotBooted(id: id.rawValue, state: FBiOSTargetStateStringFromState(simulator.state).rawValue)
         }
         simulators[id.rawValue] = simulator
         return simulator
@@ -300,7 +303,7 @@ extension IOSBackend: RawVideoStreaming {
                 isStreaming = false
                 try? await videoStream.stopStreamingAsync()
             }
-            throw CLIError(errorDescription: "Failed to stream BGRA video: \(error.localizedDescription)")
+            throw CLIError(errorDescription: "Failed to stream BGRA video: \(error.localizedDescription)", reason: .videoFailed)
         }
     }
 }

@@ -45,7 +45,7 @@ struct Assert: AsyncParsableCommand {
         on route: DeviceRouter.Route, logger: OffsiderLogger, tree: Wait.TreeSource? = nil, onPrepared: @Sendable () -> Void = {}
     ) async throws -> WaitOutcome {
         guard let query = selector.query else {
-            throw CLIError(errorDescription: "Unexpected state: no element query.")
+            throw CLIError(errorDescription: "Unexpected state: no element query.", reason: .internalError)
         }
         try await route.backend.prepare()
         onPrepared()

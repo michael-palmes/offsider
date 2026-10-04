@@ -55,7 +55,12 @@ struct ListDevices: AsyncParsableCommand {
                 throw failures[0].error
             }
             let details = failures.map { "\($0.platform.rawValue): \(message(for: $0.error))" }
-            throw CLIError(errorDescription: "Could not list devices.\n" + details.joined(separator: "\n"))
+            let reasons = failures.map { ($0.error as? any OffsiderFailure)?.reason }
+            let missing = reasons.allSatisfy { $0?.exitCode == .toolMissing }
+            throw CLIError(
+                errorDescription: "Could not list devices.\n" + details.joined(separator: "\n"),
+                reason: missing ? (reasons[0] ?? .deviceListFailed) : .deviceListFailed
+            )
         }
         for failure in failures {
             warn("Skipped \(failure.platform.rawValue) devices: \(message(for: failure.error))")

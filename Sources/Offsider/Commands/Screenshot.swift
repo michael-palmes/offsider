@@ -133,7 +133,7 @@ struct Screenshot: AsyncParsableCommand {
         var capture: CapturedScreen
         if let selected {
             guard let capturer = backend as? any DisplayCapturing else {
-                throw CLIError(errorDescription: "--display is not available for \(deviceOption.id) yet. Omit it to capture the active display.")
+                throw CLIError(errorDescription: "--display is not available for \(deviceOption.id) yet. Omit it to capture the active display.", reason: .notSupported)
             }
             capture = try await ScreenCapture.capture(capturer, device: booted.id, display: selected.display, posture: selected.list.posture)
         } else {

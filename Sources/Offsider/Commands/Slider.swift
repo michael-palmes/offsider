@@ -106,7 +106,7 @@ struct Slider: AsyncParsableCommand {
 
     private func accessibilityQuery() throws -> AccessibilityQuery {
         guard let query = SelectorQuery.make(id: elementID, label: elementLabel, value: nil) else {
-            throw CLIError(errorDescription: "Unexpected state: no slider selector.")
+            throw CLIError(errorDescription: "Unexpected state: no slider selector.", reason: .internalError)
         }
         return query
     }
@@ -114,7 +114,7 @@ struct Slider: AsyncParsableCommand {
     private func requireSlider(_ element: UINode) throws {
         guard element.isSlider else {
             let typeDescription = element.native.typeName ?? element.role.rawValue
-            throw CLIError(errorDescription: "Matched element is not a slider (type: \(typeDescription)). Use --element-type slider or a more specific --id/--label selector.")
+            throw CLIError(errorDescription: "Matched element is not a slider (type: \(typeDescription)). Use --element-type slider or a more specific --id/--label selector.", reason: .notASlider)
         }
     }
 
@@ -178,7 +178,7 @@ struct Slider: AsyncParsableCommand {
             case .performed(let reachable):
                 return try await verifyActionResult(reachable: reachable, targetNormalized: targetNormalized, query: query, target: target, logger: logger)
             case .stale:
-                throw CLIError(errorDescription: "The slider matched by \(selectorArgument) changed while Offsider was setting it. Retry when the screen is still.")
+                throw CLIError(errorDescription: "The slider matched by \(selectorArgument) changed while Offsider was setting it. Retry when the screen is still.", reason: .targetMoved)
             case .unsupported(let reason):
                 logger.info().log("Slider \(initialMatch.selectorDescription) cannot be set through accessibility (\(reason)); dragging it instead")
             }
@@ -204,7 +204,8 @@ struct Slider: AsyncParsableCommand {
         )
         guard observedValue.isWithinTolerance else {
             throw CLIError(
-                errorDescription: "Slider value did not reach requested value \(formatPercent(value)) after direct drag. Observed value: \(observedValue.rawValue ?? "none")."
+                errorDescription: "Slider value did not reach requested value \(formatPercent(value)) after direct drag. Observed value: \(observedValue.rawValue ?? "none").",
+                reason: .sliderUnverified
             )
         }
         return SliderResult(observed: observedValue.rawValue ?? formatNormalized(observedValue.normalizedValue), nearestStep: nil)
@@ -222,7 +223,8 @@ struct Slider: AsyncParsableCommand {
         let observedValue = try await pollObservedSliderValue(query: query, targetNormalized: reachable, on: target)
         guard observedValue.isWithinTolerance else {
             throw CLIError(
-                errorDescription: "Slider value did not reach requested value \(formatPercent(value)) after its accessibility action. Observed value: \(observedValue.rawValue ?? "none")."
+                errorDescription: "Slider value did not reach requested value \(formatPercent(value)) after its accessibility action. Observed value: \(observedValue.rawValue ?? "none").",
+                reason: .sliderUnverified
             )
         }
         let nearestStep = abs(reachable - targetNormalized) > Self.valueTolerance ? (reachable * 10_000).rounded() / 100 : nil
@@ -252,7 +254,7 @@ struct Slider: AsyncParsableCommand {
             initialHold: Self.directDragInitialHold,
             finalHold: Self.directDragFinalHold
         )
-        try await target.backend.perform(dragEvent, on: target.device)
+        try await target.backend.performTracked(dragEvent, on: target.device)
     }
 
     private func resolveSliderElement(query: AccessibilityQuery, on target: SliderTarget) async throws -> AccessibilityMatch {
@@ -268,7 +270,7 @@ struct Slider: AsyncParsableCommand {
             allowOffscreen: allowOffscreen
         )
         guard match.element.isSlider else {
-            throw CLIError(errorDescription: "Matched element is no longer a slider.")
+            throw CLIError(errorDescription: "Matched element is no longer a slider.", reason: .notASlider)
         }
         return (match, tree)
     }
@@ -322,7 +324,7 @@ struct Slider: AsyncParsableCommand {
         if let lastObservedValue {
             return lastObservedValue
         }
-        throw CLIError(errorDescription: "Slider value could not be verified because its value was unavailable after dragging.")
+        throw CLIError(errorDescription: "Slider value could not be verified because its value was unavailable after dragging.", reason: .sliderUnverified)
     }
 
     private func dragStartX(
@@ -359,23 +361,23 @@ struct Slider: AsyncParsableCommand {
 
     private func parseNormalizedValue(_ rawValue: String?) throws -> Double {
         guard let rawValue else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.", reason: .sliderUnreadable)
         }
 
         let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedValue.isEmpty else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.", reason: .sliderUnreadable)
         }
 
         let isPercent = trimmedValue.hasSuffix("%")
         let numericText = trimmedValue.replacingOccurrences(of: "%", with: "")
         guard let parsedValue = Double(numericText.trimmingCharacters(in: .whitespacesAndNewlines)), parsedValue.isFinite else {
-            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.")
+            throw CLIError(errorDescription: "Matched slider does not expose a numeric value, so Offsider cannot deterministically set it.", reason: .sliderUnreadable)
         }
 
         let normalizedValue = isPercent || parsedValue > 1.0 ? parsedValue / 100.0 : parsedValue
         guard (0...1).contains(normalizedValue) else {
-            throw CLIError(errorDescription: "Matched slider value is outside the supported 0...100 range: \(rawValue).")
+            throw CLIError(errorDescription: "Matched slider value is outside the supported 0...100 range: \(rawValue).", reason: .sliderUnreadable)
         }
         return normalizedValue
     }

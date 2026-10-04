@@ -165,9 +165,10 @@ struct TapCommandTests {
         #expect(warned.session.calls == [.perform(.tapAt(x: 201, y: 814.5))])
 
         let stopped = FakeDeviceBackend(trees: [Self.bannerScreen()])
-        let error = await #expect(throws: CLIError.self) {
+        let error = await #expect(throws: ReportedFailure.self) {
             try await run(["tap --id tab-home", "tap --id tab-search --fail-if-covered"], on: stopped)
         }
+        #expect(error?.exitCode == .failure)
         #expect(error?.userFacingDescription.hasPrefix("Step 2 failed: [tap]\n--id 'tab-search' at (201, 814.5) may be covered by other") == true)
         #expect(stopped.session.calls == [.perform(.tapAt(x: 67, y: 814.5))])
     }
@@ -193,5 +194,73 @@ struct TapCommandTests {
 
         #expect(line == "✓ Slider set to 60 successfully (value: 60%)")
         #expect(backend.coordinateCalls.map(\.hadTree) == [true])
+    }
+
+    @Test("a missing selector exits 2 with dispatched no")
+    func missingSelectorExits2() async {
+        let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 600)])
+        let tracker = DispatchTracker()
+
+        let error = await #expect(throws: ElementResolutionError.self) {
+            try await DispatchTracker.$current.withValue(tracker) {
+                try await Self.tap(["--id", "missing"], on: backend)
+            }
+        }
+
+        #expect(error?.exitCode == .selectorNotFound)
+        #expect(tracker.state == .no)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("a duplicated id exits 6 and names both candidates")
+    func duplicatedIDExits6() async {
+        let backend = FakeDeviceBackend(trees: [FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.button, id: "apply", label: "Apply", frame: FakeUI.frame(20, 600, 350, 44)),
+            FakeUI.node(.button, id: "apply", label: "Apply all", frame: FakeUI.frame(20, 660, 350, 44)),
+        ])])
+
+        let error = await #expect(throws: ElementResolutionError.self) {
+            try await Self.tap(["--id", "apply"], on: backend)
+        }
+
+        #expect(error?.exitCode == .ambiguousSelector)
+        #expect(error?.candidates.map(\.label) == ["Apply", "Apply all"])
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("--fail-if-covered under the keyboard is target_under_keyboard; another cover is target_covered")
+    func coverReasons() async throws {
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 560, 393, 292), children: [
+            FakeUI.node(.button, label: "q", frame: FakeUI.frame(0, 600, 393, 50)),
+        ])
+        let field = FakeUI.node(.textField, id: "field", label: "Field", frame: FakeUI.frame(20, 600, 350, 44))
+        let underKeyboard = FakeDeviceBackend(trees: [FakeUI.tree(width: 393, height: 852, [field, keyboard])])
+        let keyboardError = await #expect(throws: CLIError.self) {
+            try await Self.tap(["--id", "field", "--fail-if-covered"], on: underKeyboard)
+        }
+        #expect(keyboardError?.reason == .targetUnderKeyboard)
+
+        let banner = FakeDeviceBackend(trees: [Self.bannerScreen()])
+        let bannerError = await #expect(throws: CLIError.self) {
+            try await Self.tap(["--id", "tab-search", "--fail-if-covered"], on: banner)
+        }
+        #expect(bannerError?.reason == .targetCovered)
+        #expect(banner.session.calls.isEmpty && underKeyboard.session.calls.isEmpty)
+    }
+
+    @Test("a send that fails part way reports dispatched unknown; one that returns reports yes")
+    func trackedSendStates() async throws {
+        let failing = TrackedInputSession.wrapping(RecordingInputSession(failingOn: .shortKeyPress(40), with: CLIError(errorDescription: "lost")))
+        let failed = DispatchTracker()
+        await #expect(throws: CLIError.self) {
+            try await DispatchTracker.$current.withValue(failed) { try await failing.perform(.shortKeyPress(40)) }
+        }
+        #expect(failed.state == .unknown)
+
+        let sent = DispatchTracker()
+        try await DispatchTracker.$current.withValue(sent) {
+            try await TrackedInputSession.wrapping(RecordingInputSession()).perform(.shortKeyPress(41))
+        }
+        #expect(sent.state == .yes)
     }
 }

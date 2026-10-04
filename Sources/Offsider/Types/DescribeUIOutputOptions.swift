@@ -61,6 +61,11 @@ struct DescribeUIOutputOptions: ParsableArguments {
         return options
     }
 
+    /// json or ndjson output, so a failure prints the JSON error envelope too.
+    var writesJSON: Bool {
+        ((try? renderOptions())?.format ?? .json) != .text
+    }
+
     func render(_ tree: UITree) throws -> Data {
         UITreeRenderer.render(tree, try renderOptions())
     }

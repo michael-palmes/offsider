@@ -64,7 +64,7 @@ struct BatchReadStepTests {
         )
     }
 
-    /// Runs and returns the exit code the batch would end with: 0, 5 (`ExitCode`) or 1 (`CLIError`).
+    /// Runs and returns the exit code the batch would end with: 0, 5 (`ExitCode`) or the first failed step's code (`ReportedFailure`).
     private static func exitCode(
         _ steps: [String],
         on backend: FakeDeviceBackend,
@@ -78,9 +78,9 @@ struct BatchReadStepTests {
             return 0
         } catch let exit as ExitCode {
             return exit.rawValue
-        } catch let error as CLIError {
+        } catch let error as ReportedFailure {
             captured.err += error.userFacingDescription
-            return 1
+            return error.exitCode.rawValue
         }
     }
 
@@ -171,14 +171,16 @@ struct BatchReadStepTests {
         #expect(code == 5)
         let records = try captured.records()
         #expect(records[0]["ok"] as? Bool == false && records[0]["exitCode"] as? Int == 5)
-        #expect(records[0]["error"] as? String == "Assertion failed: --id 'state' has value 'Closed', expected 'Open'.")
+        let error = records[0]["error"] as? [String: Any]
+        #expect(error?["reason"] as? String == "condition_not_met")
+        #expect(error?["message"] as? String == "Assertion failed: --id 'state' has value 'Closed', expected 'Open'.")
         #expect(records[0]["met"] as? Bool == false)
         #expect(records.last?["failed"] as? Int == 1)
         #expect(captured.err.contains("Batch completed with 1 failure(s):\nStep 1 failed: [assert] -> Assertion failed:"))
         #expect(backend.session.calls == [.perform(.shortKeyPress(40))])
     }
 
-    @Test("a failed assert with a step that cannot run exits 1")
+    @Test("a failed assert with a step that cannot run exits with that step's code (64 for an unknown step)")
     func runFailureOutranksConditionFailure() async throws {
         let backend = FakeDeviceBackend(trees: [Self.closed])
         let captured = Captured()
@@ -187,9 +189,9 @@ struct BatchReadStepTests {
             ["assert --id state --has-value Open", "unknown-command"], on: backend, json: true, continueOnError: true, captured: captured
         )
 
-        #expect(code == 1)
+        #expect(code == 64)
         let records = try captured.records()
-        #expect(records.map { $0["exitCode"] as? Int } == [5, 1, nil])
+        #expect(records.map { $0["exitCode"] as? Int } == [5, 64, nil])
         #expect(captured.err.contains("Step 2 failed: [unknown-command] -> Unsupported batch step 'unknown-command'."))
     }
 
@@ -204,7 +206,7 @@ struct BatchReadStepTests {
         #expect(backend.session.calls.isEmpty)
         let records = try captured.records()
         #expect(records.count == 2)
-        #expect(records[0]["error"] as? String == "Timed out after 0 s waiting for --id 'sheet-title' (last: not found).")
+        #expect((records[0]["error"] as? [String: Any])?["message"] as? String == "Timed out after 0 s waiting for --id 'sheet-title' (last: not found).")
         #expect(records[1]["ok"] as? Bool == false && records[1]["steps"] as? Int == 2 && records[1]["failed"] as? Int == 1)
         #expect(captured.err == "Step 1 failed: [wait]\nTimed out after 0 s waiting for --id 'sheet-title' (last: not found).\n")
     }
@@ -286,7 +288,7 @@ struct BatchReadStepTests {
         #expect(code == 5)
         let record = try captured.records()[0]
         #expect(record["changed"] as? Bool == false && record["exitCode"] as? Int == 5)
-        #expect((record["error"] as? String)?.hasPrefix("Unchanged: ") == true)
+        #expect(((record["error"] as? [String: Any])?["message"] as? String)?.hasPrefix("Unchanged: ") == true)
     }
 
     @Test("a tap step's own --wait-timeout overrides the batch-level value")
@@ -295,7 +297,7 @@ struct BatchReadStepTests {
 
         let ignored = FakeDeviceBackend(trees: trees)
         let code = try await Self.exitCode(["tap --id open"], on: ignored, captured: Captured())
-        #expect(code == 1)
+        #expect(code == 2)
 
         let honoured = FakeDeviceBackend(trees: trees)
         try await Self.run(["tap --id open --wait-timeout 30 --poll-interval 0.01"], on: honoured, captured: Captured())
@@ -303,7 +305,7 @@ struct BatchReadStepTests {
 
         let disabled = FakeDeviceBackend(trees: trees)
         let disabledCode = try await Self.exitCode(["tap --id open --wait-timeout 0"], on: disabled, captured: Captured(), waitTimeout: 2)
-        #expect(disabledCode == 1)
+        #expect(disabledCode == 2)
         #expect(disabled.treeReads == 1)
     }
 
@@ -312,7 +314,7 @@ struct BatchReadStepTests {
         let captured = Captured()
         let code = try await Self.exitCode(["wait --id open --json"], on: FakeDeviceBackend(trees: [Self.closed]), captured: captured)
 
-        #expect(code == 1)
+        #expect(code == 64)
         #expect(captured.err.contains("Batch steps do not take --json. Use batch --json for one JSON line per step."))
         #expect(throws: ValidationError.self) { try BatchStepParser.rejectUnsupportedFlags(["tap", "--id", "x", "--json"]) }
     }

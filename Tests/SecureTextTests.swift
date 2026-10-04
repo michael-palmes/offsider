@@ -207,7 +207,7 @@ struct SecureTextTests {
         do {
             _ = try await Self.batch(["type \(Self.sentinel) extra", "type '\(Self.sentinel)£'", "type 'unterminated \(Self.sentinel)"], on: backend)
             Issue.record("expected the batch to fail")
-        } catch let error as CLIError {
+        } catch let error as ReportedFailure {
             stderr = error.userFacingDescription
         }
 

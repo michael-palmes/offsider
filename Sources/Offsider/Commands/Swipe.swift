@@ -127,7 +127,7 @@ struct Swipe: AsyncParsableCommand {
         )
         let finalEvent = InputEvent.delayed(swipeEvent, pre: preDelay, post: postDelay)
 
-        try await backend.perform(finalEvent, on: device)
+        try await backend.performTracked(finalEvent, on: device)
         
         logger.info().log("Swipe gesture completed successfully")
     }

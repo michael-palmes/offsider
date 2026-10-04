@@ -37,10 +37,11 @@ enum DeviceRouter {
             let serial = try await backend.runningSerial(forAVDNamed: name)
             return Route(backend: backend, device: DeviceID(rawValue: serial, platform: .android))
         case .empty:
-            throw CLIError(errorDescription: "Device ID cannot be empty. Run `offsider list-devices` to find device IDs.")
+            throw CLIError(errorDescription: "Device ID cannot be empty. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
         case .unrecognised:
             throw CLIError(
-                errorDescription: "Device \(id) is not an iOS simulator UDID. Run `offsider list-devices` to find device IDs."
+                errorDescription: "Device \(id) is not an iOS simulator UDID. Run `offsider list-devices` to find device IDs.",
+                reason: .invalidDeviceID, hint: "offsider list-devices"
             )
         }
     }

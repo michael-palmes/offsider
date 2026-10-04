@@ -151,7 +151,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
             return
         }
 
-        try await backend.perform(buttonEvent, on: device)
+        try await backend.performTracked(buttonEvent, on: device)
 
         logger.info().log("\(buttonType.description) press completed successfully")
     }

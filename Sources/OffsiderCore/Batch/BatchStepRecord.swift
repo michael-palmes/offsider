@@ -14,17 +14,18 @@ public struct BatchStepRecord: Sendable {
     }
 
     public struct Failure: Equatable, Sendable {
-        public let exitCode: Int32
-        public let message: String
+        public let error: ErrorPayload
 
-        public init(exitCode: Int32, message: String) {
-            self.exitCode = exitCode
-            self.message = message
+        public init(error: ErrorPayload) {
+            self.error = error
         }
+
+        public var exitCode: Int32 { error.exitCode.rawValue }
+        public var message: String { error.message }
 
         /// The condition was checked and not met (exit 5), rather than the step failing to run.
         public var isConditionNotMet: Bool {
-            exitCode == OffsiderExitCode.unverified.rawValue
+            error.exitCode == .unverified
         }
     }
 
@@ -56,7 +57,7 @@ public struct BatchStepRecord: Sendable {
             ("ms", .integer(Self.milliseconds(elapsed))),
         ]
         if let failure {
-            members += [("exitCode", .integer(Int(failure.exitCode))), ("error", .string(failure.message))]
+            members += [("exitCode", .integer(Int(failure.exitCode))), ("error", failure.error.jsonValue)]
         }
         switch detail {
         case .none:

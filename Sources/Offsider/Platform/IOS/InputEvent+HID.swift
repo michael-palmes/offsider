@@ -26,7 +26,7 @@ extension HardwareButton {
     func requireHIDButton() throws -> FBSimulatorHIDButton {
         guard let hidButton else {
             let name = ButtonType.allCases.first { $0.hardwareButton == self }?.rawValue ?? rawValue
-            throw CLIError(errorDescription: "The \(name) button is Android only. iOS buttons: \(ButtonType.names(on: .ios)).")
+            throw CLIError(errorDescription: "The \(name) button is Android only. iOS buttons: \(ButtonType.names(on: .ios)).", reason: .unsupportedButton)
         }
         return hidButton
     }

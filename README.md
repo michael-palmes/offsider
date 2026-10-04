@@ -230,7 +230,7 @@ offsider batch --device "$DEVICE" --json \
   --step "describe-ui --summary"
 ```
 
-With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `ms`, plus `exitCode` and `error` on failure and each read step's own result), then a summary line; human text goes to stderr. The batch exits 1 when a step failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0.
+With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `ms`, plus `exitCode` and `error` on failure and each read step's own result), then a summary line; human text goes to stderr. A failed step's `error` is the [JSON error object](#json-errors). The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0.
 
 `tap` warns when another element may cover its target, for example a banner over a tab bar, and `--fail-if-covered` stops instead of tapping. An overlay that is hidden from accessibility cannot be detected this way.
 
@@ -272,11 +272,113 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 | Code | Meaning |
 | --- | --- |
 | 0 | Success; for `doctor`, every check passed or was skipped |
-| 1 | The command failed; the error is printed to stderr |
+| 1 | The command failed for any other reason; the error is printed to stderr |
+| 2 | The selector matched nothing, or only elements off screen |
 | 3 | `doctor` found warnings |
 | 4 | `doctor` found failures |
 | 5 | A condition was not met: `--verify` saw no change after the input, `wait` timed out, `assert` failed, `screenshot --compare` found no change, or a `batch` had only such failures |
-| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, a `button` the device's platform lacks and `boot` with a simulator UDID |
+| 6 | The selector matched more than one element |
+| 7 | The device was not found or is not booted |
+| 8 | The device is busy: another client holds it |
+| 9 | Xcode, adb or the Android SDK is missing or unusable |
+| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, a malformed device ID, an unknown display, a key or `button` the device's platform lacks and `boot` with a simulator UDID |
+
+`batch` exits with the code of its first step that failed to run, else 5 when only conditions were not met.
+
+### JSON errors
+
+With `--json`, a failure prints one object on stdout, where the success output goes, and the `Error:` line still goes to stderr. `describe-ui` does the same when its output is JSON or NDJSON:
+
+```json
+{"version":1,"ok":false,"command":"screenshot","exitCode":7,"error":{"reason":"device_not_found","message":"No device with ID 5E1B... was found. Run `offsider list-devices` to see available devices.","hint":"offsider list-devices","dispatched":null,"candidates":[]}}
+```
+
+`--verify --json` reports (version 2) and `batch --json` step lines carry the same `error` object in place of their own envelope. `hint` is the next command to run and never repeats typed text. `candidates` lists up to five elements (`id`, `label`, `role`, `frame`, `onScreen`, never a value) for selector errors. `dispatched` says whether input may have reached the device: `no` (nothing was sent, so resending is safe), `unknown` (a send began and failed, so check the screen first) or `yes`; it is null for commands that send no input. A `--json` that is itself the mistake, such as `tap --json` without `--verify`, prints only the usage error.
+
+### Error reasons
+
+| Reason | Exit | When | What to do |
+| --- | --- | --- | --- |
+| `selector_not_found` | 2 | No element matched the selector | Read `candidates`, fix the selector, or wait with `--wait-timeout` |
+| `selector_filtered_by_type` | 2 | Elements matched, but none of the `--element-type` | Drop or change `--element-type`; `candidates` shows the roles |
+| `target_off_screen` | 2 | Every match is off screen | Scroll it into view, wait, or pass `--allow-offscreen` |
+| `selector_ambiguous` | 6 | Several elements matched | Pick from `candidates`: use `--id`, add `--element-type` or tap by coordinates |
+| `selector_ambiguous_switch` | 6 | The match holds several switches | Target the switch with `--id` or coordinates |
+| `device_not_found` | 7 | No device has that ID | `offsider list-devices` |
+| `device_not_booted` | 7 | The device exists but is not running | Boot it (`xcrun simctl boot`, `offsider boot`) |
+| `device_not_ready` | 7 | The emulator is offline or still booting | Wait, or `offsider boot <AVD>` |
+| `device_unauthorised` | 7 | adb is not authorised for the emulator | Accept the prompt, or restart it with `offsider boot` |
+| `device_ambiguous` | 7 | An AVD name matches more than one running emulator | Pass one serial with `--device` |
+| `avd_not_found` | 7 | No AVD has that name | Check the name in Android Studio's Device Manager |
+| `device_busy` | 8 | Another command is driving the device | Retry once it finishes |
+| `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |
+| `xcode_missing` | 9 | No usable Xcode is selected | `xcode-select -s <Xcode.app>/Contents/Developer` |
+| `xcode_unusable` | 9 | The selected Xcode cannot load simulator support | Select Xcode 26 or later |
+| `android_sdk_missing` | 9 | No Android SDK or adb was found | Install Platform-Tools or set `ANDROID_HOME` |
+| `adb_server_unavailable` | 9 | The adb server is not running or not answering | `adb start-server` |
+| `adb_server_misconfigured` | 9 | The adb server settings point off this Mac or cannot be read | Fix or unset the adb server variables |
+| `emulator_missing` | 9 | The Android Emulator is not installed | Install it with the SDK Manager |
+| `emulator_grpc_required` | 9 | The command needs the emulator's gRPC endpoint and it is not reachable | Restart the emulator with `offsider boot` |
+| `helper_unavailable` | 9 | The UiAutomation helper cannot run on this emulator | Unset `OFFSIDER_ANDROID_TREE`, or use another image |
+| `usage` | 64 | Invalid arguments or options | Fix the command line; see `--help` |
+| `invalid_device_id` | 64 | The device ID is empty or not a device ID | `offsider list-devices` |
+| `invalid_setting` | 64 | An `OFFSIDER_` variable has a value Offsider cannot read | Fix or unset it |
+| `unsupported_button` | 64 | The device's platform has no such button | Use a button the platform has |
+| `unsupported_key` | 64 | The key has no equivalent on the device | Use a supported key |
+| `unknown_display` | 64 | `--display` names no display on the device | `offsider displays --device <ID>` |
+| `legacy_argument` | 64 | A renamed option or command, such as `--udid` | Use the new name in the message |
+| `not_verified` | 5 | `--verify` saw no change after the input (reports only) | Check the screen before sending again |
+| `condition_not_met` | 5 | A `wait`, `assert` or `screenshot --compare` condition was not met (reports only) | Read the step's `reason` |
+| `command_failed` | 1 | Any failure without a more specific reason | Read `message` |
+| `internal_error` | 1 | Offsider reached a state it should not | Report it |
+| `input_failed` | 1 | Sending input failed | Read `dispatched` before resending |
+| `input_outcome_unknown` | 1 | The input request was lost on the way and not replayed | Check the screen before resending |
+| `target_covered` | 1 | `--fail-if-covered` found something over the target | Dismiss the cover, then retry |
+| `target_under_keyboard` | 1 | `--fail-if-covered` found the keyboard over the target | Dismiss the keyboard, then retry |
+| `target_has_no_frame` | 1 | The match has no usable frame | Target another element |
+| `target_moved` | 1 | The slider changed while it was being set | Retry when the screen is still |
+| `not_a_slider` | 1 | `slider` matched something that is not a slider | Use `--element-type slider` or a narrower selector |
+| `slider_unreadable` | 1 | The slider exposes no numeric value | Use `tap` or `drag` instead |
+| `slider_unverified` | 1 | The slider did not reach the value | Retry, or read its value with `describe-ui` |
+| `no_focused_field` | 1 | `type --replace` found no focused text field | Tap the field first |
+| `field_not_editable` | 1 | The focused element is not a text field | Tap the text field first |
+| `unsupported_text` | 1 | The text has characters the device cannot type | Remove them, or use `type --replace` on Android |
+| `secure_paste_refused` | 1 | Typing into a password field would use the clipboard | Use `type --replace` |
+| `mask_unproven` | 1 | `--mask-secure` could not locate every password field | Retry when the screen is still |
+| `tree_read_failed` | 1 | The accessibility tree could not be read | Retry; on iOS run `offsider doctor --device <ID>` |
+| `no_window` | 1 | The device shows no window | Unlock it and bring an app to the front |
+| `screen_not_idle` | 1 | The screen did not settle for uiautomator | Retry when the screen is still |
+| `screenshot_failed` | 1 | The screen could not be captured | Retry, or check the device with `offsider list-devices` |
+| `baseline_unreadable` | 1 | The `--compare` baseline cannot be read | Check the path, or capture a new baseline |
+| `baseline_mismatch` | 1 | The baseline and the capture differ in size | Capture both with the same `--region` and `--scale` |
+| `display_unreadable` | 1 | The display size or turn could not be read | Retry, or check the device |
+| `display_off` | 1 | The requested display is off | Fold or unfold the device with `offsider posture` |
+| `not_supported` | 1 | The device or platform does not support the command or option | Use another device or option |
+| `posture_failed` | 1 | The posture could not be set | Check it with `offsider posture --device <ID>` |
+| `state_not_reached` | 1 | The posture or orientation did not take effect in time | Check the device, then retry |
+| `orientation_unknown` | 1 | The device did not report its orientation | Check it with `describe-ui` |
+| `device_restarted` | 1 | The simulator restarted while Offsider connected | Retry |
+| `device_unresponsive` | 1 | The device stopped answering | `offsider doctor --device <ID>`, or restart the device |
+| `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
+| `app_not_installed` | 1 | `logs --app` names an app that is not installed | Install it, or drop `--app` |
+| `log_stream_failed` | 1 | The device's log could not be read | Retry |
+| `video_failed` | 1 | Recording or streaming video failed | Check the output path, then retry |
+| `helper_failed` | 1 | The UiAutomation helper stopped or failed | Retry; the `hint` names the log to read |
+| `helper_timed_out` | 1 | The UiAutomation helper did not answer in time | Retry when the emulator responds |
+| `adb_command_failed` | 1 | An adb command failed on the emulator | Read `message` |
+| `adb_protocol_error` | 1 | The adb server sent a reply Offsider could not read | Restart the adb server |
+| `emulator_grpc_unavailable` | 1 | The emulator's gRPC endpoint did not answer | Check the emulator is still running |
+| `emulator_grpc_auth_failed` | 1 | The emulator rejected Offsider's gRPC credentials | Restart it with `offsider boot` |
+| `emulator_grpc_failed` | 1 | A gRPC call to the emulator failed | Retry |
+| `emulator_timed_out` | 1 | The emulator did not answer a gRPC call in time | Retry when it responds |
+| `emulator_launch_failed` | 1 | The emulator could not start or exited during start-up | Read the log the message names |
+| `boot_timed_out` | 1 | The emulator did not finish booting in time | Run `offsider boot` again to keep waiting |
+| `hid_broker_failed` | 1 | The HID broker that sends iOS input failed | `offsider doctor --device <ID>` |
+| `private_directory_unsafe` | 1 | The HID broker directory is not private to this user | `offsider doctor --device <ID> --fix` |
+| `timed_out` | 1 | A helper process did not finish in time | Retry |
+| `init_failed` | 1 | `init` could not install or remove the skill | Read `message` |
+| `device_list_failed` | 1 | Devices could not be listed | Read `message` for each platform |
+| `expo_dev_client_failed` | 1 | `rn prepare` could not prepare the Expo dev client | Read `message` |
 
 ## Privacy
 

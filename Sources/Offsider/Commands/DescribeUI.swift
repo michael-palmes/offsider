@@ -54,7 +54,7 @@ struct DescribeUI: AsyncParsableCommand {
         }
         throw CLIError(errorDescription: DisplayReport.inactiveDisplay(
             selected.display, posture: selected.list.posture, platform: route.device.platform, device: deviceName
-        ))
+        ), reason: .displayOff)
     }
 
     /// The tree with the screen the envelope reports, when the device can say.

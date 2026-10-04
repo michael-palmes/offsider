@@ -139,7 +139,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             await Self.warnIfOffScreen(x: pointX, y: pointY, backend: backend, device: device)
         } else {
             guard let query else {
-                throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.")
+                throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.", reason: .internalError)
             }
 
             let polled = try await AccessibilityPoller.resolveWithPolling(
@@ -185,7 +185,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             return
         }
 
-        let session = try await backend.openInputSession(for: device)
+        let session = try await backend.openTrackedSession(for: device)
         do {
             try await dispatchTap(point: physicalPoint, style: style, in: session, logger: logger)
         } catch {
@@ -243,7 +243,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         }
         let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover)
         if failIfCovered {
-            throw CLIError(errorDescription: message)
+            let underKeyboard = AccessibilityTargetResolver.isUnderKeyboard(cover, in: tree.roots)
+            throw CLIError(
+                errorDescription: message,
+                reason: underKeyboard ? .targetUnderKeyboard : .targetCovered,
+                hint: "offsider describe-ui --device \(device.rawValue) --summary"
+            )
         }
         print("Warning: \(message) Pass --fail-if-covered to stop instead.", to: &standardError)
     }
@@ -295,7 +300,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             let finalEvent = InputEvent.delayed(.tapAt(x: point.x, y: point.y), pre: preDelay, post: postDelay)
             try await session.perform(finalEvent)
         case .automatic:
-            throw CLIError(errorDescription: "Unexpected tap style resolution.")
+            throw CLIError(errorDescription: "Unexpected tap style resolution.", reason: .internalError)
         }
     }
 

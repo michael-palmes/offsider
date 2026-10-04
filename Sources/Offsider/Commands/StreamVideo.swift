@@ -166,7 +166,7 @@ struct StreamVideo: AsyncParsableCommand {
         cancellationFlag: CancellationFlag
     ) async throws {
         guard let streamer = backend as? any RawVideoStreaming else {
-            throw CLIError(errorDescription: "BGRA streaming is not supported for device \(device.rawValue).")
+            throw CLIError(errorDescription: "BGRA streaming is not supported for device \(device.rawValue).", reason: .notSupported)
         }
 
         FileHandle.standardError.write(Data("Starting BGRA video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...\n".utf8))
