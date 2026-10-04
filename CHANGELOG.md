@@ -28,9 +28,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Selector `tap`, `slider` and batch tap steps wait out a transition the previous input started (up to 500 ms, 150 ms with no cached tree) and find the target again before acting; `--no-settle` turns this off.
 - `--verify --json` reports up to 10 `changes`, a `changesTruncated` count and `note: "keyboard_closed"`.
 - `OFFSIDER_TIMINGS=1` adds the `tree-cache`, `tree-diff` and `settle` phases.
+- `offsider guide <topic>` prints one topic of the agent skill, matched to the installed version: `selectors`, `verify`, `errors`, `android`, `react-native`, `foldables`, `batch`, `screenshots`, `describe-ui`, `device-state` and `migrate`, which maps idb, Maestro and agent-device commands to Offsider. `offsider guide` lists the topics; an unknown topic exits 64.
 
 ### Changed
 
+- The skill `offsider init` installs is a short router (under 10 KB, from 36 KB): the core loop, the rules, the exit codes and a topic table, with the depth printed on demand by `offsider guide`. `init` still installs `SKILL.md` only.
 - Offsider keeps the last accessibility tree read from each device, with password values masked and platform attributes left out, in its private per-user directory for 10 minutes; `OFFSIDER_TREE_CACHE=off` turns it off.
 - `tap --verify` reads the tree once fewer before tapping, and taps the target where the verifier's second read finds it.
 - `describe-ui --summary` stops at 16384 bytes by default (`--max-bytes 0` lifts it).

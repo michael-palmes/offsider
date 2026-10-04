@@ -5,7 +5,7 @@ import Testing
 
 @Suite("Device Option Tests")
 struct DeviceOptionTests {
-    private static let commandsWithoutDevice: Set<String> = ["boot", "init", "list-devices"]
+    private static let commandsWithoutDevice: Set<String> = ["boot", "guide", "init", "list-devices"]
 
     @Test("every device command takes --device and none takes --udid")
     func deviceCommandsTakeDevice() async throws {

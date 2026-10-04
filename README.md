@@ -70,6 +70,7 @@ offsider screenshot --output ./screen.png --device "$DEVICE"
 
 # Install the Offsider skill for Claude Code
 offsider init --client claude
+offsider guide                                   # list the skill's topics; guide <topic> prints one
 ```
 
 On Android, start an emulator with `boot` (it prints the serial once Android has booted), then use the same commands:
@@ -122,6 +123,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings, booted simulators and simulator crash loops, plus the Android SDK and adb server when an SDK is installed; with `--device`, a simulator's state, Resize Mode, dtuhidd, HID transport, accessibility and recent crashes, or an Android emulator's state, image, gRPC endpoint, UiAutomation slot, helper start and Metro reverse (Android host checks only, no Xcode checks); `--json` prints one object, `--fix` applies safe fixes (on Android, only starting an absent adb server with `ADB_MDNS=0`) |
 | `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text`, `--compact` and `--max-bytes` shape the output; `--diff` prints only what changed since the previous command's tree. `--display <id>` checks that the active display is the one you expect |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
+| `guide` | Print one topic of the skill, matched to this version (`selectors`, `verify`, `errors`, `android`, `react-native`, `foldables`, `batch`, `screenshots`, `describe-ui`, `device-state`, `migrate`), or list the topics with no argument |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`, `--no-settle`), then verify the result |
 | `type` | Type text from an argument, `--stdin` or `--file` (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; supports `--verify, --retries, --json` |
@@ -349,6 +351,29 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 - Offsider never sets `adb reverse`. To reach Metro from a debug build on a phone, run `adb -s <serial> reverse tcp:8081 tcp:8081` yourself (8742 for the playground), and `adb -s <serial> reverse --remove tcp:8081` when done; while it is set every app on the phone can reach Metro, so prefer release builds on phones.
 - A phone's screen and notifications reach `describe-ui` and screenshots, and from there whatever your agent sends to its model provider; Offsider itself sends nothing. Turn on Do Not Disturb first.
 
+### Agent skill and guide
+
+`offsider init` installs one short `SKILL.md`: the core loop, the rules every session needs and a table of topics. The depth lives in topics printed on demand by `offsider guide <topic>`, so an agent reads only what the task needs and always gets the text that matches the installed binary. `offsider guide` lists the topics and when to read each; an unknown topic exits 64.
+
+### Coming from idb, Maestro or agent-device
+
+`offsider guide migrate` maps each tool's commands to Offsider, marking every row same, renamed, missing or by design. The most common:
+
+| From | Offsider |
+| --- | --- |
+| `idb list-targets` | `list-devices` |
+| `idb ui describe-all`, agent-device `snapshot` | `describe-ui --summary` |
+| `idb ui tap X Y`, agent-device `press` | `tap -x X -y Y`, or `tap --id` and `tap --label` |
+| Maestro `tapOn` | `tap --id` or `tap --label` |
+| `idb ui text`, Maestro `inputText` | `type` |
+| agent-device `fill`, Maestro `eraseText` | `tap` on the field, then `type --replace` |
+| Maestro `assertVisible`, `extendedWaitUntil` | `assert --id`, `wait --id` |
+| Maestro `waitForAnimationToEnd` | `wait --settled` |
+| `idb approve`, `idb revoke` | `permission grant`, `permission revoke` |
+| `idb record video`, `idb video-stream` | `record-video`, `stream-video` |
+
+Installing and launching apps stays with `xcrun simctl` and `adb`, and Offsider keeps no element refs or session state: selectors and the automatic device lock cover them.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -460,7 +485,7 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `hid_broker_failed` | 1 | The HID broker that sends iOS input failed | `offsider doctor --device <ID>` |
 | `private_directory_unsafe` | 1 | The HID broker directory is not private to this user | `offsider doctor --device <ID> --fix` |
 | `timed_out` | 1 | A helper process did not finish in time | Retry |
-| `init_failed` | 1 | `init` could not install or remove the skill | Read `message` |
+| `init_failed` | 1 | `init` could not install or remove the skill, or `guide` could not read a bundled topic | Read `message` |
 | `device_list_failed` | 1 | Devices could not be listed | Read `message` for each platform |
 | `expo_dev_client_failed` | 1 | `rn prepare` could not prepare the Expo dev client | Read `message` |
 

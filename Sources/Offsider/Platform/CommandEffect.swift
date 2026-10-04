@@ -16,6 +16,7 @@ enum CommandEffect: String, Sendable {
         "boot": .input,
         "doctor": .none,
         "init": .none,
+        "guide": .none,
         "tap": .input,
         "slider": .input,
         "type": .input,

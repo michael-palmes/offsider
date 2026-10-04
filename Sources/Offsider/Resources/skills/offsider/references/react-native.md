@@ -1,0 +1,30 @@
+# React Native and Expo apps
+
+## Ids, labels and roles
+
+- `testID` is `id` and `accessibilityLabel` is `label` on both platforms (on Android from `content-desc`).
+- A `View` with neither `accessible` nor `testID` can be flattened away on Android, so ask for a `testID` when a target is missing. A `Pressable` without a label takes its children's text as its label.
+- Rows without a `testID` or `accessibilityLabel` take their children's text as the label (`Inbox, 3 unread`), live values included, so `--label` stops matching when a value changes. Prefer `--id`; otherwise find the row in `describe-ui --summary` and tap its centre.
+- Checkboxes, radio buttons and switches report their role on both platforms, with `value` `1`, `0` or `2` (mixed), so `--element-type radioButton` works on iOS too. On iOS a combo box and a progress bar may still read as `other`; select those by `--id` or `--label`.
+- `offsider button back` pops React Navigation and custom stacks on Android, like the hardware back button.
+
+## Kept-mounted views
+
+- Closed bottom sheets and the previous screens of a JavaScript stack often stay mounted. On iOS they stay in `describe-ui` with frames outside the screen; on Android nodes the user cannot see are left out.
+- Selectors, `wait` and `assert` count only on-screen matches, so open the sheet, then `wait --id <id>` before tapping inside it; add `wait --settled` when it slides in. A partly visible element is tapped at the centre of its visible part.
+- A previous screen still partly on screen under the current one keeps its ids: when `--id` reports multiple matches, narrow with `--element-type` or tap by coordinates.
+- On Android a `Modal` is its own window, so only the modal is in the tree while it is open.
+- Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` (apps often wrap charts and web views this way) is missing from the tree, buttons included, but still takes taps. Tap by coordinates and say so, or ask for the wrapper to expose its controls.
+- Charts, maps, canvases and web views change pixels, not the tree: check them with `wait --region <x,y,w,h> --changed` or `screenshot --region <x,y,w,h> --compare before.png`, and with the app's logs.
+
+## Logs
+
+`offsider logs --rn --device <DEVICE_ID>` prints `console.log`, `console.warn` and `console.error` output from the last 30 s, in release builds too. Use `--last 2m` (up to `8760h`) or `--since <time>` (up to the year 9999) to widen it, `--grep <regex>` to filter, `--app <bundle id or package>` for one app's native logs and `--duration <seconds>` to collect live output. Logs are the best check that an action did something a screenshot cannot show, such as a request being sent.
+
+## Debug builds
+
+- Debug builds load JavaScript from Metro. An Expo dev client that cannot reach Metro shows its launcher instead of the app (`Development Build`, `Searching for development servers...`, and under `RECENTLY OPENED` a button named after the app and its Metro URL): ask the user to start Metro, then tap that button.
+- Debug builds raise a LogBox banner at the bottom of the screen for `console.error` and uncaught errors, often over the tab bar (`console.warn` raises none; read warnings with `logs --rn`). It is in the tree (role `other` on iOS, `button` on Android), labelled with `!` or a count and then the message, such as `!, Request failed`. `tap` warns when it covers a target on both platforms, including taps just below it on Android, where its touch area reaches the bottom of the screen; `tap --verify` near one is a second check. Note the text, then continue.
+- A tap that lands on the banner opens the full-screen LogBox inspector, which is in `describe-ui` (`Console Error`, `Log 1 of 1`): `tap --label Dismiss` clears the log and closes it, `tap --label Minimize` returns to the banner. On Android the inspector, the dev menu and its intro are separate windows, so while one is open `describe-ui` lists only that window and the app's elements seem to be missing.
+- A fresh install of an Expo dev client opens its dev menu intro over the app: run `offsider rn prepare --bundle-id <bundle id or package> --device <DEVICE_ID>` before the first launch to skip it, or dismiss it with `tap --label Continue`, then `tap --id xmark` (on Android `tap --label Close --element-type button`). `rn prepare` needs a debug build and stops the app if it is running.
+- `offsider shake` opens the dev menu on iOS debug builds (`Reload`, `Go home`; close with `tap --id xmark`); release builds ignore it. Taps on elements under the open dev menu get no cover warning, so close it first.
