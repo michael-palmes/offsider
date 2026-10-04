@@ -17,6 +17,7 @@ SCREEN_URL="offsiderplaygroundrn://screen"
 METRO_PORT=8742
 METRO_PIDFILE="${BUILD_DIR}/metro.pid"
 METRO_LOG="${BUILD_DIR}/metro.log"
+METRO_REVERSES="${BUILD_DIR}/metro.reverses"
 METRO_STATUS_URL="http://127.0.0.1:${METRO_PORT}/status"
 METRO_START_TIMEOUT=60
 
@@ -430,7 +431,8 @@ dev_android() {
   install_android "${serial}" --debug ||
     die "install failed on ${serial}. A release build signed with another key needs 'adb -s ${serial} uninstall ${APP_ID}' first."
   "${adb}" -s "${serial}" reverse "tcp:${METRO_PORT}" "tcp:${METRO_PORT}" >/dev/null
-  echo "adb reverse: ${serial}'s 127.0.0.1:${METRO_PORT} reaches Metro on this Mac"
+  grep -qx "${serial}" "${METRO_REVERSES}" 2>/dev/null || echo "${serial}" >>"${METRO_REVERSES}"
+  echo "adb reverse: ${serial}'s 127.0.0.1:${METRO_PORT} reaches Metro on this Mac until 'metro stop'"
   "${adb}" -s "${serial}" shell am force-stop "${APP_ID}"
   "${adb}" -s "${serial}" shell am start -W -a android.intent.action.VIEW \
     -d "'exp+offsiderplaygroundrn://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A${METRO_PORT}'" "${APP_ID}"
@@ -534,8 +536,23 @@ metro_start() {
   echo "Metro is running (process group ${pgid}) on 127.0.0.1:${METRO_PORT}. Log: ${METRO_LOG}"
 }
 
+# Removes the reverses this script set, on emulators that are still running; never touches another device.
+remove_metro_reverses() {
+  local adb serial
+  [ -s "${METRO_REVERSES}" ] || return 0
+  adb=$(adb_bin) || return 0
+  while read -r serial; do
+    [[ "${serial}" =~ ^emulator-[0-9]+$ ]] || continue
+    "${adb}" -s "${serial}" emu avd name </dev/null >/dev/null 2>&1 || continue
+    "${adb}" -s "${serial}" reverse --remove "tcp:${METRO_PORT}" </dev/null >/dev/null 2>&1 &&
+      echo "adb reverse removed: ${serial} tcp:${METRO_PORT}"
+  done <"${METRO_REVERSES}"
+  rm -f "${METRO_REVERSES}"
+}
+
 metro_stop() {
   local pgid waited=0
+  remove_metro_reverses
   pgid=$(metro_pgid)
   if [ -z "${pgid}" ]; then
     echo "Metro is not running"
