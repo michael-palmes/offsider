@@ -1,9 +1,15 @@
 import Foundation
+import OffsiderAndroid
 import OffsiderCore
 
 /// Prints `offsider timing: <phase> <n> ms` on stderr as each phase ends, only when `OFFSIDER_TIMINGS=1`.
 enum Timings {
     static let isEnabled = PhaseTimings.isEnabled()
+
+    /// The same lines from Android code, which cannot see this enum.
+    static let android: AndroidTiming = isEnabled
+        ? .printing { line in FileHandle.standardError.write(Data((line + "\n").utf8)) }
+        : .disabled
 
     private static let processStart = PhaseTimings.monotonicNanoseconds()
 

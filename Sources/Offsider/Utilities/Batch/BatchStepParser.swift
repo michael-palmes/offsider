@@ -75,7 +75,8 @@ struct BatchStepParser {
         try rejectUnsupportedFlags(tokens)
         let stepArguments = Array(tokens.dropFirst())
         try rejectPerStepDevice(stepArguments)
-        let arguments = stepArguments + ["--device", deviceID]
+        // Before the step's own arguments, so a `--` terminator cannot turn the device into text.
+        let arguments = ["--device", deviceID] + stepArguments
 
         switch kind {
         case .tap:
@@ -111,7 +112,7 @@ struct BatchStepParser {
 
     private static func parseRead<C: AsyncParsableCommand & BatchReadable>(_ type: C.Type, arguments: [String]) throws -> C {
         guard var parsed = try C.parseAsRoot(arguments) as? C else {
-            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))")
+            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))", reason: .usage)
         }
         try parsed.validate()
         return parsed
@@ -124,7 +125,7 @@ struct BatchStepParser {
         logger: OffsiderLogger
     ) async throws -> [BatchPrimitive] {
         guard var parsed = try C.parseAsRoot(arguments) as? C else {
-            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))")
+            throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))", reason: .usage)
         }
         if (parsed as? VerifiableCommand)?.verification.isRequested == true {
             throw ValidationError(unsupportedFlagsMessage)
@@ -140,7 +141,12 @@ struct BatchStepParser {
         if args.contains(where: { arg in flags.contains { arg == $0 || arg.hasPrefix($0 + "=") } }) {
             throw ValidationError(perStepDeviceMessage)
         }
+        if args.contains(where: { $0 == "--wait-lock" || $0.hasPrefix("--wait-lock=") }) {
+            throw ValidationError(perStepWaitLockMessage)
+        }
     }
+
+    nonisolated static let perStepWaitLockMessage = "Batch steps do not take --wait-lock. Pass it to batch, which locks the device once for every step."
 
     private static func parseSleep(_ tokens: [String]) throws -> [BatchPrimitive] {
         guard tokens.count == 2 else {

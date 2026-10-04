@@ -49,10 +49,12 @@ struct AndroidDeviceDirectoryTests {
         let rows = try await Self.directory(Self.server(), home: home).summaries()
 
         #expect(rows == [
-            DeviceSummary(id: "emulator-5554", platform: .android, state: "Booted", name: "Work_AVD", osVersion: "Android 15", deviceType: "sdk_gphone64_arm64"),
-            DeviceSummary(id: "emulator-5556", platform: .android, state: "Booting", name: "Offsider_E2E_Pixel_9", osVersion: "Android 16", deviceType: "pixel_9"),
-            DeviceSummary(id: "emulator-5558", platform: .android, state: "Offline", name: "emulator-5558", osVersion: nil, deviceType: nil),
-            DeviceSummary(id: "Spare_AVD", platform: .android, state: "Shutdown", name: "Spare_AVD", osVersion: "Android API 36", deviceType: "pixel_9"),
+            DeviceSummary(id: "emulator-5554", platform: .android, state: "Booted", name: "Work_AVD", osVersion: "Android 15", deviceType: "sdk_gphone64_arm64", kind: .emulator),
+            DeviceSummary(id: "emulator-5556", platform: .android, state: "Booting", name: "Offsider_E2E_Pixel_9", osVersion: "Android 16", deviceType: "pixel_9", kind: .emulator),
+            DeviceSummary(id: "emulator-5558", platform: .android, state: "Offline", name: "emulator-5558", osVersion: nil, deviceType: nil, kind: .emulator),
+            DeviceSummary(id: "R5CT1234ABC", platform: .android, state: "Booted", name: "SM S928B", osVersion: nil, deviceType: "Physical (USB)", kind: .physical, connection: "usb"),
+            DeviceSummary(id: "192.168.1.5:5555", platform: .android, state: "Unsupported", name: "y", osVersion: nil, deviceType: "Physical (network)", kind: .physical, connection: "network"),
+            DeviceSummary(id: "Spare_AVD", platform: .android, state: "Shutdown", name: "Spare_AVD", osVersion: "Android API 36", deviceType: "pixel_9", kind: .avd),
         ])
     }
 
@@ -65,7 +67,7 @@ struct AndroidDeviceDirectoryTests {
         ))
         let directory = Self.directory(server, home: try AndroidTestHost.temporaryHome())
 
-        let rows = try await directory.summaries()
+        let rows = try await directory.summaries().filter { $0.kind == .emulator }
         #expect(rows.map(\.state) == ["Booted", "Unknown", "Offline"])
 
         let error = await #expect(throws: AndroidError.self) { try await directory.runningEmulator(serial: "emulator-5556") }
@@ -132,5 +134,70 @@ struct AndroidDeviceDirectoryTests {
         #expect(emulator?.avdName == "Offsider_E2E_Pixel_9")
         #expect(emulator?.bootCompleted == false)
         #expect(server.services.filter { $0.hasPrefix("host:transport:") } == ["host:transport:emulator-5556"])
+    }
+
+    // MARK: Phones
+
+    static let phoneListing = """
+    emulator-5556 device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 transport_id:1
+    R58M123ABC device usb:1-1 product:tokay model:Pixel_9 device:tokay transport_id:2
+    1A2B3C4D5E6F unauthorized usb:1-2 transport_id:3
+    192.168.1.5:5555 device product:husky model:Pixel_8_Pro transport_id:4
+
+    """
+
+    static func touchedPhone(_ server: FakeAdbServer) -> Bool {
+        server.requests.contains { request in
+            ["R58M123ABC", "1A2B3C4D5E6F", "192.168.1.5:5555"].contains { request.serial == $0 || request.service.hasSuffix(":\($0)") }
+        }
+    }
+
+    @Test("an AVD-name lookup never returns a phone, even when it is the only device")
+    func lookupSkipsPhones() async throws {
+        let server = Self.server(listing: "R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n", properties: [:])
+        let directory = Self.directory(server, home: try Self.homeWithAVDs(["Pixel_9"]))
+
+        let byAVD = await #expect(throws: AndroidError.self) { try await directory.serial(forAVDNamed: "Pixel_9") }
+        #expect(byAVD?.kind == .avdNotRunning)
+        #expect(try await directory.runningEmulators().isEmpty)
+        #expect(!Self.touchedPhone(server))
+    }
+
+    @Test("a named USB serial resolves to the phone without querying it; a network serial is refused")
+    func namedPhone() async throws {
+        let server = Self.server(listing: Self.phoneListing)
+        let directory = Self.directory(server, home: try AndroidTestHost.temporaryHome())
+
+        #expect(try await directory.resolve(name: "R58M123ABC") == "R58M123ABC")
+        #expect(try await directory.resolve(name: "1A2B3C4D5E6F") == "1A2B3C4D5E6F")
+        #expect(try await directory.resolve(name: "Offsider_E2E_Pixel_9") == "emulator-5556")
+        let network = await #expect(throws: AndroidError.self) { try await directory.resolve(name: "192.168.1.5:5555") }
+        #expect(network?.kind == .unsupportedDevice)
+        #expect(!Self.touchedPhone(server))
+    }
+
+    @Test("a phone whose serial equals a running AVD's name is refused as ambiguous")
+    func ambiguousName() async throws {
+        let server = Self.server(listing: Self.phoneListing, properties: ["emulator-5556": "R58M123ABC\n\n1\n16\n36\n"])
+        let directory = Self.directory(server, home: try AndroidTestHost.temporaryHome())
+
+        let error = await #expect(throws: AndroidError.self) { try await directory.resolve(name: "R58M123ABC") }
+        #expect(error?.kind == .ambiguousDeviceName)
+        #expect(error?.message.contains("emulator-5556") == true)
+    }
+
+    @Test("phones are listed from the device list alone: unauthorised and network rows included, none queried")
+    func phoneSummaries() async throws {
+        let server = Self.server(listing: Self.phoneListing)
+        let rows = try await Self.directory(server, home: try AndroidTestHost.temporaryHome()).summaries()
+        let phones = rows.filter { $0.kind == .physical }
+
+        #expect(phones.map(\.id) == ["R58M123ABC", "1A2B3C4D5E6F", "192.168.1.5:5555"])
+        #expect(phones.map(\.state) == ["Booted", "Unauthorised", "Unsupported"])
+        #expect(phones.map(\.connection) == ["usb", "usb", "network"])
+        #expect(phones[0].name == "Pixel 9")
+        #expect(phones[0].deviceType == "Physical (USB)")
+        #expect(rows.first?.kind == .emulator)
+        #expect(!Self.touchedPhone(server))
     }
 }

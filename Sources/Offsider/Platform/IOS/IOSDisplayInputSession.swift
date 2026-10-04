@@ -50,7 +50,7 @@ final class IOSDisplayInputSession: InputSession {
         case let .composite(events):
             for event in events { try await sendTouches(event) }
         default:
-            throw CLIError(errorDescription: Self.unsupported)
+            throw CLIError(errorDescription: Self.unsupported, reason: .notSupported)
         }
     }
 
@@ -64,7 +64,7 @@ final class IOSDisplayInputSession: InputSession {
             return link
         } catch {
             logger.info().log("Display digitizer: \(error)")
-            throw CLIError(errorDescription: Self.unsupported)
+            throw CLIError(errorDescription: Self.unsupported, reason: .notSupported)
         }
     }
 

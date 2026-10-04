@@ -70,6 +70,8 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var upright: Bool
     public var format: ImageFormat?
     public var comparison: ScreenCompare.Result?
+    /// Secure fields painted black; nil unless masking was asked for.
+    public var masked: Int?
 
     public init(
         path: String?,
@@ -83,7 +85,8 @@ public struct ScreenshotReport: Equatable, Sendable {
         posture: Posture? = nil,
         upright: Bool,
         format: ImageFormat?,
-        comparison: ScreenCompare.Result? = nil
+        comparison: ScreenCompare.Result? = nil,
+        masked: Int? = nil
     ) {
         self.path = path
         self.width = width
@@ -97,6 +100,7 @@ public struct ScreenshotReport: Equatable, Sendable {
         self.upright = upright
         self.format = format
         self.comparison = comparison
+        self.masked = masked
     }
 
     public func jsonLine() -> String {
@@ -117,6 +121,11 @@ public struct ScreenshotReport: Equatable, Sendable {
                     ("height", .number(Self.rounded(region.height))),
                 ])
             }),
+        ]
+        if let masked {
+            members.append(("masked", .integer(masked)))
+        }
+        members += [
             ("orientation", .optional(orientation, OrderedJSON.string)),
             ("rotation", .optional(rotation, OrderedJSON.integer)),
             ("display", display.map(\.jsonValue) ?? .null),

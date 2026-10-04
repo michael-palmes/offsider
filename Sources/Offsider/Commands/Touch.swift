@@ -65,7 +65,7 @@ struct Touch: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
@@ -98,7 +98,13 @@ struct Touch: AsyncParsableCommand {
             steps.append(.up(x: physicalPoint.x, y: physicalPoint.y))
         }
 
-        try await backend.sendDetachedTouch(steps, to: device)
+        do {
+            try await backend.sendDetachedTouch(steps, to: device)
+        } catch {
+            await DeviceActivityLedger.current.recordInput(on: device)
+            throw error
+        }
+        await DeviceActivityLedger.current.recordInput(on: device)
         
         logger.info().log("Touch events completed successfully")
     }

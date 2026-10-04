@@ -1,0 +1,344 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "toolbar-picker-test-screen",
+          "label": "Toolbar Picker",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 181.71,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "toolbar-picker-test-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 477,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Toolbar Picker",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "toolbar-picker-test-filter",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 249.9,
+            "y": 58.29,
+            "width": 153.52,
+            "height": 35.81
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "toolbar-picker-test-filter",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 656,
+              "y": 153,
+              "width": 403,
+              "height": 94
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Radio Group",
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "radioButton",
+          "id": "toolbar-picker-test-filter-all",
+          "label": "All",
+          "value": "1",
+          "frame": {
+            "x": 251.81,
+            "y": 60.19,
+            "width": 36.19,
+            "height": 32
+          },
+          "enabled": true,
+          "state": {
+            "checked": true,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.RadioButton",
+            "resourceId": "toolbar-picker-test-filter-all",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 661,
+              "y": 158,
+              "width": 95,
+              "height": 84
+            },
+            "text": null,
+            "contentDescription": "All",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "radioButton",
+          "id": "toolbar-picker-test-filter-unread",
+          "label": "Unread",
+          "value": "0",
+          "frame": {
+            "x": 288,
+            "y": 60.19,
+            "width": 62.86,
+            "height": 32
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.RadioButton",
+            "resourceId": "toolbar-picker-test-filter-unread",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 756,
+              "y": 158,
+              "width": 165,
+              "height": 84
+            },
+            "text": null,
+            "contentDescription": "Unread",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "radioButton",
+          "id": "toolbar-picker-test-filter-read",
+          "label": "Read",
+          "value": "0",
+          "frame": {
+            "x": 350.86,
+            "y": 60.19,
+            "width": 50.67,
+            "height": 32
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.RadioButton",
+            "resourceId": "toolbar-picker-test-filter-read",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 921,
+              "y": 158,
+              "width": 133,
+              "height": 84
+            },
+            "text": null,
+            "contentDescription": "Read",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "toolbar-picker-test-state",
+          "label": "Toolbar Picker State: All",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 98.67,
+            "width": 379.43,
+            "height": 47.62
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "toolbar-picker-test-state",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 259,
+              "width": 996,
+              "height": 125
+            },
+            "text": null,
+            "contentDescription": "Toolbar Picker State: All",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "toolbar-picker-test-body",
+          "label": "Toolbar Picker Detail Body",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 146.29,
+            "width": 379.43,
+            "height": 47.62
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "toolbar-picker-test-body",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 384,
+              "width": 996,
+              "height": 125
+            },
+            "text": null,
+            "contentDescription": "Toolbar Picker Detail Body",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

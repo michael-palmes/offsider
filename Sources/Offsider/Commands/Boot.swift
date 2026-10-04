@@ -32,11 +32,11 @@ struct Boot: AsyncParsableCommand {
         switch DeviceIDClassifier.classify(avd) {
         case .iosSimulator:
             throw ValidationError("boot starts Android emulators. Boot an iOS simulator with `xcrun simctl boot <udid>`.")
-        case .androidSerial:
+        case .androidSerial, .androidNetworkSerial:
             throw ValidationError("boot takes an AVD name, not a serial. Run `offsider list-devices` to see AVD names.")
         case .empty, .unrecognised:
             throw ValidationError("'\(avd)' is not an AVD name. AVD names use letters, digits, '.', '_' and '-'; run `offsider list-devices` to see them.")
-        case .androidAVDCandidate:
+        case .androidName:
             break
         }
         guard timeout.isFinite, Self.allowedTimeout.contains(timeout) else {

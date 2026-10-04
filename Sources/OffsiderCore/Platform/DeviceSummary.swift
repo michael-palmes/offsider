@@ -1,5 +1,13 @@
 import Foundation
 
+/// What a `list-devices` row is: a simulator, a running emulator, a shut-down AVD or a physical phone.
+public enum DeviceKind: String, Equatable, Sendable {
+    case simulator
+    case emulator
+    case avd
+    case physical
+}
+
 public struct DeviceSummary: Equatable, Sendable {
     public let id: String
     public let platform: DevicePlatform
@@ -7,14 +15,28 @@ public struct DeviceSummary: Equatable, Sendable {
     public let name: String
     public let osVersion: String?
     public let deviceType: String?
+    public let kind: DeviceKind
+    /// `usb` for a phone, `network` for a refused Wi-Fi or TCP adb connection, else nil.
+    public let connection: String?
 
-    public init(id: String, platform: DevicePlatform, state: String, name: String, osVersion: String?, deviceType: String?) {
+    public init(
+        id: String,
+        platform: DevicePlatform,
+        state: String,
+        name: String,
+        osVersion: String?,
+        deviceType: String?,
+        kind: DeviceKind,
+        connection: String? = nil
+    ) {
         self.id = id
         self.platform = platform
         self.state = state
         self.name = name
         self.osVersion = osVersion
         self.deviceType = deviceType
+        self.kind = kind
+        self.connection = connection
     }
 }
 
@@ -47,6 +69,8 @@ public enum DeviceListRenderer {
                 ("name", string(device.name)),
                 ("osVersion", device.osVersion.map(string) ?? "null"),
                 ("deviceType", device.deviceType.map(string) ?? "null"),
+                ("kind", string(device.kind.rawValue)),
+                ("connection", device.connection.map(string) ?? "null"),
             ]
             let body = fields.map { "      \(string($0.0)): \($0.1)" }.joined(separator: ",\n")
             return "    {\n\(body)\n    }"

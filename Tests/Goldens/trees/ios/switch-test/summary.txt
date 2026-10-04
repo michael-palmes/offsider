@@ -1,0 +1,9 @@
+# ios <ios-device> 402x874 @3x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 402x874)
+  button "Offsider Playground" id=BackButton (8,62 44x44)
+  header "Switch Test" id=switch-test-screen (60,74 282x20.3)
+  text "Switch Playground" id=switch-test-title (16,122.3 370x24)
+  switch "SwiftUI Weather Alerts" id=swiftui-weather-alerts-switch value="0" (323,170.3 63x28)
+  text "SwiftUI Weather Alerts: Off" id=swiftui-weather-alerts-state value="Off" (16,206.3 370x20.3)
+  switch "UIKit Weather Alerts" id=uikit-weather-alerts-switch value="0" (334,250.7 52x32)
+  text "UIKit Weather Alerts: Off" id=uikit-weather-alerts-state value="Off" (16,290.7 370x20.3)

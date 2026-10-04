@@ -6,28 +6,34 @@ public enum ChangeKind: String, Codable, Sendable {
     case none
 }
 
-public struct VerifyReport: Codable, Equatable, Sendable {
-    public static let schemaVersion = 1
+public struct VerifyReport: Equatable, Sendable {
+    public static let schemaVersion = 2
 
     public let version: Int
     public let command: String
     public let target: String
-    public let dispatched: Bool
+    public let dispatched: DispatchState
     public let verified: Bool
     public let attempts: Int
     public let change: ChangeKind
+    public let changes: [VerifyChange]
+    public let changesTruncated: Int
+    public let note: VerifyNote?
     public let style: TapDeliveryStyle?
-    public let error: String?
+    public let error: ErrorPayload?
 
     public init(
         command: String,
         target: String,
-        dispatched: Bool,
+        dispatched: DispatchState,
         verified: Bool,
         attempts: Int,
         change: ChangeKind,
+        changes: [VerifyChange] = [],
+        changesTruncated: Int = 0,
+        note: VerifyNote? = nil,
         style: TapDeliveryStyle? = nil,
-        error: String? = nil
+        error: ErrorPayload? = nil
     ) {
         self.version = Self.schemaVersion
         self.command = command
@@ -36,36 +42,36 @@ public struct VerifyReport: Codable, Equatable, Sendable {
         self.verified = verified
         self.attempts = attempts
         self.change = change
+        self.changes = changes
+        self.changesTruncated = changesTruncated
+        self.note = note
         self.style = style
         self.error = error
     }
 
     public var exitCode: OffsiderExitCode {
-        if error != nil { return .failure }
+        if let error { return error.exitCode }
         if verified { return .success }
-        return dispatched ? .unverified : .failure
+        return dispatched == .yes ? .unverified : .failure
     }
 
+    /// Keys in order: version, command, target, dispatched, verified, attempts, change, changes, changesTruncated, note, style, exitCode, error.
     public func jsonData() throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(self)
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case version, command, target, dispatched, verified, attempts, change, style, error
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(version, forKey: .version)
-        try container.encode(command, forKey: .command)
-        try container.encode(target, forKey: .target)
-        try container.encode(dispatched, forKey: .dispatched)
-        try container.encode(verified, forKey: .verified)
-        try container.encode(attempts, forKey: .attempts)
-        try container.encode(change, forKey: .change)
-        try container.encode(style, forKey: .style)
-        try container.encode(error, forKey: .error)
+        let members: [(String, OrderedJSON)] = [
+            ("version", .integer(version)),
+            ("command", .string(command)),
+            ("target", .string(target)),
+            ("dispatched", .string(dispatched.rawValue)),
+            ("verified", .bool(verified)),
+            ("attempts", .integer(attempts)),
+            ("change", .string(change.rawValue)),
+            ("changes", .array(changes.map(\.jsonValue))),
+            ("changesTruncated", .integer(changesTruncated)),
+            ("note", .optional(note?.rawValue, OrderedJSON.string)),
+            ("style", .optional(style?.rawValue, OrderedJSON.string)),
+            ("exitCode", .integer(Int(exitCode.rawValue))),
+            ("error", error.map(\.jsonValue) ?? .null),
+        ]
+        return Data(OrderedJSON.object(members).rendered().utf8)
     }
 }

@@ -9,6 +9,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
 
 # Any adb server the suites start sends no mDNS multicast on the LAN.
 export ADB_MDNS=0
+# An accidental overlap with another runner on the same device waits rather than failing with exit 8.
+export OFFSIDER_WAIT_LOCK="${OFFSIDER_WAIT_LOCK:-30}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -154,6 +156,7 @@ RN_SUITES=(
     "ReactNativeOverlayTests"
     "ReactNativeRowsTests"
     "ReactNativeEnvironmentTests"
+    "ReactNativeChoiceTests"
 )
 RN_DEBUG_SUITES=(
     "ReactNativeDebugSmokeTests"
@@ -337,6 +340,27 @@ check_prerequisites() {
     print_success "All prerequisites satisfied"
 }
 
+# Refuses a simulator in a crash loop, the same rule as doctor's simulator.crash-loop; a direct scan because Offsider is not built yet.
+check_simulator_crash_loop() {
+    local udid="$1"
+    local reports="$HOME/Library/Logs/DiagnosticReports"
+    [[ -d "$reports" ]] || return 0
+    local looping
+    # Only each report's first 16 KB, as doctor reads.
+    looping=$(find "$reports" -maxdepth 1 -type f -name '*.ips' -mmin -10 -print0 2>/dev/null \
+        | while IFS= read -r -d '' report; do
+            prefix=$(head -c 16384 "$report")
+            [[ "$prefix" == *"com.apple.CoreSimulator.SimDevice.$udid\""* ]] || continue
+            printf '%s\n' "$prefix" | grep -o -m 1 '"procName" : "[^"]*"' | sed 's/.*: "\(.*\)"/\1/'
+        done | sort | uniq -c | awk '{ n = $1; sub(/^ *[0-9]+ /, ""); if (n >= 5) printf "%s crashed %d times in the last 10 minutes\n", $0, n }') || true
+    if [[ -n "$looping" ]]; then
+        print_error "Simulator $udid is in a crash loop:"
+        echo "$looping"
+        print_info "Erase it (this removes its apps and settings), then run again: xcrun simctl shutdown $udid && xcrun simctl erase $udid"
+        exit 1
+    fi
+}
+
 # Function to boot simulator
 boot_simulator() {
     print_header "Setting Up Simulator"
@@ -356,6 +380,8 @@ boot_simulator() {
         xcrun simctl list devices | grep "iPhone"
         exit 1
     fi
+
+    check_simulator_crash_loop "$SIMULATOR_UDID"
 
     if [[ "$SIMULATOR_STATUS" != "Booted" ]]; then
         print_info "Booting simulator $SIMULATOR_NAME..."
@@ -481,6 +507,8 @@ run_unit_tests() {
     export OFFSIDER_BIN_PATH
     export OFFSIDER_E2E=0
     export OFFSIDER_LANDSCAPE_E2E=0
+    # Unit tests spawn offsider against held locks and expect it to fail at once.
+    unset OFFSIDER_WAIT_LOCK
 
     local args=(--skip-build --no-parallel)
     [[ "$VERBOSE" == true ]] && args+=(--verbose)
@@ -658,6 +686,7 @@ run_android_tests() {
         "AndroidVideoTests"
         "AndroidBatchTests"
         "AndroidVerifyTests"
+        "AndroidDeviceStateE2ETests"
         "AndroidFallbackTests"
         "AndroidJWTTests"
         "AndroidBootTests"
@@ -861,6 +890,7 @@ run_tests() {
             "CommandNamingTests"
             "DescribeUITests"
             "DeviceControlTests"
+            "DeviceStateE2ETests"
             "DoctorTests"
             "GestureTests"
             "InitTests"

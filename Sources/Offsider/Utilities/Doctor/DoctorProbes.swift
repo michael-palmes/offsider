@@ -296,3 +296,30 @@ private final class ResumeGate {
         return true
     }
 }
+
+extension DoctorProbes {
+    nonisolated static let diagnosticReportsPath = NSHomeDirectory() + "/Library/Logs/DiagnosticReports"
+
+    /// Simulator crashes from reports modified in the last 10 minutes; reads only each file's first few kilobytes.
+    nonisolated static func recentSimulatorCrashes(now: Date = Date(), directory: String = diagnosticReportsPath) -> [SimulatorCrash] {
+        let url = URL(fileURLWithPath: directory, isDirectory: true)
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
+            return []
+        }
+        let crashes = entries.compactMap { entry -> SimulatorCrash? in
+            guard
+                entry.pathExtension == "ips",
+                let values = try? entry.resourceValues(forKeys: Set(keys)),
+                values.isRegularFile == true,
+                let modified = values.contentModificationDate,
+                now.timeIntervalSince(modified) <= SimulatorCrashReports.window,
+                let handle = try? FileHandle(forReadingFrom: entry)
+            else { return nil }
+            defer { try? handle.close() }
+            guard let data = try? handle.read(upToCount: SimulatorCrashReports.prefixBytes) else { return nil }
+            return SimulatorCrashReports.parse(String(decoding: data, as: UTF8.self), modified: modified)
+        }
+        return SimulatorCrashReports.recent(crashes, now: now)
+    }
+}

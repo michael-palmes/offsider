@@ -10,7 +10,7 @@ struct RecordVideo: AsyncParsableCommand {
     )
 
     @OptionGroup
-    var deviceOption: DeviceOption
+    var deviceOption: ReadDeviceOption
 
     @Option(help: "Frames per second (1-30, default: 10)")
     var fps: Int = 10
@@ -70,7 +70,7 @@ struct RecordVideo: AsyncParsableCommand {
             FileHandle.standardError.write(Data("Recording saved to \(outputURL.path)\n".utf8))
             print(outputURL.path)
         } catch {
-            throw CLIError(errorDescription: "Failed to record video: \(error.localizedDescription)")
+            throw CLIError(errorDescription: "Failed to record video: \(error.localizedDescription)", reason: .videoFailed)
         }
     }
 
@@ -90,7 +90,7 @@ struct RecordVideo: AsyncParsableCommand {
         } else {
             let initialFrameData = try await backend.screenshotPNG(for: device)
             guard let image = VideoFrameUtilities.makeCGImage(from: initialFrameData) else {
-                throw CLIError(errorDescription: "Failed to decode simulator screenshot")
+                throw CLIError(errorDescription: "Failed to decode simulator screenshot", reason: .screenshotFailed)
             }
             initialImage = image
         }
@@ -205,7 +205,7 @@ struct RecordVideo: AsyncParsableCommand {
             var existingIsDirectory: ObjCBool = false
             fileManager.fileExists(atPath: baseURL.path, isDirectory: &existingIsDirectory)
             if existingIsDirectory.boolValue {
-                throw CLIError(errorDescription: "Output path \(baseURL.path) is a directory. Provide a file name or point to a different location.")
+                throw CLIError(errorDescription: "Output path \(baseURL.path) is a directory. Provide a file name or point to a different location.", reason: .videoFailed)
             }
             try fileManager.removeItem(at: baseURL)
         }

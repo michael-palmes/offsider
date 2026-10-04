@@ -38,6 +38,15 @@ final class FakeDeviceBackend: DeviceBackend {
     var hingeAngles: [Double] = []
     private(set) var requestedAngles: [Int] = []
     private(set) var capturedDisplays: [String?] = []
+    /// Device-state calls in order, as `name argument`.
+    private(set) var stateCalls: [String] = []
+    var biometricEnrolment: Bool? = true
+    var biometricModality = BiometricModality.face
+    /// What an Android permission read serves; nil makes the fake an iOS simulator with no read.
+    var packagePermissions: AndroidPackagePermissions?
+    var statusBarReading = StatusBarReading(overrides: [:])
+    /// What `bootMarker(for:)` serves.
+    var bootMarkerValue: String?
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -85,6 +94,8 @@ final class FakeDeviceBackend: DeviceBackend {
         var tree = readTree(for: id)
         if let point {
             tree.roots = tree.deepestNode(at: point).map { [$0] } ?? []
+        } else {
+            DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: DeviceActivityLedger.current.now())
         }
         return tree
     }
@@ -192,4 +203,57 @@ enum FakeUI {
         let root = node(.application, label: label, frame: frame(0, 0, width, height), platform: platform, children: children)
         return UITree(platform: platform, device: device, roots: [root])
     }
+}
+
+extension FakeDeviceBackend: PermissionControlling, StatusBarControlling, BiometricControlling {
+    func permissions(of app: String, on id: DeviceID) async throws -> AndroidPackagePermissions {
+        stateCalls.append("permissions \(app)")
+        guard let packagePermissions else { throw CLIError(errorDescription: "no read on this fake") }
+        return packagePermissions
+    }
+
+    func applyPermission(_ action: PermissionAction, _ targets: [PermissionTarget], app: String, on id: DeviceID) async throws -> PermissionChange {
+        stateCalls.append("\(action.rawValue) \(targets.map(\.name).joined(separator: ",")) \(app)")
+        guard let packagePermissions else {
+            return IOSPermissionArguments.change(action, services: targets.compactMap { if case .service(let service) = $0 { return service } else { return nil } })
+        }
+        return try AndroidPermissionPlan.make(action, targets, package: app, state: packagePermissions).change
+    }
+
+    func statusBar(on id: DeviceID) async throws -> StatusBarReading {
+        stateCalls.append("status-bar show")
+        return statusBarReading
+    }
+
+    func overrideStatusBar(_ override: StatusBarOverride, on id: DeviceID) async throws -> StatusBarReading {
+        stateCalls.append("status-bar override \(override.time)")
+        return statusBarReading
+    }
+
+    func clearStatusBar(on id: DeviceID) async throws {
+        stateCalls.append("status-bar clear")
+    }
+
+    func biometricEnrolled(on id: DeviceID) async throws -> Bool? {
+        stateCalls.append("biometric read")
+        return biometricEnrolment
+    }
+
+    func setBiometricEnrolment(_ enrolled: Bool, on id: DeviceID) async throws {
+        stateCalls.append("biometric enrol \(enrolled)")
+        biometricEnrolment = enrolled
+    }
+
+    func defaultBiometricModality(on id: DeviceID) async throws -> BiometricModality {
+        biometricModality
+    }
+
+    func sendBiometric(_ outcome: BiometricOutcome, modality: BiometricModality, fingerID: Int?, on id: DeviceID) async throws -> String {
+        stateCalls.append("biometric \(outcome.rawValue) \(modality.rawValue)")
+        return BiometricControl.notification(outcome, modality: modality)
+    }
+}
+
+extension FakeDeviceBackend: BootMarking {
+    func bootMarker(for id: DeviceID) async -> String? { bootMarkerValue }
 }

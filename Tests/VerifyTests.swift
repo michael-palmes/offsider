@@ -40,7 +40,7 @@ struct VerifyTests {
         let json = try report(result.stdout)
 
         #expect(result.exitCode == 5)
-        #expect(json["dispatched"] as? Bool == true)
+        #expect(json["dispatched"] as? String == "yes")
         #expect(json["verified"] as? Bool == false)
         #expect(json["change"] as? String == "none")
         #expect(json["attempts"] as? Int == 1)
@@ -78,6 +78,22 @@ struct VerifyTests {
         let uiState = try await TestHelpers.getUIState()
         let field = UIStateParser.findElement(in: uiState) { $0.type == "TextField" || $0.type == "TextEditor" }
         #expect(field?.value == "hello")
+    }
+
+    @Test("tap --verify --json lists the readout change")
+    func tapVerifyListsChanges() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "toolbar-picker-test")
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated(
+            "tap --label Unread --element-type radioButton --verify --json",
+            simulatorUDID: defaultSimulatorUDID
+        )
+        let json = try report(result.stdout)
+        let changes = try #require(json["changes"] as? [[String: Any]])
+
+        #expect(result.exitCode == 0)
+        #expect(changes.contains { $0["node"] as? String == #"text "Toolbar Picker State: Unread" id=toolbar-picker-test-state"# || ($0["new"] as? String) == "Unread" })
+        #expect(json["changesTruncated"] as? Int != nil)
     }
 
     @Test("A verified key press is delivered once")

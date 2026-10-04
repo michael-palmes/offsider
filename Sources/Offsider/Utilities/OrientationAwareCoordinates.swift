@@ -132,7 +132,7 @@ struct OrientationAwareCoordinates {
         logger: OffsiderLogger
     ) async throws -> CoordinateMapping {
         guard let appFrame = applicationFrame else {
-            throw CLIError(errorDescription: "Unable to determine coordinate mapping because the accessibility application frame is unavailable.")
+            throw CLIError(errorDescription: "Unable to determine coordinate mapping because the accessibility application frame is unavailable.", reason: .orientationUnknown)
         }
 
         if let orientationOverride {
@@ -206,7 +206,7 @@ struct OrientationAwareCoordinates {
         }
 
         guard let screenshotDims else {
-            throw CLIError(errorDescription: "Unable to determine coordinate mapping because screenshot probing failed for a landscape accessibility frame.")
+            throw CLIError(errorDescription: "Unable to determine coordinate mapping because screenshot probing failed for a landscape accessibility frame.", reason: .orientationUnknown)
         }
 
         // Screenshot is landscape-shaped: hardware is rotated.
@@ -214,7 +214,7 @@ struct OrientationAwareCoordinates {
             "Screenshot \(screenshotDims.width)×\(screenshotDims.height)px is landscape-shaped; using rotation mapping"
         )
 
-        throw CLIError(errorDescription: "Unable to determine rotated simulator orientation. Offsider can read landscape coordinates only when SimulatorKit reports the current UI orientation; the screenshot confirms the simulator is rotated, but the private orientation probe was unavailable.")
+        throw CLIError(errorDescription: "Unable to determine rotated simulator orientation. Offsider can read landscape coordinates only when SimulatorKit reports the current UI orientation; the screenshot confirms the simulator is rotated, but the private orientation probe was unavailable.", reason: .orientationUnknown)
     }
 
     // MARK: - Screenshot Dimension Probe

@@ -6,13 +6,16 @@ struct AdbDeviceShell: Sendable {
     let client: AdbClient
     let serial: String
 
-    func run(_ script: String, waiting seconds: TimeInterval = 0) async throws {
+    /// A `redactedLabel` names the script in errors and logs instead of the script itself, and hides its output.
+    func run(_ script: String, waiting seconds: TimeInterval = 0, redactedLabel: String? = nil) async throws {
         let timeout = Duration.seconds(15) + .milliseconds(Int((seconds * 1000).rounded(.up)))
-        let label = script.count > 120 ? String(script.prefix(117)) + "..." : script
+        let label = redactedLabel ?? (script.count > 120 ? String(script.prefix(117)) + "..." : script)
         let result = try await client.shell(script, on: serial, timeout: timeout, label: label)
         guard result.status == 0 else {
-            let message = (result.stderrText + result.stdoutText).split(whereSeparator: \.isNewline).first.map(String.init)
-            throw AndroidError.inputFailed(serial: serial, detail: message ?? "`input` exited \(result.status)")
+            let message = redactedLabel == nil
+                ? (result.stderrText + result.stdoutText).split(whereSeparator: \.isNewline).first.map(String.init)
+                : nil
+            throw AndroidError.inputFailed(serial: serial, detail: message ?? "`\(redactedLabel ?? "input")` exited \(result.status)")
         }
     }
 }
@@ -51,7 +54,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
     /// Looked up only when a message needs it, so ordinary input costs no extra adb call.
     private let avdName: @MainActor () async -> String?
     private let replaceFocusedText: @MainActor (String) async throws -> TextReplacement
+    /// Read only before a paste, the one path that puts text on a clipboard.
+    private let focusedSecureField: @MainActor () async -> Bool
     private let log: AndroidLog
+    private let timing: AndroidTiming
     private var touchIsDown = false
     private var lastTouch: AndroidPoint?
 
@@ -61,16 +67,20 @@ final class AndroidInputSession: InputSession, TextInputSession {
         route: @escaping @MainActor () async throws -> AndroidInputRoute,
         avdName: @escaping @MainActor () async -> String?,
         replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
+        focusedSecureField: @escaping @MainActor () async -> Bool = { false },
         sleep: @escaping @Sendable (Duration) async throws -> Void,
-        log: @escaping AndroidLog
+        log: @escaping AndroidLog,
+        timing: AndroidTiming = .disabled
     ) {
         self.device = device
         self.shell = shell
         self.resolveRoute = route
         self.avdName = avdName
         self.replaceFocusedText = replaceFocusedText
+        self.focusedSecureField = focusedSecureField
         self.sleep = sleep
         self.log = log
+        self.timing = timing
     }
 
     private func route() async throws -> AndroidInputRoute {
@@ -88,6 +98,12 @@ final class AndroidInputSession: InputSession, TextInputSession {
     static let pasteKeyCode = 279
 
     func perform(_ event: InputEvent) async throws {
+        try await timing.measure(.input) {
+            try await dispatch(event)
+        }
+    }
+
+    private func dispatch(_ event: InputEvent) async throws {
         let route = try await route()
         var down = touchIsDown
         let steps = try AndroidInputLowering.steps(for: event, touchIsDown: &down, scale: route.scale)
@@ -97,11 +113,20 @@ final class AndroidInputSession: InputSession, TextInputSession {
 
     /// All-ASCII text as key events (gRPC `text` chunks, or adb `input text`); anything else pasted whole.
     func typeText(_ text: String) async throws {
+        try await timing.measure(.input) {
+            try await dispatchText(text)
+        }
+    }
+
+    private func dispatchText(_ text: String) async throws {
         let route = try await route()
         switch try AndroidTextPlan.make(for: text) {
         case .paste(let whole):
             guard let clipboard = route.clipboard else {
                 throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: await avdName(), reason: route.adbReason)
+            }
+            if await focusedSecureField() {
+                throw AndroidError.securePasteRefused(device.rawValue)
             }
             try await paste(whole, through: clipboard)
         case .keys(let chunks):
@@ -116,7 +141,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 }
             }
             guard !commands.isEmpty else { return }
-            try await shell.run(commands.joined(separator: " && "))
+            try await shell.run(commands.joined(separator: " && "), redactedLabel: "input text (\(text.count) character\(text.count == 1 ? "" : "s"))")
         }
     }
 

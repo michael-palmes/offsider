@@ -129,6 +129,14 @@ extension AndroidBackend: PostureControlling {
     /// gRPC `setPosture` moves the hinge as the extended controls do; without gRPC, a `cmd device_state` override.
     public func requestPosture(_ posture: Posture, on id: DeviceID) async throws {
         let serial = id.rawValue
+        guard case .androidSerial = DeviceIDClassifier.classify(serial) else {
+            throw AndroidError.emulatorOnly(
+                "Setting the posture",
+                serial: serial,
+                model: phones[serial]?.model,
+                alternative: "Fold the phone by hand; `offsider posture --device \(serial)` reads its posture."
+            )
+        }
         let states = try await deviceStates(serial)
         guard states.count >= 2 else { throw AndroidError.notFoldable(serial) }
         let reading = try await deviceStateReading(serial)

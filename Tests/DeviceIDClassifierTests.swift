@@ -26,16 +26,36 @@ struct DeviceIDClassifierTests {
         #expect(DeviceIDClassifier.classify("emulator-5554").platform == .android)
     }
 
-    @Test("other names made of letters, digits, dots, underscores and hyphens are AVD candidates", arguments: [
+    @Test("other names made of letters, digits, dots, underscores and hyphens are Android names", arguments: [
         "Pixel_9_API_37", "Offsider_E2E_Pixel_9", "my.avd-2", "invalid", "emulator-", "emulator-55a4",
         "ABCDEF00-0000-4000-8000", "ABCDEF0000004000800000000000ABCD",
     ])
     func avdCandidate(raw: String) {
-        #expect(DeviceIDClassifier.classify(raw) == .androidAVDCandidate(name: raw))
+        #expect(DeviceIDClassifier.classify(raw) == .androidName(name: raw))
         #expect(DeviceIDClassifier.classify(raw).platform == .android)
     }
 
-    @Test("anything else is unrecognised", arguments: ["192.168.1.5:5555", "iPhone 17 Pro", "{ABCDEF00-0000-4000-8000-00000000ABCD}", "pixel/9"])
+    @Test("a USB serial is an Android name the router resolves", arguments: ["R58M123ABC", "1A2B3C4D5E6F", "RFCRA0TCR5B"])
+    func usbSerialIsName(raw: String) {
+        #expect(DeviceIDClassifier.classify(raw) == .androidName(name: raw))
+    }
+
+    @Test("host:port and mDNS serials are network serials", arguments: [
+        "192.168.1.5:5555", "localhost:5555", "[fe80::1]:5555", "adb-1A2B-xyz._adb-tls-connect._tcp", "adb-1A2B-xyz._adb._tcp",
+    ])
+    func networkSerial(raw: String) {
+        #expect(DeviceIDClassifier.classify(raw) == .androidNetworkSerial(serial: raw))
+        #expect(DeviceIDClassifier.classify(raw).platform == .android)
+    }
+
+    @Test("a phone serial is never classified as an emulator serial", arguments: ["RFCRA0TCR5B", "R58M123ABC", "emulator5554", "emulator-", "192.168.1.5:5555"])
+    func phoneIsNeverEmulator(raw: String) {
+        if case .androidSerial = DeviceIDClassifier.classify(raw) {
+            Issue.record("\(raw) was classified as an emulator serial")
+        }
+    }
+
+    @Test("anything else is unrecognised", arguments: ["iPhone 17 Pro", "host:port", "{ABCDEF00-0000-4000-8000-00000000ABCD}", "pixel/9"])
     func unrecognised(raw: String) {
         #expect(DeviceIDClassifier.classify(raw) == .unrecognised)
         #expect(DeviceIDClassifier.classify(raw).platform == nil)

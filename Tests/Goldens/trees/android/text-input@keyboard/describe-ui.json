@@ -1,0 +1,1894 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "text-input-screen",
+          "label": "Text Input",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 291.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "text-input-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 765,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Text Input",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "text-input-title",
+          "label": "Text Input Playground",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 114.67,
+            "width": 379.43,
+            "height": 27.05
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "text-input-title",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 301,
+              "width": 996,
+              "height": 71
+            },
+            "text": null,
+            "contentDescription": "Text Input Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "textField",
+          "id": "text-input-field",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 194.29,
+            "width": 379.43,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": true
+          },
+          "native": {
+            "className": "android.widget.EditText",
+            "resourceId": "text-input-field",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 510,
+              "width": 996,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "typing-active-indicator",
+          "label": "✏️ Typing active",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 254.48,
+            "width": 379.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "typing-active-indicator",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 668,
+              "width": 996,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "✏️ Typing active",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "role": "keyboard",
+      "id": null,
+      "label": "Password keyboard",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 54.1,
+        "width": 411.43,
+        "height": 869.33
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.google.android.inputmethod.latin",
+        "pixelFrame": {
+          "x": 0,
+          "y": 142,
+          "width": 1080,
+          "height": 2282
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "group",
+          "id": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 54.1,
+            "width": 411.43,
+            "height": 869.33
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.FrameLayout",
+            "resourceId": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+            "package": "com.google.android.inputmethod.latin",
+            "pixelFrame": {
+              "x": 0,
+              "y": 142,
+              "width": 1080,
+              "height": 2282
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_1",
+              "label": "1",
+              "value": null,
+              "frame": {
+                "x": 1.9,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_1",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 5,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "1",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_2",
+              "label": "2",
+              "value": null,
+              "frame": {
+                "x": 42.67,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_2",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 112,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "2",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_3",
+              "label": "3",
+              "value": null,
+              "frame": {
+                "x": 83.43,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_3",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 219,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "3",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_4",
+              "label": "4",
+              "value": null,
+              "frame": {
+                "x": 124.19,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_4",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 326,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "4",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_5",
+              "label": "5",
+              "value": null,
+              "frame": {
+                "x": 164.95,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_5",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 433,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "5",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_6",
+              "label": "6",
+              "value": null,
+              "frame": {
+                "x": 205.71,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_6",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 540,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "6",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_7",
+              "label": "7",
+              "value": null,
+              "frame": {
+                "x": 246.48,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_7",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 647,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "7",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_8",
+              "label": "8",
+              "value": null,
+              "frame": {
+                "x": 287.24,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_8",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 754,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "8",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_9",
+              "label": "9",
+              "value": null,
+              "frame": {
+                "x": 328,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_9",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 861,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "9",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_0",
+              "label": "0",
+              "value": null,
+              "frame": {
+                "x": 368.76,
+                "y": 587.05,
+                "width": 40.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_password_header_number_0",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 968,
+                  "y": 1541,
+                  "width": 107,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "0",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_0",
+              "label": "q",
+              "value": null,
+              "frame": {
+                "x": 1.9,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": true
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_0",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 5,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "q",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_1",
+              "label": "w",
+              "value": null,
+              "frame": {
+                "x": 42.67,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_1",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 112,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "w",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_2",
+              "label": "e",
+              "value": null,
+              "frame": {
+                "x": 83.43,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_2",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 219,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "e",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_3",
+              "label": "r",
+              "value": null,
+              "frame": {
+                "x": 124.19,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_3",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 326,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "r",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_4",
+              "label": "t",
+              "value": null,
+              "frame": {
+                "x": 164.95,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_4",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 433,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "t",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_5",
+              "label": "y",
+              "value": null,
+              "frame": {
+                "x": 205.71,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_5",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 540,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "y",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_6",
+              "label": "u",
+              "value": null,
+              "frame": {
+                "x": 246.48,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_6",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 647,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "u",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_7",
+              "label": "i",
+              "value": null,
+              "frame": {
+                "x": 287.24,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_7",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 754,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "i",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_8",
+              "label": "o",
+              "value": null,
+              "frame": {
+                "x": 328,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_8",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 861,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "o",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_0_9",
+              "label": "p",
+              "value": null,
+              "frame": {
+                "x": 368.76,
+                "y": 639.24,
+                "width": 40.76,
+                "height": 58.67
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_9",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 968,
+                  "y": 1678,
+                  "width": 107,
+                  "height": 154
+                },
+                "text": null,
+                "contentDescription": "p",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_0",
+              "label": "a",
+              "value": null,
+              "frame": {
+                "x": 1.9,
+                "y": 697.9,
+                "width": 60.95,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_0",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 5,
+                  "y": 1832,
+                  "width": 160,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "a",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_1",
+              "label": "s",
+              "value": null,
+              "frame": {
+                "x": 62.86,
+                "y": 697.9,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_1",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 165,
+                  "y": 1832,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "s",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_2",
+              "label": "d",
+              "value": null,
+              "frame": {
+                "x": 103.62,
+                "y": 697.9,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_2",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 272,
+                  "y": 1832,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "d",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_3",
+              "label": "f",
+              "value": null,
+              "frame": {
+                "x": 144.38,
+                "y": 697.9,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_3",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 379,
+                  "y": 1832,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "f",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_4",
+              "label": "g",
+              "value": null,
+              "frame": {
+                "x": 185.14,
+                "y": 697.9,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_4",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 486,
+                  "y": 1832,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "g",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_5",
+              "label": "h",
+              "value": null,
+              "frame": {
+                "x": 225.9,
+                "y": 697.9,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_5",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 593,
+                  "y": 1832,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "h",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_6",
+              "label": "j",
+              "value": null,
+              "frame": {
+                "x": 266.67,
+                "y": 697.9,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_6",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 700,
+                  "y": 1832,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "j",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_7",
+              "label": "k",
+              "value": null,
+              "frame": {
+                "x": 307.43,
+                "y": 697.9,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_7",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 807,
+                  "y": 1832,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "k",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_1_8",
+              "label": "l",
+              "value": null,
+              "frame": {
+                "x": 348.19,
+                "y": 697.9,
+                "width": 61.33,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_1_8",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 914,
+                  "y": 1832,
+                  "width": 161,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "l",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_shift",
+              "label": "Shift",
+              "value": null,
+              "frame": {
+                "x": 1.9,
+                "y": 756.95,
+                "width": 60.95,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_shift",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 5,
+                  "y": 1987,
+                  "width": 160,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "Shift",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_2_1",
+              "label": "z",
+              "value": null,
+              "frame": {
+                "x": 62.86,
+                "y": 756.95,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_2_1",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 165,
+                  "y": 1987,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "z",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_2_2",
+              "label": "x",
+              "value": null,
+              "frame": {
+                "x": 103.62,
+                "y": 756.95,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_2_2",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 272,
+                  "y": 1987,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "x",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_2_3",
+              "label": "c",
+              "value": null,
+              "frame": {
+                "x": 144.38,
+                "y": 756.95,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_2_3",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 379,
+                  "y": 1987,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "c",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_2_4",
+              "label": "v",
+              "value": null,
+              "frame": {
+                "x": 185.14,
+                "y": 756.95,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_2_4",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 486,
+                  "y": 1987,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "v",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_2_5",
+              "label": "b",
+              "value": null,
+              "frame": {
+                "x": 225.9,
+                "y": 756.95,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_2_5",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 593,
+                  "y": 1987,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "b",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_2_6",
+              "label": "n",
+              "value": null,
+              "frame": {
+                "x": 266.67,
+                "y": 756.95,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_2_6",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 700,
+                  "y": 1987,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "n",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_2_7",
+              "label": "m",
+              "value": null,
+              "frame": {
+                "x": 307.43,
+                "y": 756.95,
+                "width": 40.76,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_2_7",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 807,
+                  "y": 1987,
+                  "width": 107,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "m",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_del",
+              "label": "Delete",
+              "value": null,
+              "frame": {
+                "x": 348.19,
+                "y": 756.95,
+                "width": 61.33,
+                "height": 59.05
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_del",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 914,
+                  "y": 1987,
+                  "width": 161,
+                  "height": 155
+                },
+                "text": null,
+                "contentDescription": "Delete",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_switch_to_symbol",
+              "label": "Symbol keyboard",
+              "value": null,
+              "frame": {
+                "x": 1.9,
+                "y": 816,
+                "width": 60.95,
+                "height": 59.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_switch_to_symbol",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 5,
+                  "y": 2142,
+                  "width": 160,
+                  "height": 156
+                },
+                "text": null,
+                "contentDescription": "Symbol keyboard",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_bottom_symbol_1",
+              "label": ",",
+              "value": null,
+              "frame": {
+                "x": 62.86,
+                "y": 816,
+                "width": 40.76,
+                "height": 59.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_bottom_symbol_1",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 165,
+                  "y": 2142,
+                  "width": 107,
+                  "height": 156
+                },
+                "text": null,
+                "contentDescription": ",",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_space",
+              "label": "Space",
+              "value": null,
+              "frame": {
+                "x": 103.62,
+                "y": 816,
+                "width": 203.81,
+                "height": 59.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_space",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 272,
+                  "y": 2142,
+                  "width": 535,
+                  "height": 156
+                },
+                "text": null,
+                "contentDescription": "Space",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_bottom_symbol_2",
+              "label": ".",
+              "value": null,
+              "frame": {
+                "x": 307.43,
+                "y": 816,
+                "width": 40.76,
+                "height": 59.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_bottom_symbol_2",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 807,
+                  "y": 2142,
+                  "width": 107,
+                  "height": 156
+                },
+                "text": null,
+                "contentDescription": ".",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "com.google.android.inputmethod.latin:id/key_pos_ime_action",
+              "label": "Done",
+              "value": null,
+              "frame": {
+                "x": 348.19,
+                "y": 816,
+                "width": 61.33,
+                "height": 59.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.FrameLayout",
+                "resourceId": "com.google.android.inputmethod.latin:id/key_pos_ime_action",
+                "package": "com.google.android.inputmethod.latin",
+                "pixelFrame": {
+                  "x": 914,
+                  "y": 2142,
+                  "width": 161,
+                  "height": 156
+                },
+                "text": null,
+                "contentDescription": "Done",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "role": "image",
+          "id": "android:id/input_method_nav_back",
+          "label": "Back",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 875.43,
+            "width": 69.71,
+            "height": 48
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.ImageView",
+            "resourceId": "android:id/input_method_nav_back",
+            "package": "com.google.android.inputmethod.latin",
+            "pixelFrame": {
+              "x": 21,
+              "y": 2298,
+              "width": 183,
+              "height": 126
+            },
+            "text": null,
+            "contentDescription": "Back",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

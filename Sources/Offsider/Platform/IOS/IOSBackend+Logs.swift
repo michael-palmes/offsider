@@ -53,7 +53,7 @@ extension IOSBackend: LogReading {
             continuation.finish()
             await reader.value
             if let error = error as? CLIError { throw error }
-            throw CLIError(errorDescription: "Failed to read logs from simulator \(id.rawValue): \(error.localizedDescription)")
+            throw CLIError(errorDescription: "Failed to read logs from simulator \(id.rawValue): \(error.localizedDescription)", reason: .logStreamFailed)
         }
         await Self.drain(consumer)
         continuation.finish()
@@ -77,7 +77,7 @@ extension IOSBackend: LogReading {
         do {
             application = try await simulator.installedApplication(bundleID: bundleID)
         } catch {
-            throw CLIError(errorDescription: "App \(bundleID) is not installed on simulator \(simulator.udid). Install it, or drop --app to read all logs.")
+            throw CLIError(errorDescription: "App \(bundleID) is not installed on simulator \(simulator.udid). Install it, or drop --app to read all logs.", reason: .appNotInstalled)
         }
         if let path = application.bundle.binary?.path {
             return (path as NSString).lastPathComponent
@@ -138,9 +138,9 @@ enum LiveLogStream {
     static func failure(_ error: any Error, status: Int32?, predicate: String?) -> CLIError {
         let hint = predicate == nil ? "" : " Check the --predicate syntax."
         guard let status else {
-            return CLIError(errorDescription: "The simulator's log command stopped: \(error.localizedDescription).\(hint)")
+            return CLIError(errorDescription: "The simulator's log command stopped: \(error.localizedDescription).\(hint)", reason: .logStreamFailed)
         }
-        return CLIError(errorDescription: "The simulator's log command exited with status \(status).\(hint)")
+        return CLIError(errorDescription: "The simulator's log command exited with status \(status).\(hint)", reason: .logStreamFailed)
     }
 }
 

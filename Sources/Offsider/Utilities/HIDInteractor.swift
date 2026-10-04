@@ -34,7 +34,8 @@ struct HIDInteractor {
         } catch {
             logger.error().log("Failed to load private frameworks: \(error)")
             throw CLIError(
-                errorDescription: "Offsider could not initialize simulator input using the selected Xcode installation. Confirm Xcode 26 or later is selected and try again."
+                errorDescription: "Offsider could not initialize simulator input using the selected Xcode installation. Confirm Xcode 26 or later is selected and try again.",
+                reason: .xcodeUnusable, hint: "xcode-select -s <Xcode.app>/Contents/Developer"
             )
         }
 
@@ -46,10 +47,8 @@ struct HIDInteractor {
         logger.info().log("Simulator name: \(simulator.name)")
 
         guard simulator.state == .booted else {
-            let stateDescription = FBiOSTargetStateStringFromState(simulator.state)
-            throw CLIError(
-                errorDescription: "Simulator \(simulatorUDID) is not booted. Current state: \(stateDescription)."
-            )
+            let stateDescription = FBiOSTargetStateStringFromState(simulator.state).rawValue
+            throw CLIError.deviceNotBooted(id: simulatorUDID, state: stateDescription)
         }
         logger.info().log("Simulator state verified: booted")
 
@@ -75,7 +74,8 @@ struct HIDInteractor {
         ) else {
             hidConnections.removeValue(forKey: simulatorUDID)
             throw CLIError(
-                errorDescription: "Simulator \(simulatorUDID) restarted while Offsider was connecting. Try the command again."
+                errorDescription: "Simulator \(simulatorUDID) restarted while Offsider was connecting. Try the command again.",
+                reason: .deviceRestarted
             )
         }
         try await HIDBroker.waitForHIDReadiness(

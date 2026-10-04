@@ -15,6 +15,7 @@ private func resolveBatchTapPoint(
     pollInterval: TimeInterval,
     elementType: String?,
     allowOffscreen: Bool,
+    settle: SettlePolicy,
     logger: OffsiderLogger
 ) async throws -> Polled<TapResolution> {
     let fetchTree = context.pollingTreeSource()
@@ -24,6 +25,7 @@ private func resolveBatchTapPoint(
         pollInterval: pollInterval,
         elementType: elementType,
         allowOffscreen: allowOffscreen,
+        settle: settle,
         logger: logger
     ) {
         try await fetchTree()
@@ -75,7 +77,7 @@ extension Tap: BatchConvertible {
             } else if let elementValue {
                 query = .value(elementValue)
             } else {
-                throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.")
+                throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.", reason: .internalError)
             }
 
             // A step's own --wait-timeout and --poll-interval override the batch-level values.
@@ -91,6 +93,7 @@ extension Tap: BatchConvertible {
                 pollInterval: pollInterval,
                 elementType: elementType,
                 allowOffscreen: allowOffscreen,
+                settle: context.settlePolicy(stepOptedOut: noSettle),
                 logger: logger
             )
             resolution = resolved.value
@@ -113,7 +116,7 @@ extension Tap: BatchConvertible {
             let tapEvent = InputEvent.tapAt(x: physicalPoint.x, y: physicalPoint.y)
             return [.hidMergeable(InputEvent.delayed(tapEvent, pre: preDelay, post: postDelay))]
         case .automatic:
-            throw CLIError(errorDescription: "Unexpected tap style resolution.")
+            throw CLIError(errorDescription: "Unexpected tap style resolution.", reason: .internalError)
         }
     }
 }
@@ -258,13 +261,7 @@ extension Type: BatchConvertible {
             return inputText.isEmpty ? [] : [.text(inputText, replace: false)]
         }
 
-        guard TextToHIDEvents.validateText(inputText) else {
-            let unsupportedChars = inputText.compactMap { char in
-                let keyEvent = KeyEvent.keyCodeForString(String(char))
-                return keyEvent.keyCode == 0 ? char : nil
-            }
-            throw TextToHIDEvents.TextConversionError.unsupportedCharacter(unsupportedChars.first ?? " ")
-        }
+        try TextToHIDEvents.checkSupported(inputText)
 
         let hidEvents = try TextToHIDEvents.convertTextToHIDEvents(inputText)
         let clear = replace ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey) : nil

@@ -18,7 +18,8 @@ struct BatchCacheTests {
             device: device,
             axCachePolicy: cache,
             typeSubmissionMode: .chunked,
-            typeChunkSize: 200
+            typeChunkSize: 200,
+            noSettle: true
         )
         try await Batch.runSteps(steps, context: context, session: backend.session, continueOnError: false, logger: OffsiderLogger())
     }
@@ -50,9 +51,10 @@ struct BatchCacheTests {
         let parked = FakeUI.tree(width: 393, height: 852, [Self.button("Apply", y: 10700)])
 
         let blocked = FakeDeviceBackend(trees: [parked])
-        let error = await #expect(throws: CLIError.self) {
+        let error = await #expect(throws: ReportedFailure.self) {
             try await Self.run(["tap --label Apply"], on: blocked)
         }
+        #expect(error?.exitCode == .selectorNotFound)
         #expect(error?.userFacingDescription.hasPrefix("Step 1 failed: [tap]\nMatched --label 'Apply' is off screen: its frame (20, 10700) 350x44") == true)
         #expect(blocked.session.calls.isEmpty)
 

@@ -29,8 +29,14 @@ struct DescribeUIOutputOptions: ParsableArguments {
     @Flag(name: .customLong("compact"), help: "Print JSON on one line.")
     var compact = false
 
-    @Flag(name: .customLong("summary"), help: "Short view for agents: same as --flat --on-screen --labelled --format text.")
+    @Flag(name: .customLong("summary"), help: "Short view for agents: same as --flat --on-screen --labelled --format text, cut at 16384 bytes.")
     var summary = false
+
+    @Option(
+        name: .customLong("max-bytes"),
+        help: ArgumentHelp("Cut text output at whole lines to fit this many bytes (0 for no limit, else at least 512; --summary defaults to 16384).", valueName: "n")
+    )
+    var maxBytes: Int?
 
     func validate() throws {
         _ = try renderOptions()
@@ -58,7 +64,23 @@ struct DescribeUIOutputOptions: ParsableArguments {
             }
             options.compact = true
         }
+        if let maxBytes {
+            guard options.format == .text else {
+                throw ValidationError("--max-bytes applies to text output only.")
+            }
+            guard maxBytes == 0 || maxBytes >= 512 else {
+                throw ValidationError("--max-bytes must be 0 (no limit) or at least 512.")
+            }
+            options.maxBytes = maxBytes == 0 ? nil : maxBytes
+        } else if options.format != .text {
+            options.maxBytes = nil
+        }
         return options
+    }
+
+    /// json or ndjson output, so a failure prints the JSON error envelope too.
+    var writesJSON: Bool {
+        ((try? renderOptions())?.format ?? .json) != .text
     }
 
     func render(_ tree: UITree) throws -> Data {

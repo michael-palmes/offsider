@@ -40,6 +40,9 @@ struct AccessibilityFetcher {
         guard let target = try await cachedSimulator(udid: simulatorUDID, logger: logger) else {
             throw CLIError.deviceNotFound(id: simulatorUDID)
         }
+        guard target.state == .booted else {
+            throw CLIError.deviceNotBooted(id: simulatorUDID, state: FBiOSTargetStateStringFromState(target.state).rawValue)
+        }
         return try await fetchAccessibilityInfoJSONData(
             from: target,
             point: point,
@@ -100,7 +103,7 @@ struct AccessibilityFetcher {
             }
         }
         guard let latestData else {
-            throw CLIError(errorDescription: "Accessibility element at the requested point could not be serialized.")
+            throw CLIError(errorDescription: "Accessibility element at the requested point could not be serialized.", reason: .treeReadFailed)
         }
         return latestData
     }
@@ -128,7 +131,7 @@ struct AccessibilityFetcher {
             }
         }
         guard let latestData else {
-            throw CLIError(errorDescription: "Accessibility hierarchy could not be serialized.")
+            throw CLIError(errorDescription: "Accessibility hierarchy could not be serialized.", reason: .treeReadFailed)
         }
         return latestData
     }
@@ -204,7 +207,8 @@ struct AccessibilityFetcher {
         )
         guard status == 0 else {
             throw CLIError(
-                errorDescription: "Offsider could not restore accessibility automation for simulator \(simulatorUDID). Restart the simulator and try again."
+                errorDescription: "Offsider could not restore accessibility automation for simulator \(simulatorUDID). Restart the simulator and try again.",
+                reason: .treeReadFailed
             )
         }
         try await dependencies.wait(.milliseconds(250))
@@ -244,7 +248,7 @@ struct AccessibilityFetcher {
         }
         if process.isRunning {
             terminateProcess(process)
-            throw CLIError(errorDescription: "Offsider timed out while restoring accessibility automation.")
+            throw CLIError(errorDescription: "Offsider timed out while restoring accessibility automation.", reason: .treeReadFailed)
         }
         process.waitUntilExit()
         return process.terminationStatus
@@ -364,7 +368,7 @@ struct AccessibilityFetcher {
 
     static func serializeAccessibilityInfo(_ accessibilityInfo: Any) throws -> Data {
         guard accessibilityInfo is [String: Any] || accessibilityInfo is [[String: Any]] else {
-            throw CLIError(errorDescription: "Offsider received an unsupported accessibility response from the simulator.")
+            throw CLIError(errorDescription: "Offsider received an unsupported accessibility response from the simulator.", reason: .treeReadFailed)
         }
         return try JSONSerialization.data(withJSONObject: accessibilityInfo, options: [.prettyPrinted])
     }

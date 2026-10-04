@@ -5,6 +5,7 @@ import { AlertTestScreen } from './AlertTestScreen';
 import { BatchLoginFlowScreen } from './BatchLoginFlowScreen';
 import { BatchTestScreen } from './BatchTestScreen';
 import { ButtonTestScreen } from './ButtonTestScreen';
+import { ChoiceTestScreen } from './ChoiceTestScreen';
 import { ContextMenuTestScreen } from './ContextMenuTestScreen';
 import { EnvironmentTestScreen } from './EnvironmentTestScreen';
 import { GesturePresetsScreen } from './GesturePresetsScreen';
@@ -14,6 +15,7 @@ import { LongScrollTestScreen } from './LongScrollTestScreen';
 import { ModalNavigationTestScreen } from './ModalNavigationTestScreen';
 import { OverlayTestScreen } from './OverlayTestScreen';
 import { ParkedSheetTestScreen } from './ParkedSheetTestScreen';
+import { PermissionStateTestScreen } from './PermissionStateTestScreen';
 import { RowsTestScreen } from './RowsTestScreen';
 import { SearchableTestScreen } from './SearchableTestScreen';
 import { SheetTestScreen } from './SheetTestScreen';
@@ -34,6 +36,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'gesture-presets': GesturePresetsScreen,
   'switch-test': SwitchTestScreen,
   'tab-view-test': TabViewTestScreen,
+  'choice-test': ChoiceTestScreen,
   'text-input': TextInputScreen,
   'key-press': KeyPressScreen,
   'key-sequence': KeySequenceScreen,
@@ -53,4 +56,5 @@ export const screens: Record<RouteId, ComponentType> = {
   'overlay-test': OverlayTestScreen,
   'rows-test': RowsTestScreen,
   'environment-test': EnvironmentTestScreen,
+  'permission-state': PermissionStateTestScreen,
 };

@@ -11,12 +11,17 @@ struct VerifyRequest {
     let device: DeviceID
     let options: VerificationOptions
     let styles: [TapDeliveryStyle?]
+    /// The tree a selector was resolved on, so the verifier reads one tree fewer.
+    var initialTree: UITree? = nil
+    /// Sees the verifier's last read before the action, so a target that moved since it was resolved is acted on where it is now.
+    var beforeAction: (UITree) async throws -> Void = { _ in }
 }
 
 /// Tracks how far a verified command got, so a failure under --json reports it.
 @MainActor
 final class VerifyProgress {
-    var dispatched = false
+    /// Whether input may have reached the device, from every send since the command began.
+    var dispatched: DispatchState { DispatchTracker.current.state }
     var attempts = 0
     var style: TapDeliveryStyle?
 }
@@ -35,20 +40,19 @@ enum VerifyOutput {
         } catch let exit as ExitCode {
             throw exit
         } catch {
-            if options.json {
-                let failed = VerifyReport(
-                    command: command,
-                    target: target,
-                    dispatched: progress.dispatched,
-                    verified: false,
-                    attempts: progress.attempts,
-                    change: .none,
-                    style: progress.style,
-                    error: message(for: error)
-                )
-                writeOutput(try failed.jsonData() + Data("\n".utf8))
-            }
-            throw error
+            guard options.json else { throw error }
+            let failed = VerifyReport(
+                command: command,
+                target: target,
+                dispatched: progress.dispatched,
+                verified: false,
+                attempts: progress.attempts,
+                change: .none,
+                style: progress.style,
+                error: ErrorReporter.payload(for: error, dispatched: progress.dispatched)
+            )
+            writeOutput(try failed.jsonData() + Data("\n".utf8))
+            throw ReportedFailure(underlying: error, exitCode: failed.exitCode)
         }
     }
 
@@ -57,13 +61,15 @@ enum VerifyOutput {
         progress: VerifyProgress,
         action: (Verifier.Attempt, any InputSession) async throws -> Void
     ) async throws {
-        let session = try await request.backend.openInputSession(for: request.device)
+        let session = try await request.backend.openTrackedSession(for: request.device)
         let outcome: Verifier.Outcome
         do {
             outcome = try await Verifier.run(
                 styles: request.styles,
                 timeout: .milliseconds(Int((request.options.resolvedTimeout * 1000).rounded())),
                 dependencies: .live(backend: request.backend, device: request.device),
+                initialTree: request.initialTree,
+                beforeAction: request.beforeAction,
                 onRetry: { failed, next in
                     writeError(retryLine(failed: failed, next: next))
                 },
@@ -71,7 +77,6 @@ enum VerifyOutput {
                     progress.attempts = attempt.number
                     progress.style = attempt.style
                     try await action(attempt, session)
-                    progress.dispatched = true
                 }
             )
         } catch {
@@ -93,10 +98,13 @@ enum VerifyOutput {
         let result = VerifyReport(
             command: request.command,
             target: request.target,
-            dispatched: true,
+            dispatched: .yes,
             verified: outcome.verified,
             attempts: outcome.attempts,
             change: outcome.change,
+            changes: outcome.changes,
+            changesTruncated: outcome.changesTruncated,
+            note: outcome.note,
             style: outcome.style
         )
         if json {
@@ -118,7 +126,10 @@ enum VerifyOutput {
             change = "no change"
         }
         let style = outcome.style.map { ", \($0.rawValue) style" } ?? ""
-        return "✓ \(request.subject) verified: \(change), attempt \(outcome.attempts) of \(max(request.styles.count, 1))\(style)"
+        let note = outcome.note == .keyboardClosed
+            ? "; only the keyboard closed: the input may have been spent closing it; repeat it if the control shows no effect"
+            : ""
+        return "✓ \(request.subject) verified: \(change), attempt \(outcome.attempts) of \(max(request.styles.count, 1))\(style)\(note)"
     }
 
     static func unverifiedLine(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> String {
@@ -153,12 +164,6 @@ enum VerifyOutput {
     nonisolated private static func number(_ value: Double) -> String {
         let rounded = (value * 100).rounded() / 100
         return rounded.rounded() == rounded && abs(rounded) < 1e15 ? String(Int(rounded)) : String(rounded)
-    }
-
-    private static func message(for error: Error) -> String {
-        if let error = error as? UserFacingError { return error.userFacingDescription }
-        if let error = error as? LocalizedError, let description = error.errorDescription { return description }
-        return String(describing: error)
     }
 
     private static func writeOutput(_ data: Data) {

@@ -72,6 +72,54 @@ struct AndroidRoutingTests {
         #expect(server.connectionAttempts == 0)
     }
 
+    static func phoneServer() -> FakeAdbServer {
+        let listing = "R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n1A2B3C4D5E6F unauthorized usb:1-2 transport_id:3\n"
+        return FakeAdbServer(handler: FakeAdbServer.devices(
+            [],
+            host: { service in
+                switch service {
+                case "host:version": return FakeAdbServer.okay(payload: "0029")
+                case "host:devices-l": return FakeAdbServer.okay(payload: listing)
+                default: return .hang
+                }
+            },
+            device: { _, _ in .hang }
+        ))
+    }
+
+    @Test("a network serial is refused before any adb request")
+    func networkSerialRefused() async throws {
+        let server = Self.server([:])
+        let error = await #expect(throws: AndroidError.self) {
+            _ = try await DeviceRouter.route("192.168.1.5:5555", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
+        }
+        #expect(error?.kind == .unsupportedDevice)
+        #expect(error?.message.contains("over USB only") == true)
+        #expect(server.connectionAttempts == 0)
+    }
+
+    @Test("a named USB serial routes to the phone and checks it from the device list alone")
+    func namedPhoneRoutes() async throws {
+        let server = Self.phoneServer()
+        let route = try await DeviceRouter.route("R58M123ABC", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
+
+        #expect(route.device == DeviceID(rawValue: "R58M123ABC", platform: .android))
+        let booted = try await route.backend.requireBootedDevice(route.device)
+        #expect(booted.name == "Pixel 9")
+        #expect(server.requests.allSatisfy { $0.serial == nil && !$0.service.hasPrefix("host:transport") })
+    }
+
+    @Test("an unauthorised phone fails with the USB debugging hint")
+    func unauthorisedPhone() async throws {
+        let server = Self.phoneServer()
+        let route = try await DeviceRouter.route("1A2B3C4D5E6F", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
+
+        let error = await #expect(throws: AndroidError.self) { _ = try await route.backend.requireBootedDevice(route.device) }
+        #expect(error?.kind == .deviceUnauthorised)
+        #expect(error?.message.contains("Allow USB debugging?") == true)
+        #expect(error?.message.contains("offsider boot") == false)
+    }
+
     @Test("a UUID never builds an Android backend")
     func uuidStaysIOS() async throws {
         let server = Self.server([:])
@@ -131,17 +179,22 @@ struct AndroidRoutingTests {
 
 @Suite("Android command refusals")
 struct AndroidCommandRefusalTests {
-    @Test("doctor --device with an Android ID is a usage error, before any device work")
-    func doctorRefusesAndroid() async throws {
+    @Test("doctor --device with an Android ID and no SDK fails android.sdk, skips the device checks and exits 4")
+    func doctorChecksAndroidWithoutSDK() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("doctor --device emulator-5556")
-        #expect(result.exitCode == 64)
-        #expect(result.stderr.contains("doctor checks iOS simulators in this build; Android checks come later. Run `offsider doctor` for host checks."))
+        #expect(result.exitCode == 4)
+        #expect(result.stdout.contains("✗ android.sdk"))
+        #expect(result.stdout.contains("Android SDK not found"))
+        #expect(result.stdout.contains("- android-device.state"))
+        #expect(!result.stdout.contains("xcode.developer-dir"))
     }
 
     @Test("slider on Android is no longer refused: it goes to the emulator, here failing for want of an SDK")
     func sliderReachesAndroid() async throws {
-        let result = try await TestHelpers.runOffsiderWithoutAndroid("slider --id volume --value 50 --device emulator-5556")
-        #expect(result.exitCode == 1)
+        let serial = TestDevices.emulatorSerial()
+        defer { TestDevices.removePrivateFiles(platform: .android, id: serial) }
+        let result = try await TestHelpers.runOffsiderWithoutAndroid("slider --id volume --value 50 --device \(serial)")
+        #expect(result.exitCode == 9)
         #expect(result.stderr.contains(ListDevicesPlatformFilterTests.sdkNotFound))
         #expect(!result.stderr.contains("not supported"))
     }

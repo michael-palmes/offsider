@@ -1,0 +1,5 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application (0,0 411.4x923.4)
+  group "Sheet Fixture" id=sheet-test-sheet (16,70.1 379.4x47.2)
+  button "Run Sheet Action" id=sheet-test-action (123.4,141.3 165x43.8)
+  button "Close Sheet" id=sheet-test-close (143.6,209.5 124.2x44.2)

@@ -1,0 +1,164 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": null,
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "group",
+          "id": "sheet-test-sheet",
+          "label": "Sheet Fixture",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 70.1,
+            "width": 379.43,
+            "height": 47.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "sheet-test-sheet",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 184,
+              "width": 996,
+              "height": 124
+            },
+            "text": null,
+            "contentDescription": "Sheet Fixture",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "sheet-test-action",
+          "label": "Run Sheet Action",
+          "value": null,
+          "frame": {
+            "x": 123.43,
+            "y": 141.33,
+            "width": 164.95,
+            "height": 43.81
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "sheet-test-action",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 324,
+              "y": 371,
+              "width": 433,
+              "height": 115
+            },
+            "text": null,
+            "contentDescription": "Run Sheet Action",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "sheet-test-close",
+          "label": "Close Sheet",
+          "value": null,
+          "frame": {
+            "x": 143.62,
+            "y": 209.52,
+            "width": 124.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "sheet-test-close",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 377,
+              "y": 550,
+              "width": 326,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Close Sheet",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

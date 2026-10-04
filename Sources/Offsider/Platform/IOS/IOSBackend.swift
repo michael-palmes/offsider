@@ -11,6 +11,7 @@ final class IOSBackend: DeviceBackend {
     private var simulators: [String: FBSimulator] = [:]
     /// The last whole tree's application frame, which tells a foldable's displays apart when devicectl cannot.
     private(set) var applicationFrames: [String: UIFrame] = [:]
+    private var bootMarkers: [String: String] = [:]
     private static var isPrepared = false
 
     init(logger: OffsiderLogger) {
@@ -44,7 +45,8 @@ final class IOSBackend: DeviceBackend {
                 state: FBiOSTargetStateStringFromState(simulator.state).rawValue,
                 name: simulator.name,
                 osVersion: simulator.osVersion.name.rawValue,
-                deviceType: simulator.deviceType.model.rawValue
+                deviceType: simulator.deviceType.model.rawValue,
+                kind: .simulator
             )
         }
     }
@@ -62,16 +64,16 @@ final class IOSBackend: DeviceBackend {
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         let udid = id.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !udid.isEmpty else {
-            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.")
+            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.", reason: .invalidDeviceID, hint: "offsider list-devices")
         }
 
         guard let simulator = try await cachedSimulator(udid: udid, logger: logger) else {
-            throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.")
+            throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.", reason: .deviceNotFound, hint: "offsider list-devices")
         }
 
         guard simulator.state == .booted else {
-            let stateDescription = FBiOSTargetStateStringFromState(simulator.state)
-            throw CLIError(errorDescription: "Simulator \(udid) is not booted. Current state: \(stateDescription)")
+            let stateDescription = FBiOSTargetStateStringFromState(simulator.state).rawValue
+            throw CLIError.deviceNotBooted(id: udid, state: stateDescription)
         }
 
         simulators[udid] = simulator
@@ -79,6 +81,7 @@ final class IOSBackend: DeviceBackend {
     }
 
     func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+        let startedAt = Date()
         let simulator = try await simulator(for: id)
         let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
             from: simulator,
@@ -91,8 +94,11 @@ final class IOSBackend: DeviceBackend {
            let geometry = await panelGeometry(on: active, of: simulator) {
             tree.roots = UITree.correctingSidewaysApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
         }
-        if point == nil, let frame = tree.applicationFrame {
-            applicationFrames[id.rawValue] = frame
+        if point == nil {
+            if let frame = tree.applicationFrame {
+                applicationFrames[id.rawValue] = frame
+            }
+            DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
         }
         return tree
     }
@@ -183,7 +189,7 @@ final class IOSBackend: DeviceBackend {
             return
         }
         guard case .down = steps.first, case .up = steps.last else {
-            throw CLIError(errorDescription: "touch --down or --up alone is not supported on the iPhone Duo's inner display yet; pass --down and --up together, or fold the simulator to use the cover display.")
+            throw CLIError(errorDescription: "touch --down or --up alone is not supported on the iPhone Duo's inner display yet; pass --down and --up together, or fold the simulator to use the cover display.", reason: .notSupported)
         }
         do {
             for step in steps {
@@ -226,7 +232,7 @@ final class IOSBackend: DeviceBackend {
             }
         }
         if let display, display != "1" {
-            throw CLIError(errorDescription: "Simulator \(id.rawValue) has one display, 1 (main); got \(display). Run `offsider displays --device \(id.rawValue)`.")
+            throw CLIError(errorDescription: "Simulator \(id.rawValue) has one display, 1 (main); got \(display). Run `offsider displays --device \(id.rawValue)`.", reason: .unknownDisplay, hint: "offsider displays --device \(id.rawValue)")
         }
         return try await Timings.measure("capture") {
             try await VideoFrameUtilities.captureScreenshotData(from: simulator)
@@ -245,8 +251,17 @@ final class IOSBackend: DeviceBackend {
         guard let simulator = try await cachedSimulator(udid: id.rawValue, logger: logger) else {
             throw CLIError.deviceNotFound(id: id.rawValue)
         }
+        guard simulator.state == .booted else {
+            throw CLIError.deviceNotBooted(id: id.rawValue, state: FBiOSTargetStateStringFromState(simulator.state).rawValue)
+        }
         simulators[id.rawValue] = simulator
         return simulator
+    }
+}
+
+extension IOSBackend: RawAccessibilitySource {
+    func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
+        try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(from: try await simulator(for: id), logger: logger)
     }
 }
 
@@ -300,7 +315,7 @@ extension IOSBackend: RawVideoStreaming {
                 isStreaming = false
                 try? await videoStream.stopStreamingAsync()
             }
-            throw CLIError(errorDescription: "Failed to stream BGRA video: \(error.localizedDescription)")
+            throw CLIError(errorDescription: "Failed to stream BGRA video: \(error.localizedDescription)", reason: .videoFailed)
         }
     }
 }
@@ -315,5 +330,16 @@ extension DetachedTouchStep {
         case let .hold(duration):
             return .delay(duration)
         }
+    }
+}
+
+extension IOSBackend: BootMarking {
+    /// The device's `launchd_sim` start time, read once per command.
+    func bootMarker(for id: DeviceID) async -> String? {
+        if let marker = bootMarkers[id.rawValue] { return marker }
+        guard let identity = try? HIDBroker.currentBootIdentity(simulatorUDID: id.rawValue) else { return nil }
+        let marker = "launchd_sim \(identity.startSeconds).\(String(format: "%06d", identity.startMicroseconds))"
+        bootMarkers[id.rawValue] = marker
+        return marker
     }
 }

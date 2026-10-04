@@ -22,7 +22,7 @@ struct AndroidFallbackTests {
     @Test("non-ASCII type over adb alone fails before typing anything")
     func unicodeNeedsGrpc() async throws {
         let result = try await AndroidE2E.offsider("type 'héllo'", environment: adbOnly)
-        #expect(result.exitCode == 1)
+        #expect(result.exitCode == 9)
         #expect(result.stderr.contains("Typing non-ASCII text on Android needs the emulator's gRPC endpoint"))
     }
 }

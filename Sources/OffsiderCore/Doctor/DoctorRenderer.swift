@@ -13,7 +13,16 @@ public enum DoctorRenderer {
     }
 
     public static func render(_ report: DoctorReport) -> String {
-        var lines: [String] = [header(report.xcode)]
+        let androidOnly = report.device?.platform == "android"
+        var lines: [String] = []
+        if androidOnly {
+            lines.append("Offsider doctor: " + androidHeader(report.android))
+        } else {
+            lines.append(header(report.xcode))
+            if let android = report.android {
+                lines.append(androidHeader(android))
+            }
+        }
         for check in report.checks {
             let detail = check.status == .skip ? "Skipped: \(check.detail)" : check.detail
             lines.append("\(symbol(for: check.status)) \(padded(check.id.rawValue, idColumnWidth))\(detail)")
@@ -21,13 +30,21 @@ public enum DoctorRenderer {
                 lines.append("    Fix: \(hint)")
             }
         }
-        if report.booted.isEmpty {
-            lines.append("Booted simulators: none")
-        } else {
-            lines.append("Booted simulators:")
-            let nameWidth = (report.booted.map(\.name.count).max() ?? 0) + 2
-            for simulator in report.booted {
-                lines.append("  \(padded(simulator.name, nameWidth))\(simulator.udid)  \(simulator.osVersion)")
+        if !androidOnly {
+            lines += bootedLines(report.booted)
+        }
+        if let android = report.android {
+            let emulators = android.devices.filter { $0.kind == "emulator" }
+            if emulators.isEmpty {
+                lines.append("Running emulators: none")
+            } else {
+                lines.append("Running emulators:")
+                let nameWidth = (emulators.map { ($0.avd ?? $0.serial).count }.max() ?? 0) + 2
+                for emulator in emulators {
+                    var row = "  \(padded(emulator.avd ?? emulator.serial, nameWidth))\(emulator.serial)  \(emulator.state)"
+                    if let api = emulator.apiLevel { row += "  API \(api)" }
+                    lines.append(row)
+                }
             }
         }
         if !report.fixes.isEmpty {
@@ -45,6 +62,20 @@ public enum DoctorRenderer {
         var xcodePart = "Xcode \(xcode.version ?? "unknown")"
         if let build = xcode.build { xcodePart += " (\(build))" }
         return "Offsider doctor: \(xcodePart), CoreSimulator \(xcode.coreSimulator ?? "unknown")"
+    }
+
+    static func bootedLines(_ booted: [BootedSimulator]) -> [String] {
+        guard !booted.isEmpty else { return ["Booted simulators: none"] }
+        let nameWidth = (booted.map(\.name.count).max() ?? 0) + 2
+        return ["Booted simulators:"] + booted.map { "  \(padded($0.name, nameWidth))\($0.udid)  \($0.osVersion)" }
+    }
+
+    static func androidHeader(_ android: AndroidSummary?) -> String {
+        guard let android else { return "Android SDK not found" }
+        var text = "Android SDK \(android.sdkRoot) (\(android.sdkSource))"
+        if let version = android.adbVersion { text += ", adb \(version)" }
+        if let server = android.adbServer { text += ", server \(server)" }
+        return text
     }
 
     static func resultLine(_ report: DoctorReport) -> String {

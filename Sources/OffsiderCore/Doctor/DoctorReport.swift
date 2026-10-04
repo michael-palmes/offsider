@@ -92,30 +92,106 @@ public struct XcodeSummary: Codable, Equatable, Sendable {
     }
 }
 
+/// The device `--device` named, whatever its platform.
+public struct DoctorDevice: Codable, Equatable, Sendable {
+    public let id: String
+    /// `ios` or `android`.
+    public let platform: String
+    public let name: String?
+    /// `simulator`, `emulator` or `other`.
+    public let kind: String?
+
+    public init(id: String, platform: String, name: String?, kind: String?) {
+        self.id = id
+        self.platform = platform
+        self.name = name
+        self.kind = kind
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(platform, forKey: .platform)
+        try container.encode(name, forKey: .name)
+        try container.encode(kind, forKey: .kind)
+    }
+}
+
+/// The Android SDK and adb server doctor found; absent when no SDK is installed.
+public struct AndroidSummary: Codable, Equatable, Sendable {
+    public let sdkRoot: String
+    public let sdkSource: String
+    public let adbPath: String
+    public let adbVersion: String?
+    public let adbServer: String?
+    public let adbServerVersion: Int?
+    public let emulatorRevision: String?
+    public let devices: [AndroidDeviceRow]
+
+    public init(
+        sdkRoot: String,
+        sdkSource: String,
+        adbPath: String,
+        adbVersion: String?,
+        adbServer: String?,
+        adbServerVersion: Int?,
+        emulatorRevision: String?,
+        devices: [AndroidDeviceRow]
+    ) {
+        self.sdkRoot = sdkRoot
+        self.sdkSource = sdkSource
+        self.adbPath = adbPath
+        self.adbVersion = adbVersion
+        self.adbServer = adbServer
+        self.adbServerVersion = adbServerVersion
+        self.emulatorRevision = emulatorRevision
+        self.devices = devices
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sdkRoot, forKey: .sdkRoot)
+        try container.encode(sdkSource, forKey: .sdkSource)
+        try container.encode(adbPath, forKey: .adbPath)
+        try container.encode(adbVersion, forKey: .adbVersion)
+        try container.encode(adbServer, forKey: .adbServer)
+        try container.encode(adbServerVersion, forKey: .adbServerVersion)
+        try container.encode(emulatorRevision, forKey: .emulatorRevision)
+        try container.encode(devices, forKey: .devices)
+    }
+}
+
+/// Version 1; keys may be added within a version, so consumers ignore keys they do not know.
 public struct DoctorReport: Codable, Equatable, Sendable {
     public static let schemaVersion = 1
 
     public let version: Int
     public let offsiderVersion: String
     public let udid: String?
+    public let device: DoctorDevice?
     public let xcode: XcodeSummary
     public let booted: [BootedSimulator]
+    public let android: AndroidSummary?
     public let checks: [DoctorCheckResult]
     public let fixes: [DoctorFixResult]
 
     public init(
         offsiderVersion: String,
         udid: String?,
+        device: DoctorDevice? = nil,
         xcode: XcodeSummary,
         booted: [BootedSimulator],
+        android: AndroidSummary? = nil,
         checks: [DoctorCheckResult],
         fixes: [DoctorFixResult] = []
     ) {
         self.version = Self.schemaVersion
         self.offsiderVersion = offsiderVersion
         self.udid = udid
+        self.device = device
         self.xcode = xcode
         self.booted = booted
+        self.android = android
         self.checks = checks
         self.fixes = fixes
     }
@@ -143,11 +219,11 @@ public struct DoctorReport: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, offsiderVersion, udid, xcode, booted, checks, fixes
+        case version, offsiderVersion, udid, device, xcode, booted, android, checks, fixes
     }
 
     private enum EncodingKeys: String, CodingKey {
-        case version, offsiderVersion, status, udid, xcode, booted, checks, fixes
+        case version, offsiderVersion, status, udid, device, xcode, booted, android, checks, fixes
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -156,8 +232,10 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         try container.encode(offsiderVersion, forKey: .offsiderVersion)
         try container.encode(status, forKey: .status)
         try container.encode(udid, forKey: .udid)
+        try container.encode(device, forKey: .device)
         try container.encode(xcode, forKey: .xcode)
         try container.encode(booted, forKey: .booted)
+        try container.encode(android, forKey: .android)
         try container.encode(checks, forKey: .checks)
         try container.encode(fixes, forKey: .fixes)
     }

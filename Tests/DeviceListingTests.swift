@@ -49,9 +49,10 @@ struct DeviceListingTests {
         state: "Booted",
         name: "iPhone 17 Pro",
         osVersion: "iOS 27.0",
-        deviceType: "iPhone 17 Pro"
+        deviceType: "iPhone 17 Pro",
+        kind: .simulator
     )
-    private let pixel = DeviceSummary(id: "Pixel_9", platform: .android, state: "Shutdown", name: "Pixel \"9\"", osVersion: nil, deviceType: nil)
+    private let pixel = DeviceSummary(id: "Pixel_9", platform: .android, state: "Shutdown", name: "Pixel \"9\"", osVersion: nil, deviceType: nil, kind: .avd)
 
     @Test("the table aligns columns under a fixed header")
     func tableAlignsColumns() {
@@ -83,10 +84,40 @@ struct DeviceListingTests {
         #expect(devices[1]["osVersion"] is NSNull)
         #expect(devices[1]["deviceType"] is NSNull)
 
-        let keys = ["\"version\"", "\"devices\"", "\"id\"", "\"platform\"", "\"state\"", "\"name\"", "\"osVersion\"", "\"deviceType\""]
+        #expect(devices[0]["kind"] as? String == "simulator")
+        #expect(devices[0]["connection"] is NSNull)
+        #expect(devices[1]["kind"] as? String == "avd")
+
+        let keys = ["\"version\"", "\"devices\"", "\"id\"", "\"platform\"", "\"state\"", "\"name\"", "\"osVersion\"", "\"deviceType\"", "\"kind\"", "\"connection\""]
         let offsets = keys.compactMap { text.range(of: $0)?.lowerBound }
         #expect(offsets.count == keys.count)
         #expect(offsets == offsets.sorted())
+    }
+
+    @Test("a USB phone's JSON row carries kind physical and connection usb, under version 1")
+    func phoneJSON() throws {
+        let usb = DeviceSummary(id: "R58M123ABC", platform: .android, state: "Booted", name: "Pixel 9", osVersion: nil, deviceType: "Physical (USB)", kind: .physical, connection: "usb")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceListRenderer.json([usb]).utf8)) as? [String: Any])
+        let row = try #require((object["devices"] as? [[String: Any]])?.first)
+
+        #expect(object["version"] as? Int == 1)
+        #expect(row["kind"] as? String == "physical")
+        #expect(row["connection"] as? String == "usb")
+    }
+
+    @Test("unauthorised and network phones get one hint each; a ready phone and emulators get none")
+    func phoneHints() {
+        let rows = [
+            DeviceSummary(id: "R58M123ABC", platform: .android, state: "Booted", name: "Pixel 9", osVersion: nil, deviceType: nil, kind: .physical, connection: "usb"),
+            DeviceSummary(id: "1A2B3C4D5E6F", platform: .android, state: "Unauthorised", name: "1A2B3C4D5E6F", osVersion: nil, deviceType: nil, kind: .physical, connection: "usb"),
+            DeviceSummary(id: "192.168.1.5:5555", platform: .android, state: "Unsupported", name: "Pixel 8", osVersion: nil, deviceType: nil, kind: .physical, connection: "network"),
+            DeviceSummary(id: "emulator-5558", platform: .android, state: "Unauthorised", name: "emulator-5558", osVersion: nil, deviceType: nil, kind: .emulator),
+        ]
+
+        #expect(ListDevices.phoneHints(rows) == [
+            "1A2B3C4D5E6F is unauthorised: unlock the phone and accept the \"Allow USB debugging?\" prompt, then run `offsider list-devices` again.",
+            "192.168.1.5:5555 is a network adb connection, which Offsider does not drive; connect the phone over USB.",
+        ])
     }
 
     @Test("an empty JSON list is a versioned empty array")
@@ -200,21 +231,23 @@ struct SimulatorRuntimeTests {
 struct ListDevicesPlatformFilterTests {
     static let sdkNotFound = "Android SDK not found. Set ANDROID_HOME to your SDK (Android Studio installs it in ~/Library/Android/sdk), or put adb on PATH."
 
-    @Test("--platform android without an SDK exits 1 with the install hint")
+    @Test("--platform android without an SDK exits 9 with the install hint")
     func androidWithoutSDKFails() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("list-devices --platform android")
 
-        #expect(result.exitCode == 1)
+        #expect(result.exitCode == 9)
         #expect(result.stdout.isEmpty)
         #expect(result.stderr.contains(Self.sdkNotFound))
     }
 
-    @Test("--platform android --json without an SDK prints no JSON")
+    @Test("--platform android --json without an SDK prints the error envelope, not a device list")
     func androidJSONWithoutSDKFails() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("list-devices --platform android --json")
 
-        #expect(result.exitCode == 1)
-        #expect(result.stdout.isEmpty)
+        #expect(result.exitCode == 9)
+        let envelope = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        #expect(envelope["ok"] as? Bool == false && envelope["exitCode"] as? Int == 9)
+        #expect((envelope["error"] as? [String: Any])?["reason"] as? String == "android_sdk_missing")
         #expect(result.stderr.contains(Self.sdkNotFound))
     }
 

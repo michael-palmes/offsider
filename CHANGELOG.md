@@ -6,6 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `describe-ui --max-bytes <n>` cuts text output at whole lines and says how many nodes were left out; when the Android device stops listing nodes at its own limit, text output says the tree is incomplete.
+- `screenshot --mask-secure` and `batch --mask-secure` paint password fields black before writing the image, and withhold it when a password field cannot be located. `OFFSIDER_MASK_SECURE=1` turns masking on by default. `screenshot --json` then adds `masked`, the number of fields painted.
+- Every failure has a typed `reason` and a `hint`; with `--json` it prints one object on stdout with `exitCode` and `error` (`reason`, `message`, `hint`, `dispatched`, `candidates`). The README lists every reason.
+- Not-found and ambiguous selector errors list up to five candidates with id, label, role, frame and on-screen state in JSON, and ambiguous errors name each candidate's label.
+- Input commands and setters (including `permission`, `status-bar` and `biometric` when they change state), and Android commands that read the screen, lock the device for their run. A second command on the same device exits 8 (`device_busy`) naming the holder's pid; `--wait-lock <seconds>` or `OFFSIDER_WAIT_LOCK` waits instead. `batch` holds one lock for all its steps, and the wait never counts against the hung-device watchdog. Reads on iOS never lock. Locks live in a private per-user directory that ignores `TMPDIR`. `--wait-lock` exists only on commands that can lock.
+- The `batch --json` summary line adds `dispatched` (`yes`, `no` or `unknown`), and a failed batch's text ends with `Dispatched: <state>`, so an agent can tell whether resending the batch is safe.
+- `doctor --device` checks Android emulators, by serial or AVD name: the SDK and adb, the adb server and whether its mDNS discovery is off, the emulator package and the bundled helper, then the device's state and system image, the emulator gRPC endpoint and its auth mode (never the token), the UiAutomation slot and any accessibility service, one helper start with its times, and any Metro reverse. Plain `doctor` adds the Android host checks when an SDK is installed, and the JSON report adds `device` and `android` under version 1. `doctor --fix` starts an absent adb server with `ADB_MDNS=0` (not when `--device` names a simulator), and changes nothing else on Android.
+- `OFFSIDER_TIMINGS=1` prints Android phases: `prepare`, `adb-devices`, `adb-shell`, `display-probe`, `helper-launch`, `dex-push`, `helper-hello`, `helper-dump`, `tree-map`, `helper-close`, `grpc-connect`, `grpc-call`, `input` and `capture`.
+- USB-connected Android phones can be driven by passing their serial to `--device`; they are never chosen otherwise. `list-devices` shows them with model, connection and authorisation state, and prints the USB debugging prompt hint for an unauthorised phone. Network (Wi-Fi) adb devices are listed as unsupported and refused, and `boot`, setting a posture, `stream-video --format bgra` and non-ASCII plain `type` are refused on a phone with the alternative.
+- `permission grant|revoke|reset <service>... --app <id>` sets an app's permissions on iOS simulators (`simctl privacy`) and Android (runtime permissions, idempotent, never `pm reset-permissions`), with `show` on Android and `services` listing the names each platform supports. It works on a named USB phone.
+- `status-bar override|clear|show` sets a clean status bar: iOS `simctl status_bar`, Android System UI demo mode in one adb round trip. It works on a named USB phone.
+- `biometric enrol|unenrol|match|no-match|status` drives Face ID and Touch ID on iOS simulators and the fingerprint sensor on Android emulators through the emulator console. Android enrolment needs a screen lock and is refused with instructions, as is `biometric` on a phone. `enroll` and `unenroll` are accepted too.
+- `doctor --device <usb phone serial>` checks the phone instead of saying no device has that name, skipping the emulator gRPC check and saying why.
+- The React Native playground has a `permission-state` screen (camera and notification permissions on Android), and the native playground a `device-state` screen (contacts and photos permissions, Face ID).
+- `scripts/rn-playground.sh metro stop` removes the `adb reverse` it set on running emulators.
+- `doctor --device <UDID>` adds `simulator.crash-loop`, which reads the last 10 minutes of crash reports for that simulator, warns at two to four crashes of one process, fails at five or more and prints the erase command without running it. Plain `doctor` adds `simulators.crash-loop`, listing every simulator in a crash loop by name. `test-runner.sh` refuses to start on a simulator in a crash loop.
+- `scripts/bench-ab.sh` compares a base build with the branch on one Offsider device in paired, seeded runs, and reports medians, a bootstrap interval and a verdict.
+- `describe-ui --diff` prints the nodes added, changed and removed since the previous command's tree for the device, `unchanged since <command> <n> ms ago` when nothing changed, or the full view when most of the screen changed.
+- Selector `tap`, `slider` and batch tap steps wait out a transition the previous input started (up to 500 ms, 150 ms with no cached tree) and find the target again before acting; `--no-settle` turns this off.
+- `--verify --json` reports up to 10 `changes`, a `changesTruncated` count and `note: "keyboard_closed"`.
+- `OFFSIDER_TIMINGS=1` adds the `tree-cache`, `tree-diff` and `settle` phases.
+- `offsider guide <topic>` prints one topic of the agent skill, matched to the installed version: `selectors`, `verify`, `errors`, `android`, `react-native`, `foldables`, `batch`, `screenshots`, `describe-ui`, `device-state` and `migrate`, which maps idb, Maestro and agent-device commands to Offsider. `offsider guide` lists the topics; an unknown topic exits 64.
+
+### Changed
+
+- The skill `offsider init` installs is a short router (under 10 KB, from 36 KB): the core loop, the rules, the exit codes and a topic table, with the depth printed on demand by `offsider guide`. `init` still installs `SKILL.md` only.
+- Offsider keeps the last accessibility tree read from each device, with password values masked and platform attributes left out, in its private per-user directory for 10 minutes; `OFFSIDER_TREE_CACHE=off` turns it off.
+- `tap --verify` reads the tree once fewer before tapping, and taps the target where the verifier's second read finds it.
+- `describe-ui --summary` stops at 16384 bytes by default (`--max-bytes 0` lifts it).
+- `describe-ui --summary` and `--format text` leave out labels a parent already shows, summarise nodes past an edge of the screen as `[off-screen below] N items` with `--on-screen`, and stop indenting at 10 levels; JSON is unchanged.
+- Password fields read as bullets in `describe-ui`, selectors, `wait`, `assert` and `--verify` on both platforms, one per character. `--value` no longer matches them, and `assert --has-value` compares the bullets.
+- A SwiftUI `SecureField`, which iOS reports as a text field with a secure subrole, now has the role `secureTextField`.
+- On Android, non-ASCII text is no longer pasted into a focused password field; use `type --replace`.
+- On iOS, React Native checkboxes, radio buttons, switches, tabs, tab lists, menu items, combo boxes and progress bars report their role instead of `other`, read from the words React Native writes into the accessibility value, with `state.checked` and a `value` of `1`, `0` or `2` for toggles, as on Android.
+- iOS nodes report `state.selected` from the Selected trait when the tree carries traits.
+- **Breaking:** new exit codes: 2 selector not found (also off screen), 6 ambiguous selector, 7 device not found or not booted, 8 device busy, 9 Xcode, adb or the Android SDK missing; malformed device IDs, unknown displays and unsupported keys exit 64. These exited 1 before.
+- **Breaking:** `batch` exits with the code of its first step that failed to run, and a failed step's `error` is now an object.
+- **Breaking:** two input commands on one device no longer run at once; the second exits 8.
+- **Breaking:** `--verify --json` reports are version 2: `dispatched` is `yes`, `no` or `unknown`, `error` is an object and `exitCode` is new.
+- `list-devices --json` adds `kind` (`simulator`, `emulator`, `avd` or `physical`) and `connection` to each row, under version 1.
+- A `host:port` device ID now says Offsider drives phones over USB only, instead of that it is not a simulator UDID.
+- `doctor --device <android>` no longer exits 64. With an Android device it runs Android checks only, so Xcode and simulator state cannot fail an Android session.
+
+### Fixed
+
+- On Android, a React Native mixed checkbox reads `value` `2` with no `state.checked`, and its label no longer ends in `, mixed`.
+- `type` no longer writes the typed text to the system log, and an unsupported character is reported by position.
+- `batch --json` and batch errors no longer print the text of a `type` step.
+- `--verify` no longer quotes a password field's value.
+- Android `biometric unenrol` no longer says removal needs a screen lock; it says unenrol is not supported and points to Settings > Security.
+- A non-emulator serial could match an emulator discovery file that has no console port, and so be handed that emulator's gRPC connection.
+- On Android, a password field's text no longer appears in `describe-ui --fields native` or in a clickable parent's label, and a password field showing its hint reads as empty.
+- A failure while input was being sent no longer reports `dispatched: false`; it reports `unknown`.
+- The HID broker now checks a client's user before sending its ready handshake.
+- `--wait-timeout` no longer builds suggestions on every poll.
+
 ## [0.4.0] - 2026-10-04
 
 ### Added

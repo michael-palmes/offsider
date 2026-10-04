@@ -1,0 +1,14 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
+  group "Batch Login" id=batch-login-screen (60.2,64.4 291.4x23.2)
+  text "Fake Login Flow" id=batch-login-title (16,114.7 379.4x27.1)
+  text "Current Screen: Email" id=batch-login-current-screen (16,153.9 379.4x23.2)
+  textField id=batch-login-email-field (16,221.3 379.4x44.2) focused
+  button "Continue" id=batch-login-continue (16,277.7 379.4x44.2)
+keyboard "Gboard" (0,54.1 411.4x869.3)
+  button "Voice typing disabled" id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated (12.2,352.4 48x48)
+  button "Delete" (12.2,404.2 48x48)
+  button "Done" (12.2,456 48x48)
+  button "Show emoji keyboard" (12.2,507.8 48x48)
+  button "More stylus options" id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated (12.2,559.6 48x48)

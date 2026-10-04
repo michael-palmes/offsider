@@ -1,0 +1,15 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
+  group "Choice Test" id=choice-test-screen (60.2,64.4 291.4x23.2)
+  text "Choice State: Terms Off, Updates On, Size Medium, Sync Off, Menu Closed" id=choice-test-state (16,114.7 379.4x43.4)
+  checkbox "Accept Terms" id=choice-test-checkbox-terms value="0" (16,178.3 127.2x44.2)
+  checkbox "Product Updates" id=choice-test-checkbox-updates value="1" (16,230.5 146.3x43.8) checked
+  checkbox "Select All" id=choice-test-checkbox-mixed value="2" (16,282.3 96.8x44.2)
+  group id=choice-test-size (16,346.3 209.9x36.2)
+  radioButton "Small" id=choice-test-radio-small value="0" (17.9,348.2 62.9x32)
+  radioButton "Medium" id=choice-test-radio-medium value="1" (80.8,348.2 80x32) checked selected
+  radioButton "Large" id=choice-test-radio-large value="0" (160.8,348.2 62.9x32)
+  switch "Sync Contacts" id=choice-test-switch value="0" (16,402.3 52.2x32)
+  button "Country" id=choice-test-combobox (16,442.3 86.1x44.2)
+  group "Upload Progress, busy" id=choice-test-progress (16,494.5 200x8)

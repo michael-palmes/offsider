@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 struct AdbShellResult: Equatable, Sendable {
     let status: Int32
@@ -25,12 +26,20 @@ actor AdbClient {
     private let connector: any AdbConnecting
     private let connectTimeout: Duration
     private let hostTimeout: Duration
+    let timing: AndroidTiming
 
-    init(endpoint: LoopbackEndpoint, connector: any AdbConnecting, connectTimeout: Duration = .seconds(1), hostTimeout: Duration = .seconds(3)) {
+    init(
+        endpoint: LoopbackEndpoint,
+        connector: any AdbConnecting,
+        connectTimeout: Duration = .seconds(1),
+        hostTimeout: Duration = .seconds(3),
+        timing: AndroidTiming = .disabled
+    ) {
         self.endpoint = endpoint
         self.connector = connector
         self.connectTimeout = connectTimeout
         self.hostTimeout = hostTimeout
+        self.timing = timing
     }
 
     func serverVersion() async throws -> Int {
@@ -42,12 +51,34 @@ actor AdbClient {
     }
 
     func devices() async throws -> [AdbDeviceEntry] {
-        AdbDeviceListParser.parse(try await hostQuery("host:devices-l"))
+        try await timing.measure(.adbDevices) {
+            AdbDeviceListParser.parse(try await hostQuery("host:devices-l"))
+        }
+    }
+
+    /// `host:mdns:check`: the server's own answer about its mDNS discovery, unparsed.
+    func mdnsCheck() async throws -> String {
+        try await hostQuery("host:mdns:check")
+    }
+
+    /// A read-only device service answered with one length-prefixed string, such as `reverse:list-forward`.
+    func deviceQuery(_ service: String, on serial: String, timeout: Duration = .seconds(5)) async throws -> String {
+        let connection = try await openDevice(serial, service: service, label: service, timeout: timeout)
+        return try await closing(connection, serial: serial, command: service, timeout: timeout) {
+            let length = try AdbWire.length(fromHex: try await connection.readExactly(4))
+            return String(decoding: try await connection.readExactly(length), as: UTF8.self)
+        }
     }
 
     /// `host:transport:<serial>`, then `shell,v2,raw:<command>`; reads until the exit packet.
     /// `label` names the command in errors when the script itself is too long to quote.
     func shell(_ command: String, on serial: String, timeout: Duration = .seconds(10), label: String? = nil) async throws -> AdbShellResult {
+        try await timing.measure(.adbShell) {
+            try await runShell(command, on: serial, timeout: timeout, label: label)
+        }
+    }
+
+    private func runShell(_ command: String, on serial: String, timeout: Duration, label: String?) async throws -> AdbShellResult {
         let name = label ?? command
         let connection = try await openDevice(serial, service: "shell,v2,raw:" + command, label: name, timeout: timeout)
         var decoder = AdbWire.ShellV2Decoder()
@@ -177,9 +208,10 @@ actor AdbClient {
     }
 
     private func transportError(_ message: String, serial: String) -> AndroidError {
-        if message.contains("not found") { return .serialNotRunning(serial) }
-        if message.contains("offline") { return .deviceOffline(serial, avd: nil) }
-        if message.contains("unauthorized") { return .deviceUnauthorised(serial, avd: nil) }
+        let emulator = if case .androidSerial = DeviceIDClassifier.classify(serial) { true } else { false }
+        if message.contains("not found") { return emulator ? .serialNotRunning(serial) : .phoneNotConnected(serial) }
+        if message.contains("offline") { return emulator ? .deviceOffline(serial, avd: nil) : .phoneOffline(serial) }
+        if message.contains("unauthorized") { return emulator ? .deviceUnauthorised(serial, avd: nil) : .phoneUnauthorised(serial) }
         return .adbCommandFailed(serial: serial, command: "host:transport:\(serial)", detail: message)
     }
 }

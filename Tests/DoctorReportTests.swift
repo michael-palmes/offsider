@@ -40,7 +40,7 @@ struct DoctorReportTests {
     @Test("JSON has exactly the documented top-level keys")
     func topLevelKeys() throws {
         let object = try jsonObject(report([.warn]))
-        #expect(Set(object.keys) == ["version", "offsiderVersion", "status", "udid", "xcode", "booted", "checks", "fixes"])
+        #expect(Set(object.keys) == ["version", "offsiderVersion", "status", "udid", "device", "xcode", "booted", "android", "checks", "fixes"])
         #expect(object["version"] as? Int == 1)
         #expect(object["status"] as? String == "warn")
         #expect((object["fixes"] as? [Any])?.isEmpty == true)
@@ -84,6 +84,7 @@ struct DoctorReportTests {
             "hid.stabilization",
             "hid.broker-dir",
             "simulators.booted",
+            "simulators.crash-loop",
             "simulator.state",
             "simulator.device-window",
             "simulator.resize-mode",
@@ -91,8 +92,65 @@ struct DoctorReportTests {
             "simulator.dtuhidd-active-flag",
             "simulator.hid-transport",
             "simulator.accessibility",
+            "simulator.crash-loop",
+            "android.sdk",
+            "android.adb",
+            "android.adb-server",
+            "android.adb-mdns",
+            "android.emulator",
+            "android.helper-bundle",
+            "android.devices",
+            "android-device.state",
+            "android-device.image",
+            "android-device.grpc",
+            "android-device.uiautomation",
+            "android-device.helper",
+            "android-device.metro-reverse",
         ])
-        #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 7)
+        #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
+        #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)
+        #expect(DoctorCheckID.allCases.filter(\.isPerAndroidDevice).count == 6)
+    }
+
+    @Test("an iOS report encodes device and android as null")
+    func iosReportNulls() throws {
+        let object = try jsonObject(report([.pass]))
+        #expect(object["device"] is NSNull)
+        #expect(object["android"] is NSNull)
+    }
+
+    static let androidReport = DoctorReport(
+        offsiderVersion: "0.5.0",
+        udid: nil,
+        device: DoctorDevice(id: "emulator-5556", platform: "android", name: "Offsider_E2E_Pixel_9", kind: "emulator"),
+        xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
+        booted: [],
+        android: AndroidSummary(
+            sdkRoot: "/sdk",
+            sdkSource: "default location",
+            adbPath: "/sdk/platform-tools/adb",
+            adbVersion: "37.0.0-14910828",
+            adbServer: "127.0.0.1:5037",
+            adbServerVersion: 41,
+            emulatorRevision: nil,
+            devices: [AndroidDeviceRow(serial: "emulator-5556", kind: "emulator", state: "Booted", avd: "Offsider_E2E_Pixel_9", apiLevel: 36)]
+        ),
+        checks: [DoctorCheckResult(id: .androidDeviceGrpc, status: .pass, detail: "127.0.0.1:8556, token auth, getStatus 9 ms; commands use gRPC")]
+    )
+
+    @Test("an Android report keeps version 1 and fills device and android, with explicit nulls")
+    func androidReportShape() throws {
+        let object = try jsonObject(Self.androidReport)
+        #expect(object["version"] as? Int == 1)
+        let device = try #require(object["device"] as? [String: Any])
+        #expect(device["platform"] as? String == "android")
+        #expect(device["kind"] as? String == "emulator")
+        let android = try #require(object["android"] as? [String: Any])
+        #expect(Set(android.keys) == ["sdkRoot", "sdkSource", "adbPath", "adbVersion", "adbServer", "adbServerVersion", "emulatorRevision", "devices"])
+        #expect(android["emulatorRevision"] is NSNull)
+        let row = try #require((android["devices"] as? [[String: Any]])?.first)
+        #expect(Set(row.keys) == ["serial", "kind", "state", "avd", "apiLevel"])
+        #expect(try JSONDecoder().decode(DoctorReport.self, from: try Self.androidReport.jsonData()) == Self.androidReport)
     }
 
     @Test("A report round-trips through JSON")

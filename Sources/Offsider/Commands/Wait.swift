@@ -112,11 +112,18 @@ struct Wait: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let outcome = try await DeviceWatchdog().guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
-            let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-            return try await evaluate(on: route, logger: logger, onPrepared: ready)
+        let watchdog = DeviceWatchdog()
+        // An Android tree read locks the device, so the claim (and any --wait-lock) comes before the watchdog's bound.
+        let locking = readsTree && DeviceIDClassifier.classify(deviceOption.id).platform == .android
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
+        let outcome = try await watchdog.guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
+            try await evaluate(on: route, logger: logger, onPrepared: ready)
         }
         try Self.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
+    }
+
+    var readsTree: Bool {
+        selector.query != nil || (settled && (settleBy ?? .tree) == .tree)
     }
 
     /// The longest this wait may legitimately take before the watchdog's grace.
@@ -212,7 +219,7 @@ struct Wait: AsyncParsableCommand {
         on route: DeviceRouter.Route,
         tree: TreeSource? = nil,
         clock: PollClock = .live,
-        fingerprint: @escaping @MainActor () async throws -> ImageFingerprint = { throw CLIError(errorDescription: "This condition does not read the screen.") }
+        fingerprint: @escaping @MainActor () async throws -> ImageFingerprint = { throw CLIError(errorDescription: "This condition does not read the screen.", reason: .internalError) }
     ) -> WaitSources {
         WaitSources(
             tree: tree ?? { try await route.backend.accessibilityTree(for: route.device) },

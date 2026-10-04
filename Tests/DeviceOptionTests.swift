@@ -5,7 +5,7 @@ import Testing
 
 @Suite("Device Option Tests")
 struct DeviceOptionTests {
-    private static let commandsWithoutDevice: Set<String> = ["boot", "init", "list-devices"]
+    private static let commandsWithoutDevice: Set<String> = ["boot", "guide", "init", "list-devices"]
 
     @Test("every device command takes --device and none takes --udid")
     func deviceCommandsTakeDevice() async throws {
@@ -28,6 +28,32 @@ struct DeviceOptionTests {
         }
     }
 
+    private static func allCommands(_ root: any ParsableCommand.Type = OffsiderCommand.self) -> [any ParsableCommand.Type] {
+        root.configuration.subcommands.flatMap { sub in
+            sub.configuration.subcommands.isEmpty ? [sub] : allCommands(sub)
+        }
+    }
+
+    @Test("exactly the commands that can lock the device take --wait-lock")
+    func waitLockOnlyOnLockingCommands() {
+        let commands = Self.allCommands()
+        #expect(commands.count > 30)
+        for command in commands {
+            let help = command.helpMessage(columns: 400)
+            let name = command._commandName
+            #expect(help.contains("--wait-lock") == (command is any LockingCommand.Type), "\(name): --wait-lock in help does not match LockingCommand")
+        }
+        #expect(PermissionCommand.self is any LockingCommand.Type)
+        #expect(StatusBarCommand.self is any LockingCommand.Type)
+        #expect(!(Logs.self is any LockingCommand.Type))
+    }
+
+    @Test("a command that never locks refuses --wait-lock as a usage error")
+    func waitLockRefusedOnReads() async throws {
+        let result = try await TestHelpers.runOffsiderCommandSeparated("displays --wait-lock 5 --device \(UUID().uuidString)")
+        #expect(result.exitCode == 64)
+    }
+
     @Test("--device is required on input commands and optional on doctor")
     func deviceRequirement() throws {
         #expect(throws: (any Error).self) { try Tap.parse(["-x", "1", "-y", "1"]) }
@@ -35,7 +61,7 @@ struct DeviceOptionTests {
         #expect(try Doctor.parse([]).deviceOption.id == nil)
         let udid = UUID().uuidString
         #expect(try Doctor.parse(["--device", udid]).deviceOption.id == udid)
-        #expect(throws: (any Error).self) { try Doctor.parse(["--device", "emulator-5556"]) }
+        #expect(try Doctor.parse(["--device", "emulator-5556"]).deviceOption.id == "emulator-5556")
     }
 
     @Test("batch steps cannot choose their own device", arguments: [

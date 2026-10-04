@@ -19,6 +19,9 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case avdNotRunning
         case noDeviceNamed
         case avdRunningTwice
+        case ambiguousDeviceName
+        case unsupportedDevice
+        case appNotInstalled
         case grpcRequired
         case uiautomatorBusy
         case uiautomatorIdle
@@ -32,6 +35,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case noWindow
         case noFocusedField
         case fieldNotEditable
+        case securePasteRefused
         case unsupportedKey
         case unsupportedButton
         case unsupportedControlCharacter
@@ -131,6 +135,55 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
             .serialNotRunning,
             "No emulator with serial \(serial) is running. Run `offsider list-devices` to see running emulators."
         )
+    }
+
+    static func phoneNotConnected(_ serial: String) -> AndroidError {
+        AndroidError(
+            .serialNotRunning,
+            "No device with serial \(serial) is connected. Check the cable, then run `offsider list-devices` to see connected devices."
+        )
+    }
+
+    static func phoneOffline(_ serial: String) -> AndroidError {
+        AndroidError(.deviceOffline, "Phone \(serial) is offline in adb. Reconnect the cable and unlock the phone, then retry.")
+    }
+
+    static func phoneUnauthorised(_ serial: String) -> AndroidError {
+        AndroidError(
+            .deviceUnauthorised,
+            "Phone \(serial) is not authorised for adb. Unlock it and accept the \"Allow USB debugging?\" prompt, then retry."
+        )
+    }
+
+    public static func networkDevice(_ serial: String) -> AndroidError {
+        AndroidError(
+            .unsupportedDevice,
+            "Offsider drives Android phones over USB only, and \(serial) is a network adb connection. Connect the phone with a cable and use its USB serial from `offsider list-devices`; for an emulator, use its emulator-NNNN serial."
+        )
+    }
+
+    static func bootPhone(_ serial: String) -> AndroidError {
+        AndroidError(.unsupportedDevice, "boot starts emulators, and \(serial) is a connected phone. Run `offsider list-devices` to see AVD names.")
+    }
+
+    static func ambiguousDeviceName(_ name: String, emulatorSerial: String) -> AndroidError {
+        AndroidError(
+            .ambiguousDeviceName,
+            "\(name) names both a connected phone and a running AVD. Pass the emulator serial (\(emulatorSerial)) for the AVD; to drive the phone, rename the AVD or stop the emulator."
+        )
+    }
+
+    static func appNotInstalled(_ package: String, serial: String) -> AndroidError {
+        AndroidError(
+            .appNotInstalled,
+            "\(package) is not installed on \(serial). Install it with `adb -s \(serial) install <path-to-apk>`, or check the package name with adb -s \(serial) shell pm list packages."
+        )
+    }
+
+    /// `feature` works only on emulators; the advice is the alternative, never `offsider boot`.
+    static func emulatorOnly(_ feature: String, serial: String, model: String?, alternative: String) -> AndroidError {
+        let name = model.map { " (\($0))" } ?? ""
+        return AndroidError(.unsupportedDevice, "\(feature) on Android needs an emulator, and \(serial) is a physical device\(name). \(alternative)")
     }
 
     static func deviceOffline(_ serial: String, avd: String?) -> AndroidError {
@@ -243,12 +296,24 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func grpcRequiredForText(serial: String, avd: String?, reason: AdbReason) -> AndroidError {
-        grpcRequired(feature: "Typing non-ASCII text", serial: serial, avd: avd, reason: reason, alternative: "type ASCII only")
+        if reason == .physicalDevice {
+            return emulatorOnly(
+                "Typing non-ASCII text key by key",
+                serial: serial,
+                model: nil,
+                alternative: "Use `offsider type --replace <full text> --device \(serial)`, which sets the field through the helper."
+            )
+        }
+        return grpcRequired(feature: "Typing non-ASCII text", serial: serial, avd: avd, reason: reason, alternative: "type ASCII only")
     }
 
     /// `feature` needs gRPC and this command is on adb; the advice follows from why.
     static func grpcRequired(feature: String, serial: String, avd: String?, reason: AdbReason, alternative: String) -> AndroidError {
         let prefix = "\(feature) on Android needs the emulator's gRPC endpoint, and"
+        if reason == .physicalDevice {
+            let advice = alternative.prefix(1).uppercased() + alternative.dropFirst()
+            return emulatorOnly(feature, serial: serial, model: nil, alternative: "\(advice).")
+        }
         if reason == .forced {
             return AndroidError(.grpcRequired, "\(prefix) OFFSIDER_ANDROID_TRANSPORT is adb. Unset it, or \(alternative).")
         }
@@ -343,6 +408,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(
             .noFocusedField,
             "type --replace needs a focused text field on \(serial), and nothing has input focus. Tap the field first, for example `offsider tap --id <field> --device \(serial)`."
+        )
+    }
+
+    static func securePasteRefused(_ serial: String) -> AndroidError {
+        AndroidError(
+            .securePasteRefused,
+            "Typing this text into the focused password field on \(serial) would paste it through the emulator's clipboard, so Offsider refused. Use `offsider type --replace <full text> --device \(serial)`, which sets the field without the clipboard."
         )
     }
 
@@ -469,4 +541,80 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 /// Android shows no window for a moment while an activity starts or restarts; polling callers retry it.
 extension AndroidError: TransientFailure {
     public var isTransient: Bool { kind == .uiautomatorNoWindow || kind == .noWindow }
+}
+
+extension AndroidError: OffsiderFailure {
+    public var reason: FailureReason {
+        switch kind {
+        case .sdkVariableWithoutAdb: return .androidSdkMissing
+        case .nonLoopbackAdbServer, .invalidAdbServerSetting: return .adbServerMisconfigured
+        case .adbServerNotRunning, .adbServerStartFailed, .adbServerNoAnswer: return .adbServerUnavailable
+        case .adbProtocol: return .adbProtocolError
+        case .adbCommandFailed: return .adbCommandFailed
+        case .serialNotRunning, .noDeviceNamed: return .deviceNotFound
+        case .avdNotRunning: return .deviceNotBooted
+        case .deviceOffline, .stillBooting: return .deviceNotReady
+        case .deviceUnauthorised: return .deviceUnauthorised
+        case .avdRunningTwice, .ambiguousDeviceName: return .deviceAmbiguous
+        case .unsupportedDevice: return .notSupported
+        case .appNotInstalled: return .appNotInstalled
+        case .noAVDNamed: return .avdNotFound
+        case .grpcRequired: return .emulatorGrpcRequired
+        case .uiautomatorBusy, .helperBusy: return .uiautomationBusy
+        case .uiautomatorIdle: return .screenNotIdle
+        case .uiautomatorNoWindow, .noWindow: return .noWindow
+        case .uiautomatorFailed: return .treeReadFailed
+        case .helperUnavailable: return .helperUnavailable
+        case .helperCrashed, .helperFailed: return .helperFailed
+        case .helperTimedOut: return .helperTimedOut
+        case .noFocusedField: return .noFocusedField
+        case .fieldNotEditable: return .fieldNotEditable
+        case .securePasteRefused: return .securePasteRefused
+        case .unsupportedKey: return .unsupportedKey
+        case .unsupportedButton: return .unsupportedButton
+        case .unsupportedControlCharacter: return .unsupportedText
+        case .displayProbeUnparseable, .displaysUnreadable: return .displayUnreadable
+        case .unknownDisplay: return .unknownDisplay
+        case .displayOff: return .displayOff
+        case .postureUnavailable, .notSupported: return .notSupported
+        case .postureFailed: return .postureFailed
+        case .inputFailed: return .inputFailed
+        case .invalidSetting: return .invalidSetting
+        case .grpcNoCredentials, .grpcKeyNotActivated, .grpcUnauthenticated, .grpcPermissionDenied: return .emulatorGrpcAuthFailed
+        case .grpcUnavailable: return .emulatorGrpcUnavailable
+        case .grpcDeadlineExceeded: return .emulatorTimedOut
+        case .grpcFailed: return .emulatorGrpcFailed
+        case .screenshotFailed: return .screenshotFailed
+        case .videoOutputFailed: return .videoFailed
+        case .emulatorMissing: return .emulatorMissing
+        case .emulatorLaunchFailed, .emulatorExited: return .emulatorLaunchFailed
+        case .bootTimeout: return .bootTimedOut
+        }
+    }
+
+    public var failureMessage: String { message }
+
+    /// The message's first backticked Offsider or adb command; never the failed command itself, which can carry typed text.
+    public var hint: String? {
+        switch reason.exitCode {
+        case .deviceUnavailable where kind == .avdNotRunning || kind == .stillBooting || kind == .deviceOffline:
+            return Self.firstCommand(in: message) ?? "offsider list-devices"
+        case .deviceUnavailable:
+            return "offsider list-devices"
+        default:
+            return kind == .adbCommandFailed ? nil : Self.firstCommand(in: message)
+        }
+    }
+
+    private static func firstCommand(in message: String) -> String? {
+        let parts = message.split(separator: "`", omittingEmptySubsequences: false)
+        guard parts.count >= 3 else { return nil }
+        let command = String(parts[1])
+        return command.hasPrefix("offsider ") || command.hasPrefix("adb ") ? command : nil
+    }
+}
+
+extension HelperDexError: OffsiderFailure {
+    public var reason: FailureReason { .helperUnavailable }
+    public var failureMessage: String { description }
 }

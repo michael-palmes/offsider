@@ -22,7 +22,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | Tests | Swift Testing (`import Testing`, `@Suite`, `@Test`, `#expect`), never XCTest |
 | Simulator stack | idb's FBSimulatorControl, FBControlCore, FBDeviceControl and XCTestBootstrap, built by `scripts/build.sh` from the `michael-palmes/idb` fork at the pinned revision, linked from `build_products/XCFrameworks` |
 | Private headers | Compile-only, from `idb_checkout/PrivateHeaders`; never shipped |
-| Android stack | `OffsiderAndroid` (never imports idb): a Swift adb server client over loopback plus the emulator gRPC service (grpc-swift-2, generated code checked in from a trimmed proto) |
+| Android stack | `OffsiderAndroid` (never imports idb), for emulators and USB phones: a Swift adb server client over loopback plus the emulator gRPC service (grpc-swift-2, generated code checked in from a trimmed proto) |
 | Android toolchain | Android SDK with Platform-Tools and the Emulator, found through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` or `adb` on `PATH`; `arm64-v8a` images, tested on API 36 |
 | Android helper | Java 8 in `AndroidHelper/src/`, compiled by `scripts/build.sh helper` (JDK 17, build-tools 37.0.0 d8, android-37.0) to a committed dex and manifest in `Sources/Offsider/Resources/helper/`; run with `app_process` as the shell user for one command; Swift-only work needs no JDK |
 | Fixture app | `OffsiderPlaygroundApp` (XcodeGen `project.yml`) |
@@ -52,6 +52,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `scripts/rn-playground.sh metro start\|stop\|status` | Run Metro for the RN debug app on loopback port 8742 |
 | `pnpm --dir OffsiderPlaygroundRN typecheck` | Typecheck the RN playground |
 | `pnpm --dir OffsiderPlaygroundRN android <serial>` or `ios <udid>` | Starts Metro on loopback 8742 in the background (`metro stop` ends it), installs the RN debug build if changed and launches it from Metro; Android also takes an AVD name and sets the adb reverse; `--screen <id>` opens a fixture; refuses to run without a named device |
+| `scripts/bench-ab.sh --device <id> --scenario <name>` | Compare the merge base with this checkout on one Offsider device in paired, seeded runs (`--help` lists scenarios) |
 | `bash -n <script>` | Syntax-check a changed shell script |
 
 | Variable | Effect |
@@ -77,7 +78,13 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
+| `OFFSIDER_GOLDENS_UPDATE=1` | Re-renders the tree goldens offline (`--filter TreeGoldenRefresh`), or recaptures them with the RN device variables (`--filter TreeGoldenCaptureTests`) |
 | `OFFSIDER_TIMINGS=1` | Prints phase timings to stderr (`offsider timing: <phase> <n> ms`) |
+| `OFFSIDER_TREE_CACHE` | `off` stops reading and writing the per-device tree cache under the private directory's `trees/` (`describe-ui --diff` and the tap guard then see no earlier tree) |
+| `OFFSIDER_WAIT_LOCK` | Default seconds to wait for a device another Offsider command holds (`--wait-lock` wins; `test-runner.sh` sets 30) |
+| `OFFSIDER_TIMINGS=1` | Prints iOS and Android phase timings to stderr (`offsider timing: <phase> <n> ms`) |
+| `OFFSIDER_MASK_SECURE=1` | Makes `screenshot` and `batch` mask password fields as `--mask-secure` does |
+| `OFFSIDER_BENCH_DIR` | Where `scripts/bench-ab.sh` writes its records (default `$TMPDIR/offsider-bench`) |
 | `OFFSIDER_HELPER_JDK` | JDK 17 home for `scripts/build.sh helper` (else `JAVA_HOME`, then `/usr/libexec/java_home -v 17`) |
 
 ## Layout
@@ -89,7 +96,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | Android backend | `Sources/OffsiderAndroid/` (pure parsers stay `internal`, tests use `@testable import`); unit tests in `Tests/Android/`, E2E in `Tests/AndroidE2E/` |
 | Android helper (Java) | `AndroidHelper/src/`; never edit the dex or manifest in `Sources/Offsider/Resources/helper/` by hand |
 | HID broker, accessibility resolution, errors | `Sources/Offsider/Utilities/` |
-| The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` |
+| The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` (a router under 10 KB); topics `offsider guide` prints are `references/<topic>.md` beside it, listed in `Types/GuideTopic.swift` |
 | Version string | `Plugins/VersionPlugin` (generates git-ignored `Version.swift`) |
 | Tests | `Tests/<Name>Tests.swift`; E2E fixture screens in `OffsiderPlaygroundApp/` |
 | RN suites (iOS and Android) | `Tests/ReactNativeE2E/`; one test body runs on each enabled platform through `RNApp` |
@@ -105,6 +112,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 
 - Xcode 27 has no Simulator.app; simulators run under Device Hub. Quit Simulator.app before E2E runs.
 - Resolve Xcode through `xcode-select -p` or `DEVELOPER_DIR`, never a hard-coded path.
+- Input commands, setters and `batch` lock the device for their run (exit 8, `device_busy`, when another holds it); locks live under `offsider-<uid>/locks/` in the `confstr` user temp directory.
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` and rejects peers running as another user.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
@@ -114,9 +122,11 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 
 - Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
+- A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names its serial. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
 - E2E and manual checks drive only `Offsider_E2E_Pixel_9` and the foldable `Offsider_E2E_Pixel_9_Pro_Fold`, and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
 - Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
 - The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
+- `permission`, `status-bar` and `biometric` change state that outlives the command on both platforms; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).
 - The helper holds Android's single UiAutomation slot only while one command runs, and `accessibility_enabled` reads 1 until it exits. Keep its reflection to the four UiAutomation members and the display probe with its public fallback; never implement a hidden Binder interface.
 
 ## Collaboration

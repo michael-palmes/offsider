@@ -1,7 +1,9 @@
 import Foundation
+import OffsiderCore
 
-/// Why a command drives an emulator over adb rather than gRPC.
+/// Why a command drives a device over adb rather than gRPC.
 enum AdbReason: Equatable, Sendable {
+    case physicalDevice
     case noDiscoveryFile
     case noGrpcPort
     case forced
@@ -10,6 +12,7 @@ enum AdbReason: Equatable, Sendable {
     /// Finishes "and emulator-5556 ..." in messages about features that need gRPC.
     var clause: String {
         switch self {
+        case .physicalDevice: return "is a physical device, which has no emulator gRPC endpoint"
         case .noDiscoveryFile: return "has none (it was probably started with -port)"
         case .noGrpcPort: return "has none (its discovery file lists no grpc.port)"
         case .forced: return "is driven over adb because OFFSIDER_ANDROID_TRANSPORT is adb"
@@ -47,14 +50,16 @@ struct EmulatorTransportSelector {
         return mode
     }
 
-    /// No discovery file or port: adb, silently. A failed probe: adb with one warning, or the error when gRPC is forced.
+    /// adb for a phone or a missing discovery file; a failed probe warns once, or throws when gRPC is forced.
     func choose(for serial: String) async throws -> AndroidTransport {
         let mode = try Self.mode(host: host)
+        guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial) else {
+            return try adb(.physicalDevice, serial: serial, mode: mode)
+        }
         if mode == .adb {
             return .adb(.forced)
         }
         _ = try EmulatorAuth.preference(host: host)
-        let port = Int(serial.dropFirst("emulator-".count))
         guard let discovery = EmulatorDiscovery.live(host: host).first(where: { $0.consolePort == port }) else {
             return try adb(.noDiscoveryFile, serial: serial, mode: mode)
         }
@@ -64,9 +69,12 @@ struct EmulatorTransportSelector {
 
         var auth: EmulatorAuth?
         do {
-            let chosen = try await EmulatorAuth.choose(for: discovery, host: host)
-            auth = chosen
-            return .grpc(try await host.emulatorConnector.connect(discovery: discovery, auth: chosen))
+            let emulator = try await host.timing.measure(.grpcConnect) {
+                let chosen = try await EmulatorAuth.choose(for: discovery, host: host)
+                auth = chosen
+                return try await host.emulatorConnector.connect(discovery: discovery, auth: chosen)
+            }
+            return .grpc(TimedEmulator.wrapping(emulator, timing: host.timing))
         } catch {
             auth?.close()
             if mode == .grpc || error is CancellationError {

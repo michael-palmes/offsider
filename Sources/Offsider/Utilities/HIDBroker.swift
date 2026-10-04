@@ -63,7 +63,7 @@ enum HIDBroker {
         var requestData = try JSONEncoder().encode(request)
         requestData.append(0x0A)
         guard requestData.count <= maximumMessageBytes else {
-            throw CLIError(errorDescription: "HID broker request exceeds the maximum size.")
+            throw CLIError(errorDescription: "HID broker request exceeds the maximum size.", reason: .hidBrokerFailed)
         }
 
         // Recovery is limited to broker readiness. Once exchange starts, a lost response has an
@@ -124,6 +124,11 @@ enum HIDBroker {
                 if errno == EINTR { continue }
                 throw posixError("accept")
             }
+            // Another user's client gets no bytes at all, not even the handshake.
+            guard isSameUserPeer(client) else {
+                Darwin.close(client)
+                continue
+            }
             configureNoSignalPipe(client)
             try configureSocketTimeouts(
                 client,
@@ -158,13 +163,6 @@ enum HIDBroker {
         session: HIDInteractor.Session,
         logger: OffsiderLogger
     ) async -> Bool {
-        var peerUID: uid_t = 0
-        var peerGID: gid_t = 0
-        guard getpeereid(client, &peerUID, &peerGID) == 0, peerUID == getuid() else {
-            try? writeResponse(error: "HID broker rejected a client owned by another user.", to: client)
-            return true
-        }
-
         var shouldContinue = true
         do {
             let data = try readMessage(from: client)
@@ -173,7 +171,7 @@ enum HIDBroker {
                 switch primitive.kind {
                 case .down, .up:
                     guard let x = primitive.x, let y = primitive.y else {
-                        throw CLIError(errorDescription: "Touch primitive is missing coordinates.")
+                        throw CLIError(errorDescription: "Touch primitive is missing coordinates.", reason: .hidBrokerFailed)
                     }
                     let direction: FBSimulatorHIDDirection = primitive.kind == .down ? .down : .up
                     do {
@@ -188,7 +186,7 @@ enum HIDBroker {
                     }
                 case .delay:
                     guard let duration = primitive.duration, duration >= 0, duration <= 10 else {
-                        throw CLIError(errorDescription: "HID broker delay is invalid.")
+                        throw CLIError(errorDescription: "HID broker delay is invalid.", reason: .hidBrokerFailed)
                     }
                     try await Task.sleep(for: .seconds(duration))
                 }
@@ -199,6 +197,12 @@ enum HIDBroker {
             try? writeResponse(error: brokerResponseDescription(for: error), to: client)
         }
         return shouldContinue
+    }
+
+    static func isSameUserPeer(_ client: Int32, expectedUID: uid_t = getuid()) -> Bool {
+        var peerUID: uid_t = 0
+        var peerGID: gid_t = 0
+        return getpeereid(client, &peerUID, &peerGID) == 0 && peerUID == expectedUID
     }
 
     static func brokerResponseDescription(for error: Error) -> String {
@@ -234,39 +238,36 @@ enum HIDBroker {
         )
         let path = URL(fileURLWithPath: root, isDirectory: true).appendingPathComponent(filename).path
         guard path.utf8.count < MemoryLayout.size(ofValue: sockaddr_un().sun_path) else {
-            throw CLIError(errorDescription: "HID broker socket path is too long.")
+            throw CLIError(errorDescription: "HID broker socket path is too long.", reason: .hidBrokerFailed)
         }
         return path
     }
 
     private static func ensurePrivateDirectory(_ path: String, uid: uid_t) throws {
-        var info = stat()
-        if lstat(path, &info) == 0 {
-            guard (info.st_mode & S_IFMT) == S_IFDIR,
-                  info.st_uid == uid,
-                  info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
-                throw CLIError(errorDescription: "HID broker directory is not a private owned directory.")
-            }
-            return
+        do {
+            try OffsiderPrivateDirectory.ensurePrivateDirectory(path, uid: uid)
+        } catch let error as PrivateDirectoryError {
+            throw brokerError(error, subject: "directory")
         }
-        guard errno == ENOENT else { throw posixError("lstat") }
-        guard mkdir(path, S_IRWXU) == 0 || errno == EEXIST else { throw posixError("mkdir") }
-        guard lstat(path, &info) == 0 else { throw posixError("lstat") }
-        guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else {
-            throw CLIError(errorDescription: "HID broker directory is not a private owned directory.")
-        }
-        guard chmod(path, S_IRWXU) == 0 else { throw posixError("chmod") }
-        guard lstat(path, &info) == 0 else { throw posixError("lstat") }
-        guard (info.st_mode & S_IFMT) == S_IFDIR,
-              info.st_uid == uid,
-              info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
-            throw CLIError(errorDescription: "HID broker directory is not a private owned directory.")
+    }
+
+    /// Keeps the broker's own wording, and POSIX errors in their domain so callers can still match `EWOULDBLOCK` and `ENOENT`.
+    static func brokerError(_ error: PrivateDirectoryError, subject: String) -> Error {
+        switch error.kind {
+        case .unsafeDirectory:
+            return CLIError(errorDescription: "HID broker directory is not a private owned directory.", reason: .privateDirectoryUnsafe)
+        case .unsafeFile:
+            return CLIError(errorDescription: "HID broker " + subject + " is not a private owned file.", reason: .privateDirectoryUnsafe)
+        case .system(let operation, let code):
+            return NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [
+                NSLocalizedDescriptionKey: "HID broker \(operation) \(subject) failed: \(String(cString: strerror(code)))"
+            ])
         }
     }
 
     private static func spawnBroker(simulatorUDID: String) throws {
         guard let executable = Bundle.main.executableURL else {
-            throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.")
+            throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.", reason: .hidBrokerFailed)
         }
         let process = Process()
         process.executableURL = executable

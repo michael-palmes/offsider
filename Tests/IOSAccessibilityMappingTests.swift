@@ -139,3 +139,80 @@ struct IOSAccessibilityMappingTests {
         #expect(Set(UIRole.allCases.filter(\.isActionable)) == expected)
     }
 }
+
+@Suite("iOS React Native Role Mapping Tests")
+struct IOSReactNativeRoleMappingTests {
+    private func node(_ type: String, value: String?, traits: [String] = []) throws -> UINode {
+        var element: [String: Any] = ["type": type, "traits": traits]
+        element["AXValue"] = value
+        return IOSAccessibilityMapping.node(from: element)
+    }
+
+    @Test("an Other with role words takes the role, a native control keeps its own value")
+    func otherTakesRole() throws {
+        let radio = try node("Other", value: "radio button, checked")
+        #expect(radio.role == .radioButton)
+        #expect(radio.state.checked == true)
+        #expect(radio.value == "1")
+        #expect(radio.native.typeName == "Other")
+
+        let field = try node("TextField", value: "checkbox, unchecked")
+        #expect(field.role == .textField)
+        #expect(field.value == "checkbox, unchecked")
+        #expect(field.state.checked == nil)
+
+        let text = try node("StaticText", value: "checkbox, unchecked")
+        #expect(text.role == .text)
+        #expect(text.value == "checkbox, unchecked")
+    }
+
+    @Test("a head with no Offsider role leaves the node as other with its words")
+    func untouchedHead() throws {
+        let timer = try node("Other", value: "timer, 00:42")
+        #expect(timer.role == .other)
+        #expect(timer.value == "timer, 00:42")
+    }
+
+    @Test("a mixed checkbox reads 2 and is neither checked nor unchecked")
+    func mixedCheckbox() throws {
+        let box = try node("Other", value: "checkbox, mixed")
+        #expect(box.role == .checkbox)
+        #expect(box.value == "2")
+        #expect(box.state.checked == nil)
+    }
+
+    @Test("a bare radio button is checked when it has the Selected trait, and unknown when it has not")
+    func bareRadioTakesTrait() throws {
+        let on = try node("Other", value: "radio button", traits: ["Selected"])
+        #expect(on.role == .radioButton)
+        #expect(on.state.checked == true)
+        #expect(on.state.selected == true)
+        #expect(on.value == "1")
+
+        let off = try node("Other", value: "radio button")
+        #expect(off.state.checked == nil)
+        #expect(off.state.selected == nil)
+        #expect(off.value == nil)
+    }
+
+    @Test("a state word outranks the Selected trait")
+    func wordOutranksTrait() throws {
+        let radio = try node("Other", value: "radio button, unchecked", traits: ["Selected"])
+        #expect(radio.state.checked == false)
+        #expect(radio.state.selected == true)
+    }
+
+    @Test("the Selected trait sets selected on any iOS node, and its absence leaves selected nil")
+    func selectedTrait() throws {
+        #expect(try node("Button", value: nil, traits: ["Button", "Selected"]).state.selected == true)
+        #expect(try node("Button", value: nil, traits: ["Button"]).state.selected == nil)
+    }
+
+    @Test("a native switch still reads its own 1 or 0")
+    func nativeSwitch() throws {
+        let toggle = try node("Switch", value: "1")
+        #expect(toggle.role == .switch)
+        #expect(toggle.state.checked == true)
+        #expect(toggle.value == "1")
+    }
+}

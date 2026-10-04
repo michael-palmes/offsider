@@ -6,13 +6,23 @@ struct TextToHIDEvents {
     
     // MARK: - Error Types
     enum TextConversionError: Error, LocalizedError, UserFacingError {
-        case unsupportedCharacter(Character)
-        
+        /// One-based character positions, never the characters, so a secret never reaches an error or log.
+        case unsupportedCharacters(positions: [Int], length: Int)
+
         var errorDescription: String? {
             switch self {
-            case .unsupportedCharacter(let char):
-                return "No keycode found for character: '\(char)'"
+            case .unsupportedCharacters(let positions, let length):
+                let subject = positions.count == 1
+                    ? "The character at position \(positions[0]) (of \(length)) has"
+                    : "Characters at positions \(Self.list(positions)) (of \(length)) have"
+                return "\(subject) no US keyboard keycode. Only A-Z, a-z, 0-9 and US keyboard symbols can be typed."
             }
+        }
+
+        private static func list(_ positions: [Int]) -> String {
+            let words = positions.map(String.init)
+            guard words.count > 1 else { return words.joined() }
+            return words.dropLast().joined(separator: ", ") + " and " + words[words.count - 1]
         }
 
         var userFacingDescription: String {
@@ -42,16 +52,9 @@ struct TextToHIDEvents {
     
     // MARK: - Character to HID Event Mapping
     
-    /// Converts a single character to its corresponding HID events
-    private static func eventsForCharacter(_ character: Character) throws -> [InputEvent] {
-        let charString = String(character)
-        let keyEvent = KeyEvent.keyCodeForString(charString)
-        
-        // Check if character is supported
-        guard keyEvent.keyCode != 0 else {
-            throw TextConversionError.unsupportedCharacter(character)
-        }
-        
+    /// Converts a single supported character to its corresponding HID events
+    private static func eventsForCharacter(_ character: Character) -> [InputEvent] {
+        let keyEvent = KeyEvent.keyCodeForString(String(character))
         if keyEvent.shift {
             return shiftedKeyEvent(keyCode: keyEvent.keyCode)
         } else {
@@ -65,28 +68,30 @@ struct TextToHIDEvents {
     /// - Parameter text: The text string to validate
     /// - Returns: true if all characters are supported, false otherwise
     static func validateText(_ text: String) -> Bool {
-        for character in text {
-            let charString = String(character)
-            let keyEvent = KeyEvent.keyCodeForString(charString)
-            if keyEvent.keyCode == 0 {
-                return false
-            }
+        unsupportedPositions(in: text).isEmpty
+    }
+
+    /// One-based positions of the characters with no US keyboard keycode.
+    static func unsupportedPositions(in text: String) -> [Int] {
+        text.enumerated().compactMap { offset, character in
+            KeyEvent.keyCodeForString(String(character)).keyCode == 0 ? offset + 1 : nil
         }
-        return true
+    }
+
+    /// Throws `unsupportedCharacters` naming positions only.
+    static func checkSupported(_ text: String) throws {
+        let positions = unsupportedPositions(in: text)
+        guard positions.isEmpty else {
+            throw TextConversionError.unsupportedCharacters(positions: positions, length: text.count)
+        }
     }
     
     /// Converts a text string to a sequence of HID events
     /// - Parameter text: The text string to convert
     /// - Returns: An array of InputEvent values representing the key presses
-    /// - Throws: TextConversionError.unsupportedCharacter if any character is not supported
+    /// - Throws: TextConversionError.unsupportedCharacters if any character is not supported
     static func convertTextToHIDEvents(_ text: String) throws -> [InputEvent] {
-        var events: [InputEvent] = []
-        
-        for character in text {
-            let characterEvents = try eventsForCharacter(character)
-            events.append(contentsOf: characterEvents)
-        }
-        
-        return events
+        try checkSupported(text)
+        return text.flatMap(eventsForCharacter)
     }
 }

@@ -1,0 +1,344 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "tab-view-test-screen",
+          "label": "TabView Test",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 291.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "tab-view-test-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 765,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "TabView Test",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "tab-view-test-title",
+          "label": "TabView Playground",
+          "value": null,
+          "frame": {
+            "x": 112.76,
+            "y": 114.67,
+            "width": 185.9,
+            "height": 27.05
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "tab-view-test-title",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 296,
+              "y": 301,
+              "width": 488,
+              "height": 71
+            },
+            "text": null,
+            "contentDescription": "TabView Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "tab-view-current-tab",
+          "label": "Current Tab: Home",
+          "value": null,
+          "frame": {
+            "x": 134.1,
+            "y": 157.71,
+            "width": 143.24,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "tab-view-current-tab",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 352,
+              "y": 414,
+              "width": 376,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Current Tab: Home",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "tab-view-home-panel",
+          "label": "Home panel active",
+          "value": null,
+          "frame": {
+            "x": 134.86,
+            "y": 196.95,
+            "width": 141.71,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "tab-view-home-panel",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 354,
+              "y": 517,
+              "width": 372,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Home panel active",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "tab-view-tab-bar",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 850.29,
+            "width": 411.43,
+            "height": 73.14
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "tab-view-tab-bar",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 2232,
+              "width": 1080,
+              "height": 192
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Tab List",
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "tab-view-tab-home",
+          "label": "Home",
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 850.67,
+            "width": 205.71,
+            "height": 49.14
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": true,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "tab-view-tab-home",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 2233,
+              "width": 540,
+              "height": 129
+            },
+            "text": null,
+            "contentDescription": "Home",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Tab",
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "tab-view-tab-settings",
+          "label": "Settings",
+          "value": null,
+          "frame": {
+            "x": 205.71,
+            "y": 850.67,
+            "width": 205.71,
+            "height": 49.14
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "tab-view-tab-settings",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 540,
+              "y": 2233,
+              "width": 540,
+              "height": 129
+            },
+            "text": null,
+            "contentDescription": "Settings",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Tab",
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

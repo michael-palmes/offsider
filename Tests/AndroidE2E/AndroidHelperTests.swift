@@ -131,10 +131,10 @@ struct AndroidHelperTests {
         holder.waitUntilExit()
 
         let result = try outcome.get()
-        #expect(result.exitCode == 1)
+        #expect(result.exitCode == 8)
         #expect(result.stderr.contains("Another UiAutomation client is connected to"), "stderr: \(result.stderr)")
         #expect(!result.stderr.contains("Warning:"), "busy must not fall back to uiautomator: \(result.stderr)")
-        #expect(result.stdout.isEmpty)
+        #expect(result.stdout.contains(#""reason":"uiautomation_busy""#), "describe-ui reports the failure as its JSON envelope: \(result.stdout)")
 
         let freed = try await AndroidE2E.eventually(timeout: 20) {
             try await AndroidE2E.offsider("describe-ui").exitCode == 0

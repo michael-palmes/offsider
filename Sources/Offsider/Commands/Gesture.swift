@@ -101,7 +101,7 @@ struct Gesture: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
@@ -119,7 +119,7 @@ struct Gesture: AsyncParsableCommand {
 
         let finalEvent = InputEvent.delayed(gestureEvent, pre: preDelay, post: postDelay)
 
-        try await backend.perform(finalEvent, on: device)
+        try await backend.performTracked(finalEvent, on: device)
         
         logger.info().log("Gesture completed successfully")
     }
@@ -134,7 +134,8 @@ struct Gesture: AsyncParsableCommand {
     ) async throws -> InputEvent {
         guard let applicationFrame = tree.applicationFrame else {
             throw CLIError(
-                errorDescription: "Unable to size the \(preset.rawValue) gesture because the accessibility tree has no application frame. Check an app is in the foreground, or run `offsider doctor --device \(device.rawValue)`."
+                errorDescription: "Unable to size the \(preset.rawValue) gesture because the accessibility tree has no application frame. Check an app is in the foreground, or run `offsider doctor --device \(device.rawValue)`.",
+                reason: .treeReadFailed
             )
         }
         let screen = GesturePreset.screen(applicationFrame: applicationFrame, width: screenWidth, height: screenHeight)

@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 /// The polling half of `offsider boot`: from a launched process to a serial, then to a booted Android and gRPC.
 @MainActor
@@ -11,7 +12,7 @@ struct BootWait {
     let timeout: Duration
 
     func discovery(for serial: String) -> EmulatorDiscovery? {
-        let port = Int(serial.dropFirst("emulator-".count))
+        guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial) else { return nil }
         return EmulatorDiscovery.live(host: host).first { $0.consolePort == port }
     }
 

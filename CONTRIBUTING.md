@@ -23,10 +23,12 @@ swift build
 
 ```bash
 swift build
-swift test                   # unit tests, no simulator needed
+swift test                   # unit tests, no simulator needed; includes the tree goldens and their byte budgets
 bash -n <changed script>     # for any shell script you touched
 make e2e                     # for changes to input, accessibility or capture, on a booted simulator
 ```
+
+A change to the iOS or Android tree mapping or to the `describe-ui` renderer shows up in the tree goldens under `Tests/Goldens/trees/`. Re-render them with `OFFSIDER_GOLDENS_UPDATE=1 swift test --filter TreeGoldenRefresh` and review the diff. A rendering that outgrows its budget fails; raising the budget is a reviewed edit of `Tests/Goldens/trees/budgets.json`.
 
 ## Docs to update
 

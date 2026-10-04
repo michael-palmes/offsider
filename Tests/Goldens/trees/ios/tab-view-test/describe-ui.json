@@ -1,0 +1,585 @@
+{
+  "version": 2,
+  "platform": "ios",
+  "device": "<ios-device>",
+  "screen": {
+    "width": 402,
+    "height": 874,
+    "scale": 3,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "1"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 402,
+        "height": 874
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": null,
+        "focused": null
+      },
+      "native": {
+        "type": "Application",
+        "role": "AXApplication",
+        "subrole": null,
+        "roleDescription": "application",
+        "title": null,
+        "help": null,
+        "customActions": [],
+        "contentRequired": false,
+        "pid": 1000,
+        "axFrame": "{{0, 0}, {402, 874}}"
+      },
+      "children": [
+        {
+          "role": "group",
+          "id": null,
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 402,
+            "height": 874
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": null,
+            "focused": null
+          },
+          "native": {
+            "type": "Group",
+            "role": "AXGroup",
+            "subrole": null,
+            "roleDescription": "group",
+            "title": null,
+            "help": null,
+            "customActions": [],
+            "contentRequired": false,
+            "pid": 1000,
+            "axFrame": "{{0, 0}, {402, 874}}"
+          },
+          "children": [
+            {
+              "role": "group",
+              "id": null,
+              "label": null,
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 402,
+                "height": 874
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": null,
+                "focused": null
+              },
+              "native": {
+                "type": "Group",
+                "role": "AXGroup",
+                "subrole": null,
+                "roleDescription": "group",
+                "title": null,
+                "help": null,
+                "customActions": [],
+                "contentRequired": false,
+                "pid": 1000,
+                "axFrame": "{{0, 0}, {402, 874}}"
+              },
+              "children": [
+                {
+                  "role": "group",
+                  "id": null,
+                  "label": null,
+                  "value": null,
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 402,
+                    "height": 874
+                  },
+                  "enabled": true,
+                  "state": {
+                    "checked": null,
+                    "selected": null,
+                    "focused": null
+                  },
+                  "native": {
+                    "type": "Group",
+                    "role": "AXGroup",
+                    "subrole": null,
+                    "roleDescription": "group",
+                    "title": null,
+                    "help": null,
+                    "customActions": [],
+                    "contentRequired": false,
+                    "pid": 1000,
+                    "axFrame": "{{0, 0}, {402, 874}}"
+                  },
+                  "children": [
+                    {
+                      "role": "group",
+                      "id": null,
+                      "label": null,
+                      "value": null,
+                      "frame": {
+                        "x": 0,
+                        "y": 0,
+                        "width": 402,
+                        "height": 874
+                      },
+                      "enabled": true,
+                      "state": {
+                        "checked": null,
+                        "selected": null,
+                        "focused": null
+                      },
+                      "native": {
+                        "type": "Group",
+                        "role": "AXGroup",
+                        "subrole": null,
+                        "roleDescription": "group",
+                        "title": null,
+                        "help": null,
+                        "customActions": [],
+                        "contentRequired": false,
+                        "pid": 1000,
+                        "axFrame": "{{0, 0}, {402, 874}}"
+                      },
+                      "children": [
+                        {
+                          "role": "group",
+                          "id": null,
+                          "label": null,
+                          "value": null,
+                          "frame": {
+                            "x": 0,
+                            "y": 0,
+                            "width": 402,
+                            "height": 874
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": null,
+                            "focused": null
+                          },
+                          "native": {
+                            "type": "Group",
+                            "role": "AXGroup",
+                            "subrole": null,
+                            "roleDescription": "group",
+                            "title": null,
+                            "help": null,
+                            "customActions": [],
+                            "contentRequired": false,
+                            "pid": 1000,
+                            "axFrame": "{{0, 0}, {402, 874}}"
+                          },
+                          "children": [
+                            {
+                              "role": "group",
+                              "id": null,
+                              "label": null,
+                              "value": null,
+                              "frame": {
+                                "x": 0,
+                                "y": 0,
+                                "width": 402,
+                                "height": 874
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": null,
+                                "focused": null
+                              },
+                              "native": {
+                                "type": "Group",
+                                "role": "AXGroup",
+                                "subrole": null,
+                                "roleDescription": "group",
+                                "title": null,
+                                "help": null,
+                                "customActions": [],
+                                "contentRequired": false,
+                                "pid": 1000,
+                                "axFrame": "{{0, 0}, {402, 874}}"
+                              },
+                              "children": [
+                                {
+                                  "role": "group",
+                                  "id": null,
+                                  "label": null,
+                                  "value": null,
+                                  "frame": {
+                                    "x": 0,
+                                    "y": 0,
+                                    "width": 402,
+                                    "height": 874
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": null,
+                                    "focused": null
+                                  },
+                                  "native": {
+                                    "type": "Group",
+                                    "role": "AXGroup",
+                                    "subrole": null,
+                                    "roleDescription": "group",
+                                    "title": null,
+                                    "help": null,
+                                    "customActions": [],
+                                    "contentRequired": false,
+                                    "pid": 1000,
+                                    "axFrame": "{{0, 0}, {402, 874}}"
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 0,
+                                        "y": 0,
+                                        "width": 402,
+                                        "height": 106.33333587646484
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Group",
+                                        "role": "AXGroup",
+                                        "subrole": null,
+                                        "roleDescription": "group",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{0, 0}, {402, 106.33333587646484}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 0,
+                                        "y": 0,
+                                        "width": 402,
+                                        "height": 874
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Group",
+                                        "role": "AXGroup",
+                                        "subrole": null,
+                                        "roleDescription": "group",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{0, 0}, {402, 874}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": "BackButton",
+                                      "label": "Offsider Playground",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 8,
+                                        "y": 62,
+                                        "width": 44,
+                                        "height": 44
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Button",
+                                        "role": "AXButton",
+                                        "subrole": null,
+                                        "roleDescription": "button",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{8, 62}, {44, 44}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "header",
+                                      "id": "tab-view-test-screen",
+                                      "label": "TabView Test",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 60,
+                                        "y": 74,
+                                        "width": 282,
+                                        "height": 20.333335876464844
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Heading",
+                                        "role": "AXHeading",
+                                        "subrole": null,
+                                        "roleDescription": "heading",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{60, 74}, {282, 20.333335876464844}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "text",
+                                      "id": "tab-view-test-title",
+                                      "label": "TabView Playground",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 105.66666412353516,
+                                        "y": 122.33333587646484,
+                                        "width": 190.66668701171875,
+                                        "height": 23.99999237060547
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "StaticText",
+                                        "role": "AXStaticText",
+                                        "subrole": null,
+                                        "roleDescription": "text",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{105.66666412353516, 122.33333587646484}, {190.66668701171875, 23.999992370605469}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "text",
+                                      "id": "tab-view-current-tab",
+                                      "label": "Current Tab: Home",
+                                      "value": "Home",
+                                      "frame": {
+                                        "x": 129,
+                                        "y": 162.33333587646484,
+                                        "width": 144.33334350585938,
+                                        "height": 20.333343505859375
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "StaticText",
+                                        "role": "AXStaticText",
+                                        "subrole": null,
+                                        "roleDescription": "text",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{129, 162.33333587646484}, {144.33334350585938, 20.333343505859375}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "text",
+                                      "id": "tab-view-home-panel",
+                                      "label": "Home panel active",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 130.3333282470703,
+                                        "y": 198.6666717529297,
+                                        "width": 141.3333282470703,
+                                        "height": 20.333328247070312
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "StaticText",
+                                        "role": "AXStaticText",
+                                        "subrole": null,
+                                        "roleDescription": "text",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{130.33332824707031, 198.66667175292969}, {141.33332824707031, 20.333328247070312}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "group",
+                                      "id": "tab-view-tab-bar",
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 0,
+                                        "y": 790.6666488647461,
+                                        "width": 402,
+                                        "height": 83.33331298828125
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Group",
+                                        "role": "AXGroup",
+                                        "subrole": null,
+                                        "roleDescription": "group",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{0, 790.66664886474609}, {402, 83.33331298828125}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": "tab-view-tab-home",
+                                      "label": "Home",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 0,
+                                        "y": 790.9999822080135,
+                                        "width": 201,
+                                        "height": 49
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Button",
+                                        "role": "AXButton",
+                                        "subrole": null,
+                                        "roleDescription": "button",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{0, 790.99998220801353}, {201, 49}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": "tab-view-tab-settings",
+                                      "label": "Settings",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 201,
+                                        "y": 790.9999822080135,
+                                        "width": 201,
+                                        "height": 49
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Button",
+                                        "role": "AXButton",
+                                        "subrole": null,
+                                        "roleDescription": "button",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{201, 790.99998220801353}, {201, 49}}"
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
