@@ -239,7 +239,7 @@ struct EmulatorBootTests {
         #expect(launcher.launches.count == 1)
     }
 
-    @Test("an unknown AVD lists the AVDs on this Mac before touching adb")
+    @Test("an unknown AVD lists the AVDs on this Mac, asking adb only for its device list")
     func unknownAVD() async throws {
         let server = Self.server(AdbState())
         let host = AndroidTestHost.make(home: try Self.home(), adb: server)
@@ -247,7 +247,22 @@ struct EmulatorBootTests {
 
         let error = await #expect(throws: AndroidError.self) { try await EmulatorBooter(host: host) { _, _ in }.boot(request) { _ in } }
         #expect(error?.message == "No AVD named Pixel_10. AVDs on this Mac: Offsider_E2E, Pixel_9a. Create one in Android Studio's Device Manager.")
-        #expect(server.connectionAttempts == 0)
+        #expect(server.services == ["host:devices-l"])
+    }
+
+    @Test("boot refuses a connected phone's serial without sending the phone anything")
+    func phoneSerialRefused() async throws {
+        let server = FakeAdbServer { request in
+            request.service == "host:devices-l"
+                ? FakeAdbServer.okay(payload: "R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n")
+                : .hang
+        }
+        let host = AndroidTestHost.make(home: try Self.home(), adb: server)
+        let request = EmulatorBootRequest(avdName: "R58M123ABC", headless: false, timeout: .seconds(240))
+
+        let error = await #expect(throws: AndroidError.self) { try await EmulatorBooter(host: host) { _, _ in }.boot(request) { _ in } }
+        #expect(error?.message == "boot starts emulators, and R58M123ABC is a connected phone. Run `offsider list-devices` to see AVD names.")
+        #expect(server.requests.allSatisfy { $0.serial == nil })
     }
 
     @Test("a missing emulator binary says how to install it")

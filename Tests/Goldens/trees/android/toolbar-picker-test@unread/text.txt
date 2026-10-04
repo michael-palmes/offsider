@@ -1,0 +1,10 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
+  group "Toolbar Picker" id=toolbar-picker-test-screen (60.2,64.4 181.7x23.2)
+  group id=toolbar-picker-test-filter (249.9,58.3 153.5x35.8)
+  radioButton "All" id=toolbar-picker-test-filter-all value="0" (251.8,60.2 36.2x32)
+  radioButton "Unread" id=toolbar-picker-test-filter-unread value="1" (288,60.2 62.9x32) checked
+  radioButton "Read" id=toolbar-picker-test-filter-read value="0" (350.9,60.2 50.7x32)
+  text "Toolbar Picker State: Unread" id=toolbar-picker-test-state (16,98.7 379.4x47.6)
+  text "Toolbar Picker Detail Body" id=toolbar-picker-test-body (16,146.3 379.4x47.6)

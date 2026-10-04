@@ -32,7 +32,7 @@ extension IOSBackend: DisplayControlling {
 
     private func singleDisplay(of simulator: FBSimulator, id: DeviceID) async throws -> DisplayList {
         guard let screen = try await screenInfo(for: id), let scale = screen.scale else {
-            throw CLIError(errorDescription: "Offsider could not read the screen of simulator \(id.rawValue). Check it is booted with `offsider list-devices`.")
+            throw CLIError(errorDescription: "Offsider could not read the screen of simulator \(id.rawValue). Check it is booted with `offsider list-devices`.", reason: .displayUnreadable, hint: "offsider list-devices")
         }
         let profiled = displayCatalog.profile(of: simulator)?.first
         let portrait = screen.rotation?.isLandscape == true ? (screen.height, screen.width) : (screen.width, screen.height)
@@ -74,7 +74,7 @@ extension IOSBackend: DisplayControlling {
             )
         }
         guard let geometry = await panelGeometry(on: active, of: simulator) else {
-            throw CLIError(errorDescription: "Offsider could not read how the UI is turned on the \(display.role.rawValue) display of \(id.rawValue), so it cannot place input there. Check with `offsider displays --device \(id.rawValue)`, then retry.")
+            throw CLIError(errorDescription: "Offsider could not read how the UI is turned on the \(display.role.rawValue) display of \(id.rawValue), so it cannot place input there. Check with `offsider displays --device \(id.rawValue)`, then retry.", reason: .displayUnreadable)
         }
         return points.map { geometry.mainScreenPoint(x: $0.x, y: $0.y, mainWidth: main.width, mainHeight: main.height) }
     }
@@ -112,7 +112,7 @@ extension IOSBackend: PostureControlling, HingeControlling {
 
     func requestPosture(_ posture: Posture, on id: DeviceID) async throws {
         guard let angle = HingeControl.angle(for: posture) else {
-            throw CLIError(errorDescription: "Posture \(posture.rawValue) cannot be set. Use closed, half-opened or open.")
+            throw CLIError(errorDescription: "Posture \(posture.rawValue) cannot be set. Use closed, half-opened or open.", reason: .postureFailed)
         }
         try await requestHingeAngle(angle, on: id)
     }
@@ -127,7 +127,7 @@ extension IOSBackend: PostureControlling, HingeControlling {
     func requestHingeAngle(_ degrees: Int, on id: DeviceID) async throws {
         let simulator = try await simulator(for: id)
         guard displayCatalog.isFoldable(simulator) else {
-            throw CLIError(errorDescription: DisplayReport.notFoldable(device: id.rawValue))
+            throw CLIError(errorDescription: DisplayReport.notFoldable(device: id.rawValue), reason: .notSupported)
         }
         var reading = await displayCatalog.hingeAngle(of: simulator).map { Int($0.rounded()) }
         if reading == degrees {
@@ -145,7 +145,7 @@ extension IOSBackend: PostureControlling, HingeControlling {
             try await HingeInjector.sweep(simulator, from: start, to: degrees, logger: logger)
         } catch let failure as SimulatorDTUHID.Failure {
             logger.info().log("Hinge: \(failure)")
-            throw CLIError(errorDescription: Self.postureUnavailable(device: id.rawValue))
+            throw CLIError(errorDescription: Self.postureUnavailable(device: id.rawValue), reason: .notSupported)
         }
     }
 

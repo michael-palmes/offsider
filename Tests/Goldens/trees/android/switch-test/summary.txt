@@ -1,0 +1,9 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
+  group "Switch Test" id=switch-test-screen (60.2,64.4 291.4x23.2)
+  text "Switch Playground" id=switch-test-title (16,114.7 379.4x27.1)
+  switch "SwiftUI Weather Alerts" id=swiftui-weather-alerts-switch value="0" (349,165.7 46.5x27.1)
+  text "SwiftUI Weather Alerts: Off" id=swiftui-weather-alerts-state (16,200.8 379.4x23.2)
+  switch "UIKit Weather Alerts" id=uikit-weather-alerts-switch value="0" (343.6,248 51.8x32)
+  text "UIKit Weather Alerts: Off" id=uikit-weather-alerts-state (16,288 379.4x23.2)

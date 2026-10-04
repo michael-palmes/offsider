@@ -20,7 +20,7 @@ struct CLIErrorTests {
     @Test(
         "Every user-facing error carries its message in localizedDescription",
         arguments: [
-            TextToHIDEvents.TextConversionError.unsupportedCharacter("💥"),
+            TextToHIDEvents.TextConversionError.unsupportedCharacters(positions: [1], length: 1),
             ShellTokenizer.TokenizerError.danglingEscape,
             VideoProcessingError.failedToDecodeImage,
             HIDBrokerNotReadyError(),
@@ -35,8 +35,8 @@ struct CLIErrorTests {
     @Test("Offsider runtime error types provide user-facing descriptions")
     func offsiderRuntimeErrorsAreUserFacing() {
         #expect(
-            String(describing: TextToHIDEvents.TextConversionError.unsupportedCharacter("💥"))
-                == "No keycode found for character: '💥'"
+            String(describing: TextToHIDEvents.TextConversionError.unsupportedCharacters(positions: [4, 9], length: 12))
+                == "Characters at positions 4 and 9 (of 12) have no US keyboard keycode. Only A-Z, a-z, 0-9 and US keyboard symbols can be typed."
         )
         #expect(
             String(describing: ShellTokenizer.TokenizerError.danglingEscape)

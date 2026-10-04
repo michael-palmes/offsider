@@ -138,6 +138,20 @@ struct AccessibilityPollerTests {
         #expect(reads == 1)
     }
 
+    @Test("an element first found at the --wait-timeout deadline still goes through the transition guard")
+    func foundAtDeadlineIsGuarded() async throws {
+        var count = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("apply"), waitTimeout: 0.05, pollInterval: 0.1, elementType: nil, settle: .guarded(record: nil),
+            logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) {
+            count += 1
+            return Self.sheet(buttonY: count == 1 ? 10700 : 600)
+        }
+        #expect(polled.settledBy != .actNow(.alreadySettled))
+        #expect(polled.value.point.y == 622)
+    }
+
     @Test("an element still moving at the deadline returns its latest position")
     func stillMovingAtDeadlineReturnsLatest() async throws {
         var y = 10700.0
@@ -203,5 +217,26 @@ struct AccessibilityPollerTests {
         #expect(VerifyOutput.pointDescription(x: 217.14999999999998, y: 272.195) == "(217.15, 272.2)")
         #expect(VerifyOutput.pointDescription(x: 200, y: 400) == "(200, 400)")
         #expect(VerifyOutput.pointDescription(x: 205.72000000000003, y: 477.71) == "(205.72, 477.71)")
+    }
+
+    private static let nearMiss = UITree(platform: .android, device: "emulator-5556", roots: [
+        UINode(role: .button, id: "gon", frame: UIFrame(x: 10, y: 10, width: 100, height: 40), native: .android(AndroidNativeAttributes())),
+    ])
+
+    @Test("a wait that ends not found still lists suggestions and candidates")
+    func waitEndingNotFoundExplains() async throws {
+        let clock = ScriptedClock()
+        let error = await #expect(throws: ElementResolutionError.self) {
+            _ = try await AccessibilityPoller.pollForResolution(
+                query: .id("gone"),
+                waitTimeout: 1,
+                pollInterval: 0.25,
+                elementType: nil,
+                logger: OffsiderLogger(),
+                clock: clock.poll
+            ) { Self.nearMiss }
+        }
+        #expect(error?.userFacingDescription.contains("Did you mean 'gon'?") == true)
+        #expect(error?.candidates.map(\.id) == ["gon"])
     }
 }

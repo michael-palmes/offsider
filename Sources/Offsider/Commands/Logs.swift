@@ -51,7 +51,7 @@ struct Logs: AsyncParsableCommand {
     var json = false
 
     @OptionGroup
-    var deviceOption: DeviceOption
+    var deviceOption: ReadDeviceOption
 
     static let defaultLast = "30s"
 
@@ -122,7 +122,7 @@ struct Logs: AsyncParsableCommand {
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
         guard let reader = backend as? any LogReading else {
-            throw CLIError(errorDescription: "logs is not available for \(booted.id.platform.rawValue) devices in this build.")
+            throw CLIError(errorDescription: "logs is not available for \(booted.id.platform.rawValue) devices in this build.", reason: .notSupported)
         }
         let query = try Self.options { try self.query() }
         let sink = LogSink(try Self.options { try self.collector() })
@@ -177,7 +177,7 @@ struct Logs: AsyncParsableCommand {
         do {
             return try body()
         } catch let error as LogOptionError {
-            throw CLIError(errorDescription: error.message)
+            throw CLIError(errorDescription: error.message, reason: .logStreamFailed)
         }
     }
 }

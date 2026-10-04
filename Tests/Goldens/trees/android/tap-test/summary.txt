@@ -1,0 +1,6 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
+  group "Tap Test" id=tap-test-screen (60.2,64.4 291.4x23.2)
+  group id=tap-test-area (0,98.7 411.4x824.8)
+  text "Tap Count: 0" id=tap-count (157.3,159.2 97.1x23.2)

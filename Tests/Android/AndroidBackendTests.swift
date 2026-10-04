@@ -140,7 +140,7 @@ struct AndroidBackendTests {
         let backend = try Self.backend(server, home: AndroidTestHost.temporaryHome())
 
         await #expect(throws: PlatformUnavailable.self) { try await backend.prepare() }
-        let error = await #expect(throws: AndroidError.self) { try await backend.runningSerial(forAVDNamed: "Pixel_10") }
+        let error = await #expect(throws: AndroidError.self) { try await backend.resolveAndroidName("Pixel_10") }
         #expect(error?.message == "No device named Pixel_10. Run `offsider list-devices` to find device IDs.")
         #expect(server.connectionAttempts == 0)
     }

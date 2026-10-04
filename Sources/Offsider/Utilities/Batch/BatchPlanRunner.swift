@@ -36,7 +36,7 @@ struct BatchPlanRunner {
             case .text(let text, let replace):
                 try await flushPending()
                 guard let textSession = session as? any TextInputSession else {
-                    throw CLIError(errorDescription: "This device's input session cannot type text as one step.")
+                    throw CLIError(errorDescription: "This device's input session cannot type text as one step.", reason: .internalError)
                 }
                 if replace {
                     try await textSession.replaceText(text)

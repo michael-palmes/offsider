@@ -10,7 +10,7 @@ import OffsiderCore
 @MainActor
 private final class FakeSimulator {
     var clock: TimeInterval = 0
-    var trees: [AccessibilitySnapshot]
+    var trees: [UITree]
     var screens: [Data]
     var bands = ScreenBands(top: 60, bottom: 0)
     /// Gives the verifier a change wait, as a backend with accessibility events does.
@@ -20,14 +20,14 @@ private final class FakeSimulator {
     private(set) var sleeps: [Duration] = []
     private(set) var waits: [Duration] = []
 
-    init(trees: [AccessibilitySnapshot], screens: [Data] = []) {
+    init(trees: [UITree], screens: [Data] = []) {
         self.trees = trees
         self.screens = screens
     }
 
     var dependencies: Verifier.Dependencies {
         Verifier.Dependencies(
-            snapshot: { [unowned self] in
+            tree: { [unowned self] in
                 treeReads += 1
                 clock += 0.3
                 return trees.count > 1 ? trees.removeFirst() : trees[0]
@@ -51,15 +51,11 @@ private final class FakeSimulator {
     }
 }
 
-private func tree(count: String, extra: [AccessibilitySnapshot.Node] = []) -> AccessibilitySnapshot {
-    let frame = AccessibilitySnapshot.Frame(x: 0, y: 0, width: 64, height: 128)
-    let label = AccessibilitySnapshot.Node(type: "StaticText", identifier: "tap-count", value: count)
-    return AccessibilitySnapshot(roots: [
-        AccessibilitySnapshot.Node(type: "Application", label: "Playground", frame: frame, children: [label] + extra)
-    ])
+private func tree(count: String, extra: [UINode] = []) -> UITree {
+    FakeUI.tree(width: 64, height: 128, [FakeUI.node(.text, id: "tap-count", value: count)] + extra)
 }
 
-private let emptyTree = AccessibilitySnapshot(roots: [AccessibilitySnapshot.Node(type: "Application")])
+private let emptyTree = UITree(platform: .ios, device: "fake-device", roots: [FakeUI.node(.application)])
 
 private func screen(shade: UInt8) -> Data {
     let width = 64, height = 128
@@ -143,8 +139,103 @@ struct VerifierTests {
         #expect(outcome.attempts == 1)
         #expect(outcome.style == .simulator)
         #expect(outcome.summary?.contains("tap-count") == true)
+        #expect(outcome.changes == [VerifyChange(kind: .changed, node: "text id=tap-count", field: "value", old: "0", new: "1")])
+        #expect(outcome.changesTruncated == 0 && outcome.note == nil)
         #expect(actions.count == 1)
         #expect(retries.isEmpty)
+    }
+
+    @Test("the resolver's tree stands in for the first read, so the verifier reads one tree fewer and sees the second before acting")
+    func initialTreeSavesARead() async throws {
+        func reads(initial: UITree?) async throws -> (Int, [String?]) {
+            let fake = FakeSimulator(trees: (initial == nil ? [tree(count: "0")] : []) + [tree(count: "0"), tree(count: "1")])
+            var seen: [String?] = []
+            _ = try await Verifier.run(
+                styles: [nil], timeout: .seconds(2), dependencies: fake.dependencies, initialTree: initial,
+                beforeAction: { seen.append($0.roots[0].children[0].value) }, action: { _ in }
+            )
+            return (fake.treeReads, seen)
+        }
+        let without = try await reads(initial: nil)
+        let with = try await reads(initial: tree(count: "0"))
+        #expect(with.0 == without.0 - 1)
+        #expect(with.1 == ["0"])
+    }
+
+    @Test("changes are empty when only the screenshot changed")
+    func screenshotOnlyHasNoChanges() async throws {
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 200)])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+        #expect(outcome.change == .screenshot)
+        #expect(outcome.changes.isEmpty && outcome.changesTruncated == 0)
+    }
+
+    @Test("changes list value and state changes first, then added, removed and moved, capped at 10 with a truncated count")
+    func changesOrderAndCap() {
+        let rows = (0..<12).map { FakeUI.node(.text, id: "row-\($0)", value: "a", frame: FakeUI.frame(0, Double($0) * 44, 402, 44)) }
+        let old = FakeUI.tree(rows + [
+            FakeUI.node(.button, id: "gone", label: "Gone", frame: FakeUI.frame(0, 900, 100, 44)),
+            FakeUI.node(.button, id: "mover", label: "Mover", frame: FakeUI.frame(0, 950, 100, 44)),
+            FakeUI.node(.switch, id: "wifi", frame: FakeUI.frame(0, 1000, 60, 30), state: UIState(checked: false)),
+        ])
+        let new = FakeUI.tree([FakeUI.node(.button, id: "fresh", label: "Fresh", frame: FakeUI.frame(0, 850, 100, 44))]
+            + rows.map { var row = $0; row.value = String(repeating: "b", count: 80); return row } + [
+            FakeUI.node(.button, id: "mover", label: "Mover", frame: FakeUI.frame(0, 990, 100, 44)),
+            FakeUI.node(.switch, id: "wifi", frame: FakeUI.frame(0, 1000, 60, 30), state: UIState(checked: true)),
+        ])
+        let capped = TreeDiff.diff(old: old, new: new, filter: Verifier.changeFilter).cappedChanges()
+
+        #expect(capped.changes.count == 10)
+        #expect(capped.truncated == 6)
+        #expect(capped.changes.allSatisfy { $0.kind == .changed && ($0.field == "value" || $0.field == "checked") })
+        #expect(capped.changes[0] == VerifyChange(kind: .changed, node: "text id=row-0", field: "value", old: "a", new: String(repeating: "b", count: 59) + "…"))
+        let all = TreeDiff.diff(old: old, new: new, filter: Verifier.changeFilter).cappedChanges(limit: 100).changes
+        #expect(all.suffix(3).map(\.kind) == [.added, .removed, .changed])
+        #expect(all.last == VerifyChange(kind: .changed, node: #"button "Mover" id=mover"#, field: "frame", old: "(0, 950) 100x44", new: "(0, 990) 100x44"))
+        #expect(all.contains(VerifyChange(kind: .changed, node: "switch id=wifi", field: "checked", old: "false", new: "true")))
+    }
+
+    private static func keyboardScreen(keyboard: Bool, fieldY: Double = 300, extra: [UINode] = []) -> UITree {
+        var children = [FakeUI.node(.textField, id: "name", label: "Name", value: "Ada", frame: FakeUI.frame(16, fieldY, 370, 44))] + extra
+        if keyboard {
+            children.append(FakeUI.node(.keyboard, label: "Keyboard", frame: FakeUI.frame(0, 500, 402, 374), children: [
+                FakeUI.node(.button, label: "return", frame: FakeUI.frame(300, 800, 100, 44)),
+            ]))
+        }
+        return FakeUI.tree(children)
+    }
+
+    @Test("keyboard_closed is noted when only the keyboard left, frame moves aside")
+    func keyboardClosedNoted() {
+        let outcome = Verifier.Outcome(verified: true, attempts: 1, change: .accessibilityTree, style: nil, summary: nil)
+            .listing(from: Self.keyboardScreen(keyboard: true), to: Self.keyboardScreen(keyboard: false, fieldY: 340), skipping: [])
+        #expect(outcome.note == .keyboardClosed)
+        #expect(outcome.changes.contains { $0.kind == .removed })
+    }
+
+    @Test("keyboard_closed is not noted when another node changed, or when the read was truncated")
+    func keyboardClosedNotNoted() {
+        let base = Verifier.Outcome(verified: true, attempts: 1, change: .accessibilityTree, style: nil, summary: nil)
+        let other = base.listing(
+            from: Self.keyboardScreen(keyboard: true),
+            to: Self.keyboardScreen(keyboard: false, extra: [FakeUI.node(.text, id: "saved", label: "Saved", frame: FakeUI.frame(16, 400, 100, 20))]),
+            skipping: []
+        )
+        #expect(other.note == nil)
+        var truncated = Self.keyboardScreen(keyboard: false)
+        truncated.sourceTruncated = true
+        #expect(base.listing(from: Self.keyboardScreen(keyboard: true), to: truncated, skipping: []).note == nil)
+    }
+
+    @Test("secure values appear masked in changes")
+    func secureMaskedInChanges() {
+        func screen(_ value: String) -> UITree {
+            FakeUI.tree([FakeUI.node(.secureTextField, id: "password", label: "Password", value: SecureText.masked(value), frame: FakeUI.frame(16, 300, 370, 44))])
+        }
+        let changes = TreeDiff.diff(old: screen("abc"), new: screen("abcd"), filter: Verifier.changeFilter).cappedChanges().changes
+        #expect(changes == [VerifyChange(kind: .changed, node: #"secureTextField "Password" id=password"#, field: "value", old: "•••", new: "••••")])
     }
 
     @Test("With a change wait, polls after the action wait on it, while the gap between the baseline reads stays a sleep")
@@ -230,8 +321,8 @@ struct VerifierTests {
 
     @Test("An element that already changes between baseline reads does not count")
     func volatileBaselineIgnored() async throws {
-        func spinner(_ value: String) -> AccessibilitySnapshot {
-            tree(count: "0", extra: [AccessibilitySnapshot.Node(type: "ProgressIndicator", identifier: "spinner", value: value)])
+        func spinner(_ value: String) -> UITree {
+            tree(count: "0", extra: [FakeUI.node(.progress, id: "spinner", value: value)])
         }
         var sequence = [spinner("1"), spinner("2")]
         for index in 0..<40 { sequence.append(spinner(String(index + 3))) }

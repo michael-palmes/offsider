@@ -1,5 +1,7 @@
-import Testing
+import CoreGraphics
 import Foundation
+import OffsiderCore
+import Testing
 
 @Suite("Batch Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct BatchTests {
@@ -19,6 +21,29 @@ struct BatchTests {
         let uiState = try await TestHelpers.getUIState()
         let tapLocationElement = UIStateParser.findElementContainingLabel(in: uiState, containing: "Tap Location:")
         #expect(tapLocationElement?.label == "Tap Location: (220, 420)")
+    }
+
+    @Test("A tap during a batch on the same simulator exits 8 and names the batch")
+    func tapDuringBatchIsRefused() async throws {
+        let udid = try TestHelpers.requireSimulatorUDID()
+        let batch = Process()
+        batch.executableURL = URL(fileURLWithPath: try TestHelpers.getOffsiderPath())
+        batch.arguments = ["batch", "--device", udid, "--step", "sleep 4"]
+        batch.standardOutput = FileHandle.nullDevice
+        batch.standardError = FileHandle.nullDevice
+        try batch.run()
+        defer { batch.terminate() }
+
+        let lockPath = (OffsiderPrivateDirectory.root as NSString).appendingPathComponent("locks/ios-\(udid.uppercased()).lock")
+        let deadline = Date().addingTimeInterval(30)
+        while (try? String(contentsOfFile: lockPath, encoding: .utf8))?.contains("pid=\(batch.processIdentifier)\n") != true {
+            try #require(Date() < deadline && batch.isRunning, "batch never took the lock")
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1", simulatorUDID: udid, unsetting: ["OFFSIDER_WAIT_LOCK"])
+        #expect(result.exitCode == 8)
+        #expect(result.stderr.contains("pid \(batch.processIdentifier) (offsider batch"))
     }
 
     @Test("Batch reads steps from file")
@@ -221,6 +246,58 @@ struct BatchTests {
             $0 == "SwiftUI Weather Alerts: On"
         }
         #expect(swiftUIState == "SwiftUI Weather Alerts: On")
+    }
+
+    @Test("a typed password reads as bullets in describe-ui, and screenshot --mask-secure blacks out the field")
+    func securePasswordMasked() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "batch-login-flow")
+        let sentinel = "S3NT1NEL"
+        let shot = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-mask-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: shot) }
+
+        let result = try await TestHelpers.runOffsiderCommand(
+            "batch --json --ax-cache perStep --wait-timeout 6 --step \"type 'cam@example.com'\" --step \"tap --label Continue\" --step \"wait --label 'Sign In' --timeout 5\" --step \"type \(sentinel)\" --step \"describe-ui --format json\" --step \"screenshot --output \(shot.path) --mask-secure\"",
+            simulatorUDID: defaultSimulatorUDID
+        )
+        #expect(!result.output.contains(sentinel))
+
+        let records = result.output.split(separator: "\n").compactMap { line in
+            (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+        }
+        let typeLine = records.first { ($0["line"] as? String)?.contains("8 characters") == true }
+        #expect(typeLine != nil)
+
+        func find(_ node: Any?) -> [String: Any]? {
+            guard let node = node as? [String: Any] else { return nil }
+            if node["role"] as? String == "secureTextField" { return node }
+            for child in (node["children"] as? [Any] ?? []) + (node["roots"] as? [Any] ?? []) {
+                if let found = find(child) { return found }
+            }
+            return nil
+        }
+        let field = try #require(find(records.first { $0["kind"] as? String == "describe-ui" }?["tree"]))
+        let value = try #require(field["value"] as? String)
+        #expect(!value.isEmpty && value.allSatisfy { $0 == "•" })
+
+        let screenshot = try #require(records.first { $0["kind"] as? String == "screenshot" })
+        #expect(screenshot["masked"] as? Int == 1)
+        let frame = try #require(field["frame"] as? [String: Double])
+        let scale = try #require(screenshot["pixelsPerPoint"] as? Double)
+        let image = try ScreenImage.decode(try Data(contentsOf: shot))
+        let centre = (x: Int((frame["x"]! + frame["width"]! / 2) * scale), y: Int((frame["y"]! + frame["height"]! / 2) * scale))
+        #expect(Self.rgb(image, centre.x, centre.y) == [0, 0, 0])
+    }
+
+    private static func rgb(_ image: CGImage, _ x: Int, _ y: Int) -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: 4)
+        bytes.withUnsafeMutableBytes { buffer in
+            let context = CGContext(
+                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )!
+            context.draw(image, in: CGRect(x: -x, y: y - image.height + 1, width: image.width, height: image.height))
+        }
+        return Array(bytes.prefix(3))
     }
 
     @Test("Batch login flow fails without waiting for post-sign-in screen")

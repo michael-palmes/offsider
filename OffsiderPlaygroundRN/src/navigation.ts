@@ -39,6 +39,12 @@ export const routeInfo = {
     menuTitle: 'TabView Test',
     subtitle: 'Tab switching',
   },
+  'choice-test': {
+    section: 'Touch & Gestures',
+    title: 'Choice Test',
+    menuTitle: 'Choice Test',
+    subtitle: 'Checkboxes, radios, a switch and a combo box',
+  },
   'text-input': {
     section: 'Input & Text',
     title: 'Text Input',
@@ -152,6 +158,12 @@ export const routeInfo = {
     title: 'Environment',
     menuTitle: 'Environment Test',
     subtitle: 'Appearance, size, canvas and logging',
+  },
+  'permission-state': {
+    section: 'Real-world RN',
+    title: 'Permission State',
+    menuTitle: 'Permission State',
+    subtitle: 'Camera and notification permissions',
   },
 } satisfies Record<string, RouteInfo>;
 

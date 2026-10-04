@@ -22,7 +22,7 @@ struct Displays: AsyncParsableCommand {
     var json = false
 
     @OptionGroup
-    var deviceOption: DeviceOption
+    var deviceOption: ReadDeviceOption
 
     func run() async throws {
         let logger = OffsiderLogger()
@@ -35,7 +35,7 @@ struct Displays: AsyncParsableCommand {
     @MainActor
     static func report(json: Bool, on device: DeviceID, backend: any DeviceBackend, deviceName: String) async throws -> String {
         guard let displays = backend as? any DisplayControlling else {
-            throw CLIError(errorDescription: "displays is not available for \(deviceName) yet.")
+            throw CLIError(errorDescription: "displays is not available for \(deviceName) yet.", reason: .notSupported)
         }
         let list = try await displays.displays(of: device)
         return json ? DisplayReport.json(list) : DisplayReport.table(list, platform: device.platform)

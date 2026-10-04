@@ -95,6 +95,24 @@ struct TapTests {
         #expect(tapTestMarker == nil)
     }
     
+    @Test("A missing id exits 2 with dispatched no, and an ambiguous id exits 6, on a real screen")
+    func selectorFailureExitCodes() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "tap-test")
+
+        let missing = try await TestHelpers.runOffsiderCommandSeparated("tap --id no-such-element --verify --json", simulatorUDID: defaultSimulatorUDID)
+        #expect(missing.exitCode == 2)
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(missing.stdout.utf8)) as? [String: Any])
+        let error = try #require(report["error"] as? [String: Any])
+        #expect(error["reason"] as? String == "selector_not_found")
+        #expect(report["dispatched"] as? String == "no")
+
+        try await TestHelpers.runOffsiderCommand("tap --id BackButton", simulatorUDID: defaultSimulatorUDID)
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        let ambiguous = try await TestHelpers.runOffsiderCommandSeparated("tap --id chevron.forward", simulatorUDID: defaultSimulatorUDID)
+        #expect(ambiguous.exitCode == 6)
+        #expect(ambiguous.stderr.contains("accessibility elements matched --id 'chevron.forward'"))
+    }
+
     @Test("Tap by AXLabel navigates back to home")
     func tapByLabelNavigatesBack() async throws {
         // Arrange

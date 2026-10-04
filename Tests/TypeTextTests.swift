@@ -53,13 +53,14 @@ struct TypeTextTests {
         #expect(text.unicodeScalars.map(\.value) == [0x63, 0x61, 0x66, 0xE9])
     }
 
-    @Test("an iOS batch type step names the composed character it cannot type, not a bare combining mark")
+    @Test("an iOS batch type step counts a composed character once when it reports the position it cannot type")
     func batchIOSNamesComposedCharacter() async throws {
         let error = await #expect(throws: TextToHIDEvents.TextConversionError.self) {
             _ = try await Type.parse([Self.decomposed, "--device", "x"])
                 .toBatchPrimitives(context: Self.context(.ios), logger: OffsiderLogger())
         }
-        guard case .unsupportedCharacter(let character) = error else { return }
-        #expect(character.unicodeScalars.map(\.value) == [0xE9])
+        guard case .unsupportedCharacters(let positions, let length) = error else { return }
+        #expect(positions == [4])
+        #expect(length == 4)
     }
 }

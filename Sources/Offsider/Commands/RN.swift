@@ -41,16 +41,16 @@ struct RNPrepare: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         guard let preparer = route.backend as? any ExpoDevClientPreparing else {
-            throw CLIError(errorDescription: "rn prepare is not available for \(deviceOption.id).")
+            throw CLIError(errorDescription: "rn prepare is not available for \(deviceOption.id).", reason: .notSupported)
         }
         try await preparer.prepare()
         let device = try await preparer.requireBootedDevice(route.device).id
         do {
             try await preparer.prepareExpoDevClient(bundleID, on: device)
         } catch let error as ExpoDevClientError {
-            throw CLIError(errorDescription: error.message)
+            throw CLIError(errorDescription: error.message, reason: .expoDevClientFailed)
         }
         print("Prepared \(bundleID): the Expo dev menu intro is marked as seen and the menu will not open at launch.")
     }

@@ -45,7 +45,7 @@ offsider --version
 - Apple silicon (arm64). Intel Macs are not supported.
 - macOS 26 or later.
 - Xcode 26 or later, selected with `xcode-select` or `DEVELOPER_DIR`. Tested on Xcode 27, where simulators run under Device Hub and Simulator.app is not required. Xcode is needed even if you only drive Android emulators, because the binary links the simulator frameworks.
-- For Android: the Android SDK with Platform-Tools and the Android Emulator, and `arm64-v8a` system images (tested on API 36; the adb fallback needs API 33 or later). Offsider finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` (where Android Studio installs it) or `adb` on your `PATH`.
+- For Android: the Android SDK with Platform-Tools (and the Android Emulator for emulators), and `arm64-v8a` system images (tested on API 36; the adb fallback needs API 33 or later). Offsider finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` (where Android Studio installs it) or `adb` on your `PATH`.
 
 ## Quick start
 
@@ -70,12 +70,13 @@ offsider screenshot --output ./screen.png --device "$DEVICE"
 
 # Install the Offsider skill for Claude Code
 offsider init --client claude
+offsider guide                                   # list the skill's topics; guide <topic> prints one
 ```
 
 On Android, start an emulator with `boot` (it prints the serial once Android has booted), then use the same commands:
 
 ```bash
-offsider list-devices --platform android       # running emulators by serial, AVDs by name
+offsider list-devices --platform android       # running emulators and USB phones by serial, AVDs by name
 DEVICE=$(offsider boot Pixel_9)                 # add --headless to hide the window
 offsider describe-ui --device "$DEVICE"
 offsider tap --id LoginButton --verify --device "$DEVICE"
@@ -83,11 +84,13 @@ offsider type 'héllo' --device "$DEVICE"
 offsider button back --device "$DEVICE"
 ```
 
-Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. `slider` always checks its value. If input seems to be ignored on a simulator, run `offsider doctor --device "$DEVICE"`.
+Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. `slider` always checks its value. If input seems to be ignored, or screen reads fail, run `offsider doctor --device "$DEVICE"` (simulators and Android emulators).
+
+A simulator can fall into a crash loop after boot, with macOS showing a "quit unexpectedly" dialog for each crash. `doctor --device <UDID>` reads the crash reports macOS wrote in the last 10 minutes (only their header and process name, never paths or stack frames): `simulator.crash-loop` warns at two to four crashes of one process and fails at five or more (a busy host sees a few daemon crashes without a loop), printing `xcrun simctl shutdown <UDID> && xcrun simctl erase <UDID>` without running it. Erasing removes the simulator's apps and settings. Plain `doctor` lists every simulator with five or more crashes of one process as `simulators.crash-loop`, and `test-runner.sh` refuses to start on a simulator in a crash loop.
 
 ## Commands
 
-Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), an Android emulator serial such as `emulator-5554`, or the name of a running AVD. Run `offsider <command> --help` for the full list of options.
+Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Run `offsider <command> --help` for the full list of options.
 
 `list-devices --json` prints one object with a schema version, for scripts and agents:
 
@@ -101,11 +104,15 @@ Every device command takes `--device <id>`, using an ID from `offsider list-devi
       "state": "Booted",
       "name": "iPhone 17 Pro",
       "osVersion": "iOS 27.0",
-      "deviceType": "iPhone 17 Pro"
+      "deviceType": "iPhone 17 Pro",
+      "kind": "simulator",
+      "connection": null
     }
   ]
 }
 ```
+
+`kind` is `simulator`, `emulator` (running), `avd` (shut down) or `physical`; `connection` is `usb` for a phone (`network` for one Offsider refuses), else null.
 
 In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devices`. The old names exit 64 with a hint.
 
@@ -113,11 +120,12 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | --- | --- |
 | `list-devices` | List iOS simulators (iPhone and iPad), running Android emulators and shut-down AVDs with their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
 | `boot` | Start an Android emulator by AVD name and wait until it has booted, then print its serial (`--headless`, `--timeout`); an AVD that is already running is not started again |
-| `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings and booted simulators, and with `--device` a simulator's state, Resize Mode, dtuhidd, HID transport and accessibility; `--json` prints one object, `--fix` applies safe fixes. Android checks are not in this release |
-| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text` and `--compact` shape the output. `--display <id>` checks that the active display is the one you expect |
+| `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings, booted simulators and simulator crash loops, plus the Android SDK and adb server when an SDK is installed; with `--device`, a simulator's state, Resize Mode, dtuhidd, HID transport, accessibility and recent crashes, or an Android emulator's state, image, gRPC endpoint, UiAutomation slot, helper start and Metro reverse (Android host checks only, no Xcode checks); `--json` prints one object, `--fix` applies safe fixes (on Android, only starting an absent adb server with `ADB_MDNS=0`, never when `--device` names a simulator) |
+| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text`, `--compact` and `--max-bytes` shape the output; `--diff` prints only what changed since the previous command's tree. `--display <id>` checks that the active display is the one you expect |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
-| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--tap-style`, delays and `--verify, --retries, --json` |
-| `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`), then verify the result |
+| `guide` | Print one topic of the skill, matched to this version (`selectors`, `verify`, `errors`, `android`, `react-native`, `foldables`, `batch`, `screenshots`, `describe-ui`, `device-state`, `migrate`), or list the topics with no argument |
+| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json` |
+| `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`, `--no-settle`), then verify the result |
 | `type` | Type text from an argument, `--stdin` or `--file` (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; supports `--verify, --retries, --json` |
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
 | `drag` | Low-level point-to-point drag using explicit touch moves (`--duration`, `--steps`) |
@@ -129,11 +137,14 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `key-combo` | Press `--key` while holding comma-separated `--modifiers` |
 | `wait` | Wait until an element is on screen (`--id`, `--label`, `--value`, `--has-value`) or `--gone`, the screen is `--settled`, a `--region x,y,w,h` is `--changed` or `--stable`, or `--seconds` pass; `--timeout`, `--json`. Exits 5 on timeout |
 | `assert` | Check once that an element is on screen, optionally with `--has-value`, or `--gone`; exits 5 when it is not |
-| `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin`: input steps, `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`; supports `--wait-timeout`, `--ax-cache`, `--continue-on-error` and `--json` (one NDJSON line per step). Selector steps read the screen again after any step that sends input |
-| `screenshot` | Save a PNG or JPEG of the active display (`--output`, `--format`, `--quality`); `--display <id>` captures another display of a foldable, `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, and `--compare <baseline>` (`--threshold`) exits 0 when the capture changed and 5 when it did not |
+| `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin`: input steps, `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`; supports `--wait-timeout`, `--ax-cache`, `--no-settle`, `--continue-on-error`, `--mask-secure` (every screenshot step masks password fields) and `--json` (one NDJSON line per step; a `type` step's line shows `<N characters>`, never its text). Selector steps read the screen again after any step that sends input |
+| `screenshot` | Save a PNG or JPEG of the active display (`--output`, `--format`, `--quality`); `--display <id>` captures another display of a foldable, `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, `--compare <baseline>` (`--threshold`) exits 0 when the capture changed and 5 when it did not, and `--mask-secure` paints password fields black first |
 | `logs` | Print recent device log entries (`--last 30s` by default, up to `8760h`, or `--since` a time up to the year 9999), or collect live ones with `--duration` or `--follow`; `--rn` for React Native, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw`, `--json` |
 | `appearance` | Read or set light or dark appearance; on Android a reading can be `auto` or `custom` when night mode follows a schedule |
 | `content-size` | Read or set the text size: a Dynamic Type category on iOS, the matching font scale on Android; `reset` restores `large` |
+| `permission` | Grant, revoke or reset an app's permissions by service (`--app` required): `simctl privacy` on iOS, runtime permissions on Android; `show` lists an Android app's runtime permissions, `services` the names each platform supports; `--json` |
+| `status-bar` | `override` sets a clean status bar (9:41, full battery and signal, or `--time`, `--battery`, `--charging`, `--wifi`, `--cellular`, `--operator`, `--data-network`, `--notifications`), `clear` removes it, `show` reads it; `--json` |
+| `biometric` | `enrol`, `unenrol` or `status` of Face ID or Touch ID on iOS simulators; `match` and `no-match` send a face or finger to an app that is asking, also on Android emulators (`--modality`, `--finger-id`, `--json`) |
 | `orientation` | Read or set the device orientation, waiting until the device has turned: `portrait`, `landscape-left`, `landscape-right`, `portrait-upside-down`, named after how the device is turned, as Maestro and devicectl name them (`landscape-left` is turned 90 degrees anticlockwise, home edge on the right; UIKit calls that interface orientation `landscape-right`), or `--rotation 0\|90\|180\|270` in degrees anticlockwise; `--json` |
 | `displays` | List the device's built-in displays (`main`, or `cover` and `inner` on a foldable) with platform ID, size, scale, rotation and which one is active, then the posture; `--json` |
 | `posture` | Read a foldable's posture (`closed`, `half-opened`, `open`) and its active display, or set it: Android emulators through the emulator, the iPhone Duo simulator through its hinge (`--angle 0-180`, `--timeout`, `--json`), waiting until the display has swapped |
@@ -193,7 +204,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `value` | `AXValue`, as a string | A text field's text; `1` or `0` for switches, checkboxes and radio buttons, and `2` for a partly checked checkbox; a slider's or progress bar's position in its range as a percentage with up to two decimals, such as `25%` or `39.95%` |
 | `frame`, `enabled` | The same keys | `bounds` over density / 160, `enabled` |
 | `state.checked` | `switch` and `checkbox` only: `AXValue` `1` or `0` | `checked` for checkable nodes; `null` when partly checked |
-| `state.selected`, `state.focused` | Always `null` on iOS | `selected`, `focused` |
+| `state.selected`, `state.focused` | `selected` is `true` with the Selected trait, else `null`; `focused` is always `null` | `selected`, `focused` |
 | `native` | `type`, `role`, `subrole`, `roleDescription`, `title`, `help`, `customActions`, `contentRequired`, `pid`, `axFrame` | `className`, `resourceId`, `package`, `pixelFrame`, `text`, `contentDescription`, `hint`, `stateDescription` (the spoken state, such as `25%`), `roleDescription`, `testTag` |
 
 When Offsider falls back to `uiautomator` on Android (see [Android notes](#android-notes)), the tree has one unlabelled `application` root and no keyboard root, and sliders and progress bars have no `value`.
@@ -204,15 +215,40 @@ For a screen scan, `describe-ui --summary` prints one line per on-screen node th
 # ios <ID> 402x874 @3x portrait 0°
 application "Playground" (0,0 402x874)
   button "Save" id=save-button (170.7,313.3 61x34.3)
+  group id=rows (0,400 402x474)
+    button "Inbox, 3 unread" (0,400 402x56)
+    [off-screen below] 34 items: id=rows-item-9 to id=rows-end
+# folded 2 repeated labels
 ```
 
 On a foldable the header line ends with the display and posture, such as `inner open`.
 
-`--summary` is short for `--flat --on-screen --labelled --format text`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes with at least 1 point on screen, judged as selectors judge it; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
+`--summary` is short for `--flat --on-screen --labelled --format text --max-bytes 16384`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes with at least 1 point on screen, judged as selectors judge it; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
+
+Text output (`--summary` and `--format text`) saves bytes in three ways; JSON and ndjson keep every node and label:
+
+- A child whose label its parent already shows, whole or as one of its comma-separated parts (React Native merges `Inbox` and `3 unread` into `Inbox, 3 unread`), loses the label, and its line goes when nothing else is left (no id, value, control role or checked or selected state). A text's value equal to its label is left out. One closing `# folded N repeated labels` line counts them.
+- With `--on-screen`, nodes wholly past an edge that would otherwise show are summarised where they start, per side and counting rows rather than their texts: `[off-screen below] 34 items: id=rows-item-9 to id=rows-end`, also `above`, `left` and `right`. Scroll that way to bring them on screen.
+- Nested lines stop indenting at 10 levels.
+
+`--max-bytes <n>` cuts text output at whole lines (UTF-8 bytes, newline included) so it fits `n` bytes, always keeping the header and the first node, and ends with `# truncated: 87 more nodes past the 16384-byte budget; pass --max-bytes 0 for all, or narrow with --actionable`. `--summary` defaults to 16384 bytes, `--max-bytes 0` lifts the limit, plain `--format text` has none unless asked, and with JSON or ndjson `--max-bytes` is a usage error (exit 64), as is a value from 1 to 511. When the Android device stops listing nodes at its own limit, text output ends with `# the device stopped listing nodes at its limit; this tree is incomplete`.
+
+`describe-ui --diff` compares this read with the previous command's tree for the device (see [Privacy](#privacy)) and prints only what changed, in the `--summary` view unless `--format text` and filters are given:
+
+```text
+# ios <ID> 402x874 @3x portrait 0°
+# changes since tap 840 ms ago: 1 added, 1 changed, 0 removed
+changed text "State: Unread" id=filter-state value="Unread" (16,120 370x44) (was: text "State: All" id=filter-state value="All" (16,120 370x44))
+added button "Apply" id=apply-filters (142,640 118x34)
+```
+
+A node is named by its `id` (UUIDs normalised), else by its role, label and position on a 4 pt grid. A screen with no change prints `# unchanged since <command> <n> ms ago (<hash>)`; with no earlier tree, or when 60 or more lines or over half of them changed, the full view follows a comment saying so. After a tap the base is the tree read before the tap, so tap then `--diff` shows what the tap did. `--diff` is text only, and refused with JSON formats, `--compact` and `--point`.
 
 ### Selectors
 
 `--id`, `--label` and `--value` match `id`, `label` and `value`. Selectors prefer matches that are on screen: apps often keep views mounted off screen (a closed bottom sheet parked below the screen, rows below the fold), and a match whose frame lies outside the screen fails with an error naming its frame instead of tapping nothing. `--wait-timeout` waits for it to come on screen, and `--allow-offscreen` resolves it anyway. An element that is only partly on screen is tapped at the centre of its visible part. When no label or value matches exactly, typographic quotes and unusual spaces are folded (`--label "Don't Allow"` finds `Don’t Allow`), and a miss suggests the closest labels. On Android, `--id alert_title` also matches `com.example:id/alert_title` when no id matches exactly. `--element-type` matches `role` in any case or the native `type` exactly, so `button`, `Button` and `RadioButton` all work.
+
+Selector `tap`, `slider` and batch `tap` steps guard against a target still moving from an earlier input, such as a sheet sliding in. They act at once when the last input was 500 ms or more ago, or when the target sits within 1 pt of where the cached tree had it; otherwise they wait out the rest of 500 ms (150 ms when there is no cached tree), read once more and tap the target where it is now. `--no-settle` turns this off, for scripted loops that already wait. Under `tap --verify` the verifier's own second read does the same job, so it reads the tree once fewer than before.
 
 ### Conditions and whole cases
 
@@ -230,18 +266,54 @@ offsider batch --device "$DEVICE" --json \
   --step "describe-ui --summary"
 ```
 
-With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `ms`, plus `exitCode` and `error` on failure and each read step's own result), then a summary line; human text goes to stderr. The batch exits 1 when a step failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0.
+With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `ms`, plus `exitCode` and `error` on failure and each read step's own result), then a summary line with `steps`, `failed` and `dispatched` (`yes`, `no` or `unknown`: whether any step sent input); human text goes to stderr and ends a failure with `Dispatched: <state>`. A failed step's `error` is the [JSON error object](#json-errors). The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0. Earlier steps may have run whatever the code, so resend a failed batch whole only when `dispatched` is `no`.
 
 `tap` warns when another element may cover its target, for example a banner over a tab bar, and `--fail-if-covered` stops instead of tapping. An overlay that is hidden from accessibility cannot be detected this way.
+
+### Device lock
+
+Input commands (`tap`, `type`, `swipe`, `drag`, `touch`, `gesture`, `key`, `key-combo`, `key-sequence`, `button`, `slider`, `shake`, `batch`, `rn prepare`, and `posture`, `orientation`, `appearance`, `content-size`, `permission`, `status-bar` and `biometric` when setting a value) lock the device for their run, so two agents cannot interleave input. On Android, any command that reads the screen through the helper or `uiautomator` (`describe-ui`, `wait`, `assert`, `screenshot --mask-secure`) also locks, since Android has one UiAutomation slot. A second command on a held device exits 8 with the reason `device_busy`, naming the holder's pid and command, and sends nothing. `--wait-lock <seconds>` (0 to 600) waits for the holder instead, and `OFFSIDER_WAIT_LOCK` sets that wait by default; it exists only on commands that can lock, so `logs`, `displays`, `stream-video` and `record-video` reject it with exit 64. `batch` takes the lock once for all its steps. Reads on iOS (`describe-ui`, `screenshot`, `wait`, `assert`, `logs`, `displays`, `list-devices`, `doctor` and the getters) never lock. Separate `touch --down` and `touch --up` commands each lock only for their own run, so another agent can act between them; keep a held touch in one `touch --down --up` or one `batch`. The lock is advisory: it stops other Offsider commands, not other tools.
+
+Locks are files in a private per-user directory, `offsider-<uid>/locks/` under the per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`), which ignores `TMPDIR` so agents with different sandboxes share one lock. When that directory cannot be used, Offsider falls back to `$TMPDIR/offsider-<uid>/`, and agents with different `TMPDIR` values then lock only among themselves. Each lock file is mode 0600 inside 0700 directories and holds only the holder's pid, command name and start time. The kernel drops a lock when its command exits, even when killed.
 
 ### React Native notes
 
 - `testID` is `id` and `accessibilityLabel` is `label` on both platforms. A pressable row with neither takes its children's text as its label (`Inbox, 3 unread`), live values included, so prefer a `testID`.
 - Views often stay mounted while off screen: a closed bottom sheet parked below the screen, or the previous screen of a JavaScript stack. On iOS they stay in the tree with off-screen frames; on Android nodes the user cannot see are left out. Selectors, `wait`, `assert` and `describe-ui --on-screen` count only what is on screen. A previous screen that is still partly on screen under the current one keeps its ids, so a duplicated id there needs `--element-type` or coordinates.
 - Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` is not in the tree but still takes taps.
+- On iOS, React Native writes the role of a checkbox, radio button, switch, tab, tab list, menu item, combo box or progress bar into the accessibility value, and Offsider reads it back: these report `checkbox`, `radioButton`, `switch`, `tab`, `tabBar`, `menuItem`, `picker` or `progress` instead of `other`, with `state.checked` and a `value` of `1`, `0` or `2` (mixed) for checkboxes, radio buttons and switches, as on Android. The new architecture writes only the checkbox and radio button words, so on it a combo box and a progress bar stay `other`. `native.type` keeps the platform's own type, so `--element-type Other` still finds them.
 - `offsider logs --rn` prints `console.log`, `console.warn` and `console.error` output, in release builds too.
 - `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off. `orientation` names the device turn, so `landscape-left` is what React Native's and UIKit's interface orientation call landscape-right; `describe-ui` and `screenshot --json` report the shape as `orientation` and the turn as `rotation`.
 - Debug builds: `rn prepare` skips an Expo dev client's first-launch intro. A LogBox error banner sits over the bottom of the screen and swallows taps; `tap` warns about it on both platforms, and `tap --verify` shows the tap had no effect.
+
+### Device state
+
+`permission`, `status-bar` and `biometric` change state that outlives the command, and each has a reset. Setting a value already in place succeeds and says it changed nothing where the platform can read it. Set state before launching the app and reset it when done.
+
+| Service | iOS (`simctl privacy`) | Android runtime permissions |
+| --- | --- | --- |
+| `all` | `all` | every runtime permission the app requests |
+| `calendar` | yes | `READ_CALENDAR`, `WRITE_CALENDAR` |
+| `camera` | not offered | `CAMERA` |
+| `contacts` | yes | `READ_CONTACTS`, `WRITE_CONTACTS`, `GET_ACCOUNTS` |
+| `contacts-limited` | yes | not offered |
+| `location` | yes | `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` |
+| `location-always` | yes | the above plus `ACCESS_BACKGROUND_LOCATION` |
+| `media-library` | yes | `READ_MEDIA_AUDIO` |
+| `microphone` | yes | `RECORD_AUDIO` |
+| `motion` | yes | `ACTIVITY_RECOGNITION` |
+| `notifications` | not offered | `POST_NOTIFICATIONS` |
+| `photos` | yes | `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_VISUAL_USER_SELECTED` |
+| `photos-add`, `reminders`, `siri` | yes | not offered |
+| `bluetooth` | not offered | `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `BLUETOOTH_ADVERTISE` |
+| `phone` | not offered | `READ_PHONE_STATE`, `CALL_PHONE`, `READ_CALL_LOG`, `WRITE_CALL_LOG` |
+| `sms` | not offered | `SEND_SMS`, `RECEIVE_SMS`, `READ_SMS` |
+| `body-sensors` | not offered | `BODY_SENSORS` |
+
+- `permission` always needs `--app`; Offsider never changes every app's permissions at once. On Android it reads `dumpsys package` first, grants or revokes only what is not already in place, and also takes a literal `android.permission.NAME`. A service the app requests none of fails naming the manifest entries it needs; one it requests only some of applies to those and adds a note. `reset` revokes and clears the user-set and user-fixed flags so the app asks again (`reset all` also resets the app's app ops); it never runs `pm reset-permissions`, which resets every app. Android stops an app when one of its permissions is revoked, and the output says so. iOS simulators offer no read, so `show` is Android only and iOS reports earlier values as unknown.
+- `status-bar` uses `simctl status_bar` on iOS. On Android it uses System UI demo mode in one adb round trip: `override` sets `sysui_demo_allowed` to 1 and sends the demo broadcasts, and `clear` exits demo mode and deletes the setting (the override's `--json` reports its earlier value, so a caller can restore it). Android cannot report whether demo mode is showing, and some vendor builds ignore it.
+- `biometric` on iOS posts the BiometricKit notifications behind the simulator's Face ID and Touch ID menus: Face ID, or Touch ID on the iPhone SE and iPads other than iPad Pro (`--modality` overrides). On an Android emulator `match` touches the fingerprint sensor with finger 1 and `no-match` with finger 10 through the emulator console (`adb emu finger`, `--finger-id` overrides). `match` and `no-match` are events: nothing confirms the app saw them, so check its screen. Enrolling a fingerprint on Android needs a screen lock, which Offsider does not set, so `enrol` there explains how to do it in Settings.
+- `permission` and `status-bar` work on a named USB phone; `biometric` is refused there. Location simulation is not offered.
 
 ### Foldables
 
@@ -252,7 +324,7 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 
 ### Android notes
 
-- IDs are emulator serials (`emulator-5554`) or the names of running AVDs; `list-devices` shows both. `boot` starts an AVD with its window (`--headless` hides it), passes only `-no-metrics` to the emulator, writes the emulator's output to `$TMPDIR/offsider-boot-<avd>.log` and never starts a second instance of an AVD that is already running.
+- IDs are emulator serials (`emulator-5554`), the names of running AVDs, or USB phone serials; `list-devices` shows all three. `boot` starts an AVD with its window (`--headless` hides it), passes only `-no-metrics` to the emulator, writes the emulator's output to `$TMPDIR/offsider-boot-<avd>.log` and never starts a second instance of an AVD that is already running.
 - Coordinates, frames and `--delta` are in dp, the Android equivalent of points.
 - Every screen read (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `gesture` presets, `slider` and `type --replace`) goes through a small helper that Offsider pushes to `/data/local/tmp/offsider-helper-<hash>.dex` when that copy is missing, and runs with `app_process` as the shell user for the length of one command. A `describe-ui` takes about 0.3 s and a verified tap 1 to 1.5 s on a quiet Mac; both are slower while the Mac running the emulator is busy, because Android then starts the helper more slowly. Commands that only send input, such as `tap -x -y`, `swipe`, `key` and plain `type`, never start it.
 - While the helper runs it holds Android's single UiAutomation connection, and the emulator reports an accessibility service as enabled (`accessibility_enabled`), which some apps notice. Both end with the command.
@@ -260,27 +332,172 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 - If the helper cannot run (for example the push fails, or the Android version lacks the API it uses), Offsider prints one `Warning:` line saying why and reads the screen with `uiautomator` instead, at about 2 s per read. `slider` then fails, as `uiautomator` reports no slider values.
 - `--verify` leaves the status and navigation bars, as the helper measures them, out of screenshot comparisons; with gesture navigation there is no navigation bar to leave out. `--tap-style` and the `style` field keep their names: `simulator` is a single tap and `physical` a timed touch down and up.
 - `slider` sets the value through Android's accessibility progress action, and drags when the control does not take it. A control whose steps cannot show the value stops at the nearest step, and the success line says so, for example `Slider set to 78 (the nearest step to 78.25)`. Apps that act only when a drag ends, such as React Native's `onSlidingComplete`, may not see the change; use `drag` on the track for those.
-- `type` sends ASCII text as key events. Text with any other character is pasted through the emulator's clipboard, which Offsider saves first and restores afterwards.
+- `type` sends ASCII text as key events. Text with any other character is pasted through the emulator's clipboard, which Offsider saves first and restores afterwards. Into a focused password field that paste is refused, so a secret never reaches the clipboard: use `type --replace`, which sets the field without it. The emulator's clipboard sharing may copy a paste to the Mac's pasteboard; this has not been checked. Over adb, `input text` briefly shows the text in the emulator's process list to other shell-user processes; the gRPC transport avoids this.
 - `type --replace` sets the focused field's text in one accessibility action, so any Unicode text works without gRPC, but key handlers such as `onKeyPress` do not run. A trailing newline is then pressed as Return, so `type --replace $'query\n'` submits a search field; other newlines become line breaks. A field that refuses the action, or an emulator where the helper cannot run, gets Ctrl+A, Delete and typing instead, with a warning. With nothing focused it fails: tap the field first.
 - Offsider talks to the adb server and to the emulator's gRPC endpoint on loopback. An emulator started with `-port` has no gRPC endpoint, so Offsider falls back to adb: screenshots are slower, `type` accepts ASCII only (`type --replace` still takes any text) and `stream-video --format bgra` is unavailable.
 - `stream-video --format bgra` sends a frame when the screen changes, not at a fixed rate, so a still screen sends one frame.
-- `doctor --device` does not support Android emulators yet.
+- `doctor --device <serial or AVD>` runs read-only Android checks: the SDK, adb and its server (on loopback, and whether its mDNS discovery is off), the emulator package, the bundled helper, then the emulator's state and system image, its gRPC endpoint with the auth mode (never the token), the UiAutomation slot and any accessibility service, one helper start with its times, and any Metro reverse (shown, never changed). The helper start holds UiAutomation for about half a second, so it is skipped while another Offsider helper runs. `doctor` never kills a process, restarts the adb server or changes a setting; `--fix` only starts an absent adb server with `ADB_MDNS=0`.
+- `batch` starts the helper once and reuses it for every step, so several reads in one `batch` pay the helper start once; prefer it to separate commands when no reasoning is needed between reads.
 - For troubleshooting, `OFFSIDER_ANDROID_TRANSPORT=adb` (or `grpc`) forces one transport, `OFFSIDER_ANDROID_GRPC_AUTH=jwt` makes Offsider sign in to gRPC with a short-lived key instead of the emulator's token, and `OFFSIDER_ANDROID_TREE=uiautomator` (or `helper`) forces one way of reading the screen: `uiautomator` never starts the helper, and `helper` makes an unavailable helper an error instead of a fallback.
+
+### Physical Android phones
+
+- Offsider drives a phone connected over USB, and only when you pass its serial to `--device`. AVD names, `boot`, the playground scripts and the test suites only ever choose emulators, so an attached phone is never picked by accident. A name that is both a phone's serial and a running AVD's name is refused as ambiguous.
+- Turn on Developer options and USB debugging on the phone, connect the cable, unlock it and accept the "Allow USB debugging?" prompt. Until then `list-devices` shows the phone as `Unauthorised` with a hint on stderr; Offsider never tries to accept the prompt. Some vendor builds (for example MIUI) also need a "USB debugging (security settings)" switch before input and screen reads work.
+- `list-devices` reads phones from adb's device list alone, with the model adb reports and no OS version, and never sends a listed phone a command. Wi-Fi and TCP adb connections (`adb connect`, wireless debugging) are listed as `Unsupported` and refused: connect the phone over USB.
+- A phone has no emulator gRPC endpoint, so every command uses adb: screenshots use `screencap`, input uses `input`, and rotation, appearance and content size use `settings` and `cmd uimode`. Plain `type` of non-ASCII text is refused with a pointer to `type --replace`, which sets the field through the helper. `boot`, setting a `posture` (reading it works), `biometric`, `stream-video --format bgra` and `OFFSIDER_ANDROID_TRANSPORT=grpc` are refused on a phone with a message naming the alternative.
+- `doctor --device <serial>` checks a phone from its row in adb's device list: its state, system image, the UiAutomation slot, one helper start and any reverse. The emulator gRPC check is skipped, and the report says why.
+- The helper works as on an emulator: it is pushed to `/data/local/tmp/offsider-helper-<hash>.dex` and holds UiAutomation, with `accessibility_enabled` reading 1, only while one command runs.
+- Offsider never sets `adb reverse`. To reach Metro from a debug build on a phone, run `adb -s <serial> reverse tcp:8081 tcp:8081` yourself (8742 for the playground), and `adb -s <serial> reverse --remove tcp:8081` when done; while it is set every app on the phone can reach Metro, so prefer release builds on phones.
+- A phone's screen and notifications reach `describe-ui` and screenshots, and from there whatever your agent sends to its model provider; Offsider itself sends nothing. Turn on Do Not Disturb first.
+
+### Agent skill and guide
+
+`offsider init` installs one short `SKILL.md`: the core loop, the rules every session needs and a table of topics. The depth lives in topics printed on demand by `offsider guide <topic>`, so an agent reads only what the task needs and always gets the text that matches the installed binary. `offsider guide` lists the topics and when to read each; an unknown topic exits 64.
+
+### Coming from idb, Maestro or agent-device
+
+`offsider guide migrate` maps each tool's commands to Offsider, marking every row same, renamed, missing or by design. The most common:
+
+| From | Offsider |
+| --- | --- |
+| `idb list-targets` | `list-devices` |
+| `idb ui describe-all`, agent-device `snapshot` | `describe-ui --summary` |
+| `idb ui tap X Y`, agent-device `press` | `tap -x X -y Y`, or `tap --id` and `tap --label` |
+| Maestro `tapOn` | `tap --id` or `tap --label` |
+| `idb ui text`, Maestro `inputText` | `type` |
+| agent-device `fill`, Maestro `eraseText` | `tap` on the field, then `type --replace` |
+| Maestro `assertVisible`, `extendedWaitUntil` | `assert --id`, `wait --id` |
+| Maestro `waitForAnimationToEnd` | `wait --settled` |
+| `idb approve`, `idb revoke` | `permission grant`, `permission revoke` |
+| `idb record video`, `idb video-stream` | `record-video`, `stream-video` |
+
+Installing and launching apps stays with `xcrun simctl` and `adb`, and Offsider keeps no element refs or session state: selectors and the automatic device lock cover them.
 
 ### Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | 0 | Success; for `doctor`, every check passed or was skipped |
-| 1 | The command failed; the error is printed to stderr |
+| 1 | The command failed for any other reason; the error is printed to stderr |
+| 2 | The selector matched nothing, or only elements off screen |
 | 3 | `doctor` found warnings |
 | 4 | `doctor` found failures |
 | 5 | A condition was not met: `--verify` saw no change after the input, `wait` timed out, `assert` failed, `screenshot --compare` found no change, or a `batch` had only such failures |
-| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, a `button` the device's platform lacks and `boot` with a simulator UDID |
+| 6 | The selector matched more than one element |
+| 7 | The device was not found or is not booted |
+| 8 | The device is busy: another Offsider command holds it (see [Device lock](#device-lock)), or another UiAutomation client holds an Android emulator |
+| 9 | Xcode, adb or the Android SDK is missing or unusable |
+| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, a malformed device ID, an unknown display, a key or `button` the device's platform lacks and `boot` with a simulator UDID |
+
+`batch` exits with the code of its first step that failed to run, else 5 when only conditions were not met.
+
+### JSON errors
+
+With `--json`, a failure prints one object on stdout, where the success output goes, and the `Error:` line still goes to stderr. `describe-ui` does the same when its output is JSON or NDJSON:
+
+```json
+{"version":1,"ok":false,"command":"screenshot","exitCode":7,"error":{"reason":"device_not_found","message":"No device with ID 5E1B... was found. Run `offsider list-devices` to see available devices.","hint":"offsider list-devices","dispatched":null,"candidates":[]}}
+```
+
+`--verify --json` reports (version 2) and `batch --json` step lines carry the same `error` object in place of their own envelope. `hint` is the next command to run and never repeats typed text. `candidates` lists up to five elements (`id`, `label`, `role`, `frame`, `onScreen`, never a value) for selector errors. `dispatched` says whether input may have reached the device: `no` (nothing was sent, so resending is safe), `unknown` (a send began and failed, so check the screen first) or `yes`; it is null for commands that send no input. A `--json` that is itself the mistake, such as `tap --json` without `--verify`, prints only the usage error.
+
+A verified `--verify --json` report also lists what changed: `changes` holds up to 10 entries, value and state changes first, then added, removed and moved nodes, each as `{"kind": "changed", "node": "text \"State\" id=state", "field": "value", "old": "All", "new": "Unread"}` (`kind` is `added`, `removed` or `changed`; `field`, `old` and `new` are null where they do not apply). `changesTruncated` counts the entries left out, and `note` is `keyboard_closed` when the keyboard left and nothing outside it changed except frames: the input may have been spent closing the keyboard, so repeat it if the control shows no effect. A change seen only in the screenshot gives `changes: []`.
+
+### Error reasons
+
+| Reason | Exit | When | What to do |
+| --- | --- | --- | --- |
+| `selector_not_found` | 2 | No element matched the selector | Read `candidates`, fix the selector, or wait with `--wait-timeout` |
+| `selector_filtered_by_type` | 2 | Elements matched, but none of the `--element-type` | Drop or change `--element-type`; `candidates` shows the roles |
+| `target_off_screen` | 2 | Every match is off screen | Scroll it into view, wait, or pass `--allow-offscreen` |
+| `selector_ambiguous` | 6 | Several elements matched | Pick from `candidates`: use `--id`, add `--element-type` or tap by coordinates |
+| `selector_ambiguous_switch` | 6 | The match holds several switches | Target the switch with `--id` or coordinates |
+| `device_not_found` | 7 | No device has that ID | `offsider list-devices` |
+| `device_not_booted` | 7 | The device exists but is not running | Boot it (`xcrun simctl boot`, `offsider boot`) |
+| `device_not_ready` | 7 | The emulator is offline or still booting | Wait, or `offsider boot <AVD>` |
+| `device_unauthorised` | 7 | adb is not authorised for the emulator | Accept the prompt, or restart it with `offsider boot` |
+| `device_ambiguous` | 7 | An AVD name matches more than one running emulator, or names both a phone and an AVD | Pass one serial with `--device` |
+| `avd_not_found` | 7 | No AVD has that name | Check the name in Android Studio's Device Manager |
+| `device_busy` | 8 | Another Offsider command holds the device; the message names its pid | Wait and retry, or pass `--wait-lock <seconds>` |
+| `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |
+| `xcode_missing` | 9 | No usable Xcode is selected | `xcode-select -s <Xcode.app>/Contents/Developer` |
+| `xcode_unusable` | 9 | The selected Xcode cannot load simulator support | Select Xcode 26 or later |
+| `android_sdk_missing` | 9 | No Android SDK or adb was found | Install Platform-Tools or set `ANDROID_HOME` |
+| `adb_server_unavailable` | 9 | The adb server is not running or not answering | `adb start-server` |
+| `adb_server_misconfigured` | 9 | The adb server settings point off this Mac or cannot be read | Fix or unset the adb server variables |
+| `emulator_missing` | 9 | The Android Emulator is not installed | Install it with the SDK Manager |
+| `emulator_grpc_required` | 9 | The command needs the emulator's gRPC endpoint and it is not reachable | Restart the emulator with `offsider boot` |
+| `helper_unavailable` | 9 | The UiAutomation helper cannot run on this emulator | Unset `OFFSIDER_ANDROID_TREE`, or use another image |
+| `usage` | 64 | Invalid arguments or options | Fix the command line; see `--help` |
+| `invalid_device_id` | 64 | The device ID is empty or not a device ID | `offsider list-devices` |
+| `invalid_setting` | 64 | An `OFFSIDER_` variable has a value Offsider cannot read | Fix or unset it |
+| `unsupported_button` | 64 | The device's platform has no such button | Use a button the platform has |
+| `unsupported_key` | 64 | The key has no equivalent on the device | Use a supported key |
+| `unknown_display` | 64 | `--display` names no display on the device | `offsider displays --device <ID>` |
+| `legacy_argument` | 64 | A renamed option or command, such as `--udid` | Use the new name in the message |
+| `not_verified` | 5 | `--verify` saw no change after the input (reports only) | Check the screen before sending again |
+| `condition_not_met` | 5 | A `wait`, `assert` or `screenshot --compare` condition was not met (reports only) | Read the step's `reason` |
+| `command_failed` | 1 | Any failure without a more specific reason | Read `message` |
+| `internal_error` | 1 | Offsider reached a state it should not | Report it |
+| `input_failed` | 1 | Sending input failed | Read `dispatched` before resending |
+| `input_outcome_unknown` | 1 | The input request was lost on the way and not replayed | Check the screen before resending |
+| `target_covered` | 1 | `--fail-if-covered` found something over the target | Dismiss the cover, then retry |
+| `target_under_keyboard` | 1 | `--fail-if-covered` found the keyboard over the target | Dismiss the keyboard, then retry |
+| `target_has_no_frame` | 1 | The match has no usable frame | Target another element |
+| `target_moved` | 1 | The slider changed while it was being set | Retry when the screen is still |
+| `not_a_slider` | 1 | `slider` matched something that is not a slider | Use `--element-type slider` or a narrower selector |
+| `slider_unreadable` | 1 | The slider exposes no numeric value | Use `tap` or `drag` instead |
+| `slider_unverified` | 1 | The slider did not reach the value | Retry, or read its value with `describe-ui` |
+| `no_focused_field` | 1 | `type --replace` found no focused text field | Tap the field first |
+| `field_not_editable` | 1 | The focused element is not a text field | Tap the text field first |
+| `unsupported_text` | 1 | The text has characters the device cannot type | Remove them, or use `type --replace` on Android |
+| `secure_paste_refused` | 1 | Typing into a password field would use the clipboard | Use `type --replace` |
+| `mask_unproven` | 1 | `--mask-secure` could not locate every password field | Retry when the screen is still |
+| `tree_read_failed` | 1 | The accessibility tree could not be read | Retry; on iOS run `offsider doctor --device <ID>` |
+| `no_window` | 1 | The device shows no window | Unlock it and bring an app to the front |
+| `screen_not_idle` | 1 | The screen did not settle for uiautomator | Retry when the screen is still |
+| `screenshot_failed` | 1 | The screen could not be captured | Retry, or check the device with `offsider list-devices` |
+| `baseline_unreadable` | 1 | The `--compare` baseline cannot be read | Check the path, or capture a new baseline |
+| `baseline_mismatch` | 1 | The baseline and the capture differ in size | Capture both with the same `--region` and `--scale` |
+| `display_unreadable` | 1 | The display size or turn could not be read | Retry, or check the device |
+| `display_off` | 1 | The requested display is off | Fold or unfold the device with `offsider posture` |
+| `not_supported` | 1 | The device or platform does not support the command or option, such as a network adb device or an emulator-only feature on a phone | Use another device or option |
+| `posture_failed` | 1 | The posture could not be set | Check it with `offsider posture --device <ID>` |
+| `state_not_reached` | 1 | The posture or orientation did not take effect in time | Check the device, then retry |
+| `orientation_unknown` | 1 | The device did not report its orientation | Check it with `describe-ui` |
+| `device_restarted` | 1 | The simulator restarted while Offsider connected | Retry |
+| `device_unresponsive` | 1 | The device stopped answering | `offsider doctor --device <ID>`, or restart the device |
+| `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
+| `app_not_installed` | 1 | `logs --app` or an Android permission command names an app that is not installed | Install it (`adb -s <serial> install <apk>` on Android), or drop `--app` |
+| `log_stream_failed` | 1 | The device's log could not be read | Retry |
+| `video_failed` | 1 | Recording or streaming video failed | Check the output path, then retry |
+| `helper_failed` | 1 | The UiAutomation helper stopped or failed | Retry; the `hint` names the log to read |
+| `helper_timed_out` | 1 | The UiAutomation helper did not answer in time | Retry when the emulator responds |
+| `adb_command_failed` | 1 | An adb command failed on the emulator | Read `message` |
+| `adb_protocol_error` | 1 | The adb server sent a reply Offsider could not read | Restart the adb server |
+| `emulator_grpc_unavailable` | 1 | The emulator's gRPC endpoint did not answer | Check the emulator is still running |
+| `emulator_grpc_auth_failed` | 1 | The emulator rejected Offsider's gRPC credentials | Restart it with `offsider boot` |
+| `emulator_grpc_failed` | 1 | A gRPC call to the emulator failed | Retry |
+| `emulator_timed_out` | 1 | The emulator did not answer a gRPC call in time | Retry when it responds |
+| `emulator_launch_failed` | 1 | The emulator could not start or exited during start-up | Read the log the message names |
+| `boot_timed_out` | 1 | The emulator did not finish booting in time | Run `offsider boot` again to keep waiting |
+| `hid_broker_failed` | 1 | The HID broker that sends iOS input failed | `offsider doctor --device <ID>` |
+| `private_directory_unsafe` | 1 | The HID broker directory is not private to this user | `offsider doctor --device <ID> --fix` |
+| `timed_out` | 1 | A helper process did not finish in time | Retry |
+| `init_failed` | 1 | `init` could not install or remove the skill, or `guide` could not read a bundled topic | Read `message` |
+| `device_list_failed` | 1 | Devices could not be listed | Read `message` for each platform |
+| `expo_dev_client_failed` | 1 | `rn prepare` could not prepare the Expo dev client | Read `message` |
 
 ## Privacy
 
-Offsider has no telemetry and no accounts. It never connects to non-loopback addresses and never resolves hostnames; it may use Unix sockets and loopback TCP to local developer daemons (the adb server and the Android Emulator), so nothing leaves your Mac. It talks to simulators through Xcode's frameworks and writes only the files you ask for. See [SECURITY.md](SECURITY.md) for what it touches.
+Offsider has no telemetry and no accounts. It never connects to non-loopback addresses and never resolves hostnames; it may use Unix sockets and loopback TCP to local developer daemons (the adb server and the Android Emulator), so nothing leaves your Mac. It talks to simulators through Xcode's frameworks, and beyond the files you ask for it writes only to a private per-user directory, `offsider-<uid>/` under your user temp directory (mode 0700): device locks, and the last accessibility tree read from each device, so `describe-ui --diff` and the tap guard can compare against it. Each tree is one 0600 file per device, named by a hash of the device ID, holding the neutral tree with password values already masked and platform attributes left out, the command that wrote it and when. It is overwritten by the next command, ignored after 10 minutes or a reboot of the device, and capped at 1 MB. `OFFSIDER_TREE_CACHE=off` turns it off. See [SECURITY.md](SECURITY.md) for what it touches.
+
+### Secure fields
+
+Password fields (iOS secure text fields, Android `password="true"`) read as bullets, one per character, in `describe-ui`, selectors, `wait`, `assert` and `--verify`, so a typed password keeps its length and nothing else. Their `id`, `label` and hint stay readable; `--value` never matches them. `type` logs only the number of characters, never the text, and `batch` records and errors show `<N characters>` for a `type` step.
+
+`screenshot --mask-secure` (or `OFFSIDER_MASK_SECURE=1`) reads the accessibility tree, then paints every password field opaque black before the image is written; when a password field has no frame, the image is withheld and no file is written. Plain screenshots, `record-video` and `stream-video` are never masked, and iOS briefly shows the last character typed into a secure field. Masking follows the platform's secure flag, so a secret in an ordinary text field, such as a custom PIN pad, is not masked, and a field that appears between the tree read and the capture is not covered.
 
 ## Building from source
 
@@ -301,7 +518,12 @@ make e2e-android-fold  # run the foldable suite on the Offsider_E2E_Fold AVD
 
 `make e2e-rn-debug-ios` and `make e2e-rn-debug-android` build the React Native debug app, run Metro on loopback port 8742 and run the debug smoke suite. `pnpm --dir OffsiderPlaygroundRN ios <udid>` or `android <serial|avd>` installs the debug app and runs it from the same background Metro (`scripts/rn-playground.sh metro stop` ends it).
 
-`OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines.
+Committed, scrubbed trees of the React Native playground live in `Tests/Goldens/trees/`, with a byte budget per screen in `budgets.json`: `swift test` fails when a `--summary` or `--format text` rendering outgrows its budget, or when a budget sits more than 20 percent above it. After a mapping or renderer change, `OFFSIDER_GOLDENS_UPDATE=1 swift test --filter TreeGoldenRefresh` re-renders them offline; `Tests/Goldens/README.md` covers recapturing from a device.
+
+`OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines; `tree-cache` is a tree cache read or write, `tree-diff` the `--diff` comparison and `settle` the transition guard's wait and second read.
+`OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines. Android commands add `prepare`, `adb-devices`, `adb-shell`, `display-probe`, `helper-launch`, `dex-push`, `helper-hello`, `helper-dump`, `tree-map`, `helper-close`, `grpc-connect`, `grpc-call`, `input` and `capture`; a phase that repeats prints one line each time.
+
+`scripts/bench-ab.sh --device <id> --scenario android-describe` compares a base build (the merge base with `origin/main` by default, built once in a detached worktree under `$TMPDIR`) with this checkout on one Offsider device, in paired runs whose order comes from `--seed`. Pairs whose exit code or output differ are dropped; the summary gives medians per side and per phase, a bootstrap 95% interval of the change and a verdict (`faster`, `slower`, `same` within 5% or 10 ms, or `unresolved`). Records go to `${OFFSIDER_BENCH_DIR:-$TMPDIR/offsider-bench}` as hashes, never output, and only Offsider-named simulators and the Offsider E2E AVDs are driven. `--help` lists the scenarios.
 
 The simulator frameworks come from [michael-palmes/idb](https://github.com/michael-palmes/idb), a mirror of facebook/idb with Cameron Cooke's Xcode 27 changes on the `offsider/xcode27` branch (tag `offsider-idb-v0.2.0`). `scripts/build.sh` pins the exact revision and verifies it before building.
 

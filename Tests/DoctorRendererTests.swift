@@ -75,4 +75,51 @@ struct DoctorRendererTests {
         #expect(!text.contains("Fixes:"))
         #expect(text.hasSuffix("Result: no problems found\n"))
     }
+
+    @Test("iOS output is unchanged when no Android SDK is present")
+    func iosUnchangedWithoutAndroid() {
+        let ios = DoctorReport(
+            offsiderVersion: "0.4.0",
+            udid: nil,
+            xcode: XcodeSummary(developerDir: "/X", version: "27.0", build: nil, coreSimulator: "1155.4"),
+            booted: [],
+            checks: [DoctorCheckResult(id: .developerDir, status: .pass, detail: "/X (xcode-select)")]
+        )
+        #expect(DoctorRenderer.render(ios) == """
+        Offsider doctor: Xcode 27.0, CoreSimulator 1155.4
+        ✓ xcode.developer-dir            /X (xcode-select)
+        Booted simulators: none
+        Result: no problems found
+
+        """)
+    }
+
+    @Test("Android checks render under the same id column, with the SDK header and running emulators")
+    func androidLayout() {
+        let android = DoctorReport(
+            offsiderVersion: "0.5.0",
+            udid: nil,
+            device: DoctorDevice(id: "emulator-5556", platform: "android", name: "Offsider_E2E", kind: "emulator"),
+            xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
+            booted: [],
+            android: AndroidSummary(
+                sdkRoot: "/sdk", sdkSource: "default location", adbPath: "/sdk/platform-tools/adb", adbVersion: "37.0.0-1",
+                adbServer: "127.0.0.1:5037", adbServerVersion: 41, emulatorRevision: "37.1.11",
+                devices: [AndroidDeviceRow(serial: "emulator-5556", kind: "emulator", state: "Booted", avd: "Offsider_E2E", apiLevel: 36)]
+            ),
+            checks: [
+                DoctorCheckResult(id: .androidSDK, status: .pass, detail: "/sdk (default location)"),
+                DoctorCheckResult(id: .androidDeviceMetroReverse, status: .pass, detail: "none"),
+            ]
+        )
+        #expect(DoctorRenderer.render(android) == """
+        Offsider doctor: Android SDK /sdk (default location), adb 37.0.0-1, server 127.0.0.1:5037
+        ✓ android.sdk                    /sdk (default location)
+        ✓ android-device.metro-reverse   none
+        Running emulators:
+          Offsider_E2E  emulator-5556  Booted  API 36
+        Result: no problems found
+
+        """)
+    }
 }

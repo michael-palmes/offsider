@@ -8,6 +8,7 @@ extension AndroidBackend {
             if announcingFallback { announceFallback(chosen, on: serial) }
             return chosen
         }
+        try await host.claimDevice(serial)
         let mode = try AndroidTreeMode.mode(host: host)
         let chosen: AndroidTreeSource
         if mode == .uiautomator {
@@ -83,7 +84,7 @@ extension AndroidBackend {
     }
 
     /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, then `noWindow`.
-    func helperRoots(_ serial: String, session: HelperSession) async throws -> [UINode] {
+    func helperRoots(_ serial: String, session: HelperSession) async throws -> (roots: [UINode], truncated: Bool) {
         var dump = try await helperDump(serial, session: session)
         if HelperTreeMapping.appWindow(in: dump) == nil {
             log(.debug, "The helper found no window on \(serial); reading the screen again")
@@ -103,9 +104,20 @@ extension AndroidBackend {
         if dump.truncated, warnedAboutTruncation.insert(serial).inserted {
             log(.warning, AndroidTreeSource.truncationWarning(serial: serial))
         }
-        let mapped = HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)
+        let mapped = host.timing.measure(.treeMap) {
+            HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)
+        }
         session.remember(mapped.index)
-        return mapped.roots
+        return (mapped.roots, dump.truncated)
+    }
+
+    /// The helper's dump reply as it arrived, without its `id` and `ok`; uiautomator has no such reply.
+    public func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
+        let serial = id.rawValue
+        guard case .helper(let session) = try await treeSource(for: serial) else {
+            throw AndroidError.helperFailed(serial, message: "the raw tree needs the UiAutomation helper, which is not running")
+        }
+        return try await session.rawDump()
     }
 
     /// `ACTION_SET_PROGRESS` on `node` from this command's latest dump; a node that moved since is `.stale`.
@@ -175,7 +187,7 @@ extension AndroidBackend {
         }
         let client = try requireClient()
         do {
-            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log)
+            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing)
         } catch HelperStartFailure.busy(let detail) {
             log(.debug, "UiAutomation is busy on \(serial): \(detail)")
         }
@@ -193,7 +205,7 @@ extension AndroidBackend {
             throw AndroidError.helperBusy(serial, stalePid: stale)
         }
         do {
-            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log)
+            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing)
         } catch HelperStartFailure.busy {
             throw await busyError(serial)
         }
@@ -214,3 +226,5 @@ extension AndroidBackend {
         return result.stdoutText.split(whereSeparator: \.isWhitespace).compactMap { Int32($0) }
     }
 }
+
+extension AndroidBackend: RawAccessibilitySource {}

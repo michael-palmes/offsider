@@ -67,7 +67,7 @@ struct Drag: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
@@ -94,7 +94,7 @@ struct Drag: AsyncParsableCommand {
             initialHold: Self.initialHold,
             finalHold: Self.finalHold
         )
-        try await backend.perform(dragEvent, on: device)
+        try await backend.performTracked(dragEvent, on: device)
 
         if let postDelay, postDelay > 0 {
             logger.info().log("Post-delay: \(postDelay)s")

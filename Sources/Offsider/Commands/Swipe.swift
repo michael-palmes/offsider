@@ -76,7 +76,7 @@ struct Swipe: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
@@ -127,7 +127,7 @@ struct Swipe: AsyncParsableCommand {
         )
         let finalEvent = InputEvent.delayed(swipeEvent, pre: preDelay, post: postDelay)
 
-        try await backend.perform(finalEvent, on: device)
+        try await backend.performTracked(finalEvent, on: device)
         
         logger.info().log("Swipe gesture completed successfully")
     }

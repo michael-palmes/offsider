@@ -1,0 +1,2059 @@
+{
+  "version": 2,
+  "platform": "ios",
+  "device": "<ios-device>",
+  "screen": {
+    "width": 402,
+    "height": 874,
+    "scale": 3,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "1"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 402,
+        "height": 874
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": null,
+        "focused": null
+      },
+      "native": {
+        "type": "Application",
+        "role": "AXApplication",
+        "subrole": null,
+        "roleDescription": "application",
+        "title": null,
+        "help": null,
+        "customActions": [],
+        "contentRequired": false,
+        "pid": 1000,
+        "axFrame": "{{0, 0}, {402, 874}}"
+      },
+      "children": [
+        {
+          "role": "group",
+          "id": null,
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 402,
+            "height": 874
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": null,
+            "focused": null
+          },
+          "native": {
+            "type": "Group",
+            "role": "AXGroup",
+            "subrole": null,
+            "roleDescription": "group",
+            "title": null,
+            "help": null,
+            "customActions": [],
+            "contentRequired": false,
+            "pid": 1000,
+            "axFrame": "{{0, 0}, {402, 874}}"
+          },
+          "children": [
+            {
+              "role": "group",
+              "id": null,
+              "label": null,
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 402,
+                "height": 874
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": null,
+                "focused": null
+              },
+              "native": {
+                "type": "Group",
+                "role": "AXGroup",
+                "subrole": null,
+                "roleDescription": "group",
+                "title": null,
+                "help": null,
+                "customActions": [],
+                "contentRequired": false,
+                "pid": 1000,
+                "axFrame": "{{0, 0}, {402, 874}}"
+              },
+              "children": [
+                {
+                  "role": "group",
+                  "id": null,
+                  "label": null,
+                  "value": null,
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 402,
+                    "height": 874
+                  },
+                  "enabled": true,
+                  "state": {
+                    "checked": null,
+                    "selected": null,
+                    "focused": null
+                  },
+                  "native": {
+                    "type": "Group",
+                    "role": "AXGroup",
+                    "subrole": null,
+                    "roleDescription": "group",
+                    "title": null,
+                    "help": null,
+                    "customActions": [],
+                    "contentRequired": false,
+                    "pid": 1000,
+                    "axFrame": "{{0, 0}, {402, 874}}"
+                  },
+                  "children": [
+                    {
+                      "role": "group",
+                      "id": null,
+                      "label": null,
+                      "value": null,
+                      "frame": {
+                        "x": 0,
+                        "y": 0,
+                        "width": 402,
+                        "height": 874
+                      },
+                      "enabled": true,
+                      "state": {
+                        "checked": null,
+                        "selected": null,
+                        "focused": null
+                      },
+                      "native": {
+                        "type": "Group",
+                        "role": "AXGroup",
+                        "subrole": null,
+                        "roleDescription": "group",
+                        "title": null,
+                        "help": null,
+                        "customActions": [],
+                        "contentRequired": false,
+                        "pid": 1000,
+                        "axFrame": "{{0, 0}, {402, 874}}"
+                      },
+                      "children": [
+                        {
+                          "role": "group",
+                          "id": null,
+                          "label": null,
+                          "value": null,
+                          "frame": {
+                            "x": 0,
+                            "y": 0,
+                            "width": 402,
+                            "height": 874
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": null,
+                            "focused": null
+                          },
+                          "native": {
+                            "type": "Group",
+                            "role": "AXGroup",
+                            "subrole": null,
+                            "roleDescription": "group",
+                            "title": null,
+                            "help": null,
+                            "customActions": [],
+                            "contentRequired": false,
+                            "pid": 1000,
+                            "axFrame": "{{0, 0}, {402, 874}}"
+                          },
+                          "children": [
+                            {
+                              "role": "group",
+                              "id": null,
+                              "label": null,
+                              "value": null,
+                              "frame": {
+                                "x": 0,
+                                "y": 0,
+                                "width": 402,
+                                "height": 874
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": null,
+                                "focused": null
+                              },
+                              "native": {
+                                "type": "Group",
+                                "role": "AXGroup",
+                                "subrole": null,
+                                "roleDescription": "group",
+                                "title": null,
+                                "help": null,
+                                "customActions": [],
+                                "contentRequired": false,
+                                "pid": 1000,
+                                "axFrame": "{{0, 0}, {402, 874}}"
+                              },
+                              "children": [
+                                {
+                                  "role": "group",
+                                  "id": null,
+                                  "label": null,
+                                  "value": null,
+                                  "frame": {
+                                    "x": 0,
+                                    "y": 0,
+                                    "width": 402,
+                                    "height": 874
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": null,
+                                    "focused": null
+                                  },
+                                  "native": {
+                                    "type": "Group",
+                                    "role": "AXGroup",
+                                    "subrole": null,
+                                    "roleDescription": "group",
+                                    "title": null,
+                                    "help": null,
+                                    "customActions": [],
+                                    "contentRequired": false,
+                                    "pid": 1000,
+                                    "axFrame": "{{0, 0}, {402, 874}}"
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 0,
+                                        "y": 0,
+                                        "width": 402,
+                                        "height": 874
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Group",
+                                        "role": "AXGroup",
+                                        "subrole": null,
+                                        "roleDescription": "group",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{0, 0}, {402, 874}}"
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "scrollView",
+                                          "id": null,
+                                          "label": null,
+                                          "value": null,
+                                          "frame": {
+                                            "x": 0,
+                                            "y": 0,
+                                            "width": 402,
+                                            "height": 874
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": null,
+                                            "focused": null
+                                          },
+                                          "native": {
+                                            "type": "ScrollArea",
+                                            "role": "AXScrollArea",
+                                            "subrole": null,
+                                            "roleDescription": "Group",
+                                            "title": null,
+                                            "help": null,
+                                            "customActions": [],
+                                            "contentRequired": false,
+                                            "pid": 1000,
+                                            "axFrame": "{{0, 0}, {402, 874}}"
+                                          },
+                                          "children": [
+                                            {
+                                              "role": "group",
+                                              "id": null,
+                                              "label": null,
+                                              "value": null,
+                                              "frame": {
+                                                "x": 0,
+                                                "y": 0,
+                                                "width": 402,
+                                                "height": 874
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": null,
+                                                "focused": null
+                                              },
+                                              "native": {
+                                                "type": "Group",
+                                                "role": "AXGroup",
+                                                "subrole": null,
+                                                "roleDescription": "group",
+                                                "title": null,
+                                                "help": null,
+                                                "customActions": [],
+                                                "contentRequired": false,
+                                                "pid": 1000,
+                                                "axFrame": "{{0, 0}, {402, 874}}"
+                                              },
+                                              "children": [
+                                                {
+                                                  "role": "group",
+                                                  "id": null,
+                                                  "label": null,
+                                                  "value": null,
+                                                  "frame": {
+                                                    "x": 0,
+                                                    "y": 0,
+                                                    "width": 402,
+                                                    "height": 102
+                                                  },
+                                                  "enabled": true,
+                                                  "state": {
+                                                    "checked": null,
+                                                    "selected": null,
+                                                    "focused": null
+                                                  },
+                                                  "native": {
+                                                    "type": "Group",
+                                                    "role": "AXGroup",
+                                                    "subrole": null,
+                                                    "roleDescription": "group",
+                                                    "title": null,
+                                                    "help": null,
+                                                    "customActions": [],
+                                                    "contentRequired": false,
+                                                    "pid": 1000,
+                                                    "axFrame": "{{0, 0}, {402, 102}}"
+                                                  },
+                                                  "children": []
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "role": "group",
+                                              "id": null,
+                                              "label": null,
+                                              "value": null,
+                                              "frame": {
+                                                "x": 0,
+                                                "y": 0,
+                                                "width": 402,
+                                                "height": 874
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": null,
+                                                "focused": null
+                                              },
+                                              "native": {
+                                                "type": "Group",
+                                                "role": "AXGroup",
+                                                "subrole": null,
+                                                "roleDescription": "group",
+                                                "title": null,
+                                                "help": null,
+                                                "customActions": [],
+                                                "contentRequired": false,
+                                                "pid": 1000,
+                                                "axFrame": "{{0, 0}, {402, 874}}"
+                                              },
+                                              "children": [
+                                                {
+                                                  "role": "group",
+                                                  "id": null,
+                                                  "label": null,
+                                                  "value": null,
+                                                  "frame": {
+                                                    "x": 0,
+                                                    "y": 0,
+                                                    "width": 402,
+                                                    "height": 102
+                                                  },
+                                                  "enabled": true,
+                                                  "state": {
+                                                    "checked": null,
+                                                    "selected": null,
+                                                    "focused": null
+                                                  },
+                                                  "native": {
+                                                    "type": "Group",
+                                                    "role": "AXGroup",
+                                                    "subrole": null,
+                                                    "roleDescription": "group",
+                                                    "title": null,
+                                                    "help": null,
+                                                    "customActions": [],
+                                                    "contentRequired": false,
+                                                    "pid": 1000,
+                                                    "axFrame": "{{0, 0}, {402, 102}}"
+                                                  },
+                                                  "children": []
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "role": "group",
+                                              "id": null,
+                                              "label": null,
+                                              "value": null,
+                                              "frame": {
+                                                "x": 0,
+                                                "y": 0,
+                                                "width": 402,
+                                                "height": 1922.3333740234375
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": null,
+                                                "focused": null
+                                              },
+                                              "native": {
+                                                "type": "Group",
+                                                "role": "AXGroup",
+                                                "subrole": null,
+                                                "roleDescription": "group",
+                                                "title": null,
+                                                "help": null,
+                                                "customActions": [],
+                                                "contentRequired": false,
+                                                "pid": 1000,
+                                                "axFrame": "{{0, 0}, {402, 1922.3333740234375}}"
+                                              },
+                                              "children": [
+                                                {
+                                                  "role": "group",
+                                                  "id": null,
+                                                  "label": null,
+                                                  "value": null,
+                                                  "frame": {
+                                                    "x": 0,
+                                                    "y": 0,
+                                                    "width": 402,
+                                                    "height": 1922.3333740234375
+                                                  },
+                                                  "enabled": true,
+                                                  "state": {
+                                                    "checked": null,
+                                                    "selected": null,
+                                                    "focused": null
+                                                  },
+                                                  "native": {
+                                                    "type": "Group",
+                                                    "role": "AXGroup",
+                                                    "subrole": null,
+                                                    "roleDescription": "group",
+                                                    "title": null,
+                                                    "help": null,
+                                                    "customActions": [],
+                                                    "contentRequired": false,
+                                                    "pid": 1000,
+                                                    "axFrame": "{{0, 0}, {402, 1922.3333740234375}}"
+                                                  },
+                                                  "children": [
+                                                    {
+                                                      "role": "header",
+                                                      "id": "menu-title",
+                                                      "label": "Offsider Playground",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 0,
+                                                        "y": 70,
+                                                        "width": 402,
+                                                        "height": 48.666664123535156
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Heading",
+                                                        "role": "AXHeading",
+                                                        "subrole": null,
+                                                        "roleDescription": "heading",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{0, 70}, {402, 48.666664123535156}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "header",
+                                                      "id": "menu-section-touch-gestures",
+                                                      "label": "Touch & Gestures",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 0,
+                                                        "y": 134.6666717529297,
+                                                        "width": 402,
+                                                        "height": 21.666656494140625
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Heading",
+                                                        "role": "AXHeading",
+                                                        "subrole": null,
+                                                        "roleDescription": "heading",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{0, 134.66667175292969}, {402, 21.666656494140625}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "group",
+                                                      "id": null,
+                                                      "label": null,
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 16,
+                                                        "y": 156.33333778381348,
+                                                        "width": 370,
+                                                        "height": 399
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Group",
+                                                        "role": "AXGroup",
+                                                        "subrole": null,
+                                                        "roleDescription": "group",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{16, 156.33333778381348}, {370, 399}}"
+                                                      },
+                                                      "children": [
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-tap-test",
+                                                          "label": "Tap Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 156.33333778381348,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Displays coordinates of CLI taps",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 156.33333778381348}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-touch-control",
+                                                          "label": "Touch Control",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 213.33333778381348,
+                                                            "width": 370,
+                                                            "height": 57.00001525878906
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Touch down/up events",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 213.33333778381348}, {370, 57.000015258789062}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-swipe-test",
+                                                          "label": "Swipe Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 270.3333377838135,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Shows CLI swipe paths",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 270.33333778381348}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-gesture-presets",
+                                                          "label": "Gesture Presets",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 327.3333377838135,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Drag gesture classification",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 327.33333778381348}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-switch-test",
+                                                          "label": "Switch Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 384.3333377838135,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Native and custom switch controls",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 384.33333778381348}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-tab-view-test",
+                                                          "label": "TabView Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 441.3333377838135,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Tab switching",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 441.33333778381348}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-choice-test",
+                                                          "label": "Choice Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 498.3333377838135,
+                                                            "width": 370,
+                                                            "height": 56.999969482421875
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Checkboxes, radios, a switch and a combo box",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 498.33333778381348}, {370, 56.999969482421875}}"
+                                                          },
+                                                          "children": []
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "role": "header",
+                                                      "id": "menu-section-input-text",
+                                                      "label": "Input & Text",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 0,
+                                                        "y": 571.3333129882812,
+                                                        "width": 402,
+                                                        "height": 21.66668701171875
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Heading",
+                                                        "role": "AXHeading",
+                                                        "subrole": null,
+                                                        "roleDescription": "heading",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{0, 571.33331298828125}, {402, 21.66668701171875}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "group",
+                                                      "id": null,
+                                                      "label": null,
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 16,
+                                                        "y": 592.999979019165,
+                                                        "width": 370,
+                                                        "height": 171
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Group",
+                                                        "role": "AXGroup",
+                                                        "subrole": null,
+                                                        "roleDescription": "group",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{16, 592.99997901916504}, {370, 171}}"
+                                                      },
+                                                      "children": [
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-text-input",
+                                                          "label": "Text Input",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 592.999979019165,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Text typed by CLI commands",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 592.99997901916504}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-key-press",
+                                                          "label": "Key Press",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 649.999979019165,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Detects CLI key events",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 649.99997901916504}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-key-sequence",
+                                                          "label": "Key Sequence",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 706.999979019165,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Detects CLI key sequences",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 706.99997901916504}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "role": "header",
+                                                      "id": "menu-section-hardware",
+                                                      "label": "Hardware",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 0,
+                                                        "y": 780,
+                                                        "width": 402,
+                                                        "height": 21.66668701171875
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Heading",
+                                                        "role": "AXHeading",
+                                                        "subrole": null,
+                                                        "roleDescription": "heading",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{0, 780}, {402, 21.66668701171875}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "group",
+                                                      "id": null,
+                                                      "label": null,
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 16,
+                                                        "y": 801.6666660308838,
+                                                        "width": 370,
+                                                        "height": 57
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Group",
+                                                        "role": "AXGroup",
+                                                        "subrole": null,
+                                                        "roleDescription": "group",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{16, 801.66666603088379}, {370, 57}}"
+                                                      },
+                                                      "children": [
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-button-test",
+                                                          "label": "Button Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 801.6666660308838,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Hardware button press detection",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 801.66666603088379}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "role": "header",
+                                                      "id": "menu-section-batch",
+                                                      "label": "Batch",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 0,
+                                                        "y": 874.6666870117188,
+                                                        "width": 402,
+                                                        "height": 21.6666259765625
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Heading",
+                                                        "role": "AXHeading",
+                                                        "subrole": null,
+                                                        "roleDescription": "heading",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{0, 874.66668701171875}, {402, 21.6666259765625}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "group",
+                                                      "id": null,
+                                                      "label": null,
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 16,
+                                                        "y": 896.3333530426025,
+                                                        "width": 370,
+                                                        "height": 114
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Group",
+                                                        "role": "AXGroup",
+                                                        "subrole": null,
+                                                        "roleDescription": "group",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{16, 896.33335304260254}, {370, 114}}"
+                                                      },
+                                                      "children": [
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-batch-test",
+                                                          "label": "Batch Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 896.3333530426025,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "State changes + delayed element appearance",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 896.33335304260254}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-batch-login-flow",
+                                                          "label": "Batch Login Flow",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 953.3333530426025,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Multi-step login + loading + post-login action",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 953.33335304260254}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "role": "header",
+                                                      "id": "menu-section-accessibility",
+                                                      "label": "Accessibility",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 0,
+                                                        "y": 1026.3333740234375,
+                                                        "width": 402,
+                                                        "height": 21.6666259765625
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Heading",
+                                                        "role": "AXHeading",
+                                                        "subrole": null,
+                                                        "roleDescription": "heading",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{0, 1026.3333740234375}, {402, 21.6666259765625}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "group",
+                                                      "id": null,
+                                                      "label": null,
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 16,
+                                                        "y": 1048.0000400543213,
+                                                        "width": 370,
+                                                        "height": 171
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Group",
+                                                        "role": "AXGroup",
+                                                        "subrole": null,
+                                                        "roleDescription": "group",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{16, 1048.0000400543213}, {370, 171}}"
+                                                      },
+                                                      "children": [
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-slider-value-test",
+                                                          "label": "Slider Value Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1048.0000400543213,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Numeric value with selector tap",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1048.0000400543213}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-searchable-test",
+                                                          "label": "Searchable Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1105.0000400543213,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Search field targeting",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1105.0000400543213}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-toolbar-picker-test",
+                                                          "label": "Toolbar Picker Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1162.0000400543213,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Header segmented picker targeting",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1162.0000400543213}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "role": "header",
+                                                      "id": "menu-section-presentation",
+                                                      "label": "Presentation",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 0,
+                                                        "y": 1235,
+                                                        "width": 402,
+                                                        "height": 21.6666259765625
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Heading",
+                                                        "role": "AXHeading",
+                                                        "subrole": null,
+                                                        "roleDescription": "heading",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{0, 1235}, {402, 21.6666259765625}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "group",
+                                                      "id": null,
+                                                      "label": null,
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 16,
+                                                        "y": 1256.6666660308838,
+                                                        "width": 370,
+                                                        "height": 285
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Group",
+                                                        "role": "AXGroup",
+                                                        "subrole": null,
+                                                        "roleDescription": "group",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{16, 1256.6666660308838}, {370, 285}}"
+                                                      },
+                                                      "children": [
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-alert-test",
+                                                          "label": "Alert Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1256.6666660308838,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Alert presentation and button targeting",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1256.6666660308838}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-sheet-test",
+                                                          "label": "Sheet Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1313.6666660308838,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Sheet presentation and actions",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1313.6666660308838}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-context-menu-test",
+                                                          "label": "Context Menu Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1370.6666660308838,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Long press menu targeting",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1370.6666660308838}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-modal-navigation-test",
+                                                          "label": "Modal Navigation Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1427.6666660308838,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Modal route and nested navigation",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1427.6666660308838}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-long-scroll-test",
+                                                          "label": "Long Scroll Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1484.6666660308838,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Dedicated long scroll coverage",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1484.6666660308838}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        }
+                                                      ]
+                                                    },
+                                                    {
+                                                      "role": "header",
+                                                      "id": "menu-section-real-world-rn",
+                                                      "label": "Real-world RN",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 0,
+                                                        "y": 1557.6666259765625,
+                                                        "width": 402,
+                                                        "height": 21.666748046875
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Heading",
+                                                        "role": "AXHeading",
+                                                        "subrole": null,
+                                                        "roleDescription": "heading",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{0, 1557.6666259765625}, {402, 21.666748046875}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "group",
+                                                      "id": null,
+                                                      "label": null,
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 16,
+                                                        "y": 1579.3332920074463,
+                                                        "width": 370,
+                                                        "height": 285
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Group",
+                                                        "role": "AXGroup",
+                                                        "subrole": null,
+                                                        "roleDescription": "group",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{16, 1579.3332920074463}, {370, 285}}"
+                                                      },
+                                                      "children": [
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-parked-sheet-test",
+                                                          "label": "Parked Sheet Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1579.3332920074463,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Sheet kept mounted and parked off screen",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1579.3332920074463}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-stack-test",
+                                                          "label": "Mounted Stack Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1636.3332920074463,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Previous pages stay mounted with the same ids",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1636.3332920074463}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-overlay-test",
+                                                          "label": "Overlay Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1693.3332920074463,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Banners, silent scrims and hidden controls",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1693.3332920074463}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-rows-test",
+                                                          "label": "Rows Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1750.3332920074463,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Merged row labels, live values, long list",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1750.3332920074463}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-environment-test",
+                                                          "label": "Environment Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1807.3332920074463,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Appearance, size, canvas and logging",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1807.3332920074463}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "role": "slider",
+                                              "id": null,
+                                              "label": "Vertical scroll bar, 3 pages",
+                                              "value": "0%",
+                                              "frame": {
+                                                "x": 369,
+                                                "y": 62,
+                                                "width": 30,
+                                                "height": 750
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": null,
+                                                "focused": null
+                                              },
+                                              "native": {
+                                                "type": "Slider",
+                                                "role": "AXSlider",
+                                                "subrole": null,
+                                                "roleDescription": "slider",
+                                                "title": null,
+                                                "help": null,
+                                                "customActions": [],
+                                                "contentRequired": false,
+                                                "pid": 1000,
+                                                "axFrame": "{{369, 62}, {30, 750}}"
+                                              },
+                                              "children": [
+                                                {
+                                                  "role": "group",
+                                                  "id": null,
+                                                  "label": null,
+                                                  "value": null,
+                                                  "frame": {
+                                                    "x": 396,
+                                                    "y": 65,
+                                                    "width": 3,
+                                                    "height": 338.3333333333333
+                                                  },
+                                                  "enabled": true,
+                                                  "state": {
+                                                    "checked": null,
+                                                    "selected": null,
+                                                    "focused": null
+                                                  },
+                                                  "native": {
+                                                    "type": "Group",
+                                                    "role": "AXGroup",
+                                                    "subrole": null,
+                                                    "roleDescription": "group",
+                                                    "title": null,
+                                                    "help": null,
+                                                    "customActions": [],
+                                                    "contentRequired": false,
+                                                    "pid": 1000,
+                                                    "axFrame": "{{396, 65}, {3, 338.33333333333331}}"
+                                                  },
+                                                  "children": []
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "role": "slider",
+                                              "id": null,
+                                              "label": "Horizontal scroll bar, 1 page",
+                                              "value": "0%",
+                                              "frame": {
+                                                "x": 62,
+                                                "y": 841,
+                                                "width": 278,
+                                                "height": 30
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": null,
+                                                "focused": null
+                                              },
+                                              "native": {
+                                                "type": "Slider",
+                                                "role": "AXSlider",
+                                                "subrole": null,
+                                                "roleDescription": "slider",
+                                                "title": null,
+                                                "help": null,
+                                                "customActions": [],
+                                                "contentRequired": false,
+                                                "pid": 1000,
+                                                "axFrame": "{{62, 841}, {278, 30}}"
+                                              },
+                                              "children": [
+                                                {
+                                                  "role": "group",
+                                                  "id": null,
+                                                  "label": null,
+                                                  "value": null,
+                                                  "frame": {
+                                                    "x": 65,
+                                                    "y": 868,
+                                                    "width": 272,
+                                                    "height": 3
+                                                  },
+                                                  "enabled": true,
+                                                  "state": {
+                                                    "checked": null,
+                                                    "selected": null,
+                                                    "focused": null
+                                                  },
+                                                  "native": {
+                                                    "type": "Group",
+                                                    "role": "AXGroup",
+                                                    "subrole": null,
+                                                    "roleDescription": "group",
+                                                    "title": null,
+                                                    "help": null,
+                                                    "customActions": [],
+                                                    "contentRequired": false,
+                                                    "pid": 1000,
+                                                    "axFrame": "{{65, 868}, {272, 3}}"
+                                                  },
+                                                  "children": []
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "role": "slider",
+                                              "id": null,
+                                              "label": "Vertical scroll bar, 3 pages",
+                                              "value": "0%",
+                                              "frame": {
+                                                "x": 369,
+                                                "y": 62,
+                                                "width": 30,
+                                                "height": 750
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": null,
+                                                "focused": null
+                                              },
+                                              "native": {
+                                                "type": "Slider",
+                                                "role": "AXSlider",
+                                                "subrole": null,
+                                                "roleDescription": "slider",
+                                                "title": null,
+                                                "help": null,
+                                                "customActions": [],
+                                                "contentRequired": false,
+                                                "pid": 1000,
+                                                "axFrame": "{{369, 62}, {30, 750}}"
+                                              },
+                                              "children": [
+                                                {
+                                                  "role": "group",
+                                                  "id": null,
+                                                  "label": null,
+                                                  "value": null,
+                                                  "frame": {
+                                                    "x": 396,
+                                                    "y": 65,
+                                                    "width": 3,
+                                                    "height": 338.3333333333333
+                                                  },
+                                                  "enabled": true,
+                                                  "state": {
+                                                    "checked": null,
+                                                    "selected": null,
+                                                    "focused": null
+                                                  },
+                                                  "native": {
+                                                    "type": "Group",
+                                                    "role": "AXGroup",
+                                                    "subrole": null,
+                                                    "roleDescription": "group",
+                                                    "title": null,
+                                                    "help": null,
+                                                    "customActions": [],
+                                                    "contentRequired": false,
+                                                    "pid": 1000,
+                                                    "axFrame": "{{396, 65}, {3, 338.33333333333331}}"
+                                                  },
+                                                  "children": []
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "role": "slider",
+                                              "id": null,
+                                              "label": "Horizontal scroll bar, 1 page",
+                                              "value": "0%",
+                                              "frame": {
+                                                "x": 62,
+                                                "y": 841,
+                                                "width": 278,
+                                                "height": 30
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": null,
+                                                "focused": null
+                                              },
+                                              "native": {
+                                                "type": "Slider",
+                                                "role": "AXSlider",
+                                                "subrole": null,
+                                                "roleDescription": "slider",
+                                                "title": null,
+                                                "help": null,
+                                                "customActions": [],
+                                                "contentRequired": false,
+                                                "pid": 1000,
+                                                "axFrame": "{{62, 841}, {278, 30}}"
+                                              },
+                                              "children": [
+                                                {
+                                                  "role": "group",
+                                                  "id": null,
+                                                  "label": null,
+                                                  "value": null,
+                                                  "frame": {
+                                                    "x": 65,
+                                                    "y": 868,
+                                                    "width": 272,
+                                                    "height": 3
+                                                  },
+                                                  "enabled": true,
+                                                  "state": {
+                                                    "checked": null,
+                                                    "selected": null,
+                                                    "focused": null
+                                                  },
+                                                  "native": {
+                                                    "type": "Group",
+                                                    "role": "AXGroup",
+                                                    "subrole": null,
+                                                    "roleDescription": "group",
+                                                    "title": null,
+                                                    "help": null,
+                                                    "customActions": [],
+                                                    "contentRequired": false,
+                                                    "pid": 1000,
+                                                    "axFrame": "{{65, 868}, {272, 3}}"
+                                                  },
+                                                  "children": []
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

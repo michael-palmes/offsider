@@ -1,0 +1,489 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "batch-login-screen",
+          "label": "Batch Login",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 291.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "batch-login-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 765,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Batch Login",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "batch-login-title",
+          "label": "Fake Login Flow",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 114.67,
+            "width": 379.43,
+            "height": 27.05
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "batch-login-title",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 301,
+              "width": 996,
+              "height": 71
+            },
+            "text": null,
+            "contentDescription": "Fake Login Flow",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "batch-login-current-screen",
+          "label": "Current Screen: Email",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 153.9,
+            "width": 379.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "batch-login-current-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 404,
+              "width": 996,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Current Screen: Email",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "textField",
+          "id": "batch-login-email-field",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 221.33,
+            "width": 379.43,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": true
+          },
+          "native": {
+            "className": "android.widget.EditText",
+            "resourceId": "batch-login-email-field",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 581,
+              "width": 996,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "batch-login-continue",
+          "label": "Continue",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 277.71,
+            "width": 379.43,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "batch-login-continue",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 729,
+              "width": 996,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Continue",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "role": "keyboard",
+      "id": null,
+      "label": "Gboard",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 54.1,
+        "width": 411.43,
+        "height": 869.33
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.google.android.inputmethod.latin",
+        "pixelFrame": {
+          "x": 0,
+          "y": 142,
+          "width": 1080,
+          "height": 2282
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+          "label": "Voice typing disabled",
+          "value": null,
+          "frame": {
+            "x": 12.19,
+            "y": 352.38,
+            "width": 48,
+            "height": 48
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.FrameLayout",
+            "resourceId": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+            "package": "com.google.android.inputmethod.latin",
+            "pixelFrame": {
+              "x": 32,
+              "y": 925,
+              "width": 126,
+              "height": 126
+            },
+            "text": null,
+            "contentDescription": "Voice typing disabled",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": null,
+          "label": "Delete",
+          "value": null,
+          "frame": {
+            "x": 12.19,
+            "y": 404.19,
+            "width": 48,
+            "height": 48
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.FrameLayout",
+            "resourceId": null,
+            "package": "com.google.android.inputmethod.latin",
+            "pixelFrame": {
+              "x": 32,
+              "y": 1061,
+              "width": 126,
+              "height": 126
+            },
+            "text": null,
+            "contentDescription": "Delete",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": null,
+          "label": "Done",
+          "value": null,
+          "frame": {
+            "x": 12.19,
+            "y": 456,
+            "width": 48,
+            "height": 48
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.FrameLayout",
+            "resourceId": null,
+            "package": "com.google.android.inputmethod.latin",
+            "pixelFrame": {
+              "x": 32,
+              "y": 1197,
+              "width": 126,
+              "height": 126
+            },
+            "text": null,
+            "contentDescription": "Done",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": null,
+          "label": "Show emoji keyboard",
+          "value": null,
+          "frame": {
+            "x": 12.19,
+            "y": 507.81,
+            "width": 48,
+            "height": 48
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.FrameLayout",
+            "resourceId": null,
+            "package": "com.google.android.inputmethod.latin",
+            "pixelFrame": {
+              "x": 32,
+              "y": 1333,
+              "width": 126,
+              "height": 126
+            },
+            "text": null,
+            "contentDescription": "Show emoji keyboard",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+          "label": "More stylus options",
+          "value": null,
+          "frame": {
+            "x": 12.19,
+            "y": 559.62,
+            "width": 48,
+            "height": 48
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.FrameLayout",
+            "resourceId": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+            "package": "com.google.android.inputmethod.latin",
+            "pixelFrame": {
+              "x": 32,
+              "y": 1469,
+              "width": 126,
+              "height": 126
+            },
+            "text": null,
+            "contentDescription": "More stylus options",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

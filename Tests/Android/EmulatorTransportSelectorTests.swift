@@ -19,15 +19,41 @@ struct EmulatorTransportSelectorTests {
         environment: [String: String] = [:],
         emulator: FakeEmulatorConnector,
         logs: LogRecorder = LogRecorder(),
-        live: Set<Int32> = [50144]
+        live: Set<Int32> = [50144],
+        serial: String = "emulator-5556"
     ) async throws -> AndroidTransport {
         let host = AndroidTestHost.make(home: home, environment: environment, emulator: emulator, liveProcesses: live)
-        return try await EmulatorTransportSelector(host: host, log: logs.log).choose(for: "emulator-5556")
+        return try await EmulatorTransportSelector(host: host, log: logs.log).choose(for: serial)
     }
 
     static func reason(_ transport: AndroidTransport) -> AdbReason? {
         if case .adb(let reason) = transport { return reason }
         return nil
+    }
+
+    @Test("a phone uses adb and never gets an emulator's client, even beside a discovery file with no console port")
+    func phoneUsesAdb() async throws {
+        let home = try AndroidTestHost.temporaryHome()
+        try AndroidTestHost.write("avd.id=Portless\ngrpc.port=8556\ngrpc.token=t\n", to: "\(Self.running)/pid_50144.ini", in: home)
+        let connector = FakeEmulatorConnector(.success(FakeEmulator()))
+        let logs = LogRecorder()
+
+        for serial in ["R58TEST0001", "R58M123ABC", "emulator5B"] {
+            let transport = try await Self.choose(home: home, emulator: connector, logs: logs, serial: serial)
+            #expect(Self.reason(transport) == .physicalDevice)
+        }
+        #expect(connector.connections.isEmpty)
+        #expect(logs.warnings.isEmpty)
+    }
+
+    @Test("forcing gRPC on a phone fails naming the physical device")
+    func forcedGrpcOnPhone() async throws {
+        let connector = FakeEmulatorConnector(.success(FakeEmulator()))
+        let error = await #expect(throws: AndroidError.self) {
+            _ = try await Self.choose(home: AndroidTestHost.temporaryHome(), environment: ["OFFSIDER_ANDROID_TRANSPORT": "grpc"], emulator: connector, serial: "R58M123ABC")
+        }
+        #expect(error?.message.contains("R58M123ABC is a physical device") == true)
+        #expect(connector.connections.isEmpty)
     }
 
     @Test("OFFSIDER_ANDROID_TRANSPORT=adb uses adb without looking for an endpoint")

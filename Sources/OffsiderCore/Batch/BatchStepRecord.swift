@@ -14,17 +14,18 @@ public struct BatchStepRecord: Sendable {
     }
 
     public struct Failure: Equatable, Sendable {
-        public let exitCode: Int32
-        public let message: String
+        public let error: ErrorPayload
 
-        public init(exitCode: Int32, message: String) {
-            self.exitCode = exitCode
-            self.message = message
+        public init(error: ErrorPayload) {
+            self.error = error
         }
+
+        public var exitCode: Int32 { error.exitCode.rawValue }
+        public var message: String { error.message }
 
         /// The condition was checked and not met (exit 5), rather than the step failing to run.
         public var isConditionNotMet: Bool {
-            exitCode == OffsiderExitCode.unverified.rawValue
+            error.exitCode == .unverified
         }
     }
 
@@ -56,7 +57,7 @@ public struct BatchStepRecord: Sendable {
             ("ms", .integer(Self.milliseconds(elapsed))),
         ]
         if let failure {
-            members += [("exitCode", .integer(Int(failure.exitCode))), ("error", .string(failure.message))]
+            members += [("exitCode", .integer(Int(failure.exitCode))), ("error", failure.error.jsonValue)]
         }
         switch detail {
         case .none:
@@ -79,8 +80,8 @@ public struct BatchStepRecord: Sendable {
         return OrderedJSON.object(members).rendered(compact: true)
     }
 
-    /// The final `batch --json` line: `{"step":null,"kind":"batch","ok":true,"ms":840,"steps":5,"failed":0}`.
-    public static func summaryLine(ok: Bool, elapsed: TimeInterval, steps: Int, failed: Int) -> String {
+    /// The final `batch --json` line: `{"step":null,"kind":"batch","ok":true,"ms":840,"steps":5,"failed":0,"dispatched":"yes"}`.
+    public static func summaryLine(ok: Bool, elapsed: TimeInterval, steps: Int, failed: Int, dispatched: DispatchState) -> String {
         OrderedJSON.object([
             ("step", .null),
             ("kind", .string("batch")),
@@ -88,7 +89,14 @@ public struct BatchStepRecord: Sendable {
             ("ms", .integer(milliseconds(elapsed))),
             ("steps", .integer(steps)),
             ("failed", .integer(failed)),
+            ("dispatched", .string(dispatched.rawValue)),
         ]).rendered(compact: true)
+    }
+
+    /// Whether any of a batch's steps sent input: `yes` beats `unknown` beats `no`.
+    public static func dispatched(_ states: [DispatchState]) -> DispatchState {
+        if states.contains(.yes) { return .yes }
+        return states.contains(.unknown) ? .unknown : .no
     }
 
     private static func milliseconds(_ seconds: TimeInterval) -> Int {

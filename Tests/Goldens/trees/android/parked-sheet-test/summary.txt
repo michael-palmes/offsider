@@ -1,0 +1,9 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
+  group "Parked Sheet" id=parked-sheet-test-screen (60.2,64.4 291.4x23.2)
+  text "Parked Sheet State: Initial" id=parked-sheet-test-state (108.2,114.7 195.1x23.2)
+  text "Sheet Position: Parked" id=parked-sheet-test-position (119.6,153.9 172.2x23.2)
+  button "Open Filters" id=parked-sheet-test-open (143.2,193.1 125x43.8)
+  button "Open Filters Slowly" id=parked-sheet-test-open-slow (116.2,253.3 179.4x44.2)
+  button "Save" id=parked-sheet-test-body-save (171.1,313.1 69.3x43.8)

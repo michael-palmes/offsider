@@ -22,7 +22,7 @@ struct AndroidListDevicesTests {
         let rows = try #require(object["devices"] as? [[String: Any]])
         #expect(!rows.isEmpty)
         for row in rows {
-            #expect(Set(row.keys) == ["id", "platform", "state", "name", "osVersion", "deviceType"])
+            #expect(Set(row.keys) == ["id", "platform", "state", "name", "osVersion", "deviceType", "kind", "connection"])
             #expect(row["platform"] as? String == "android")
         }
     }

@@ -26,6 +26,7 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
         public var enabled: Bool?
         public var frame: Frame?
         public var state: UIState
+        public var isSecure: Bool
         public var children: [Node]
 
         public init(
@@ -39,6 +40,7 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
             enabled: Bool? = nil,
             frame: Frame? = nil,
             state: UIState = UIState(),
+            isSecure: Bool = false,
             children: [Node] = []
         ) {
             self.type = type
@@ -51,6 +53,7 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
             self.enabled = enabled
             self.frame = frame
             self.state = state
+            self.isSecure = isSecure
             self.children = children
         }
     }
@@ -113,6 +116,7 @@ extension AccessibilitySnapshot.Node {
             enabled: node.enabled,
             frame: node.frame.map { AccessibilitySnapshot.Frame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) },
             state: node.state,
+            isSecure: node.isSecure,
             children: node.children.map(Self.init(node:))
         )
     }
@@ -125,16 +129,22 @@ extension AccessibilitySnapshot.Node {
             }
             return AccessibilitySnapshot.Frame(x: x, y: y, width: width, height: height)
         }
+        let secure = IOSAccessibilityMapping.role(
+            type: Self.text(dictionary["type"]), role: Self.text(dictionary["role"]),
+            subrole: Self.text(dictionary["subrole"]), roleDescription: Self.text(dictionary["role_description"])
+        ) == .secureTextField
+        let value = Self.text(dictionary["AXValue"])
         self.init(
             type: Self.text(dictionary["type"]) ?? "",
             identifier: Self.text(dictionary["AXUniqueId"]) ?? Self.text(dictionary["AXIdentifier"]),
             role: Self.text(dictionary["role"]),
             subrole: Self.text(dictionary["subrole"]),
             label: Self.text(dictionary["AXLabel"]),
-            value: Self.text(dictionary["AXValue"]),
+            value: secure ? SecureText.masked(value) : value,
             title: Self.text(dictionary["title"]),
             enabled: dictionary["enabled"] as? Bool,
             frame: frame,
+            isSecure: secure,
             children: (dictionary["children"] as? [[String: Any]] ?? []).map(Self.init(dictionary:))
         )
     }

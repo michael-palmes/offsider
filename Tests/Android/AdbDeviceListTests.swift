@@ -36,4 +36,25 @@ struct AdbDeviceListTests {
         #expect(AdbDeviceListParser.parse("").isEmpty)
         #expect(AdbDeviceListParser.parse("\n\n").isEmpty)
     }
+
+    @Test("a usb: property makes a USB device; the attached phone's real row is one")
+    func usbKind() {
+        let row = "R58TEST0001            device usb:1-2.4.1.3 product:f0ldxxx model:SM_F000B device:f0ld transport_id:22\n"
+        #expect(AdbDeviceListParser.parse(row).map(\.kind) == [.usb])
+        #expect(AdbDeviceListParser.parse(Self.listing)[3].kind == .usb)
+    }
+
+    @Test("a row without usb: is a network device, whatever its serial looks like")
+    func networkKind() {
+        let entries = AdbDeviceListParser.parse(Self.listing + "R58M123ABC device product:tokay model:Pixel_9 transport_id:8\nadb-1A2B-x._adb-tls-connect._tcp device usb:0 transport_id:9\n")
+        #expect(entries[4].kind == .network)
+        #expect(entries.first { $0.serial == "R58M123ABC" }?.kind == .network)
+        #expect(entries.first { $0.serial.hasSuffix("._tcp") }?.kind == .network)
+    }
+
+    @Test("an unauthorised USB row keeps its kind, and only emulator rows are emulators")
+    func unauthorisedKeepsKind() {
+        let entries = AdbDeviceListParser.parse("1A2B3C4D5E6F unauthorized usb:1-2 transport_id:3\nemulator-5554 device transport_id:1\n")
+        #expect(entries.map(\.kind) == [.usb, .emulator(consolePort: 5554)])
+    }
 }

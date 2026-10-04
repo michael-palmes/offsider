@@ -61,7 +61,7 @@ struct KeyCombo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
@@ -82,7 +82,7 @@ struct KeyCombo: AsyncParsableCommand {
         }
         let comboEvent = InputEvent.composite(events)
 
-        try await backend.perform(comboEvent, on: device)
+        try await backend.performTracked(comboEvent, on: device)
 
         logger.info().log("Key combo completed successfully")
     }

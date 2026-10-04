@@ -1,7 +1,7 @@
 import Foundation
 import OffsiderCore
 
-/// Android emulators over the adb server; lives for one command run, so its caches do too.
+/// Android emulators and USB phones over the adb server; lives for one command run, so its caches do too.
 @MainActor
 public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming, AccessibilityChangeWaiting {
     let host: AndroidHost
@@ -15,6 +15,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var displayLists: [String: AndroidDisplayList] = [:]
     var screenStatuses: [String: (display: ScreenDisplay?, posture: Posture?)] = [:]
     private var avdNames: [String: String] = [:]
+    /// Phones this command named, from their device-list row.
+    var phones: [String: ConnectedPhone] = [:]
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
     private var dumpCounter = 0
@@ -32,22 +34,36 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// Locates the SDK and adb, and starts the adb server with `ADB_MDNS=0` when none answers. Idempotent.
     public func prepare() async throws {
         guard client == nil else { return }
-        let sdk = try AndroidSDK.locate(host: host)
-        let endpoint = try LoopbackEndpoint.adbServer(environment: host.environment)
-        let client = AdbClient(endpoint: endpoint, connector: host.adbConnector)
-        log(.debug, "Android SDK at \(sdk.root.path); adb server at \(endpoint)")
-        try await AdbServerLauncher(adb: sdk.adb).ensureRunning(client: client, host: host)
+        let (sdk, client) = try await host.timing.measure(.prepare) {
+            let sdk = try AndroidSDK.locate(host: host)
+            let endpoint = try LoopbackEndpoint.adbServer(environment: host.environment)
+            let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
+            log(.debug, "Android SDK at \(sdk.root.path); adb server at \(endpoint)")
+            try await AdbServerLauncher(adb: sdk.adb).ensureRunning(client: client, host: host)
+            return (sdk, client)
+        }
         self.sdk = sdk
         self.client = client
+    }
+
+    /// The SDK's adb, for the emulator console commands the adb server protocol does not carry.
+    func adbExecutable() async throws -> URL {
+        try await prepare()
+        guard let sdk else { throw PlatformUnavailable(platform: .android, message: "The Android SDK was not found.") }
+        return sdk.adb
     }
 
     public func listDevices() async throws -> [DeviceSummary] {
         try await directory().summaries()
     }
 
-    /// State `device` with `sys.boot_completed`; the name is the AVD name, else the serial.
+    /// State `device` with `sys.boot_completed`; the name is the AVD name, else the serial. A phone needs state `device`.
     public func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         let serial = id.rawValue
+        guard case .androidSerial = DeviceIDClassifier.classify(serial) else {
+            let phone = try await requireConnectedPhone(serial)
+            return BootedDevice(id: id, name: phone.model ?? serial)
+        }
         guard let emulator = try await directory().runningEmulator(serial: serial) else {
             throw AndroidError.serialNotRunning(serial)
         }
@@ -69,28 +85,54 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return BootedDevice(id: id, name: emulator.avdName ?? serial)
     }
 
-    /// For the router: the single running serial of an AVD; with no SDK, the name is simply unknown.
-    public func runningSerial(forAVDNamed name: String) async throws -> String {
+    /// The USB phone's row for a serial the user named; offline, unauthorised and network rows are refused.
+    func requireConnectedPhone(_ serial: String) async throws -> ConnectedPhone {
+        if let cached = phones[serial] {
+            return cached
+        }
+        guard let phone = try await directory().connectedPhone(serial: serial) else {
+            throw AndroidError.phoneNotConnected(serial)
+        }
+        guard phone.kind == .usb else { throw AndroidError.networkDevice(serial) }
+        switch phone.state {
+        case .device: break
+        case .offline: throw AndroidError.phoneOffline(serial)
+        case .unauthorized: throw AndroidError.phoneUnauthorised(serial)
+        case .other(let state):
+            throw AndroidError.adbCommandFailed(serial: serial, command: "host:transport:\(serial)", detail: "adb reports the phone as \(state)")
+        }
+        phones[serial] = phone
+        return phone
+    }
+
+    /// For the router: a USB phone by exact serial, else an AVD's single running serial; unknown with no SDK.
+    public func resolveAndroidName(_ name: String) async throws -> String {
         do {
             try await prepare()
         } catch is PlatformUnavailable {
             throw AndroidError.noDeviceNamed(name)
         }
-        return try await directory().serial(forAVDNamed: name)
+        return try await directory().resolve(name: name)
     }
 
     /// The helper's dump (else `uiautomator dump --compressed`) mapped to dp; with `point`, the deepest node there as the only root.
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         let serial = id.rawValue
+        let startedAt = Date()
         let roots: [UINode]
+        var truncated = false
         switch try await treeSource(for: serial) {
         case .helper(let session):
-            roots = try await helperRoots(serial, session: session)
+            (roots, truncated) = try await helperRoots(serial, session: session)
         case .uiautomator:
             roots = try await uiautomatorRoots(serial)
         }
-        let tree = UITree(platform: .android, device: serial, roots: roots)
-        guard let point else { return tree }
+        var tree = UITree(platform: .android, device: serial, roots: roots)
+        tree.sourceTruncated = truncated
+        guard let point else {
+            DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
+            return tree
+        }
         return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
     }
 
@@ -183,9 +225,27 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             route: { try await self.inputRoute(for: serial, shell: shell) },
             avdName: { await self.avdName(for: serial) },
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
+            focusedSecureField: { await self.hasFocusedSecureField(id) },
             sleep: host.sleep,
-            log: log
+            log: log,
+            timing: host.timing
         )
+    }
+
+    /// Best effort: an unreadable screen does not block typing, since the guard only keeps a password off the clipboard.
+    private func hasFocusedSecureField(_ id: DeviceID) async -> Bool {
+        let serial = id.rawValue
+        do {
+            let roots: [UINode]
+            switch try await treeSource(for: serial, announcingFallback: false) {
+            case .helper(let session): roots = try await helperRoots(serial, session: session).roots
+            case .uiautomator: roots = try await uiautomatorRoots(serial)
+            }
+            return UITree(platform: .android, device: serial, roots: roots).secureFocus == .secureFocused
+        } catch {
+            log(.debug, "Could not check for a focused password field on \(id.rawValue) before pasting: \((error as? AndroidError)?.message ?? error.localizedDescription)")
+            return false
+        }
     }
 
     /// The display geometry (settled on a foldable), then the transport, when the session's first input needs them.
@@ -204,7 +264,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         if let cached = avdNames[serial] {
             return cached
         }
-        let port = Int(serial.dropFirst("emulator-".count))
+        guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial) else { return nil }
         let fromFile = EmulatorDiscovery.live(host: host).first { $0.consolePort == port }?.avdID
         let name: String?
         if let fromFile {
@@ -274,7 +334,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// gRPC `getScreenshot`, turned upright when only the guest rotated; else adb's `screencap`.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         try await prepare()
-        let serial = id.rawValue
+        return try await host.timing.measure(.capture) {
+            try await capturePNG(id.rawValue)
+        }
+    }
+
+    private func capturePNG(_ serial: String) async throws -> Data {
         guard case .grpc(let emulator) = try await transport(for: serial) else {
             return try await adbScreenshot(serial)
         }
@@ -330,7 +395,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             return measured
         }
         try await prepare()
-        let result = try await requireClient().shell(AndroidDisplayGeometry.probeScript, on: serial, label: "wm size; wm density; dumpsys input")
+        let client = try requireClient()
+        let result = try await host.timing.measure(.displayProbe) {
+            try await client.shell(AndroidDisplayGeometry.probeScript, on: serial, label: "wm size; wm density; dumpsys input")
+        }
         do {
             let geometry = try AndroidDisplayGeometry.parse(result.stdoutText)
             geometries[serial] = geometry
@@ -360,6 +428,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         displayLists = [:]
         screenStatuses = [:]
         avdNames = [:]
+        phones = [:]
         warnedAboutOverride = []
         for helper in helpers {
             await helper.close()

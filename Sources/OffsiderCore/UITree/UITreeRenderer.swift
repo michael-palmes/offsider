@@ -20,26 +20,34 @@ public struct UITreeRenderOptions: Equatable, Sendable {
     /// Keys to print; nil prints every key (text leaves out `native` unless it is listed).
     public var fields: [UIField]?
     public var compact: Bool
+    /// Text only: cut the output at whole lines to fit this many bytes; nil prints everything.
+    public var maxBytes: Int?
 
     public init(
         format: UITreeFormat = .json,
         flat: Bool = false,
         filter: UITreeFilter = UITreeFilter(),
         fields: [UIField]? = nil,
-        compact: Bool = false
+        compact: Bool = false,
+        maxBytes: Int? = nil
     ) {
         self.format = format
         self.flat = flat
         self.filter = filter
         self.fields = fields
         self.compact = compact
+        self.maxBytes = maxBytes
     }
+
+    /// The `--summary` byte budget.
+    public static let summaryMaxBytes = 16384
 
     /// The short agent view: flat, on-screen, labelled, text.
     public static let summary = UITreeRenderOptions(
         format: .text,
         flat: true,
-        filter: UITreeFilter(onScreen: true, labelled: true)
+        filter: UITreeFilter(onScreen: true, labelled: true),
+        maxBytes: summaryMaxBytes
     )
 
     /// Parses `role,label,...` into schema order without duplicates.
@@ -115,21 +123,20 @@ public enum UITreeRenderer {
     // MARK: Text
 
     private static func text(_ tree: UITree, _ options: UITreeRenderOptions, fields: Set<UIField>?) -> String {
-        let entries = options.flat
-            ? tree.flatEntries(options.filter)
-            : tree.filtered(options.filter).flatEntries(UITreeFilter())
         let shown = fields ?? Set(UIField.allCases).subtracting([.native])
-        var depths: [Int] = []
-        var output = header(tree) + "\n"
-        for entry in entries {
-            let depth = entry.parent.map { depths[$0] + 1 } ?? 0
-            depths.append(depth)
-            output += String(repeating: "  ", count: depth) + line(entry.node, shown) + "\n"
+        let result = UITreeEconomy.lines(tree, options, fields: shown) { node, label, value in
+            line(node, shown, label: label, value: value)
         }
-        return output
+        return UITreeEconomy.budgeted(
+            result.lines,
+            header: header(tree),
+            folded: result.folded,
+            sourceTruncated: tree.sourceTruncated,
+            maxBytes: options.maxBytes
+        )
     }
 
-    private static func header(_ tree: UITree) -> String {
+    static func header(_ tree: UITree) -> String {
         var parts = ["#", tree.platform.rawValue, tree.device]
         if let screen = tree.screen {
             parts.append("\(number(screen.width))x\(number(screen.height))")
@@ -144,15 +151,21 @@ public enum UITreeRenderer {
         return parts.joined(separator: " ")
     }
 
-    private static func line(_ node: UINode, _ fields: Set<UIField>) -> String {
+    /// One unfolded line, for callers that show a single node such as the diff renderer.
+    static func line(_ node: UINode, _ fields: Set<UIField>) -> String {
+        line(node, fields, label: fields.contains(.label) ? node.label : nil, value: fields.contains(.value) ? node.value : nil)
+    }
+
+    /// `label` and `value` arrive already folded, nil to leave them out.
+    private static func line(_ node: UINode, _ fields: Set<UIField>, label: String?, value: String?) -> String {
         var parts = [node.role.rawValue]
-        if fields.contains(.label), let label = nonEmpty(node.label) {
+        if let label = nonEmpty(label) {
             parts.append(quoted(label))
         }
         if fields.contains(.id), let id = nonEmpty(node.id) {
             parts.append("id=" + token(id))
         }
-        if fields.contains(.value), let value = nonEmpty(node.value) {
+        if let value = nonEmpty(value) {
             parts.append("value=" + quoted(value))
         }
         if fields.contains(.native), let type = node.native.typeName.flatMap(nonEmpty) {
@@ -177,14 +190,14 @@ public enum UITreeRenderer {
         return value
     }
 
-    private static func quoted(_ value: String) -> String {
+    static func quoted(_ value: String) -> String {
         var output = ""
         OrderedJSON.writeString(value, to: &output)
         return output
     }
 
     /// Bare when the value is a plain identifier, else JSON-quoted.
-    private static func token(_ value: String) -> String {
+    static func token(_ value: String) -> String {
         let plain = value.unicodeScalars.allSatisfy { scalar in
             scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || "_.:/-".unicodeScalars.contains(scalar))
         }

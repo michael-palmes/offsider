@@ -58,7 +58,7 @@ struct KeySequence: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
@@ -78,7 +78,7 @@ struct KeySequence: AsyncParsableCommand {
         }
         let sequenceEvent = InputEvent.composite(events)
 
-        try await backend.perform(sequenceEvent, on: device)
+        try await backend.performTracked(sequenceEvent, on: device)
         
         logger.info().log("Key sequence completed successfully")
     }

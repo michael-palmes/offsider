@@ -1,0 +1,6 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
+  group "Sheet Test" id=sheet-test-screen (60.2,64.4 291.4x23.2)
+  text "Sheet State: Initial" id=sheet-test-state (136.8,114.7 137.9x23.2)
+  button "Open Sheet" id=sheet-test-open-sheet (145.5,161.9 120.8x43.8)

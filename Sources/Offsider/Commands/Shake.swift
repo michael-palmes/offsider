@@ -27,7 +27,7 @@ struct Shake: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         guard let shaker = route.backend as? any DeviceShaking else {
             throw ValidationError(Self.androidMessage)
         }

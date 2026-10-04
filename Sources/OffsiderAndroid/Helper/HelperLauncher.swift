@@ -60,6 +60,7 @@ struct HelperLauncher {
     let dex: HelperDex
     let log: AndroidLog
     var hostPid: Int32 = getpid()
+    var timing: AndroidTiming = .disabled
 
     /// Exits 90 unless the dex has the right size; `exec` lets adbd's hang-up reach the helper; a push renames, drops adbd's 0666 to 644 and prunes first.
     static func startScript(_ dex: HelperDex, pushedFrom temporaryPath: String?) -> String {
@@ -79,22 +80,27 @@ struct HelperLauncher {
     }
 
     /// Starts the helper, pushing once on exit 90; throws `HelperStartFailure` or a device `AndroidError`.
-    func launch() async throws -> (shell: ShellStream, ready: HelperReady) {
+    /// `milliseconds` runs from the first start script to the ready line, including any push.
+    func launch() async throws -> (shell: ShellStream, ready: HelperReady, pushed: Bool, milliseconds: Int) {
         let started = ContinuousClock.now
         if case .started(let shell, let ready) = try await attempt(Self.startScript(dex, pushedFrom: nil)) {
-            log(.debug, "The UiAutomation helper on \(serial) was ready in \(Self.milliseconds(since: started)) ms (pid \(ready.pid))")
-            return (shell, ready)
+            let elapsed = Self.milliseconds(since: started)
+            log(.debug, "The UiAutomation helper on \(serial) was ready in \(elapsed) ms (pid \(ready.pid))")
+            return (shell, ready, false, elapsed)
         }
         log(.debug, "\(dex.devicePath) is missing on \(serial); pushing it")
         do {
-            try await client.push(dex.bytes, to: temporaryPath, mtime: UInt32(Date().timeIntervalSince1970), on: serial, timeout: Self.pushTimeout)
+            try await timing.measure(.dexPush) {
+                try await client.push(dex.bytes, to: temporaryPath, mtime: UInt32(Date().timeIntervalSince1970), on: serial, timeout: Self.pushTimeout)
+            }
         } catch let error as AndroidError where error.kind == .adbCommandFailed {
             throw HelperStartFailure.unavailable(.pushFailed(Self.pushDetail(error)))
         }
         switch try await attempt(Self.startScript(dex, pushedFrom: temporaryPath)) {
         case .started(let shell, let ready):
-            log(.debug, "The UiAutomation helper on \(serial) was pushed and ready in \(Self.milliseconds(since: started)) ms (pid \(ready.pid))")
-            return (shell, ready)
+            let elapsed = Self.milliseconds(since: started)
+            log(.debug, "The UiAutomation helper on \(serial) was pushed and ready in \(elapsed) ms (pid \(ready.pid))")
+            return (shell, ready, true, elapsed)
         case .missing(let stderr):
             let line = Self.firstLine(stderr).map { ": \($0)" } ?? ""
             throw HelperStartFailure.unavailable(.pushFailed("the helper was still missing after the push\(line)"))
@@ -107,6 +113,12 @@ struct HelperLauncher {
     }
 
     private func attempt(_ script: String) async throws -> Attempt {
+        try await timing.measure(.helperLaunch) {
+            try await startAttempt(script)
+        }
+    }
+
+    private func startAttempt(_ script: String) async throws -> Attempt {
         let opened = try await client.openService("shell,v2,raw:" + script, on: serial, timeout: Self.readyTimeout)
         let shell = ShellStream(opened, serial: serial, label: Self.startLabel)
         let deadline = ContinuousClock.now + Self.readyTimeout

@@ -1,0 +1,10 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
+  group "Slider Value" id=slider-value-test-screen (60.2,64.4 291.4x23.2)
+  text "Slider Value State: Initial" id=slider-value-state (113.9,114.7 184x23.2)
+  button "Slider Value Button" id=slider-value-button (116.2,161.9 179.4x43.8)
+  text "Slider Position: 0.25" id=slider-position-value (129.9,230.1 151.6x23.2)
+  text "Slider Percent State: 25.00" id=slider-percent-state (105.1,277.3 201.5x23.2)
+  text "Slider Exact Value: 0.2500" id=slider-exact-value-state (107.4,324.6 197x23.2)
+  slider "Slider Value Slider" id=slider-value-slider value="25%" (16,384.8 379.4x17.9)

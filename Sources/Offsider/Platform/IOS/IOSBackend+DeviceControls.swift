@@ -28,7 +28,7 @@ extension IOSBackend: DeviceSettingsControlling {
     /// The simulator's index as a category; an index outside 1 to 12 is an error, never a guess.
     static func contentSizeReading(iosIndex: Int, on id: DeviceID) throws -> ContentSizeReading {
         guard let category = ContentSizeCategory(iosIndex: iosIndex) else {
-            throw CLIError(errorDescription: "Offsider could not read the content size of simulator \(id.rawValue): it reported \(iosIndex), which is not a known size. Set one with `offsider content-size large --device \(id.rawValue)`.")
+            throw CLIError(errorDescription: "Offsider could not read the content size of simulator \(id.rawValue): it reported \(iosIndex), which is not a known size. Set one with `offsider content-size large --device \(id.rawValue)`.", reason: .deviceControlFailed)
         }
         return ContentSizeReading(category: category, fontScale: nil)
     }
@@ -36,7 +36,7 @@ extension IOSBackend: DeviceSettingsControlling {
     func setContentSize(_ category: ContentSizeCategory, on id: DeviceID) async throws {
         let simulator = try await simulator(for: id)
         guard let value = FBSimulatorContentSizeCategory(rawValue: category.iosIndex) else {
-            throw CLIError(errorDescription: "Content size \(category.rawValue) has no simulator equivalent.")
+            throw CLIError(errorDescription: "Content size \(category.rawValue) has no simulator equivalent.", reason: .notSupported)
         }
         try await settingsCall("set the content size of", id) {
             try await simulator.setContentSizeCategory(value)
@@ -48,7 +48,7 @@ extension IOSBackend: DeviceSettingsControlling {
             return try await body()
         } catch {
             logger.info().log("Settings call failed: \(error)")
-            throw CLIError(errorDescription: "Offsider could not \(action) simulator \(id.rawValue): \(error.localizedDescription). Check it is booted with `offsider list-devices`.")
+            throw CLIError(errorDescription: "Offsider could not \(action) simulator \(id.rawValue): \(error.localizedDescription). Check it is booted with `offsider list-devices`.", reason: .deviceControlFailed, hint: "offsider list-devices")
         }
     }
 }
@@ -72,7 +72,7 @@ extension IOSBackend: OrientationControlling {
 
     func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws {
         guard let value = FBSimulatorHIDDeviceOrientation(rawValue: orientation.iosEventValue) else {
-            throw CLIError(errorDescription: "Orientation \(orientation.rawValue) has no simulator event.")
+            throw CLIError(errorDescription: "Orientation \(orientation.rawValue) has no simulator event.", reason: .notSupported)
         }
         displayCatalog.forgetReadings(of: id.rawValue)
         try await sendOneEvent(.deviceOrientation(value), to: id)

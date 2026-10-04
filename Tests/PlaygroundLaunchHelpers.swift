@@ -150,6 +150,7 @@ extension TestHelpers {
         case "long-scroll-test": return .identifier("long-scroll-test-scroll-view")
         case "parked-sheet-test": return .identifier("parked-sheet-test-open")
         case "environment-test": return .identifier("environment-test-scheme")
+        case "device-state": return .identifier("device-state-contacts")
         case "text-input": return .identifier("text-input-screen")
         case "key-press": return .identifier("key-press-screen")
         case "key-sequence": return .label("Key Sequence Detection")

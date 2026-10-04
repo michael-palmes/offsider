@@ -56,6 +56,22 @@ struct DescribeUITests {
         #expect(UIStateParser.findElement(in: application, withIdentifier: "BackButton")?.role == "button")
     }
     
+    @Test("describe-ui --diff prints unchanged on a still screen and the sheet's controls after opening it")
+    func describeUIDiff() async throws {
+        let simulatorUDID = try TestHelpers.requireSimulatorUDID()
+        try await TestHelpers.launchPlaygroundApp(to: "parked-sheet-test", simulatorUDID: simulatorUDID)
+
+        _ = try await TestHelpers.runOffsiderCommand("describe-ui --diff", simulatorUDID: simulatorUDID)
+        let still = try await TestHelpers.runOffsiderCommand("describe-ui --diff", simulatorUDID: simulatorUDID)
+        #expect(still.output.contains("# unchanged since describe-ui "))
+
+        _ = try await TestHelpers.runOffsiderCommand("tap --id parked-sheet-test-open", simulatorUDID: simulatorUDID)
+        try await Task.sleep(for: .seconds(1))
+        let opened = try await TestHelpers.runOffsiderCommand("describe-ui --diff", simulatorUDID: simulatorUDID)
+        #expect(opened.output.contains("# changes since tap "))
+        #expect(opened.output.contains("added button \"Apply Filters\" id=parked-sheet-test-apply"))
+    }
+
     @Test("Describe-ui captures UI hierarchy")
     func describeUIHierarchy() async throws {
         // Arrange

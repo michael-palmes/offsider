@@ -13,13 +13,13 @@ struct DisplayOption: ParsableArguments {
     func resolve(on backend: any DeviceBackend, device: DeviceID, deviceName: String) async throws -> (display: DisplayInfo, list: DisplayList)? {
         guard let id else { return nil }
         guard let displays = backend as? any DisplayControlling else {
-            throw CLIError(errorDescription: "--display is not available for \(deviceName) yet. Omit it to use the active display.")
+            throw CLIError(errorDescription: "--display is not available for \(deviceName) yet. Omit it to use the active display.", reason: .notSupported)
         }
         let list = try await displays.displays(of: device)
         do {
             return (try list.resolve(id, device: deviceName), list)
         } catch let error as DeviceSettingsError {
-            throw CLIError(errorDescription: error.message)
+            throw CLIError(errorDescription: error.message, reason: .unknownDisplay)
         }
     }
 }

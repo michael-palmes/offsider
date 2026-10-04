@@ -133,4 +133,25 @@ struct HelperTreeMappingTests {
         #expect(raw["bounds"] == "[1,2][3,4]")
         #expect(raw.attributes["range-type"] == nil)
     }
+
+    @Test("a React Native mixed checkbox reads 2, is neither checked nor unchecked, and loses the suffix from its label")
+    func reactNativeMixedCheckbox() throws {
+        let boxes = [
+            #"{"i":1,"class":"android.widget.CheckBox",\#(Self.package),"resourceId":"mixed","contentDescription":"Select All, mixed","bounds":[42,741,296,857],"clickable":true,"focusable":true}"#,
+            #"{"i":2,"class":"android.widget.CheckBox",\#(Self.package),"resourceId":"plain","contentDescription":"Accept Terms","bounds":[42,468,376,584],"checkable":true,"checkedState":"unchecked","clickable":true,"focusable":true}"#,
+            #"{"i":3,"class":"android.widget.TextView",\#(Self.package),"resourceId":"text","contentDescription":"Colours, mixed","bounds":[42,900,376,950],"focusable":true}"#,
+        ].joined(separator: ",")
+        let nodes = Self.flat(HelperTreeMapping.roots(from: try Self.dump(Self.appWindow(boxes)), scale: Self.scale, pid: 1).roots)
+        let mixed = try #require(nodes.first { $0.id == "mixed" })
+        #expect(mixed.role == .checkbox)
+        #expect(mixed.label == "Select All")
+        #expect(mixed.value == "2")
+        #expect(mixed.state.checked == nil)
+
+        let plain = try #require(nodes.first { $0.id == "plain" })
+        #expect(plain.label == "Accept Terms")
+        #expect(plain.value == "0")
+        #expect(plain.state.checked == false)
+        #expect(nodes.first { $0.id == "text" }?.label == "Colours, mixed")
+    }
 }

@@ -1,0 +1,669 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "overlay-test-screen",
+          "label": "Overlays",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 291.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "overlay-test-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 765,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Overlays",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "scrollView",
+          "id": null,
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 98.67,
+            "width": 411.43,
+            "height": 751.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.ScrollView",
+            "resourceId": null,
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 259,
+              "width": 1080,
+              "height": 1972
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "text",
+              "id": "overlay-test-tab",
+              "label": "Overlay Tab: Home",
+              "value": null,
+              "frame": {
+                "x": 134.48,
+                "y": 114.67,
+                "width": 142.86,
+                "height": 23.24
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "overlay-test-tab",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 353,
+                  "y": 301,
+                  "width": 375,
+                  "height": 61
+                },
+                "text": null,
+                "contentDescription": "Overlay Tab: Home",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "overlay-test-swallowed",
+              "label": "Swallowed Taps: 0",
+              "value": null,
+              "frame": {
+                "x": 135.24,
+                "y": 150.1,
+                "width": 141.33,
+                "height": 23.24
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "overlay-test-swallowed",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 355,
+                  "y": 394,
+                  "width": 371,
+                  "height": 61
+                },
+                "text": null,
+                "contentDescription": "Swallowed Taps: 0",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "overlay-test-scrim",
+              "label": "Scrim: Hidden",
+              "value": null,
+              "frame": {
+                "x": 152.38,
+                "y": 185.14,
+                "width": 106.67,
+                "height": 23.24
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "overlay-test-scrim",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 400,
+                  "y": 486,
+                  "width": 280,
+                  "height": 61
+                },
+                "text": null,
+                "contentDescription": "Scrim: Hidden",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "overlay-test-hidden-taps",
+              "label": "Hidden Taps: 0",
+              "value": null,
+              "frame": {
+                "x": 149.33,
+                "y": 220.57,
+                "width": 113.14,
+                "height": 23.24
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "overlay-test-hidden-taps",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 392,
+                  "y": 579,
+                  "width": 297,
+                  "height": 61
+                },
+                "text": null,
+                "contentDescription": "Hidden Taps: 0",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-toggle-banner",
+              "label": "Show Banner",
+              "value": null,
+              "frame": {
+                "x": 139.05,
+                "y": 255.62,
+                "width": 133.33,
+                "height": 43.81
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-toggle-banner",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 365,
+                  "y": 671,
+                  "width": 350,
+                  "height": 115
+                },
+                "text": null,
+                "contentDescription": "Show Banner",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-show-scrim",
+              "label": "Show Silent Scrim",
+              "value": null,
+              "frame": {
+                "x": 120,
+                "y": 311.62,
+                "width": 171.81,
+                "height": 43.81
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-show-scrim",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 315,
+                  "y": 818,
+                  "width": 451,
+                  "height": 115
+                },
+                "text": null,
+                "contentDescription": "Show Silent Scrim",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "group",
+              "id": "overlay-test-hidden-frame",
+              "label": "Hidden Action Area",
+              "value": null,
+              "frame": {
+                "x": 85.71,
+                "y": 367.62,
+                "width": 240,
+                "height": 56
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.view.ViewGroup",
+                "resourceId": "overlay-test-hidden-frame",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 225,
+                  "y": 965,
+                  "width": 630,
+                  "height": 147
+                },
+                "text": null,
+                "contentDescription": "Hidden Action Area",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-log-warning",
+              "label": "Log Warning",
+              "value": null,
+              "frame": {
+                "x": 141.33,
+                "y": 435.81,
+                "width": 128.76,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-log-warning",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 371,
+                  "y": 1144,
+                  "width": 338,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "Log Warning",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-clear-logs",
+              "label": "Clear Logs",
+              "value": null,
+              "frame": {
+                "x": 148.57,
+                "y": 491.81,
+                "width": 114.29,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-clear-logs",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 390,
+                  "y": 1291,
+                  "width": 300,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "Clear Logs",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-log-error",
+              "label": "Log Error",
+              "value": null,
+              "frame": {
+                "x": 154.29,
+                "y": 547.81,
+                "width": 102.86,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-log-error",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 405,
+                  "y": 1438,
+                  "width": 270,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "Log Error",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "role": "group",
+          "id": "overlay-test-tab-bar",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 850.29,
+            "width": 411.43,
+            "height": 73.14
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "overlay-test-tab-bar",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 2232,
+              "width": 1080,
+              "height": 192
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Tab List",
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "overlay-test-tab-home",
+          "label": "Home",
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 850.67,
+            "width": 137.14,
+            "height": 49.14
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": true,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "overlay-test-tab-home",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 2233,
+              "width": 360,
+              "height": 129
+            },
+            "text": null,
+            "contentDescription": "Home",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Tab",
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "overlay-test-tab-search",
+          "label": "Search",
+          "value": null,
+          "frame": {
+            "x": 137.14,
+            "y": 850.67,
+            "width": 137.14,
+            "height": 49.14
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "overlay-test-tab-search",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 360,
+              "y": 2233,
+              "width": 360,
+              "height": 129
+            },
+            "text": null,
+            "contentDescription": "Search",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Tab",
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "overlay-test-tab-profile",
+          "label": "Profile",
+          "value": null,
+          "frame": {
+            "x": 274.29,
+            "y": 850.67,
+            "width": 137.14,
+            "height": 49.14
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "overlay-test-tab-profile",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 720,
+              "y": 2233,
+              "width": 360,
+              "height": 129
+            },
+            "text": null,
+            "contentDescription": "Profile",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Tab",
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

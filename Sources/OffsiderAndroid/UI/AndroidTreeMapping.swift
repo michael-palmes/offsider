@@ -13,12 +13,18 @@ enum AndroidTreeMapping {
     static func node(from raw: RawAndroidNode, scale: Double, rootRole: UIRole? = nil, rootLabel: String? = nil) -> UINode {
         let role = rootRole ?? self.role(for: raw)
         let pixels = pixelFrame(raw["bounds"])
-        let partial = raw["checked-state"] == "partial"
+        let secure = role == .secureTextField || raw.flag("password")
+        var nodeLabel = rootRole == nil ? label(for: raw) : rootLabel.flatMap(nonEmpty)
+        let reactNativeMixed = rootRole == nil && role == .checkbox && nodeLabel?.hasSuffix(mixedSuffix) == true
+        if reactNativeMixed, let full = nodeLabel {
+            nodeLabel = nonEmpty(String(full.dropLast(mixedSuffix.count)))
+        }
+        let partial = raw["checked-state"] == "partial" || reactNativeMixed
         return UINode(
             role: role,
             id: nonEmpty(raw["resource-id"]) ?? nonEmpty(raw["test-tag"]),
-            label: rootRole == nil ? label(for: raw) : rootLabel.flatMap(nonEmpty),
-            value: value(for: raw, role: role),
+            label: nodeLabel,
+            value: reactNativeMixed ? "2" : value(for: raw, role: role),
             frame: pixels.map { dp($0, scale: scale) },
             enabled: raw.flag("enabled"),
             state: UIState(
@@ -31,7 +37,7 @@ enum AndroidTreeMapping {
                 resourceId: nonEmpty(raw["resource-id"]),
                 package: nonEmpty(raw["package"]),
                 pixelFrame: pixels,
-                text: nonEmpty(raw["text"]),
+                text: secure ? SecureText.masked(secureText(raw)) : nonEmpty(raw["text"]),
                 contentDescription: nonEmpty(raw["content-desc"]),
                 hint: nonEmpty(raw["hint"]),
                 stateDescription: nonEmpty(raw["state-description"]),
@@ -41,6 +47,9 @@ enum AndroidTreeMapping {
             children: raw.children.map { node(from: $0, scale: scale) }
         )
     }
+
+    /// React Native marks a mixed checkbox only with this suffix on its description, and drops `checkable`.
+    private static let mixedSuffix = ", mixed"
 
     /// `content-desc`, else `text` unless editable; a clickable node with neither takes its non-clickable descendants' text.
     static func label(for raw: RawAndroidNode) -> String? {
@@ -56,7 +65,7 @@ enum AndroidTreeMapping {
     }
 
     private static func descendantLabels(_ raw: RawAndroidNode) -> [String] {
-        guard !raw.flag("clickable") else { return [] }
+        guard !raw.flag("clickable"), !raw.flag("password") else { return [] }
         let own = nonEmpty(raw["content-desc"]) ?? nonEmpty(raw["text"])
         return (own.map { [$0] } ?? []) + raw.children.flatMap(descendantLabels)
     }
@@ -64,8 +73,10 @@ enum AndroidTreeMapping {
     /// Text for fields, `1`, `0` or `2` (partial) for toggles, and the range position as a percentage for sliders.
     static func value(for raw: RawAndroidNode, role: UIRole) -> String? {
         switch role {
-        case .textField, .secureTextField:
+        case .textField:
             return nonEmpty(raw["text"])
+        case .secureTextField:
+            return SecureText.masked(secureText(raw))
         case .switch, .checkbox, .radioButton:
             if raw["checked-state"] == "partial" {
                 return "2"
@@ -76,6 +87,12 @@ enum AndroidTreeMapping {
         default:
             return nil
         }
+    }
+
+    /// A password field's text, nil when it only repeats the hint (some framework versions report an empty field that way).
+    private static func secureText(_ raw: RawAndroidNode) -> String? {
+        let text = nonEmpty(raw["text"])
+        return text == nonEmpty(raw["hint"]) ? nil : text
     }
 
     /// (current - min) / (max - min) with up to two decimals: "25%", "39.95%"; nil when indeterminate or empty.

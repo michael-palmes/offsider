@@ -127,6 +127,7 @@ public struct ChangeDetector: Sendable {
         let a = before.signature
         let b = after.signature
         let name = after.name
+        if a.value != b.value, before.node.isSecure || after.node.isSecure { return "value of \(name) changed (secure field)" }
         if a.value != b.value { return "value of \(name) changed from \(Self.quoted(a.value)) to \(Self.quoted(b.value))" }
         if a.label != b.label { return "label of \(name) changed from \(Self.quoted(a.label)) to \(Self.quoted(b.label))" }
         if a.title != b.title { return "title of \(name) changed from \(Self.quoted(a.title)) to \(Self.quoted(b.title))" }
