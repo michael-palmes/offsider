@@ -60,14 +60,16 @@ extension AndroidBackend: BiometricControlling {
         return BiometricControl.parseAndroidEnrolled(output)
     }
 
-    /// Enrolling needs a screen lock PIN, a security change Offsider does not make.
+    /// Enrolling needs a screen lock PIN, a security change Offsider does not make; removal is left to Settings.
     public func setBiometricEnrolment(_ enrolled: Bool, on id: DeviceID) async throws {
         let serial = id.rawValue
         try requireEmulatorForBiometrics(serial)
-        let verb = enrolled ? "Enrolling" : "Removing"
+        guard enrolled else {
+            throw AndroidError(.notSupported, "unenrol is not supported on Android: remove the fingerprint in Settings > Security.")
+        }
         throw AndroidError(
             .notSupported,
-            "\(verb) a fingerprint on Android needs a screen lock, which Offsider does not set. Set a screen lock and \(enrolled ? "add" : "remove") a fingerprint in Settings > Security; when it asks for the sensor, run `offsider biometric match --device \(serial)`."
+            "Enrolling a fingerprint on Android needs a screen lock, which Offsider does not set. Set a screen lock and add a fingerprint in Settings > Security; when it asks for the sensor, run `offsider biometric match --device \(serial)`."
         )
     }
 

@@ -132,6 +132,15 @@ struct AndroidDeviceStateTests {
         #expect(processes.calls.allSatisfy { !$0.arguments.contains("emu") })
     }
 
+    @Test("Android unenrol refuses with the Settings instructions, whether or not a screen lock exists")
+    func unenrolRefuses() async throws {
+        let (backend, processes, _) = try Self.biometricBackend()
+        let error = await #expect(throws: AndroidError.self) { try await backend.setBiometricEnrolment(false, on: Self.device) }
+        #expect(error?.message == "unenrol is not supported on Android: remove the fingerprint in Settings > Security.")
+        #expect(error?.message.contains("screen lock") == false)
+        #expect(processes.calls.allSatisfy { !$0.arguments.contains("emu") })
+    }
+
     @Test("biometric on a physical Android device refuses before any console command")
     func phoneRefuses() async throws {
         let (backend, processes, _) = try Self.biometricBackend()

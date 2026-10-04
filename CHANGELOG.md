@@ -50,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `type` no longer writes the typed text to the system log, and an unsupported character is reported by position.
 - `batch --json` and batch errors no longer print the text of a `type` step.
 - `--verify` no longer quotes a password field's value.
+- Android `biometric unenrol` no longer says removal needs a screen lock; it says unenrol is not supported and points to Settings > Security.
 - A non-emulator serial could match an emulator discovery file that has no console port, and so be handed that emulator's gRPC connection.
 - On Android, a password field's text no longer appears in `describe-ui --fields native` or in a clickable parent's label, and a password field showing its hint reads as empty.
 - A failure while input was being sent no longer reports `dispatched: false`; it reports `unknown`.
