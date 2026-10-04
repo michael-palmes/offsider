@@ -1,6 +1,6 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "rotate", "fold or unfold a foldable", "text size", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, waits and assertions, screenshots, logs, appearance, orientation, foldable displays and postures, video, and batch workflows.
+description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "rotate", "fold or unfold a foldable", "text size", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, waits and assertions, screenshots, logs, appearance, permissions, status bar, biometrics, orientation, foldable displays and postures, video, and batch workflows.
 ---
 
 ## Step 1: Confirm runtime context
@@ -22,7 +22,7 @@ description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator 
 
 ## Step 2: Choose the right command
 
-Available commands: `doctor`, `init`, `boot`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `describe-ui`, `screenshot`, `logs`, `appearance`, `content-size`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`, `list-devices`. Run `offsider --help` or `offsider <command> --help` for full options.
+Available commands: `doctor`, `init`, `boot`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `describe-ui`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`, `list-devices`. Run `offsider --help` or `offsider <command> --help` for full options.
 
 Common examples:
 ```bash
@@ -119,6 +119,8 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 - A fresh install of an Expo dev client opens its dev menu intro over the app: run `offsider rn prepare --bundle-id <bundle id or package> --device <DEVICE_ID>` before the first launch to skip it, or dismiss it with `tap --label Continue`, then `tap --id xmark` (on Android `tap --label Close --element-type button`). `rn prepare` needs a debug build and stops the app if it is running. `offsider shake` opens the dev menu on iOS debug builds (`Reload`, `Go home`; close with `tap --id xmark`); release builds ignore it. Taps on elements under the open dev menu get no cover warning, so close it first.
 - `offsider appearance light|dark`, `content-size <category>|reset` and `orientation portrait|landscape-left|landscape-right` (or `--rotation 0|90|180|270`) change the device and stay changed: read the current value by omitting the argument, and set it back when done. `orientation` names the device turn, as Maestro does: `landscape-left` is turned anticlockwise, which UIKit and the app call interface orientation landscape-right. It waits until the screen has turned and prints the new size; a portrait-only app stays portrait and the command times out. On Android it turns auto-rotate off, and `appearance` reads `auto` or `custom` when night mode follows a schedule; setting light or dark replaces it. Apps with their own theme setting follow `appearance` only when that setting is on automatic.
 
+- `offsider permission grant|revoke|reset <service>... --app <bundle id or package>`, `status-bar override|clear` and `biometric enrol|unenrol|match|no-match` set device state for a test: set it before launching the app and reset it after (`reset`, `clear`, `unenrol`). `offsider permission services` lists the service names (`camera` and `notifications` are Android only, `photos-add`, `reminders` and `siri` iOS only); `permission show --app <id>` reads an Android app's runtime permissions. Android stops the app when a permission is revoked, so relaunch it. Send `biometric match` or `no-match` only while the app shows its Face ID, Touch ID or fingerprint prompt, then check the screen: nothing confirms the app saw it. On iOS enrol first; on Android enrolment is manual (it needs a screen lock), and `biometric` is refused on a phone. `--json` on each prints one object with `version: 1`.
+
 ## Step 5: Batch vs discrete commands
 
 **Prefer `offsider batch`** for multi-step flows. Batch runs input steps, `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`, written like the standalone commands without `--device`, in a single process invocation, which means:
@@ -184,6 +186,6 @@ Before finalising guidance, verify:
 - Only valid Offsider commands and flags are used.
 - Shell quoting is correct (single quotes for literals, `--stdin`/`--file` for complex text).
 - Outcomes that matter are checked with `assert`, `wait`, `--verify` or a region compare.
-- Device settings changed with `appearance`, `content-size` or `orientation` were set back.
+- Device settings changed with `appearance`, `content-size` or `orientation`, and device state set with `permission`, `status-bar` or `biometric`, were set back.
 - Labels were copied from `describe-ui`, and selector targets were on screen when tapped.
 - Coordinates read from a screenshot came from a `--scale points` capture.

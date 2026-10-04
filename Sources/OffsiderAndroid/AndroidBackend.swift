@@ -46,6 +46,13 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         self.client = client
     }
 
+    /// The SDK's adb, for the emulator console commands the adb server protocol does not carry.
+    func adbExecutable() async throws -> URL {
+        try await prepare()
+        guard let sdk else { throw PlatformUnavailable(platform: .android, message: "The Android SDK was not found.") }
+        return sdk.adb
+    }
+
     public func listDevices() async throws -> [DeviceSummary] {
         try await directory().summaries()
     }

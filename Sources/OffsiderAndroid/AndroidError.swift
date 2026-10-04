@@ -21,6 +21,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case avdRunningTwice
         case ambiguousDeviceName
         case unsupportedDevice
+        case appNotInstalled
         case grpcRequired
         case uiautomatorBusy
         case uiautomatorIdle
@@ -170,6 +171,10 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
             .ambiguousDeviceName,
             "\(name) names both a connected phone and a running AVD. Pass the emulator serial (\(emulatorSerial)) for the AVD; to drive the phone, rename the AVD or stop the emulator."
         )
+    }
+
+    static func appNotInstalled(_ package: String, serial: String) -> AndroidError {
+        AndroidError(.appNotInstalled, "\(package) is not installed on \(serial). Check the package name with `adb -s \(serial) shell pm list packages`.")
     }
 
     /// `feature` works only on emulators; the advice is the alternative, never `offsider boot`.

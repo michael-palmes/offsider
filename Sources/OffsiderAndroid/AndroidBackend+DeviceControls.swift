@@ -76,9 +76,9 @@ extension AndroidBackend: DeviceSettingsControlling {
     }
 
     /// Stdout of a settings command; a non-zero exit is an error quoting stderr.
-    func settingsShell(_ command: String, on serial: String) async throws -> String {
+    func settingsShell(_ command: String, on serial: String, timeout: Duration = .seconds(10)) async throws -> String {
         try await prepare()
-        let result = try await requireClient().shell(command, on: serial, label: command)
+        let result = try await requireClient().shell(command, on: serial, timeout: timeout, label: command)
         guard result.status == 0 else {
             let detail = (result.stderrText.isEmpty ? result.stdoutText : result.stderrText)
                 .split(whereSeparator: \.isNewline).first.map(String.init) ?? "exit status \(result.status)"

@@ -20,6 +20,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.CAMERA", "android.permission.POST_NOTIFICATIONS"],
       "intentFilters": [
         {
           "action": "VIEW",

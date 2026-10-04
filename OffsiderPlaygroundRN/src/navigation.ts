@@ -159,6 +159,12 @@ export const routeInfo = {
     menuTitle: 'Environment Test',
     subtitle: 'Appearance, size, canvas and logging',
   },
+  'permission-state': {
+    section: 'Real-world RN',
+    title: 'Permission State',
+    menuTitle: 'Permission State',
+    subtitle: 'Camera and notification permissions',
+  },
 } satisfies Record<string, RouteInfo>;
 
 export type RouteId = keyof typeof routeInfo;

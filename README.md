@@ -138,6 +138,9 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `logs` | Print recent device log entries (`--last 30s` by default, up to `8760h`, or `--since` a time up to the year 9999), or collect live ones with `--duration` or `--follow`; `--rn` for React Native, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw`, `--json` |
 | `appearance` | Read or set light or dark appearance; on Android a reading can be `auto` or `custom` when night mode follows a schedule |
 | `content-size` | Read or set the text size: a Dynamic Type category on iOS, the matching font scale on Android; `reset` restores `large` |
+| `permission` | Grant, revoke or reset an app's permissions by service (`--app` required): `simctl privacy` on iOS, runtime permissions on Android; `show` lists an Android app's runtime permissions, `services` the names each platform supports; `--json` |
+| `status-bar` | `override` sets a clean status bar (9:41, full battery and signal, or `--time`, `--battery`, `--charging`, `--wifi`, `--cellular`, `--operator`, `--data-network`, `--notifications`), `clear` removes it, `show` reads it; `--json` |
+| `biometric` | `enrol`, `unenrol` or `status` of Face ID or Touch ID on iOS simulators; `match` and `no-match` send a face or finger to an app that is asking, also on Android emulators (`--modality`, `--finger-id`, `--json`) |
 | `orientation` | Read or set the device orientation, waiting until the device has turned: `portrait`, `landscape-left`, `landscape-right`, `portrait-upside-down`, named after how the device is turned, as Maestro and devicectl name them (`landscape-left` is turned 90 degrees anticlockwise, home edge on the right; UIKit calls that interface orientation `landscape-right`), or `--rotation 0\|90\|180\|270` in degrees anticlockwise; `--json` |
 | `displays` | List the device's built-in displays (`main`, or `cover` and `inner` on a foldable) with platform ID, size, scale, rotation and which one is active, then the posture; `--json` |
 | `posture` | Read a foldable's posture (`closed`, `half-opened`, `open`) and its active display, or set it: Android emulators through the emulator, the iPhone Duo simulator through its hinge (`--angle 0-180`, `--timeout`, `--json`), waiting until the display has swapped |
@@ -254,6 +257,35 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 - `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off. `orientation` names the device turn, so `landscape-left` is what React Native's and UIKit's interface orientation call landscape-right; `describe-ui` and `screenshot --json` report the shape as `orientation` and the turn as `rotation`.
 - Debug builds: `rn prepare` skips an Expo dev client's first-launch intro. A LogBox error banner sits over the bottom of the screen and swallows taps; `tap` warns about it on both platforms, and `tap --verify` shows the tap had no effect.
 
+### Device state
+
+`permission`, `status-bar` and `biometric` change state that outlives the command, and each has a reset. Setting a value already in place succeeds and says it changed nothing where the platform can read it. Set state before launching the app and reset it when done.
+
+| Service | iOS (`simctl privacy`) | Android runtime permissions |
+| --- | --- | --- |
+| `all` | `all` | every runtime permission the app requests |
+| `calendar` | yes | `READ_CALENDAR`, `WRITE_CALENDAR` |
+| `camera` | not offered | `CAMERA` |
+| `contacts` | yes | `READ_CONTACTS`, `WRITE_CONTACTS`, `GET_ACCOUNTS` |
+| `contacts-limited` | yes | not offered |
+| `location` | yes | `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` |
+| `location-always` | yes | the above plus `ACCESS_BACKGROUND_LOCATION` |
+| `media-library` | yes | `READ_MEDIA_AUDIO` |
+| `microphone` | yes | `RECORD_AUDIO` |
+| `motion` | yes | `ACTIVITY_RECOGNITION` |
+| `notifications` | not offered | `POST_NOTIFICATIONS` |
+| `photos` | yes | `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_VISUAL_USER_SELECTED` |
+| `photos-add`, `reminders`, `siri` | yes | not offered |
+| `bluetooth` | not offered | `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `BLUETOOTH_ADVERTISE` |
+| `phone` | not offered | `READ_PHONE_STATE`, `CALL_PHONE`, `READ_CALL_LOG`, `WRITE_CALL_LOG` |
+| `sms` | not offered | `SEND_SMS`, `RECEIVE_SMS`, `READ_SMS` |
+| `body-sensors` | not offered | `BODY_SENSORS` |
+
+- `permission` always needs `--app`; Offsider never changes every app's permissions at once. On Android it reads `dumpsys package` first, grants or revokes only what is not already in place, and also takes a literal `android.permission.NAME`. A service the app requests none of fails naming the manifest entries it needs; one it requests only some of applies to those and adds a note. `reset` revokes and clears the user-set and user-fixed flags so the app asks again (`reset all` also resets the app's app ops); it never runs `pm reset-permissions`, which resets every app. Android stops an app when one of its permissions is revoked, and the output says so. iOS simulators offer no read, so `show` is Android only and iOS reports earlier values as unknown.
+- `status-bar` uses `simctl status_bar` on iOS. On Android it uses System UI demo mode in one adb round trip: `override` sets `sysui_demo_allowed` to 1 and sends the demo broadcasts, and `clear` exits demo mode and deletes the setting (the override's `--json` reports its earlier value, so a caller can restore it). Android cannot report whether demo mode is showing, and some vendor builds ignore it.
+- `biometric` on iOS posts the BiometricKit notifications behind the simulator's Face ID and Touch ID menus: Face ID, or Touch ID on the iPhone SE and iPads other than iPad Pro (`--modality` overrides). On an Android emulator `match` touches the fingerprint sensor with finger 1 and `no-match` with finger 10 through the emulator console (`adb emu finger`, `--finger-id` overrides). `match` and `no-match` are events: nothing confirms the app saw them, so check its screen. Enrolling a fingerprint on Android needs a screen lock, which Offsider does not set, so `enrol` there explains how to do it in Settings.
+- `permission` and `status-bar` work on a named USB phone; `biometric` is refused there. Location simulation is not offered.
+
 ### Foldables
 
 A foldable has a `cover` and an `inner` display, and one of them is active at a time. `offsider displays` lists both and marks the active one, and `offsider posture` reads the posture (`closed` uses the cover display, `open` the inner one). `describe-ui`, `tap` and the other input commands use the active display, and `screenshot` captures it unless `--display` names the other one. `describe-ui --display inner` fails with a hint while the inner display is not active, so a script can check it is reading the screen it expects.
@@ -284,7 +316,7 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 - Offsider drives a phone connected over USB, and only when you pass its serial to `--device`. AVD names, `boot`, the playground scripts and the test suites only ever choose emulators, so an attached phone is never picked by accident. A name that is both a phone's serial and a running AVD's name is refused as ambiguous.
 - Turn on Developer options and USB debugging on the phone, connect the cable, unlock it and accept the "Allow USB debugging?" prompt. Until then `list-devices` shows the phone as `Unauthorised` with a hint on stderr; Offsider never tries to accept the prompt. Some vendor builds (for example MIUI) also need a "USB debugging (security settings)" switch before input and screen reads work.
 - `list-devices` reads phones from adb's device list alone, with the model adb reports and no OS version, and never sends a listed phone a command. Wi-Fi and TCP adb connections (`adb connect`, wireless debugging) are listed as `Unsupported` and refused: connect the phone over USB.
-- A phone has no emulator gRPC endpoint, so every command uses adb: screenshots use `screencap`, input uses `input`, and rotation, appearance and content size use `settings` and `cmd uimode`. Plain `type` of non-ASCII text is refused with a pointer to `type --replace`, which sets the field through the helper. `boot`, setting a `posture` (reading it works), `stream-video --format bgra` and `OFFSIDER_ANDROID_TRANSPORT=grpc` are refused on a phone with a message naming the alternative.
+- A phone has no emulator gRPC endpoint, so every command uses adb: screenshots use `screencap`, input uses `input`, and rotation, appearance and content size use `settings` and `cmd uimode`. Plain `type` of non-ASCII text is refused with a pointer to `type --replace`, which sets the field through the helper. `boot`, setting a `posture` (reading it works), `biometric`, `stream-video --format bgra` and `OFFSIDER_ANDROID_TRANSPORT=grpc` are refused on a phone with a message naming the alternative.
 - The helper works as on an emulator: it is pushed to `/data/local/tmp/offsider-helper-<hash>.dex` and holds UiAutomation, with `accessibility_enabled` reading 1, only while one command runs.
 - Offsider never sets `adb reverse`. To reach Metro from a debug build on a phone, run `adb -s <serial> reverse tcp:8081 tcp:8081` yourself (8742 for the playground), and `adb -s <serial> reverse --remove tcp:8081` when done; while it is set every app on the phone can reach Metro, so prefer release builds on phones.
 - A phone's screen and notifications reach `describe-ui` and screenshots, and from there whatever your agent sends to its model provider; Offsider itself sends nothing. Turn on Do Not Disturb first.

@@ -15,6 +15,7 @@ import { LongScrollTestScreen } from './LongScrollTestScreen';
 import { ModalNavigationTestScreen } from './ModalNavigationTestScreen';
 import { OverlayTestScreen } from './OverlayTestScreen';
 import { ParkedSheetTestScreen } from './ParkedSheetTestScreen';
+import { PermissionStateTestScreen } from './PermissionStateTestScreen';
 import { RowsTestScreen } from './RowsTestScreen';
 import { SearchableTestScreen } from './SearchableTestScreen';
 import { SheetTestScreen } from './SheetTestScreen';
@@ -55,4 +56,5 @@ export const screens: Record<RouteId, ComponentType> = {
   'overlay-test': OverlayTestScreen,
   'rows-test': RowsTestScreen,
   'environment-test': EnvironmentTestScreen,
+  'permission-state': PermissionStateTestScreen,
 };

@@ -79,6 +79,8 @@ struct ContentView: View {
             ParkedSheetTestView()
         case "environment-test":
             EnvironmentTestView()
+        case "device-state":
+            DeviceStateTestView()
             
         // Input & Text
         case "text-input":
@@ -131,7 +133,8 @@ struct MainMenuView: View {
             ("slider-value-test", "Slider Value Test", "Numeric AXValue with selector tap"),
             ("searchable-test", "Searchable Test", "Navigation search field targeting"),
             ("toolbar-picker-test", "Toolbar Picker Test", "Toolbar segmented picker targeting"),
-            ("environment-test", "Environment Test", "Colour scheme, content size and orientation")
+            ("environment-test", "Environment Test", "Colour scheme, content size and orientation"),
+            ("device-state", "Device State Test", "Permissions and biometric authentication")
         ]),
         ("Presentation", [
             ("alert-test", "Alert Test", "Alert presentation and button targeting"),

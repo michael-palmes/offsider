@@ -25,6 +25,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: OffsiderPlayground
+        INFOPLIST_KEY_NSContactsUsageDescription: Shows the contacts permission state for Offsider tests.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Shows the photos permission state for Offsider tests.
+        INFOPLIST_KEY_NSFaceIDUsageDescription: Tests Face ID input from Offsider.
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
