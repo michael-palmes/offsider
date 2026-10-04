@@ -8,6 +8,7 @@ extension AndroidBackend {
             if announcingFallback { announceFallback(chosen, on: serial) }
             return chosen
         }
+        try await host.claimDevice(serial)
         let mode = try AndroidTreeMode.mode(host: host)
         let chosen: AndroidTreeSource
         if mode == .uiautomator {

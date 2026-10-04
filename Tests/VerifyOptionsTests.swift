@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Verify Options Tests")
 struct VerifyOptionsTests {
-    private static let fakeUDID = "00000000-0000-0000-0000-000000000000"
+    private static var fakeUDID: String { UUID().uuidString }
 
     private func run(_ command: String) async throws -> SeparatedCommandOutput {
         try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(Self.fakeUDID)")

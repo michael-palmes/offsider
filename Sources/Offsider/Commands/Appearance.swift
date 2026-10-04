@@ -41,7 +41,7 @@ struct AppearanceCommand: AsyncParsableCommand {
     func run() async throws {
         let target = try target()
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: target != nil)
         try await route.backend.prepare()
         let device = try await route.backend.requireBootedDevice(route.device).id
         guard let settings = route.backend as? any DeviceSettingsControlling else {

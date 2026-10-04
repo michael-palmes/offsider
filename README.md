@@ -234,6 +234,12 @@ With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `
 
 `tap` warns when another element may cover its target, for example a banner over a tab bar, and `--fail-if-covered` stops instead of tapping. An overlay that is hidden from accessibility cannot be detected this way.
 
+### Device lock
+
+Input commands (`tap`, `type`, `swipe`, `drag`, `touch`, `gesture`, `key`, `key-combo`, `key-sequence`, `button`, `slider`, `shake`, `batch`, `rn prepare`, and `posture`, `orientation`, `appearance` and `content-size` when setting a value) lock the device for their run, so two agents cannot interleave input. On Android, any command that reads the screen through the helper or `uiautomator` (`describe-ui`, `wait`, `assert`, `screenshot --mask-secure`) also locks, since Android has one UiAutomation slot. A second command on a held device exits 8 with the reason `device_busy`, naming the holder's pid and command, and sends nothing. `--wait-lock <seconds>` (0 to 600) waits for the holder instead, and `OFFSIDER_WAIT_LOCK` sets that wait by default. `batch` takes the lock once for all its steps. Reads on iOS (`describe-ui`, `screenshot`, `wait`, `assert`, `logs`, `displays`, `list-devices`, `doctor` and the getters) never lock. Separate `touch --down` and `touch --up` commands each lock only for their own run, so another agent can act between them; keep a held touch in one `touch --down --up` or one `batch`. The lock is advisory: it stops other Offsider commands, not other tools.
+
+Locks are files in a private per-user directory, `offsider-<uid>/locks/` under the per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`), which ignores `TMPDIR` so agents with different sandboxes share one lock. When that directory cannot be used, Offsider falls back to `$TMPDIR/offsider-<uid>/`, and agents with different `TMPDIR` values then lock only among themselves. Each lock file is mode 0600 inside 0700 directories and holds only the holder's pid, command name and start time. The kernel drops a lock when its command exits, even when killed.
+
 ### React Native notes
 
 - `testID` is `id` and `accessibilityLabel` is `label` on both platforms. A pressable row with neither takes its children's text as its label (`Inbox, 3 unread`), live values included, so prefer a `testID`.
@@ -279,7 +285,7 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 | 5 | A condition was not met: `--verify` saw no change after the input, `wait` timed out, `assert` failed, `screenshot --compare` found no change, or a `batch` had only such failures |
 | 6 | The selector matched more than one element |
 | 7 | The device was not found or is not booted |
-| 8 | The device is busy: another client holds it |
+| 8 | The device is busy: another Offsider command holds it (see [Device lock](#device-lock)), or another UiAutomation client holds an Android emulator |
 | 9 | Xcode, adb or the Android SDK is missing or unusable |
 | 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, a malformed device ID, an unknown display, a key or `button` the device's platform lacks and `boot` with a simulator UDID |
 
@@ -310,7 +316,7 @@ With `--json`, a failure prints one object on stdout, where the success output g
 | `device_unauthorised` | 7 | adb is not authorised for the emulator | Accept the prompt, or restart it with `offsider boot` |
 | `device_ambiguous` | 7 | An AVD name matches more than one running emulator | Pass one serial with `--device` |
 | `avd_not_found` | 7 | No AVD has that name | Check the name in Android Studio's Device Manager |
-| `device_busy` | 8 | Another command is driving the device | Retry once it finishes |
+| `device_busy` | 8 | Another Offsider command holds the device; the message names its pid | Wait and retry, or pass `--wait-lock <seconds>` |
 | `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |
 | `xcode_missing` | 9 | No usable Xcode is selected | `xcode-select -s <Xcode.app>/Contents/Developer` |
 | `xcode_unusable` | 9 | The selected Xcode cannot load simulator support | Select Xcode 26 or later |

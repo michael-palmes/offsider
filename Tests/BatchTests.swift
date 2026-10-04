@@ -23,6 +23,29 @@ struct BatchTests {
         #expect(tapLocationElement?.label == "Tap Location: (220, 420)")
     }
 
+    @Test("A tap during a batch on the same simulator exits 8 and names the batch")
+    func tapDuringBatchIsRefused() async throws {
+        let udid = try TestHelpers.requireSimulatorUDID()
+        let batch = Process()
+        batch.executableURL = URL(fileURLWithPath: try TestHelpers.getOffsiderPath())
+        batch.arguments = ["batch", "--device", udid, "--step", "sleep 4"]
+        batch.standardOutput = FileHandle.nullDevice
+        batch.standardError = FileHandle.nullDevice
+        try batch.run()
+        defer { batch.terminate() }
+
+        let lockPath = (OffsiderPrivateDirectory.root as NSString).appendingPathComponent("locks/ios-\(udid.uppercased()).lock")
+        let deadline = Date().addingTimeInterval(30)
+        while (try? String(contentsOfFile: lockPath, encoding: .utf8))?.contains("pid=\(batch.processIdentifier)\n") != true {
+            try #require(Date() < deadline && batch.isRunning, "batch never took the lock")
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1", simulatorUDID: udid, unsetting: ["OFFSIDER_WAIT_LOCK"])
+        #expect(result.exitCode == 8)
+        #expect(result.stderr.contains("pid \(batch.processIdentifier) (offsider batch"))
+    }
+
     @Test("Batch reads steps from file")
     func fileInputSource() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test")

@@ -65,6 +65,11 @@ struct OffsiderCommand: AsyncParsableCommand {
             var command = try parseAsRoot(nil)
             parsed = command
             ErrorReporter.prepare(command: command, arguments: arguments)
+            let name = type(of: command)._commandName
+            await DeviceClaims.current.configure(
+                command: command is RNPrepare ? "rn \(name)" : name,
+                waitOption: (command as? any DeviceOptionCommand)?.deviceOption.waitLock
+            )
             try await CommandScope.current.run {
                 if var asyncCommand = command as? any AsyncParsableCommand {
                     try await asyncCommand.run()

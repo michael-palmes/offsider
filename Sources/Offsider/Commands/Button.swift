@@ -113,7 +113,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
 
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let backend = route.backend
         let device = route.device
         try Self.checkAvailability(buttonType, on: device.platform, device: deviceOption.id)

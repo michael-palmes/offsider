@@ -9,6 +9,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
 
 # Any adb server the suites start sends no mDNS multicast on the LAN.
 export ADB_MDNS=0
+# An accidental overlap with another runner on the same device waits rather than failing with exit 8.
+export OFFSIDER_WAIT_LOCK="${OFFSIDER_WAIT_LOCK:-30}"
 
 # Colors for output
 RED='\033[0;31m'

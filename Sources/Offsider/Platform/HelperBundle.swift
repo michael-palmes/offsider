@@ -1,5 +1,6 @@
 import Foundation
 import OffsiderAndroid
+import OffsiderCore
 
 /// The Android helper shipped in Offsider's resource bundle, read and checked once per process.
 enum HelperBundle {
@@ -30,6 +31,8 @@ enum HelperBundle {
 extension AndroidHost {
     /// The executable's host: the live Mac plus the bundled helper.
     static func cli() -> AndroidHost {
-        .live(helperDex: { try HelperBundle.load() })
+        var host = AndroidHost.live(helperDex: { try HelperBundle.load() })
+        host.claimDevice = { serial in try await DeviceClaims.current.claim(DeviceLockKey(platform: .android, id: serial)) }
+        return host
     }
 }

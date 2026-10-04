@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `screenshot --mask-secure` and `batch --mask-secure` paint password fields black before writing the image, and withhold it when a password field cannot be located. `OFFSIDER_MASK_SECURE=1` turns masking on by default. `screenshot --json` then adds `masked`, the number of fields painted.
 - Every failure has a typed `reason` and a `hint`; with `--json` it prints one object on stdout with `exitCode` and `error` (`reason`, `message`, `hint`, `dispatched`, `candidates`). The README lists every reason.
 - Not-found and ambiguous selector errors list up to five candidates with id, label, role, frame and on-screen state in JSON, and ambiguous errors name each candidate's label.
+- Input commands and setters, and Android commands that read the screen, lock the device for their run. A second command on the same device exits 8 (`device_busy`) naming the holder's pid; `--wait-lock <seconds>` or `OFFSIDER_WAIT_LOCK` waits instead. `batch` holds one lock for all its steps. Reads on iOS never lock. Locks live in a private per-user directory that ignores `TMPDIR`.
 
 ### Changed
 
@@ -19,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On Android, non-ASCII text is no longer pasted into a focused password field; use `type --replace`.
 - **Breaking:** new exit codes: 2 selector not found (also off screen), 6 ambiguous selector, 7 device not found or not booted, 8 device busy, 9 Xcode, adb or the Android SDK missing; malformed device IDs, unknown displays and unsupported keys exit 64. These exited 1 before.
 - **Breaking:** `batch` exits with the code of its first step that failed to run, and a failed step's `error` is now an object.
+- **Breaking:** two input commands on one device no longer run at once; the second exits 8.
 - **Breaking:** `--verify --json` reports are version 2: `dispatched` is `yes`, `no` or `unknown`, `error` is an object and `exitCode` is new.
 
 ### Fixed

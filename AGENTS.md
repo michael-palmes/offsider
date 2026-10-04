@@ -78,6 +78,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
 | `OFFSIDER_TIMINGS=1` | Prints phase timings to stderr (`offsider timing: <phase> <n> ms`) |
+| `OFFSIDER_WAIT_LOCK` | Default seconds to wait for a device another Offsider command holds (`--wait-lock` wins; `test-runner.sh` sets 30) |
 | `OFFSIDER_MASK_SECURE=1` | Makes `screenshot` and `batch` mask password fields as `--mask-secure` does |
 | `OFFSIDER_HELPER_JDK` | JDK 17 home for `scripts/build.sh helper` (else `JAVA_HOME`, then `/usr/libexec/java_home -v 17`) |
 
@@ -106,6 +107,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 
 - Xcode 27 has no Simulator.app; simulators run under Device Hub. Quit Simulator.app before E2E runs.
 - Resolve Xcode through `xcode-select -p` or `DEVELOPER_DIR`, never a hard-coded path.
+- Input commands, setters and `batch` lock the device for their run (exit 8, `device_busy`, when another holds it); locks live under `offsider-<uid>/locks/` in the `confstr` user temp directory.
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` and rejects peers running as another user.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.

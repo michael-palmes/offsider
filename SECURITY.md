@@ -18,7 +18,8 @@ It touches:
 
 - Xcode's private simulator frameworks (CoreSimulator, SimulatorKit and related), loaded at runtime from the selected Xcode.
 - Simulator HID input: touches, key presses, hardware buttons and text are sent to the simulator you name with `--device`.
-- A per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` for its HID broker. The broker rejects connections from any other user.
+- A per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` for its HID broker. The broker rejects connections from any other user before sending them anything.
+- A private per-user directory, `offsider-<uid>/` under the per-user temp directory from `confstr(_CS_DARWIN_USER_TEMP_DIR)`, which ignores `TMPDIR` (falling back to `$TMPDIR/offsider-<uid>/` when it cannot be used). It is mode 0700, owned by the user and checked on every use, and holds `locks/`: one 0600 file per device driven, opened without following symlinks, recording only the holding command's pid, name and start time, never anything from the screen. The lock is advisory and is never inherited by the processes Offsider starts.
 - Secure fields: password field values are masked as bullets before any output (`describe-ui`, selectors, `--verify`, `batch`), `type` logs only the number of characters it types, and `screenshot --mask-secure` paints password fields black before writing the image. Video is never masked.
 - Files you ask for: screenshots and recordings are written to `--output` or to a default name in the current directory, and `type` and `batch` read the file you pass with `--file`.
 - `offsider init`, which writes its skill to `~/.claude/skills/offsider`, `~/.agents/skills/offsider` or the directory you pass with `--dest`.

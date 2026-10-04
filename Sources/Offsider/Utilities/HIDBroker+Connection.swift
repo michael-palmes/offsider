@@ -1,6 +1,7 @@
 import Darwin
 import Dispatch
 import Foundation
+import OffsiderCore
 import OSLog
 
 // Every connection receives this newline-delimited handshake before the client writes a request.
@@ -164,16 +165,13 @@ extension HIDBroker {
         operation: String,
         nonblocking: Bool
     ) throws -> Int32 {
-        let descriptor = Darwin.open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
-        guard descriptor >= 0 else { throw posixError("open " + operation) }
+        let descriptor: Int32
         do {
-            var info = stat()
-            guard fstat(descriptor, &info) == 0 else { throw posixError("fstat " + operation) }
-            guard (info.st_mode & S_IFMT) == S_IFREG,
-                  info.st_uid == getuid(),
-                  info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
-                throw CLIError(errorDescription: "HID broker " + operation + " is not a private owned file.", reason: .privateDirectoryUnsafe)
-            }
+            descriptor = try OffsiderPrivateDirectory.openPrivateFile(path)
+        } catch let error as PrivateDirectoryError {
+            throw brokerError(error, subject: operation)
+        }
+        do {
             let lockOperation = nonblocking ? LOCK_EX | LOCK_NB : LOCK_EX
             while flock(descriptor, lockOperation) != 0 {
                 guard errno == EINTR else { throw posixError("lock " + operation) }

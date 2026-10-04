@@ -244,27 +244,24 @@ enum HIDBroker {
     }
 
     private static func ensurePrivateDirectory(_ path: String, uid: uid_t) throws {
-        var info = stat()
-        if lstat(path, &info) == 0 {
-            guard (info.st_mode & S_IFMT) == S_IFDIR,
-                  info.st_uid == uid,
-                  info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
-                throw CLIError(errorDescription: "HID broker directory is not a private owned directory.", reason: .privateDirectoryUnsafe)
-            }
-            return
+        do {
+            try OffsiderPrivateDirectory.ensurePrivateDirectory(path, uid: uid)
+        } catch let error as PrivateDirectoryError {
+            throw brokerError(error, subject: "directory")
         }
-        guard errno == ENOENT else { throw posixError("lstat") }
-        guard mkdir(path, S_IRWXU) == 0 || errno == EEXIST else { throw posixError("mkdir") }
-        guard lstat(path, &info) == 0 else { throw posixError("lstat") }
-        guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else {
-            throw CLIError(errorDescription: "HID broker directory is not a private owned directory.", reason: .privateDirectoryUnsafe)
-        }
-        guard chmod(path, S_IRWXU) == 0 else { throw posixError("chmod") }
-        guard lstat(path, &info) == 0 else { throw posixError("lstat") }
-        guard (info.st_mode & S_IFMT) == S_IFDIR,
-              info.st_uid == uid,
-              info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
-            throw CLIError(errorDescription: "HID broker directory is not a private owned directory.", reason: .privateDirectoryUnsafe)
+    }
+
+    /// Keeps the broker's own wording, and POSIX errors in their domain so callers can still match `EWOULDBLOCK` and `ENOENT`.
+    static func brokerError(_ error: PrivateDirectoryError, subject: String) -> Error {
+        switch error.kind {
+        case .unsafeDirectory:
+            return CLIError(errorDescription: "HID broker directory is not a private owned directory.", reason: .privateDirectoryUnsafe)
+        case .unsafeFile:
+            return CLIError(errorDescription: "HID broker " + subject + " is not a private owned file.", reason: .privateDirectoryUnsafe)
+        case .system(let operation, let code):
+            return NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [
+                NSLocalizedDescriptionKey: "HID broker \(operation) \(subject) failed: \(String(cString: strerror(code)))"
+            ])
         }
     }
 

@@ -140,7 +140,12 @@ struct BatchStepParser {
         if args.contains(where: { arg in flags.contains { arg == $0 || arg.hasPrefix($0 + "=") } }) {
             throw ValidationError(perStepDeviceMessage)
         }
+        if args.contains(where: { $0 == "--wait-lock" || $0.hasPrefix("--wait-lock=") }) {
+            throw ValidationError(perStepWaitLockMessage)
+        }
     }
+
+    nonisolated static let perStepWaitLockMessage = "Batch steps do not take --wait-lock. Pass it to batch, which locks the device once for every step."
 
     private static func parseSleep(_ tokens: [String]) throws -> [BatchPrimitive] {
         guard tokens.count == 2 else {

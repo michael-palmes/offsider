@@ -25,10 +25,11 @@ struct ErrorEnvelopeTests {
 
     @Test("a coordinate tap on an unknown device exits 7 and prints no JSON without --json")
     func unknownDeviceTapExits7() async throws {
-        let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1 --device 00000000-0000-0000-0000-000000000000")
+        let udid = UUID().uuidString
+        let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1 --device \(udid)")
         #expect(result.exitCode == 7)
         #expect(result.stdout.isEmpty)
-        #expect(result.stderr.contains("No device with ID 00000000-0000-0000-0000-000000000000 was found."))
+        #expect(result.stderr.contains("No device with ID \(udid) was found."))
     }
 
     @Test("a usage error under --json still prints an envelope and exits 64")

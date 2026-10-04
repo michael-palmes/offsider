@@ -15,6 +15,22 @@ enum DeviceRouter {
         [scope.adopt(IOSBackend(logger: logger)), scope.adopt(AndroidBackend.make(logger: logger, host: host))]
     }
 
+    /// Routes, then locks the device for this command before any input session or helper starts.
+    static func routeForInput(
+        _ option: DeviceOption,
+        logger: OffsiderLogger,
+        locking: Bool = true,
+        host: AndroidHost = .cli(),
+        scope: CommandScope = .current,
+        claims: DeviceClaims = .current
+    ) async throws -> Route {
+        let route = try await route(option.id, logger: logger, host: host, scope: scope)
+        if locking {
+            try await claims.claim(route.device)
+        }
+        return route
+    }
+
     static func route(
         _ rawID: String,
         logger: OffsiderLogger,

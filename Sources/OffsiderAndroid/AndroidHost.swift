@@ -82,6 +82,8 @@ public struct AndroidHost: Sendable {
     var uptime: @Sendable () -> Duration
     /// The helper dex and manifest; the executable reads its bundle, tests inject bytes, the default has none.
     var helperDex: @Sendable () throws -> HelperDex
+    /// Locks a serial for this command before its helper or uiautomator takes the UiAutomation slot; a no-op by default.
+    public var claimDevice: @Sendable (String) async throws -> Void = { _ in }
 
     init(
         environment: [String: String],
