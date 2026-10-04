@@ -167,10 +167,14 @@ struct SecureTextTests {
 
     @Test("typed text never appears on stdout or stderr")
     func typedTextNeverPrinted() async throws {
-        let unknown = UUID().uuidString
+        let unknown = TestDevices.simulatorUDID()
+        defer { TestDevices.removePrivateFiles(platform: .ios, id: unknown) }
         for command in [
             "type \(Self.sentinel) --device \(unknown)",
             "batch --json --step 'type \(Self.sentinel)' --device \(unknown)",
+            "type -\(Self.sentinel) --device \(unknown)",
+            "type -\(Self.sentinel) --verify --json --device \(unknown)",
+            "batch --json --step 'type -\(Self.sentinel)' --device \(unknown)",
         ] {
             let result = try await TestHelpers.runOffsiderCommandAllowFailure(command)
             #expect(result.exitCode != 0)
@@ -221,6 +225,55 @@ struct SecureTextTests {
         #expect(BatchStepRedaction.redactedLine("type --file in.txt", tokens: ["type", "--file", "in.txt"]) == "type --file in.txt")
         #expect(BatchStepRedaction.redactedLine("type 'x", tokens: nil) == "type <unparsed>")
         #expect(BatchStepRedaction.redactedLine("tap --id a", tokens: ["tap", "--id", "a"]) == "tap --id a")
+    }
+
+    @Test("a dash-leading type text is text, and an option's value stays with its option")
+    func redactionUsesTypeOptions() {
+        #expect(BatchStepRedaction.redactedLine("", tokens: ["type", "-Pa55word"]) == "type <9 characters>")
+        #expect(BatchStepRedaction.textTokens(["type", "-Pa55word"]) == ["-Pa55word"])
+        #expect(BatchStepRedaction.redactedLine("", tokens: ["type", "hello", "--verify-timeout", "3"]) == "type <5 characters> --verify-timeout 3")
+        #expect(BatchStepRedaction.textTokens(["type", "hello", "--verify-timeout", "3"]) == ["hello"])
+        #expect(BatchStepRedaction.redactedLine("", tokens: ["type", "--", "--replace"]) == "type -- <9 characters>")
+        #expect(BatchStepRedaction.textTokens(["type", "--retries=2", "x"]) == ["x"])
+    }
+
+    @Test("the redaction's option names are exactly type's options")
+    func redactionMatchesTypeHelp() throws {
+        let help = Type.helpMessage(columns: 400)
+        let regex = try NSRegularExpression(pattern: "(?<![\\w-])(--[a-z][a-z-]*|-h)\\b(?: <[^>]+>)?")
+        var flags: Set<String> = []
+        var values: Set<String> = []
+        for match in regex.matches(in: help, range: NSRange(help.startIndex..., in: help)) {
+            let text = String(help[Range(match.range, in: help)!])
+            let name = String(text.split(separator: " ")[0])
+            if text.contains("<") { values.insert(name) } else { flags.insert(name) }
+        }
+        flags.subtract(values)
+        #expect(values == BatchStepRedaction.valueOptions)
+        #expect(flags == BatchStepRedaction.flags)
+    }
+
+    @Test("a batch type step whose text starts with a dash keeps it out of records and errors")
+    func batchDashText() async throws {
+        let backend = FakeDeviceBackend(trees: [FakeUI.tree()])
+        var stderr = ""
+        var out = ""
+        do {
+            let result = try await Self.batch(["type -\(Self.sentinel)", "type ok --verify-timeout 3"], on: backend)
+            out = result.out
+        } catch let error as ReportedFailure {
+            stderr = error.userFacingDescription
+        }
+        #expect(!out.contains(Self.sentinel))
+        #expect(!stderr.contains(Self.sentinel))
+    }
+
+    @Test("a batch type step after -- types dash-leading text")
+    func batchTerminatedText() async throws {
+        let backend = FakeDeviceBackend(trees: [FakeUI.tree()])
+        let result = try await Self.batch(["type -- -\(Self.sentinel)"], on: backend)
+        #expect(result.records.map(\.ok) == [true])
+        #expect(result.records.map(\.line) == ["type -- <9 characters>"])
     }
 
     // MARK: - Screenshot masking

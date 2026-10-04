@@ -75,7 +75,8 @@ struct BatchStepParser {
         try rejectUnsupportedFlags(tokens)
         let stepArguments = Array(tokens.dropFirst())
         try rejectPerStepDevice(stepArguments)
-        let arguments = stepArguments + ["--device", deviceID]
+        // Before the step's own arguments, so a `--` terminator cannot turn the device into text.
+        let arguments = ["--device", deviceID] + stepArguments
 
         switch kind {
         case .tap:
