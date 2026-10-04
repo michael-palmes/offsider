@@ -107,5 +107,6 @@ extension StatusBarCommand: DeviceOptionCommand {}
 extension Swipe: DeviceOptionCommand {}
 extension Tap: DeviceOptionCommand {}
 extension Touch: DeviceOptionCommand {}
+extension Turnstile: DeviceOptionCommand {}
 extension Type: DeviceOptionCommand {}
 extension Wait: DeviceOptionCommand {}
