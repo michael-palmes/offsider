@@ -2,7 +2,7 @@ import Foundation
 import OffsiderAndroid
 import OffsiderCore
 
-/// Picks the backend from the device ID's shape: UUIDs are iOS simulators, emulator-NNNN and AVD names Android emulators.
+/// Picks the backend from the device ID's shape: UUIDs are iOS simulators; emulator-NNNN, AVD names and USB phone serials Android.
 /// Every backend it builds is adopted by `scope`, which closes it when the command ends.
 @MainActor
 enum DeviceRouter {
@@ -47,10 +47,12 @@ enum DeviceRouter {
                 backend: scope.adopt(AndroidBackend.make(logger: logger, host: host)),
                 device: DeviceID(rawValue: "emulator-\(port)", platform: .android)
             )
-        case .androidAVDCandidate(let name):
+        case .androidNetworkSerial(let serial):
+            throw AndroidError.networkDevice(serial)
+        case .androidName(let name):
             // Resolved now, so a typo gets "No device named X" before any work.
             let backend = scope.adopt(AndroidBackend.make(logger: logger, host: host))
-            let serial = try await backend.runningSerial(forAVDNamed: name)
+            let serial = try await backend.resolveAndroidName(name)
             return Route(backend: backend, device: DeviceID(rawValue: serial, platform: .android))
         case .empty:
             throw CLIError(errorDescription: "Device ID cannot be empty. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")

@@ -72,6 +72,54 @@ struct AndroidRoutingTests {
         #expect(server.connectionAttempts == 0)
     }
 
+    static func phoneServer() -> FakeAdbServer {
+        let listing = "R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n1A2B3C4D5E6F unauthorized usb:1-2 transport_id:3\n"
+        return FakeAdbServer(handler: FakeAdbServer.devices(
+            [],
+            host: { service in
+                switch service {
+                case "host:version": return FakeAdbServer.okay(payload: "0029")
+                case "host:devices-l": return FakeAdbServer.okay(payload: listing)
+                default: return .hang
+                }
+            },
+            device: { _, _ in .hang }
+        ))
+    }
+
+    @Test("a network serial is refused before any adb request")
+    func networkSerialRefused() async throws {
+        let server = Self.server([:])
+        let error = await #expect(throws: AndroidError.self) {
+            _ = try await DeviceRouter.route("192.168.1.5:5555", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
+        }
+        #expect(error?.kind == .unsupportedDevice)
+        #expect(error?.message.contains("over USB only") == true)
+        #expect(server.connectionAttempts == 0)
+    }
+
+    @Test("a named USB serial routes to the phone and checks it from the device list alone")
+    func namedPhoneRoutes() async throws {
+        let server = Self.phoneServer()
+        let route = try await DeviceRouter.route("R58M123ABC", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
+
+        #expect(route.device == DeviceID(rawValue: "R58M123ABC", platform: .android))
+        let booted = try await route.backend.requireBootedDevice(route.device)
+        #expect(booted.name == "Pixel 9")
+        #expect(server.requests.allSatisfy { $0.serial == nil && !$0.service.hasPrefix("host:transport") })
+    }
+
+    @Test("an unauthorised phone fails with the USB debugging hint")
+    func unauthorisedPhone() async throws {
+        let server = Self.phoneServer()
+        let route = try await DeviceRouter.route("1A2B3C4D5E6F", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
+
+        let error = await #expect(throws: AndroidError.self) { _ = try await route.backend.requireBootedDevice(route.device) }
+        #expect(error?.kind == .deviceUnauthorised)
+        #expect(error?.message.contains("Allow USB debugging?") == true)
+        #expect(error?.message.contains("offsider boot") == false)
+    }
+
     @Test("a UUID never builds an Android backend")
     func uuidStaysIOS() async throws {
         let server = Self.server([:])

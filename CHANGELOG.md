@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Input commands and setters, and Android commands that read the screen, lock the device for their run. A second command on the same device exits 8 (`device_busy`) naming the holder's pid; `--wait-lock <seconds>` or `OFFSIDER_WAIT_LOCK` waits instead. `batch` holds one lock for all its steps. Reads on iOS never lock. Locks live in a private per-user directory that ignores `TMPDIR`.
 - `doctor --device` checks Android emulators, by serial or AVD name: the SDK and adb, the adb server and whether its mDNS discovery is off, the emulator package and the bundled helper, then the device's state and system image, the emulator gRPC endpoint and its auth mode (never the token), the UiAutomation slot and any accessibility service, one helper start with its times, and any Metro reverse. Plain `doctor` adds the Android host checks when an SDK is installed, and the JSON report adds `device` and `android` under version 1. `doctor --fix` starts an absent adb server with `ADB_MDNS=0`, and changes nothing else on Android.
 - `OFFSIDER_TIMINGS=1` prints Android phases: `prepare`, `adb-devices`, `adb-shell`, `display-probe`, `helper-launch`, `dex-push`, `helper-hello`, `helper-dump`, `tree-map`, `helper-close`, `grpc-connect`, `grpc-call`, `input` and `capture`.
+- USB-connected Android phones can be driven by passing their serial to `--device`; they are never chosen otherwise. `list-devices` shows them with model, connection and authorisation state, and prints the USB debugging prompt hint for an unauthorised phone. Network (Wi-Fi) adb devices are listed as unsupported and refused, and `boot`, setting a posture, `stream-video --format bgra` and non-ASCII plain `type` are refused on a phone with the alternative.
+- `scripts/rn-playground.sh metro stop` removes the `adb reverse` it set on running emulators.
 - `scripts/bench-ab.sh` compares a base build with the branch on one Offsider device in paired, seeded runs, and reports medians, a bootstrap interval and a verdict.
 
 ### Changed
@@ -27,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Breaking:** `batch` exits with the code of its first step that failed to run, and a failed step's `error` is now an object.
 - **Breaking:** two input commands on one device no longer run at once; the second exits 8.
 - **Breaking:** `--verify --json` reports are version 2: `dispatched` is `yes`, `no` or `unknown`, `error` is an object and `exitCode` is new.
+- `list-devices --json` adds `kind` (`simulator`, `emulator`, `avd` or `physical`) and `connection` to each row, under version 1.
+- A `host:port` device ID now says Offsider drives phones over USB only, instead of that it is not a simulator UDID.
 - `doctor --device <android>` no longer exits 64. With an Android device it runs Android checks only, so Xcode and simulator state cannot fail an Android session.
 
 ### Fixed
@@ -34,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `type` no longer writes the typed text to the system log, and an unsupported character is reported by position.
 - `batch --json` and batch errors no longer print the text of a `type` step.
 - `--verify` no longer quotes a password field's value.
+- A non-emulator serial could match an emulator discovery file that has no console port, and so be handed that emulator's gRPC connection.
 - On Android, a password field's text no longer appears in `describe-ui --fields native` or in a clickable parent's label, and a password field showing its hint reads as empty.
 - A failure while input was being sent no longer reports `dispatched: false`; it reports `unknown`.
 - The HID broker now checks a client's user before sending its ready handshake.

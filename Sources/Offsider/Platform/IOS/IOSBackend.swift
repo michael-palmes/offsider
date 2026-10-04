@@ -44,7 +44,8 @@ final class IOSBackend: DeviceBackend {
                 state: FBiOSTargetStateStringFromState(simulator.state).rawValue,
                 name: simulator.name,
                 osVersion: simulator.osVersion.name.rawValue,
-                deviceType: simulator.deviceType.model.rawValue
+                deviceType: simulator.deviceType.model.rawValue,
+                kind: .simulator
             )
         }
     }

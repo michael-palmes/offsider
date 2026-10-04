@@ -17,15 +17,32 @@ enum AdbDeviceState: Equatable, Sendable {
     }
 }
 
+/// How a device reaches adb; only emulators and USB phones are driven.
+enum AndroidDeviceKind: Equatable, Sendable {
+    case emulator(consolePort: Int)
+    case usb
+    /// Wi-Fi, TCP or any connection adb does not report as USB, which Offsider refuses.
+    case network
+}
+
 struct AdbDeviceEntry: Equatable, Sendable {
     let serial: String
     let state: AdbDeviceState
     /// `product`, `model`, `device`, `transport_id` and any other `key:value` pairs.
     let properties: [String: String]
 
+    /// `emulator-NNNN` is an emulator; a phone is USB only when its row carries a `usb:` property.
+    var kind: AndroidDeviceKind {
+        switch DeviceIDClassifier.classify(serial) {
+        case .androidSerial(let port): return .emulator(consolePort: port)
+        case .androidNetworkSerial: return .network
+        default: return properties["usb"] != nil ? .usb : .network
+        }
+    }
+
     /// Only `emulator-NNNN` serials name a console port; USB and `host:port` serials do not.
     var consolePort: Int? {
-        guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial) else { return nil }
+        guard case .emulator(let port) = kind else { return nil }
         return port
     }
 }

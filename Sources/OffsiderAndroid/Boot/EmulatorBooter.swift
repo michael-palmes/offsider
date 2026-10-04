@@ -51,10 +51,14 @@ public struct EmulatorBooter {
         let name = request.avdName
         let sdk = try AndroidSDK.locate(host: host)
         let catalog = AVDCatalog(host: host)
+        let client = AdbClient(endpoint: try LoopbackEndpoint.adbServer(environment: host.environment), connector: host.adbConnector, timing: host.timing)
         guard let avd = catalog.info(named: name) else {
+            // Only an already-running server is asked, so a mistyped name never starts adb.
+            if let rows = try? await client.devices(), rows.contains(where: { $0.serial == name && $0.consolePort == nil }) {
+                throw AndroidError.bootPhone(name)
+            }
             throw AndroidError.noAVDNamed(name, available: catalog.all().map(\.name))
         }
-        let client = AdbClient(endpoint: try LoopbackEndpoint.adbServer(environment: host.environment), connector: host.adbConnector, timing: host.timing)
         try await AdbServerLauncher(adb: sdk.adb).ensureRunning(client: client, host: host)
         let wait = BootWait(host: host, log: log, client: client, avdName: name, deadline: deadline, timeout: request.timeout)
 

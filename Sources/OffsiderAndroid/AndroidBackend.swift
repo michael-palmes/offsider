@@ -1,7 +1,7 @@
 import Foundation
 import OffsiderCore
 
-/// Android emulators over the adb server; lives for one command run, so its caches do too.
+/// Android emulators and USB phones over the adb server; lives for one command run, so its caches do too.
 @MainActor
 public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming, AccessibilityChangeWaiting {
     let host: AndroidHost
@@ -15,6 +15,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var displayLists: [String: AndroidDisplayList] = [:]
     var screenStatuses: [String: (display: ScreenDisplay?, posture: Posture?)] = [:]
     private var avdNames: [String: String] = [:]
+    /// Phones this command named, from their device-list row.
+    var phones: [String: ConnectedPhone] = [:]
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
     private var dumpCounter = 0
@@ -48,9 +50,13 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         try await directory().summaries()
     }
 
-    /// State `device` with `sys.boot_completed`; the name is the AVD name, else the serial.
+    /// State `device` with `sys.boot_completed`; the name is the AVD name, else the serial. A phone needs state `device`.
     public func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         let serial = id.rawValue
+        guard case .androidSerial = DeviceIDClassifier.classify(serial) else {
+            let phone = try await requireConnectedPhone(serial)
+            return BootedDevice(id: id, name: phone.model ?? serial)
+        }
         guard let emulator = try await directory().runningEmulator(serial: serial) else {
             throw AndroidError.serialNotRunning(serial)
         }
@@ -72,14 +78,35 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return BootedDevice(id: id, name: emulator.avdName ?? serial)
     }
 
-    /// For the router: the single running serial of an AVD; with no SDK, the name is simply unknown.
-    public func runningSerial(forAVDNamed name: String) async throws -> String {
+    /// The USB phone's row for a serial the user named; offline, unauthorised and network rows are refused.
+    func requireConnectedPhone(_ serial: String) async throws -> ConnectedPhone {
+        if let cached = phones[serial] {
+            return cached
+        }
+        guard let phone = try await directory().connectedPhone(serial: serial) else {
+            throw AndroidError.phoneNotConnected(serial)
+        }
+        guard phone.kind == .usb else { throw AndroidError.networkDevice(serial) }
+        switch phone.state {
+        case .device: break
+        case .offline: throw AndroidError.phoneOffline(serial)
+        case .unauthorized: throw AndroidError.phoneUnauthorised(serial)
+        case .other(let state):
+            throw AndroidError.adbCommandFailed(serial: serial, command: "host:transport:\(serial)", detail: "adb reports the phone as \(state)")
+        }
+        phones[serial] = phone
+        return phone
+    }
+
+    /// For the router: a USB phone named by its exact serial, else the single running serial of an AVD;
+    /// with no SDK, the name is simply unknown.
+    public func resolveAndroidName(_ name: String) async throws -> String {
         do {
             try await prepare()
         } catch is PlatformUnavailable {
             throw AndroidError.noDeviceNamed(name)
         }
-        return try await directory().serial(forAVDNamed: name)
+        return try await directory().resolve(name: name)
     }
 
     /// The helper's dump (else `uiautomator dump --compressed`) mapped to dp; with `point`, the deepest node there as the only root.
@@ -225,7 +252,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         if let cached = avdNames[serial] {
             return cached
         }
-        let port = Int(serial.dropFirst("emulator-".count))
+        guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial) else { return nil }
         let fromFile = EmulatorDiscovery.live(host: host).first { $0.consolePort == port }?.avdID
         let name: String?
         if let fromFile {
@@ -389,6 +416,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         displayLists = [:]
         screenStatuses = [:]
         avdNames = [:]
+        phones = [:]
         warnedAboutOverride = []
         for helper in helpers {
             await helper.close()

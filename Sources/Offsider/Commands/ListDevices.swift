@@ -18,6 +18,22 @@ struct ListDevices: AsyncParsableCommand {
     func run() async throws {
         let devices = try await Self.listDevices(platform: platform, logger: OffsiderLogger())
         print(json ? DeviceListRenderer.json(devices) : DeviceListRenderer.table(devices), terminator: "")
+        for hint in Self.phoneHints(devices) {
+            FileHandle.standardError.write(Data("\(hint)\n".utf8))
+        }
+    }
+
+    /// One line per phone Offsider cannot drive yet, saying what the user must do.
+    static func phoneHints(_ devices: [DeviceSummary]) -> [String] {
+        devices.filter { $0.kind == .physical }.compactMap { device in
+            if device.connection == "network" {
+                return "\(device.id) is a network adb connection, which Offsider does not drive; connect the phone over USB."
+            }
+            if device.state == "Unauthorised" {
+                return "\(device.id) is unauthorised: unlock the phone and accept the \"Allow USB debugging?\" prompt, then run `offsider list-devices` again."
+            }
+            return nil
+        }
     }
 
     @MainActor

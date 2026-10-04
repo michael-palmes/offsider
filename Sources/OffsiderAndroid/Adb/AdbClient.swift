@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 struct AdbShellResult: Equatable, Sendable {
     let status: Int32
@@ -207,9 +208,10 @@ actor AdbClient {
     }
 
     private func transportError(_ message: String, serial: String) -> AndroidError {
-        if message.contains("not found") { return .serialNotRunning(serial) }
-        if message.contains("offline") { return .deviceOffline(serial, avd: nil) }
-        if message.contains("unauthorized") { return .deviceUnauthorised(serial, avd: nil) }
+        let emulator = if case .androidSerial = DeviceIDClassifier.classify(serial) { true } else { false }
+        if message.contains("not found") { return emulator ? .serialNotRunning(serial) : .phoneNotConnected(serial) }
+        if message.contains("offline") { return emulator ? .deviceOffline(serial, avd: nil) : .phoneOffline(serial) }
+        if message.contains("unauthorized") { return emulator ? .deviceUnauthorised(serial, avd: nil) : .phoneUnauthorised(serial) }
         return .adbCommandFailed(serial: serial, command: "host:transport:\(serial)", detail: message)
     }
 }

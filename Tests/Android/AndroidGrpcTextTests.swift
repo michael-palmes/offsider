@@ -85,4 +85,23 @@ struct AndroidGrpcTextTests {
         let error = await #expect(throws: AndroidError.self) { try await session.typeText("é") }
         #expect(error?.message == "Typing non-ASCII text on Android needs the emulator's gRPC endpoint, and emulator-5556 has one, but it failed (The emulator's gRPC endpoint on port 8556 did not answer on 127.0.0.1 or [::1]; it may be shutting down). Restart it with `offsider boot Offsider_E2E_Pixel_9`, or type ASCII only.")
     }
+
+    @Test("non-ASCII type on a phone suggests type --replace, not boot, and touches nothing")
+    func phoneNonASCII() async throws {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(
+            ["R58M123ABC"],
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            device: { _, service in
+                service.hasSuffix(AndroidDisplayGeometry.probeScript) ? FakeAdbServer.shell(stdout: AndroidBackendTests.geometryOutput) : FakeAdbServer.shell()
+            }
+        ))
+        let backend = AndroidBackend(host: AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: server)) { _, _ in }
+        let session = try #require(try await backend.openInputSession(for: DeviceID(rawValue: "R58M123ABC", platform: .android)) as? any TextInputSession)
+
+        let error = await #expect(throws: AndroidError.self) { try await session.typeText("é") }
+        #expect(error?.kind == .unsupportedDevice)
+        #expect(error?.message.contains("type --replace") == true)
+        #expect(error?.message.contains("offsider boot") == false)
+        #expect(AndroidInputSessionTests.scripts(server).filter { $0.hasPrefix("input") }.isEmpty)
+    }
 }

@@ -19,6 +19,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case avdNotRunning
         case noDeviceNamed
         case avdRunningTwice
+        case ambiguousDeviceName
+        case unsupportedDevice
         case grpcRequired
         case uiautomatorBusy
         case uiautomatorIdle
@@ -134,6 +136,48 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func phoneNotConnected(_ serial: String) -> AndroidError {
+        AndroidError(
+            .serialNotRunning,
+            "No device with serial \(serial) is connected. Check the cable, then run `offsider list-devices` to see connected devices."
+        )
+    }
+
+    static func phoneOffline(_ serial: String) -> AndroidError {
+        AndroidError(.deviceOffline, "Phone \(serial) is offline in adb. Reconnect the cable and unlock the phone, then retry.")
+    }
+
+    static func phoneUnauthorised(_ serial: String) -> AndroidError {
+        AndroidError(
+            .deviceUnauthorised,
+            "Phone \(serial) is not authorised for adb. Unlock it and accept the \"Allow USB debugging?\" prompt, then retry."
+        )
+    }
+
+    public static func networkDevice(_ serial: String) -> AndroidError {
+        AndroidError(
+            .unsupportedDevice,
+            "Offsider drives Android phones over USB only, and \(serial) is a network adb connection. Connect the phone with a cable and use its USB serial from `offsider list-devices`; for an emulator, use its emulator-NNNN serial."
+        )
+    }
+
+    static func bootPhone(_ serial: String) -> AndroidError {
+        AndroidError(.unsupportedDevice, "boot starts emulators, and \(serial) is a connected phone. Run `offsider list-devices` to see AVD names.")
+    }
+
+    static func ambiguousDeviceName(_ name: String, emulatorSerial: String) -> AndroidError {
+        AndroidError(
+            .ambiguousDeviceName,
+            "\(name) names both a connected phone and a running AVD. Pass the emulator serial (\(emulatorSerial)) for the AVD; to drive the phone, rename the AVD or stop the emulator."
+        )
+    }
+
+    /// `feature` works only on emulators; the advice is the alternative, never `offsider boot`.
+    static func emulatorOnly(_ feature: String, serial: String, model: String?, alternative: String) -> AndroidError {
+        let name = model.map { " (\($0))" } ?? ""
+        return AndroidError(.unsupportedDevice, "\(feature) on Android needs an emulator, and \(serial) is a physical device\(name). \(alternative)")
+    }
+
     static func deviceOffline(_ serial: String, avd: String?) -> AndroidError {
         AndroidError(
             .deviceOffline,
@@ -244,12 +288,24 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func grpcRequiredForText(serial: String, avd: String?, reason: AdbReason) -> AndroidError {
-        grpcRequired(feature: "Typing non-ASCII text", serial: serial, avd: avd, reason: reason, alternative: "type ASCII only")
+        if reason == .physicalDevice {
+            return emulatorOnly(
+                "Typing non-ASCII text key by key",
+                serial: serial,
+                model: nil,
+                alternative: "Use `offsider type --replace <full text> --device \(serial)`, which sets the field through the helper."
+            )
+        }
+        return grpcRequired(feature: "Typing non-ASCII text", serial: serial, avd: avd, reason: reason, alternative: "type ASCII only")
     }
 
     /// `feature` needs gRPC and this command is on adb; the advice follows from why.
     static func grpcRequired(feature: String, serial: String, avd: String?, reason: AdbReason, alternative: String) -> AndroidError {
         let prefix = "\(feature) on Android needs the emulator's gRPC endpoint, and"
+        if reason == .physicalDevice {
+            let advice = alternative.prefix(1).uppercased() + alternative.dropFirst()
+            return emulatorOnly(feature, serial: serial, model: nil, alternative: "\(advice).")
+        }
         if reason == .forced {
             return AndroidError(.grpcRequired, "\(prefix) OFFSIDER_ANDROID_TRANSPORT is adb. Unset it, or \(alternative).")
         }

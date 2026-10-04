@@ -45,7 +45,7 @@ offsider --version
 - Apple silicon (arm64). Intel Macs are not supported.
 - macOS 26 or later.
 - Xcode 26 or later, selected with `xcode-select` or `DEVELOPER_DIR`. Tested on Xcode 27, where simulators run under Device Hub and Simulator.app is not required. Xcode is needed even if you only drive Android emulators, because the binary links the simulator frameworks.
-- For Android: the Android SDK with Platform-Tools and the Android Emulator, and `arm64-v8a` system images (tested on API 36; the adb fallback needs API 33 or later). Offsider finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` (where Android Studio installs it) or `adb` on your `PATH`.
+- For Android: the Android SDK with Platform-Tools (and the Android Emulator for emulators), and `arm64-v8a` system images (tested on API 36; the adb fallback needs API 33 or later). Offsider finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` (where Android Studio installs it) or `adb` on your `PATH`.
 
 ## Quick start
 
@@ -75,7 +75,7 @@ offsider init --client claude
 On Android, start an emulator with `boot` (it prints the serial once Android has booted), then use the same commands:
 
 ```bash
-offsider list-devices --platform android       # running emulators by serial, AVDs by name
+offsider list-devices --platform android       # running emulators and USB phones by serial, AVDs by name
 DEVICE=$(offsider boot Pixel_9)                 # add --headless to hide the window
 offsider describe-ui --device "$DEVICE"
 offsider tap --id LoginButton --verify --device "$DEVICE"
@@ -87,7 +87,7 @@ Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type
 
 ## Commands
 
-Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), an Android emulator serial such as `emulator-5554`, or the name of a running AVD. Run `offsider <command> --help` for the full list of options.
+Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Run `offsider <command> --help` for the full list of options.
 
 `list-devices --json` prints one object with a schema version, for scripts and agents:
 
@@ -101,11 +101,15 @@ Every device command takes `--device <id>`, using an ID from `offsider list-devi
       "state": "Booted",
       "name": "iPhone 17 Pro",
       "osVersion": "iOS 27.0",
-      "deviceType": "iPhone 17 Pro"
+      "deviceType": "iPhone 17 Pro",
+      "kind": "simulator",
+      "connection": null
     }
   ]
 }
 ```
+
+`kind` is `simulator`, `emulator` (running), `avd` (shut down) or `physical`; `connection` is `usb` for a phone (`network` for one Offsider refuses), else null.
 
 In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devices`. The old names exit 64 with a hint.
 
@@ -259,7 +263,7 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 
 ### Android notes
 
-- IDs are emulator serials (`emulator-5554`) or the names of running AVDs; `list-devices` shows both. `boot` starts an AVD with its window (`--headless` hides it), passes only `-no-metrics` to the emulator, writes the emulator's output to `$TMPDIR/offsider-boot-<avd>.log` and never starts a second instance of an AVD that is already running.
+- IDs are emulator serials (`emulator-5554`), the names of running AVDs, or USB phone serials; `list-devices` shows all three. `boot` starts an AVD with its window (`--headless` hides it), passes only `-no-metrics` to the emulator, writes the emulator's output to `$TMPDIR/offsider-boot-<avd>.log` and never starts a second instance of an AVD that is already running.
 - Coordinates, frames and `--delta` are in dp, the Android equivalent of points.
 - Every screen read (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `gesture` presets, `slider` and `type --replace`) goes through a small helper that Offsider pushes to `/data/local/tmp/offsider-helper-<hash>.dex` when that copy is missing, and runs with `app_process` as the shell user for the length of one command. A `describe-ui` takes about 0.3 s and a verified tap 1 to 1.5 s on a quiet Mac; both are slower while the Mac running the emulator is busy, because Android then starts the helper more slowly. Commands that only send input, such as `tap -x -y`, `swipe`, `key` and plain `type`, never start it.
 - While the helper runs it holds Android's single UiAutomation connection, and the emulator reports an accessibility service as enabled (`accessibility_enabled`), which some apps notice. Both end with the command.
@@ -274,6 +278,16 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 - `doctor --device <serial or AVD>` runs read-only Android checks: the SDK, adb and its server (on loopback, and whether its mDNS discovery is off), the emulator package, the bundled helper, then the emulator's state and system image, its gRPC endpoint with the auth mode (never the token), the UiAutomation slot and any accessibility service, one helper start with its times, and any Metro reverse (shown, never changed). The helper start holds UiAutomation for about half a second, so it is skipped while another Offsider helper runs. `doctor` never kills a process, restarts the adb server or changes a setting; `--fix` only starts an absent adb server with `ADB_MDNS=0`.
 - `batch` starts the helper once and reuses it for every step, so several reads in one `batch` pay the helper start once; prefer it to separate commands when no reasoning is needed between reads.
 - For troubleshooting, `OFFSIDER_ANDROID_TRANSPORT=adb` (or `grpc`) forces one transport, `OFFSIDER_ANDROID_GRPC_AUTH=jwt` makes Offsider sign in to gRPC with a short-lived key instead of the emulator's token, and `OFFSIDER_ANDROID_TREE=uiautomator` (or `helper`) forces one way of reading the screen: `uiautomator` never starts the helper, and `helper` makes an unavailable helper an error instead of a fallback.
+
+### Physical Android phones
+
+- Offsider drives a phone connected over USB, and only when you pass its serial to `--device`. AVD names, `boot`, the playground scripts and the test suites only ever choose emulators, so an attached phone is never picked by accident. A name that is both a phone's serial and a running AVD's name is refused as ambiguous.
+- Turn on Developer options and USB debugging on the phone, connect the cable, unlock it and accept the "Allow USB debugging?" prompt. Until then `list-devices` shows the phone as `Unauthorised` with a hint on stderr; Offsider never tries to accept the prompt. Some vendor builds (for example MIUI) also need a "USB debugging (security settings)" switch before input and screen reads work.
+- `list-devices` reads phones from adb's device list alone, with the model adb reports and no OS version, and never sends a listed phone a command. Wi-Fi and TCP adb connections (`adb connect`, wireless debugging) are listed as `Unsupported` and refused: connect the phone over USB.
+- A phone has no emulator gRPC endpoint, so every command uses adb: screenshots use `screencap`, input uses `input`, and rotation, appearance and content size use `settings` and `cmd uimode`. Plain `type` of non-ASCII text is refused with a pointer to `type --replace`, which sets the field through the helper. `boot`, setting a `posture` (reading it works), `stream-video --format bgra` and `OFFSIDER_ANDROID_TRANSPORT=grpc` are refused on a phone with a message naming the alternative.
+- The helper works as on an emulator: it is pushed to `/data/local/tmp/offsider-helper-<hash>.dex` and holds UiAutomation, with `accessibility_enabled` reading 1, only while one command runs.
+- Offsider never sets `adb reverse`. To reach Metro from a debug build on a phone, run `adb -s <serial> reverse tcp:8081 tcp:8081` yourself (8742 for the playground), and `adb -s <serial> reverse --remove tcp:8081` when done; while it is set every app on the phone can reach Metro, so prefer release builds on phones.
+- A phone's screen and notifications reach `describe-ui` and screenshots, and from there whatever your agent sends to its model provider; Offsider itself sends nothing. Turn on Do Not Disturb first.
 
 ### Exit codes
 
