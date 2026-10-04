@@ -23,6 +23,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             Init.self,
             Guide.self,
             Tap.self,
+            Turnstile.self,
             Slider.self,
             Type.self,
             Swipe.self,

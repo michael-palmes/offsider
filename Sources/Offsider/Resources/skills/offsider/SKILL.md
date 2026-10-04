@@ -1,6 +1,6 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "rotate", "fold or unfold a foldable", "text size", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, waits and assertions, screenshots, logs, appearance, permissions, status bar, biometrics, orientation, foldable displays and postures, video, and batch workflows.
+description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, waits and assertions, screenshots, logs, appearance, permissions, status bar, biometrics, orientation, foldable displays and postures, video, and batch workflows.
 ---
 # Offsider
 
@@ -16,7 +16,7 @@ Offsider drives iOS Simulators, Android Emulators and USB Android phones from th
 ## The loop: look, act, verify
 
 1. **Look.** `offsider describe-ui --summary --device <DEVICE_ID>` prints one line per on-screen node with a label, id or value, such as `button "Save" id=save-button (170.7,313.3 61x34.3)` (role, label, id, value, then x,y and size). Copy `--id` and `--label` values from it (`guide describe-ui`).
-2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors survive layout changes, prefer on-screen matches and wait with `--wait-timeout`; fall back to `tap -x <X> -y <Y>` with points from `describe-ui` (`guide selectors`).
+2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors survive layout changes, prefer on-screen matches and wait with `--wait-timeout`; fall back to `tap -x <X> -y <Y>` with points from `describe-ui` (`guide selectors`). A Cloudflare Turnstile checkbox's frame includes the words beside the square, so `tap` on that label misses the box: `offsider turnstile` taps the square and waits until the widget passes. On iOS that square is outside the tree, where the green check sits.
 3. **Verify.** Most input is fire-and-forget. Add `--verify` to `tap`, `type`, `key` or `button` (exit 5 when nothing changed), or check with `wait`, `assert` or `describe-ui --diff`, which prints only what changed since the previous command's tree (`guide verify`).
 4. **Batch.** For three or more steps, run one `offsider batch` call (`guide batch`).
 
@@ -46,7 +46,7 @@ With `--json`, a failure prints `exitCode` and an `error` object. `dispatched: n
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`. Run `offsider <command> --help` for every option.
+`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`. Run `offsider <command> --help` for every option.
 
 `button` names depend on the platform: iOS has `apple-pay`, `home`, `lock`, `side-button` and `siri`; Android has `back`, `app-switch`, `home`, `lock` (the power key), `volume-up` and `volume-down`. A button the device lacks exits 64.
 

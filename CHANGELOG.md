@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `turnstile` taps the checkbox square of a Cloudflare Turnstile widget and waits until it passes. The checkbox's accessibility frame includes the words beside the square, so a normal tap lands on the words. The tap sits a few points off the square's centre and stays inside it (`--jitter`, `--seed`). On iOS the web view leaves the checkbox out of the tree: the command reads a point in that web view, leaves a widget that already says Success, and otherwise taps the square where the green check sits. `--id` limits the search to one wrapper. Exits 5 when the checkbox remains, and 2 when no widget is on screen. A visual challenge fails with a message.
+
 ## [0.5.0] - 2026-10-04
 
 ### Added

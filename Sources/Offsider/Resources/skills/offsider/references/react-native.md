@@ -17,6 +17,10 @@
 - Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` (apps often wrap charts and web views this way) is missing from the tree, buttons included, but still takes taps. Tap by coordinates and say so, or ask for the wrapper to expose its controls.
 - Charts, maps, canvases and web views change pixels, not the tree: check them with `wait --region <x,y,w,h> --changed` or `screenshot --region <x,y,w,h> --compare before.png`, and with the app's logs.
 
+## Cloudflare Turnstile
+
+The checkbox frame includes the words beside the square, so `tap --label "Verify you are human"` lands on the words. `offsider turnstile` taps the square, a few points off its centre, and waits until the widget reads Success or the wait times out (exit 5). It finds a `cf-chl-widget` id, or that checkbox label when the container id is missing. On iOS the web view leaves the checkbox and the Success text out of the tree. The command reads a point in the short web view: Success means it has already passed, and otherwise the tap is the square where the green check sits. `--id` limits the search to one wrapper. A visual challenge fails with a message, because a checkbox tap cannot complete an image grid.
+
 ## Logs
 
 `offsider logs --rn --device <DEVICE_ID>` prints `console.log`, `console.warn` and `console.error` output from the last 30 s, in release builds too. Use `--last 2m` (up to `8760h`) or `--since <time>` (up to the year 9999) to widen it, `--grep <regex>` to filter, `--app <bundle id or package>` for one app's native logs and `--duration <seconds>` to collect live output. Logs are the best check that an action did something a screenshot cannot show, such as a request being sent.
