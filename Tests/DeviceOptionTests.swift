@@ -35,7 +35,7 @@ struct DeviceOptionTests {
         #expect(try Doctor.parse([]).deviceOption.id == nil)
         let udid = UUID().uuidString
         #expect(try Doctor.parse(["--device", udid]).deviceOption.id == udid)
-        #expect(throws: (any Error).self) { try Doctor.parse(["--device", "emulator-5556"]) }
+        #expect(try Doctor.parse(["--device", "emulator-5556"]).deviceOption.id == "emulator-5556")
     }
 
     @Test("batch steps cannot choose their own device", arguments: [

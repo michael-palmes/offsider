@@ -101,11 +101,11 @@ final class FakeHelperDevice: @unchecked Sendable {
         lock.withLock { recordedTimeline.append(entry) }
     }
 
-    /// A fake adb server whose emulator-5556 is this device.
-    func server() -> FakeAdbServer {
+    /// A fake adb server whose emulator-5556 is this device; `host` answers host queries other than `host:version`.
+    func server(host: @escaping @Sendable (String) -> FakeAdbServer.Reply = { _ in .hang }) -> FakeAdbServer {
         FakeAdbServer(handler: FakeAdbServer.devices(
             [Self.serial],
-            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : host($0) },
             device: { [self] _, service in handle(service) }
         ))
     }

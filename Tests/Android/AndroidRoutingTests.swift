@@ -131,11 +131,14 @@ struct AndroidRoutingTests {
 
 @Suite("Android command refusals")
 struct AndroidCommandRefusalTests {
-    @Test("doctor --device with an Android ID is a usage error, before any device work")
-    func doctorRefusesAndroid() async throws {
+    @Test("doctor --device with an Android ID and no SDK fails android.sdk, skips the device checks and exits 4")
+    func doctorChecksAndroidWithoutSDK() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("doctor --device emulator-5556")
-        #expect(result.exitCode == 64)
-        #expect(result.stderr.contains("doctor checks iOS simulators in this build; Android checks come later. Run `offsider doctor` for host checks."))
+        #expect(result.exitCode == 4)
+        #expect(result.stdout.contains("✗ android.sdk"))
+        #expect(result.stdout.contains("Android SDK not found"))
+        #expect(result.stdout.contains("- android-device.state"))
+        #expect(!result.stdout.contains("xcode.developer-dir"))
     }
 
     @Test("slider on Android is no longer refused: it goes to the emulator, here failing for want of an SDK")
