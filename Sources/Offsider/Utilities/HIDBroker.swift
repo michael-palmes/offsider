@@ -124,6 +124,11 @@ enum HIDBroker {
                 if errno == EINTR { continue }
                 throw posixError("accept")
             }
+            // Another user's client gets no bytes at all, not even the handshake.
+            guard isSameUserPeer(client) else {
+                Darwin.close(client)
+                continue
+            }
             configureNoSignalPipe(client)
             try configureSocketTimeouts(
                 client,
@@ -158,13 +163,6 @@ enum HIDBroker {
         session: HIDInteractor.Session,
         logger: OffsiderLogger
     ) async -> Bool {
-        var peerUID: uid_t = 0
-        var peerGID: gid_t = 0
-        guard getpeereid(client, &peerUID, &peerGID) == 0, peerUID == getuid() else {
-            try? writeResponse(error: "HID broker rejected a client owned by another user.", to: client)
-            return true
-        }
-
         var shouldContinue = true
         do {
             let data = try readMessage(from: client)
@@ -199,6 +197,12 @@ enum HIDBroker {
             try? writeResponse(error: brokerResponseDescription(for: error), to: client)
         }
         return shouldContinue
+    }
+
+    static func isSameUserPeer(_ client: Int32, expectedUID: uid_t = getuid()) -> Bool {
+        var peerUID: uid_t = 0
+        var peerGID: gid_t = 0
+        return getpeereid(client, &peerUID, &peerGID) == 0 && peerUID == expectedUID
     }
 
     static func brokerResponseDescription(for error: Error) -> String {

@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--verify` no longer quotes a password field's value.
 - On Android, a password field's text no longer appears in `describe-ui --fields native` or in a clickable parent's label, and a password field showing its hint reads as empty.
 - A failure while input was being sent no longer reports `dispatched: false`; it reports `unknown`.
+- The HID broker now checks a client's user before sending its ready handshake.
 - `--wait-timeout` no longer builds suggestions on every poll.
 
 ## [0.4.0] - 2026-10-04
