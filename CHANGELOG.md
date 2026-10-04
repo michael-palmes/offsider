@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Password fields read as bullets in `describe-ui`, selectors, `wait`, `assert` and `--verify` on both platforms, one per character. `--value` no longer matches them, and `assert --has-value` compares the bullets.
 - A SwiftUI `SecureField`, which iOS reports as a text field with a secure subrole, now has the role `secureTextField`.
 - On Android, non-ASCII text is no longer pasted into a focused password field; use `type --replace`.
+- On iOS, React Native checkboxes, radio buttons, switches, tabs, tab lists, menu items, combo boxes and progress bars report their role instead of `other`, read from the words React Native writes into the accessibility value, with `state.checked` and a `value` of `1`, `0` or `2` for toggles, as on Android.
+- iOS nodes report `state.selected` from the Selected trait when the tree carries traits.
 - **Breaking:** new exit codes: 2 selector not found (also off screen), 6 ambiguous selector, 7 device not found or not booted, 8 device busy, 9 Xcode, adb or the Android SDK missing; malformed device IDs, unknown displays and unsupported keys exit 64. These exited 1 before.
 - **Breaking:** `batch` exits with the code of its first step that failed to run, and a failed step's `error` is now an object.
 - **Breaking:** two input commands on one device no longer run at once; the second exits 8.

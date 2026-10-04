@@ -39,6 +39,12 @@ export const routeInfo = {
     menuTitle: 'TabView Test',
     subtitle: 'Tab switching',
   },
+  'choice-test': {
+    section: 'Touch & Gestures',
+    title: 'Choice Test',
+    menuTitle: 'Choice Test',
+    subtitle: 'Checkboxes, radios, a switch and a combo box',
+  },
   'text-input': {
     section: 'Input & Text',
     title: 'Text Input',

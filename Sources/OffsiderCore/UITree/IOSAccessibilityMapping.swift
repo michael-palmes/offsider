@@ -58,9 +58,19 @@ public enum IOSAccessibilityMapping {
         let nativeRole = text(dictionary["role"])
         let subrole = text(dictionary["subrole"])
         let roleDescription = text(dictionary["role_description"])
-        let role = role(type: type, role: nativeRole, subrole: subrole, roleDescription: roleDescription)
+        var role = role(type: type, role: nativeRole, subrole: subrole, roleDescription: roleDescription)
         let raw = text(dictionary["AXValue"])
-        let value = role == .secureTextField ? SecureText.masked(raw) : raw
+        var value = role == .secureTextField ? SecureText.masked(raw) : raw
+        let traits = (dictionary["traits"] as? [Any] ?? []).compactMap(text)
+        let selected: Bool? = traits.contains("Selected") ? true : nil
+        var checked: Bool?
+        if role == .other, let parsed = ReactNativeAXValue.parse(raw) {
+            role = parsed.role
+            checked = parsed.mixed ? nil : parsed.checked ?? (role == .radioButton ? selected : nil)
+            value = parsed.value ?? (role.isToggle ? ReactNativeAXValue.toggleValue(checked: checked, mixed: false) : nil)
+        } else {
+            checked = self.checked(role: role, value: value)
+        }
 
         return UINode(
             role: role,
@@ -69,7 +79,7 @@ public enum IOSAccessibilityMapping {
             value: value,
             frame: frame(dictionary["frame"]),
             enabled: dictionary["enabled"] as? Bool,
-            state: UIState(checked: checked(role: role, value: value)),
+            state: UIState(checked: checked, selected: selected),
             native: .ios(IOSNativeAttributes(
                 type: type,
                 role: nativeRole,

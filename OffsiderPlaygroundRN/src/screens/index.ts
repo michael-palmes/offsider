@@ -5,6 +5,7 @@ import { AlertTestScreen } from './AlertTestScreen';
 import { BatchLoginFlowScreen } from './BatchLoginFlowScreen';
 import { BatchTestScreen } from './BatchTestScreen';
 import { ButtonTestScreen } from './ButtonTestScreen';
+import { ChoiceTestScreen } from './ChoiceTestScreen';
 import { ContextMenuTestScreen } from './ContextMenuTestScreen';
 import { EnvironmentTestScreen } from './EnvironmentTestScreen';
 import { GesturePresetsScreen } from './GesturePresetsScreen';
@@ -34,6 +35,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'gesture-presets': GesturePresetsScreen,
   'switch-test': SwitchTestScreen,
   'tab-view-test': TabViewTestScreen,
+  'choice-test': ChoiceTestScreen,
   'text-input': TextInputScreen,
   'key-press': KeyPressScreen,
   'key-sequence': KeySequenceScreen,

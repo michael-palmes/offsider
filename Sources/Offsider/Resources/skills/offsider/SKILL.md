@@ -101,7 +101,7 @@ Most HID commands (`tap`, `swipe`, `drag`, `type`, `key`, etc.) are fire-and-for
 - `stream-video --format bgra` sends a frame only when the screen changes.
 - React Native on Android: `testID` is `id` and `accessibilityLabel` is `label` (from `content-desc`), as on iOS. A `View` with neither `accessible` nor `testID` can be flattened away, so ask for a `testID` when a target is missing. A `Pressable` without a label takes its children's text as its label.
 - Android alerts show upper-case button text (`DELETE`, `CANCEL`) with ids `android:id/button1` and `android:id/button2`; `--id button1` matches through the `:id/` suffix. A `Modal` is its own window, so only the modal is in the tree while it is open.
-- Radio segments are `radioButton` on Android but `other` on iOS, so select them by `--id` or `--label` rather than `--element-type`.
+- React Native checkboxes, radio buttons and switches report their role on both platforms, with `value` `1`, `0` or `2` (mixed), so `--element-type radioButton` works on iOS too. On iOS a combo box and a progress bar may still read as `other`; select those by `--id` or `--label`.
 - `offsider button back` pops React Navigation and custom stacks, like the hardware back button.
 
 ## Step 4b: React Native and Expo apps
