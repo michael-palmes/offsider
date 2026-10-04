@@ -23,7 +23,7 @@ struct DeviceLockCommandTests {
         let (udid, lock) = try await holdRandomSimulator()
         defer { done(udid, lock) }
 
-        let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1 --verify --json --device \(udid)")
+        let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1 --verify --json --device \(udid)", unsetting: ["OFFSIDER_WAIT_LOCK"])
         #expect(result.exitCode == 8)
         #expect(result.stderr.contains("is in use by pid \(getpid()) (offsider batch"))
         let report = try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any]
@@ -41,7 +41,7 @@ struct DeviceLockCommandTests {
         try FileManager.default.createDirectory(atPath: sandbox, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: sandbox) }
 
-        let result = try await TestHelpers.runOffsiderCommandSeparated("swipe --start-x 1 --start-y 1 --end-x 2 --end-y 2 --device \(udid)", environment: ["TMPDIR": sandbox])
+        let result = try await TestHelpers.runOffsiderCommandSeparated("swipe --start-x 1 --start-y 1 --end-x 2 --end-y 2 --device \(udid)", environment: ["TMPDIR": sandbox], unsetting: ["OFFSIDER_WAIT_LOCK"])
         #expect(result.exitCode == 8)
     }
 
@@ -88,7 +88,7 @@ struct DeviceLockCommandTests {
             "orientation landscape-left", "appearance dark", "content-size large",
             "permission grant photos --app com.example.app", "status-bar override --battery 50", "status-bar clear", "biometric enrol",
         ] {
-            let result = try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(udid)")
+            let result = try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(udid)", unsetting: ["OFFSIDER_WAIT_LOCK"])
             #expect(result.exitCode == 8, "\(command): \(result.stderr)")
         }
     }

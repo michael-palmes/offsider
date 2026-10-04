@@ -507,6 +507,8 @@ run_unit_tests() {
     export OFFSIDER_BIN_PATH
     export OFFSIDER_E2E=0
     export OFFSIDER_LANDSCAPE_E2E=0
+    # Unit tests spawn offsider against held locks and expect it to fail at once.
+    unset OFFSIDER_WAIT_LOCK
 
     local args=(--skip-build --no-parallel)
     [[ "$VERBOSE" == true ]] && args+=(--verbose)
