@@ -125,7 +125,15 @@ public enum AndroidDoctorRules {
 
     public static func deviceState(_ facts: AndroidDeviceFacts) -> Verdict {
         let serial = facts.serial ?? facts.id
-        let name = facts.avdName.map { "\($0) (\(serial))" } ?? serial
+        let name = (facts.avdName ?? facts.model).map { "\($0) (\(serial))" } ?? serial
+        if facts.isPhysical {
+            switch facts.state {
+            case .booted: return (.pass, "\(name), a phone connected over USB", nil)
+            case .offline: return (.fail, "\(name) is offline", "Reconnect the cable and unlock the phone, then run doctor again.")
+            case .unauthorised: return (.fail, "\(name) is unauthorised", "Unlock the phone and accept the \"Allow USB debugging?\" prompt.")
+            default: break
+            }
+        }
         switch facts.state {
         case .booted:
             return (.pass, "\(name), booted", nil)
@@ -281,7 +289,7 @@ public enum AndroidDoctorRules {
         if let grpc = facts.grpc {
             checks.append(DoctorCheckResult(id: .androidDeviceGrpc, verdict: self.grpc(grpc)))
         } else {
-            checks.append(.skipped(.androidDeviceGrpc, "not an emulator"))
+            checks.append(.skipped(.androidDeviceGrpc, facts.isPhysical ? "a physical device has no emulator gRPC endpoint" : "not an emulator"))
         }
         if let uiAutomation = facts.uiAutomation {
             checks.append(DoctorCheckResult(id: .androidDeviceUiAutomation, verdict: self.uiAutomation(uiAutomation)))

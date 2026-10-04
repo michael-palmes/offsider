@@ -5,7 +5,7 @@ import OffsiderCore
 
 struct Doctor: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Check the host and, with --device, a simulator or Android emulator for problems that stop Offsider input or screen reads."
+        abstract: "Check the host and, with --device, a simulator, Android emulator or USB phone for problems that stop Offsider input or screen reads."
     )
 
     @OptionGroup
@@ -75,11 +75,13 @@ struct Doctor: AsyncParsableCommand {
             facts = await probe.run(deviceID: id)
         }
         let serial = facts.device?.serial ?? id
-        let kind: String? = facts.device?.serial.map { DeviceIDClassifier.classify($0).platform == .android ? "emulator" : "other" }
+        let kind: String? = facts.device.flatMap { device in
+            device.isPhysical ? "physical" : device.serial.map { DeviceIDClassifier.classify($0).platform == .android ? "emulator" : "other" }
+        }
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: nil,
-            device: DoctorDevice(id: serial, platform: "android", name: facts.device?.avdName, kind: kind),
+            device: DoctorDevice(id: serial, platform: "android", name: facts.device?.avdName ?? facts.device?.model, kind: kind),
             xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
             booted: [],
             android: AndroidDoctorRules.summary(facts.host, device: facts.device),

@@ -6,6 +6,8 @@ import OffsiderCore
 public struct AndroidDoctorProbe {
     nonisolated static let deviceScript = "getprop ro.product.cpu.abi; settings get secure accessibility_enabled; "
         + "settings get secure enabled_accessibility_services; pidof \(HelperLauncher.processName)"
+    /// The API level and release first (a phone's device-list row has neither), then the emulator script, whose `pidof` may print nothing.
+    nonisolated static let phoneScript = "getprop ro.build.version.sdk; getprop ro.build.version.release; " + deviceScript
 
     let host: AndroidHost
 
@@ -150,10 +152,13 @@ public struct AndroidDoctorProbe {
             serial = id
         default:
             do {
-                serial = try await directory.serial(forAVDNamed: id)
+                serial = try await directory.resolve(name: id)
             } catch {
                 return AndroidDeviceFacts(id: id, state: .notFound(Self.message(error)))
             }
+        }
+        guard case .androidSerial = DeviceIDClassifier.classify(serial) else {
+            return await phoneFacts(id, serial: serial, directory: directory, client: client)
         }
         let emulator: RunningEmulator
         do {
@@ -169,17 +174,48 @@ public struct AndroidDoctorProbe {
         facts.apiLevel = emulator.apiLevel
         facts.release = emulator.osRelease
 
-        if let result = try? await client.shell(Self.deviceScript, on: serial, timeout: .seconds(5), label: "getprop; settings get; pidof") {
-            let lines = result.stdoutText.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
-            let line = { (index: Int) in index < lines.count ? lines[index] : "" }
-            facts.abi = line(0).isEmpty ? nil : line(0)
-            facts.uiAutomation = UiAutomationFact(
-                accessibilityEnabled: Int(line(1)).map { $0 != 0 },
-                enabledServices: line(2) == "null" ? [] : line(2).split(separator: ":").map(String.init).filter { !$0.isEmpty },
-                offsiderHelperPids: line(3).split(whereSeparator: \.isWhitespace).compactMap { Int32($0) }
-            )
-        }
+        _ = await readDeviceScript(Self.deviceScript, into: &facts, serial: serial, client: client)
         facts.grpc = await grpcFact(emulator)
+        return await finishDeviceFacts(facts, serial: serial, client: client)
+    }
+
+    /// A USB phone: state from its device-list row, no gRPC; the shell, reverse and helper checks run as on an emulator.
+    func phoneFacts(_ id: String, serial: String, directory: AndroidDeviceDirectory, client: AdbClient) async -> AndroidDeviceFacts {
+        let phone: ConnectedPhone
+        do {
+            guard let found = try await directory.connectedPhone(serial: serial) else {
+                return AndroidDeviceFacts(id: id, serial: serial, state: .notFound(AndroidError.phoneNotConnected(serial).message))
+            }
+            phone = found
+        } catch {
+            return AndroidDeviceFacts(id: id, serial: serial, state: .other(Self.message(error)))
+        }
+        var facts = AndroidDeviceFacts(id: id, serial: serial, state: Self.state(phone.state, bootCompleted: true))
+        facts.isPhysical = true
+        facts.model = phone.model
+        guard facts.state == .booted else { return facts }
+        let lines = await readDeviceScript(Self.phoneScript, into: &facts, serial: serial, client: client, skipping: 2)
+        facts.apiLevel = lines.first.flatMap { Int($0) }
+        facts.release = lines.count > 1 && !lines[1].isEmpty ? lines[1] : nil
+        return await finishDeviceFacts(facts, serial: serial, client: client)
+    }
+
+    /// Runs the getprop and settings script; returns its trimmed lines, empty when the shell failed.
+    private func readDeviceScript(_ script: String, into facts: inout AndroidDeviceFacts, serial: String, client: AdbClient, skipping offset: Int = 0) async -> [String] {
+        guard let result = try? await client.shell(script, on: serial, timeout: .seconds(5), label: "getprop; settings get; pidof") else { return [] }
+        let lines = result.stdoutText.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+        let line = { (index: Int) in index + offset < lines.count ? lines[index + offset] : "" }
+        facts.abi = line(0).isEmpty ? nil : line(0)
+        facts.uiAutomation = UiAutomationFact(
+            accessibilityEnabled: Int(line(1)).map { $0 != 0 },
+            enabledServices: line(2) == "null" ? [] : line(2).split(separator: ":").map(String.init).filter { !$0.isEmpty },
+            offsiderHelperPids: line(3).split(whereSeparator: \.isWhitespace).compactMap { Int32($0) }
+        )
+        return lines
+    }
+
+    private func finishDeviceFacts(_ facts: AndroidDeviceFacts, serial: String, client: AdbClient) async -> AndroidDeviceFacts {
+        var facts = facts
         if let listing = try? await client.deviceQuery("reverse:list-forward", on: serial) {
             facts.reverses = listing.split(whereSeparator: \.isNewline).map(String.init)
         }
@@ -190,8 +226,12 @@ public struct AndroidDoctorProbe {
     }
 
     static func state(_ emulator: RunningEmulator) -> AndroidDeviceStateFact {
-        switch emulator.state {
-        case .device: return emulator.bootCompleted ? .booted : .booting
+        state(emulator.state, bootCompleted: emulator.bootCompleted)
+    }
+
+    static func state(_ state: AdbDeviceState, bootCompleted: Bool) -> AndroidDeviceStateFact {
+        switch state {
+        case .device: return bootCompleted ? .booted : .booting
         case .offline: return .offline
         case .unauthorized: return .unauthorised
         case .other(let state): return .other(state)

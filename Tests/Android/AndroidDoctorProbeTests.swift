@@ -135,6 +135,60 @@ struct AndroidDoctorProbeTests {
         #expect(rig.device.startedProcesses == 0)
     }
 
+    static func phoneProbe(_ listing: String) throws -> (AndroidDoctorProbe, FakeAdbServer) {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(
+            ["R58M123ABC"],
+            host: { service in
+                switch service {
+                case "host:version": return FakeAdbServer.okay(payload: "0029")
+                case "host:mdns:check": return FakeAdbServer.okay(payload: "ERROR: mdns discovery disabled")
+                case "host:devices-l": return FakeAdbServer.okay(payload: listing)
+                default: return .hang
+                }
+            },
+            device: { _, service in
+                if service.hasSuffix(AndroidDoctorProbe.phoneScript) { return FakeAdbServer.shell(stdout: "35\n15\narm64-v8a\n0\nnull\n") }
+                if service == "reverse:list-forward" { return FakeAdbServer.okay(payload: "") }
+                return FakeAdbServer.shell(status: 1)
+            }
+        ))
+        let host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: server, processes: processes())
+        return (AndroidDoctorProbe(host: host), server)
+    }
+
+    @Test("a USB phone is checked from its device-list row, with the emulator-only checks skipped and saying why")
+    func phoneChecks() async throws {
+        let (probe, server) = try Self.phoneProbe("R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n")
+        let facts = await probe.run(deviceID: "R58M123ABC")
+        let device = try #require(facts.device)
+
+        #expect(device.isPhysical)
+        #expect(device.state == .booted)
+        #expect(device.model == "Pixel 9")
+        #expect(device.apiLevel == 35)
+        #expect(device.release == "15")
+        #expect(device.abi == "arm64-v8a")
+        #expect(device.grpc == nil)
+        #expect(!server.services.contains { $0.contains("emu") || $0.contains(AndroidDeviceDirectory.propertiesScript) })
+        let checks = AndroidDoctorRules.deviceChecks(device, hostBlocker: nil)
+        #expect(checks.first { $0.id == .androidDeviceState }?.status == .pass)
+        #expect(checks.first { $0.id == .androidDeviceState }?.detail == "Pixel 9 (R58M123ABC), a phone connected over USB")
+        let grpc = try #require(checks.first { $0.id == .androidDeviceGrpc })
+        #expect(grpc.status == .skip)
+        #expect(grpc.detail.contains("a physical device has no emulator gRPC endpoint"))
+    }
+
+    @Test("an unauthorised phone fails the device state with the USB debugging hint")
+    func unauthorisedPhone() async throws {
+        let (probe, _) = try Self.phoneProbe("R58M123ABC unauthorized usb:1-1 transport_id:2\n")
+        let device = try #require(await probe.run(deviceID: "R58M123ABC").device)
+
+        #expect(device.state == .unauthorised)
+        let check = try #require(AndroidDoctorRules.deviceChecks(device, hostBlocker: nil).first { $0.id == .androidDeviceState })
+        #expect(check.status == .fail)
+        #expect(check.hint?.contains("Allow USB debugging?") == true)
+    }
+
     @Test("an AVD name that is not running fails the device state without throwing")
     func unknownAVD() async throws {
         let rig = try Self.rig()

@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `permission grant|revoke|reset <service>... --app <id>` sets an app's permissions on iOS simulators (`simctl privacy`) and Android (runtime permissions, idempotent, never `pm reset-permissions`), with `show` on Android and `services` listing the names each platform supports. It works on a named USB phone.
 - `status-bar override|clear|show` sets a clean status bar: iOS `simctl status_bar`, Android System UI demo mode in one adb round trip. It works on a named USB phone.
 - `biometric enrol|unenrol|match|no-match|status` drives Face ID and Touch ID on iOS simulators and the fingerprint sensor on Android emulators through the emulator console. Android enrolment needs a screen lock and is refused with instructions, as is `biometric` on a phone. `enroll` and `unenroll` are accepted too.
+- `doctor --device <usb phone serial>` checks the phone instead of saying no device has that name, skipping the emulator gRPC check and saying why.
 - The React Native playground has a `permission-state` screen (camera and notification permissions on Android), and the native playground a `device-state` screen (contacts and photos permissions, Face ID).
 - `scripts/rn-playground.sh metro stop` removes the `adb reverse` it set on running emulators.
 - `scripts/bench-ab.sh` compares a base build with the branch on one Offsider device in paired, seeded runs, and reports medians, a bootstrap interval and a verdict.
