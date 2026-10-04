@@ -111,8 +111,7 @@ struct AndroidDeviceDirectory {
         return ConnectedPhone(entry)
     }
 
-    /// A USB phone named by its exact serial, else the single running emulator of that AVD, from one device list.
-    /// A network row is refused, and a name that is both a phone and a running AVD is ambiguous.
+    /// A USB phone by exact serial, else that AVD's single running emulator; refuses network rows and ambiguous names.
     func resolve(name: String) async throws -> String {
         let rows = try await client.devices()
         let phone = rows.first { $0.serial == name && $0.consolePort == nil }

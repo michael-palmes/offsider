@@ -105,8 +105,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return phone
     }
 
-    /// For the router: a USB phone named by its exact serial, else the single running serial of an AVD;
-    /// with no SDK, the name is simply unknown.
+    /// For the router: a USB phone by exact serial, else an AVD's single running serial; unknown with no SDK.
     public func resolveAndroidName(_ name: String) async throws -> String {
         do {
             try await prepare()

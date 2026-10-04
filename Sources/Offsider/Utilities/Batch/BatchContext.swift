@@ -102,8 +102,7 @@ final class BatchContext {
         }
     }
 
-    /// What the transition guard compares against: the latest tree this batch read, with the last input from this batch or else the disk record.
-    /// With neither a record nor an input, an earlier read in this batch still lets an unmoved target act at once.
+    /// The guard's baseline: this batch's latest tree, with its last input or else the disk record's.
     func settlePolicy(stepOptedOut: Bool) -> SettlePolicy {
         guard !noSettle, !stepOptedOut else { return .off }
         guard let lastTree else { return .guarded(record: lastInputAt == nil ? cachedRecord : record(lastInputAt: lastInputAt, tree: nil)) }

@@ -1,7 +1,7 @@
 import Foundation
 import OffsiderCore
 
-/// Read-only Android checks: never starts or kills the adb server, never writes a setting, never adds or removes a reverse.
+/// Read-only Android checks, except `startAdbServerIfAbsent` for `--fix`: never kills the adb server, writes a setting or changes a reverse.
 @MainActor
 public struct AndroidDoctorProbe {
     nonisolated static let deviceScript = "getprop ro.product.cpu.abi; settings get secure accessibility_enabled; "

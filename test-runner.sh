@@ -346,10 +346,12 @@ check_simulator_crash_loop() {
     local reports="$HOME/Library/Logs/DiagnosticReports"
     [[ -d "$reports" ]] || return 0
     local looping
+    # Only each report's first 16 KB, as doctor reads.
     looping=$(find "$reports" -maxdepth 1 -type f -name '*.ips' -mmin -10 -print0 2>/dev/null \
-        | xargs -0 grep -l -F "com.apple.CoreSimulator.SimDevice.$udid\"" 2>/dev/null \
-        | while IFS= read -r report; do
-            head -c 16384 "$report" | grep -o -m 1 '"procName" : "[^"]*"' | sed 's/.*: "\(.*\)"/\1/'
+        | while IFS= read -r -d '' report; do
+            prefix=$(head -c 16384 "$report")
+            [[ "$prefix" == *"com.apple.CoreSimulator.SimDevice.$udid\""* ]] || continue
+            printf '%s\n' "$prefix" | grep -o -m 1 '"procName" : "[^"]*"' | sed 's/.*: "\(.*\)"/\1/'
         done | sort | uniq -c | awk '{ n = $1; sub(/^ *[0-9]+ /, ""); if (n >= 3) printf "%s crashed %d times in the last 10 minutes\n", $0, n }') || true
     if [[ -n "$looping" ]]; then
         print_error "Simulator $udid is in a crash loop:"

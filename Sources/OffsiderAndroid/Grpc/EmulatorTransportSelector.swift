@@ -50,8 +50,7 @@ struct EmulatorTransportSelector {
         return mode
     }
 
-    /// A phone, or no discovery file or port: adb, silently. A failed probe: adb with one warning, or the error when gRPC is forced.
-    /// Only an `emulator-NNNN` serial is matched to a discovery file, so a phone never gets an emulator's client.
+    /// adb for a phone or a missing discovery file; a failed probe warns once, or throws when gRPC is forced.
     func choose(for serial: String) async throws -> AndroidTransport {
         let mode = try Self.mode(host: host)
         guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial) else {

@@ -157,6 +157,8 @@ else
     echo "bench-ab: building base ($BASE_SHA) in release in $WORKTREE" >&2
     if [[ ! -d "$WORKTREE" ]]; then
       (umask 077 && mkdir -p "$BENCH_ROOT/worktrees")
+      # A purged TMPDIR leaves a stale registration that would block the add.
+      git -C "$REPO" worktree prune
       git -C "$REPO" worktree add --detach "$WORKTREE" "$BASE_SHA" >&2
     fi
     if [[ ! -d "$WORKTREE/build_products" ]]; then

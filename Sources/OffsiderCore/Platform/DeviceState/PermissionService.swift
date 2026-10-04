@@ -202,8 +202,7 @@ public struct AndroidPermissionPlan: Equatable, Sendable {
     public let script: String?
     public let change: PermissionChange
 
-    /// Grant and revoke skip permissions already in place; reset revokes and clears the user-set flags so the app asks again.
-    /// A named service the app requests none of is an error naming the manifest entries.
+    /// Grant and revoke skip permissions already in place; reset also clears the user-set flags so the app asks again.
     public static func make(_ action: PermissionAction, _ targets: [PermissionTarget], package: String, state: AndroidPackagePermissions) throws -> AndroidPermissionPlan {
         var notes: [String] = []
         var changes: [PermissionTargetChange] = []

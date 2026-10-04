@@ -44,7 +44,8 @@ struct Doctor: AsyncParsableCommand {
         var fixes: [DoctorFixResult] = []
         if fix {
             fixes = await DoctorFixes.apply(after: result, udid: udid)
-            if case .found = facts.sdk {
+            // A named simulator needs no adb server, so only a host-wide fix starts one.
+            if udid == nil, case .found = facts.sdk {
                 fixes.append(await android.startAdbServerIfAbsent())
             }
             result = await runner.run()
