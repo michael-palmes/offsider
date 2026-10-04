@@ -191,7 +191,9 @@ struct AndroidCommandRefusalTests {
 
     @Test("slider on Android is no longer refused: it goes to the emulator, here failing for want of an SDK")
     func sliderReachesAndroid() async throws {
-        let result = try await TestHelpers.runOffsiderWithoutAndroid("slider --id volume --value 50 --device emulator-5556")
+        let serial = TestDevices.emulatorSerial()
+        defer { TestDevices.removePrivateFiles(platform: .android, id: serial) }
+        let result = try await TestHelpers.runOffsiderWithoutAndroid("slider --id volume --value 50 --device \(serial)")
         #expect(result.exitCode == 9)
         #expect(result.stderr.contains(ListDevicesPlatformFilterTests.sdkNotFound))
         #expect(!result.stderr.contains("not supported"))

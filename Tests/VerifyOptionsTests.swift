@@ -3,10 +3,10 @@ import Testing
 
 @Suite("Verify Options Tests")
 struct VerifyOptionsTests {
-    private static var fakeUDID: String { UUID().uuidString }
-
     private func run(_ command: String) async throws -> SeparatedCommandOutput {
-        try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(Self.fakeUDID)")
+        let udid = TestDevices.simulatorUDID()
+        defer { TestDevices.removePrivateFiles(platform: .ios, id: udid) }
+        return try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(udid)")
     }
 
     @Test("--retries without --verify is a usage error")

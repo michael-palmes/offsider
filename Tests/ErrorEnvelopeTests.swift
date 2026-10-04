@@ -25,7 +25,8 @@ struct ErrorEnvelopeTests {
 
     @Test("a coordinate tap on an unknown device exits 7 and prints no JSON without --json")
     func unknownDeviceTapExits7() async throws {
-        let udid = UUID().uuidString
+        let udid = TestDevices.simulatorUDID()
+        defer { TestDevices.removePrivateFiles(platform: .ios, id: udid) }
         let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1 --device \(udid)")
         #expect(result.exitCode == 7)
         #expect(result.stdout.isEmpty)
@@ -74,7 +75,9 @@ struct SecretEchoTests {
         "batch --json --step 'type \(sentinel)'",
     ])
     func noEcho(command: String) async throws {
-        let result = try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(UUID().uuidString)")
+        let udid = TestDevices.simulatorUDID()
+        defer { TestDevices.removePrivateFiles(platform: .ios, id: udid) }
+        let result = try await TestHelpers.runOffsiderCommandSeparated("\(command) --device \(udid)")
         #expect(result.exitCode != 0)
         #expect(!result.stdout.contains(Self.sentinel))
         #expect(!result.stderr.contains(Self.sentinel))
