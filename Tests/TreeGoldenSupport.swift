@@ -81,16 +81,21 @@ enum TreeGoldens {
         ]
     }
 
+    /// The raw capture as compact JSON with sorted keys, so it stays small and diffs stay stable.
+    static func rawData(_ capture: Any) throws -> Data {
+        try JSONSerialization.data(withJSONObject: capture, options: [.sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
+    }
+
     /// Writes the scrubbed raw capture and the three files derived from it.
     static func write(_ capture: [String: Any], to golden: Golden) throws {
         try FileManager.default.createDirectory(at: golden.directory, withIntermediateDirectories: true)
-        let raw = try JSONSerialization.data(withJSONObject: capture, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
-        try raw.write(to: golden.url(rawFile))
+        try rawData(capture).write(to: golden.url(rawFile))
         try rerender(golden)
     }
 
-    /// Re-renders the derived files from the committed raw capture, offline.
+    /// Rewrites the committed raw capture in the compact format and re-renders the derived files from it, offline.
     static func rerender(_ golden: Golden) throws {
+        try rawData(try JSONSerialization.jsonObject(with: golden.data(rawFile))).write(to: golden.url(rawFile))
         for (file, data) in renderings(of: try tree(of: golden)) {
             try data.write(to: golden.url(file))
         }

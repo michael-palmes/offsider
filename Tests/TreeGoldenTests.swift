@@ -141,7 +141,7 @@ struct OutputEconomyTests {
         #expect(text <= budget.text, "\(golden.name) text is \(text) bytes, over its \(budget.text) byte budget. \(Self.raise)")
     }
 
-    @Test("no budget is more than 20 percent above the output it bounds", arguments: goldens)
+    @Test("no budget is more than 20 percent above the output it bounds, or above its 64-byte rounding when that is more", arguments: goldens)
     func noSlack(golden: TreeGoldens.Golden) throws {
         let budget = try #require(try TreeGoldens.budgets()[golden.name])
         let renderings = TreeGoldens.renderings(of: try UITree(jsonData: try golden.data(TreeGoldens.jsonFile)))
@@ -149,7 +149,7 @@ struct OutputEconomyTests {
             ("summary", renderings[TreeGoldens.summaryFile]!.count, budget.summary),
             ("text", renderings[TreeGoldens.textFile]!.count, budget.text),
         ] {
-            #expect(Double(limit) <= Double(size) * 1.2, "\(golden.name) \(name) budget \(limit) is more than 20 percent above its \(size) bytes; lower it.")
+            #expect(Double(limit) <= max(Double(size) * 1.2, Double(TreeGoldens.budget(for: size))), "\(golden.name) \(name) budget \(limit) is more than 20 percent above its \(size) bytes; lower it.")
         }
     }
 }

@@ -1,0 +1,308 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "parked-sheet-test-screen",
+          "label": "Parked Sheet",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 291.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "parked-sheet-test-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 765,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Parked Sheet",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "parked-sheet-test-state",
+          "label": "Parked Sheet State: Initial",
+          "value": null,
+          "frame": {
+            "x": 108.19,
+            "y": 114.67,
+            "width": 195.05,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "parked-sheet-test-state",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 284,
+              "y": 301,
+              "width": 512,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Parked Sheet State: Initial",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "parked-sheet-test-position",
+          "label": "Sheet Position: Parked",
+          "value": null,
+          "frame": {
+            "x": 119.62,
+            "y": 153.9,
+            "width": 172.19,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "parked-sheet-test-position",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 314,
+              "y": 404,
+              "width": 452,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Sheet Position: Parked",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "parked-sheet-test-open",
+          "label": "Open Filters",
+          "value": null,
+          "frame": {
+            "x": 143.24,
+            "y": 193.14,
+            "width": 124.95,
+            "height": 43.81
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "parked-sheet-test-open",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 376,
+              "y": 507,
+              "width": 328,
+              "height": 115
+            },
+            "text": null,
+            "contentDescription": "Open Filters",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "parked-sheet-test-open-slow",
+          "label": "Open Filters Slowly",
+          "value": null,
+          "frame": {
+            "x": 116.19,
+            "y": 253.33,
+            "width": 179.43,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "parked-sheet-test-open-slow",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 305,
+              "y": 665,
+              "width": 471,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Open Filters Slowly",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "parked-sheet-test-body-save",
+          "label": "Save",
+          "value": null,
+          "frame": {
+            "x": 171.05,
+            "y": 313.14,
+            "width": 69.33,
+            "height": 43.81
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "parked-sheet-test-body-save",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 449,
+              "y": 822,
+              "width": 182,
+              "height": 115
+            },
+            "text": null,
+            "contentDescription": "Save",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

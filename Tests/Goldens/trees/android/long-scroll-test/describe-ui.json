@@ -1,0 +1,669 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "long-scroll-test-screen",
+          "label": "Long Scroll",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 291.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "long-scroll-test-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 765,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Long Scroll",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "long-scroll-test-state",
+          "label": "Long Scroll Selected: None",
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 98.67,
+            "width": 411.43,
+            "height": 55.62
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "long-scroll-test-state",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 259,
+              "width": 1080,
+              "height": 146
+            },
+            "text": null,
+            "contentDescription": "Long Scroll Selected: None",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "scrollView",
+          "id": "long-scroll-test-scroll-view",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 154.29,
+            "width": 411.43,
+            "height": 769.14
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.ScrollView",
+            "resourceId": "long-scroll-test-scroll-view",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 405,
+              "width": 1080,
+              "height": 2019
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "button",
+              "id": "long-scroll-test-start",
+              "label": "Long Scroll Start",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 154.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-start",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 405,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Start",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-1",
+              "label": "Long Scroll Row 1",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 218.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-1",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 573,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 1",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-2",
+              "label": "Long Scroll Row 2",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 282.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-2",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 741,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 2",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-3",
+              "label": "Long Scroll Row 3",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 346.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-3",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 909,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 3",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-4",
+              "label": "Long Scroll Row 4",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 410.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-4",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 1077,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 4",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-5",
+              "label": "Long Scroll Row 5",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 474.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-5",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 1245,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 5",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-6",
+              "label": "Long Scroll Row 6",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 538.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-6",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 1413,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 6",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-7",
+              "label": "Long Scroll Row 7",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 602.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-7",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 1581,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 7",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-8",
+              "label": "Long Scroll Row 8",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 666.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-8",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 1749,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 8",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-9",
+              "label": "Long Scroll Row 9",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 730.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-9",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 1917,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 9",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-10",
+              "label": "Long Scroll Row 10",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 794.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-10",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 2085,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 10",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-11",
+              "label": "Long Scroll Row 11",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 858.29,
+                "width": 411.43,
+                "height": 64
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-11",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 2253,
+                  "width": 1080,
+                  "height": 168
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 11",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "long-scroll-test-row-12",
+              "label": "Long Scroll Row 12",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 922.29,
+                "width": 411.43,
+                "height": 1.14
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "long-scroll-test-row-12",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 2421,
+                  "width": 1080,
+                  "height": 3
+                },
+                "text": null,
+                "contentDescription": "Long Scroll Row 12",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

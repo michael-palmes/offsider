@@ -1,0 +1,524 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "choice-test-screen",
+          "label": "Choice Test",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 291.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "choice-test-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 765,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Choice Test",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "choice-test-state",
+          "label": "Choice State: Terms Off, Updates On, Size Medium, Sync Off, Menu Closed",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 114.67,
+            "width": 379.43,
+            "height": 43.43
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "choice-test-state",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 301,
+              "width": 996,
+              "height": 114
+            },
+            "text": null,
+            "contentDescription": "Choice State: Terms Off, Updates On, Size Medium, Sync Off, Menu Closed",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "checkbox",
+          "id": "choice-test-checkbox-terms",
+          "label": "Accept Terms",
+          "value": "0",
+          "frame": {
+            "x": 16,
+            "y": 178.29,
+            "width": 127.24,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.CheckBox",
+            "resourceId": "choice-test-checkbox-terms",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 468,
+              "width": 334,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Accept Terms",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "checkbox",
+          "id": "choice-test-checkbox-updates",
+          "label": "Product Updates",
+          "value": "1",
+          "frame": {
+            "x": 16,
+            "y": 230.48,
+            "width": 146.29,
+            "height": 43.81
+          },
+          "enabled": true,
+          "state": {
+            "checked": true,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.CheckBox",
+            "resourceId": "choice-test-checkbox-updates",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 605,
+              "width": 384,
+              "height": 115
+            },
+            "text": null,
+            "contentDescription": "Product Updates",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "checkbox",
+          "id": "choice-test-checkbox-mixed",
+          "label": "Select All, mixed",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 282.29,
+            "width": 96.76,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.CheckBox",
+            "resourceId": "choice-test-checkbox-mixed",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 741,
+              "width": 254,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Select All, mixed",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "choice-test-size",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 346.29,
+            "width": 209.9,
+            "height": 36.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "choice-test-size",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 909,
+              "width": 551,
+              "height": 95
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Radio Group",
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "radioButton",
+          "id": "choice-test-radio-small",
+          "label": "Small",
+          "value": "0",
+          "frame": {
+            "x": 17.9,
+            "y": 348.19,
+            "width": 62.86,
+            "height": 32
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.RadioButton",
+            "resourceId": "choice-test-radio-small",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 47,
+              "y": 914,
+              "width": 165,
+              "height": 84
+            },
+            "text": null,
+            "contentDescription": "Small",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "radioButton",
+          "id": "choice-test-radio-medium",
+          "label": "Medium",
+          "value": "1",
+          "frame": {
+            "x": 80.76,
+            "y": 348.19,
+            "width": 80,
+            "height": 32
+          },
+          "enabled": true,
+          "state": {
+            "checked": true,
+            "selected": true,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.RadioButton",
+            "resourceId": "choice-test-radio-medium",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 212,
+              "y": 914,
+              "width": 210,
+              "height": 84
+            },
+            "text": null,
+            "contentDescription": "Medium",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "radioButton",
+          "id": "choice-test-radio-large",
+          "label": "Large",
+          "value": "0",
+          "frame": {
+            "x": 160.76,
+            "y": 348.19,
+            "width": 62.86,
+            "height": 32
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.RadioButton",
+            "resourceId": "choice-test-radio-large",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 422,
+              "y": 914,
+              "width": 165,
+              "height": 84
+            },
+            "text": null,
+            "contentDescription": "Large",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "switch",
+          "id": "choice-test-switch",
+          "label": "Sync Contacts",
+          "value": "0",
+          "frame": {
+            "x": 16,
+            "y": 402.29,
+            "width": 52.19,
+            "height": 32
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Switch",
+            "resourceId": "choice-test-switch",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 1056,
+              "width": 137,
+              "height": 84
+            },
+            "text": null,
+            "contentDescription": "Sync Contacts",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": "choice-test-combobox",
+          "label": "Country",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 442.29,
+            "width": 86.1,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "choice-test-combobox",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 1161,
+              "width": 226,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Country",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Combo Box",
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "choice-test-progress",
+          "label": "Upload Progress, busy",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 494.48,
+            "width": 200,
+            "height": 8
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "choice-test-progress",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 1298,
+              "width": 525,
+              "height": 21
+            },
+            "text": null,
+            "contentDescription": "Upload Progress, busy",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": "Progress Bar",
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

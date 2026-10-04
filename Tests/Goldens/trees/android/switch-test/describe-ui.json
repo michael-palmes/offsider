@@ -1,0 +1,308 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "button",
+          "id": "BackButton",
+          "label": "Offsider Playground",
+          "value": null,
+          "frame": {
+            "x": 8,
+            "y": 54.1,
+            "width": 44.19,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "BackButton",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 21,
+              "y": 142,
+              "width": 116,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Offsider Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "group",
+          "id": "switch-test-screen",
+          "label": "Switch Test",
+          "value": null,
+          "frame": {
+            "x": 60.19,
+            "y": 64.38,
+            "width": 291.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.View",
+            "resourceId": "switch-test-screen",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 158,
+              "y": 169,
+              "width": 765,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Switch Test",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "switch-test-title",
+          "label": "Switch Playground",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 114.67,
+            "width": 379.43,
+            "height": 27.05
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "switch-test-title",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 301,
+              "width": 996,
+              "height": 71
+            },
+            "text": null,
+            "contentDescription": "Switch Playground",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "switch",
+          "id": "swiftui-weather-alerts-switch",
+          "label": "SwiftUI Weather Alerts",
+          "value": "0",
+          "frame": {
+            "x": 348.95,
+            "y": 165.71,
+            "width": 46.48,
+            "height": 27.05
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Switch",
+            "resourceId": "swiftui-weather-alerts-switch",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 916,
+              "y": 435,
+              "width": 122,
+              "height": 71
+            },
+            "text": null,
+            "contentDescription": "SwiftUI Weather Alerts",
+            "hint": null,
+            "stateDescription": "OFF",
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "swiftui-weather-alerts-state",
+          "label": "SwiftUI Weather Alerts: Off",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 200.76,
+            "width": 379.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "swiftui-weather-alerts-state",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 527,
+              "width": 996,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "SwiftUI Weather Alerts: Off",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "switch",
+          "id": "uikit-weather-alerts-switch",
+          "label": "UIKit Weather Alerts",
+          "value": "0",
+          "frame": {
+            "x": 343.62,
+            "y": 248,
+            "width": 51.81,
+            "height": 32
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Switch",
+            "resourceId": "uikit-weather-alerts-switch",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 902,
+              "y": 651,
+              "width": 136,
+              "height": 84
+            },
+            "text": null,
+            "contentDescription": "UIKit Weather Alerts",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "uikit-weather-alerts-state",
+          "label": "UIKit Weather Alerts: Off",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 288,
+            "width": 379.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "uikit-weather-alerts-state",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 756,
+              "width": 996,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "UIKit Weather Alerts: Off",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}
