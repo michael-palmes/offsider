@@ -46,14 +46,20 @@ struct SimulatorCrashLoopTests {
         #expect(SimulatorCrashReports.recent(crashes, now: Self.now).map(\.process) == ["routined"])
     }
 
-    @Test("no crashes passes, one or two warns, three or more fails with the erase command")
+    @Test("no crashes or one passes, two to four warns, five or more fails with the erase command")
     func thresholds() {
         #expect(DoctorRules.crashLoop([], udid: Self.udid).status == .pass)
         #expect(DoctorRules.crashLoop(Self.crashes("PosterBoard", 9, udid: Self.other), udid: Self.udid).status == .pass)
 
+        let single = DoctorRules.crashLoop(Self.crashes("routined", 1), udid: Self.udid)
+        #expect(single.status == .pass)
+        #expect(single.detail == "routined crashed 1 time in the last 10 minutes")
+
         let warn = DoctorRules.crashLoop(Self.crashes("AppIntentsLiveEntityService", 2), udid: Self.udid)
         #expect(warn.status == .warn)
         #expect(warn.detail == "AppIntentsLiveEntityService crashed 2 times in the last 10 minutes")
+        #expect(DoctorRules.crashLoop(Self.crashes("tccd", 4), udid: Self.udid).status == .warn)
+        #expect(DoctorRules.crashLoop(Self.crashes("tccd", 5), udid: Self.udid).status == .fail)
 
         let fail = DoctorRules.crashLoop(Self.crashes("PosterBoard", 25) + Self.crashes("routined", 1), udid: Self.udid)
         #expect(fail.status == .fail)
@@ -62,13 +68,13 @@ struct SimulatorCrashLoopTests {
         #expect(fail.hint?.contains("removes its apps and settings") == true)
     }
 
-    @Test("the host check names each looping simulator and ignores ones below three crashes")
+    @Test("the host check names each looping simulator and ignores ones below five crashes")
     func hostListsLoopingSimulators() {
-        let crashes = Self.crashes("PosterBoard", 3) + Self.crashes("routined", 2, udid: Self.other)
+        let crashes = Self.crashes("PosterBoard", 5) + Self.crashes("routined", 4, udid: Self.other)
         let verdict = DoctorRules.crashLoops(crashes, names: [Self.udid: "Offsider E2E iPhone"])
         #expect(verdict.status == .warn)
-        #expect(verdict.detail == "Offsider E2E iPhone (\(Self.udid)): PosterBoard crashed 3 times in the last 10 minutes")
-        #expect(DoctorRules.crashLoops(Self.crashes("routined", 2), names: [:]).status == .pass)
+        #expect(verdict.detail == "Offsider E2E iPhone (\(Self.udid)): PosterBoard crashed 5 times in the last 10 minutes")
+        #expect(DoctorRules.crashLoops(Self.crashes("routined", 4), names: [:]).status == .pass)
     }
 
     @Test("the probe reads recent simulator reports and skips old files and other extensions")

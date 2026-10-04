@@ -352,7 +352,7 @@ check_simulator_crash_loop() {
             prefix=$(head -c 16384 "$report")
             [[ "$prefix" == *"com.apple.CoreSimulator.SimDevice.$udid\""* ]] || continue
             printf '%s\n' "$prefix" | grep -o -m 1 '"procName" : "[^"]*"' | sed 's/.*: "\(.*\)"/\1/'
-        done | sort | uniq -c | awk '{ n = $1; sub(/^ *[0-9]+ /, ""); if (n >= 3) printf "%s crashed %d times in the last 10 minutes\n", $0, n }') || true
+        done | sort | uniq -c | awk '{ n = $1; sub(/^ *[0-9]+ /, ""); if (n >= 5) printf "%s crashed %d times in the last 10 minutes\n", $0, n }') || true
     if [[ -n "$looping" ]]; then
         print_error "Simulator $udid is in a crash loop:"
         echo "$looping"

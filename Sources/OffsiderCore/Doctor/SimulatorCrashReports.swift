@@ -75,16 +75,22 @@ extension DoctorRules {
             return (.pass, "No crashes in the last 10 minutes", nil)
         }
         let detail = counts.map(crashSummary).joined(separator: "; ")
-        guard worst >= 3 else {
-            return (.warn, detail, "A crash or two after boot is common; run doctor again if \"quit unexpectedly\" dialogs keep appearing.")
+        guard worst >= 2 else {
+            return (.pass, detail, nil)
+        }
+        guard worst >= loopThreshold else {
+            return (.warn, detail, "A few crashes after boot or under host load are common; run doctor again if \"quit unexpectedly\" dialogs keep appearing.")
         }
         return (.fail, detail, eraseHint(udid))
     }
 
-    /// Every simulator with three or more crashes of one process; `names` maps known UDIDs to simulator names.
+    /// A process that crashed this often in ten minutes is being restarted in a loop; busy hosts see two or three.
+    public static let loopThreshold = 5
+
+    /// Every simulator with `loopThreshold` or more crashes of one process; `names` maps known UDIDs to simulator names.
     public static func crashLoops(_ crashes: [SimulatorCrash], names: [String: String]) -> Verdict {
         let looping = Set(crashes.map(\.udid)).sorted().compactMap { udid -> String? in
-            let counts = SimulatorCrashReports.counts(crashes, udid: udid).filter { $0.count >= 3 }
+            let counts = SimulatorCrashReports.counts(crashes, udid: udid).filter { $0.count >= loopThreshold }
             guard !counts.isEmpty else { return nil }
             let label = names[udid].map { "\($0) (\(udid))" } ?? udid
             return "\(label): \(counts.map(crashSummary).joined(separator: ", "))"
