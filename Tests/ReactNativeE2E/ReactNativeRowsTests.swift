@@ -91,7 +91,7 @@ struct ReactNativeRowsTests {
         #expect(first != second, "the Downloads row should change between reads")
     }
 
-    @Test("describe-ui --summary is short and leaves out rows below the fold", arguments: RNPlatform.enabled)
+    @Test("describe-ui --summary is short, summarises rows below the fold and folds labels the row shows", arguments: RNPlatform.enabled)
     func summaryIsShort(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("rows-test")
@@ -105,8 +105,11 @@ struct ReactNativeRowsTests {
         switch platform {
         case .ios:
             #expect(full.contains("rows-test-item-40"), "iOS lists every row of a non-virtualised ScrollView")
+            #expect(summary.contains("[off-screen below]"))
         case .android:
             #expect(!full.contains("rows-test-item-40"), "Android's helper omits rows below the fold from every view")
+            #expect(!summary.contains(#"text "Inbox""#), "the row's child texts repeat its merged label")
+            #expect(summary.contains("# folded "))
         }
     }
 }

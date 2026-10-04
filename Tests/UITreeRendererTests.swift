@@ -147,7 +147,7 @@ struct UITreeRendererTests {
         """))
     }
 
-    @Test("flat text indents by kept ancestors, so filtered parents do not leave gaps")
+    @Test("flat text indents by kept ancestors, so filtered parents do not leave gaps, and the text below the screen becomes a run line")
     func flatTextIndent() {
         let output = string(Self.iosTree, .summary)
 
@@ -155,6 +155,7 @@ struct UITreeRendererTests {
         # ios IOS-UDID 402x874 @3x portrait 0°
         application "Playground" (0,0 402x874)
           button "1D" id=one-d value="3" (16,769 85x36)
+          [off-screen below] 1 item: "Far below"
 
         """)
     }
@@ -196,9 +197,9 @@ struct UITreeRendererTests {
         #expect(try JSONSerialization.jsonObject(with: Data(compact.utf8)) as? NSDictionary == pretty)
     }
 
-    @Test("--summary equals --flat --on-screen --labelled --format text")
+    @Test("--summary equals --flat --on-screen --labelled --format text --max-bytes 16384")
     func summaryExpands() throws {
-        let expanded = try cliOptions(["--flat", "--on-screen", "--labelled", "--format", "text"])
+        let expanded = try cliOptions(["--flat", "--on-screen", "--labelled", "--format", "text", "--max-bytes", "16384"])
 
         #expect(try cliOptions(["--summary"]) == expanded)
         #expect(expanded == .summary)
@@ -221,6 +222,29 @@ struct UITreeRendererTests {
         #expect(error?.description == "Unknown field 'labels' in --fields. Use: role, id, label, value, frame, enabled, state, native.")
         #expect(DescribeUIOutputOptions.message(for: CLIParseProbe.error(["--fields", "role,labels"]))
             == "Unknown field 'labels' in --fields. Use: role, id, label, value, frame, enabled, state, native.")
+    }
+
+    @Test("--summary defaults to 16384 bytes, --format text has no default budget, --max-bytes 0 lifts it")
+    func maxBytesDefaults() throws {
+        #expect(try cliOptions(["--summary"]).maxBytes == 16384)
+        #expect(try cliOptions(["--format", "text"]).maxBytes == nil)
+        #expect(try cliOptions(["--summary", "--max-bytes", "0"]).maxBytes == nil)
+        #expect(try cliOptions(["--format", "text", "--max-bytes", "2000"]).maxBytes == 2000)
+        #expect(try cliOptions(["--summary", "--format", "json"]).maxBytes == nil)
+    }
+
+    @Test("--max-bytes is refused with JSON and below 512, as a usage error")
+    func maxBytesRefused() {
+        let cases: [([String], String)] = [
+            (["--max-bytes", "4096"], "--max-bytes applies to text output only."),
+            (["--summary", "--format", "ndjson", "--max-bytes", "4096"], "--max-bytes applies to text output only."),
+            (["--summary", "--max-bytes", "511"], "--max-bytes must be 0 (no limit) or at least 512."),
+        ]
+        for (arguments, message) in cases {
+            let error = CLIParseProbe.error(arguments)
+            #expect(DescribeUIOutputOptions.message(for: error) == message)
+            #expect(DescribeUIOutputOptions.exitCode(for: error).rawValue == 64)
+        }
     }
 
     @Test("--compact is rejected for text output, including --summary")

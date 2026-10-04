@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `describe-ui --max-bytes <n>` cuts text output at whole lines and says how many nodes were left out; when the Android device stops listing nodes at its own limit, text output says the tree is incomplete.
 - `screenshot --mask-secure` and `batch --mask-secure` paint password fields black before writing the image, and withhold it when a password field cannot be located. `OFFSIDER_MASK_SECURE=1` turns masking on by default. `screenshot --json` then adds `masked`, the number of fields painted.
 - Every failure has a typed `reason` and a `hint`; with `--json` it prints one object on stdout with `exitCode` and `error` (`reason`, `message`, `hint`, `dispatched`, `candidates`). The README lists every reason.
 - Not-found and ambiguous selector errors list up to five candidates with id, label, role, frame and on-screen state in JSON, and ambiguous errors name each candidate's label.
@@ -32,6 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Offsider keeps the last accessibility tree read from each device, with password values masked and platform attributes left out, in its private per-user directory for 10 minutes; `OFFSIDER_TREE_CACHE=off` turns it off.
 - `tap --verify` reads the tree once fewer before tapping, and taps the target where the verifier's second read finds it.
+- `describe-ui --summary` stops at 16384 bytes by default (`--max-bytes 0` lifts it).
+- `describe-ui --summary` and `--format text` leave out labels a parent already shows, summarise nodes past an edge of the screen as `[off-screen below] N items` with `--on-screen`, and stop indenting at 10 levels; JSON is unchanged.
 - Password fields read as bullets in `describe-ui`, selectors, `wait`, `assert` and `--verify` on both platforms, one per character. `--value` no longer matches them, and `assert --has-value` compares the bullets.
 - A SwiftUI `SecureField`, which iOS reports as a text field with a secure subrole, now has the role `secureTextField`.
 - On Android, non-ASCII text is no longer pasted into a focused password field; use `type --replace`.

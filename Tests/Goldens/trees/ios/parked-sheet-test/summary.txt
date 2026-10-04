@@ -7,3 +7,4 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
   button "Open Filters" id=parked-sheet-test-open (137,195 128.3x44)
   button "Open Filters Slowly" id=parked-sheet-test-open-slow (109,255 184.3x44)
   button "Save" id=parked-sheet-test-body-save (166,315 70.3x44)
+  [off-screen below] 4 items: id=parked-sheet-test-sheet-title to id=parked-sheet-test-close

@@ -121,13 +121,15 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let serial = id.rawValue
         let startedAt = Date()
         let roots: [UINode]
+        var truncated = false
         switch try await treeSource(for: serial) {
         case .helper(let session):
-            roots = try await helperRoots(serial, session: session)
+            (roots, truncated) = try await helperRoots(serial, session: session)
         case .uiautomator:
             roots = try await uiautomatorRoots(serial)
         }
-        let tree = UITree(platform: .android, device: serial, roots: roots)
+        var tree = UITree(platform: .android, device: serial, roots: roots)
+        tree.sourceTruncated = truncated
         guard let point else {
             DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
             return tree
@@ -237,7 +239,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         do {
             let roots: [UINode]
             switch try await treeSource(for: serial, announcingFallback: false) {
-            case .helper(let session): roots = try await helperRoots(serial, session: session)
+            case .helper(let session): roots = try await helperRoots(serial, session: session).roots
             case .uiautomator: roots = try await uiautomatorRoots(serial)
             }
             return UITree(platform: .android, device: serial, roots: roots).secureFocus == .secureFocused

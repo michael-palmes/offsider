@@ -84,7 +84,7 @@ extension AndroidBackend {
     }
 
     /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, then `noWindow`.
-    func helperRoots(_ serial: String, session: HelperSession) async throws -> [UINode] {
+    func helperRoots(_ serial: String, session: HelperSession) async throws -> (roots: [UINode], truncated: Bool) {
         var dump = try await helperDump(serial, session: session)
         if HelperTreeMapping.appWindow(in: dump) == nil {
             log(.debug, "The helper found no window on \(serial); reading the screen again")
@@ -108,7 +108,7 @@ extension AndroidBackend {
             HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)
         }
         session.remember(mapped.index)
-        return mapped.roots
+        return (mapped.roots, dump.truncated)
     }
 
     /// The helper's dump reply as it arrived, without its `id` and `ok`; uiautomator has no such reply.

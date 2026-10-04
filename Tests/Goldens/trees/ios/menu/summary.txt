@@ -15,6 +15,7 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
   button "Key Sequence" id=menu-key-sequence (16,707 370x57)
   header "Hardware" id=menu-section-hardware (0,780 402x21.7)
   button "Button Test" id=menu-button-test (16,801.7 370x57)
+  [off-screen below] 19 items: id=menu-section-batch to id=menu-environment-test
   slider "Vertical scroll bar, 3 pages" value="0%" (369,62 30x750)
   slider "Horizontal scroll bar, 1 page" value="0%" (62,841 278x30)
   slider "Vertical scroll bar, 3 pages" value="0%" (369,62 30x750)

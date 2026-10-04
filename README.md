@@ -121,6 +121,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `boot` | Start an Android emulator by AVD name and wait until it has booted, then print its serial (`--headless`, `--timeout`); an AVD that is already running is not started again |
 | `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings, booted simulators and simulator crash loops, plus the Android SDK and adb server when an SDK is installed; with `--device`, a simulator's state, Resize Mode, dtuhidd, HID transport, accessibility and recent crashes, or an Android emulator's state, image, gRPC endpoint, UiAutomation slot, helper start and Metro reverse (Android host checks only, no Xcode checks); `--json` prints one object, `--fix` applies safe fixes (on Android, only starting an absent adb server with `ADB_MDNS=0`) |
 | `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text` and `--compact` shape the output; `--diff` prints only what changed since the previous command's tree. `--display <id>` checks that the active display is the one you expect |
+| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text`, `--compact` and `--max-bytes` shape the output. `--display <id>` checks that the active display is the one you expect |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`, `--no-settle`), then verify the result |
@@ -213,11 +214,23 @@ For a screen scan, `describe-ui --summary` prints one line per on-screen node th
 # ios <ID> 402x874 @3x portrait 0°
 application "Playground" (0,0 402x874)
   button "Save" id=save-button (170.7,313.3 61x34.3)
+  group id=rows (0,400 402x474)
+    button "Inbox, 3 unread" (0,400 402x56)
+    [off-screen below] 34 items: id=rows-item-9 to id=rows-end
+# folded 2 repeated labels
 ```
 
 On a foldable the header line ends with the display and posture, such as `inner open`.
 
-`--summary` is short for `--flat --on-screen --labelled --format text`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes with at least 1 point on screen, judged as selectors judge it; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
+`--summary` is short for `--flat --on-screen --labelled --format text --max-bytes 16384`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes with at least 1 point on screen, judged as selectors judge it; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
+
+Text output (`--summary` and `--format text`) saves bytes in three ways; JSON and ndjson keep every node and label:
+
+- A child whose label its parent already shows, whole or as one of its comma-separated parts (React Native merges `Inbox` and `3 unread` into `Inbox, 3 unread`), loses the label, and its line goes when nothing else is left (no id, value, control role or checked or selected state). A text's value equal to its label is left out. One closing `# folded N repeated labels` line counts them.
+- With `--on-screen`, nodes wholly past an edge that would otherwise show are summarised where they start, per side and counting rows rather than their texts: `[off-screen below] 34 items: id=rows-item-9 to id=rows-end`, also `above`, `left` and `right`. Scroll that way to bring them on screen.
+- Nested lines stop indenting at 10 levels.
+
+`--max-bytes <n>` cuts text output at whole lines (UTF-8 bytes, newline included) so it fits `n` bytes, always keeping the header and the first node, and ends with `# truncated: 87 more nodes past the 16384-byte budget; pass --max-bytes 0 for all, or narrow with --actionable`. `--summary` defaults to 16384 bytes, `--max-bytes 0` lifts the limit, plain `--format text` has none unless asked, and with JSON or ndjson `--max-bytes` is a usage error (exit 64), as is a value from 1 to 511. When the Android device stops listing nodes at its own limit, text output ends with `# the device stopped listing nodes at its limit; this tree is incomplete`.
 
 `describe-ui --diff` compares this read with the previous command's tree for the device (see [Privacy](#privacy)) and prints only what changed, in the `--summary` view unless `--format text` and filters are given:
 

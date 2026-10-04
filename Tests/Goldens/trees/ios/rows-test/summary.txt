@@ -18,6 +18,7 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
     button "Item 6" id=rows-test-item-6 (0,752.7 402x56)
     button "Item 7" id=rows-test-item-7 (0,808.7 402x56)
     button "Item 8" id=rows-test-item-8 (0,864.7 402x56)
+    [off-screen below] 34 items: id=rows-test-item-9 to id=rows-test-end
     slider "Vertical scroll bar, 5 pages" value="0%" (369,239.3 30x572.7)
     slider "Horizontal scroll bar, 1 page" value="0%" (62,841 278x30)
     slider "Vertical scroll bar, 5 pages" value="0%" (369,239.3 30x572.7)

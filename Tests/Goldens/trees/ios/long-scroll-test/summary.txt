@@ -16,6 +16,7 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
     button "Long Scroll Row 9" id=long-scroll-test-row-9 (0,735 402x64)
     button "Long Scroll Row 10" id=long-scroll-test-row-10 (0,799 402x64)
     button "Long Scroll Row 11" id=long-scroll-test-row-11 (0,863 402x64)
+    [off-screen below] 70 items: id=long-scroll-test-row-12 to id=long-scroll-test-end
     slider "Vertical scroll bar, 8 pages" value="0%" (369,159 30x653)
     slider "Horizontal scroll bar, 1 page" value="0%" (62,841 278x30)
     slider "Vertical scroll bar, 8 pages" value="0%" (369,159 30x653)

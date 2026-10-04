@@ -58,6 +58,7 @@ enum TreeGoldens {
     /// The tree the current mapping makes of a raw capture, as describe-ui would print it.
     static func tree(from capture: RawTreeCapture) throws -> UITree {
         let roots: [UINode]
+        var truncated = false
         switch capture.platform {
         case .ios:
             roots = try IOSAccessibilityMapping.roots(fromJSON: capture.source)
@@ -65,8 +66,11 @@ enum TreeGoldens {
             let dump = try JSONDecoder().decode(HelperDump.self, from: capture.source)
             let scale = AndroidDisplayGeometry(display: dump.display)?.scale ?? (capture.screen?.scale ?? 1)
             roots = HelperTreeMapping.roots(from: dump, scale: scale, pid: 0).roots
+            truncated = dump.truncated
         }
-        return UITree(platform: capture.platform, device: placeholder(for: capture.platform), screen: capture.screen, roots: roots)
+        var tree = UITree(platform: capture.platform, device: placeholder(for: capture.platform), screen: capture.screen, roots: roots)
+        tree.sourceTruncated = truncated
+        return tree
     }
 
     static func tree(of golden: Golden) throws -> UITree {
