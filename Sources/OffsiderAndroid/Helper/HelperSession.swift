@@ -18,6 +18,10 @@ final class HelperSession {
     private(set) var eventCursor: Int64 = 0
     /// The latest mapped dump's nodes and references, for actions on what the command last saw.
     private(set) var index: HelperTreeIndex?
+    /// From the latest start: time to the ready line (with any push), whether the dex was pushed, and the `hello` time.
+    private(set) var launchMilliseconds: Int
+    private(set) var pushed: Bool
+    private(set) var helloMilliseconds: Int
 
     private let launcher: HelperLauncher
     private let log: AndroidLog
@@ -29,6 +33,9 @@ final class HelperSession {
     private init(launcher: HelperLauncher, connection: HelperConnection, nextID: Int, log: @escaping AndroidLog) {
         serial = launcher.serial
         ready = connection.ready
+        launchMilliseconds = connection.launchMilliseconds
+        pushed = connection.pushed
+        helloMilliseconds = connection.helloMilliseconds
         self.launcher = launcher
         self.connection = connection
         self.nextID = nextID
@@ -36,14 +43,32 @@ final class HelperSession {
     }
 
     /// Launch, open `localabstract:<socket>`, send `hello` with the token; throws `HelperStartFailure` or a device error.
-    static func start(client: AdbClient, serial: String, dex: HelperDex, log: @escaping AndroidLog) async throws -> HelperSession {
-        let launcher = HelperLauncher(client: client, serial: serial, dex: dex, log: log)
+    static func start(
+        client: AdbClient,
+        serial: String,
+        dex: HelperDex,
+        log: @escaping AndroidLog,
+        timing: AndroidTiming = .disabled
+    ) async throws -> HelperSession {
+        var launcher = HelperLauncher(client: client, serial: serial, dex: dex, log: log)
+        launcher.timing = timing
         let connection = try await open(launcher, helloID: 1)
         return HelperSession(launcher: launcher, connection: connection, nextID: 2, log: log)
     }
 
     private static func open(_ launcher: HelperLauncher, helloID: Int) async throws -> HelperConnection {
-        let (shell, ready) = try await launcher.launch()
+        let (shell, ready, pushed, launchMilliseconds) = try await launcher.launch()
+        let helloStart = ContinuousClock.now
+        return try await launcher.timing.measure(.helperHello) {
+            let connection = try await hello(launcher, shell: shell, ready: ready, helloID: helloID)
+            connection.launchMilliseconds = launchMilliseconds
+            connection.pushed = pushed
+            connection.helloMilliseconds = HelperLauncher.milliseconds(since: helloStart)
+            return connection
+        }
+    }
+
+    private static func hello(_ launcher: HelperLauncher, shell: ShellStream, ready: HelperReady, helloID: Int) async throws -> HelperConnection {
         let opened: AdbServiceStream
         do {
             opened = try await launcher.client.openService("localabstract:" + ready.socket, on: launcher.serial, timeout: helloTimeout)
@@ -69,7 +94,9 @@ final class HelperSession {
     }
 
     func dump(_ options: HelperDumpOptions = HelperDumpOptions()) async throws -> HelperDump {
-        let dump = try await screenRequest(.dump(options), as: HelperDump.self, timeout: Self.dumpTimeout)
+        let dump = try await launcher.timing.measure(.helperDump) {
+            try await screenRequest(.dump(options), as: HelperDump.self, timeout: Self.dumpTimeout)
+        }
         display = dump.display
         windows = dump.windows
         eventCursor = dump.eventSeq
@@ -176,6 +203,9 @@ final class HelperSession {
             let fresh = try await Self.open(launcher, helloID: id)
             connection = fresh
             ready = fresh.ready
+            launchMilliseconds = fresh.launchMilliseconds
+            pushed = fresh.pushed
+            helloMilliseconds = fresh.helloMilliseconds
         } catch HelperStartFailure.unavailable(let reason) {
             throw AndroidError.helperCrashed(serial, detail: "it could not start again: \(reason)")
         }
@@ -209,7 +239,10 @@ final class HelperSession {
     func close() async {
         guard !isClosed else { return }
         isClosed = true
-        await shutdown()
+        guard connection != nil else { return }
+        await launcher.timing.measure(.helperClose) {
+            await shutdown()
+        }
     }
 
     private func shutdown() async {
@@ -247,6 +280,9 @@ final class HelperConnection {
 
     let shell: ShellStream
     let ready: HelperReady
+    var launchMilliseconds = 0
+    var pushed = false
+    var helloMilliseconds = 0
     private let socket: any AdbByteStream
     private var unread: Data
     private var decoder = HelperWire.FrameDecoder()

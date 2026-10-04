@@ -57,6 +57,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
     /// Read only before a paste, the one path that puts text on a clipboard.
     private let focusedSecureField: @MainActor () async -> Bool
     private let log: AndroidLog
+    private let timing: AndroidTiming
     private var touchIsDown = false
     private var lastTouch: AndroidPoint?
 
@@ -68,7 +69,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
         replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
         focusedSecureField: @escaping @MainActor () async -> Bool = { false },
         sleep: @escaping @Sendable (Duration) async throws -> Void,
-        log: @escaping AndroidLog
+        log: @escaping AndroidLog,
+        timing: AndroidTiming = .disabled
     ) {
         self.device = device
         self.shell = shell
@@ -78,6 +80,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.focusedSecureField = focusedSecureField
         self.sleep = sleep
         self.log = log
+        self.timing = timing
     }
 
     private func route() async throws -> AndroidInputRoute {
@@ -95,6 +98,12 @@ final class AndroidInputSession: InputSession, TextInputSession {
     static let pasteKeyCode = 279
 
     func perform(_ event: InputEvent) async throws {
+        try await timing.measure(.input) {
+            try await dispatch(event)
+        }
+    }
+
+    private func dispatch(_ event: InputEvent) async throws {
         let route = try await route()
         var down = touchIsDown
         let steps = try AndroidInputLowering.steps(for: event, touchIsDown: &down, scale: route.scale)
@@ -104,6 +113,12 @@ final class AndroidInputSession: InputSession, TextInputSession {
 
     /// All-ASCII text as key events (gRPC `text` chunks, or adb `input text`); anything else pasted whole.
     func typeText(_ text: String) async throws {
+        try await timing.measure(.input) {
+            try await dispatchText(text)
+        }
+    }
+
+    private func dispatchText(_ text: String) async throws {
         let route = try await route()
         switch try AndroidTextPlan.make(for: text) {
         case .paste(let whole):

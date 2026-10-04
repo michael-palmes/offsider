@@ -84,6 +84,8 @@ public struct AndroidHost: Sendable {
     var helperDex: @Sendable () throws -> HelperDex
     /// Locks a serial for this command before its helper or uiautomator takes the UiAutomation slot; a no-op by default.
     public var claimDevice: @Sendable (String) async throws -> Void = { _ in }
+    /// Phase lines for `OFFSIDER_TIMINGS=1`; disabled unless the executable turns it on.
+    public var timing: AndroidTiming
 
     init(
         environment: [String: String],
@@ -97,7 +99,8 @@ public struct AndroidHost: Sendable {
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         launcher: any EmulatorLaunching = DetachedProcess(),
         uptime: @escaping @Sendable () -> Duration = { .seconds(ProcessInfo.processInfo.systemUptime) },
-        helperDex: @escaping @Sendable () throws -> HelperDex = AndroidHost.noHelper
+        helperDex: @escaping @Sendable () throws -> HelperDex = AndroidHost.noHelper,
+        timing: AndroidTiming = .disabled
     ) {
         self.environment = environment
         self.homeDirectory = homeDirectory
@@ -111,6 +114,7 @@ public struct AndroidHost: Sendable {
         self.launcher = launcher
         self.uptime = uptime
         self.helperDex = helperDex
+        self.timing = timing
     }
 
     /// The library's default: no bundle, so tests and other hosts never start a helper by accident.
@@ -119,11 +123,12 @@ public struct AndroidHost: Sendable {
     /// `HOME` wins over the account's home folder, so a test run with an empty `HOME` sees no SDK or AVDs.
     public static func live(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        helperDex: @escaping @Sendable () throws -> HelperDex = AndroidHost.noHelper
+        helperDex: @escaping @Sendable () throws -> HelperDex = AndroidHost.noHelper,
+        timing: AndroidTiming = .disabled
     ) -> AndroidHost {
         let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
             ?? FileManager.default.homeDirectoryForCurrentUser
-        return AndroidHost(environment: environment, homeDirectory: home, helperDex: helperDex)
+        return AndroidHost(environment: environment, homeDirectory: home, helperDex: helperDex, timing: timing)
     }
 
     /// `EPERM` means the process exists but belongs to another user, so it counts as alive.

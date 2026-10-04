@@ -32,11 +32,14 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// Locates the SDK and adb, and starts the adb server with `ADB_MDNS=0` when none answers. Idempotent.
     public func prepare() async throws {
         guard client == nil else { return }
-        let sdk = try AndroidSDK.locate(host: host)
-        let endpoint = try LoopbackEndpoint.adbServer(environment: host.environment)
-        let client = AdbClient(endpoint: endpoint, connector: host.adbConnector)
-        log(.debug, "Android SDK at \(sdk.root.path); adb server at \(endpoint)")
-        try await AdbServerLauncher(adb: sdk.adb).ensureRunning(client: client, host: host)
+        let (sdk, client) = try await host.timing.measure(.prepare) {
+            let sdk = try AndroidSDK.locate(host: host)
+            let endpoint = try LoopbackEndpoint.adbServer(environment: host.environment)
+            let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
+            log(.debug, "Android SDK at \(sdk.root.path); adb server at \(endpoint)")
+            try await AdbServerLauncher(adb: sdk.adb).ensureRunning(client: client, host: host)
+            return (sdk, client)
+        }
         self.sdk = sdk
         self.client = client
     }
@@ -185,7 +188,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             focusedSecureField: { await self.hasFocusedSecureField(id) },
             sleep: host.sleep,
-            log: log
+            log: log,
+            timing: host.timing
         )
     }
 
@@ -291,7 +295,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// gRPC `getScreenshot`, turned upright when only the guest rotated; else adb's `screencap`.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         try await prepare()
-        let serial = id.rawValue
+        return try await host.timing.measure(.capture) {
+            try await capturePNG(id.rawValue)
+        }
+    }
+
+    private func capturePNG(_ serial: String) async throws -> Data {
         guard case .grpc(let emulator) = try await transport(for: serial) else {
             return try await adbScreenshot(serial)
         }
@@ -347,7 +356,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             return measured
         }
         try await prepare()
-        let result = try await requireClient().shell(AndroidDisplayGeometry.probeScript, on: serial, label: "wm size; wm density; dumpsys input")
+        let client = try requireClient()
+        let result = try await host.timing.measure(.displayProbe) {
+            try await client.shell(AndroidDisplayGeometry.probeScript, on: serial, label: "wm size; wm density; dumpsys input")
+        }
         do {
             let geometry = try AndroidDisplayGeometry.parse(result.stdoutText)
             geometries[serial] = geometry

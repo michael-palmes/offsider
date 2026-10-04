@@ -104,7 +104,9 @@ extension AndroidBackend {
         if dump.truncated, warnedAboutTruncation.insert(serial).inserted {
             log(.warning, AndroidTreeSource.truncationWarning(serial: serial))
         }
-        let mapped = HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)
+        let mapped = host.timing.measure(.treeMap) {
+            HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)
+        }
         session.remember(mapped.index)
         return mapped.roots
     }
@@ -185,7 +187,7 @@ extension AndroidBackend {
         }
         let client = try requireClient()
         do {
-            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log)
+            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing)
         } catch HelperStartFailure.busy(let detail) {
             log(.debug, "UiAutomation is busy on \(serial): \(detail)")
         }
@@ -203,7 +205,7 @@ extension AndroidBackend {
             throw AndroidError.helperBusy(serial, stalePid: stale)
         }
         do {
-            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log)
+            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing)
         } catch HelperStartFailure.busy {
             throw await busyError(serial)
         }

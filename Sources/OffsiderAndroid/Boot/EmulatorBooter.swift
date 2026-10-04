@@ -54,7 +54,7 @@ public struct EmulatorBooter {
         guard let avd = catalog.info(named: name) else {
             throw AndroidError.noAVDNamed(name, available: catalog.all().map(\.name))
         }
-        let client = AdbClient(endpoint: try LoopbackEndpoint.adbServer(environment: host.environment), connector: host.adbConnector)
+        let client = AdbClient(endpoint: try LoopbackEndpoint.adbServer(environment: host.environment), connector: host.adbConnector, timing: host.timing)
         try await AdbServerLauncher(adb: sdk.adb).ensureRunning(client: client, host: host)
         let wait = BootWait(host: host, log: log, client: client, avdName: name, deadline: deadline, timeout: request.timeout)
 

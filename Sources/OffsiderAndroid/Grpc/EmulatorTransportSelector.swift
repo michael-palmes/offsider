@@ -64,9 +64,12 @@ struct EmulatorTransportSelector {
 
         var auth: EmulatorAuth?
         do {
-            let chosen = try await EmulatorAuth.choose(for: discovery, host: host)
-            auth = chosen
-            return .grpc(try await host.emulatorConnector.connect(discovery: discovery, auth: chosen))
+            let emulator = try await host.timing.measure(.grpcConnect) {
+                let chosen = try await EmulatorAuth.choose(for: discovery, host: host)
+                auth = chosen
+                return try await host.emulatorConnector.connect(discovery: discovery, auth: chosen)
+            }
+            return .grpc(TimedEmulator.wrapping(emulator, timing: host.timing))
         } catch {
             auth?.close()
             if mode == .grpc || error is CancellationError {
