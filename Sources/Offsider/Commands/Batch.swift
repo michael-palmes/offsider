@@ -25,11 +25,13 @@ struct Batch: AsyncParsableCommand {
         a type step's line shows its text as <N characters>, never the text; \
         a failure adds exitCode and error; wait and assert add met, reason, match; screenshot adds its --json keys; \
         describe-ui adds tree (json format) or output (ndjson or text). A last line follows: \
-        {"step":null,"kind":"batch","ok":...,"ms":...,"steps":...,"failed":...}, where steps counts every step \
-        in the batch, run or not. Human text goes to stderr.
+        {"step":null,"kind":"batch","ok":...,"ms":...,"steps":...,"failed":...,"dispatched":...}, where steps counts \
+        every step in the batch, run or not, and dispatched (yes, no or unknown) says whether any step sent input. \
+        Human text goes to stderr.
 
-        Without --continue-on-error the first failure stops the batch. Exit codes: 1 when any step failed to run, \
-        else 5 when a wait, assert or screenshot --compare condition was not met, else 0.
+        Without --continue-on-error the first failure stops the batch. Exit codes: the first failed step's code when \
+        a step failed to run, else 5 when a wait, assert or screenshot --compare condition was not met, else 0. \
+        Earlier steps may have sent input whatever the code: check dispatched before resending the batch.
 
         Examples:
           offsider batch --device DEVICE_ID --json \\
@@ -185,10 +187,12 @@ struct Batch: AsyncParsableCommand {
         let clock = ContinuousClock()
         let batchStart = clock.now
         var records: [BatchStepRecord] = []
+        var states: [DispatchState] = []
 
         for (index, line) in stepLines.enumerated() {
-            let record = await runStep(index + 1, line: line, context: context, runner: runner, output: output, logger: logger)
+            let (record, state) = await runStep(index + 1, line: line, context: context, runner: runner, output: output, logger: logger)
             records.append(record)
+            states.append(state)
             if output.json {
                 output.write(record.jsonLine() + "\n")
             }
@@ -198,11 +202,12 @@ struct Batch: AsyncParsableCommand {
         }
 
         let failed = records.filter { !$0.ok }
+        let dispatched = BatchStepRecord.dispatched(states)
         if output.json {
             let elapsed = Self.seconds(clock.now - batchStart)
-            output.write(BatchStepRecord.summaryLine(ok: failed.isEmpty, elapsed: elapsed, steps: stepLines.count, failed: failed.count) + "\n")
+            output.write(BatchStepRecord.summaryLine(ok: failed.isEmpty, elapsed: elapsed, steps: stepLines.count, failed: failed.count, dispatched: dispatched) + "\n")
         }
-        try finish(failed, continueOnError: continueOnError, output: output)
+        try finish(failed, continueOnError: continueOnError, dispatched: dispatched, output: output)
         return records
     }
 
@@ -214,7 +219,7 @@ struct Batch: AsyncParsableCommand {
         runner: BatchPlanRunner,
         output: BatchOutput,
         logger: OffsiderLogger
-    ) async -> BatchStepRecord {
+    ) async -> (BatchStepRecord, DispatchState) {
         let clock = ContinuousClock()
         let start = clock.now
         var stepName = "<unparsed>"
@@ -253,14 +258,15 @@ struct Batch: AsyncParsableCommand {
             }
             failure = .init(error: payload)
         }
-        return BatchStepRecord(
+        let record = BatchStepRecord(
             step: number, kind: stepName, line: BatchStepRedaction.redactedLine(line, tokens: parsedTokens), elapsed: seconds(clock.now - start), failure: failure, detail: detail
         )
+        return (record, sendsInput ? DispatchTracker.current.state : .no)
     }
 
     /// The code of the first step that failed to run; else exit 5 when only conditions were not met.
     @MainActor
-    private static func finish(_ failed: [BatchStepRecord], continueOnError: Bool, output: BatchOutput) throws {
+    private static func finish(_ failed: [BatchStepRecord], continueOnError: Bool, dispatched: DispatchState, output: BatchOutput) throws {
         let failures = failed.compactMap { record in record.failure.map { (record, $0) } }
         guard !failures.isEmpty else { return }
 
@@ -272,13 +278,14 @@ struct Batch: AsyncParsableCommand {
             let (record, failure) = failures[0]
             text = "Step \(record.step) failed: [\(record.kind)]\n\(failure.message)"
         }
+        let summary = text + "\nDispatched: \(dispatched.rawValue)" + (dispatched == .no ? "" : " (input may have reached the device; check before resending)")
 
         if failures.allSatisfy({ $0.1.isConditionNotMet }) {
-            output.writeError(text + "\n")
+            output.writeError(summary + "\n")
             throw ExitCode(OffsiderExitCode.unverified.rawValue)
         }
         let code = failures.first { !$0.1.isConditionNotMet }?.1.error.exitCode ?? .failure
-        throw ReportedFailure(underlying: CLIError(errorDescription: text), exitCode: code)
+        throw ReportedFailure(underlying: CLIError(errorDescription: summary), exitCode: code)
     }
 
     private static func seconds(_ duration: Duration) -> TimeInterval {

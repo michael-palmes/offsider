@@ -132,7 +132,7 @@ struct BatchReadStepTests {
         #expect(records[3]["path"] as? String == shot && records[3]["width"] as? Int == 40)
         #expect((records[4]["output"] as? String)?.contains("sheet-title") == true)
         #expect(lines[5].hasPrefix(#"{"step":null,"kind":"batch","ok":true,"ms":"#))
-        #expect(lines[5].hasSuffix(#","steps":5,"failed":0}"#))
+        #expect(lines[5].hasSuffix(#","steps":5,"failed":0,"dispatched":"yes"}"#))
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 122))])
     }
 
@@ -208,7 +208,8 @@ struct BatchReadStepTests {
         #expect(records.count == 2)
         #expect((records[0]["error"] as? [String: Any])?["message"] as? String == "Timed out after 0 s waiting for --id 'sheet-title' (last: not found).")
         #expect(records[1]["ok"] as? Bool == false && records[1]["steps"] as? Int == 2 && records[1]["failed"] as? Int == 1)
-        #expect(captured.err == "Step 1 failed: [wait]\nTimed out after 0 s waiting for --id 'sheet-title' (last: not found).\n")
+        #expect(records[1]["dispatched"] as? String == "no")
+        #expect(captured.err == "Step 1 failed: [wait]\nTimed out after 0 s waiting for --id 'sheet-title' (last: not found).\nDispatched: no\n")
     }
 
     @Test("a wait met after polling shares its last tree with the next selector tap")

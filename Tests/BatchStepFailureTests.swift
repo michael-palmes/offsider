@@ -35,8 +35,21 @@ struct BatchStepFailureTests {
         }
         #expect(error?.exitCode == .failure)
 
-        #expect(error?.userFacingDescription == "Step 1 failed: [key]\nHID broker read timed out.")
+        #expect(error?.userFacingDescription == "Step 1 failed: [key]\nHID broker read timed out.\nDispatched: unknown (input may have reached the device; check before resending)")
         #expect(session.calls == [.perform(.shortKeyPress(40))])
+    }
+
+    @Test("a failure after a step that sent input says the batch dispatched, whatever the failing step's code")
+    func failureAfterInputIsDispatched() async {
+        let session = RecordingInputSession(
+            failingOn: .shortKeyPress(41),
+            with: CLIError(errorDescription: "No device.", reason: .deviceNotFound)
+        )
+        let error = await #expect(throws: ReportedFailure.self) {
+            try await runSteps(["key 40", "key 41"], continueOnError: false, on: session)
+        }
+        #expect(error?.exitCode == .deviceUnavailable)
+        #expect(error?.userFacingDescription.hasSuffix("\nDispatched: yes (input may have reached the device; check before resending)") == true)
     }
 
     @Test("continue-on-error runs later steps and reports each failure's underlying error text")
