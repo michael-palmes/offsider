@@ -58,6 +58,7 @@ enum TreeCache {
         effect: CommandEffect,
         claimed: Set<DeviceLockKey>,
         backends: [any DeviceBackend],
+        sentNothing: Bool = false,
         ledger: DeviceActivityLedger? = nil,
         environment: TreeCacheEnvironment = .current
     ) async {
@@ -77,7 +78,7 @@ enum TreeCache {
                 let previous = read(device, in: directory, bootMarker: marker, now: now)
                 guard let record = TreeCacheRecord.committing(
                     activity, previous: previous, command: command,
-                    inputAtEnd: effect == .input, bootMarker: marker, now: now
+                    inputAtEnd: effect == .input && !sentNothing, bootMarker: marker, now: now
                 ) else { return }
                 var data = record.encoded()
                 if data.count > TreeCacheRecord.maximumBytes {

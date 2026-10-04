@@ -159,8 +159,7 @@ public struct TreeCacheRecord: Equatable, Sendable {
 }
 
 extension TreeCacheRecord {
-    /// The record one command leaves for a device, or nil to leave the file as it is.
-    /// `inputAtEnd` covers an input command that recorded no input event: it counts as input when the command ends.
+    /// The record one command leaves for a device, or nil to leave the file; `inputAtEnd` stamps input no event recorded.
     public static func committing(
         _ activity: DeviceActivityLedger.Activity,
         previous: TreeCacheRecord?,

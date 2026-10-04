@@ -270,6 +270,32 @@ struct TreeCacheTests {
         #expect(try fixture.record(for: tracked.device)?.lastInputAt == fixture.now)
     }
 
+    @Test("a failed input command that sent nothing is not recorded as input")
+    func failedWithoutDispatch() async throws {
+        let fixture = try TreeCacheFixture()
+        let root = try makePrivateLockRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let claims = DeviceClaims()
+        claims.root = { root }
+        claims.environment = [:]
+        let scope = CommandScope(claims: claims)
+        scope.configure(command: "tap")
+        try await fixture.run {
+            try await DispatchTracker.$current.withValue(DispatchTracker()) {
+                await #expect(throws: CLIError.self) {
+                    try await scope.run {
+                        try await claims.claim(DeviceLockKey(platform: .ios, id: Self.device.rawValue))
+                        DeviceActivityLedger.current.recordTreeRead(Self.screen(), on: Self.device, startedAt: fixture.now)
+                        throw CLIError(errorDescription: "No accessibility element matched --id 'missing'.", reason: .selectorNotFound)
+                    }
+                }
+            }
+        }
+        let record = try fixture.record(for: Self.device)
+        #expect(record?.lastInputAt == nil)
+        #expect(record?.treeRole == .read)
+    }
+
     @Test("a tree over 1 MB is written as a tombstone that keeps the last input time")
     func sizeCap() async throws {
         let fixture = try TreeCacheFixture()

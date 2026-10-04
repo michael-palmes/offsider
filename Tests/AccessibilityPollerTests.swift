@@ -138,6 +138,20 @@ struct AccessibilityPollerTests {
         #expect(reads == 1)
     }
 
+    @Test("an element first found at the --wait-timeout deadline still goes through the transition guard")
+    func foundAtDeadlineIsGuarded() async throws {
+        var count = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("apply"), waitTimeout: 0.05, pollInterval: 0.1, elementType: nil, settle: .guarded(record: nil),
+            logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) {
+            count += 1
+            return Self.sheet(buttonY: count == 1 ? 10700 : 600)
+        }
+        #expect(polled.settledBy != .actNow(.alreadySettled))
+        #expect(polled.value.point.y == 622)
+    }
+
     @Test("an element still moving at the deadline returns its latest position")
     func stillMovingAtDeadlineReturnsLatest() async throws {
         var y = 10700.0

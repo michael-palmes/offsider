@@ -36,7 +36,7 @@ final class CommandScope {
         do {
             try await body()
         } catch {
-            await commitTreeCache()
+            await commitTreeCache(failed: true)
             await closeAll()
             claims.releaseAll()
             throw error
@@ -46,10 +46,11 @@ final class CommandScope {
         claims.releaseAll()
     }
 
-    /// Also after a failure: a failed input command may still have dispatched.
-    func commitTreeCache() async {
+    /// Also after a failure: a failed input command may still have dispatched, unless the tracker saw nothing sent.
+    func commitTreeCache(failed: Bool = false) async {
         guard let command else { return }
-        await TreeCache.commit(command: command, effect: CommandEffect.of(command), claimed: claims.heldKeys, backends: adopted)
+        let sentNothing = failed && DispatchTracker.current.state == .no
+        await TreeCache.commit(command: command, effect: CommandEffect.of(command), claimed: claims.heldKeys, backends: adopted, sentNothing: sentNothing)
     }
 
     /// Idempotent: each backend leaves the list before its close starts, so a slow close never skips or repeats another.

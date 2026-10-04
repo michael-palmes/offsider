@@ -122,8 +122,7 @@ struct AccessibilityPoller {
         }
     }
 
-    /// The transition guard: acts at once when the cache shows the target at rest, else waits, reads once more and resolves again.
-    /// A target gone from the second read is acted on where it was first found.
+    /// The transition guard: acts at once when the cache shows the target at rest, else waits and resolves on one more read.
     static func settled<T>(
         _ polled: Polled<T>,
         policy: SettlePolicy,
@@ -194,7 +193,8 @@ struct AccessibilityPoller {
                 guard waitedForElement else { return polled }
                 let current = position(polled.value)
                 if let lastPosition, ElementMotion.hasSettled(previous: lastPosition, current: current) { return polled }
-                guard clock.now() < findDeadline else { return polled }
+                // Out of time before two reads agreed, so the transition guard decides.
+                guard clock.now() < findDeadline else { return Polled(value: polled.value, tree: tree) }
                 if lastPosition != nil { logger.info().log("Element still moving, checking again in \(pollInterval)s…") }
                 lastPosition = current
                 try await clock.sleep(.seconds(pollInterval))
