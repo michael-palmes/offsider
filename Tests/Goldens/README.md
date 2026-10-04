@@ -31,7 +31,7 @@ These cells are manually captured compatibility evidence, not general-purpose PR
 
 `trees/` is not a matrix cell. It holds scrubbed accessibility trees of the React Native playground, one directory per screen at `trees/<platform>/<screen>/` (`<screen>@<state>` for a second state, such as `toolbar-picker-test@unread`), each with four files:
 
-- `raw.json`: the platform's own reply before mapping (the idb accessibility JSON on iOS, the UiAutomation helper's dump on Android) beside the describe-ui `screen`, as the hidden `describe-ui --raw-source` prints it, stored as compact JSON with sorted keys.
+- `raw.json`: the platform's own reply before mapping (the idb accessibility JSON on iOS, the UiAutomation helper's dump on Android) beside the describe-ui `screen`, as the hidden `describe-ui --raw-source` prints it, stored as compact JSON with sorted keys. The Android dump's `timings`, `stats` and `eventSeq` change on every read and play no part in the mapping, so the capture and the refresh leave them out.
 - `describe-ui.json`, `summary.txt` and `text.txt`: what the current mapping and renderer make of it as JSON, `--summary` and `--format text`.
 
 `swift test` checks that each raw capture still maps to its committed files, that the JSON decodes and re-encodes byte for byte, and that no file holds a device UDID, an emulator serial, a home path, the user name, an email address, a host address or a readable secure value. A mapping or renderer change shows up as a reviewed diff: `OFFSIDER_GOLDENS_UPDATE=1 swift test --filter TreeGoldenRefresh` re-renders the derived files offline and rewrites each `raw.json` in the compact format.

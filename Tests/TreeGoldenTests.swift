@@ -81,6 +81,16 @@ struct TreeGoldenTests {
         _ = try TreeGoldenScrubber.scrub(["type": "SecureTextField", "AXValue": "•••"], platform: .ios)
     }
 
+    @Test("Android raw captures hold no timings, stats or event sequence, which change on every read", arguments: goldens.filter { $0.platform == .android })
+    func androidRawIsStable(golden: TreeGoldens.Golden) throws {
+        let object = try #require(try JSONSerialization.jsonObject(with: golden.data(TreeGoldens.rawFile)) as? [String: Any])
+        let source = try #require(object["source"] as? [String: Any])
+        for key in TreeGoldens.volatileAndroidKeys {
+            #expect(source[key] == nil, "\(golden.name) raw.json keeps \(key)")
+        }
+        #expect(source["windows"] != nil)
+    }
+
     @Test("secure fields in the goldens hold no readable value", arguments: goldens)
     func secureFieldsMasked(golden: TreeGoldens.Golden) throws {
         let tree = try UITree(jsonData: try golden.data(TreeGoldens.jsonFile))

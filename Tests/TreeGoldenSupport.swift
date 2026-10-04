@@ -81,9 +81,23 @@ enum TreeGoldens {
         ]
     }
 
-    /// The raw capture as compact JSON with sorted keys, so it stays small and diffs stay stable.
+    /// Keys of the Android helper's dump that change on every read and play no part in the mapping.
+    static let volatileAndroidKeys = ["timings", "stats", "eventSeq"]
+
+    /// The capture without the Android dump's volatile keys, so a recapture of an unchanged screen changes nothing.
+    static func stable(_ capture: Any) -> Any {
+        guard var object = capture as? [String: Any], object["platform"] as? String == DevicePlatform.android.rawValue,
+              var source = object["source"] as? [String: Any] else { return capture }
+        for key in volatileAndroidKeys {
+            source[key] = nil
+        }
+        object["source"] = source
+        return object
+    }
+
+    /// The stable raw capture as compact JSON with sorted keys, so it stays small and diffs stay stable.
     static func rawData(_ capture: Any) throws -> Data {
-        try JSONSerialization.data(withJSONObject: capture, options: [.sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
+        try JSONSerialization.data(withJSONObject: stable(capture), options: [.sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
     }
 
     /// Writes the scrubbed raw capture and the three files derived from it.
