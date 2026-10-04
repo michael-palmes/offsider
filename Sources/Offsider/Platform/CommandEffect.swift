@@ -18,6 +18,7 @@ enum CommandEffect: String, Sendable {
         "init": .none,
         "guide": .none,
         "tap": .input,
+        "turnstile": .input,
         "slider": .input,
         "type": .input,
         "swipe": .input,
