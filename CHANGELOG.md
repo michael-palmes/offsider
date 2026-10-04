@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-04
+
 ### Added
 
 - `describe-ui --max-bytes <n>` cuts text output at whole lines and says how many nodes were left out; when the Android device stops listing nodes at its own limit, text output says the tree is incomplete.
@@ -210,7 +212,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/michael-palmes/offsider/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/michael-palmes/offsider/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/michael-palmes/offsider/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/michael-palmes/offsider/compare/v0.1.0...v0.2.0
