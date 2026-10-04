@@ -340,6 +340,25 @@ check_prerequisites() {
     print_success "All prerequisites satisfied"
 }
 
+# Refuses a simulator in a crash loop, the same rule as doctor's simulator.crash-loop; a direct scan because Offsider is not built yet.
+check_simulator_crash_loop() {
+    local udid="$1"
+    local reports="$HOME/Library/Logs/DiagnosticReports"
+    [[ -d "$reports" ]] || return 0
+    local looping
+    looping=$(find "$reports" -maxdepth 1 -type f -name '*.ips' -mmin -10 -print0 2>/dev/null \
+        | xargs -0 grep -l -F "com.apple.CoreSimulator.SimDevice.$udid\"" 2>/dev/null \
+        | while IFS= read -r report; do
+            head -c 16384 "$report" | grep -o -m 1 '"procName" : "[^"]*"' | sed 's/.*: "\(.*\)"/\1/'
+        done | sort | uniq -c | awk '{ n = $1; sub(/^ *[0-9]+ /, ""); if (n >= 3) printf "%s crashed %d times in the last 10 minutes\n", $0, n }') || true
+    if [[ -n "$looping" ]]; then
+        print_error "Simulator $udid is in a crash loop:"
+        echo "$looping"
+        print_info "Erase it (this removes its apps and settings), then run again: xcrun simctl shutdown $udid && xcrun simctl erase $udid"
+        exit 1
+    fi
+}
+
 # Function to boot simulator
 boot_simulator() {
     print_header "Setting Up Simulator"
@@ -359,6 +378,8 @@ boot_simulator() {
         xcrun simctl list devices | grep "iPhone"
         exit 1
     fi
+
+    check_simulator_crash_loop "$SIMULATOR_UDID"
 
     if [[ "$SIMULATOR_STATUS" != "Booted" ]]; then
         print_info "Booting simulator $SIMULATOR_NAME..."

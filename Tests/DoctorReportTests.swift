@@ -84,6 +84,7 @@ struct DoctorReportTests {
             "hid.stabilization",
             "hid.broker-dir",
             "simulators.booted",
+            "simulators.crash-loop",
             "simulator.state",
             "simulator.device-window",
             "simulator.resize-mode",
@@ -91,6 +92,7 @@ struct DoctorReportTests {
             "simulator.dtuhidd-active-flag",
             "simulator.hid-transport",
             "simulator.accessibility",
+            "simulator.crash-loop",
             "android.sdk",
             "android.adb",
             "android.adb-server",
@@ -105,7 +107,7 @@ struct DoctorReportTests {
             "android-device.helper",
             "android-device.metro-reverse",
         ])
-        #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 7)
+        #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)
         #expect(DoctorCheckID.allCases.filter(\.isPerAndroidDevice).count == 6)
     }

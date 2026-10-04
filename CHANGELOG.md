@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `doctor --device <usb phone serial>` checks the phone instead of saying no device has that name, skipping the emulator gRPC check and saying why.
 - The React Native playground has a `permission-state` screen (camera and notification permissions on Android), and the native playground a `device-state` screen (contacts and photos permissions, Face ID).
 - `scripts/rn-playground.sh metro stop` removes the `adb reverse` it set on running emulators.
+- `doctor --device <UDID>` adds `simulator.crash-loop`, which reads the last 10 minutes of crash reports for that simulator, warns at one or two crashes of a process, fails at three or more and prints the erase command without running it. Plain `doctor` adds `simulators.crash-loop`, listing every simulator in a crash loop by name. `test-runner.sh` refuses to start on a simulator in a crash loop.
 - `scripts/bench-ab.sh` compares a base build with the branch on one Offsider device in paired, seeded runs, and reports medians, a bootstrap interval and a verdict.
 
 ### Changed

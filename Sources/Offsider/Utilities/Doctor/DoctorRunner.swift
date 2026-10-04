@@ -136,6 +136,10 @@ struct DoctorRunner {
             run.checks.append(.skipped(.bootedSimulators, "requires xcode.frameworks"))
         }
 
+        let crashes = DoctorProbes.recentSimulatorCrashes()
+        let names = Dictionary(simulators.map { ($0.udid, $0.name) }, uniquingKeysWith: { first, _ in first })
+        run.checks.append(DoctorCheckResult(id: .simulatorCrashLoops, verdict: DoctorRules.crashLoops(crashes, names: names)))
+
         run.xcode = XcodeSummary(developerDir: developerDirectory, version: version, build: build, coreSimulator: coreSimulator)
         run.context.developerDirectory = developerDirectory
         run.context.xcodeMajor = xcodeMajor
@@ -151,6 +155,7 @@ struct DoctorRunner {
                 context: &run.context
             )
             run.checks.append(contentsOf: perSimulator)
+            run.checks.append(DoctorCheckResult(id: .crashLoop, verdict: DoctorRules.crashLoop(crashes, udid: udid)))
         }
         return run
     }
