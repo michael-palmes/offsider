@@ -109,6 +109,7 @@ final class FakeLauncher: EmulatorLaunching, @unchecked Sendable {
 
     private let lock = NSLock()
     private var recorded: [Launch] = []
+    private var recordedEnvironments: [[String: String]] = []
     private let pid: Int32
     private let exit: Int32?
     private let onLaunch: @Sendable (Launch) -> Void
@@ -120,10 +121,14 @@ final class FakeLauncher: EmulatorLaunching, @unchecked Sendable {
     }
 
     var launches: [Launch] { lock.withLock { recorded } }
+    var environments: [[String: String]] { lock.withLock { recordedEnvironments } }
 
     func launch(executable: URL, arguments: [String], environment: [String: String], logPath: String) throws -> Int32 {
         let launch = Launch(executable: executable.path, arguments: arguments, logPath: logPath)
-        lock.withLock { recorded.append(launch) }
+        lock.withLock {
+            recorded.append(launch)
+            recordedEnvironments.append(environment)
+        }
         onLaunch(launch)
         return pid
     }

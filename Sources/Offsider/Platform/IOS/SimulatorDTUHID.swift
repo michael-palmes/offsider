@@ -58,7 +58,7 @@ final class SimulatorDTUHID: @unchecked Sendable {
     /// Writes one message; returns once XPC has sent it.
     func send(_ message: DTUHIDValue) async {
         hasSent = true
-        let object = Self.xpcObject(message)
+        let object = message.xpcObject
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             xpc_connection_send_message(connection, object)
             xpc_connection_send_barrier(connection) { continuation.resume() }
@@ -79,7 +79,7 @@ final class SimulatorDTUHID: @unchecked Sendable {
 
     /// True when `dtuhidd` itself answered before the timeout.
     private func roundTrip(_ message: DTUHIDValue) async -> Bool {
-        let object = Self.xpcObject(message)
+        let object = message.xpcObject
         let answer = FirstAnswer()
         return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             let queue = DispatchQueue.global(qos: .userInitiated)
@@ -124,22 +124,6 @@ final class SimulatorDTUHID: @unchecked Sendable {
         xpc_connection_set_event_handler(connection) { _ in }
         xpc_connection_resume(connection)
         return connection
-    }
-
-    static func xpcObject(_ value: DTUHIDValue) -> xpc_object_t {
-        switch value {
-        case let .string(text): return xpc_string_create(text)
-        case let .bool(flag): return xpc_bool_create(flag)
-        case let .uint(number): return xpc_uint64_create(number)
-        case let .double(number): return xpc_double_create(number)
-        case let .data(bytes): return bytes.withUnsafeBytes { xpc_data_create($0.baseAddress, bytes.count) }
-        case let .dictionary(entries):
-            let dictionary = xpc_dictionary_create(nil, nil, 0)
-            for (key, entry) in entries {
-                xpc_dictionary_set_value(dictionary, key, xpcObject(entry))
-            }
-            return dictionary
-        }
     }
 }
 
