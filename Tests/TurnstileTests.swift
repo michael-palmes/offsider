@@ -258,4 +258,54 @@ struct TurnstileTests {
             return String(describing: error)
         }
     }
+
+    @Test("--status maps each phase to a state, keeps the checkbox frame, and leaves ambiguous to exit 6")
+    func statusMapping() {
+        let frame = UIFrame(x: 32, y: 388.95, width: 163.81, height: 25.14)
+        let checkbox = TurnstileStatus(phase: .ready(TurnstileTarget(frame: frame, logoOnRight: true)), source: .tree)
+        #expect(checkbox == TurnstileStatus(state: .checkbox, source: .tree, frame: frame))
+        #expect(checkbox?.textLine() == "Turnstile: checkbox at (32, 388.95) 163.81x25.14")
+        #expect(checkbox?.jsonLine() == #"{"version":1,"state":"checkbox","source":"tree","frame":{"x":32,"y":388.95,"width":163.81,"height":25.14}}"#)
+        #expect(TurnstileStatus(phase: .checking, source: .webViewPoints)?.state == .verifying)
+        #expect(TurnstileStatus(phase: .passed, source: .tree)?.jsonLine() == #"{"version":1,"state":"passed","source":"tree","frame":null}"#)
+        #expect(TurnstileStatus(phase: .visualChallenge, source: .tree)?.state == .challenge)
+        #expect(TurnstileStatus(phase: .absent, source: .tree)?.textLine() == "Turnstile: absent")
+        #expect(TurnstileStatus(phase: .ambiguous(2), source: .tree) == nil)
+    }
+
+    @Test("--status reads a checkbox and sends no input")
+    @MainActor
+    func statusSendsNothing() async throws {
+        let backend = FakeDeviceBackend(trees: [UITree(platform: .android, device: "emulator-5554", roots: roots([checkboxWidget()]))])
+        let route = DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))
+
+        let status = try await Turnstile.parse(["--status", "--device", "emulator-5554"]).readStatus(on: route)
+
+        #expect(status.state == .checkbox)
+        #expect(backend.session.calls.isEmpty)
+        #expect(backend.openedSessions.isEmpty)
+    }
+
+    @Test("--status refuses the tap options", arguments: ["--jitter", "--seed", "--timeout"])
+    func statusRefusesTapOptions(option: String) {
+        let error = #expect(throws: (any Error).self) { try Turnstile.parse(["--status", option, "2", "--device", "emulator-5554"]) }
+        #expect(error.map { Turnstile.exitCode(for: $0).rawValue } == 64)
+        #expect(error.map { Turnstile.message(for: $0).contains("does not take \(option)") } == true)
+    }
+
+    @Test("a visual challenge fails with turnstile_challenge, exit 1, and sends nothing")
+    @MainActor
+    func challengeReason() async throws {
+        let grid = node(role: .group, id: "cf-chl-widget-grid", frame: UIFrame(x: 24, y: 300, width: 365, height: 280), children: [
+            node(role: .text, label: "Select all squares with a bus", frame: UIFrame(x: 24, y: 300, width: 365, height: 40)),
+        ])
+        let backend = FakeDeviceBackend(trees: [UITree(platform: .android, device: "emulator-5554", roots: roots([grid]))])
+        let route = DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))
+        let error = await #expect(throws: CLIError.self) {
+            try await Turnstile.parse(["--device", "emulator-5554"]).perform(on: route, logger: OffsiderLogger())
+        }
+        #expect(error?.reason == .turnstileChallenge)
+        #expect(FailureReason.turnstileChallenge.exitCode == .failure)
+        #expect(backend.session.calls.isEmpty)
+    }
 }

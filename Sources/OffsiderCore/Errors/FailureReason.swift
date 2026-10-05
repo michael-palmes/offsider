@@ -57,6 +57,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case runActive = "run_active"
     case runUnavailable = "run_unavailable"
     case verifyTargetPresent = "verify_target_present"
+    case turnstileChallenge = "turnstile_challenge"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"

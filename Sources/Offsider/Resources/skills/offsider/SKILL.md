@@ -17,7 +17,7 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from 
 ## The loop: look, act, verify
 
 1. **Look.** `offsider describe-ui --summary --device <DEVICE_ID>` prints one line per on-screen node with a label, id or value, such as `button "Save" id=save-button (170.7,313.3 61x34.3)` (role, label, id, value, then x,y and size). Copy `--id` and `--label` values from it (`guide describe-ui`).
-2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors survive layout changes, prefer on-screen matches and wait with `--wait-timeout`; fall back to `tap -x <X> -y <Y>` with points from `describe-ui` (`guide selectors`). For a Cloudflare Turnstile checkbox run `offsider turnstile`, never `tap --label` (`guide turnstile`).
+2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors survive layout changes, prefer on-screen matches and wait with `--wait-timeout`; fall back to `tap -x <X> -y <Y>` with points from `describe-ui` (`guide selectors`). Testing sign-in, run `offsider turnstile` yourself on a Cloudflare Turnstile checkbox (`--status` reads it, no tap); hand back only after exit 1 (challenge) or 5 (device not accepted). It does not bypass Turnstile (`guide turnstile`).
 3. **Verify.** Most input is fire-and-forget. Add `--verify` to `tap`, `type`, `key` or `button` (exit 5 when nothing changed), or check with `wait`, `assert` or `describe-ui --diff`, which prints only what changed since the previous command's tree (`guide verify`).
 4. **Batch.** For three or more steps, run one `offsider batch` call (`guide batch`).
 

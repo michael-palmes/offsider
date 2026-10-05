@@ -17,6 +17,7 @@ Resending a single command is safe after 2, 6, 7, 8, 9 and 64: nothing was sent.
 
 ## Reasons to act on
 
+- `turnstile_challenge` (exit 1): Cloudflare showed a visual challenge. Hand back to a person; never retry `turnstile` in a loop (`guide turnstile`).
 - `verify_target_present` (exit 1, nothing sent): the `--verify-id` element was already on screen, so its appearing could not show the input worked. Pick an id that only the next screen has.
 
 ## JSON errors

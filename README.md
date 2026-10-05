@@ -137,7 +137,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
 | `guide` | Print one topic of the skill, matched to this version (`selectors`, `verify`, `errors`, `android`, `ios-device`, `react-native`, `turnstile`, `foldables`, `batch`, `screenshots`, `evidence`, `describe-ui`, `device-state`, `migrate`), or list the topics with no argument; `--project <path>` prints the repository's own `OFFSIDER.md` |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json`; `--app <bundle-id>` on an iPhone or iPad |
-| `turnstile` | Tap the checkbox square of a Cloudflare Turnstile widget and wait until it passes. The checkbox frame includes the words beside the square, so a normal tap misses the box. On iOS the web view leaves the checkbox out of the tree, so the tap is the square where the green check sits. It does not bypass Turnstile: the widget passes only when Cloudflare accepts the device. `--timeout`, `--jitter`, `--seed`, `--id`, `--json`. Exits 5 when the checkbox remains, and 2 when no widget is on screen. See `offsider guide turnstile` |
+| `turnstile` | Tap the checkbox square of a Cloudflare Turnstile widget and wait until it passes. The checkbox frame includes the words beside the square, so a normal tap misses the box. On iOS the web view leaves the checkbox out of the tree, so the tap is the square where the green check sits. It does not bypass Turnstile: the widget passes only when Cloudflare accepts the device. `--timeout`, `--jitter`, `--seed`, `--id`, `--json`; `--status` reads the state (`checkbox`, `verifying`, `passed`, `challenge`, `absent`) without a tap. Exits 5 when the checkbox remains, 1 (`turnstile_challenge`) on a visual challenge, and 2 when no widget is on screen. See `offsider guide turnstile` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`, `--no-settle`), then verify the result |
 | `type` | Type text from an argument, `--stdin` or `--file` (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; supports `--verify, --retries, --json` |
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
@@ -321,7 +321,7 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 
 ### Cloudflare Turnstile
 
-`offsider turnstile` taps the checkbox square a person would tap. It does not bypass Turnstile. Cloudflare still decides whether the device is eligible, and the widget passes only when Cloudflare accepts it. The command never mints, reads or submits a token, and never calls Cloudflare. A simulator or emulator is often not eligible: the checkbox stays, a visual challenge appears, or the app rejects the token, and the command cannot make that login succeed. Exit 0 means the widget on screen reads Success, not that the server accepted a token. `offsider guide turnstile` is the full note.
+`offsider turnstile` taps the checkbox square a person would tap. It does not bypass Turnstile. Cloudflare still decides whether the device is eligible, and the widget passes only when Cloudflare accepts it. The command never mints, reads or submits a token, and never calls Cloudflare. A simulator or emulator is often not eligible: the checkbox stays, a visual challenge appears, or the app rejects the token, and the command cannot make that login succeed. Exit 0 means the widget on screen reads Success, not that the server accepted a token. When you test sign-in end to end, run `turnstile` yourself and hand back to a person only after it exits 1 (visual challenge) or 5 (device not accepted). `offsider guide turnstile` is the full note.
 
 ### Device state
 
@@ -592,6 +592,7 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `runner_unavailable` | 1 | The iPhone runner did not answer; no input was sent | Retry; `offsider doctor --device <UDID>` |
 | `run_active` | 1 | `run start` named another folder while this session's run is active | `offsider run stop`, then start the new run |
 | `run_unavailable` | 1 | The run folder cannot be written and it would hold the only copy, `OFFSIDER_RUN` names an unusable folder or is `off`, or the session cannot be found | Fix the folder, `offsider run status`, or set `OFFSIDER_RUN=<dir>` |
+| `turnstile_challenge` | 1 | `turnstile` found a visual challenge, which a checkbox tap cannot complete | Hand back to a person; do not retry |
 | `verify_target_present` | 1 | The `--verify-id` element was already on screen before the input, so nothing was sent | Pass an id only the next screen has, or use `--verify` |
 
 ## Privacy
