@@ -11,7 +11,7 @@ struct AndroidE2EGuardTests {
     }
 
     @Test("a USB or network serial is refused before any adb call, even when OFFSIDER_ANDROID_DEVICE names it", arguments: [
-        "RFCRA0TCR5B", "R58M123ABC", "192.168.1.5:5555", "emulator-", "emulator-55a4",
+        "R5CRFAKE03", "R58M123ABC", "192.168.1.5:5555", "emulator-", "emulator-55a4",
     ])
     func phoneRefused(serial: String) {
         let early = AndroidE2EGuard.preflight(serial: serial, expected: "Offsider_E2E_Pixel_9", allowed: allowed)

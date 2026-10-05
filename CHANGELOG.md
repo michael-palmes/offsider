@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `turnstile` taps the checkbox square of a Cloudflare Turnstile widget and waits until it passes. The checkbox's accessibility frame includes the words beside the square, so a normal tap lands on the words. The tap sits a few points off the square's centre and stays inside it (`--jitter`, `--seed`). On iOS the web view leaves the checkbox out of the tree: the command reads a point in that web view, leaves a widget that already says Success, and otherwise taps the square where the green check sits. `--id` limits the search to one wrapper. Exits 5 when the checkbox remains, and 2 when no widget is on screen. A visual challenge fails with a message. It does not bypass Turnstile: the command only taps the checkbox, and the widget passes only when Cloudflare accepts the device. `offsider guide turnstile` is that note.
+- `stay-awake [on|off]` reads or sets Developer options > Stay awake on Android emulators and named USB phones (the `stay_on_while_plugged_in` global setting, for every power source), with the screen timeout, and says when it has no effect: the device is not charging, charges over a source the setting leaves out, or a device policy caps the screen timeout.
+- `wake` turns an Android screen on and dismisses its lock screen, and sends nothing when the screen is already on and unlocked. A PIN, pattern or password lock screen exits 7 with the new reason `device_locked`.
+- `unlock-code set|status|remove` keeps a test device's PIN or password in the login Keychain under its phone serial or AVD name, asking twice with typing hidden or reading `--stdin`, and never prints it. `wake --unlock` types it once, only into a focused password field inside System UI's lock screen; after a code fails, Offsider does not type it again until the device is unlocked by hand or the code is saved again.
+- `stay-awake`, `wake` and `unlock-code` refuse an iOS simulator as `not_supported`: simulators never sleep or lock.
+- `stay-awake`, `wake`, `unlock-code` and their errors name a phone by maker and model, such as `Motorola moto g57 (ZY22FAKE01)`, and an emulator by its AVD name, from the state read these commands already make.
+- `doctor --device` on Android adds `android-device.screen` and `android-device.stay-awake`, and on a phone `android-device.adb-expiry` (whether this Mac's adb authorisation lapses) and `android-device.system-updates`; it names a phone by maker and model.
+
+### Changed
+
+- When an Android command fails because a selector matched nothing, no window was found, `--verify` saw no change, or `wait`, `assert` or `screenshot --compare` was not met, and the screen is off or locked, the error names the device, says so and its hint becomes `offsider wake --device <id>`; the reason and exit code are unchanged. A `--verify --json` error carries it too; a `--verify` that saw no change, `wait`, `assert` and `screenshot --compare` add a `Note:` line on stderr. The check uses only what the failed command had already read, plus one state read.
 
 ## [0.5.0] - 2026-10-04
 

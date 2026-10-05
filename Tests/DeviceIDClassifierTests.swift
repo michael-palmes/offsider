@@ -35,7 +35,7 @@ struct DeviceIDClassifierTests {
         #expect(DeviceIDClassifier.classify(raw).platform == .android)
     }
 
-    @Test("a USB serial is an Android name the router resolves", arguments: ["R58M123ABC", "1A2B3C4D5E6F", "RFCRA0TCR5B"])
+    @Test("a USB serial is an Android name the router resolves", arguments: ["R58M123ABC", "1A2B3C4D5E6F", "R5CRFAKE03"])
     func usbSerialIsName(raw: String) {
         #expect(DeviceIDClassifier.classify(raw) == .androidName(name: raw))
     }
@@ -48,7 +48,7 @@ struct DeviceIDClassifierTests {
         #expect(DeviceIDClassifier.classify(raw).platform == .android)
     }
 
-    @Test("a phone serial is never classified as an emulator serial", arguments: ["RFCRA0TCR5B", "R58M123ABC", "emulator5554", "emulator-", "192.168.1.5:5555"])
+    @Test("a phone serial is never classified as an emulator serial", arguments: ["R5CRFAKE03", "R58M123ABC", "emulator5554", "emulator-", "192.168.1.5:5555"])
     func phoneIsNeverEmulator(raw: String) {
         if case .androidSerial = DeviceIDClassifier.classify(raw) {
             Issue.record("\(raw) was classified as an emulator serial")

@@ -67,6 +67,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case deviceNotBooted = "device_not_booted"
     case deviceNotReady = "device_not_ready"
     case deviceUnauthorised = "device_unauthorised"
+    case deviceLocked = "device_locked"
     case deviceAmbiguous = "device_ambiguous"
     case avdNotFound = "avd_not_found"
 
@@ -98,7 +99,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
             return .unverified
         case .selectorAmbiguous, .selectorAmbiguousSwitch:
             return .ambiguousSelector
-        case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceAmbiguous, .avdNotFound:
+        case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound:
             return .deviceUnavailable
         case .deviceBusy, .uiautomationBusy:
             return .deviceBusy

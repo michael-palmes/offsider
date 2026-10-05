@@ -8,11 +8,14 @@ struct AndroidDoctorE2ETests {
         return (object, try #require(object["checks"] as? [[String: Any]]))
     }
 
-    @Test("doctor on the E2E emulator passes every device check with the playground open")
+    @Test("doctor on the E2E emulator passes every device check with the playground open and stay awake on")
     func deviceChecksPass() async throws {
         let serial = try await AndroidE2E.serial()
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        let restore = try await AndroidDeviceStateE2ETests.stayOnRestore()
+        try await AndroidE2E.run("stay-awake on")
         let result = try await AndroidE2E.offsider("doctor --json")
+        try await AndroidE2E.shell(restore)
         let (object, checks) = try Self.checks(result)
 
         #expect(result.exitCode != 4, "doctor failed: \(result.stderr)")
@@ -20,9 +23,11 @@ struct AndroidDoctorE2ETests {
         #expect(device["id"] as? String == serial)
         #expect(device["platform"] as? String == "android")
         let perDevice = checks.filter { ($0["id"] as? String)?.hasPrefix("android-device.") == true }
-        #expect(perDevice.count == 6)
+        #expect(perDevice.count == 10)
+        let phoneOnly: Set = ["android-device.adb-expiry", "android-device.system-updates"]
         for check in perDevice {
-            #expect(check["status"] as? String == "pass", "\(check["id"] ?? ""): \(check["detail"] ?? "")")
+            let expected = phoneOnly.contains(check["id"] as? String ?? "") ? "skip" : "pass"
+            #expect(check["status"] as? String == expected, "\(check["id"] ?? ""): \(check["detail"] ?? "")")
         }
         #expect(!checks.contains { ($0["id"] as? String)?.hasPrefix("xcode.") == true })
     }

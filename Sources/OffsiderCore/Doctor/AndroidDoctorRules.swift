@@ -125,7 +125,8 @@ public enum AndroidDoctorRules {
 
     public static func deviceState(_ facts: AndroidDeviceFacts) -> Verdict {
         let serial = facts.serial ?? facts.id
-        let name = (facts.avdName ?? facts.model).map { "\($0) (\(serial))" } ?? serial
+        let label = facts.isPhysical ? DeviceName.label(maker: facts.awake?.maker, model: facts.model) : facts.avdName ?? facts.model
+        let name = DeviceName.display(serial, label: label)
         if facts.isPhysical {
             switch facts.state {
             case .booted: return (.pass, "\(name), a phone connected over USB", nil)
@@ -220,6 +221,64 @@ public enum AndroidDoctorRules {
         }
     }
 
+    /// Input reaches apps only while the screen is on and unlocked.
+    public static func screen(_ reading: AwakeReading, deviceID: String) -> Verdict {
+        let wake = "Run `offsider wake --device \(deviceID)`."
+        switch (reading.screen, reading.lockScreen) {
+        case (.on, .hidden):
+            return (.pass, "On and unlocked", nil)
+        case (.on, .secure):
+            return (
+                .warn,
+                "On, \(reading.credentialName) lock screen showing; input and screen reads reach the lock screen",
+                "Unlock it on the device, or save its code with `offsider unlock-code set` and run `offsider wake --unlock --device \(deviceID)`."
+            )
+        case (.on, .swipe):
+            return (.warn, "On, lock screen showing; input and screen reads reach the lock screen", wake)
+        case (.dreaming, _):
+            return (.warn, "Showing a screen saver; input and screen reads do not reach the app", wake)
+        case (.off, _), (.dozing, _):
+            return (.warn, "Off; input and screen reads do not reach the app", wake)
+        }
+    }
+
+    /// Off lets the screen time out, and a PIN, pattern or password lock screen return.
+    public static func stayAwake(_ reading: AwakeReading, deviceID: String) -> Verdict {
+        let fix = "Run `offsider stay-awake on --device \(deviceID)`."
+        let timeout = reading.screenTimeoutSummary.map { "after \($0) without input" } ?? "when it times out"
+        guard !reading.stayAwake.isEmpty else {
+            let lock = reading.credential == nil ? "" : ", then the \(reading.credentialName) lock screen returns"
+            return (.warn, "Off: the screen turns off \(timeout)\(lock)", fix)
+        }
+        if reading.timeoutCappedByPolicy {
+            return (.warn, "On, but a device policy caps the screen timeout, so Android ignores it", "Remove the work profile or device admin policy that limits the screen timeout.")
+        }
+        if reading.charging.isEmpty {
+            return (.warn, "On, but the device is not charging, so the screen turns off \(timeout)", "Connect it to power.")
+        }
+        if !reading.staysAwake {
+            return (.warn, "On while charging over \(reading.stayAwake.summary), but the device charges over \(reading.charging.summary)", fix)
+        }
+        return (.pass, "On; charging over \(reading.charging.summary)", nil)
+    }
+
+    /// `null` is the 7-day default; `0` is Developer options > Disable adb authorization timeout.
+    public static func adbAuthorisation(_ setting: String) -> Verdict {
+        let hint = "Turn on Developer options > Disable adb authorization timeout."
+        if setting == "0" { return (.pass, "Never lapses", nil) }
+        let days = setting == "null" ? 7 : Int(setting).map { max(1, $0 / 86_400_000) }
+        guard let days else { return (.warn, "Unreadable setting \(setting)", hint) }
+        return (.warn, "Lapses after \(days) day\(days == 1 ? "" : "s") without a connection from this Mac, and the phone then asks again", hint)
+    }
+
+    /// An automatic update restarts the phone, which then waits at its lock screen.
+    public static func systemUpdates(_ setting: String) -> Verdict {
+        guard setting == "1" else {
+            return (.warn, "Automatic system updates are on, so the phone can restart to install one", "Turn off automatic system updates in Developer options.")
+        }
+        return (.pass, "Automatic system updates are off", nil)
+    }
+
     /// Information only: Offsider never sets or removes a reverse.
     public static func metroReverse(_ lines: [String]?) -> Verdict {
         guard let lines else { return (.pass, "Could not read the reverse list", nil) }
@@ -272,7 +331,8 @@ public enum AndroidDoctorRules {
     }
 
     static let deviceDependents: [DoctorCheckID] = [
-        .androidDeviceImage, .androidDeviceGrpc, .androidDeviceUiAutomation, .androidDeviceHelper, .androidDeviceMetroReverse,
+        .androidDeviceImage, .androidDeviceScreen, .androidDeviceStayAwake, .androidDeviceGrpc, .androidDeviceUiAutomation,
+        .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
     ]
 
     /// `hostBlocker` names the failed host check the device checks need, such as `android.sdk`.
@@ -286,6 +346,12 @@ public enum AndroidDoctorRules {
             return checks + deviceDependents.map { .skipped($0, "requires android-device.state") }
         }
         checks.append(DoctorCheckResult(id: .androidDeviceImage, verdict: image(apiLevel: facts.apiLevel, release: facts.release, abi: facts.abi)))
+        if let awake = facts.awake {
+            checks.append(DoctorCheckResult(id: .androidDeviceScreen, verdict: screen(awake, deviceID: facts.id)))
+            checks.append(DoctorCheckResult(id: .androidDeviceStayAwake, verdict: stayAwake(awake, deviceID: facts.id)))
+        } else {
+            checks += [.skipped(.androidDeviceScreen, "could not read the power state"), .skipped(.androidDeviceStayAwake, "could not read the power state")]
+        }
         if let grpc = facts.grpc {
             checks.append(DoctorCheckResult(id: .androidDeviceGrpc, verdict: self.grpc(grpc)))
         } else {
@@ -304,6 +370,19 @@ public enum AndroidDoctorRules {
             checks.append(.skipped(.androidDeviceHelper, "requires android-device.uiautomation"))
         }
         checks.append(DoctorCheckResult(id: .androidDeviceMetroReverse, verdict: metroReverse(facts.reverses)))
+        let phoneChecks: [(DoctorCheckID, String?, (String) -> Verdict)] = [
+            (.androidDeviceAdbExpiry, facts.adbAuthorisationTimeout, adbAuthorisation),
+            (.androidDeviceSystemUpdates, facts.automaticUpdatesDisabled, systemUpdates),
+        ]
+        for (id, setting, rule) in phoneChecks {
+            if !facts.isPhysical {
+                checks.append(.skipped(id, "applies to phones only"))
+            } else if let setting {
+                checks.append(DoctorCheckResult(id: id, verdict: rule(setting)))
+            } else {
+                checks.append(.skipped(id, "could not read the setting"))
+            }
+        }
         return checks
     }
 

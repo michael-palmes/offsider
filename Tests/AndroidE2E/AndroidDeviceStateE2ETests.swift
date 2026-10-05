@@ -72,6 +72,43 @@ struct AndroidDeviceStateE2ETests {
         }
     }
 
+    static func stayOnRestore() async throws -> String {
+        let before = try await AndroidE2E.shell("settings get global stay_on_while_plugged_in").trimmingCharacters(in: .whitespacesAndNewlines)
+        return before == "null" ? "settings delete global stay_on_while_plugged_in" : "settings put global stay_on_while_plugged_in \(before)"
+    }
+
+    @Test("stay-awake on writes every power source and takes effect on the emulator's AC power, and off clears it")
+    func stayAwake() async throws {
+        let restore = try await Self.stayOnRestore()
+        try await Self.restoring({ _ = try? await AndroidE2E.shell(restore) }) {
+            let on = try await AndroidE2E.run("stay-awake on --json")
+            #expect(on.stdout.contains(#""stayAwake":true"#))
+            #expect(on.stdout.contains(#""effective":true"#))
+            #expect(try await AndroidE2E.shell("settings get global stay_on_while_plugged_in").trimmingCharacters(in: .whitespacesAndNewlines) == "15")
+
+            let off = try await AndroidE2E.run("stay-awake off")
+            #expect(off.stdout.hasPrefix("Stay awake: off (was on)"))
+        }
+    }
+
+    @Test("wake sends nothing to a usable emulator, and brings a sleeping one back to the app")
+    func wake() async throws {
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        let idle = try await AndroidE2E.run("wake --json")
+        #expect(idle.stdout.contains(#""sent":[]"#))
+
+        try await Self.restoring({ _ = try? await AndroidE2E.shell("input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard") }) {
+            try await AndroidE2E.shell("input keyevent KEYCODE_SLEEP")
+            let asleep = try await AndroidE2E.run("stay-awake --json")
+            #expect(asleep.stdout.contains(#""current":{"screen":"off""#))
+
+            let woken = try await AndroidE2E.run("wake --json")
+            #expect(woken.stdout.contains(#""sent":["KEYCODE_WAKEUP""#))
+            #expect(woken.stdout.contains(#""current":{"screen":"on","lockScreen":"hidden""#))
+            try await AndroidE2E.run("assert --id tap-test-area")
+        }
+    }
+
     @Test("biometric match and no-match reach the emulator console, and enrol refuses")
     func biometric() async throws {
         let match = try await AndroidE2E.run("biometric match")

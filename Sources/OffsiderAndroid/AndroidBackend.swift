@@ -85,6 +85,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return BootedDevice(id: id, name: emulator.avdName ?? serial)
     }
 
+    /// The model or AVD name an earlier `requireBootedDevice` read for this device, without asking adb again.
+    public func listedName(of id: DeviceID) -> String? {
+        phones[id.rawValue]?.model ?? avdNames[id.rawValue]
+    }
+
     /// The USB phone's row for a serial the user named; offline, unauthorised and network rows are refused.
     func requireConnectedPhone(_ serial: String) async throws -> ConnectedPhone {
         if let cached = phones[serial] {

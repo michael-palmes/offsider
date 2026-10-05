@@ -29,10 +29,14 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case androidDevices = "android.devices"
     case androidDeviceState = "android-device.state"
     case androidDeviceImage = "android-device.image"
+    case androidDeviceScreen = "android-device.screen"
+    case androidDeviceStayAwake = "android-device.stay-awake"
     case androidDeviceGrpc = "android-device.grpc"
     case androidDeviceUiAutomation = "android-device.uiautomation"
     case androidDeviceHelper = "android-device.helper"
     case androidDeviceMetroReverse = "android-device.metro-reverse"
+    case androidDeviceAdbExpiry = "android-device.adb-expiry"
+    case androidDeviceSystemUpdates = "android-device.system-updates"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -75,10 +79,14 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .androidDevices: return "Android devices"
         case .androidDeviceState: return "Device state"
         case .androidDeviceImage: return "System image"
+        case .androidDeviceScreen: return "Screen"
+        case .androidDeviceStayAwake: return "Stay awake"
         case .androidDeviceGrpc: return "Emulator gRPC"
         case .androidDeviceUiAutomation: return "UiAutomation"
         case .androidDeviceHelper: return "UiAutomation helper"
         case .androidDeviceMetroReverse: return "Metro reverse"
+        case .androidDeviceAdbExpiry: return "adb authorisation expiry"
+        case .androidDeviceSystemUpdates: return "System updates"
         }
     }
 }

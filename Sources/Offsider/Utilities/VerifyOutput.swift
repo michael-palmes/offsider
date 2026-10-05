@@ -28,10 +28,13 @@ final class VerifyProgress {
 
 @MainActor
 enum VerifyOutput {
+    /// With --json, the screen check runs before the report is written, so its error carries any off or locked screen too.
     static func reportingFailures(
         command: String,
         target: String,
         options: VerificationOptions,
+        scope: CommandScope = .current,
+        write: (Data) -> Void = writeOutput,
         _ body: (VerifyProgress) async throws -> Void
     ) async throws {
         let progress = VerifyProgress()
@@ -41,6 +44,7 @@ enum VerifyOutput {
             throw exit
         } catch {
             guard options.json else { throw error }
+            let error = await scope.screenHint(for: error)
             let failed = VerifyReport(
                 command: command,
                 target: target,
@@ -51,7 +55,7 @@ enum VerifyOutput {
                 style: progress.style,
                 error: ErrorReporter.payload(for: error, dispatched: progress.dispatched)
             )
-            writeOutput(try failed.jsonData() + Data("\n".utf8))
+            write(try failed.jsonData() + Data("\n".utf8))
             throw ReportedFailure(underlying: error, exitCode: failed.exitCode)
         }
     }

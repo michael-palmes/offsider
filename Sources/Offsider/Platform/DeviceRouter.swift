@@ -67,6 +67,17 @@ enum DeviceRouter {
         host: AndroidHost = .cli(),
         scope: CommandScope = .current
     ) async throws -> Route {
+        let route = try await resolve(rawID, logger: logger, host: host, scope: scope)
+        scope.noteRoute(route)
+        return route
+    }
+
+    private static func resolve(
+        _ rawID: String,
+        logger: OffsiderLogger,
+        host: AndroidHost,
+        scope: CommandScope
+    ) async throws -> Route {
         let id = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
         switch DeviceIDClassifier.classify(rawID) {
         case .iosSimulator(let udid):

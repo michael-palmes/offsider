@@ -39,7 +39,7 @@ struct AdbDeviceListTests {
 
     @Test("a usb: property makes a USB device; the attached phone's real row is one")
     func usbKind() {
-        let row = "RFCRA0TCR5B            device usb:1-2.4.1.3 product:q2qxxx model:SM_F926B device:q2q transport_id:22\n"
+        let row = "R5CRFAKE03            device usb:1-2.4.1.3 product:q2qxxx model:SM_F926B device:q2q transport_id:22\n"
         #expect(AdbDeviceListParser.parse(row).map(\.kind) == [.usb])
         #expect(AdbDeviceListParser.parse(Self.listing)[3].kind == .usb)
     }
