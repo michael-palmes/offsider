@@ -240,4 +240,44 @@ struct WakeCommandTests {
         #expect(try UnlockCodeCommand.deviceKey("Offsider_E2E_Pixel_9") == "Offsider_E2E_Pixel_9")
         #expect((try #require(throws: CLIError.self) { try UnlockCodeCommand.deviceKey("emulator-5556") }).reason == .usage)
     }
+
+    // MARK: screen hint
+
+    static func route(_ backend: FakeDeviceBackend) -> [DeviceRouter.Route] {
+        [DeviceRouter.Route(backend: backend, device: phone)]
+    }
+
+    @Test("a selector failure on a locked screen keeps its reason and gains the wake hint")
+    func hintAdded() async throws {
+        let failure = CLIError(errorDescription: "No accessibility element matched --label 'Save'.", reason: .selectorNotFound)
+        let backend = Self.backend(Self.locked)
+        backend.listedDeviceName = "moto g57"
+        let annotated = await ScreenStateHint.annotate(failure, routes: Self.route(backend))
+        let wrapped = try #require(annotated as? ScreenStateFailure)
+
+        #expect(wrapped.reason == .selectorNotFound)
+        #expect(wrapped.failureMessage == "No accessibility element matched --label 'Save'. The screen of Motorola moto g57 (ZY22FAKE01) is off, so input and screen reads do not reach the app. Run `offsider wake --device ZY22FAKE01`, then retry.")
+        #expect(wrapped.hint == "offsider wake --device ZY22FAKE01")
+    }
+
+    @Test("a usable screen, another reason or two devices leave the failure unchanged")
+    func hintSkipped() async {
+        let notFound = CLIError(errorDescription: "missing", reason: .selectorNotFound)
+        let busy = CLIError(errorDescription: "busy", reason: .deviceBusy)
+        let locked = Self.backend(Self.locked)
+        #expect(await ScreenStateHint.annotate(notFound, routes: Self.route(Self.backend())) is CLIError)
+        #expect(await ScreenStateHint.annotate(busy, routes: Self.route(locked)) is CLIError)
+        #expect(await ScreenStateHint.annotate(notFound, routes: Self.route(locked) + Self.route(locked)) is CLIError)
+        #expect(locked.stateCalls.isEmpty)
+    }
+
+    @Test("a condition that was printed already gets a note line and keeps exit 5")
+    func hintNote() async {
+        var notes: [String] = []
+        let exit = ExitCode(OffsiderExitCode.unverified.rawValue)
+        let result = await ScreenStateHint.annotate(exit, routes: Self.route(Self.backend(AwakeReading(screen: .on, lockScreen: .secure, credential: "password")))) { notes.append($0) }
+
+        #expect((result as? ExitCode)?.rawValue == 5)
+        #expect(notes == ["Note: ZY22FAKE01 is showing its password lock screen, so input and screen reads do not reach the app. Run `offsider wake --device ZY22FAKE01`, then retry."])
+    }
 }

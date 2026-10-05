@@ -38,6 +38,8 @@ public protocol AwakeControlling: DeviceBackend {
     func wake(on id: DeviceID) async throws -> WakeOutcome
     /// Types `code` once into the lock screen's focused PIN or password field, then Enter; returns the reading afterwards.
     func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> AwakeReading
+    /// The model or AVD name already read for this device, without a round trip; nil when none was.
+    func listedName(of id: DeviceID) -> String?
 }
 
 /// The JSON objects `permission`, `status-bar` and `biometric` print with `--json`, in schema order.

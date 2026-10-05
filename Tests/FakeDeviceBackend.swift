@@ -54,6 +54,8 @@ final class FakeDeviceBackend: DeviceBackend {
     /// What typing a code leaves.
     var afterCode = AwakeReading(screen: .on, lockScreen: .hidden)
     private(set) var enteredCodes: [UnlockCode] = []
+    /// What `listedName(of:)` serves, as a phone's model or an AVD name.
+    var listedDeviceName: String?
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -284,6 +286,10 @@ extension FakeDeviceBackend: AwakeControlling {
         guard !previous.isUsable else { return WakeOutcome(previous: previous, current: previous, sent: []) }
         awake = afterWake ?? awake
         return WakeOutcome(previous: previous, current: awake, sent: ["KEYCODE_WAKEUP", "dismiss-keyguard"])
+    }
+
+    func listedName(of id: DeviceID) -> String? {
+        listedDeviceName
     }
 
     func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> AwakeReading {

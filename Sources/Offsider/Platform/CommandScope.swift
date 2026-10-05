@@ -14,6 +14,9 @@ final class CommandScope {
     /// The command path for the tree cache; nil leaves the cache alone (tests that only check closing).
     private(set) var command: String?
 
+    /// Each device the router chose, for the screen check after a failure.
+    private(set) var routes: [DeviceRouter.Route] = []
+
     nonisolated init(claims: DeviceClaims = .current) {
         self.claims = claims
     }
@@ -31,11 +34,16 @@ final class CommandScope {
         return backend
     }
 
+    func noteRoute(_ route: DeviceRouter.Route) {
+        routes.append(route)
+    }
+
     /// Runs `body`, writes the tree cache, then closes every adopted backend in reverse adoption order, also when `body` throws.
     func run(_ body: () async throws -> Void) async throws {
         do {
             try await body()
         } catch {
+            let error = await ScreenStateHint.annotate(error, routes: routes)
             await commitTreeCache(failed: true)
             await closeAll()
             claims.releaseAll()

@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `stay-awake`, `wake` and `unlock-code` refuse an iOS simulator as `not_supported`: simulators never sleep or lock.
 - `stay-awake`, `wake`, `unlock-code` and their errors name a phone by maker and model, such as `Motorola moto g57 (ZY22FAKE01)`, and an emulator by its AVD name, from the state read these commands already make.
 
+### Changed
+
+- When an Android command fails because a selector matched nothing, no window was found, `--verify` saw no change, or `wait`, `assert` or `screenshot --compare` was not met, and the screen is off or locked, the error names the device, says so and its hint becomes `offsider wake --device <id>`; the reason and exit code are unchanged. Commands that printed their own report add a `Note:` line on stderr. The check uses only what the failed command had already read, plus one state read.
+
 ## [0.5.0] - 2026-10-04
 
 ### Added
