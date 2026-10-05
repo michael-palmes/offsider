@@ -181,6 +181,7 @@ struct ReactNativeEnvironmentTests {
             let timestamp: String
             let level: String
             let message: String
+            let raw: String?
         }
         let version: Int
         let platform: String
@@ -230,6 +231,7 @@ struct ReactNativeEnvironmentTests {
             #expect(entry.level == Self.expectedLevels(platform)[level], "console \(level) logged at \(entry.level)")
             let time = try #require(parser.date(from: entry.timestamp), "\(entry.timestamp)")
             #expect(time > start.addingTimeInterval(-5), "OffsiderFixture \(level) \(n) at \(entry.timestamp) is from an earlier launch")
+            #expect(entry.raw?.contains("OffsiderFixture \(level) \(n)") == true, "raw: \(entry.raw ?? "null")")
         }
 
         let grep = try await app.run("logs --rn --grep 'OffsiderFixture error' --last 1m")

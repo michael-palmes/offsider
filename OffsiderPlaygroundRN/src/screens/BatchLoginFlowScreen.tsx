@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native';
 
-import { colours, Note, Readout, Screen, Target } from '../fixtures';
+import { colours, fixtureLog, Note, Readout, Screen, Target } from '../fixtures';
 
 type Stage = 'Email' | 'Password' | 'Loading' | 'Dashboard' | 'Settings';
 
@@ -19,6 +19,7 @@ const fieldProps = {
 export function BatchLoginFlowScreen() {
   const [stage, setStage] = useState<Stage>('Email');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -31,6 +32,7 @@ export function BatchLoginFlowScreen() {
   );
 
   const signIn = () => {
+    fixtureLog('batch-login', JSON.stringify({ email, password }));
     setStage('Loading');
     timer.current = setTimeout(() => {
       timer.current = null;
@@ -63,6 +65,7 @@ export function BatchLoginFlowScreen() {
           <TextInput
             testID="batch-login-password-field"
             secureTextEntry
+            onChangeText={setPassword}
             style={styles.field}
             {...fieldProps}
           />

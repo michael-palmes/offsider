@@ -109,3 +109,17 @@ struct AndroidLandscapeTests {
         try await restorePortrait()
     }
 }
+
+@Suite("Android evidence runs", .serialized, .enabled(if: isAndroidE2EEnabled))
+struct AndroidRunTests {
+    @Test("a screenshot, a logs read and a batch screenshot step are numbered into the run")
+    func threeCaptures() async throws {
+        _ = try await AndroidE2E.serial()
+        let (summary, folder) = try await RunE2E.record { environment in
+            for command in ["screenshot", "logs --last 5s --max-lines 20", "batch --step screenshot"] {
+                try await AndroidE2E.run(command, environment: environment)
+            }
+        }
+        try RunE2E.checkThreeCaptures(summary, folder: folder)
+    }
+}
