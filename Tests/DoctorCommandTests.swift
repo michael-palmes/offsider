@@ -45,6 +45,9 @@ struct DoctorCommandTests {
         #expect(result.stderr.contains("Offsider doctor: Xcode"))
         #expect(result.stderr.contains("✓ xcode.developer-dir"))
         #expect(!result.stdout.contains("Offsider doctor:"))
+        let host = try #require(report["host"] as? [String: Any])
+        #expect((host["loadAverage"] as? [Double])?.count == 3)
+        #expect(ids.isSuperset(of: ["host.load", "host.disk", "host.sessions"]))
     }
 
     @Test("Without --json the human report goes to stdout")

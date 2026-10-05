@@ -54,6 +54,9 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case iosDeviceUsbmuxd = "ios-device.usbmuxd"
     case iosDeviceRunnerSigning = "ios-device.runner-signing"
     case deviceLease = "device.lease"
+    case hostLoad = "host.load"
+    case hostDisk = "host.disk"
+    case hostSessions = "host.sessions"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -125,6 +128,9 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .iosDeviceUsbmuxd: return "usbmuxd"
         case .iosDeviceRunnerSigning: return "Runner signing"
         case .deviceLease: return "Lease"
+        case .hostLoad: return "Load"
+        case .hostDisk: return "Free disk"
+        case .hostSessions: return "Offsider commands"
         }
     }
 }

@@ -19,7 +19,7 @@ struct Doctor: AsyncParsableCommand {
     var fix = false
 
     func run() async throws {
-        let report: DoctorReport
+        var report: DoctorReport
         if let id = deviceOption.id, case .iosDevice(let udid) = DeviceIDClassifier.classify(id) {
             report = await iosDeviceReport(udid)
         } else if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
@@ -27,6 +27,7 @@ struct Doctor: AsyncParsableCommand {
         } else {
             report = await hostAndSimulatorReport()
         }
+        report = Self.withHost(report, HostProbe.live.facts())
         try write(report)
         if report.exitCode != .success {
             throw ExitCode(report.exitCode.rawValue)
@@ -119,6 +120,14 @@ struct Doctor: AsyncParsableCommand {
             android: nil,
             checks: IOSDeviceDoctorRules.checks(result.facts) + [Self.leaseCheck(platform: .ios, key: udid.uppercased(), lockID: udid)],
             fixes: fixes
+        )
+    }
+
+    /// Host facts and checks join every report, after its own checks.
+    static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
+        DoctorReport(
+            offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host), fixes: report.fixes, host: host
         )
     }
 

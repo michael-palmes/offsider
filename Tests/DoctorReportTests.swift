@@ -40,7 +40,7 @@ struct DoctorReportTests {
     @Test("JSON has exactly the documented top-level keys")
     func topLevelKeys() throws {
         let object = try jsonObject(report([.warn]))
-        #expect(Set(object.keys) == ["version", "offsiderVersion", "status", "udid", "device", "xcode", "booted", "android", "checks", "fixes"])
+        #expect(Set(object.keys) == ["version", "offsiderVersion", "status", "udid", "device", "xcode", "booted", "android", "checks", "fixes", "host"])
         #expect(object["version"] as? Int == 1)
         #expect(object["status"] as? String == "warn")
         #expect((object["fixes"] as? [Any])?.isEmpty == true)
@@ -127,6 +127,9 @@ struct DoctorReportTests {
             "ios-device.usbmuxd",
             "ios-device.runner-signing",
             "device.lease",
+            "host.load",
+            "host.disk",
+            "host.sessions",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)

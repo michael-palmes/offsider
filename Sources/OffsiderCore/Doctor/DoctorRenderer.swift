@@ -26,6 +26,9 @@ public enum DoctorRenderer {
                 lines.append(androidHeader(android))
             }
         }
+        if let host = report.host {
+            lines.append("Host: " + host.summary)
+        }
         if let device = report.device, device.source == "environment" {
             lines.append("Device: \(device.id)" + (device.name.map { " (\($0))" } ?? "") + ", from OFFSIDER_DEVICE")
         }
