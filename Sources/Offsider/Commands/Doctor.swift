@@ -64,7 +64,7 @@ struct Doctor: AsyncParsableCommand {
             xcode: result.xcode,
             booted: result.booted,
             android: AndroidDoctorRules.summary(facts, device: nil),
-            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false),
+            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false) + (udid.map { [Self.leaseCheck(platform: .ios, key: $0.uppercased(), lockID: $0)] } ?? []),
             fixes: fixes
         )
     }
@@ -94,7 +94,8 @@ struct Doctor: AsyncParsableCommand {
             booted: [],
             android: AndroidDoctorRules.summary(facts.host, device: facts.device),
             checks: AndroidDoctorRules.hostChecks(facts.host, deviceNamed: true)
-                + AndroidDoctorRules.deviceChecks(facts.device, hostBlocker: AndroidDoctorRules.hostBlocker(facts.host)),
+                + AndroidDoctorRules.deviceChecks(facts.device, hostBlocker: AndroidDoctorRules.hostBlocker(facts.host))
+                + [Self.leaseCheck(platform: .android, key: Self.leaseKey(facts.device, id: id), lockID: serial)],
             fixes: fixes
         )
     }
@@ -116,9 +117,27 @@ struct Doctor: AsyncParsableCommand {
             xcode: XcodeSummary(developerDir: result.xcode?.developerDirectory, version: result.xcode?.version, build: result.xcode?.build, coreSimulator: nil),
             booted: [],
             android: nil,
-            checks: IOSDeviceDoctorRules.checks(result.facts),
+            checks: IOSDeviceDoctorRules.checks(result.facts) + [Self.leaseCheck(platform: .ios, key: udid.uppercased(), lockID: udid)],
             fixes: fixes
         )
+    }
+
+    /// An emulator's lease is kept under its AVD name, a phone's under its serial.
+    static func leaseKey(_ facts: AndroidDeviceFacts?, id: String) -> String {
+        guard let facts else { return StableDeviceKey.of(id: id)?.key ?? id }
+        return facts.isPhysical ? (facts.serial ?? id) : (facts.avdName ?? facts.serial ?? id)
+    }
+
+    static func leaseCheck(
+        platform: DevicePlatform, key: String, lockID: String,
+        store: DeviceLeaseStore = DeviceLeaseStore(),
+        sessionLabel: String? = ProcessInfo.processInfo.environment[DeviceLeaseRules.sessionVariable],
+        holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
+    ) -> DoctorCheckResult {
+        let verdict = DeviceLeaseRules.lease(
+            store.lease(platform: platform, key: key), sessionLabel: sessionLabel, holder: holder(DeviceLockKey(platform: platform, id: lockID))
+        )
+        return DoctorCheckResult(id: .deviceLease, verdict: verdict)
     }
 
     /// The Keychain is read (attributes only) only for a device with a credential; an emulator's code is saved under its AVD name.

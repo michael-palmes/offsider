@@ -24,6 +24,8 @@ public struct DeviceSummary: Equatable, Sendable {
     public var bootedBy: ProcessStamp?
     /// The Offsider command holding the device's lock right now.
     public var heldBy: DeviceLockHolder?
+    /// The advisory lease on the device, from `offsider lease set`.
+    public var lease: DeviceLease?
 
     public init(
         id: String,
@@ -84,6 +86,7 @@ public enum DeviceListRenderer {
                 ("avd", device.avd.map(string) ?? "null"),
                 ("bootedBy", device.bootedBy.map(stamp) ?? "null"),
                 ("heldBy", device.heldBy.map(holder) ?? "null"),
+                ("lease", device.lease.map(lease) ?? "null"),
             ]
             let body = fields.map { "      \(string($0.0)): \($0.1)" }.joined(separator: ",\n")
             return "    {\n\(body)\n    }"
@@ -100,6 +103,13 @@ public enum DeviceListRenderer {
         let command: String = string(holder.command)
         let startedAt: String = holder.startedAt.map { string(ProcessStamp.timestamp($0)) } ?? "null"
         return "{\"pid\": \(holder.pid), \"command\": \(command), \"startedAt\": \(startedAt)}"
+    }
+
+    static func lease(_ lease: DeviceLease) -> String {
+        let label: String = string(lease.label)
+        let since: String = string(ProcessStamp.timestamp(lease.created))
+        let expiresAt: String = string(ProcessStamp.timestamp(lease.expires))
+        return "{\"label\": \(label), \"since\": \(since), \"expiresAt\": \(expiresAt)}"
     }
 
     private static func string(_ value: String) -> String {

@@ -93,7 +93,7 @@ struct DeviceListingTests {
 
         let keys = [
             "\"version\"", "\"devices\"", "\"id\"", "\"platform\"", "\"state\"", "\"name\"", "\"osVersion\"", "\"deviceType\"", "\"kind\"",
-            "\"connection\"", "\"avd\"", "\"bootedBy\"", "\"heldBy\"",
+            "\"connection\"", "\"avd\"", "\"bootedBy\"", "\"heldBy\"", "\"lease\"",
         ]
         let offsets = keys.compactMap { text.range(of: $0)?.lowerBound }
         #expect(offsets.count == keys.count)

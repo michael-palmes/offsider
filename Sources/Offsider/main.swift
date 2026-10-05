@@ -41,6 +41,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             StayAwakeCommand.self,
             Wake.self,
             UnlockCodeCommand.self,
+            LeaseCommand.self,
             Key.self,
             KeySequence.self,
             KeyCombo.self,

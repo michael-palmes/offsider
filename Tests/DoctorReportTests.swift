@@ -126,6 +126,7 @@ struct DoctorReportTests {
             "ios-device.session",
             "ios-device.usbmuxd",
             "ios-device.runner-signing",
+            "device.lease",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)

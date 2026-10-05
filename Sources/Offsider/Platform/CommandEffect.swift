@@ -34,6 +34,7 @@ enum CommandEffect: String, Sendable {
         "status-bar": .input,
         "biometric": .input,
         "unlock-code": .none,
+        "lease": .none,
         "stay-awake": .input,
         "wake": .input,
         "key": .input,

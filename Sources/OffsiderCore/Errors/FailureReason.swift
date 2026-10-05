@@ -79,6 +79,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case uiAutomationOff = "ui_automation_off"
 
     case deviceBusy = "device_busy"
+    case deviceLeased = "device_leased"
     case uiautomationBusy = "uiautomation_busy"
 
     case xcodeMissing = "xcode_missing"
@@ -112,7 +113,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
         case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
              .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff:
             return .deviceUnavailable
-        case .deviceBusy, .uiautomationBusy:
+        case .deviceBusy, .uiautomationBusy, .deviceLeased:
             return .deviceBusy
         case .xcodeMissing, .xcodeUnusable, .androidSdkMissing, .adbServerUnavailable, .adbServerMisconfigured,
              .emulatorMissing, .emulatorGrpcRequired, .helperUnavailable, .xcodeTooOld, .teamMissing, .usbmuxUnavailable:
