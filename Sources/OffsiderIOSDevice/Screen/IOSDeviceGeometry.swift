@@ -8,12 +8,18 @@ public struct IOSDeviceGeometry: Codable, Equatable, Sendable {
     public var pointScale: Double
     /// Anticlockwise from portrait; the motion `orientation` block is ignored because it follows the hardware, not the UI.
     public var rotationDegrees: Int?
+    /// The UI's points from `bounds`; they win over the panel's pixels over `pointScale`, which Display Zoom does not follow.
+    public var points: IOSDevicePoints?
+    /// devicectl's `nativeOrientation`, clockwise: 270 on a landscape-native iPad, whose UI is landscape at rotation 0.
+    public var nativeDegrees: Int?
 
-    public init(pixelWidth: Double, pixelHeight: Double, pointScale: Double, rotationDegrees: Int?) {
+    public init(pixelWidth: Double, pixelHeight: Double, pointScale: Double, rotationDegrees: Int?, points: IOSDevicePoints? = nil, nativeDegrees: Int? = nil) {
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.pointScale = pointScale
         self.rotationDegrees = rotationDegrees
+        self.points = points
+        self.nativeDegrees = nativeDegrees
     }
 
     public struct ParseError: Error, Equatable, Sendable {
@@ -40,7 +46,9 @@ public struct IOSDeviceGeometry: Codable, Equatable, Sendable {
             pixelWidth: min(size.0, size.1),
             pixelHeight: max(size.0, size.1),
             pointScale: scale,
-            rotationDegrees: clockwise.map(DevicectlDisplays.anticlockwise)
+            rotationDegrees: clockwise.map(DevicectlDisplays.anticlockwise),
+            points: IOSDevicePoints.parse(display: display, scale: scale),
+            nativeDegrees: DevicectlDisplays.degrees(display["nativeOrientation"] as? String)
         )
     }
 
@@ -48,11 +56,11 @@ public struct IOSDeviceGeometry: Codable, Equatable, Sendable {
         rotationDegrees.flatMap(DeviceOrientation.init(rotationDegrees:))?.coordinateOrientation
     }
 
-    /// Points in the current orientation.
+    /// Points in the UI's current shape; the rotation stays the UI's turn on the panel, which is how the captures arrive.
     public var screenInfo: UIScreenInfo {
-        let width = pixelWidth / pointScale
-        let height = pixelHeight / pointScale
-        let landscape = orientation?.isLandscape == true
+        let width = points.map { min($0.width, $0.height) } ?? pixelWidth / pointScale
+        let height = points.map { max($0.width, $0.height) } ?? pixelHeight / pointScale
+        let landscape = ((nativeDegrees ?? 0) + (rotationDegrees ?? 0)) % 180 == 90
         return UIScreenInfo(
             width: landscape ? height : width,
             height: landscape ? width : height,

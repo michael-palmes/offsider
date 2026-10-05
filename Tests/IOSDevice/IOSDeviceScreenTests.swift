@@ -65,7 +65,9 @@ struct IOSDeviceScreenTests {
     @Test("the displays reply gives the portrait panel in points and the UI's turn, not the motion orientation")
     func geometryParse() throws {
         let geometry = try IOSDeviceGeometry.parse(try IOSDeviceFixtures.data("devicectl-info-displays.json"))
-        #expect(geometry == IOSDeviceGeometry(pixelWidth: 1290, pixelHeight: 2796, pointScale: 3, rotationDegrees: 0))
+        #expect(geometry == IOSDeviceGeometry(
+            pixelWidth: 1290, pixelHeight: 2796, pointScale: 3, rotationDegrees: 0, points: IOSDevicePoints(width: 430, height: 932), nativeDegrees: 0
+        ))
         #expect(geometry.screenInfo == UIScreenInfo(width: 430, height: 932, scale: 3, rotation: .portrait, rotationDegrees: 0))
     }
 
@@ -75,6 +77,28 @@ struct IOSDeviceScreenTests {
         let info = try IOSDeviceGeometry.parse(Data(json.utf8)).screenInfo
         #expect(info.width == 932 && info.height == 430)
         #expect(info.rotation == orientation && info.rotationDegrees == degrees)
+    }
+
+    static func iPadDisplays(bounds: String) -> Data {
+        Data("""
+        {"result": {"displays": [{"displayId": 1, "primary": true, \(bounds) "nativeSize": [2752, 2064], "pointScale": 2,
+          "currentOrientation": "rot0", "nativeOrientation": "rot270", "type": {"integrated": {}}}]}}
+        """.utf8)
+    }
+
+    @Test("a landscape-native iPad reports a landscape screen at rotation 0, in its bounds' points, else its nativeSize points")
+    func iPadGeometry() throws {
+        let zoomed = try IOSDeviceGeometry.parse(Self.iPadDisplays(bounds: #""bounds": [[0, 0], [3200, 2400]],"#))
+        #expect(zoomed.screenInfo == UIScreenInfo(width: 1600, height: 1200, scale: 2, rotation: .portrait, rotationDegrees: 0))
+        let native = try IOSDeviceGeometry.parse(Self.iPadDisplays(bounds: ""))
+        #expect(native.screenInfo == UIScreenInfo(width: 1376, height: 1032, scale: 2, rotation: .portrait, rotationDegrees: 0))
+    }
+
+    @Test("a geometry cached before points and native orientation were kept still reads")
+    func olderGeometryFile() throws {
+        let data = Data(#"{"pixelWidth": 1290, "pixelHeight": 2796, "pointScale": 3, "rotationDegrees": 0}"#.utf8)
+        let geometry = try JSONDecoder().decode(IOSDeviceGeometry.self, from: data)
+        #expect(geometry.screenInfo.width == 430 && geometry.screenInfo.height == 932)
     }
 
     @Test("a reply without a display size is refused")

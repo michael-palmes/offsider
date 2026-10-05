@@ -77,6 +77,17 @@ struct IOSDevicePanelTests {
         #expect(panel.fraction(x: point.x, y: point.y) == (x: 0.25, y: 0.75))
     }
 
+    @Test("an iPad at More Space is measured in the points of its 3200 x 2400 bounds, so the UI's centre is the touchscreen's")
+    func iPadMoreSpace() throws {
+        let json = Data("""
+        {"result": {"displays": [{"displayId": 1, "primary": true, "bounds": [[0, 0], [3200, 2400]], "nativeSize": [2752, 2064], "pointScale": 2,
+          "currentOrientation": "rot0", "nativeOrientation": "rot270", "type": {"integrated": {}}}]}}
+        """.utf8)
+        let panel = try #require(IOSDevicePanel.parse(displaysJSON: json))
+        #expect(panel == IOSDevicePanel(width: 1600, height: 1200, scale: 2, orientation: .portrait))
+        #expect(panel.touchscreenPoint(x: 800, y: 600) == (32768, 32768))
+    }
+
     @Test("a UI turned a quarter on the panel swaps its size, keeps its centre and moves its corner", arguments: ["rot90", "rot270"])
     func turned(current: String) throws {
         let panel = try #require(IOSDevicePanel.parse(displaysJSON: Self.displays(width: 1290, height: 2796, scale: 3, current: current)))

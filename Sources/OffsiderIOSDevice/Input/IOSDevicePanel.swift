@@ -18,8 +18,8 @@ public struct IOSDevicePanel: Equatable, Sendable {
         self.orientation = orientation
     }
 
-    /// The primary integrated display from `devicectl device info displays`: `nativeSize` pixels over `pointScale`,
-    /// turned by `currentOrientation`, which devicectl reports clockwise.
+    /// The primary integrated display from `devicectl device info displays`: `nativeSize` pixels over `pointScale`, measured in
+    /// the UI's points from `bounds` when it reports them, and turned by `currentOrientation`, which devicectl reports clockwise.
     public static func parse(displaysJSON data: Data) -> IOSDevicePanel? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let result = root["result"] as? [String: Any],
@@ -35,7 +35,19 @@ public struct IOSDevicePanel: Equatable, Sendable {
             height: size[1].doubleValue / scale,
             scale: scale,
             orientation: OrientationCoordinateMath.Orientation(uprightQuarterTurnsCounterclockwise: quarterTurns)
-        )
+        ).rebased(onPoints: IOSDevicePoints.parse(display: display, scale: scale))
+    }
+
+    /// The same panel measured in the UI's points, given in either order; the panel keeps its native axes, so the touchscreen's
+    /// fractions stay fractions of the UI.
+    public func rebased(onPoints points: IOSDevicePoints?) -> IOSDevicePanel {
+        guard let points, points.width > 0, points.height > 0 else { return self }
+        let long = max(points.width, points.height)
+        let short = min(points.width, points.height)
+        var panel = self
+        panel.width = width >= height ? long : short
+        panel.height = width >= height ? short : long
+        return panel
     }
 
     /// The UI's size in points, swapped when the UI is sideways on the panel.
@@ -50,5 +62,26 @@ public struct IOSDevicePanel: Equatable, Sendable {
     /// A panel point as the digitizer's fractions, clamped to the panel.
     public func fraction(x: Double, y: Double) -> (x: Double, y: Double) {
         (x: min(max(x / width, 0), 1), y: min(max(y / height, 0), 1))
+    }
+}
+
+/// The UI's size in points: devicectl's `bounds` over `pointScale`, the framebuffer the UI renders into.
+/// Display Zoom scales it away from `nativeSize` (an iPad Pro 13-inch at More Space renders 3200 x 2400 for a 2752 x 2064 panel).
+public struct IOSDevicePoints: Codable, Equatable, Sendable {
+    public var width: Double
+    public var height: Double
+
+    public init(width: Double, height: Double) {
+        self.width = width
+        self.height = height
+    }
+
+    /// The display's `bounds` (`[[x, y], [width, height]]`) over its point scale; nil when either is missing or empty.
+    static func parse(display: [String: Any], scale: Double) -> IOSDevicePoints? {
+        guard scale > 0, let bounds = display["bounds"] as? [Any], bounds.count == 2, let size = bounds[1] as? [NSNumber], size.count == 2 else { return nil }
+        let width = size[0].doubleValue / scale
+        let height = size[1].doubleValue / scale
+        guard width > 0, height > 0, width.isFinite, height.isFinite else { return nil }
+        return IOSDevicePoints(width: width, height: height)
     }
 }

@@ -76,6 +76,39 @@ struct UniversalHIDMappingTests {
         let phone = IOSDevicePanel(width: 402, height: 874, scale: 3, orientation: .portrait)
         #expect(phone.touchscreenPoint(x: 201, y: 874) == (32768, 65535))
     }
+
+    /// The iPad at Display Zoom "More Space": `nativeSize` gives 1376 x 1032 points, `bounds` 1600 x 1200 (here in the other order).
+    let morePoints = IOSDevicePoints(width: 1200, height: 1600)
+
+    @Test("measured in the UI's points, the UI's centre and far corner land on the touchscreen's centre and corner")
+    func runnerBasis() {
+        let panel = iPad.rebased(onPoints: morePoints)
+        #expect(panel.width == 1600 && panel.height == 1200)
+        #expect(panel.touchscreenPoint(x: 800, y: 600) == (32768, 32768))
+        #expect(panel.touchscreenPoint(x: 1600, y: 1200) == (0, 65535))
+        #expect(panel.touchscreenPoint(x: 400, y: 300) == (49151, 16384))
+    }
+
+    @Test("measured in nativeSize points, the same UI point lands past the centre")
+    func nativeBasis() {
+        #expect(iPad.rebased(onPoints: nil) == iPad)
+        let native = iPad.touchscreenPoint(x: 800, y: 600)
+        #expect(native.x == 27433 && native.y == 38102)
+        #expect(native != iPad.rebased(onPoints: morePoints).touchscreenPoint(x: 800, y: 600))
+    }
+
+    @Test("a portrait-native panel takes the UI's points on its own axes")
+    func portraitRebased() {
+        let phone = IOSDevicePanel(width: 402, height: 874, scale: 3, orientation: .portrait).rebased(onPoints: IOSDevicePoints(width: 375, height: 812))
+        #expect(phone.width == 375 && phone.height == 812)
+        #expect(phone.touchscreenPoint(x: 187.5, y: 812) == (32768, 65535))
+    }
+
+    @Test("a broker touch on the rebased panel sends the touchscreen's centre for the UI's centre")
+    func reportsOnRunnerBasis() throws {
+        let reports = try DeviceSessionReports.touch([.touch(.down, x: 800, y: 600), .touch(.up, x: 800, y: 600)], panel: iPad.rebased(onPoints: morePoints))
+        #expect(reports == [.touch(x: 32768, y: 32768, state: .contact), .touch(x: 32768, y: 32768, state: .release)])
+    }
 }
 
 @Suite("UniversalHID messages")
