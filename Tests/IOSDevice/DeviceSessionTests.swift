@@ -230,6 +230,23 @@ struct DeviceSessionManagerTests {
         #expect(try DeviceSessionStore(root: root).read(udid: Self.udid) == nil)
     }
 
+    @Test("while another command holds the start lock, even one whose owner line names an exited process, no second broker starts")
+    func startLockHeld() async throws {
+        let root = SessionTestPaths.root()
+        let processes = FakeRunnerProcesses()
+        let manager = DeviceSessionManager(
+            store: DeviceSessionStore(root: root), processes: processes, environment: [:], connector: { _ in throw DeviceSessionConnectError(code: ECONNREFUSED) },
+            log: { _, _ in }, lockTimeout: 0.3
+        )
+        let held = try await manager.acquireStartLock(udid: Self.udid)
+        try StartLockTests.claimForExitedProcess(held.path)
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(udid: Self.udid) }
+        #expect(error?.reason == .hidBrokerFailed)
+        #expect(error?.message.contains("still starting the device session") == true)
+        #expect(processes.launches.isEmpty)
+        held.release()
+    }
+
     @Test("existing never starts a broker")
     func existingNeverStarts() async throws {
         let processes = FakeRunnerProcesses()

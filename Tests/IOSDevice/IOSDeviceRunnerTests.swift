@@ -227,23 +227,23 @@ struct RunnerSessionTests {
         #expect(try store.read(udid: Self.udid) == nil)
     }
 
-    @Test("a start lock whose owner has exited is taken over at once; one a live command holds is waited for")
-    func startLockOwner() async throws {
+    @Test("a held start lock is waited for even when its owner line names an exited process, and is free once released")
+    func startLockHeld() async throws {
         let root = RunnerTestPaths.temporaryRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
-        let lock = "\(try IOSDevicePaths.device(Self.udid, root: root))/runner.lock"
-        let exited = Process()
-        exited.executableURL = URL(fileURLWithPath: "/usr/bin/true")
-        try exited.run()
-        exited.waitUntilExit()
-        try Data("\(exited.processIdentifier) 12345\n".utf8).write(to: URL(fileURLWithPath: lock))
-        let manager = Self.manager(root: root, processes: FakeRunnerProcesses(), transport: FakeRunnerTransport(), lockTimeout: 1)
-
-        let taken = try await manager.acquireStartLock(udid: Self.udid)
-        #expect(try String(contentsOfFile: taken, encoding: .utf8) == RunnerSessionManager.lockOwner(getpid()))
+        let manager = Self.manager(root: root, processes: FakeRunnerProcesses(), transport: FakeRunnerTransport(), lockTimeout: 0.5)
+        let held = try await manager.acquireStartLock(udid: Self.udid)
+        #expect(try String(contentsOfFile: held.path, encoding: .utf8) == IOSDeviceStartLock.owner(getpid()))
+        try StartLockTests.claimForExitedProcess(held.path)
 
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.acquireStartLock(udid: Self.udid) }
         #expect(error?.reason == .runnerUnavailable)
+        #expect(error?.message.contains("still starting the runner") == true)
+
+        held.release()
+        let next = try await manager.acquireStartLock(udid: Self.udid)
+        #expect(try String(contentsOfFile: next.path, encoding: .utf8) == IOSDeviceStartLock.owner(getpid()))
+        next.release()
     }
 }
 

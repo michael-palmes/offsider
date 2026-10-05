@@ -192,7 +192,6 @@ public final class RunnerSessionManager {
     static let pollInterval: TimeInterval = 0.25
     /// A snapshot can hold the runner's main thread for seconds, so a slow ping means busy, not gone.
     static let reuseTimeout: TimeInterval = 5
-    nonisolated static let lockStale: TimeInterval = 180
 
     let store: RunnerSessionStore
     let builder: any RunnerBuilding
@@ -244,7 +243,7 @@ public final class RunnerSessionManager {
         let build = try await builder.build(for: destination, deviceName: deviceName)
         if let client = try await reuse(destination, build: build, holdingLock: false) { return client }
         let lock = try await acquireStartLock(udid: destination.udid)
-        defer { unlink(lock) }
+        defer { lock.release() }
         if let client = try await reuse(destination, build: build, holdingLock: true) { return client }
         return try await start(destination, build: build)
     }
@@ -353,44 +352,12 @@ public final class RunnerSessionManager {
         return RunnerClient(udid: record.udid, token: record.token, transport: transport(destination, record.port))
     }
 
-    /// `runner.lock`, created with `O_EXCL` and holding its owner's pid and start time; a lock whose owner has exited is taken over at once.
-    func acquireStartLock(udid: String) async throws -> String {
+    /// `runner.lock`, waited for while another command starts this device's runner.
+    func acquireStartLock(udid: String) async throws -> IOSDeviceStartLock {
         let path = (try IOSDevicePaths.device(udid, root: store.root) as NSString).appendingPathComponent(RunnerSessionStore.lockName)
-        let deadline = Date().addingTimeInterval(lockTimeout)
-        let owner = Self.lockOwner(getpid())
-        while true {
-            let descriptor = open(path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
-            if descriptor >= 0 {
-                _ = owner.withCString { write(descriptor, $0, strlen($0)) }
-                close(descriptor)
-                return path
-            }
-            guard errno == EEXIST else {
-                throw PrivateDirectoryError(.system(operation: "open", code: errno), path: path)
-            }
-            if Self.lockIsStale(path) {
-                unlink(path)
-                continue
-            }
-            guard Date() < deadline else {
-                throw IOSDeviceError(.runnerUnavailable, "Another Offsider command is still starting the runner on \(udid). Retry in a minute.")
-            }
-            try await Task.sleep(for: .seconds(Self.pollInterval))
+        return try await IOSDeviceStartLock.acquire(path, timeout: lockTimeout, poll: .seconds(Self.pollInterval)) {
+            IOSDeviceError(.runnerUnavailable, "Another Offsider command is still starting the runner on \(udid). Retry in a minute.")
         }
-    }
-
-    nonisolated static func lockOwner(_ pid: Int32) -> String {
-        "\(pid) \(RunnerProcessIdentity.of(pid: pid)?.startTime ?? 0)\n"
-    }
-
-    /// Stale once its owner has exited; a lock with no readable owner falls back to its age.
-    nonisolated static func lockIsStale(_ path: String) -> Bool {
-        let fields = ((try? String(contentsOfFile: path, encoding: .utf8)) ?? "").split(whereSeparator: \.isWhitespace)
-        if fields.count == 2, let pid = Int32(fields[0]), let startTime = UInt64(fields[1]) {
-            return RunnerProcessIdentity.of(pid: pid)?.startTime != startTime
-        }
-        guard let modified = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return false }
-        return Date().timeIntervalSince(modified) > lockStale
     }
 
     nonisolated static func makeToken() -> String {

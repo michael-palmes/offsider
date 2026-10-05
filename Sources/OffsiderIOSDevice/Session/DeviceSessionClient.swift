@@ -195,6 +195,7 @@ public final class DeviceSessionManager: DeviceSessionConnecting {
     public static let idleVariable = "OFFSIDER_IOS_SESSION_IDLE"
     public static let serveArguments = ["device-session", "serve", "--device"]
     static let pollInterval: Duration = .milliseconds(20)
+    static let lockPollInterval: Duration = .milliseconds(50)
 
     let store: DeviceSessionStore
     let processes: any RunnerProcessControlling
@@ -238,7 +239,7 @@ public final class DeviceSessionManager: DeviceSessionConnecting {
     public func connect(udid: String) async throws -> DeviceSessionClient {
         if let client = await reuse(udid: udid, holdingLock: false) { return client }
         let lock = try await acquireStartLock(udid: udid)
-        defer { unlink(lock) }
+        defer { lock.release() }
         if let client = await reuse(udid: udid, holdingLock: true) { return client }
         return try await start(udid: udid)
     }
@@ -345,29 +346,10 @@ public final class DeviceSessionManager: DeviceSessionConnecting {
         return DeviceSessionStatus(record: record, alive: true, reply: client?.status)
     }
 
-    /// `session.lock`, with the same owner and staleness rules as the runner's start lock.
-    func acquireStartLock(udid: String) async throws -> String {
-        let path = try store.lockPath(udid: udid)
-        let deadline = Date().addingTimeInterval(lockTimeout)
-        let owner = RunnerSessionManager.lockOwner(getpid())
-        while true {
-            let descriptor = open(path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
-            if descriptor >= 0 {
-                _ = owner.withCString { write(descriptor, $0, strlen($0)) }
-                close(descriptor)
-                return path
-            }
-            guard errno == EEXIST else {
-                throw PrivateDirectoryError(.system(operation: "open", code: errno), path: path)
-            }
-            if RunnerSessionManager.lockIsStale(path) {
-                unlink(path)
-                continue
-            }
-            guard Date() < deadline else {
-                throw IOSDeviceError(.sessionFailed, "Another Offsider command is still starting the device session for \(udid). Retry in a moment.")
-            }
-            try await Task.sleep(for: .milliseconds(50))
+    /// `session.lock`, waited for while another command starts this device's broker.
+    func acquireStartLock(udid: String) async throws -> IOSDeviceStartLock {
+        try await IOSDeviceStartLock.acquire(try store.lockPath(udid: udid), timeout: lockTimeout, poll: Self.lockPollInterval) {
+            IOSDeviceError(.sessionFailed, "Another Offsider command is still starting the device session for \(udid). Retry in a moment.")
         }
     }
 }
