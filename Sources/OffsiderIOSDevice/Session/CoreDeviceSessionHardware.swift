@@ -30,6 +30,11 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private var failure: IOSDeviceError?
     private var buttons: DeviceDTUHID?
     private var target: (identifier: String, name: String)?
+    private var listing: Task<ListedDevice, Error>?
+    /// Set once a listing shows the device unlisted, unavailable or off USB; the broker then ends.
+    private var gone: IOSDeviceError?
+    private var hidTried = false
+    private var buttonsTried = false
     private var lastFrames = 0
     private var lastProgress = ContinuousClock.now
     private var failedReopens = 0
@@ -141,15 +146,36 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    /// A fresh listing each time, since the tunnel address changes when the tunnel comes back.
-    private func currentDevice() async throws -> (identifier: String, name: String, tunnel: String?) {
+    typealias ListedDevice = (identifier: String, name: String, tunnel: String?)
+
+    /// A fresh listing, which callers asking while one runs share; a device gone or off USB ends the broker.
+    private func currentDevice() async throws -> ListedDevice {
+        if let listing { return try await listing.value }
+        let task = Task { try await self.listAndRecord() }
+        listing = task
+        defer { listing = nil }
+        return try await task.value
+    }
+
+    private func listAndRecord() async throws -> ListedDevice {
+        do {
+            let device = try await listDevice()
+            target = (device.identifier, device.name)
+            return device
+        } catch let error as IOSDeviceError where [.notListed, .unavailable, .notWired].contains(error.kind) {
+            gone = error
+            throw error
+        }
+    }
+
+    private func listDevice() async throws -> ListedDevice {
         guard let device = try await IOSDeviceDirectory(host: host).device(udid: udid) else { throw IOSDeviceError.notListed(udid) }
         let name = DeviceName.display(device.udid, label: device.label)
-        guard device.transportType == "wired", device.connectionState != "unavailable" else { throw IOSDeviceError.unavailable(name) }
+        guard device.connectionState != "unavailable" else { throw IOSDeviceError.unavailable(name) }
+        guard device.transportType == "wired" else { throw IOSDeviceError.notWired(name) }
         guard let identifier = device.coreDeviceIdentifier else {
             throw IOSDeviceError.streamFailed(name, udid: udid, detail: "devicectl did not report its CoreDevice identifier")
         }
-        target = (identifier, name)
         return (identifier, name, device.tunnelAddress)
     }
 
@@ -259,6 +285,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private func hidService() async throws -> UniversalHIDService {
         if let hid { return hid }
         if let hidOpening { return try await hidOpening.value }
+        if let gone { throw gone }
         if let hidFailure, !hidRetryDue { throw hidFailure }
         let task = Task { try await self.openHID() }
         hidOpening = task
@@ -268,7 +295,9 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
 
     private func openHID() async throws -> UniversalHIDService {
         do {
-            let device = try await resolvedTarget()
+            let reopening = hidTried
+            hidTried = true
+            let device = try await openTarget(reopening: reopening)
             guard let version, version.supportsHID else { throw IOSDeviceError.xcodeTooOld(device.name, version: version) }
             let service = try await UniversalHIDService.connect(deviceIdentifier: device.identifier, version: version, name: device.name, udid: udid)
             let listed = try await service.connectedServices()
@@ -352,6 +381,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private func buttonLink() async throws -> DeviceDTUHID {
         if let buttons { return buttons }
         if let buttonsOpening { return try await buttonsOpening.value }
+        if let gone { throw gone }
         let task = Task { try await self.openButtons() }
         buttonsOpening = task
         defer { buttonsOpening = nil }
@@ -359,7 +389,9 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     }
 
     private func openButtons() async throws -> DeviceDTUHID {
-        let device = try await resolvedTarget()
+        let reopening = buttonsTried
+        buttonsTried = true
+        let device = try await openTarget(reopening: reopening)
         guard let version, version.supportsHID else { throw IOSDeviceError.xcodeTooOld(device.name, version: version) }
         let link = try await DeviceDTUHID.connect(
             deviceIdentifier: device.identifier, feature: DTUHIDMessage.buttonService, version: version, name: device.name, udid: udid, anySent: false
@@ -370,8 +402,9 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         return link
     }
 
-    private func resolvedTarget() async throws -> (identifier: String, name: String) {
-        if let target { return target }
+    /// The broker's opening listing serves only a link's first open; any later one lists again, so it never reopens off USB.
+    private func openTarget(reopening: Bool) async throws -> (identifier: String, name: String) {
+        if !reopening, let target { return target }
         let device = try await currentDevice()
         return (device.identifier, device.name)
     }
@@ -409,9 +442,9 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    /// Never waits on the stream: a stalled one is dropped and re-opened in the background with back-off, and input carries on
-    /// without it. Only a device that is no longer listed or reachable ends the broker.
+    /// Never waits on the stream, which re-opens in the background with back-off; false only once a listing shows the device gone or off USB.
     public func checkHealth() async -> Bool {
+        if gone != nil { return false }
         let now = ContinuousClock.now
         if now - lastUse < Self.activeWindow, panel == nil || now - panelReadAt > Self.panelInterval { refreshPanel() }
         if let stream {
@@ -427,7 +460,6 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
             lastAttempt = .now - Self.reopenInterval
         }
         guard opening == nil else { return true }
-        if let failure, [.notListed, .unavailable].contains(failure.kind) { return false }
         if failure?.kind == .streamNeedsGUISession {
             guard now - lastPresence > Self.presenceInterval else { return true }
             lastPresence = now
