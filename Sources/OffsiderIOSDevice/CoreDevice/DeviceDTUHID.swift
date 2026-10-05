@@ -73,29 +73,8 @@ final class DeviceDTUHID {
     func roundTrip(_ message: DTUHIDValue) async -> DTUHIDReply {
         let object = DTUHIDMessage.forDevice(message).xpcObject
         let socket = socket
-        let once = OnceFlag()
-        return await withCheckedContinuation { (continuation: CheckedContinuation<DTUHIDReply, Never>) in
-            socket.send(object) { reply in
-                let answer = DTUHIDReply(xpc: reply)
-                if once.claim() { continuation.resume(returning: answer) }
-            }
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + Self.replyTimeoutSeconds) {
-                if once.claim() { continuation.resume(returning: .timedOut) }
-            }
+        return await replyOrTimeout(within: Self.replyTimeoutSeconds, timedOut: .timedOut) { answer in
+            socket.send(object) { answer(DTUHIDReply(xpc: $0)) }
         }
-    }
-}
-
-/// True for exactly one caller, which resumes the continuation.
-final class OnceFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var pending = true
-
-    func claim() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        let wasPending = pending
-        pending = false
-        return wasPending
     }
 }

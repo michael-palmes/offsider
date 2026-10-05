@@ -96,15 +96,8 @@ public final class UniversalHIDService {
     func request(_ message: UniversalHIDValue) async -> Outcome {
         let object = message.xpcObject
         let socket = socket
-        let once = OnceFlag()
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Outcome, Never>) in
-            socket.send(object) { reply in
-                let outcome = Self.outcome(reply)
-                if once.claim() { continuation.resume(returning: outcome) }
-            }
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + Self.replyTimeoutSeconds) {
-                if once.claim() { continuation.resume(returning: .timedOut) }
-            }
+        return await replyOrTimeout(within: Self.replyTimeoutSeconds, timedOut: .timedOut) { answer in
+            socket.send(object) { answer(Self.outcome($0)) }
         }
     }
 

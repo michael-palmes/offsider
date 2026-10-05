@@ -78,15 +78,10 @@ final class SimulatorDTUHID: @unchecked Sendable {
     /// True when `dtuhidd` itself answered before the timeout.
     private func roundTrip(_ message: DTUHIDValue) async -> Bool {
         let object = message.xpcObject
-        let answer = FirstAnswer()
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let queue = DispatchQueue.global(qos: .userInitiated)
-            xpc_connection_send_message_with_reply(connection, object, queue) { reply in
-                if answer.claim() { continuation.resume(returning: xpc_get_type(reply) != XPC_TYPE_ERROR) }
-            }
-            queue.asyncAfter(deadline: .now() + Self.replyTimeoutSeconds) {
-                if answer.claim() { continuation.resume(returning: false) }
-            }
+        let connection = connection
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        return await replyOrTimeout(within: Self.replyTimeoutSeconds, timedOut: false, on: queue) { answer in
+            xpc_connection_send_message_with_reply(connection, object, queue) { answer(xpc_get_type($0) != XPC_TYPE_ERROR) }
         }
     }
 
@@ -122,19 +117,5 @@ final class SimulatorDTUHID: @unchecked Sendable {
         xpc_connection_set_event_handler(connection) { _ in }
         xpc_connection_resume(connection)
         return connection
-    }
-}
-
-/// True for exactly one caller, which resumes the continuation.
-private final class FirstAnswer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var pending = true
-
-    func claim() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        let wasPending = pending
-        pending = false
-        return wasPending
     }
 }

@@ -76,15 +76,9 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
 
     /// Nil when nothing came back before the timeout.
     private static func reply(to request: xpc_object_t, on service: xpc_connection_t) async -> xpc_object_t? {
-        let once = OnceFlag()
         let queue = DispatchQueue(label: "offsider.coredevice.reply")
-        return await withCheckedContinuation { (continuation: CheckedContinuation<xpc_object_t?, Never>) in
-            xpc_connection_send_message_with_reply(service, request, queue) { reply in
-                if once.claim() { continuation.resume(returning: reply) }
-            }
-            queue.asyncAfter(deadline: .now() + openTimeoutSeconds) {
-                if once.claim() { continuation.resume(returning: nil) }
-            }
+        return await replyOrTimeout(within: openTimeoutSeconds, timedOut: nil, on: queue) { answer in
+            xpc_connection_send_message_with_reply(service, request, queue) { answer($0) }
         }
     }
 

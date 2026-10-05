@@ -197,14 +197,8 @@ public final class IOSDeviceScreenStream {
     /// Nil when the device did not answer in time.
     private static func request(_ socket: CoreDeviceServiceSocket, action: String, input: MediaStreamValue, target: Target, timeout: Double = replyTimeoutSeconds) async -> xpc_object_t? {
         let message = CoreDeviceServiceSocket.envelope(action: action, deviceIdentifier: target.deviceIdentifier, version: target.version, input: input.xpcObject)
-        let once = OnceFlag()
-        return await withCheckedContinuation { (continuation: CheckedContinuation<xpc_object_t?, Never>) in
-            socket.send(message) { reply in
-                if once.claim() { continuation.resume(returning: reply) }
-            }
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) {
-                if once.claim() { continuation.resume(returning: nil) }
-            }
+        return await replyOrTimeout(within: timeout, timedOut: nil) { answer in
+            socket.send(message) { answer($0) }
         }
     }
 
