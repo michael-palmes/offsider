@@ -7,6 +7,7 @@
 - `--json` prints `path`, `width`, `height`, `pixelsPerPoint`, `region`, `orientation`, `rotation`, `display` and `posture`. Landscape captures are upright.
 - `screenshot --display <id>` captures a foldable's other display (`guide foldables`).
 - On an Android phone, or an emulator without gRPC, `screenshot` uses `screencap -p`. `OFFSIDER_ANDROID_CAPTURE=raw` (raw `screencap` pixels) or `helper` (the UiAutomation helper) encodes the PNG on the Mac instead, falling back to `screencap -p`; both measured slower, so leave it unset.
+- On a physical iPhone or iPad, `screenshot` uses `devicectl device capture screenshot`, usually under a second. `--verify` may take several captures there, so it is slower than on a simulator.
 
 ```bash
 offsider screenshot --device <DEVICE_ID> --output screenshot.png --scale points
@@ -24,4 +25,4 @@ Add `--mask-secure` to `screenshot` (or `batch`) before sharing an image of a sc
 ## Video
 
 - `offsider record-video --output run.mp4 --device <DEVICE_ID>` records the display to an H.264 MP4 until Ctrl+C (`--fps`, `--quality`, `--scale`).
-- `offsider stream-video` streams frames to stdout (`--format mjpeg|raw|ffmpeg|bgra`, `--fps`, `--quality`, `--scale`). On Android `bgra` sends a frame only when the screen changes, and needs an emulator; use `mjpeg` on a phone.
+- `offsider stream-video` streams frames to stdout (`--format mjpeg|raw|ffmpeg|bgra`, `--fps`, `--quality`, `--scale`). On Android `bgra` sends a frame only when the screen changes, and needs an emulator; use `mjpeg` on a phone. On an iPhone or iPad `bgra` is refused, and the other formats and `record-video` build each frame from a screenshot, so the frame rate is low.

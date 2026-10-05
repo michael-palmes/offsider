@@ -15,11 +15,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `OFFSIDER_TIMINGS=1` adds the Android phases `helper-inject`, `helper-capture` and `capture-encode`.
 - `OFFSIDER_ANDROID_PHONE=<serial>` with `./test-runner.sh --android-phone` (`make e2e-android-phone`) runs the `AndroidPhone*Tests` suites on that one USB phone, installing the React Native playground there and leaving it.
 - `scripts/bench-ab.sh --phone --device <serial>` benchmarks a USB phone, with the scenarios `android-tap-xy`, `android-tap-xy-input`, `android-tap-xy-helper`, `android-tap-physical`, `android-swipe`, `android-type-ascii`, `android-type-ascii-helper`, `android-screenshot`, `android-screenshot-raw`, `android-screenshot-helper` and `android-batch-tap-5`; it never installs the playground and refuses when it is missing.
+- Physical iPhones and iPads over USB, named by UDID with `--device`. A device on Wi-Fi is refused with `device_not_wired`, and Offsider never pairs one. The device must trust the Mac and have Developer Mode on, and input needs Settings > Developer > UI Automation.
+- On an Xcode 27 host (CoreDevice 636 or later), input goes through CoreDevice HID: coordinate taps, touches, swipes, gestures, keys, the `home`, `lock`, `side-button` and `siri` buttons, and US keyboard text. On an Xcode 26 host, listing, `doctor`, screenshots, appearance, text size, orientation, the tree, `wait`, `assert`, element taps, coordinate `tap`, `swipe` and `button home` work through the runner, and the other input exits 9 with `xcode_too_old`. Non-ASCII text and `type --replace` go through the runner on both.
+- An XCUITest runner reads the accessibility tree on a device. Offsider builds it from bundled source with `xcodebuild` on first use (about a minute), caches it under `~/Library/Caches/offsider/runner/`, signs it with `OFFSIDER_IOS_TEAM_ID` or the one team signed in to Xcode, and reaches it over usbmuxd with a per-session token. It stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds idle (default 300).
+- `runner status` and `runner stop` (`--device`, `--json`) show and stop runner sessions.
+- `--app <bundle-id>` on `describe-ui`, `tap`, `wait` and `assert` names the app a device's runner reads, and later commands remember it; simulators and Android ignore it.
+- `list-devices` shows iPhones and iPads with `kind` `physical`, `connection` `usb` or `network`, and a state (Booted, Wireless, Untrusted, Developer Mode off, Preparing, Reconnecting or Unavailable), with a hint for each problem.
+- `doctor --device <UDID>` runs the `ios-device.*` checks (`xcode`, `coredevice`, `listed`, `transport`, `pairing`, `developer-mode`, `ddi`, `tunnel`, `lock-state`, `hid`, `ui-automation`, `usbmuxd`, `runner-signing`); `--fix` only mounts the developer disk image.
+- `screenshot` on a device uses `devicectl device capture screenshot`, and `appearance`, `content-size` and `orientation` use `devicectl`.
+- New error reasons: `device_not_wired`, `device_untrusted`, `developer_mode_off`, `device_preparing` and `ui_automation_off` (exit 7), `xcode_too_old`, `team_missing` and `usbmux_unavailable` (exit 9), and `runner_build_failed` and `runner_unavailable` (exit 1). `device_locked` also covers a locked iPhone or iPad.
+- `permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, a lone `touch --down`, `boot`, `wake`, `stay-awake`, `unlock-code` and `button apple-pay` are refused on a device, most with a message naming the alternative.
+- `OFFSIDER_IOS_DEVICE_E2E=1`, `OFFSIDER_IOS_DEVICE=<UDID>` and `OFFSIDER_IOS_TEAM_ID` with `./test-runner.sh --ios-device` (`make e2e-ios-device`) run the device suites on that one device.
+- `offsider guide ios-device` covers physical iPhones and iPads.
+- `scripts/build.sh runner [--check]` regenerates the runner's Xcode project from its `project.yml`, or compares it with the committed one.
 
 ### Changed
 
 - When the helper carries Android input, a key or button can stay held across other input, which `input` refuses; Android reports an accessibility service as enabled for that command, as it does for screen reads.
 - An Android input failure now asks you to check that the device is still connected, not that the emulator is running.
+- A physical iPhone or iPad UDID now routes to the device instead of failing as an unknown Android device name.
+- `orientation` on a physical device that does not turn in time says the screen follows only while the device is awake and unlocked and the app in front supports the orientation.
 
 ### Fixed
 

@@ -6,7 +6,7 @@ A hand for your agent on the iOS Simulator and the Android Emulator.
 [![Release](https://img.shields.io/github/v/release/michael-palmes/offsider?sort=semver)](https://github.com/michael-palmes/offsider/releases/latest)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-Offsider is a command-line tool that inspects and drives iOS Simulators and Android Emulators: describe the UI through accessibility, tap, type, swipe, press buttons and capture screenshots or video. It is built for terminals, scripts and AI coding agents, and it runs entirely on your Mac.
+Offsider is a command-line tool that inspects and drives iOS Simulators and Android Emulators, and iPhones, iPads and Android phones connected over USB: describe the UI through accessibility, tap, type, swipe, press buttons and capture screenshots or video. It is built for terminals, scripts and AI coding agents, and it runs entirely on your Mac.
 
 Offsider is a fork of [AXe](https://github.com/cameroncooke/axe) v1.8.0 by Cameron Cooke, used under the MIT licence. It is not endorsed by AXe's author. See [Licensing and attribution](#licensing-and-attribution).
 
@@ -45,6 +45,7 @@ offsider --version
 - Apple silicon (arm64). Intel Macs are not supported.
 - macOS 26 or later.
 - Xcode 26 or later, selected with `xcode-select` or `DEVELOPER_DIR`. Tested on Xcode 27, where simulators run under Device Hub and Simulator.app is not required. Xcode is needed even if you only drive Android emulators, because the binary links the simulator frameworks.
+- For a physical iPhone or iPad: a USB cable, and the host's Xcode decides what works. Xcode 27 (CoreDevice 636 or later) gives every command through CoreDevice HID input. Xcode 26 gives listing, `doctor`, screenshots, appearance, text size, orientation, and through the runner the accessibility tree, `wait`, `assert`, element taps, coordinate `tap`, `swipe` and `button home`. The device can run iOS or iPadOS 26 or 27 (with Xcode 27's developer disk image). Hosts are macOS 26.7 or later, or macOS 27, on Apple silicon. See [Physical iPhones and iPads](#physical-iphones-and-ipads).
 - For Android: the Android SDK with Platform-Tools (and the Android Emulator for emulators), and `arm64-v8a` system images (tested on API 36; the adb fallback needs API 33 or later). Offsider finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` (where Android Studio installs it) or `adb` on your `PATH`.
 
 ## Quick start
@@ -84,13 +85,20 @@ offsider type 'héllo' --device "$DEVICE"
 offsider button back --device "$DEVICE"
 ```
 
-Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. `slider` always checks its value. If input seems to be ignored, or screen reads fail, run `offsider doctor --device "$DEVICE"` (simulators and Android emulators).
+On a physical iPhone or iPad, connected by cable, pass its UDID and name the app to read (see [Physical iPhones and iPads](#physical-iphones-and-ipads)):
+
+```bash
+offsider doctor --device <UDID>                                 # trust, Developer Mode, UI Automation, signing
+offsider describe-ui --summary --app com.example.app --device <UDID>   # builds the runner on first use
+```
+
+Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. `slider` always checks its value. If input seems to be ignored, or screen reads fail, run `offsider doctor --device "$DEVICE"` (simulators, Android devices and iPhones).
 
 A simulator can fall into a crash loop after boot, with macOS showing a "quit unexpectedly" dialog for each crash. `doctor --device <UDID>` reads the crash reports macOS wrote in the last 10 minutes (only their header and process name, never paths or stack frames): `simulator.crash-loop` warns at two to four crashes of one process and fails at five or more (a busy host sees a few daemon crashes without a loop), printing `xcrun simctl shutdown <UDID> && xcrun simctl erase <UDID>` without running it. Erasing removes the simulator's apps and settings. Plain `doctor` lists every simulator with five or more crashes of one process as `simulators.crash-loop`, and `test-runner.sh` refuses to start on a simulator in a crash loop.
 
 ## Commands
 
-Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Run `offsider <command> --help` for the full list of options.
+Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), a USB iPhone or iPad's UDID (such as `00008130-001C...`), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Run `offsider <command> --help` for the full list of options.
 
 `list-devices --json` prints one object with a schema version, for scripts and agents:
 
@@ -112,19 +120,19 @@ Every device command takes `--device <id>`, using an ID from `offsider list-devi
 }
 ```
 
-`kind` is `simulator`, `emulator` (running), `avd` (shut down) or `physical`; `connection` is `usb` for a phone (`network` for one Offsider refuses), else null.
+`kind` is `simulator`, `emulator` (running), `avd` (shut down) or `physical`; `connection` is `usb` for a phone (`network` for one Offsider refuses), else null. An iPhone or iPad's `state` is `Booted` when Offsider can drive it, else `Wireless`, `Untrusted`, `Developer Mode off`, `Preparing`, `Reconnecting` or `Unavailable`, with a hint on stderr.
 
 In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devices`. The old names exit 64 with a hint.
 
 | Command | What it does |
 | --- | --- |
-| `list-devices` | List iOS simulators (iPhone and iPad), running Android emulators, USB Android phones and shut-down AVDs with their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
+| `list-devices` | List iOS simulators (iPhone and iPad), iPhones and iPads known to this Mac, running Android emulators, USB Android phones and shut-down AVDs with their IDs as a table, or as JSON with `--json`; `--platform ios\|android` filters |
 | `boot` | Start an Android emulator by AVD name and wait until it has booted, then print its serial (`--headless`, `--timeout`); an AVD that is already running is not started again |
-| `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings, booted simulators and simulator crash loops, plus the Android SDK and adb server when an SDK is installed; with `--device`, a simulator's state, Resize Mode, dtuhidd, HID transport, accessibility and recent crashes, or an Android device's state, image, screen and lock screen, stay awake, gRPC endpoint, UiAutomation slot, helper start and Metro reverse, plus a phone's adb authorisation expiry and automatic system updates (Android host checks only, no Xcode checks); `--json` prints one object, `--fix` applies safe fixes (on Android, only starting an absent adb server with `ADB_MDNS=0`, never when `--device` names a simulator) |
-| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text`, `--compact` and `--max-bytes` shape the output; `--diff` prints only what changed since the previous command's tree. `--display <id>` checks that the active display is the one you expect |
+| `doctor` | Check Xcode, Device Hub, CoreSimulator, HID settings, booted simulators and simulator crash loops, plus the Android SDK and adb server when an SDK is installed; with `--device`, a simulator's state, Resize Mode, dtuhidd, HID transport, accessibility and recent crashes, or an Android device's state, image, screen and lock screen, stay awake, gRPC endpoint, UiAutomation slot, helper start and Metro reverse, plus a phone's adb authorisation expiry and automatic system updates (Android host checks only, no Xcode checks), or an iPhone or iPad's `ios-device.*` checks; `--json` prints one object, `--fix` applies safe fixes (on Android, only starting an absent adb server with `ADB_MDNS=0`, never when `--device` names a simulator; on an iPhone or iPad, only mounting the developer disk image) |
+| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, or only the element at `--point x,y`; `--summary` prints a short on-screen text view, and `--flat`, `--on-screen`, `--labelled`, `--actionable`, `--fields`, `--format json\|ndjson\|text`, `--compact` and `--max-bytes` shape the output; `--diff` prints only what changed since the previous command's tree. `--display <id>` checks that the active display is the one you expect; `--app <bundle-id>` names the app to read on an iPhone or iPad |
 | `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
-| `guide` | Print one topic of the skill, matched to this version (`selectors`, `verify`, `errors`, `android`, `react-native`, `turnstile`, `foldables`, `batch`, `screenshots`, `describe-ui`, `device-state`, `migrate`), or list the topics with no argument |
-| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json` |
+| `guide` | Print one topic of the skill, matched to this version (`selectors`, `verify`, `errors`, `android`, `ios-device`, `react-native`, `turnstile`, `foldables`, `batch`, `screenshots`, `describe-ui`, `device-state`, `migrate`), or list the topics with no argument |
+| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label` or `--value`; supports `--element-type`, `--wait-timeout`, `--allow-offscreen`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json`; `--app <bundle-id>` on an iPhone or iPad |
 | `turnstile` | Tap the checkbox square of a Cloudflare Turnstile widget and wait until it passes. The checkbox frame includes the words beside the square, so a normal tap misses the box. On iOS the web view leaves the checkbox out of the tree, so the tap is the square where the green check sits. It does not bypass Turnstile: the widget passes only when Cloudflare accepts the device. `--timeout`, `--jitter`, `--seed`, `--id`, `--json`. Exits 5 when the checkbox remains, and 2 when no widget is on screen. See `offsider guide turnstile` |
 | `slider` | Set a slider to `--value` 0 to 100 by `--id` or `--label` (`--allow-offscreen`, `--no-settle`), then verify the result |
 | `type` | Type text from an argument, `--stdin` or `--file` (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; supports `--verify, --retries, --json` |
@@ -136,8 +144,8 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `key` | Press one HID keycode (0 to 255), optionally held for `--duration`; supports `--verify, --retries, --json` |
 | `key-sequence` | Press comma-separated `--keycodes` in order, with an optional `--delay` |
 | `key-combo` | Press `--key` while holding comma-separated `--modifiers` |
-| `wait` | Wait until an element is on screen (`--id`, `--label`, `--value`, `--has-value`) or `--gone`, the screen is `--settled`, a `--region x,y,w,h` is `--changed` or `--stable`, or `--seconds` pass; `--timeout`, `--json`. Exits 5 on timeout |
-| `assert` | Check once that an element is on screen, optionally with `--has-value`, or `--gone`; exits 5 when it is not |
+| `wait` | Wait until an element is on screen (`--id`, `--label`, `--value`, `--has-value`) or `--gone`, the screen is `--settled`, a `--region x,y,w,h` is `--changed` or `--stable`, or `--seconds` pass; `--timeout`, `--json`, and `--app <bundle-id>` on an iPhone or iPad. Exits 5 on timeout |
+| `assert` | Check once that an element is on screen, optionally with `--has-value`, or `--gone`; exits 5 when it is not; `--app <bundle-id>` on an iPhone or iPad |
 | `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin`: input steps, `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`; supports `--wait-timeout`, `--ax-cache`, `--no-settle`, `--continue-on-error`, `--mask-secure` (every screenshot step masks password fields) and `--json` (one NDJSON line per step; a `type` step's line shows `<N characters>`, never its text). Selector steps read the screen again after any step that sends input |
 | `screenshot` | Save a PNG or JPEG of the active display (`--output`, `--format`, `--quality`); `--display <id>` captures another display of a foldable, `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, `--compare <baseline>` (`--threshold`) exits 0 when the capture changed and 5 when it did not, and `--mask-secure` paints password fields black first |
 | `logs` | Print recent device log entries (`--last 30s` by default, up to `8760h`, or `--since` a time up to the year 9999), or collect live ones with `--duration` or `--follow`; `--rn` for React Native, `--app`, `--process`, `--predicate` (iOS), `--grep`, `--max-lines`, `--raw`, `--json` |
@@ -156,6 +164,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`); stops the app first if it is running |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
+| `runner` | `status` lists the XCUITest runner sessions that read physical iPhones and iPads, `stop` stops one (`--device`) or all; `--json`. A runner stops by itself after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300) |
 
 ### describe-ui output
 
@@ -326,7 +335,7 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 
 #### Screen, stay awake and unlocking
 
-`stay-awake`, `wake` and `unlock-code` are Android only: iOS simulators never sleep or lock. Their output names a phone by maker and model, such as `Motorola moto g57 (ZY22FAKE01)`, and an emulator by its AVD name; commands in their messages keep the serial.
+`stay-awake`, `wake` and `unlock-code` are Android only and refuse an iOS simulator or iPhone: simulators never sleep or lock, and an iPhone or iPad is unlocked by hand. Their output names a phone by maker and model, such as `Motorola moto g57 (ZY22FAKE01)`, and an emulator by its AVD name; commands in their messages keep the serial.
 
 - `stay-awake on` writes the `stay_on_while_plugged_in` global setting that Developer options > Stay awake uses, for every power source (AC, USB, wireless and dock), and `off` writes 0. It survives reboots and keeps an awake screen on while the device charges, which a phone on USB and an emulator do; it does not turn a dark screen on. The output says when it has no effect: the device is not charging, charges over a source the setting leaves out, or a device policy caps the screen timeout.
 - `wake` reads the screen and lock screen in one adb round trip (`dumpsys power`, `dumpsys window policy`) and sends nothing when the screen is on and unlocked. Otherwise it sends `KEYCODE_WAKEUP`, runs `wm dismiss-keyguard` and waits about 3 s. A swipe lock screen goes; a PIN, pattern or password lock screen stays, and `wake` exits 7 (`device_locked`).
@@ -373,6 +382,31 @@ A foldable has a `cover` and an `inner` display, and one of them is active at a 
 - Separate `touch --down` and `touch --up` commands always use `input motionevent`, whatever `OFFSIDER_ANDROID_INPUT` says. On a phone with several displays, such as the Galaxy Z Fold3, `screencap` prints a warning before the image, which Offsider skips.
 - Offsider never sets `adb reverse`. To reach Metro from a debug build on a phone, run `adb -s <serial> reverse tcp:8081 tcp:8081` yourself (8742 for the playground), and `adb -s <serial> reverse --remove tcp:8081` when done; while it is set every app on the phone can reach Metro, so prefer release builds on phones.
 - A phone's screen and notifications reach `describe-ui` and screenshots, and from there whatever your agent sends to its model provider; Offsider itself sends nothing. Turn on Do Not Disturb first.
+
+### Physical iPhones and iPads
+
+- Offsider drives an iPhone or iPad connected over USB, and only when you pass its UDID to `--device`; nothing else ever chooses one. A device connected over Wi-Fi is refused with `device_not_wired` (exit 7) and a hint to connect its cable. Offsider never pairs a device, and never accepts a prompt on it.
+- Prepare the device once: connect the cable, unlock it and tap Trust, turn on Developer Mode (Settings > Privacy & Security > Developer Mode, then restart it), and for input turn on Settings > Developer > UI Automation. Until then `list-devices` shows it as `Untrusted`, `Developer Mode off` or `Preparing` (while Xcode prepares it for development) with a hint on stderr. A locked device refuses input with `device_locked` (exit 7); unlock it by hand, as Offsider never types an iPhone passcode.
+- `list-devices` reads iPhones and iPads from `xcrun devicectl list devices`, with `kind` `physical` and `connection` `usb` or `network`. `doctor --device <UDID>` runs the `ios-device.*` checks: `xcode`, `coredevice`, `listed`, `transport`, `pairing`, `developer-mode`, `ddi`, `tunnel`, `lock-state`, `hid`, `ui-automation`, `usbmuxd` and `runner-signing`. `--fix` only mounts the developer disk image.
+- Input on an Xcode 27 host goes through CoreDevice HID, the input service in Xcode 27's developer disk image: coordinate and element taps, touches, swipes, gestures, drags, keys, the `home`, `lock`, `side-button` and `siri` buttons, and US keyboard text. `apple-pay` is refused; press `side-button` twice instead.
+
+| | Xcode 27 host | Xcode 26 host |
+| --- | --- | --- |
+| `list-devices`, `doctor`, `screenshot`, `appearance`, `content-size`, `orientation` | yes | yes |
+| `describe-ui`, `wait`, `assert`, element taps (runner) | yes | yes |
+| Coordinate `tap`, `swipe`, `button home` | CoreDevice HID | runner |
+| `key`, `key-sequence`, `key-combo`, `touch`, `gesture`, `drag`, the other buttons | CoreDevice HID | `xcode_too_old` |
+| Plain ASCII `type` | CoreDevice HID | `xcode_too_old` |
+| Non-ASCII `type`, `type --replace` | runner | runner |
+
+- `xcode_too_old` exits 9 with the hint to install Xcode 27 for HID input. The device can run iOS or iPadOS 26 or 27; HID input needs Xcode 27's developer disk image on it, which Xcode 27 mounts.
+- The accessibility tree comes from a small XCUITest runner app. The first command that reads the screen builds it from source bundled with Offsider, with `xcodebuild` (about a minute, with a line on stderr), into `~/Library/Caches/offsider/runner/`; the build is reused until the source, Xcode or team changes. It is signed with the team in `OFFSIDER_IOS_TEAM_ID`, or with the one team signed in to Xcode; with none, or several, commands exit 9 with `team_missing`. A failed build exits 1 with `runner_build_failed` and names its log.
+- The runner is launched detached with `xcodebuild test-without-building` and listens only on the device's loopback, with a token per session. Offsider reaches it through usbmuxd (`/var/run/usbmuxd`), which connects USB devices only. It keeps running so later commands answer quickly, and stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300). `offsider runner status` lists sessions and `offsider runner stop` stops them (`--device`, `--json`); the token is never printed.
+- XCTest reads one named app, or the Home Screen. `describe-ui`, `tap`, `wait` and `assert` take `--app <bundle-id>` on a device, and later commands remember it; simulators and Android ignore it. Without it the runner reads the app in front when it can tell which that is, else the Home Screen. A named app that is not in front fails with a message saying so.
+- `screenshot` uses `devicectl device capture screenshot`; expect under a second per capture. `--verify` may take several captures, so it is slower than on a simulator. `record-video` and `stream-video` build frames from such captures, so their frame rate is low.
+- `appearance` and `content-size` read and set the device through `devicectl`, and `orientation` turns it. The screen follows a new orientation only while the device is awake and unlocked and the app in front supports it; otherwise the command times out and says so.
+- Refused on a device, with a message naming the alternative where there is one: `permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, a `touch --down` without `--up` in the same command, `boot`, `wake`, `stay-awake` and `unlock-code`. Install and launch apps with `xcrun devicectl`.
+- A device's screen and notifications reach `describe-ui` and screenshots, and from there whatever your agent sends to its model provider; Offsider itself sends nothing. Turn on a Focus first.
 
 ### Agent skill and guide
 
@@ -440,7 +474,7 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `device_not_booted` | 7 | The device exists but is not running | Boot it (`xcrun simctl boot`, `offsider boot`) |
 | `device_not_ready` | 7 | The emulator is offline or still booting | Wait, or `offsider boot <AVD>` |
 | `device_unauthorised` | 7 | adb is not authorised for the emulator | Accept the prompt, or restart it with `offsider boot` |
-| `device_locked` | 7 | A PIN, pattern or password lock screen stayed up after `wake`, or its saved code did not unlock it | Unlock it on the device, or `offsider wake --unlock` with a code saved by `offsider unlock-code set` |
+| `device_locked` | 7 | A PIN, pattern or password lock screen stayed up after `wake`, or its saved code did not unlock it, or an iPhone or iPad is locked and refused input | Unlock it on the device, or on Android `offsider wake --unlock` with a code saved by `offsider unlock-code set` |
 | `device_ambiguous` | 7 | An AVD name matches more than one running emulator, or names both a phone and an AVD | Pass one serial with `--device` |
 | `avd_not_found` | 7 | No AVD has that name | Check the name in Android Studio's Device Manager |
 | `device_not_wired` | 7 | The iPhone or iPad is connected over Wi-Fi, and Offsider drives it over USB only | Connect its cable |
@@ -525,7 +559,7 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 
 ## Privacy
 
-Offsider has no telemetry and no accounts. It never connects to non-loopback addresses and never resolves hostnames; it may use Unix sockets and loopback TCP to local developer daemons (the adb server and the Android Emulator), so nothing leaves your Mac. It talks to simulators through Xcode's frameworks, and beyond the files you ask for it writes only to a private per-user directory, `offsider-<uid>/` under your user temp directory (mode 0700): device locks, and the last accessibility tree read from each device, so `describe-ui --diff` and the tap guard can compare against it. Each tree is one 0600 file per device, named by a hash of the device ID, holding the neutral tree with password values already masked and platform attributes left out, the command that wrote it and when. It is overwritten by the next command, ignored after 10 minutes or a reboot of the device, and capped at 1 MB. `OFFSIDER_TREE_CACHE=off` turns it off. After a saved unlock code fails, an empty `unlock/device-<id>.failed` file there stops Offsider typing it again. Unlock codes saved with `unlock-code set` live only in your login Keychain. See [SECURITY.md](SECURITY.md) for what it touches.
+Offsider has no telemetry and no accounts. It never connects to non-loopback addresses and never resolves hostnames; it may use Unix sockets and loopback TCP to local developer daemons (the adb server, the Android Emulator and usbmuxd), so nothing leaves your Mac. It talks to simulators through Xcode's frameworks, and beyond the files you ask for it writes only to a private per-user directory, `offsider-<uid>/` under your user temp directory (mode 0700): device locks, and the last accessibility tree read from each device, so `describe-ui --diff` and the tap guard can compare against it. Each tree is one 0600 file per device, named by a hash of the device ID, holding the neutral tree with password values already masked and platform attributes left out, the command that wrote it and when. It is overwritten by the next command, ignored after 10 minutes or a reboot of the device, and capped at 1 MB. `OFFSIDER_TREE_CACHE=off` turns it off. After a saved unlock code fails, an empty `unlock/device-<id>.failed` file there stops Offsider typing it again. Unlock codes saved with `unlock-code set` live only in your login Keychain. For an iPhone or iPad it also keeps, under `ios-devices/<UDID>/`, the runner session (pid, port and its token, mode 0600), the runner log and the display geometry, and screenshots pass through a `captures/` folder there and are removed once read; the runner build lives in `~/Library/Caches/offsider/runner/`. See [SECURITY.md](SECURITY.md) for what it touches.
 
 ### Secure fields
 
@@ -547,19 +581,22 @@ make e2e-rn-ios   # run the React Native playground suites on a simulator (needs
 make e2e-foldable # run the foldable suite on the "Offsider Duo iPhone" simulator
 make e2e-android-fold  # run the foldable suite on the Offsider_E2E_Pixel_9_Pro_Fold AVD
 OFFSIDER_ANDROID_PHONE=<serial> make e2e-android-phone  # run the phone suites on one USB phone
+OFFSIDER_IOS_DEVICE=<UDID> OFFSIDER_IOS_TEAM_ID=<team> make e2e-ios-device  # run the device suites on one iPhone or iPad
 ```
 
-`make e2e-foldable` sets `OFFSIDER_FOLDABLE_E2E=1` and runs `FoldableTests` on an iPhone Duo simulator, folding and unfolding it with `offsider posture`. `make e2e-android-fold` sets `OFFSIDER_ANDROID_FOLD_E2E=1` and `OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E_Pixel_9_Pro_Fold`; the Android suites drive only that AVD and `Offsider_E2E_Pixel_9`. `make e2e-android-phone` (`./test-runner.sh --android-phone`) runs the `AndroidPhone*Tests` suites on the one USB phone whose exact serial `OFFSIDER_ANDROID_PHONE` names, and refuses beside `OFFSIDER_ANDROID_E2E`. It installs the React Native playground APK on that phone and leaves it there; Google Play Protect may ask on the phone to send the app for a security check on the first install, so answer it there.
+`make e2e-foldable` sets `OFFSIDER_FOLDABLE_E2E=1` and runs `FoldableTests` on an iPhone Duo simulator, folding and unfolding it with `offsider posture`. `make e2e-android-fold` sets `OFFSIDER_ANDROID_FOLD_E2E=1` and `OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E_Pixel_9_Pro_Fold`; the Android suites drive only that AVD and `Offsider_E2E_Pixel_9`. `make e2e-android-phone` (`./test-runner.sh --android-phone`) runs the `AndroidPhone*Tests` suites on the one USB phone whose exact serial `OFFSIDER_ANDROID_PHONE` names, and refuses beside `OFFSIDER_ANDROID_E2E`. It installs the React Native playground APK on that phone and leaves it there; Google Play Protect may ask on the phone to send the app for a security check on the first install, so answer it there. `make e2e-ios-device` (`./test-runner.sh --ios-device`) sets `OFFSIDER_IOS_DEVICE_E2E=1` and runs the device suites on the one iPhone or iPad whose UDID `OFFSIDER_IOS_DEVICE` names, signing the runner with `OFFSIDER_IOS_TEAM_ID`; the device must be on its cable, unlocked and with UI Automation on.
 
 `make e2e-rn-debug-ios` and `make e2e-rn-debug-android` build the React Native debug app, run Metro on loopback port 8742 and run the debug smoke suite. `pnpm --dir OffsiderPlaygroundRN ios <udid>` or `android <serial|avd>` installs the debug app and runs it from the same background Metro (`scripts/rn-playground.sh metro stop` ends it).
 
 Committed, scrubbed trees of the React Native playground live in `Tests/Goldens/trees/`, with a byte budget per screen in `budgets.json`: `swift test` fails when a `--summary` or `--format text` rendering outgrows its budget, or when a budget sits more than 20 percent above it. After a mapping or renderer change, `OFFSIDER_GOLDENS_UPDATE=1 swift test --filter TreeGoldenRefresh` re-renders them offline; `Tests/Goldens/README.md` covers recapturing from a device.
 
-`OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines; `tree-cache` is a tree cache read or write, `tree-diff` the `--diff` comparison and `settle` the transition guard's wait and second read. Android commands add `prepare`, `adb-devices`, `adb-shell`, `display-probe`, `helper-launch`, `dex-push`, `helper-hello`, `helper-dump`, `tree-map`, `helper-close`, `helper-inject` (input through the helper), `helper-capture` (a helper screenshot), `capture-encode` (encoding raw pixels as PNG on the Mac), `grpc-connect`, `grpc-call`, `input` and `capture`; a phase that repeats prints one line each time.
+`OFFSIDER_TIMINGS=1` prints phase timings for a command to stderr, as `offsider timing: <phase> <n> ms` lines; `tree-cache` is a tree cache read or write, `tree-diff` the `--diff` comparison and `settle` the transition guard's wait and second read. Android commands add `prepare`, `adb-devices`, `adb-shell`, `display-probe`, `helper-launch`, `dex-push`, `helper-hello`, `helper-dump`, `tree-map`, `helper-close`, `helper-inject` (input through the helper), `helper-capture` (a helper screenshot), `capture-encode` (encoding raw pixels as PNG on the Mac), `grpc-connect`, `grpc-call`, `input` and `capture`; an iPhone or iPad adds `runner` (connecting to or starting the runner), `accessibility` (the runner's snapshot) and `capture`. A phase that repeats prints one line each time.
 
 `scripts/bench-ab.sh --device <id> --scenario android-describe` compares a base build (the merge base with `origin/main` by default, built once in a detached worktree under `$TMPDIR`) with this checkout on one Offsider device, in paired runs whose order comes from `--seed`. Pairs whose exit code or output differ are dropped; the summary gives medians per side and per phase, a bootstrap 95% interval of the change and a verdict (`faster`, `slower`, `same` within 5% or 10 ms, or `unresolved`). Records go to `${OFFSIDER_BENCH_DIR:-$TMPDIR/offsider-bench}` as hashes, never output, and only Offsider-named simulators and the Offsider E2E AVDs are driven. `--phone --device <serial> --scenario android-tap-xy` (or another `android-*` scenario) benchmarks a USB phone instead: the serial must match an `adb devices -l` row with `usb:` and state `device`, and the React Native playground must already be installed, as bench never installs it. `--help` lists the scenarios.
 
 The simulator frameworks come from [michael-palmes/idb](https://github.com/michael-palmes/idb), a mirror of facebook/idb with Cameron Cooke's Xcode 27 changes on the `offsider/xcode27` branch (tag `offsider-idb-v0.2.0`). `scripts/build.sh` pins the exact revision and verifies it before building.
+
+The iPhone runner's source is in `Sources/Offsider/Resources/runner/`: an XcodeGen `project.yml` with the generated `OffsiderRunner.xcodeproj` committed beside it. After changing `project.yml`, run `scripts/build.sh runner` to regenerate the project, and `scripts/build.sh runner --check` regenerates it and compares it with the committed project. Both need XcodeGen.
 
 The Android helper's Java source is in `AndroidHelper/`, and its compiled dex is committed, so `swift build` needs no JDK. Only when you change `AndroidHelper/`, rebuild it with `scripts/build.sh helper` (or `make helper`), which needs JDK 17 (`OFFSIDER_HELPER_JDK`, `JAVA_HOME` or `/usr/libexec/java_home -v 17`) and the Android SDK's build-tools 37.0.0 and android-37.0 platform, and commit the dex and manifest with the source. `scripts/build.sh helper --check` (or `make helper-check`) rebuilds it and compares it with the committed dex, as CI does.
 
