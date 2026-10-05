@@ -23,7 +23,7 @@ With `--json`, every failure prints one object on stdout: `exitCode` and `error`
 
 - One agent per device: input commands, setters (`permission`, `status-bar` and `biometric` too, but not their `show` or `status`) and `batch` lock the device for their run (on Android, so do commands that read the screen). Reads on iOS never lock.
 - `--wait-lock` exists only on commands that can lock; `logs`, `displays`, `stream-video` and `record-video` reject it with exit 64.
-- Exit 8 with `device_busy` means another Offsider command holds the device, and the message names its pid and command. Wait for it to finish, or rerun with `--wait-lock <seconds>` (`OFFSIDER_WAIT_LOCK` sets a default). Never resend in a loop, and never kill the holder.
+- Exit 8 with `device_busy` means another Offsider command holds the device, and the message names its pid and command. Wait for it to finish, or rerun with `--wait-lock <seconds>` (`OFFSIDER_WAIT_LOCK` sets a default). Never resend in a loop, and never kill the holder. `offsider list-devices --json` shows each device's holder as `heldBy`.
 - Keep a held touch in one command (`touch --down --up`) or one `batch`: separate `touch --down` and `touch --up` commands are not protected from another agent acting in between.
 
 ## doctor

@@ -16,10 +16,30 @@ struct ListDevices: AsyncParsableCommand {
     var platform: DevicePlatform?
 
     func run() async throws {
-        let devices = try await Self.listDevices(platform: platform, logger: OffsiderLogger())
+        let devices = Self.withHolders(try await Self.listDevices(platform: platform, logger: OffsiderLogger()))
         print(json ? DeviceListRenderer.json(devices) : DeviceListRenderer.table(devices), terminator: "")
-        for hint in Self.phoneHints(devices) {
+        for hint in Self.phoneHints(devices) + Self.holderNotes(devices) {
             FileHandle.standardError.write(Data("\(hint)\n".utf8))
+        }
+    }
+
+    /// Fills `heldBy` for every row that can be locked; a shut-down AVD cannot.
+    static func withHolders(_ devices: [DeviceSummary], holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }) -> [DeviceSummary] {
+        devices.map { device in
+            guard device.kind != .avd else { return device }
+            var device = device
+            device.heldBy = holder(DeviceLockKey(platform: device.platform, id: device.id))
+            return device
+        }
+    }
+
+    /// One line per device another Offsider command is driving.
+    static func holderNotes(_ devices: [DeviceSummary], now: Date = Date()) -> [String] {
+        devices.compactMap { device in
+            guard let holder = device.heldBy else { return nil }
+            let command = holder.command.isEmpty ? "offsider" : "offsider \(holder.command)"
+            let age = holder.startedAt.map { ", started \(max(0, Int(now.timeIntervalSince($0)))) s ago" } ?? ""
+            return "\(device.id) is in use by pid \(holder.pid) (\(command)\(age))."
         }
     }
 

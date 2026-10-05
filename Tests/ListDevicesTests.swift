@@ -100,7 +100,7 @@ struct ListDevicesTests {
         let device = try #require(devices.first { $0["id"] as? String == udid })
 
         #expect(object["version"] as? Int == 1)
-        #expect(Set(device.keys) == ["id", "platform", "state", "name", "osVersion", "deviceType", "kind", "connection", "avd", "bootedBy"])
+        #expect(Set(device.keys) == ["id", "platform", "state", "name", "osVersion", "deviceType", "kind", "connection", "avd", "bootedBy", "heldBy"])
         #expect(device["platform"] as? String == "ios")
         #expect(device["state"] as? String == "Booted")
         #expect((device["osVersion"] as? String)?.hasPrefix("iOS ") == true)

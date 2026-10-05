@@ -22,6 +22,8 @@ public struct DeviceSummary: Equatable, Sendable {
     public var avd: String?
     /// The running emulator's process; nil otherwise.
     public var bootedBy: ProcessStamp?
+    /// The Offsider command holding the device's lock right now.
+    public var heldBy: DeviceLockHolder?
 
     public init(
         id: String,
@@ -81,6 +83,7 @@ public enum DeviceListRenderer {
                 ("connection", device.connection.map(string) ?? "null"),
                 ("avd", device.avd.map(string) ?? "null"),
                 ("bootedBy", device.bootedBy.map(stamp) ?? "null"),
+                ("heldBy", device.heldBy.map(holder) ?? "null"),
             ]
             let body = fields.map { "      \(string($0.0)): \($0.1)" }.joined(separator: ",\n")
             return "    {\n\(body)\n    }"
@@ -91,6 +94,12 @@ public enum DeviceListRenderer {
     static func stamp(_ stamp: ProcessStamp) -> String {
         let startedAt: String = string(ProcessStamp.timestamp(stamp.startedAt))
         return "{\"pid\": \(stamp.pid), \"startedAt\": \(startedAt)}"
+    }
+
+    static func holder(_ holder: DeviceLockHolder) -> String {
+        let command: String = string(holder.command)
+        let startedAt: String = holder.startedAt.map { string(ProcessStamp.timestamp($0)) } ?? "null"
+        return "{\"pid\": \(holder.pid), \"command\": \(command), \"startedAt\": \(startedAt)}"
     }
 
     private static func string(_ value: String) -> String {

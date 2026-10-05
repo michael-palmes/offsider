@@ -93,7 +93,7 @@ struct DeviceListingTests {
 
         let keys = [
             "\"version\"", "\"devices\"", "\"id\"", "\"platform\"", "\"state\"", "\"name\"", "\"osVersion\"", "\"deviceType\"", "\"kind\"",
-            "\"connection\"", "\"avd\"", "\"bootedBy\"",
+            "\"connection\"", "\"avd\"", "\"bootedBy\"", "\"heldBy\"",
         ]
         let offsets = keys.compactMap { text.range(of: $0)?.lowerBound }
         #expect(offsets.count == keys.count)
@@ -127,6 +127,25 @@ struct DeviceListingTests {
         plain.avd = nil
         plain.bootedBy = nil
         #expect(DeviceListRenderer.table([emulator]) == DeviceListRenderer.table([plain]))
+    }
+
+    @Test("held rows carry heldBy in JSON and one stderr note each; a shut-down AVD is never looked up")
+    func heldBy() throws {
+        let started = Date(timeIntervalSince1970: 1_790_000_000)
+        var looked: [String] = []
+        let rows = ListDevices.withHolders([phone, pixel]) { key in
+            looked.append(key.id)
+            return DeviceLockHolder(pid: 4321, command: "wait", startedAt: started)
+        }
+        #expect(looked == [phone.id])
+        #expect(ListDevices.holderNotes(rows, now: started.addingTimeInterval(3)) == ["\(phone.id) is in use by pid 4321 (offsider wait, started 3 s ago)."])
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceListRenderer.json(rows).utf8)) as? [String: Any])
+        let devices = try #require(object["devices"] as? [[String: Any]])
+        let heldBy = try #require(devices[0]["heldBy"] as? [String: Any])
+        #expect(heldBy["pid"] as? Int == 4321)
+        #expect(heldBy["command"] as? String == "wait")
+        #expect(heldBy["startedAt"] as? String == "2026-09-21T14:13:20Z")
+        #expect(devices[1]["heldBy"] is NSNull)
     }
 
     @Test("unauthorised and network phones get one hint each; a ready phone and emulators get none")
