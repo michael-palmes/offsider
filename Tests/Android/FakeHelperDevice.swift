@@ -244,7 +244,7 @@ final class FakeHelperDevice: @unchecked Sendable {
             return scripted
         }
         switch op {
-        case "hello": return .ok(#"{"helper":"1.1.0","protocol":2}"#)
+        case "hello": return .ok(#"{"helper":"1.2.0","protocol":2}"#)
         case "ping", "quit": return .ok("{}")
         case "dump": return .ok(lock.withLock { dump })
         case "display": return .ok(Self.displayReply)

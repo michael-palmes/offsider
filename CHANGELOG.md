@@ -55,6 +55,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn logbox status` reads React Native LogBox toasts and the inspector without a tap, and `rn logbox dismiss` clears every log through each toast's clear button, or the inspector's Dismiss when that does nothing, exiting 5 (`not_verified`) when logs remain.
 - `tap --nth <n>` taps the nth on-screen match in tree order, and `tap --topmost` the one drawn on top (the last on Android, the one a hit-test reaches on iOS), in single taps and batch steps; ambiguous-match candidates now carry `index`, `window` and `screen` in JSON and the message.
 - `type --into-id <id>` (or `--into-label`) taps a field and waits up to 2 s for focus before typing, in one locked command and as a batch step; when focus never comes nothing is typed and it exits 5 with the new reason `focus_not_confirmed`. `type --require-focus-id <id>` types only into a field that already has focus and otherwise exits 2 with the new reason `focus_mismatch`.
+- The Android helper 1.2.0 (still protocol 2) names the field's `inputType` in `setText` replies and refusals, and gains a `paste` op that selects the focused field's text and pastes the clipboard over it, refusing password fields; `hello` lists it.
 
 ### Changed
 
