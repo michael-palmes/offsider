@@ -16,6 +16,7 @@ private func resolveBatchTapPoint(
     elementType: String?,
     allowOffscreen: Bool,
     settle: SettlePolicy,
+    pick: MatchPick?,
     logger: OffsiderLogger
 ) async throws -> Polled<TapResolution> {
     let fetchTree = context.pollingTreeSource()
@@ -26,6 +27,7 @@ private func resolveBatchTapPoint(
         elementType: elementType,
         allowOffscreen: allowOffscreen,
         settle: settle,
+        pick: pick,
         logger: logger
     ) {
         try await fetchTree()
@@ -94,6 +96,7 @@ extension Tap: BatchConvertible {
                 elementType: elementType,
                 allowOffscreen: allowOffscreen,
                 settle: context.settlePolicy(stepOptedOut: noSettle),
+                pick: try await matchPick(query: query, backend: context.backend, device: context.device),
                 logger: logger
             )
             resolution = resolved.value

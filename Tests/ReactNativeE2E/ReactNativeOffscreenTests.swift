@@ -205,4 +205,20 @@ struct ReactNativeOffscreenTests {
         #expect(present.exitCode == 1, "\(present.stderr)")
         #expect(present.stderr.contains("already on screen"), "\(present.stderr)")
     }
+
+    @Test("on a stack two deep, --topmost taps the page on top, and a control of the page beneath is still flagged as covered on Android", arguments: RNPlatform.enabled)
+    func topmostOnStack(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("stack-test")
+        try await app.run("tap --id stack-test-next")
+        _ = try await app.waitForLabel(of: "stack-test-depth") { $0 == "Stack Depth: 2" }
+
+        if platform == .android {
+            let beneath = try await app.offsider("tap --id stack-test-mark --nth 1 --fail-if-covered")
+            #expect(beneath.exitCode == 1, "\(beneath.stderr)")
+            #expect(beneath.stderr.contains("may be covered by"), "\(beneath.stderr)")
+        }
+        try await app.run("tap --id stack-test-mark --topmost --fail-if-covered")
+        _ = try await app.waitForLabel(of: "stack-test-state") { $0 == "Stack State: Page 2 marked" }
+    }
 }

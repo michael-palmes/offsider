@@ -14,13 +14,22 @@ public struct FailureCandidate: Equatable, Sendable {
     public let role: String
     public let frame: UIFrame?
     public let onScreen: Bool?
+    /// The number `tap --nth` takes for it, among the on-screen matches.
+    public let index: Int?
+    /// The window or app title it is in.
+    public let window: String?
+    /// The id of the nearest screen-filling ancestor.
+    public let screen: String?
 
-    public init(id: String?, label: String?, role: String, frame: UIFrame?, onScreen: Bool?) {
+    public init(id: String?, label: String?, role: String, frame: UIFrame?, onScreen: Bool?, index: Int? = nil, window: String? = nil, screen: String? = nil) {
         self.id = id
         self.label = label
         self.role = role
         self.frame = frame
         self.onScreen = onScreen
+        self.index = index
+        self.window = window
+        self.screen = screen
     }
 
     var jsonValue: OrderedJSON {
@@ -30,6 +39,9 @@ public struct FailureCandidate: Equatable, Sendable {
             ("role", .string(role)),
             ("frame", frame.map(\.jsonValue) ?? .null),
             ("onScreen", .optional(onScreen, OrderedJSON.bool)),
+            ("index", .optional(index, OrderedJSON.integer)),
+            ("window", .optional(window, OrderedJSON.string)),
+            ("screen", .optional(screen, OrderedJSON.string)),
         ])
     }
 }

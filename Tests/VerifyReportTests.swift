@@ -86,7 +86,7 @@ struct VerifyReportTests {
         #expect(payload["dispatched"] as? String == "no")
         let candidates = try #require(payload["candidates"] as? [[String: Any]])
         #expect(candidates.count == 2)
-        #expect(Set(candidates[0].keys) == ["id", "label", "role", "frame", "onScreen"])
+        #expect(Set(candidates[0].keys) == ["id", "label", "role", "frame", "onScreen", "index", "window", "screen"])
         #expect(candidates[0]["label"] as? String == "Save")
         #expect(candidates[0]["onScreen"] as? Bool == true)
     }

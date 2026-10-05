@@ -42,7 +42,8 @@ enum AndroidTreeMapping {
                 hint: nonEmpty(raw["hint"]),
                 stateDescription: nonEmpty(raw["state-description"]),
                 roleDescription: nonEmpty(raw["role-description"]),
-                testTag: nonEmpty(raw["test-tag"])
+                testTag: nonEmpty(raw["test-tag"]),
+                visibleToUser: nonEmpty(raw["visible-to-user"]).map { $0 == "true" }
             )),
             children: raw.children.map { node(from: $0, scale: scale) }
         )
