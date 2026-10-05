@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import OffsiderAndroid
 import OffsiderCore
+import OffsiderIOSDevice
 
 struct Doctor: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -19,7 +20,9 @@ struct Doctor: AsyncParsableCommand {
 
     func run() async throws {
         let report: DoctorReport
-        if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
+        if let id = deviceOption.id, case .iosDevice(let udid) = DeviceIDClassifier.classify(id) {
+            report = await iosDeviceReport(udid)
+        } else if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
             report = await androidReport(id)
         } else {
             report = await hostAndSimulatorReport()
@@ -88,6 +91,28 @@ struct Doctor: AsyncParsableCommand {
             android: AndroidDoctorRules.summary(facts.host, device: facts.device),
             checks: AndroidDoctorRules.hostChecks(facts.host, deviceNamed: true)
                 + AndroidDoctorRules.deviceChecks(facts.device, hostBlocker: AndroidDoctorRules.hostBlocker(facts.host)),
+            fixes: fixes
+        )
+    }
+
+    /// Host checks for a physical iPhone or iPad; simulator and Android state cannot affect it.
+    @MainActor
+    private func iosDeviceReport(_ udid: String) async -> DoctorReport {
+        let probe = IOSDeviceDoctorProbe()
+        var result = await probe.run(udid: udid)
+        var fixes: [DoctorFixResult] = []
+        if fix {
+            fixes = [await probe.mountDDI(udid: udid, facts: result.facts)]
+            result = await probe.run(udid: udid)
+        }
+        return DoctorReport(
+            offsiderVersion: VERSION,
+            udid: nil,
+            device: DoctorDevice(id: udid, platform: "ios", name: result.facts.row?.label, kind: "physical"),
+            xcode: XcodeSummary(developerDir: result.xcode?.developerDirectory, version: result.xcode?.version, build: result.xcode?.build, coreSimulator: nil),
+            booted: [],
+            android: nil,
+            checks: IOSDeviceDoctorRules.checks(result.facts),
             fixes: fixes
         )
     }

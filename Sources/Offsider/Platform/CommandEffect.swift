@@ -50,6 +50,11 @@ enum CommandEffect: String, Sendable {
         "batch": .input,
         "rn prepare": .input,
         "hid-broker": .none,
+        "runner status": .none,
+        "runner stop": .none,
+        "session status": .none,
+        "session stop": .none,
+        "device-session serve": .none,
     ]
 
     /// Batch step kinds, so a new step cannot skip the cache rules.

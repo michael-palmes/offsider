@@ -73,6 +73,8 @@ struct UnlockCodeCommand: AsyncParsableCommand {
             throw AndroidError.networkDevice(serial)
         case .iosSimulator:
             throw CLIError(errorDescription: "unlock-code is Android only: iOS simulators have no lock screen code.", reason: .notSupported)
+        case .iosDevice:
+            throw CLIError(errorDescription: "unlock-code is Android only: Offsider never stores or types an iPhone or iPad passcode. Unlock it by hand.", reason: .notSupported)
         case .empty, .unrecognised:
             throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a phone serial or AVD name"). Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
         }

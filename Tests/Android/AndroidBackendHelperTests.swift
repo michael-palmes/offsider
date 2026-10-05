@@ -48,7 +48,7 @@ struct AndroidBackendHelperTests {
         #expect(rig.device.ops == ["hello", "setText", "quit"])
     }
 
-    @Test("type --replace with a trailing newline takes the display from the helper before pressing Return, with no probe")
+    @Test("type --replace with a trailing newline takes the display from the helper and presses Return through it, with no probe or shell")
     func replaceSubmitSequence() async throws {
         let rig = try AndroidReplaceTextTests.rig()
         try await AndroidReplaceTextTests.replace("abc\n", on: rig)
@@ -58,9 +58,23 @@ struct AndroidBackendHelperTests {
             "host:version",
             "host:transport:emulator-5556", "shell,v2,raw:" + HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil),
             "host:transport:emulator-5556", "localabstract:offsider-fake-1",
-            "host:transport:emulator-5556", "shell,v2,raw:input keyevent 66",
         ])
-        #expect(rig.device.ops == ["hello", "setText", "display", "quit"])
+        #expect(rig.device.ops == ["hello", "setText", "display", "inject", "quit"])
+    }
+
+    @Test("tap --id reads the tree, then taps through the same helper: hello, dump, inject, quit")
+    func tapAfterReadSequence() async throws {
+        let rig = try HelperRig()
+        _ = try await rig.read()
+        let session = try await rig.backend.openInputSession(for: Self.device)
+        try await session.perform(.tapAt(x: 100, y: 200))
+        await session.close()
+        await rig.backend.close()
+
+        #expect(rig.device.ops == ["hello", "dump", "inject", "quit"])
+        #expect(rig.device.injected == ["tap 100 200"])
+        #expect(rig.startShells == 1)
+        #expect(!rig.server.services.contains { $0.hasPrefix("shell,v2,raw:input ") })
     }
 
     @Test("later reads in the command reuse the same helper")

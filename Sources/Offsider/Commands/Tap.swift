@@ -55,6 +55,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
 
     func validate() throws {
         if pointX != nil || pointY != nil {
@@ -127,6 +130,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
     /// Resolves and sends the tap on `route`; tests pass a fake backend here.
     func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger) async throws {
+        await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

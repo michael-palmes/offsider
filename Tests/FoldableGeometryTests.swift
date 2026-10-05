@@ -230,7 +230,7 @@ struct DTUHIDMessageTests {
 
     @Test("values become XPC objects of the wire types dtuhidd decodes")
     func xpc() {
-        let object = SimulatorDTUHID.xpcObject(.dictionary(["n": .uint(7), "d": .double(0.5), "b": .bool(true), "s": .string("x"), "data": .data(Data([1, 2]))]))
+        let object = DTUHIDValue.dictionary(["n": .uint(7), "d": .double(0.5), "b": .bool(true), "s": .string("x"), "data": .data(Data([1, 2]))]).xpcObject
         #expect(xpc_dictionary_get_uint64(object, "n") == 7)
         #expect(xpc_dictionary_get_double(object, "d") == 0.5)
         #expect(xpc_dictionary_get_bool(object, "b"))

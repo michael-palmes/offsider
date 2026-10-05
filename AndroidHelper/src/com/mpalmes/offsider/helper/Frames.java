@@ -5,7 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-/** Length-prefixed frames: a 4-byte big-endian length, then that many bytes of UTF-8 JSON. */
+/** Length-prefixed frames: a 4-byte big-endian length, then that many bytes of UTF-8 JSON or a screenshot. */
 final class Frames {
     static final int MAX_BYTES = 32 << 20;
 
@@ -38,13 +38,11 @@ final class Frames {
         if (payload.length > MAX_BYTES) {
             throw new IOException("a reply of " + payload.length + " bytes is over the " + MAX_BYTES + " byte limit");
         }
-        byte[] frame = new byte[4 + payload.length];
-        frame[0] = (byte) (payload.length >>> 24);
-        frame[1] = (byte) (payload.length >>> 16);
-        frame[2] = (byte) (payload.length >>> 8);
-        frame[3] = (byte) payload.length;
-        System.arraycopy(payload, 0, frame, 4, payload.length);
-        out.write(frame);
+        byte[] header = {
+            (byte) (payload.length >>> 24), (byte) (payload.length >>> 16), (byte) (payload.length >>> 8), (byte) payload.length,
+        };
+        out.write(header);
+        out.write(payload);
         out.flush();
     }
 

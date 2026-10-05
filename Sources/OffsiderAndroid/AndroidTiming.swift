@@ -13,6 +13,9 @@ enum AndroidPhase: String, CaseIterable, Sendable {
     case helperDump = "helper-dump"
     case treeMap = "tree-map"
     case helperClose = "helper-close"
+    case helperInject = "helper-inject"
+    case helperCapture = "helper-capture"
+    case captureEncode = "capture-encode"
     case grpcConnect = "grpc-connect"
     case grpcCall = "grpc-call"
     case input

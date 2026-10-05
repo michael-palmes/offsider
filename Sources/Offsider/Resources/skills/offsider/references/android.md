@@ -11,15 +11,18 @@
 - Never choose a `physical` device yourself: drive a phone only when the user names its serial.
 - An `Unauthorised` phone needs the user to unlock it and accept the "Allow USB debugging?" prompt; never try to automate that. `Unsupported` rows are Wi-Fi or TCP adb connections, which Offsider refuses.
 - On a phone everything runs over adb. `boot`, setting a `posture`, `stream-video --format bgra` and non-ASCII plain `type` are emulator-only: use `type --replace` for non-ASCII text and `--format mjpeg` for streams. `biometric` is refused on a phone.
+- On a phone, input goes through `input` unless the command already started the helper to read the screen (a selector tap, `type --replace`); screenshots use `screencap -p`. Starting the helper costs 0.3 to 0.4 s, more than it saves on plain input, so these defaults are the fast path; do not set the variables below to speed a phone up.
+- `OFFSIDER_ANDROID_INPUT=helper` forces input through the helper (an error, with a hint, when it cannot start) and `input` never uses it. `OFFSIDER_ANDROID_CAPTURE=raw` or `helper` encodes raw pixels on the Mac, falling back to `screencap -p`; `screencap` is the default. Both apply to an emulator without gRPC too.
+- While the helper carries input, the phone reports an accessibility service as enabled for that command, as it does for screen reads. Separate `touch --down` and `touch --up` commands always use `input motionevent`.
 - Offsider never sets `adb reverse` on a phone; ask the user before running it.
 - A phone's screen sleeps and locks when it times out. For long runs ask the user before running `offsider stay-awake on --device <serial>`; after a reboot or unplug it needs unlocking again (`guide device-state`).
 
 ## The helper
 
-- Screen reads (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `slider`, `type --replace`) go through a small UiAutomation helper that Offsider starts on the device for one command: about 0.3 s per `describe-ui` and 1 to 1.5 s per verified tap on a quiet Mac, slower when the Mac is busy. Poll and verify as on iOS.
+- Screen reads (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `slider`, `type --replace`) go through a small UiAutomation helper that Offsider starts on the device for one command (input and screenshots start it only when `OFFSIDER_ANDROID_INPUT` or `OFFSIDER_ANDROID_CAPTURE` is `helper`): about 0.3 s per `describe-ui` and 1 to 1.5 s per verified tap on a quiet Mac, slower when the Mac is busy. Poll and verify as on iOS.
 - While a command reads the screen, the device reports an accessibility service as enabled, which some apps react to.
 - A "found no window" error while an activity starts is retried by `--wait-timeout` and `tap --verify`.
-- With `OFFSIDER_TIMINGS=1`, stderr shows where a command spent its time (`helper-launch`, `helper-dump`, `adb-shell`, `grpc-call` and more), one `offsider timing: <phase> <n> ms` line per phase.
+- With `OFFSIDER_TIMINGS=1`, stderr shows where a command spent its time (`helper-launch`, `helper-dump`, `helper-inject`, `helper-capture`, `capture-encode`, `adb-shell`, `grpc-call` and more), one `offsider timing: <phase> <n> ms` line per phase.
 - "Another UiAutomation client is connected" means Appium, Maestro, `uiautomator`, an instrumentation test or Layout Inspector holds Android's single UiAutomation connection. Offsider never reads around it: ask the user to stop that client, then retry.
 - "An earlier Offsider helper (pid N) still holds UiAutomation" usually means another Offsider command is still running on the same emulator. Run commands on one emulator one at a time; the helper exits within 10 s, or run the `adb -s <serial> shell kill <pid>` command the message gives.
 - A `Warning:` that the UiAutomation helper is unavailable means Offsider fell back to `uiautomator`: reads take about 2 s, the tree has no keyboard root and no slider values, and `slider` fails. Pass the reason in the warning on to the user.

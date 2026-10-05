@@ -19,6 +19,39 @@ struct DeviceIDClassifierTests {
         #expect(DeviceIDClassifier.classify(udid).platform == .ios)
     }
 
+    @Test("a modern iPhone UDID is a physical iOS device in canonical uppercase")
+    func modernPhoneUDID() {
+        let phone = "00008130-0000000000000ABC"
+        #expect(DeviceIDClassifier.classify(phone) == .iosDevice(udid: phone))
+        #expect(DeviceIDClassifier.classify(phone.lowercased()) == .iosDevice(udid: phone))
+        #expect(DeviceIDClassifier.classify(" \(phone.lowercased())\n") == .iosDevice(udid: phone))
+        #expect(DeviceIDClassifier.classify(phone).platform == .ios)
+    }
+
+    @Test("a 40-hex iPhone UDID is a physical iOS device in canonical lowercase")
+    func legacyPhoneUDID() {
+        let phone = "0123456789abcdef0123456789abcdef01234567"
+        #expect(DeviceIDClassifier.classify(phone) == .iosDevice(udid: phone))
+        #expect(DeviceIDClassifier.classify(phone.uppercased()) == .iosDevice(udid: phone))
+        #expect(DeviceIDClassifier.classify("\t\(phone.uppercased()) ") == .iosDevice(udid: phone))
+        #expect(DeviceIDClassifier.classify(phone).platform == .ios)
+    }
+
+    @Test("near misses of an iPhone UDID stay Android names", arguments: [
+        String(repeating: "a", count: 39), String(repeating: "a", count: 41), "0000813-00000000000000ABC", "000081300-000000000000ABC",
+        "00008130-0000000000000ABG", "00008130-000000000000000ABC",
+    ])
+    func phoneUDIDNearMisses(raw: String) {
+        #expect(DeviceIDClassifier.classify(raw) == .androidName(name: raw))
+    }
+
+    @Test("only a physical iOS device ID reports itself as one")
+    func physicalFlag() {
+        #expect(DeviceID(rawValue: "00008130-0000000000000ABC", platform: .ios).isPhysicalIOSDevice)
+        #expect(!DeviceID(rawValue: udid, platform: .ios).isPhysicalIOSDevice)
+        #expect(!DeviceID(rawValue: "00008130-0000000000000ABC", platform: .android).isPhysicalIOSDevice)
+    }
+
     @Test("emulator-<port> is an Android emulator serial")
     func emulatorSerial() {
         #expect(DeviceIDClassifier.classify("emulator-5554") == .androidSerial(consolePort: 5554))

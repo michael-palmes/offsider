@@ -8,7 +8,7 @@ final class FakeHelperDevice: @unchecked Sendable {
     static let dexBytes = Data("dex".utf8)
     static let dex = try! HelperDex(bytes: dexBytes, manifestJSON: manifest(for: dexBytes))
 
-    static func manifest(for bytes: Data, protocol number: Int = 1, sha256: String? = nil) -> Data {
+    static func manifest(for bytes: Data, protocol number: Int = 2, sha256: String? = nil) -> Data {
         let hash = sha256 ?? SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         return Data("""
         {"helper": "offsider-helper", "helperVersion": "1.0.0", "protocol": \(number), "dex": {"file": "offsider-helper.dex", "bytes": \(bytes.count), "sha256": "\(hash)"}}
@@ -30,6 +30,8 @@ final class FakeHelperDevice: @unchecked Sendable {
     enum Answer {
         /// `"ok": true` with these fields, a JSON object.
         case ok(String)
+        /// An ok reply with these fields, then this binary frame, as `screenshot` answers.
+        case okWithPayload(String, Data)
         /// The focused element's class and id ride along, as `setText` errors carry them.
         case error(code: String, message: String, className: String? = nil, resourceId: String? = nil)
         /// A `bye` frame instead of a reply, then the helper exits.
@@ -169,9 +171,9 @@ final class FakeHelperDevice: @unchecked Sendable {
             }
             switch start {
             case .ready:
-                process.pending = [Self.stdout(readyLine(process, protocol: 1))]
+                process.pending = [Self.stdout(readyLine(process, protocol: 2))]
             case .readyAfter(let lines):
-                process.pending = lines.map { Self.stdout($0 + "\n") } + [Self.stdout(readyLine(process, protocol: 1))]
+                process.pending = lines.map { Self.stdout($0 + "\n") } + [Self.stdout(readyLine(process, protocol: 2))]
             case .readyWithProtocol(let number):
                 process.pending = [Self.stdout(readyLine(process, protocol: number))]
             case .exit(let status, let stdout, let stderr):
@@ -242,11 +244,56 @@ final class FakeHelperDevice: @unchecked Sendable {
             return scripted
         }
         switch op {
-        case "hello": return .ok(#"{"helper":"1.0.0","protocol":1}"#)
+        case "hello": return .ok(#"{"helper":"1.1.0","protocol":2}"#)
         case "ping", "quit": return .ok("{}")
         case "dump": return .ok(lock.withLock { dump })
         case "display": return .ok(Self.displayReply)
+        case "inject": return .ok(Self.injectReply(to: json))
         default: return .error(code: "unknown-op", message: "unknown op '\(op)'")
+        }
+    }
+
+    /// A raw screenshot reply and its frame: `width` x `height` RGBA pixels, each red = its index.
+    static func screenshot(width: Int, height: Int) -> Answer {
+        let pixels = Data((0..<(width * height)).flatMap { [UInt8($0 & 0xFF), 0, 0, 255] })
+        return .okWithPayload(
+            #"{"frame":{"width":\#(width),"height":\#(height),"format":"rgba8888","bytes":\#(pixels.count)},"captureMs":40,"copyMs":5,"encodeMs":3}"#,
+            pixels
+        )
+    }
+
+    /// Every step dispatched in 1 ms.
+    static func injectReply(to json: String) -> String {
+        let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        let count = (object?["steps"] as? [Any])?.count ?? 0
+        let steps = Array(repeating: #"{"dispatched":true,"ms":1}"#, count: count).joined(separator: ",")
+        return #"{"steps":[\#(steps)],"eventSeqBefore":7,"totalMs":\#(count)}"#
+    }
+
+    /// The steps of every `inject` the helper received, in order.
+    var injectedSteps: [[String: Any]] {
+        frames.filter { $0.op == "inject" }.flatMap { frame -> [[String: Any]] in
+            let object = try? JSONSerialization.jsonObject(with: Data(frame.json.utf8)) as? [String: Any]
+            return object?["steps"] as? [[String: Any]] ?? []
+        }
+    }
+
+    /// Each injected step as a short line, such as `key press 66 meta 0` or `touch down 100 200`.
+    var injected: [String] {
+        injectedSteps.map { step in
+            func number(_ key: String) -> String {
+                guard let value = step[key] as? NSNumber else { return "?" }
+                return value.doubleValue == value.doubleValue.rounded() ? String(value.intValue) : String(value.doubleValue)
+            }
+            switch step["kind"] as? String {
+            case "tap": return "tap \(number("x")) \(number("y"))"
+            case "swipe": return "swipe \(number("fromX")) \(number("fromY")) \(number("toX")) \(number("toY")) \(number("durationMs")) ms \(number("moves")) moves"
+            case "touch": return "touch \(step["phase"] as? String ?? "?") \(number("x")) \(number("y"))"
+            case "key": return "key \(step["phase"] as? String ?? "?") \(number("code")) meta \(number("meta"))"
+            case "text": return "text \(step["text"] as? String ?? "?")"
+            case "pause": return "pause \(number("ms"))"
+            default: return "unknown"
+            }
         }
     }
 
@@ -329,6 +376,10 @@ final class FakeHelperSocket: FakeServiceSession, @unchecked Sendable {
                     device.exit(process, status: 0)
                     return (out, true)
                 }
+            case .okWithPayload(let fields, let payload):
+                out += Self.frame(Self.ok(id: id, fields: fields))
+                let count = UInt32(payload.count)
+                out += Data([UInt8(count >> 24), UInt8(count >> 16 & 0xFF), UInt8(count >> 8 & 0xFF), UInt8(count & 0xFF)]) + payload
             case .error(let code, let message, let className, let resourceId):
                 let node = [className.map { #","className":"\#($0)""# }, resourceId.map { #","resourceId":"\#($0)""# }].compactMap { $0 }.joined()
                 out += Self.frame(#"{"id":\#(id),"ok":false,"error":{"code":"\#(code)","message":"\#(message)","detail":null\#(node)},"eventSeq":7}"#)

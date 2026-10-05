@@ -103,13 +103,16 @@ struct OrientationCommand: AsyncParsableCommand {
             now: { Date().timeIntervalSinceReferenceDate }
         )
         guard outcome == .reached else {
-            throw CLIError(errorDescription: Self.timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceOption.id), reason: .stateNotReached)
+            throw CLIError(errorDescription: Self.timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceOption.id, physical: device.isPhysicalIOSDevice), reason: .stateNotReached)
         }
         try await report(target, previous: previous, backend: backend, device: device)
     }
 
-    static func timeoutMessage(target: DeviceOrientation, timeout: Double, platform: DevicePlatform, device: String) -> String {
+    static func timeoutMessage(target: DeviceOrientation, timeout: Double, platform: DevicePlatform, device: String, physical: Bool = false) -> String {
         let seconds = DeviceSettingsReport.number(timeout)
+        if physical {
+            return "The screen did not turn to \(target.rawValue) within \(seconds) s. The device took the new orientation, but its screen follows only while it is awake and unlocked, and only if the frontmost app supports \(target.rawValue). Wake and unlock it, or rotate the device by hand, then check with `offsider orientation --device \(device)`."
+        }
         switch platform {
         case .ios:
             let app = target.isLandscape ? "supports portrait only" : "does not support \(target.rawValue)"

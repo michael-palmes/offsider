@@ -101,7 +101,7 @@ struct HelperLauncherTests {
         (.exit(status: 6, stdout: #"{"ok":false,"error":{"code":"crashed","message":"unexpected error","detail":"java.lang.NullPointerException"}}"#), .unavailable(.crashed(status: 6, detail: "unexpected error"))),
         (.exit(status: 127, stderr: "/system/bin/sh: app_process: inaccessible or not found\n"), .unavailable(.crashed(status: 127, detail: "/system/bin/sh: app_process: inaccessible or not found"))),
         (.exit(status: 137), .unavailable(.crashed(status: 137, detail: "no output"))),
-        (.readyWithProtocol(2), .unavailable(.handshake("the helper on the device speaks protocol 2, Offsider speaks 1"))),
+        (.readyWithProtocol(3), .unavailable(.handshake("the helper on the device speaks protocol 3, Offsider speaks 2"))),
         (.silent, .unavailable(.noReady(seconds: 30))),
     ]
 

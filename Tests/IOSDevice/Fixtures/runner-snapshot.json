@@ -1,0 +1,66 @@
+[
+  {
+    "type": "Application",
+    "AXLabel": "OffsiderPlayground",
+    "bundleId": "com.mpalmes.offsider.playground",
+    "pid": 87579,
+    "enabled": true,
+    "traits": [],
+    "frame": {"x": 0, "y": 0, "width": 430, "height": 932},
+    "children": [
+      {
+        "type": "Window",
+        "enabled": true,
+        "traits": [],
+        "frame": {"x": 0, "y": 0, "width": 430, "height": 932},
+        "children": [
+          {
+            "type": "NavigationBar",
+            "AXUniqueId": "Offsider Playground",
+            "enabled": true,
+            "traits": [],
+            "frame": {"x": 0, "y": 62, "width": 430, "height": 106},
+            "children": []
+          },
+          {
+            "type": "Button",
+            "AXLabel": "Tap Test, Displays coordinates of CLI taps",
+            "enabled": true,
+            "traits": [],
+            "frame": {"x": 16, "y": 208.33, "width": 398, "height": 68.67},
+            "children": [
+              {
+                "type": "StaticText",
+                "AXLabel": "Tap Test",
+                "enabled": true,
+                "traits": [],
+                "frame": {"x": 32, "y": 223.33, "width": 66.67, "height": 20.33},
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "Switch",
+            "AXUniqueId": "wifi-switch",
+            "AXLabel": "Wi-Fi",
+            "AXValue": "1",
+            "enabled": true,
+            "traits": ["Selected"],
+            "frame": {"x": 16, "y": 300, "width": 398, "height": 44},
+            "children": []
+          },
+          {
+            "type": "SecureTextField",
+            "AXUniqueId": "password",
+            "AXValue": "hunter2",
+            "enabled": true,
+            "traits": [],
+            "frame": {"x": 16, "y": 360, "width": 398, "height": 44},
+            "focused": true,
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+]

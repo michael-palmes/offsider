@@ -125,6 +125,8 @@ struct EmulatorBootTests {
             arguments: ["-avd", Self.avd, "-no-metrics", "-no-window"],
             logPath: logPath
         )])
+        #expect(launcher.environments.map { $0["ADB_MDNS"] } == ["0"])
+        #expect(launcher.environments.first?["TMPDIR"] == home.path)
         #expect(emulator.calls == [.status, .status, .close])
         #expect(run.lines == ["Starting \(Self.avd)...", "Waiting for Android to finish booting on emulator-5556..."])
     }

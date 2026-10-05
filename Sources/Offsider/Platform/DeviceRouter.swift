@@ -1,9 +1,9 @@
 import Foundation
 import OffsiderAndroid
 import OffsiderCore
+import OffsiderIOSDevice
 
-/// Picks the backend from the device ID's shape: UUIDs are iOS simulators; emulator-NNNN, AVD names and USB phone serials Android.
-/// Every backend it builds is adopted by `scope`, which closes it when the command ends.
+/// Picks the backend by ID shape (UUIDs simulators, iPhone UDIDs devices, the rest Android); `scope` closes each one when the command ends.
 @MainActor
 enum DeviceRouter {
     struct Route {
@@ -12,7 +12,11 @@ enum DeviceRouter {
     }
 
     static func allBackends(logger: OffsiderLogger, host: AndroidHost = .cli(), scope: CommandScope = .current) -> [any DeviceBackend] {
-        [scope.adopt(IOSBackend(logger: logger)), scope.adopt(AndroidBackend.make(logger: logger, host: host))]
+        [
+            scope.adopt(IOSBackend(logger: logger)),
+            scope.adopt(AndroidBackend.make(logger: logger, host: host)),
+            scope.adopt(IOSDeviceBackend.make(logger: logger)),
+        ]
     }
 
     /// Routes, then locks the device for this command before any input session or helper starts.
@@ -82,6 +86,9 @@ enum DeviceRouter {
         switch DeviceIDClassifier.classify(rawID) {
         case .iosSimulator(let udid):
             return Route(backend: scope.adopt(IOSBackend(logger: logger)), device: DeviceID(rawValue: udid, platform: .ios))
+        case .iosDevice(let udid):
+            // Readiness is checked on first use, so routing costs no devicectl call.
+            return Route(backend: scope.adopt(IOSDeviceBackend.make(logger: logger)), device: DeviceID(rawValue: udid, platform: .ios))
         case .androidSerial(let port):
             // Existence is checked on first use, so a serial costs no adb round trip here.
             return Route(
@@ -99,7 +106,7 @@ enum DeviceRouter {
             throw CLIError(errorDescription: "Device ID cannot be empty. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
         case .unrecognised:
             throw CLIError(
-                errorDescription: "Device \(id) is not an iOS simulator UDID. Run `offsider list-devices` to find device IDs.",
+                errorDescription: "Device \(id) is not a device ID Offsider recognises. Run `offsider list-devices` to find device IDs.",
                 reason: .invalidDeviceID, hint: "offsider list-devices"
             )
         }

@@ -6,6 +6,7 @@ Every setter here changes the device and it stays changed. Read the current valu
 
 - `offsider appearance light|dark --device <DEVICE_ID>` sets the appearance. On Android a reading can be `auto` or `custom` when night mode follows a schedule; setting light or dark replaces it. Apps with their own theme setting follow `appearance` only when that setting is on automatic.
 - `offsider content-size <category>|reset` sets the text size: a Dynamic Type category on iOS, the matching font scale on Android; `reset` restores `large`.
+- On a physical iPhone or iPad both go through `devicectl`, and `orientation` turns the screen only while the device is awake and unlocked. `permission`, `status-bar` and `biometric` are refused there: use a simulator.
 
 ## Orientation
 
@@ -29,6 +30,8 @@ Every setter here changes the device and it stays changed. Read the current valu
 - On iOS enrol first, and `unenrol` afterwards. On Android enrolment is manual (it needs a screen lock), and `biometric` is refused on a phone.
 
 ## Screen, stay awake and unlocking (Android)
+
+`stay-awake`, `wake` and `unlock-code` refuse an iOS simulator or iPhone as `not_supported`: simulators never sleep or lock, and an iPhone or iPad is unlocked by hand.
 
 - `offsider stay-awake --device <DEVICE_ID>` reads Developer options > Stay awake with the screen timeout; `on` keeps an awake screen on while the device charges (every power source) and `off` restores the timeout. It survives reboots. The output says when it has no effect: not charging, charging over a source it leaves out, or a device policy capping the timeout. Turn it on before a long run; it does not turn a dark screen on.
 - `offsider wake --device <DEVICE_ID>` turns the screen on and dismisses a swipe lock screen, and sends nothing when the screen is already on and unlocked. A PIN, pattern or password lock screen stays up and exits 7 with `device_locked`: ask the user to unlock the device.

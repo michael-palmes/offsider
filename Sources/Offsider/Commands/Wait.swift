@@ -59,6 +59,9 @@ struct Wait: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     static let defaultQuietMs = 500
 
     func validate() throws {
@@ -138,6 +141,7 @@ struct Wait: AsyncParsableCommand {
         clock: PollClock = .live,
         onPrepared: @Sendable () -> Void = {}
     ) async throws -> WaitOutcome {
+        appOption.apply(to: route)
         try await route.backend.prepare()
         onPrepared()
         let sources = try await liveSources(on: route, tree: tree, clock: clock)

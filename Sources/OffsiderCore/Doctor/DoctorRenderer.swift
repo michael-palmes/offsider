@@ -13,9 +13,12 @@ public enum DoctorRenderer {
     }
 
     public static func render(_ report: DoctorReport) -> String {
-        let androidOnly = report.device?.platform == "android"
+        let iosDeviceOnly = report.device?.platform == "ios" && report.device?.kind == "physical"
+        let androidOnly = report.device?.platform == "android" || iosDeviceOnly
         var lines: [String] = []
-        if androidOnly {
+        if iosDeviceOnly {
+            lines.append(iosDeviceHeader(report))
+        } else if androidOnly {
             lines.append("Offsider doctor: " + androidHeader(report.android))
         } else {
             lines.append(header(report.xcode))
@@ -62,6 +65,15 @@ public enum DoctorRenderer {
         var xcodePart = "Xcode \(xcode.version ?? "unknown")"
         if let build = xcode.build { xcodePart += " (\(build))" }
         return "Offsider doctor: \(xcodePart), CoreSimulator \(xcode.coreSimulator ?? "unknown")"
+    }
+
+    static func iosDeviceHeader(_ report: DoctorReport) -> String {
+        var text = "Offsider doctor: "
+        if let version = report.xcode.version {
+            text += "Xcode \(version)" + (report.xcode.build.map { " (\($0))" } ?? "") + ", "
+        }
+        let device = report.device.map { DeviceName.display($0.id, label: $0.name) } ?? "iPhone"
+        return text + device
     }
 
     static func bootedLines(_ booted: [BootedSimulator]) -> [String] {

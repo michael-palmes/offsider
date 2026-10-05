@@ -52,6 +52,9 @@ struct PermissionCommand: AsyncParsableCommand {
     }
 
     func plan() throws -> Plan {
+        if let device {
+            try CLIError.refuseOnPhone(device, command: "permission", alternative: "Change the app's access in Settings on the device, or use an iOS simulator.")
+        }
         let name = action.trimmingCharacters(in: .whitespaces).lowercased()
         if name == "services" {
             guard services.isEmpty else { throw ValidationError("permission services takes no service names.") }

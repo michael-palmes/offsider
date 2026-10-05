@@ -10,10 +10,24 @@ public indirect enum DTUHIDValue: Equatable, Sendable {
     case dictionary([String: DTUHIDValue])
 }
 
-/// The plain-XPC dictionaries a simulator's `dtuhidd` decodes, as idb's DTUHID transport sends them for the digitizer.
+/// The plain-XPC dictionaries `dtuhidd` decodes on a simulator or a device, as idb's DTUHID transport sends them.
 public enum DTUHIDMessage {
     public static let digitizerService = "com.apple.coredevice.feature.remote.hid.digitizer"
+    public static let keyboardService = "com.apple.coredevice.feature.remote.hid.keyboard"
+    public static let buttonService = "com.apple.coredevice.feature.remote.hid.button"
     public static let vendorDefinedService = "com.apple.coredevice.feature.remote.hid.vendordefined"
+
+    /// `dtuhidd` opens the services it creates for a new peer 560 to 770 ms after the peer's first message, and drops events sent before then.
+    public static let activationFloor: Duration = .seconds(1)
+
+    /// `HIDButtonState` for keys and buttons; `dtuhidd` rejects 0.
+    public enum ButtonState: UInt64, Sendable {
+        case down = 1
+        case up = 2
+    }
+
+    /// The HID consumer page, where the home, lock and Siri buttons live.
+    public static let consumerUsagePage: UInt64 = 0x0C
 
     public enum TouchPhase: UInt64, Sendable {
         case start = 0
@@ -30,18 +44,38 @@ public enum DTUHIDMessage {
         ])
     }
 
+    /// A device's `dtuhidd` drops the connection on an event that carries a false `isBarrier`; the simulator's expects the key.
+    public static func forDevice(_ message: DTUHIDValue) -> DTUHIDValue {
+        guard case .dictionary(var fields) = message, fields["isBarrier"] == .bool(false) else { return message }
+        fields["isBarrier"] = nil
+        return .dictionary(fields)
+    }
+
     /// Keyboard usage 0, which `dtuhidd` answers without the guest seeing a key.
     public static func barrier(service: String) -> DTUHIDValue {
         envelope("IndigoKeyboardButtonEvent", service: service, isBarrier: true, payload: ["usageCode": .uint(0), "state": .uint(2)])
     }
 
     /// One contact at fractions of the panel; `target` is the touchscreen's simulator screen ID, 0 for the main screen.
-    public static func touch(x: Double, y: Double, phase: TouchPhase, target: UInt64) -> DTUHIDValue {
-        envelope("IndigoDigitizerEvent", service: digitizerService, payload: [
+    public static func touch(x: Double, y: Double, phase: TouchPhase, target: UInt64, service: String = digitizerService) -> DTUHIDValue {
+        envelope("IndigoDigitizerEvent", service: service, payload: [
             "pointOne": .dictionary(["x": .double(x), "y": .double(y)]),
             "eventType": .uint(phase.rawValue),
             "edge": .uint(0),
             "target": .uint(target),
+        ])
+    }
+
+    /// A USB HID keyboard usage, the same code the simulator's key events carry.
+    public static func keyboard(usage: UInt64, state: ButtonState, service: String = keyboardService) -> DTUHIDValue {
+        envelope("IndigoKeyboardButtonEvent", service: service, payload: ["usageCode": .uint(usage), "state": .uint(state.rawValue)])
+    }
+
+    public static func button(usagePage: UInt64, usage: UInt64, state: ButtonState, service: String = buttonService) -> DTUHIDValue {
+        envelope("IndigoButtonEvent", service: service, payload: [
+            "usagePage": .uint(usagePage),
+            "usageCode": .uint(usage),
+            "state": .uint(state.rawValue),
         ])
     }
 

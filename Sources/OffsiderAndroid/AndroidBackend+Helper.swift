@@ -64,6 +64,24 @@ extension AndroidBackend {
         return .useKeys(warning: "The focused field on \(serial) does not accept replacement text (\(refusal)), so Offsider clears it with Ctrl+A and Delete, then types.")
     }
 
+    /// The helper for input, started if needed under the tree's rules; when not `required`, a busy or unavailable helper is nil.
+    func helperForInput(_ serial: String, required: Bool) async throws -> HelperSession? {
+        let source: AndroidTreeSource
+        do {
+            source = try await treeSource(for: serial, announcingFallback: false)
+        } catch let error as AndroidError where !required && (error.kind == .helperBusy || error.kind == .helperUnavailable) {
+            log(.debug, "Input on \(serial) goes through `input`: \(error.message)")
+            return nil
+        }
+        switch source {
+        case .helper(let session):
+            return session
+        case .uiautomator(let reason):
+            guard !required else { throw AndroidError.helperUnavailableForInput(serial, reason: reason) }
+            return nil
+        }
+    }
+
     /// The helper this command already started on `serial`, for callers that must never start one.
     func runningHelper(for serial: String) -> HelperSession? {
         guard case .helper(let session) = treeSources[serial] else { return nil }

@@ -15,4 +15,10 @@ public struct DeviceID: Hashable, Sendable, CustomStringConvertible {
     }
 
     public var description: String { rawValue }
+
+    /// A physical iPhone or iPad rather than a simulator; both share the `ios` platform.
+    public var isPhysicalIOSDevice: Bool {
+        guard platform == .ios, case .iosDevice = DeviceIDClassifier.classify(rawValue) else { return false }
+        return true
+    }
 }

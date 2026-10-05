@@ -63,6 +63,7 @@ struct StatusBarCommand: AsyncParsableCommand {
     }
 
     func plan() throws -> (Action, StatusBarOverride?) {
+        try CLIError.refuseOnPhone(deviceOption.id, command: "status-bar", alternative: "Use an iOS simulator for a clean status bar.")
         guard let parsed = Action(rawValue: action.trimmingCharacters(in: .whitespaces).lowercased()) else {
             throw ValidationError("Unknown action '\(action)'. Use override, clear or show.")
         }

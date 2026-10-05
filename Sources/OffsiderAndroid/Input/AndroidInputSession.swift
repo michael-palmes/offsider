@@ -23,6 +23,7 @@ struct AdbDeviceShell: Sendable {
 enum AndroidInputExecutor: Sendable {
     case adb(AdbDeviceShell)
     case grpc(GrpcInputDriver)
+    case helper(HelperInputDriver)
 }
 
 /// How `type --replace` went: the helper set the text, or the session must clear the field with keys and type.
@@ -103,6 +104,49 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
+    /// Through the helper, down, hold and up are one `inject`; elsewhere, the shared timed down and up.
+    func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+        guard case .helper = try await route().executor else {
+            try await separatePhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
+            return
+        }
+        if let preDelay, preDelay > 0 {
+            try await sleep(.seconds(preDelay))
+        }
+        try await perform(.composite([
+            .touch(direction: .down, x: point.x, y: point.y),
+            .delay(TapTiming.defaultHoldDuration),
+            .touch(direction: .up, x: point.x, y: point.y),
+        ]))
+        if let postDelay, postDelay > 0 {
+            try await sleep(.seconds(postDelay))
+        }
+    }
+
+    /// The `InputSession` default: after a failure that follows the down, only a best-effort up, never a second down.
+    private func separatePhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+        if let preDelay, preDelay > 0 {
+            try await Task.sleep(for: .seconds(preDelay))
+        }
+        let up = InputEvent.touch(direction: .up, x: point.x, y: point.y)
+        var didTouchDown = false
+        do {
+            try await perform(.touch(direction: .down, x: point.x, y: point.y))
+            didTouchDown = true
+            try await Task.sleep(for: .seconds(TapTiming.defaultHoldDuration))
+            try await perform(up)
+            didTouchDown = false
+        } catch {
+            if didTouchDown {
+                try? await perform(up)
+            }
+            throw error
+        }
+        if let postDelay, postDelay > 0 {
+            try await Task.sleep(for: .seconds(postDelay))
+        }
+    }
+
     private func dispatch(_ event: InputEvent) async throws {
         let route = try await route()
         var down = touchIsDown
@@ -132,6 +176,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
         case .keys(let chunks):
             if case .grpc(let driver) = route.executor {
                 try await type(chunks, on: driver.emulator)
+                return
+            }
+            if case .helper(let driver) = route.executor {
+                try await driver.type(chunks)
                 return
             }
             let commands = try chunks.flatMap { chunk -> [String] in
@@ -208,6 +256,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 try await shell.run("input motionevent UP \(Int(point.x.rounded())) \(Int(point.y.rounded()))")
             case .grpc(let driver):
                 try await driver.touch(point, down: false)
+            case .helper(let driver):
+                try await driver.lift(at: point)
             }
         } catch {
             log(.warning, "Could not lift the touch left down on \(device.rawValue): \(error.localizedDescription)")
@@ -232,9 +282,15 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 }
             case .grpc(let driver):
                 try await driver.run(steps)
+            case .helper(let driver):
+                try await driver.run(steps)
             }
         } catch {
-            if pressesDown { touchIsDown = true }
+            if case .helper(let driver) = executor, driver.releasedInput {
+                touchIsDown = false
+            } else if pressesDown {
+                touchIsDown = true
+            }
             throw error
         }
     }

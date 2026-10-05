@@ -168,9 +168,9 @@ enum ScreenCapture {
         return RenderedScreenshot(image: image, pixelsPerPoint: pixelsPerPoint, region: region, untouchedPNG: untouched)
     }
 
-    /// Volatile bands in the rendered image's pixels: whole, upright, portrait screens only, as `--verify` does.
+    /// Volatile bands in the rendered image's pixels: whole, upright screens, in portrait unless the bands hold in every orientation, as `--verify` does.
     nonisolated static func bandPixels(_ rendered: RenderedScreenshot, capture: CapturedScreen, bands: ScreenBands) -> (top: Int, bottom: Int) {
-        guard rendered.region == nil, capture.upright, let screen = capture.screen, screen.height >= screen.width,
+        guard rendered.region == nil, capture.upright, let screen = capture.screen, bands.everyOrientation || screen.height >= screen.width,
               let pixelsPerPoint = rendered.pixelsPerPoint else {
             return (0, 0)
         }

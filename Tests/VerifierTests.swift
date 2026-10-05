@@ -78,6 +78,29 @@ private func screen(shade: UInt8) -> Data {
 }
 
 /// `screen(shade: 10)` except its bottom 16 rows, which sit inside a 48-point bottom band at this scale.
+/// The `screen(shade: 10)` image with its rightmost 8 columns painted `shade`.
+private func rightEdge(shade: UInt8) -> Data {
+    let width = 64, height = 128
+    var bytes = [UInt8](repeating: 255, count: width * height * 4)
+    for y in 0..<height {
+        for x in 0..<width {
+            if x >= width - 8 { bytes[(y * width + x) * 4] = shade } else if y >= 64 { bytes[(y * width + x) * 4] = 10 }
+        }
+    }
+    let provider = CGDataProvider(data: Data(bytes) as CFData)!
+    let image = CGImage(
+        width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+    )!
+    let data = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, image, nil)
+    CGImageDestinationFinalize(destination)
+    return data as Data
+}
+
 private func bottomBar(shade: UInt8) -> Data {
     let width = 64, height = 128
     var bytes = [UInt8](repeating: 255, count: width * height * 4)
@@ -368,10 +391,30 @@ struct VerifierTests {
         let portrait = AccessibilitySnapshot.Frame(x: 0, y: 0, width: 32, height: 64)
         let landscape = AccessibilitySnapshot.Frame(x: 0, y: 0, width: 64, height: 32)
         let android = ScreenBands(top: 60, bottom: 48)
-        #expect(Verifier.bandPixels(pngData: png, screenFrame: portrait, bands: android) == (120, 96))
-        #expect(Verifier.bandPixels(pngData: png, screenFrame: portrait, bands: ScreenBands(top: 60, bottom: 0)) == (120, 0))
-        #expect(Verifier.bandPixels(pngData: png, screenFrame: landscape, bands: android) == (0, 0))
-        #expect(Verifier.bandPixels(pngData: png, screenFrame: nil, bands: android) == (0, 0))
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: portrait, bands: android) == (120, 96, 0, 0))
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: portrait, bands: ScreenBands(top: 60, bottom: 0)) == (120, 0, 0, 0))
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: landscape, bands: android) == (0, 0, 0, 0))
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: nil, bands: android) == (0, 0, 0, 0))
+    }
+
+    @Test("A physical device's status bar band follows the UI's top edge onto the raw screenshot in every orientation", arguments: [
+        (0, 124, 0, 0, 0), (1, 0, 0, 0, 124), (2, 0, 124, 0, 0), (3, 0, 0, 124, 0),
+    ])
+    func deviceBandsInLandscape(turns: Int, top: Int, bottom: Int, left: Int, right: Int) {
+        let png = screen(shade: 10)
+        let landscape = AccessibilitySnapshot.Frame(x: 0, y: 0, width: 64, height: 32)
+        let device = ScreenBands(top: 62, bottom: 0, everyOrientation: true, screenshotQuarterTurns: turns)
+        #expect(Verifier.bandPixels(pngData: png, screenFrame: landscape, bands: device) == (top, bottom, left, right))
+    }
+
+    @Test("Pixels in excluded side columns never count as a change")
+    func sideColumnsExcluded() throws {
+        let before = try #require(ImageFingerprint(pngData: screen(shade: 10), excludingRightPixels: 8))
+        let changedRight = try #require(ImageFingerprint(pngData: rightEdge(shade: 200), excludingRightPixels: 8))
+        #expect(!ScreenChange.detect(before: before, after: [changedRight]))
+        #expect(before.comparedTileCount == 14 * 32)
+        let unmasked = try #require(ImageFingerprint(pngData: rightEdge(shade: 200)))
+        #expect(ScreenChange.detect(before: try #require(ImageFingerprint(pngData: screen(shade: 10))), after: [unmasked]))
     }
 
     @Test("A screen change only in the bottom band verifies with no bottom band and not with one")
