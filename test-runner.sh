@@ -62,6 +62,7 @@ show_usage() {
     echo "      --rn-debug      With --rn-ios or --android: build the Debug app, start Metro on 8742 and run only ReactNativeDebugSmokeTests"
     echo "      --foldable      Build Offsider and the playground, then run FoldableTests on the Offsider Duo iPhone"
     echo "      --android-fold  Build Offsider and run AndroidFoldableTests on the Offsider_E2E_Pixel_9_Pro_Fold AVD"
+    echo "      --android-phone Build Offsider and run the AndroidPhone*Tests suites on the USB phone OFFSIDER_ANDROID_PHONE names"
     echo "  -c, --clean         Clean build before building"
     echo "  -s, --sequential    Run suites one-by-one (single simulator-safe flow)"
     echo "  -v, --verbose       Verbose output"
@@ -85,6 +86,10 @@ show_usage() {
     echo "Foldables (--foldable, --android-fold):"
     echo "  SIMULATOR_UDID            The iPhone Duo simulator for --foldable (default: the one named Offsider Duo iPhone, booted first)"
     echo "  OFFSIDER_ANDROID_DEVICE   For --android-fold: the fold emulator's serial or AVD name (default: Offsider_E2E_Pixel_9_Pro_Fold)"
+    echo ""
+    echo "Android phone (--android-phone):"
+    echo "  OFFSIDER_ANDROID_PHONE    Required: the phone's exact USB serial from adb devices -l; no other device is touched"
+    echo "  OFFSIDER_ANDROID_APK      The React Native playground's release APK, installed once and left in place"
     echo ""
     echo "React Native on iOS (--rn-ios, needs pnpm):"
     echo "  OFFSIDER_RN_IOS_APP       The Release simulator app (default: built by scripts/rn-playground.sh build-ios --if-changed)"
@@ -127,6 +132,7 @@ show_usage() {
     echo "  $0 --android ReactNativeRowsTests   # Run one React Native suite on the Android emulator"
     echo "  $0 --foldable       # Run the foldable suite on the Offsider Duo iPhone (unfold it in Device Hub when asked)"
     echo "  $0 --android-fold   # Run the foldable suite on the Pixel 9 Pro Fold AVD"
+    echo "  OFFSIDER_ANDROID_PHONE=<serial> $0 --android-phone   # Run the phone suites on one USB phone"
     echo "  $0 -b               # Only build, skip tests"
     echo "  $0 -c               # Clean build and run all tests"
 }
@@ -141,6 +147,7 @@ RN_DEBUG=false
 RN_METRO_STARTED=false
 FOLDABLE=false
 ANDROID_FOLD=false
+ANDROID_PHONE=false
 FOLDABLE_SIMULATOR_NAME="Offsider Duo iPhone"
 ANDROID_FOLD_AVD="Offsider_E2E_Pixel_9_Pro_Fold"
 CLEAN_BUILD=false
@@ -213,6 +220,10 @@ while [[ $# -gt 0 ]]; do
             ANDROID_FOLD=true
             shift
             ;;
+        --android-phone)
+            ANDROID_PHONE=true
+            shift
+            ;;
         -c|--clean)
             CLEAN_BUILD=true
             shift
@@ -254,6 +265,17 @@ if [[ "$FOLDABLE" == true || "$ANDROID_FOLD" == true ]]; then
     fi
     if [[ "$ANDROID" == true || "$RN_IOS" == true || "$RN_DEBUG" == true || "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
         print_error "--foldable and --android-fold can only be combined with --tests-only and --verbose."
+        exit 1
+    fi
+fi
+
+if [[ "$ANDROID_PHONE" == true ]]; then
+    if [[ "$FOLDABLE" == true || "$ANDROID_FOLD" == true || "$ANDROID" == true || "$RN_IOS" == true || "$RN_DEBUG" == true || "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
+        print_error "--android-phone can only be combined with --tests-only and --verbose."
+        exit 1
+    fi
+    if [[ -z "${OFFSIDER_ANDROID_PHONE:-}" ]]; then
+        print_error "Set OFFSIDER_ANDROID_PHONE to the phone's USB serial from 'adb devices -l'."
         exit 1
     fi
 fi
@@ -315,7 +337,7 @@ check_prerequisites() {
         exit 1
     fi
 
-    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true ]] && ! command -v jq &> /dev/null; then
+    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true && "$ANDROID_PHONE" != true ]] && ! command -v jq &> /dev/null; then
         print_error "jq not found. Install jq to select the matching simulator runtime."
         exit 1
     fi
@@ -325,7 +347,7 @@ check_prerequisites() {
         exit 1
     fi
 
-    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true && "$RN_IOS" != true ]] && ! command -v xcodegen &> /dev/null; then
+    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true && "$ANDROID_PHONE" != true && "$RN_IOS" != true ]] && ! command -v xcodegen &> /dev/null; then
         print_error "xcodegen not found. Install it with 'brew install xcodegen' to generate the playground project."
         exit 1
     fi
@@ -730,6 +752,30 @@ run_android_fold_tests() {
     print_success "Android foldable suite passed"
 }
 
+# The phone suites alone, on the one USB phone OFFSIDER_ANDROID_PHONE names; the emulator suites stay off.
+run_android_phone_tests() {
+    print_header "Running Android Phone E2E Tests"
+    ensure_test_framework_rpaths
+
+    export OFFSIDER_ANDROID_PHONE
+    export OFFSIDER_ANDROID_E2E=0
+    export OFFSIDER_ANDROID_FOLD_E2E=0
+    export OFFSIDER_E2E=0
+    export OFFSIDER_LANDSCAPE_E2E=0
+    export OFFSIDER_RN_E2E=0
+    export OFFSIDER_RN_DEBUG_E2E=0
+    unset OFFSIDER_ANDROID_DEVICE OFFSIDER_ANDROID_DEBUG_APK
+    if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
+        OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
+    fi
+    export OFFSIDER_BIN_PATH
+    resolve_android_apk
+    export OFFSIDER_ANDROID_APK
+    print_info "Environment: OFFSIDER_ANDROID_PHONE=$OFFSIDER_ANDROID_PHONE, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
+    run_suite_list "AndroidPhoneInputTests" "AndroidPhoneScreenshotTests" "AndroidPhoneHelperTests" "AndroidPhoneTimingTests"
+    print_success "Android phone suites passed"
+}
+
 # Picks the Offsider Duo iPhone unless SIMULATOR_UDID already names a simulator.
 select_foldable_simulator() {
     if [[ -n "$SIMULATOR_UDID" ]]; then
@@ -972,6 +1018,15 @@ main() {
 
     # Always check prerequisites
     check_prerequisites
+
+    if [[ "$ANDROID_PHONE" == true ]]; then
+        if [[ "$TESTS_ONLY" != true ]]; then
+            build_idb_xcframeworks
+            build_offsider
+        fi
+        run_android_phone_tests
+        return
+    fi
 
     if [[ "$ANDROID_FOLD" == true ]]; then
         if [[ "$TESTS_ONLY" != true ]]; then

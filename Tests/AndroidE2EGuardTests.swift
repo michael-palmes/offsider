@@ -63,3 +63,59 @@ struct AndroidE2EGuardTests {
         }
     }
 }
+
+@Suite("Android phone E2E guard")
+struct AndroidPhoneGuardTests {
+    private static let devices = """
+    List of devices attached
+    emulator-5554          device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a transport_id:1
+    R5CRFAKE01            device usb:1-1 product:q2qksx model:SM_F926B device:q2q transport_id:4
+    R5CRFAKE01X           device usb:1-2 product:q2qksx model:SM_F926B device:q2q transport_id:5
+    ZYFAKE0002             unauthorized usb:2-1 transport_id:6
+    192.168.1.5:5555       device product:pixel model:Pixel_8 device:shiba transport_id:7
+    NOUSB0001              device product:x model:y device:z transport_id:8
+    """
+
+    private func refused(_ result: Result<String, AndroidE2EError>) -> String? {
+        if case .failure(let error) = result { return error.description }
+        return nil
+    }
+
+    @Test("the exact serial in state device with a usb: field passes, and only that serial is returned")
+    func exactUSBSerialPasses() throws {
+        #expect(try AndroidPhoneGuard.verdict(requested: "R5CRFAKE01", emulatorE2E: false, devices: Self.devices).get() == "R5CRFAKE01")
+    }
+
+    @Test("a serial that is only a prefix of a listed one is refused, never matched to the longer serial")
+    func prefixRefused() {
+        #expect(refused(AndroidPhoneGuard.verdict(requested: "RFCRA0TCR5", emulatorE2E: false, devices: Self.devices))?.contains("does not list it") == true)
+    }
+
+    @Test("an unauthorised phone, or one with no usb: field, is refused")
+    func stateAndTransportRefused() {
+        #expect(refused(AndroidPhoneGuard.verdict(requested: "ZYFAKE0002", emulatorE2E: false, devices: Self.devices))?.contains("unauthorized") == true)
+        #expect(refused(AndroidPhoneGuard.verdict(requested: "NOUSB0001", emulatorE2E: false, devices: Self.devices))?.contains("no usb: field") == true)
+    }
+
+    @Test("an emulator or network serial is refused before any adb call", arguments: ["emulator-5554", "192.168.1.5:5555", "R5 CR", "a;b"])
+    func shapeRefused(serial: String) {
+        guard case .failure = AndroidPhoneGuard.preflight(requested: serial, emulatorE2E: false) else {
+            Issue.record("\(serial) passed the preflight")
+            return
+        }
+    }
+
+    @Test("the phone guard refuses to run beside the emulator suites, even for a listed phone")
+    func refusesWithEmulatorE2E() {
+        let message = refused(AndroidPhoneGuard.verdict(requested: "R5CRFAKE01", emulatorE2E: true, devices: Self.devices))
+        #expect(message?.contains("OFFSIDER_ANDROID_E2E") == true)
+    }
+
+    @Test("the phone suites never send emu commands")
+    func phoneSuitesSendNoEmu() throws {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("AndroidE2E/AndroidPhoneTests.swift")
+        let source = try String(contentsOf: file, encoding: .utf8)
+        #expect(!source.contains("emu "), "AndroidPhoneTests.swift sends an emulator console command")
+        #expect(!source.contains("emulatorClient"), "AndroidPhoneTests.swift reaches for the emulator gRPC client")
+    }
+}

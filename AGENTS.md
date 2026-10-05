@@ -45,6 +45,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites (needs `OFFSIDER_ANDROID_DEVICE`) |
 | `./test-runner.sh --foldable` or `make e2e-foldable` | Build Offsider and the playground, run `FoldableTests` on the `Offsider Duo iPhone` (or `SIMULATOR_UDID`) |
 | `./test-runner.sh --android-fold` or `make e2e-android-fold` | Build Offsider and run `AndroidFoldableTests` on `Offsider_E2E_Pixel_9_Pro_Fold` |
+| `OFFSIDER_ANDROID_PHONE=<serial> ./test-runner.sh --android-phone` or `make e2e-android-phone` | Build Offsider and run the `AndroidPhone*Tests` suites on that one USB phone (only when the user names it) |
 | `./test-runner.sh --rn-ios` or `make e2e-rn-ios` | Build Offsider and the RN playground, run the React Native suites on a simulator (needs pnpm) |
 | `./test-runner.sh --rn-ios --rn-debug` or `--android --rn-debug` | Build the RN debug app, start Metro on 8742 and run the debug smoke suite (`make e2e-rn-debug-ios`, `make e2e-rn-debug-android`) |
 | `scripts/generate-emulator-grpc.sh [--check]` or `make grpc-generate` | Regenerate the emulator gRPC client from the vendored proto; `--check` compares with the checked-in code |
@@ -75,6 +76,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD |
 | `OFFSIDER_FOLDABLE_E2E=1` | Enables `FoldableTests` on the iPhone Duo simulator named by `SIMULATOR_UDID` |
 | `OFFSIDER_ANDROID_FOLD_E2E=1` | Enables `AndroidFoldableTests` (needs `OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E_Pixel_9_Pro_Fold`) |
+| `OFFSIDER_ANDROID_PHONE` | The exact USB serial the `AndroidPhone*Tests` suites drive (an `adb devices -l` row with `usb:` and state `device`; refused beside `OFFSIDER_ANDROID_E2E`) |
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
