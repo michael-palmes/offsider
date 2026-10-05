@@ -16,6 +16,12 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case usbmuxUnavailable
         case usbmuxFailed
         case runnerUnavailable
+        case locked
+        case uiAutomationOff
+        case xcodeTooOld
+        case notSupported
+        case unsupportedButton
+        case hidFailed
     }
 
     public let kind: Kind
@@ -132,6 +138,12 @@ extension IOSDeviceError: OffsiderFailure {
         case .usbmuxUnavailable: return .usbmuxUnavailable
         case .usbmuxFailed: return .commandFailed
         case .runnerUnavailable: return .runnerUnavailable
+        case .locked: return .deviceLocked
+        case .uiAutomationOff: return .uiAutomationOff
+        case .xcodeTooOld: return .xcodeTooOld
+        case .notSupported: return .notSupported
+        case .unsupportedButton: return .unsupportedButton
+        case .hidFailed: return .inputFailed
         }
     }
 

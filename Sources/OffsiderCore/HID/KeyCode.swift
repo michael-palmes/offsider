@@ -1,12 +1,12 @@
 import Foundation
 
-struct KeyEvent {
-    let keyCode: Int
-    let shift: Bool
+public struct KeyEvent: Equatable, Sendable {
+    public let keyCode: Int
+    public let shift: Bool
 }
 
 extension KeyEvent {
-    var stringForKeyCode: String {
+    public var stringForKeyCode: String {
         switch (keyCode, shift) {
             case (4, false): return "a"
             case (5, false): return "b"
@@ -108,7 +108,7 @@ extension KeyEvent {
         }
     }
     
-    static func keyCodeForString(_ string: String) -> KeyEvent {
+    public static func keyCodeForString(_ string: String) -> KeyEvent {
         guard let character = string.first, string.count == 1 else { return KeyEvent(keyCode: 0, shift: false) }
         
         switch String(character) {

@@ -254,7 +254,7 @@ extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let inputText = try resolvedText()
 
-        if context.device.platform == .android {
+        if context.device.platform == .android || context.device.isPhysicalIOSDevice {
             if replace {
                 return [.text(inputText, replace: true)]
             }

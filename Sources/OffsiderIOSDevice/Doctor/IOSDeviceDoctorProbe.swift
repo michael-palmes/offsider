@@ -7,12 +7,21 @@ public struct IOSDeviceDoctorProbe {
     public static let usbmuxdSocket = "/var/run/usbmuxd"
     static let teamVariable = "OFFSIDER_IOS_TEAM_ID"
 
+    /// Opens the digitizer socket to a device by CoreDevice identifier, display name and UDID.
+    public typealias HIDProbe = @MainActor (_ identifier: String, _ name: String, _ udid: String) async -> IOSDeviceDoctorFacts.HIDFact
+
     let host: IOSDeviceHost
     let xcodeTeams: @Sendable () -> [String]
+    let hid: HIDProbe
 
-    public init(host: IOSDeviceHost = .live(), xcodeTeams: @escaping @Sendable () -> [String] = IOSDeviceDoctorProbe.signedInTeams) {
+    public init(
+        host: IOSDeviceHost = .live(),
+        xcodeTeams: @escaping @Sendable () -> [String] = IOSDeviceDoctorProbe.signedInTeams,
+        hid: @escaping HIDProbe = IOSDeviceDoctorProbe.liveHID
+    ) {
         self.host = host
         self.xcodeTeams = xcodeTeams
+        self.hid = hid
     }
 
     public struct Result: Sendable {
@@ -54,6 +63,9 @@ public struct IOSDeviceDoctorProbe {
                 device = details
             }
             facts.lock = await lockFact(device.udid, directory: directory)
+            if device.developerModeStatus == "enabled", device.ddiServicesAvailable == true {
+                facts.hid = await hidFact(device, coreDeviceVersion: facts.coreDeviceVersion)
+            }
         }
         facts.listing = .listed(IOSDeviceDoctorRow(
             label: device.label,
@@ -95,6 +107,48 @@ public struct IOSDeviceDoctorProbe {
             return .read(passcodeRequired: DevicectlLockInfo.passcodeRequired(Data(lock.utf8)), backlightOn: DevicectlLockInfo.backlightOn(Data(displays.utf8)))
         } catch {
             return .unreadable(Self.message(error))
+        }
+    }
+
+    /// Below the HID floor nothing is asked of the device.
+    private func hidFact(_ device: DevicectlDevice, coreDeviceVersion: String?) async -> IOSDeviceDoctorFacts.HIDFact {
+        if let version = coreDeviceVersion.flatMap(CoreDeviceVersion.init), !version.supportsHID {
+            return .unsupported(coreDevice: coreDeviceVersion)
+        }
+        guard let identifier = device.coreDeviceIdentifier else {
+            return .socketFailed("devicectl did not report the CoreDevice identifier")
+        }
+        return await hid(identifier, DeviceName.display(device.udid, label: device.label), device.udid)
+    }
+
+    /// The digitizer socket, its barrier, then a harmless probe event; sends nothing the device acts on.
+    public static let liveHID: HIDProbe = { identifier, name, udid in
+        let installed = CoreDeviceVersion.installed()
+        guard let version = installed, version.supportsHID else {
+            return .unsupported(coreDevice: installed?.description)
+        }
+        let link: DeviceDTUHID
+        do {
+            link = try await DeviceDTUHID.connect(
+                deviceIdentifier: identifier, feature: DTUHIDMessage.digitizerService, version: version, name: name, udid: udid, anySent: false
+            )
+        } catch let error as IOSDeviceError {
+            switch error.kind {
+            case .locked: return .locked
+            case .uiAutomationOff: return .refused
+            case .xcodeTooOld: return .unsupported(coreDevice: version.description)
+            default: return .socketFailed(error.message)
+            }
+        } catch {
+            return .socketFailed(error.localizedDescription)
+        }
+        let reply = await link.probe()
+        await link.close()
+        switch reply {
+        case .answered: return .ready
+        case .refused(let error): return error.isLocked ? .locked : .refused
+        case .connectionLost(let detail): return .unresponsive("closed after the barrier: \(detail)")
+        case .timedOut: return .unresponsive("an input probe did not answer")
         }
     }
 

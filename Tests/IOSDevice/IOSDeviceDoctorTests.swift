@@ -23,9 +23,10 @@ struct IOSDeviceDoctorTests {
         xcode: IOSDeviceDoctorFacts.XcodeFact = .found(developerDir: "/Xcode.app/Contents/Developer", version: "27.0", build: "27A266a"),
         listing: IOSDeviceDoctorFacts.ListingFact? = .listed(wired),
         lock: IOSDeviceDoctorFacts.LockFact? = .read(passcodeRequired: true, backlightOn: true),
+        hid: IOSDeviceDoctorFacts.HIDFact? = .ready,
         team: IOSDeviceDoctorFacts.TeamFact = .environment("ABCDE12345")
     ) -> IOSDeviceDoctorFacts {
-        IOSDeviceDoctorFacts(udid: udid, xcode: xcode, coreDeviceVersion: "651.13.4", listing: listing, lock: lock, usbmuxdSocket: true, team: team)
+        IOSDeviceDoctorFacts(udid: udid, xcode: xcode, coreDeviceVersion: "651.13.4", listing: listing, lock: lock, hid: hid, usbmuxdSocket: true, team: team)
     }
 
     static func row(_ change: (inout IOSDeviceDoctorRow) -> Void) -> IOSDeviceDoctorFacts.ListingFact {
@@ -38,14 +39,16 @@ struct IOSDeviceDoctorTests {
         Dictionary(uniqueKeysWithValues: checks.map { ($0.id.rawValue, $0.status) })
     }
 
-    @Test("a wired, trusted, prepared phone passes every check in the documented order")
+    @Test("a wired, trusted, prepared phone passes every check in the documented order; UI Automation cannot be read")
     func healthy() {
         let checks = IOSDeviceDoctorRules.checks(Self.facts())
         #expect(checks.map(\.id.rawValue) == [
             "ios-device.xcode", "ios-device.coredevice", "ios-device.listed", "ios-device.transport", "ios-device.pairing",
-            "ios-device.developer-mode", "ios-device.ddi", "ios-device.tunnel", "ios-device.lock-state", "ios-device.usbmuxd", "ios-device.runner-signing",
+            "ios-device.developer-mode", "ios-device.ddi", "ios-device.tunnel", "ios-device.lock-state",
+            "ios-device.hid", "ios-device.ui-automation", "ios-device.usbmuxd", "ios-device.runner-signing",
         ])
-        #expect(checks.allSatisfy { $0.status == .pass })
+        #expect(checks.filter { $0.id != .iosDeviceUIAutomation }.allSatisfy { $0.status == .pass })
+        #expect(Self.statuses(checks)["ios-device.ui-automation"] == .skip)
         #expect(checks[2].detail == "Apple iPhone 15 Pro Max (\(Self.udid)), iOS 27.2")
     }
 
@@ -53,7 +56,7 @@ struct IOSDeviceDoctorTests {
     func noXcode() {
         let checks = IOSDeviceDoctorRules.checks(Self.facts(xcode: .notFound("No Xcode"), listing: nil, lock: nil))
         #expect(checks[0].status == .fail)
-        #expect(checks.filter { $0.detail == "requires ios-device.xcode" }.count == 8)
+        #expect(checks.filter { $0.detail == "requires ios-device.xcode" }.count == 10)
     }
 
     @Test("a device that is not listed fails listed and skips the rest of the chain")
@@ -63,6 +66,7 @@ struct IOSDeviceDoctorTests {
         #expect(statuses["ios-device.listed"] == .fail)
         #expect(checks.filter { $0.detail == "requires ios-device.listed" }.map(\.id.rawValue) == [
             "ios-device.transport", "ios-device.pairing", "ios-device.developer-mode", "ios-device.ddi", "ios-device.tunnel", "ios-device.lock-state",
+            "ios-device.hid", "ios-device.ui-automation",
         ])
     }
 
@@ -79,7 +83,7 @@ struct IOSDeviceDoctorTests {
     func untrusted() {
         let checks = IOSDeviceDoctorRules.checks(Self.facts(listing: Self.row { $0.pairingState = "unpaired" }, lock: nil))
         #expect(Self.statuses(checks)["ios-device.pairing"] == .fail)
-        #expect(checks.filter { $0.detail == "requires ios-device.pairing" }.count == 4)
+        #expect(checks.filter { $0.detail == "requires ios-device.pairing" }.count == 6)
     }
 
     @Test("missing developer services warn and are the one fixable check")
@@ -130,19 +134,20 @@ struct IOSDeviceDoctorTests {
     func idsFitColumn() {
         let longest = DoctorCheckID.allCases.filter { !$0.isPerIOSDevice }.map(\.rawValue.count).max() ?? 0
         #expect(DoctorCheckID.allCases.filter(\.isPerIOSDevice).allSatisfy { $0.rawValue.count <= longest })
-        #expect(DoctorCheckID.allCases.filter(\.isPerIOSDevice).count == 11)
+        #expect(DoctorCheckID.allCases.filter(\.isPerIOSDevice).count == 13)
     }
 
     // MARK: Probe
 
-    @Test("the probe asks a connected, trusted device for details, lock state and displays; the team comes from the variable")
+    @Test("the probe asks a connected, trusted device for details, lock state, displays and HID; the team comes from the variable")
     func probeConnected() async throws {
+        let hid = HIDRecorder(.refused)
         let devicectl = try FakeDevicectl.listing("devicectl-list-xcode27-disconnected.json", extra: [
             "details": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-details.json"), stderr: ""),
             "lockState": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-lockstate.json"), stderr: ""),
             "displays": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-displays.json"), stderr: ""),
         ])
-        let probe = IOSDeviceDoctorProbe(host: .fake(devicectl, environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], existing: [IOSDeviceDoctorProbe.usbmuxdSocket]), xcodeTeams: { ["SHOULDNOTREAD"] })
+        let probe = IOSDeviceDoctorProbe(host: .fake(devicectl, environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], existing: [IOSDeviceDoctorProbe.usbmuxdSocket]), xcodeTeams: { ["SHOULDNOTREAD"] }, hid: hid.probe)
         let facts = await probe.run(udid: Self.udid).facts
 
         #expect(devicectl.calls.map { $0.first == "list" ? "list" : $0[2] } == ["list", "details", "lockState", "displays"])
@@ -152,12 +157,15 @@ struct IOSDeviceDoctorTests {
         #expect(facts.team == .environment("ABCDE12345"))
         #expect(facts.usbmuxdSocket)
         #expect(facts.coreDeviceVersion == "651.13.4")
+        #expect(facts.hid == .refused)
+        #expect(hid.calls == ["00000000-0000-4000-8000-0000000000A1 \(Self.udid)"])
     }
 
     @Test("the probe never sends a device command to a device it cannot see or that does not trust the Mac")
     func probeQuiet() async throws {
         let devicectl = try FakeDevicectl.listing("devicectl-list-xcode26.json")
-        let probe = IOSDeviceDoctorProbe(host: .fake(devicectl), xcodeTeams: { [] })
+        let hid = HIDRecorder(.ready)
+        let probe = IOSDeviceDoctorProbe(host: .fake(devicectl), xcodeTeams: { [] }, hid: hid.probe)
         let missing = await probe.run(udid: "00008140-0000000000000001").facts
         let untrusted = await probe.run(udid: IOSDeviceFixtures.iPad).facts
 
@@ -166,6 +174,47 @@ struct IOSDeviceDoctorTests {
         #expect(untrusted.row?.pairingState == "unpaired")
         #expect(untrusted.lock == nil)
         #expect(!missing.usbmuxdSocket)
+        #expect(hid.calls.isEmpty)
+    }
+
+    @Test("below CoreDevice 636 the probe reports HID unsupported without opening a socket")
+    func probeBelowFloor() async throws {
+        let listing = try IOSDeviceFixtures.text("devicectl-list-xcode27-disconnected.json").replacingOccurrences(of: "\"651.13.4\"", with: "\"518.24\"")
+        let devicectl = FakeDevicectl(replies: [
+            "list": ProcessCaptureResult(status: 0, stdout: listing, stderr: ""),
+            "details": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-details.json"), stderr: ""),
+        ])
+        let hid = HIDRecorder(.ready)
+        let facts = await IOSDeviceDoctorProbe(host: .fake(devicectl), xcodeTeams: { [] }, hid: hid.probe).run(udid: Self.udid).facts
+
+        #expect(facts.hid == .unsupported(coreDevice: "518.24"))
+        #expect(hid.calls.isEmpty)
+        let check = IOSDeviceDoctorRules.checks(facts).first { $0.id == .iosDeviceHID }
+        #expect(check?.status == .skip)
+        #expect(check?.hint == "Install Xcode 27 for HID input on an iPhone or iPad.")
+    }
+
+    @Test("HID and UI Automation verdicts", arguments: [
+        (IOSDeviceDoctorFacts.HIDFact.ready, CheckStatus.pass, CheckStatus.skip),
+        (.locked, .fail, .skip),
+        (.refused, .fail, .fail),
+        (.socketFailed("no tunnel"), .fail, .skip),
+        (.unresponsive("no answer"), .fail, .skip),
+        (.unsupported(coreDevice: "518.24"), .skip, .skip),
+    ])
+    func hidVerdicts(fact: IOSDeviceDoctorFacts.HIDFact, hid: CheckStatus, uiAutomation: CheckStatus) {
+        #expect(IOSDeviceDoctorRules.hid(fact).status == hid)
+        let verdict = IOSDeviceDoctorRules.uiAutomation(fact)
+        #expect(verdict.status == uiAutomation)
+        #expect((verdict.detail + (verdict.hint ?? "")).contains("Settings > Developer > UI Automation"))
+    }
+
+    @Test("a device with Developer Mode off skips HID behind developer-mode")
+    func hidNeedsDeveloperMode() {
+        let checks = IOSDeviceDoctorRules.checks(Self.facts(listing: Self.row { $0.developerModeStatus = "disabled" }, hid: nil))
+        #expect(checks.filter { $0.detail == "requires ios-device.developer-mode" }.map(\.id.rawValue) == [
+            "ios-device.ddi", "ios-device.tunnel", "ios-device.hid", "ios-device.ui-automation",
+        ])
     }
 
     @Test("--fix mounts the disk image only when the ddi check is fixable")
@@ -201,5 +250,23 @@ struct IOSDeviceDoctorTests {
         #expect(!text.contains("Booted simulators"))
         #expect(!text.contains("CoreSimulator"))
         #expect(text.hasSuffix("Result: no problems found\n"))
+    }
+}
+
+/// Records each HID probe as "<identifier> <udid>" and answers with one fact.
+@MainActor
+final class HIDRecorder {
+    private(set) var calls: [String] = []
+    let answer: IOSDeviceDoctorFacts.HIDFact
+
+    init(_ answer: IOSDeviceDoctorFacts.HIDFact) {
+        self.answer = answer
+    }
+
+    var probe: IOSDeviceDoctorProbe.HIDProbe {
+        { identifier, _, udid in
+            self.calls.append("\(identifier) \(udid)")
+            return self.answer
+        }
     }
 }

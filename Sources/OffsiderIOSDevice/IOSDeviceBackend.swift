@@ -15,6 +15,7 @@ public final class IOSDeviceBackend: DeviceBackend {
     let host: IOSDeviceHost
     let log: IOSDeviceLog
     public let directory: IOSDeviceDirectory
+    public var input = IOSDeviceInputHooks()
     private var xcode: XcodeLocation?
     private var woken: Set<String> = []
 
@@ -74,18 +75,6 @@ public final class IOSDeviceBackend: DeviceBackend {
     }
 
     public func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? { nil }
-
-    public func deviceCoordinates(for points: [(x: Double, y: Double)], tree: UITree?, on id: DeviceID) async throws -> [(x: Double, y: Double)] {
-        throw IOSDeviceError.notYetSupported(id.rawValue, feature: "Input")
-    }
-
-    public func openInputSession(for id: DeviceID) async throws -> any InputSession {
-        throw IOSDeviceError.notYetSupported(id.rawValue, feature: "Input")
-    }
-
-    public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
-        throw IOSDeviceError.notYetSupported(id.rawValue, feature: "Input")
-    }
 
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         throw IOSDeviceError.notYetSupported(id.rawValue, feature: "Taking a screenshot")

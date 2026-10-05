@@ -23,6 +23,19 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         case xcodeTeams([String])
     }
 
+    /// What opening the digitizer socket and probing it showed.
+    public enum HIDFact: Equatable, Sendable {
+        /// Below CoreDevice 636 nothing is asked of the device.
+        case unsupported(coreDevice: String?)
+        case locked
+        case socketFailed(String)
+        /// The socket opened but its barrier never answered.
+        case unresponsive(String)
+        /// The barrier or an ordinary probe event was refused while unlocked.
+        case refused
+        case ready
+    }
+
     public var udid: String
     public var xcode: XcodeFact
     /// From the `devicectl` reply's `info.version`; nil when `devicectl` did not answer.
@@ -31,6 +44,8 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
     public var listing: ListingFact?
     /// Nil when the device was not reachable enough to ask.
     public var lock: LockFact?
+    /// Nil when the device was not ready for developer services, so no socket was opened.
+    public var hid: HIDFact?
     public var usbmuxdSocket: Bool
     public var team: TeamFact
 
@@ -40,6 +55,7 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         coreDeviceVersion: String? = nil,
         listing: ListingFact? = nil,
         lock: LockFact? = nil,
+        hid: HIDFact? = nil,
         usbmuxdSocket: Bool,
         team: TeamFact
     ) {
@@ -48,6 +64,7 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         self.coreDeviceVersion = coreDeviceVersion
         self.listing = listing
         self.lock = lock
+        self.hid = hid
         self.usbmuxdSocket = usbmuxdSocket
         self.team = team
     }

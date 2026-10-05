@@ -25,6 +25,7 @@ public enum IOSDeviceDoctorRules {
 
     private static let chain: [DoctorCheckID] = [
         .iosDeviceCoreDevice, .iosDeviceListed, .iosDeviceTransport, .iosDevicePairing, .iosDeviceDeveloperMode, .iosDeviceDDI, .iosDeviceTunnel, .iosDeviceLockState,
+        .iosDeviceHID, .iosDeviceUIAutomation,
     ]
 
     static func deviceChecks(_ facts: IOSDeviceDoctorFacts) -> [DoctorCheckResult] {
@@ -64,6 +65,11 @@ public enum IOSDeviceDoctorRules {
             checks += [.iosDeviceDDI, .iosDeviceTunnel].map { DoctorCheckResult.skipped($0, "requires \(DoctorCheckID.iosDeviceDeveloperMode.rawValue)") }
         }
         checks.append(DoctorCheckResult(id: .iosDeviceLockState, verdict: lockState(facts.lock)))
+        guard modeVerdict.status == .pass else {
+            return checks + [.iosDeviceHID, .iosDeviceUIAutomation].map { DoctorCheckResult.skipped($0, "requires \(DoctorCheckID.iosDeviceDeveloperMode.rawValue)") }
+        }
+        checks.append(DoctorCheckResult(id: .iosDeviceHID, verdict: hid(facts.hid)))
+        checks.append(DoctorCheckResult(id: .iosDeviceUIAutomation, verdict: uiAutomation(facts.hid)))
         return checks
     }
 
@@ -175,6 +181,36 @@ public enum IOSDeviceDoctorRules {
                 return (.skip, "the device did not report its screen state", nil)
             }
         }
+    }
+
+    static let uiAutomationPath = "Settings > Developer > UI Automation"
+
+    /// The digitizer socket and a barrier on it; below CoreDevice 636 nothing is asked of the device.
+    public static func hid(_ fact: IOSDeviceDoctorFacts.HIDFact?) -> Verdict {
+        switch fact {
+        case nil:
+            return (.skip, "not checked: the developer services were not available", nil)
+        case .unsupported(let version)?:
+            return (.skip, "CoreDevice \(version ?? "unknown") has no HID input", "Install Xcode \(hidXcodeMajor) for HID input on an iPhone or iPad.")
+        case .locked?:
+            return (.fail, "The device is locked, so it refuses HID input", "Unlock the iPhone or iPad, then retry. Offsider never types a passcode.")
+        case .socketFailed(let message)?:
+            return (.fail, "CoreDevice did not open the digitizer: \(message)", "Reconnect the cable and unlock the device, then retry.")
+        case .unresponsive(let message)?:
+            return (.fail, "The digitizer opened but \(message)", "Reconnect the cable, then retry.")
+        case .refused?:
+            return (.fail, "The device refused HID input while unlocked", "Turn on \(uiAutomationPath).")
+        case .ready?:
+            return (.pass, "The digitizer answered", nil)
+        }
+    }
+
+    /// iOS reports no setting for it, so only a refused probe on an unlocked device shows it is off.
+    public static func uiAutomation(_ fact: IOSDeviceDoctorFacts.HIDFact?) -> Verdict {
+        if case .refused? = fact {
+            return (.fail, "Probably off: the device refused input while unlocked", "Turn on \(uiAutomationPath).")
+        }
+        return (.skip, "not readable; it must be on in \(uiAutomationPath)", nil)
     }
 
     public static func usbmuxd(_ socketExists: Bool) -> Verdict {

@@ -119,6 +119,8 @@ struct DoctorReportTests {
             "ios-device.ddi",
             "ios-device.tunnel",
             "ios-device.lock-state",
+            "ios-device.hid",
+            "ios-device.ui-automation",
             "ios-device.usbmuxd",
             "ios-device.runner-signing",
         ])
