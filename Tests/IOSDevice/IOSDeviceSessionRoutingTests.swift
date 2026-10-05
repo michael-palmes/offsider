@@ -127,6 +127,24 @@ struct IOSDeviceInputRoutingTests {
         #expect(second.requests.map(\.op) == ["ping", "keys"])
     }
 
+    @Test("a broker that failed to start is not started again in the same command: Home goes to the runner and screenshots to devicectl at once")
+    func failedStartRemembered() async throws {
+        let connector = FakeSessionConnector(link: nil, failure: IOSDeviceError(.sessionFailed, "The device session did not start."))
+        var host = IOSDeviceHost.fake(try IOSDeviceScreenTests.devicectl(capture: IOSDeviceScreenTests.png))
+        host.sessionConnector = connector
+        let backend = IOSDeviceBackend(host: host) { _, _ in }
+        backend.input.coreDeviceVersion = { CoreDeviceVersion("651.13.4") }
+        let runner = RecordingRunnerSession(device: Self.phone)
+        backend.input.fallbackInputSession = { _ in runner }
+        let session = try await backend.openInputSession(for: Self.phone)
+        try await session.perform(.tapAt(x: 1, y: 1))
+        try await session.perform(.shortButtonPress(.home))
+        #expect(try await backend.screenshotPNG(for: Self.phone) == IOSDeviceScreenTests.png)
+        try await session.perform(.shortButtonPress(.home))
+        #expect(connector.connections == 1)
+        #expect(runner.events == [.tapAt(x: 1, y: 1), .shortButtonPress(.home), .shortButtonPress(.home)])
+    }
+
     @Test("below CoreDevice 636 the runner serves input; with no runner it is xcode_too_old, and no broker is asked")
     func belowFloor() async throws {
         let connector = FakeSessionConnector(link: FakeSessionLink.broker(udid: IOSDeviceFixtures.phone))

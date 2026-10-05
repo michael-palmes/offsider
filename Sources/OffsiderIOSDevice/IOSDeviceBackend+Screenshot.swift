@@ -9,6 +9,7 @@ final class IOSDeviceState {
     var runners: [String: RunnerClient] = [:]
     var connector: (any RunnerConnecting)?
     var sessions: [String: DeviceSessionClient] = [:]
+    var sessionFailures: [String: Error] = [:]
     var sessionConnector: (any DeviceSessionConnecting)?
     var streamNoticeShown = false
 }

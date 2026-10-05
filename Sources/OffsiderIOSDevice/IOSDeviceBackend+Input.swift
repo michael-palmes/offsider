@@ -100,14 +100,20 @@ extension IOSDeviceBackend {
     /// A broker can be reached or started: a test connector, or this `offsider` executable to spawn.
     var sessionsAvailable: Bool { host.sessionConnector != nil || host.sessionExecutable != nil }
 
-    /// One broker connection per device per command, reused or started through `session.json`; a broken one is replaced.
+    /// One broker connection per device per command: a broken one is replaced, and a failed start is not tried again.
     func session(for id: DeviceID) async throws -> DeviceSessionClient {
         let udid = id.rawValue
         if let client = cachedSession(udid) { return client }
+        if let failure = state.sessionFailures[udid] { throw failure }
         let connector = try sessionConnector()
-        let client = try await host.timing.measure("session") { try await connector.connect(udid: udid) }
-        state.sessions[udid] = client
-        return client
+        do {
+            let client = try await host.timing.measure("session") { try await connector.connect(udid: udid) }
+            state.sessions[udid] = client
+            return client
+        } catch {
+            state.sessionFailures[udid] = error
+            throw error
+        }
     }
 
     /// A live broker already serving `id`, never started; nil when none answers.
