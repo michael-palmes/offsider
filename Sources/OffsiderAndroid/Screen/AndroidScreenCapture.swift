@@ -170,6 +170,15 @@ enum AndroidScreenCapture {
 
     /// Raw `screencap`: little-endian u32 width, height, format (and a colour space from API 28), taken only where RGBA or RGBX rows fill the rest exactly.
     static func pixels(fromScreencapRaw output: Data) throws -> Pixels {
+        guard let header = try rawHeader(output) else {
+            throw ImageFailure(detail: "screencap's raw output has no header Offsider can read (\(output.count) bytes, starting \(failureDetail(output).prefix(80)))")
+        }
+        let start = output.startIndex + header.offset + header.length
+        return Pixels(width: header.width, height: header.height, bytes: Data(output[start...]))
+    }
+
+    /// Where raw screencap output's header starts, its length and the image size, without copying the pixels; nil when none fits.
+    static func rawHeader(_ output: Data) throws -> (offset: Int, length: Int, width: Int, height: Int)? {
         let bytes = [UInt8](output.prefix(maxLeadingBytes + 16))
         func word(_ at: Int) -> Int {
             Int(bytes[at]) | Int(bytes[at + 1]) << 8 | Int(bytes[at + 2]) << 16 | Int(bytes[at + 3]) << 24
@@ -184,11 +193,10 @@ enum AndroidScreenCapture {
                 guard format == 1 || format == 2 else {
                     throw ImageFailure(detail: "screencap reported pixel format \(format), not RGBA_8888 or RGBX_8888")
                 }
-                let start = output.startIndex + offset + headerSize
-                return Pixels(width: width, height: height, bytes: Data(output[start...]))
+                return (offset, headerSize, width, height)
             }
         }
-        throw ImageFailure(detail: "screencap's raw output has no header Offsider can read (\(output.count) bytes, starting \(failureDetail(output).prefix(80)))")
+        return nil
     }
 
     /// The three lines `screencap` without `-d` prints first on a device with several displays.

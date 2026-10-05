@@ -22,3 +22,9 @@ enum AndroidCapturePolicy: String, Sendable {
         return policy
     }
 }
+
+/// What `screencap` without `-d` captures on a device with several displays: the active one, or one Offsider must name.
+enum ScreencapPick: Sendable {
+    case activeDisplay
+    case namedDisplay
+}

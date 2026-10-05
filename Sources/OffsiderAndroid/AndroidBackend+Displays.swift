@@ -94,8 +94,8 @@ extension AndroidBackend: DisplayControlling {
             }
         }
         let foldable = (knownDeviceStates[serial]?.count ?? 0) >= 2
-        if !foldable, let uniqueId = activeUniqueIds[serial], uniqueId.hasPrefix("local:") {
-            return (ScreenDisplay(id: DisplayRole.main.rawValue, platformId: String(uniqueId.dropFirst("local:".count))), nil)
+        if !foldable, let platformId = viewportPlatformId(serial) {
+            return (ScreenDisplay(id: DisplayRole.main.rawValue, platformId: platformId), nil)
         }
         let display = displayLists[serial].flatMap { activeDisplay(in: $0, serial: serial) }?.descriptor.screenDisplay
         return (display, foldable ? reading?.committed.posture : nil)
@@ -104,6 +104,12 @@ extension AndroidBackend: DisplayControlling {
     /// Logical display 0's panel, else the probe's viewport, else the only lit panel (One UI names no panel for display 0).
     func activeDisplay(in list: AndroidDisplayList, serial: String) -> AndroidDisplayList.Physical? {
         list.active ?? list.displays.first { $0.uniqueId == activeUniqueIds[serial] } ?? list.soleLitPanel
+    }
+
+    /// The platform id of the panel that display 0's viewport named in the latest shell probe.
+    func viewportPlatformId(_ serial: String) -> String? {
+        guard let uniqueId = activeUniqueIds[serial], uniqueId.hasPrefix("local:") else { return nil }
+        return String(uniqueId.dropFirst("local:".count))
     }
 }
 
@@ -130,7 +136,7 @@ extension AndroidBackend: PostureControlling {
     /// gRPC `setPosture` moves the hinge as the extended controls do; without gRPC, a `cmd device_state` override.
     public func requestPosture(_ posture: Posture, on id: DeviceID) async throws {
         let serial = id.rawValue
-        guard case .androidSerial = DeviceIDClassifier.classify(serial) else {
+        guard !id.isPhysicalAndroidDevice else {
             throw AndroidError.emulatorOnly(
                 "Setting the posture",
                 serial: serial,
