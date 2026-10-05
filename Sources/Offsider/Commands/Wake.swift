@@ -76,8 +76,9 @@ struct Wake: AsyncParsableCommand {
                     hint: "offsider wake --unlock --device \(serial)"
                 )
             }
-            current = try await enterSavedCode(current, on: device, name: name, key: unlockKey, backend: backend, store: store, ledger: ledger)
-            sent.append("code")
+            let attempt = try await enterSavedCode(current, on: device, name: name, key: unlockKey, backend: backend, store: store, ledger: ledger)
+            current = attempt.reading
+            if attempt.typed { sent.append("code") }
         }
         if current.lockScreen == .swipe {
             throw CLIError(errorDescription: "The lock screen of \(name) stayed up after `wm dismiss-keyguard`. Swipe it away on the device.", reason: .deviceLocked)
@@ -87,7 +88,7 @@ struct Wake: AsyncParsableCommand {
         return json ? DeviceStateReport.wake(result, on: device) : line(result, name: name)
     }
 
-    /// One attempt; a rejected code is recorded so no later command types it again.
+    /// One attempt; a rejected code is recorded so no later command types it again, and an untyped one never is.
     @MainActor
     static func enterSavedCode(
         _ reading: AwakeReading,
@@ -97,7 +98,7 @@ struct Wake: AsyncParsableCommand {
         backend: any AwakeControlling,
         store: any UnlockCodeStoring,
         ledger: UnlockAttemptLedger
-    ) async throws -> AwakeReading {
+    ) async throws -> UnlockAttempt {
         func locked(_ message: String, hint: String? = nil) -> CLIError {
             CLIError(errorDescription: message, reason: .deviceLocked, hint: hint)
         }
@@ -117,17 +118,22 @@ struct Wake: AsyncParsableCommand {
         if reading.credential == "pin", !code.isPIN {
             throw locked("\(name) asks for a PIN, but its saved code is not 4 to 16 digits, so Offsider typed nothing. Save its PIN with `\(save)`.", hint: save)
         }
-        let after: AwakeReading
+        let attempt: UnlockAttempt
         do {
-            after = try await backend.enterUnlockCode(code, on: device)
+            attempt = try await backend.enterUnlockCode(code, on: device)
         } catch let failure as any OffsiderFailure where failure.reason == .deviceLocked {
             throw locked("The lock screen of \(name) showed no PIN or password field, so Offsider typed nothing. Unlock it on the device.")
         }
-        if after.lockScreen == .secure {
+        guard attempt.typed else {
+            if attempt.reading.isUsable { return attempt }
+            let retry = "offsider wake --unlock --device \(device.rawValue)"
+            throw locked("The screen of \(name) changed before Offsider typed its code, so nothing was typed. Run `\(retry)` again.", hint: retry)
+        }
+        if attempt.reading.lockScreen == .secure {
             try? ledger.recordFailure(key)
             throw locked("The saved code did not unlock \(name), so Offsider will not type it again until the device is unlocked by hand or the code is saved again with `\(save)`.", hint: save)
         }
-        return after
+        return attempt
     }
 
     /// `Motorola moto g57 (ZY22FAKE01): screen on and unlocked (was off, PIN lock screen showing)`.

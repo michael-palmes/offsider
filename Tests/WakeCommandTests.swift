@@ -161,6 +161,20 @@ struct WakeCommandTests {
         }
     }
 
+    @Test("a code that was never typed, because the screen changed first, is not recorded as rejected")
+    func untypedCodeNotRecorded() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            backend.codeTyped = false
+            backend.afterCode = AwakeReading(screen: .off, lockScreen: .secure, credential: "pin")
+            let error = await #expect(throws: CLIError.self) { try await Self.wake(backend, unlock: true, store: try Self.store("2580"), ledger: ledger) }
+
+            #expect(error?.userFacingDescription.contains("nothing was typed") == true)
+            #expect(error?.hint == "offsider wake --unlock --device ZY22FAKE01")
+            #expect(!ledger.hasFailed("ZY22FAKE01"))
+        }
+    }
+
     @Test("a usable screen clears an earlier failure, as an unlock by hand does")
     func usableClearsLedger() async throws {
         try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in

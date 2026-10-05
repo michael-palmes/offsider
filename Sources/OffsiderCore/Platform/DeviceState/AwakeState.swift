@@ -131,6 +131,18 @@ public struct AwakeReading: Equatable, Sendable {
     }
 }
 
+/// What typing a saved code did.
+public struct UnlockAttempt: Equatable, Sendable {
+    /// False when the screen turned off or the lock screen went before typing, so nothing was sent.
+    public let typed: Bool
+    public let reading: AwakeReading
+
+    public init(typed: Bool, reading: AwakeReading) {
+        self.typed = typed
+        self.reading = reading
+    }
+}
+
 /// What `wake` did and found.
 public struct WakeOutcome: Equatable, Sendable {
     public let previous: AwakeReading

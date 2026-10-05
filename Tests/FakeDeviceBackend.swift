@@ -51,8 +51,9 @@ final class FakeDeviceBackend: DeviceBackend {
     var awake = AwakeReading(screen: .on, lockScreen: .hidden)
     /// What `wake` leaves when the screen was not usable; nil leaves `awake` as it was.
     var afterWake: AwakeReading?
-    /// What typing a code leaves.
+    /// What typing a code leaves, and whether the code was typed at all.
     var afterCode = AwakeReading(screen: .on, lockScreen: .hidden)
+    var codeTyped = true
     private(set) var enteredCodes: [UnlockCode] = []
     /// What `listedName(of:)` serves, as a phone's model or an AVD name.
     var listedDeviceName: String?
@@ -292,10 +293,10 @@ extension FakeDeviceBackend: AwakeControlling {
         listedDeviceName
     }
 
-    func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> AwakeReading {
+    func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> UnlockAttempt {
         stateCalls.append("enter code")
         enteredCodes.append(code)
         awake = afterCode
-        return awake
+        return UnlockAttempt(typed: codeTyped, reading: awake)
     }
 }

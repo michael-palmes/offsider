@@ -58,11 +58,11 @@ extension AndroidBackend: AwakeControlling {
     }
 
     /// Types nothing unless the lock screen is up with its PIN or password field focused, read again just before typing.
-    public func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> AwakeReading {
+    public func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> UnlockAttempt {
         let serial = id.rawValue
         guard try await codeFieldShowing(id) else { throw AndroidError.codeFieldMissing(serial) }
         let state = try await awakeState(on: id)
-        guard state.screen == .on, state.lockScreen == .secure else { return state }
+        guard state.screen == .on, state.lockScreen == .secure else { return UnlockAttempt(typed: false, reading: state) }
         let result = try await requireClient().shell(AndroidAwakeState.codeScript(code), on: serial, timeout: .seconds(15), label: AndroidAwakeState.codeLabel)
         guard result.status == 0 else {
             throw AndroidError.adbCommandFailed(serial: serial, command: AndroidAwakeState.codeLabel, detail: "exit status \(result.status)")
@@ -73,7 +73,7 @@ extension AndroidBackend: AwakeControlling {
             current = try await awakeState(on: id)
             if current.lockScreen != .secure { break }
         }
-        return current
+        return UnlockAttempt(typed: true, reading: current)
     }
 
     /// Up to three tree reads, asking for the code field between them: a fingerprint bouncer shows none.

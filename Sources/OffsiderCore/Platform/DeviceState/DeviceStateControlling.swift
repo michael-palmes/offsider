@@ -36,8 +36,8 @@ public protocol AwakeControlling: DeviceBackend {
     func setStayAwake(_ on: Bool, on id: DeviceID) async throws -> (previous: AwakeReading, current: AwakeReading)
     /// Turns the screen on and dismisses the lock screen, which a PIN, pattern or password leaves showing.
     func wake(on id: DeviceID) async throws -> WakeOutcome
-    /// Types `code` once into the lock screen's focused PIN or password field, then Enter; returns the reading afterwards.
-    func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> AwakeReading
+    /// Types `code` once into the lock screen's focused PIN or password field, then Enter, unless the lock screen changed first.
+    func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> UnlockAttempt
     /// The model or AVD name already read for this device, without a round trip; nil when none was.
     func listedName(of id: DeviceID) -> String?
 }

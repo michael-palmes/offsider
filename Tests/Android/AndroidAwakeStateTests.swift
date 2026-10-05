@@ -208,10 +208,21 @@ struct AndroidAwakeStateTests {
     func enterCode() async throws {
         let states = ScriptedOutputs([Self.state(showing: true), Self.motoAwake])
         let server = Self.server(states: states)
-        let after = try await Self.backend(server).enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device)
+        let attempt = try await Self.backend(server).enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device)
 
-        #expect(after.isUsable)
+        #expect(attempt.typed)
+        #expect(attempt.reading.isUsable)
         #expect(Self.shellCommands(server).filter { $0.hasPrefix("input") } == ["input text '2580' && input keyevent KEYCODE_ENTER"])
+    }
+
+    @Test("a lock screen that went dark between finding the field and typing gets nothing typed")
+    func screenWentDark() async throws {
+        let server = Self.server(states: ScriptedOutputs([Self.state("Asleep", showing: true)]))
+        let attempt = try await Self.backend(server).enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device)
+
+        #expect(!attempt.typed)
+        #expect(attempt.reading.screen == .off)
+        #expect(!Self.shellCommands(server).contains { $0.hasPrefix("input") })
     }
 
     @Test("with no lock screen code field Offsider types nothing and says the device is locked")
