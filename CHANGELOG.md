@@ -51,6 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The bundled skill's router is shorter: `type` and `button` detail, the full `list-devices --json` shape and the Turnstile detail now live in the `selectors`, `android` and `turnstile` guide topics.
 - `wait --timeout` and `wait --seconds` accept up to 900 seconds (was 300), so a wait can outlast a cold React Native bundle; the error names the cap.
 - `stay-awake --json` and `wake --json` report `credential` as `none` when lock settings say no credential is set, instead of null.
+- Documentation only: `offsider guide react-native` explains that airplane mode and `svc wifi|data disable` on an emulator also cut a debug build's route to Metro at `10.0.2.2` (an `adb reverse` the user set keeps working), that per-app network blocking also blocks loopback on API 35 and 36 and is missing on API 34, so Offsider has no `network` command, and that `logs --rn` keeps working.
 
 ### Fixed
 
