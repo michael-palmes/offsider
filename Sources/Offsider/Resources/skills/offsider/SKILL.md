@@ -37,7 +37,7 @@ offsider describe-ui --diff --device <DEVICE_ID>
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop, never kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames are in points (dp on Android). Capture with `screenshot --scale points` when you will tap what you see.
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric` and `stay-awake` change the device and stay changed: read the current value first, and set it back when done (`guide device-state`).
-- A physical iPhone or iPad works over USB only. Input needs Xcode 27 on the Mac, and `describe-ui`, `tap`, `wait` and `assert` take `--app <bundle-id>` to read that app (`guide ios-device`).
+- A physical iPhone or iPad works over USB only, unlocked, with Settings > Developer > UI Automation on (ask the user; `ui_automation_off` or `device_locked` means it is not). Input needs Xcode 27 on the Mac, and `describe-ui`, `tap`, `wait` and `assert` take `--app <bundle-id>` to read that app (`guide ios-device`).
 - When an Android error says the screen is off or locked, run `offsider wake --device <DEVICE_ID>`. Exit 7 `device_locked` means a PIN, pattern or password lock screen: ask the user to unlock it, or run `wake --unlock` if they saved a code. Never ask for or handle a lock screen code; the user saves it with `unlock-code set` in their own terminal.
 
 ## Exit codes
