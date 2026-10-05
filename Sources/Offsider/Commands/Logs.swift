@@ -9,8 +9,9 @@ struct Logs: AsyncParsableCommand {
         discussion: """
         Reads the last 30 seconds by default. Choose one source (--rn, --app or --process) and one window \
         (--last, --since, --duration or --follow). ANSI colour codes, including escaped forms such as \\u001b[32m, \
-        are removed unless --raw. Exits 0 even when nothing matches. On iOS this reads the simulator's unified log; \
-        on Android, logcat.
+        are removed unless --raw. Passwords, tokens, keys, cookies, JWTs and email addresses are replaced with \
+        [redacted] unless --no-redact (or --raw alone); --grep matches the text before redaction. Exits 0 even when \
+        nothing matches. On iOS this reads the simulator's unified log; on Android, logcat.
         """
     )
 
@@ -44,8 +45,11 @@ struct Logs: AsyncParsableCommand {
     @Option(name: .customLong("max-lines"), help: ArgumentHelp("Keep the newest this many entries; 0 keeps all. Ignored with --follow.", valueName: "n"))
     var maxLines: Int = 500
 
-    @Flag(help: "Keep ANSI colour codes in messages.")
+    @Flag(help: "Keep ANSI colour codes in messages; also turns redaction off unless --redact is given.")
     var raw = false
+
+    @Flag(inversion: .prefixedNo, help: "Replace passwords, tokens, keys, cookies, JWTs and email addresses with [redacted] (default on, off with --raw).")
+    var redact: Bool?
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
@@ -108,7 +112,12 @@ struct Logs: AsyncParsableCommand {
     }
 
     func collector() throws -> LogCollector {
-        try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, keepsANSI: raw, retainsEntries: !follow)
+        try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, keepsANSI: raw, redacts: redacts, retainsEntries: !follow)
+    }
+
+    /// `--redact` or `--no-redact` when given, else on unless `--raw`.
+    var redacts: Bool {
+        redact ?? !raw
     }
 
     func run() async throws {
@@ -151,15 +160,25 @@ struct Logs: AsyncParsableCommand {
             print("Following logs on \(booted.id.rawValue); press Ctrl+C to stop.", to: &standardError)
         }
         try await reading.value
-        guard !follow else { return }
-        Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, write: write)
+        if !follow {
+            Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, write: write)
+        }
+        if let footer = Self.redactionFooter(sink.collector.redacted) {
+            print(footer, to: &standardError)
+        }
+    }
+
+    /// The stderr line after a read that redacted something; nil when nothing was.
+    static func redactionFooter(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return "Redacted \(count) \(count == 1 ? "value" : "values") (passwords, tokens, emails); --no-redact shows them."
     }
 
     @MainActor
     static func emit(_ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool, write: (String) -> Void) {
         let entries = collector.entries
         if json {
-            write(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated).jsonLine())
+            write(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated, redacted: collector.redacted).jsonLine())
         } else if !entries.isEmpty {
             write(entries.map { LogText.format($0) }.joined(separator: "\n"))
         }

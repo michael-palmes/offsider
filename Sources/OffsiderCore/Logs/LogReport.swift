@@ -6,15 +6,18 @@ public struct LogReport: Equatable, Sendable {
     public let device: String
     public let entries: [LogEntry]
     public let truncated: Int
+    /// Values masked by redaction; 0 with `--no-redact`.
+    public let redacted: Int
 
-    public init(platform: DevicePlatform, device: String, entries: [LogEntry], truncated: Int) {
+    public init(platform: DevicePlatform, device: String, entries: [LogEntry], truncated: Int, redacted: Int = 0) {
         self.platform = platform
         self.device = device
         self.entries = entries
         self.truncated = truncated
+        self.redacted = redacted
     }
 
-    /// `{"version":1,"platform":"ios","device":"…","entries":[…],"truncated":0}`.
+    /// `{"version":1,"platform":"ios","device":"…","entries":[…],"truncated":0,"redacted":0}`.
     public func jsonLine() -> String {
         OrderedJSON.object([
             ("version", .integer(1)),
@@ -22,6 +25,7 @@ public struct LogReport: Equatable, Sendable {
             ("device", .string(device)),
             ("entries", .array(entries.map(Self.json))),
             ("truncated", .integer(truncated)),
+            ("redacted", .integer(redacted)),
         ]).rendered(compact: true)
     }
 

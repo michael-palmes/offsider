@@ -120,7 +120,7 @@ struct LogsCommandTests {
         ]
         let line = LogReport(platform: .ios, device: "UDID", entries: entries, truncated: 2).jsonLine()
 
-        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\""},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null}],"truncated":2}"#)
+        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\""},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null}],"truncated":2,"redacted":0}"#)
         let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         #expect((object["entries"] as? [Any])?.count == 2)
     }
@@ -154,10 +154,53 @@ struct LogsCommandTests {
         #expect(lines[1].hasSuffix(#""raw":null}"#))
     }
 
+    // MARK: Redaction
+
+    private static let secretLine = #"batch-login {"email":"e2e@example.com","password":"hunter22"}"#
+
+    @Test("redaction is on by default, off with --no-redact or --raw alone, and on with --raw --redact", arguments: [
+        ([String](), true), (["--no-redact"], false), (["--raw"], false), (["--raw", "--redact"], true), (["--redact"], true),
+    ])
+    func redactionFlags(arguments: [String], redacts: Bool) throws {
+        #expect(try Self.command(arguments).collector().redacts == redacts)
+    }
+
+    @Test("--grep matches the unredacted text, then the message and raw line are redacted and counted")
+    func grepBeforeRedaction() throws {
+        var collector = try LogCollector(maxLines: 10, grep: "hunter22", keepsANSI: false, redacts: true)
+        collector.add(LogEntry(message: Self.secretLine, raw: "1790945238.399  4100  4120 I ReactNativeJS: " + Self.secretLine))
+
+        let entry = try #require(collector.entries.first)
+        #expect(entry.message == #"batch-login {"email":"[redacted]","password":"[redacted]"}"#)
+        #expect(entry.raw?.hasSuffix(#"{"email":"[redacted]","password":"[redacted]"}"#) == true)
+        #expect(collector.redacted == 2)
+    }
+
+    @Test("the report counts redacted values, and the stderr footer names --no-redact")
+    @MainActor
+    func reportCountsRedactions() async throws {
+        let backend = FakeLogBackend(entries: [LogEntry(message: Self.secretLine), LogEntry(message: "plain")])
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        var lines: [String] = []
+        try await Self.command(["--json"]).read(from: DeviceRouter.Route(backend: backend, device: device)) { lines.append($0) }
+        let first = try #require(lines.first)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(first.utf8)) as? [String: Any])
+        #expect(object["redacted"] as? Int == 2)
+        #expect(!lines[0].contains("hunter22"))
+
+        lines = []
+        try await Self.command(["--json", "--no-redact"]).read(from: DeviceRouter.Route(backend: backend, device: device)) { lines.append($0) }
+        #expect(lines[0].contains("hunter22"))
+        #expect(lines[0].hasSuffix(#""redacted":0}"#))
+
+        #expect(Logs.redactionFooter(3) == "Redacted 3 values (passwords, tokens, emails); --no-redact shows them.")
+        #expect(Logs.redactionFooter(0) == nil)
+    }
+
     @Test("an empty result is an empty entries array")
     func emptyReport() {
         #expect(LogReport(platform: .android, device: "emulator-5554", entries: [], truncated: 0).jsonLine()
-            == #"{"version":1,"platform":"android","device":"emulator-5554","entries":[],"truncated":0}"#)
+            == #"{"version":1,"platform":"android","device":"emulator-5554","entries":[],"truncated":0,"redacted":0}"#)
     }
 
     // MARK: Flags

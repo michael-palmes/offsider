@@ -23,7 +23,7 @@ The checkbox frame includes the words beside the square, so `tap --label "Verify
 
 ## Logs
 
-`offsider logs --rn --device <DEVICE_ID>` prints `console.log`, `console.warn` and `console.error` output from the last 30 s, in release builds too. Use `--last 2m` (up to `8760h`) or `--since <time>` (up to the year 9999) to widen it, `--grep <regex>` to filter, `--app <bundle id or package>` for one app's native logs and `--duration <seconds>` to collect live output. Logs are the best check that an action did something a screenshot cannot show, such as a request being sent.
+`offsider logs --rn --device <DEVICE_ID>` prints `console.log`, `console.warn` and `console.error` output from the last 30 s, in release builds too. Use `--last 2m` (up to `8760h`) or `--since <time>` (up to the year 9999) to widen it, `--grep <regex>` to filter, `--app <bundle id or package>` for one app's native logs and `--duration <seconds>` to collect live output. Logs are the best check that an action did something a screenshot cannot show, such as a request being sent. Passwords, tokens and emails read `[redacted]` unless `--no-redact` (`guide evidence`).
 
 ## Debug builds
 
