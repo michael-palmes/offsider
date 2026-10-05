@@ -188,9 +188,23 @@ enum AndroidScreenCapture {
                 return Pixels(width: width, height: height, bytes: Data(output[start...]))
             }
         }
-        let text = String(decoding: output.prefix(200), as: UTF8.self)
-        let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
-        throw ImageFailure(detail: "screencap's raw output has no header Offsider can read (\(output.count) bytes, starting \(firstLine.prefix(80)))")
+        throw ImageFailure(detail: "screencap's raw output has no header Offsider can read (\(output.count) bytes, starting \(failureDetail(output).prefix(80)))")
+    }
+
+    /// The three lines `screencap` without `-d` prints first on a device with several displays.
+    static let multiDisplayWarning = ["[Warning] Multiple displays were found", "A display ID can be specified with", "See \"dumpsys SurfaceFlinger --display-id\""]
+
+    static func warnsOfSeveralDisplays(_ output: Data) -> Bool {
+        String(decoding: output.prefix(maxLeadingBytes), as: UTF8.self).contains(multiDisplayWarning[0])
+    }
+
+    /// The first line of screencap's text that is not its multi-display warning, for an error message.
+    static func failureDetail(_ output: Data) -> String {
+        let lines = String(decoding: output.prefix(maxLeadingBytes), as: UTF8.self)
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        let line = lines.first { line in !line.isEmpty && !multiDisplayWarning.contains { line.hasPrefix($0) } }
+        return line.map { String($0.prefix(200)) } ?? "no output"
     }
 
     static let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
@@ -200,6 +214,14 @@ enum AndroidScreenCapture {
         let window = output.prefix(maxLeadingBytes + pngSignature.count)
         guard let range = window.firstRange(of: pngSignature) else { return nil }
         return range.lowerBound == output.startIndex ? output : Data(output[range.lowerBound...])
+    }
+
+    /// The width and height in a PNG's IHDR chunk, read without decoding the image.
+    static func pngSize(_ png: Data) -> (width: Int, height: Int)? {
+        let bytes = [UInt8](png.prefix(24))
+        guard bytes.count == 24, bytes.starts(with: pngSignature), bytes[12..<16].elementsEqual("IHDR".utf8) else { return nil }
+        let word = { (at: Int) in bytes[at..<(at + 4)].reduce(0) { $0 << 8 | Int($1) } }
+        return (word(16), word(20))
     }
 
     static func encodePNG(_ pixels: Pixels) throws -> Data {
