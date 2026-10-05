@@ -61,17 +61,6 @@ struct OffsiderCommand: AsyncParsableCommand {
         ]
     )
 
-    /// The command's path as `CommandEffect.table` keys it, with its parent for a nested command.
-    static func path(of command: any ParsableCommand, name: String) -> String {
-        switch command {
-        case is RNPrepare: return "rn \(name)"
-        case is RunnerStatus, is RunnerStop: return "runner \(name)"
-        case is SessionStatus, is SessionStop: return "session \(name)"
-        case is DeviceSessionServe: return "device-session \(name)"
-        default: return name
-        }
-    }
-
     static func main() async {
         Timings.installTotal()
         let arguments = Array(CommandLine.arguments.dropFirst())
@@ -87,8 +76,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             var command = try parseAsRoot(nil)
             parsed = command
             ErrorReporter.prepare(command: command, arguments: arguments)
-            let name = type(of: command)._commandName
-            let path = Self.path(of: command, name: name)
+            let path = CommandPath.of(command)
             await CommandScope.current.configure(command: path)
             await DeviceClaims.current.configure(
                 command: path,

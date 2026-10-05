@@ -28,7 +28,7 @@ enum ErrorReporter {
     nonisolated(unsafe) static var context = Context(command: nil, wantsJSON: false, device: nil)
 
     static func prepare(command: (any ParsableCommand)?, arguments: [String]) {
-        let name = command.map { type(of: $0)._commandName } ?? arguments.first { !$0.hasPrefix("-") }
+        let name = command.map { CommandPath.of($0) } ?? arguments.first { !$0.hasPrefix("-") }
         let wantsJSON = (command as? any JSONReportingCommand)?.wantsJSON ?? arguments.contains("--json")
         context = Context(command: name, wantsJSON: wantsJSON, device: deviceArgument(in: arguments))
     }
