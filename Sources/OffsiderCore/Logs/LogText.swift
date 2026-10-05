@@ -88,7 +88,8 @@ public enum LogText {
             process: imagePath.map { ($0 as NSString).lastPathComponent },
             pid: (object["processID"] as? NSNumber)?.intValue,
             tag: tag,
-            message: message
+            message: message,
+            raw: message
         )
     }
 

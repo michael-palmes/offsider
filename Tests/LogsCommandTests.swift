@@ -115,14 +115,43 @@ struct LogsCommandTests {
     @Test("the JSON report has version, platform, device, entries with null for missing fields, and truncated")
     func reportShape() throws {
         let entries = [
-            LogEntry(timestamp: Date(timeIntervalSince1970: 1_790_945_238.25), level: "Info", process: "Playground", pid: 4100, tag: "javascript", message: "saved \"draft\""),
+            LogEntry(timestamp: Date(timeIntervalSince1970: 1_790_945_238.25), level: "Info", process: "Playground", pid: 4100, tag: "javascript", message: "saved \"draft\"", raw: "\u{1B}[32msaved\u{1B}[39m \"draft\""),
             LogEntry(message: "bare"),
         ]
         let line = LogReport(platform: .ios, device: "UDID", entries: entries, truncated: 2).jsonLine()
 
-        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\""},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare"}],"truncated":2}"#)
+        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\""},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null}],"truncated":2}"#)
         let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         #expect((object["entries"] as? [Any])?.count == 2)
+    }
+
+    @Test("--raw off strips colour codes from the message but keeps them in raw")
+    func rawKeepsCodesUnderStripping() throws {
+        let collector = try LogCollector(maxLines: 10, grep: nil, keepsANSI: false)
+        let shown = collector.filter(LogEntry(message: "\u{1B}[32mLOG\u{1B}[39m saved", raw: "\u{1B}[32mLOG\u{1B}[39m saved"))
+        #expect(shown?.message == "LOG saved")
+        #expect(shown?.raw == "\u{1B}[32mLOG\u{1B}[39m saved")
+    }
+
+    @Test("--follow --json prints one entry object per line, each with raw")
+    @MainActor
+    func followJSONLines() async throws {
+        let backend = FakeLogBackend(entries: [
+            LogEntry(level: "Info", tag: "ReactNativeJS", message: "one", raw: "1790945238.399  4100  4120 I ReactNativeJS: one"),
+            LogEntry(message: "two"),
+        ])
+        var lines: [String] = []
+        try await Self.command(["--follow", "--json"])
+            .read(from: DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))) { lines.append($0) }
+
+        #expect(lines.count == 2)
+        for line in lines {
+            #expect(!line.contains("\n"))
+            let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+            #expect(object.keys.contains("raw"))
+        }
+        #expect(lines[0].hasSuffix(#""message":"one","raw":"1790945238.399  4100  4120 I ReactNativeJS: one"}"#))
+        #expect(lines[1].hasSuffix(#""raw":null}"#))
     }
 
     @Test("an empty result is an empty entries array")

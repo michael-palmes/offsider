@@ -116,8 +116,16 @@ struct Logs: AsyncParsableCommand {
         try await read(from: try await DeviceRouter.route(deviceOption.id, logger: logger))
     }
 
+    /// Prints one line of stdout at once, so a reader of `--follow` sees each entry as it arrives.
     @MainActor
-    func read(from route: DeviceRouter.Route) async throws {
+    static func printLine(_ line: String) {
+        print(line)
+        fflush(stdout)
+    }
+
+    /// `write` receives each line meant for stdout, without its newline.
+    @MainActor
+    func read(from route: DeviceRouter.Route, write: @escaping @MainActor (String) -> Void = Logs.printLine) async throws {
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
@@ -132,8 +140,7 @@ struct Logs: AsyncParsableCommand {
         let reading = Task { @MainActor in
             try await reader.readLogs(query, on: booted.id) { entry in
                 guard let shown = sink.collector.add(entry), follow else { return }
-                print(json ? LogReport.jsonLine(shown) : LogText.format(shown))
-                fflush(stdout)
+                write(json ? LogReport.jsonLine(shown) : LogText.format(shown))
             }
         }
         let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
@@ -145,18 +152,18 @@ struct Logs: AsyncParsableCommand {
         }
         try await reading.value
         guard !follow else { return }
-        Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json)
+        Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, write: write)
     }
 
-    static func emit(_ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool) {
+    @MainActor
+    static func emit(_ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool, write: (String) -> Void) {
         let entries = collector.entries
         if json {
-            print(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated).jsonLine())
+            write(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated).jsonLine())
         } else if !entries.isEmpty {
-            print(entries.map { LogText.format($0) }.joined(separator: "\n"))
+            write(entries.map { LogText.format($0) }.joined(separator: "\n"))
         }
         if collector.truncated > 0 {
-            fflush(stdout)
             print("Showing the newest \(entries.count) of \(entries.count + collector.truncated) entries; raise --max-lines or narrow with --grep.", to: &standardError)
         }
     }

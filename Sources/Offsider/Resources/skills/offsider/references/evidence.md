@@ -24,3 +24,9 @@ offsider screenshot --mask-secure --mask-emails --mask-id profile-name --json --
 ```bash
 offsider screenshot --compare before.png --diff-output diff.png --json --device <DEVICE_ID>
 ```
+
+## Logs
+
+`offsider logs` reads the last 30 s by default. Choose one source (`--rn`, `--app <bundle id or package>`, `--process <name>`) and one window (`--last 2m`, `--since <time>`, `--duration <seconds>` or `--follow`); `--grep <regex>` filters.
+
+`--json` prints `{"version":1,"platform","device","entries":[...],"truncated"}`; each entry has `timestamp` (ISO 8601, the device's clock), `level`, `process`, `pid`, `tag`, `message` (colour codes removed unless `--raw`) and `raw`, the line as the device wrote it (a whole logcat line, or the iOS message with its colour codes), or null. With `--follow --json`, each entry is one line of its own.

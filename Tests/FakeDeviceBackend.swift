@@ -318,3 +318,32 @@ extension FakeDeviceBackend: ForegroundReading {
         homeIntents += 1
     }
 }
+
+/// A booted device whose log serves `entries` in order, for `logs`.
+@MainActor
+final class FakeLogBackend: LogReading {
+    let platform: DevicePlatform
+    let entries: [LogEntry]
+    private(set) var queries: [LogQuery] = []
+
+    init(platform: DevicePlatform = .android, entries: [LogEntry]) {
+        self.platform = platform
+        self.entries = entries
+    }
+
+    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
+        queries.append(query)
+        entries.forEach(onEntry)
+    }
+
+    func prepare() async throws {}
+    func listDevices() async throws -> [DeviceSummary] { [] }
+    func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice { BootedDevice(id: id, name: "Fake") }
+    func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree { UITree(platform: platform, device: id.rawValue, roots: []) }
+    func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? { nil }
+    func deviceCoordinates(for points: [(x: Double, y: Double)], tree: UITree?, on id: DeviceID) async throws -> [(x: Double, y: Double)] { points }
+    func openInputSession(for id: DeviceID) async throws -> any InputSession { RecordingInputSession() }
+    func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {}
+    func screenshotPNG(for id: DeviceID) async throws -> Data { Data() }
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands { ScreenBands(top: 0, bottom: 0) }
+}

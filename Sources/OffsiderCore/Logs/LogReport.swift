@@ -25,7 +25,7 @@ public struct LogReport: Equatable, Sendable {
         ]).rendered(compact: true)
     }
 
-    /// `{"timestamp":"2026-10-02T12:47:18.399Z","level":"Info","process":"…","pid":1,"tag":"…","message":"…"}`; missing fields are null.
+    /// `{"timestamp":"2026-10-02T12:47:18.399Z","level":"Info","process":"…","pid":1,"tag":"…","message":"…","raw":"…"}`; missing fields are null.
     public static func jsonLine(_ entry: LogEntry) -> String {
         json(entry).rendered(compact: true)
     }
@@ -38,6 +38,7 @@ public struct LogReport: Equatable, Sendable {
             ("pid", .optional(entry.pid, OrderedJSON.integer)),
             ("tag", .optional(entry.tag, OrderedJSON.string)),
             ("message", .string(entry.message)),
+            ("raw", .optional(entry.raw, OrderedJSON.string)),
         ])
     }
 

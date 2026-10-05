@@ -87,6 +87,7 @@ struct LogTextTests {
         #expect(entry.tag == "javascript")
         #expect(entry.process == "Playground")
         #expect(entry.message == "\u{1B}[32mLOG\u{1B}[39m  tapped save")
+        #expect(entry.raw == "\u{1B}[32mLOG\u{1B}[39m  tapped save")
     }
 
     @Test("activity events, the closing count and non-JSON lines are skipped", arguments: [
