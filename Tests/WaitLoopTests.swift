@@ -64,6 +64,35 @@ struct WaitLoopTests {
         #expect(script.treeReads == 3)
     }
 
+    @Test("with a dwell, a 250 ms absence then a return does not satisfy gone, and 500 ms gone does")
+    func goneDwell() async throws {
+        let present = Result<UITree, Error>.success(Self.screen([Self.save]))
+        let absent = Result<UITree, Error>.success(Self.screen())
+        let flicker = Script()
+        flicker.trees = [present, absent, absent, present, present, present, present, present, present]
+        let outcome = try await WaitLoop.run(.element(probe: Self.probe, gone: true, stableFor: 0.5), timeout: 2, interval: 0.125, sources: flicker.sources)
+        #expect(!outcome.met)
+        #expect(outcome.reason == "still on screen")
+
+        let leaves = Script()
+        leaves.trees = [present, absent, absent, absent, absent, absent]
+        let gone = try await WaitLoop.run(.element(probe: Self.probe, gone: true, stableFor: 0.5), timeout: 2, interval: 0.125, sources: leaves.sources)
+        #expect(gone.met)
+        #expect(gone.reason == "gone for 0.5 s")
+        #expect(gone.elapsed == 0.625)
+    }
+
+    @Test("a dwell needs two reads, and a transient failure restarts it")
+    func dwellReadsAndFailures() async throws {
+        let script = Script()
+        script.trees = [.success(Self.screen([Self.save])), .failure(Flicker()), .success(Self.screen([Self.save])), .success(Self.screen([Self.save]))]
+        let outcome = try await WaitLoop.run(.element(probe: Self.probe, gone: false, stableFor: 0.5), timeout: 2, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 1)
+        #expect(outcome.reason == "on screen for 0.5 s")
+        #expect(outcome.match == Self.save)
+    }
+
     @Test("gone is met once the element is absent")
     func elementGone() async throws {
         let script = Script()

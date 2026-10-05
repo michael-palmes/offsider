@@ -29,6 +29,9 @@ struct Wait: AsyncParsableCommand {
     @Option(name: .customLong("settle-by"), help: "What --settled watches (default tree).")
     var settleBy: SettleSource?
 
+    @Option(name: .customLong("stable-for"), help: ArgumentHelp("With a selector, how long the element must stay on screen (or, with --gone, stay gone) before the wait is met, from 0 to 60000 ms. Default 500 for --gone when --timeout is at least 0.5 s, else 0.", valueName: "ms"))
+    var stableForMs: Int?
+
     @Option(help: ArgumentHelp("Watch this rectangle's pixels, in points as describe-ui prints them. Needs --changed or --stable.", valueName: "x,y,w,h"))
     var region: String?
 
@@ -78,6 +81,20 @@ struct Wait: AsyncParsableCommand {
         }
         if gone && selector.query == nil {
             throw ValidationError("--gone needs --id, --label or --value.")
+        }
+        if let stableForMs {
+            if settled || stable {
+                throw ValidationError("--stable-for applies to selector waits; for --settled and --region --stable use --quiet-ms.")
+            }
+            guard selector.query != nil else {
+                throw ValidationError("--stable-for needs --id, --label or --value.")
+            }
+            guard (0...60_000).contains(stableForMs) else {
+                throw ValidationError("--stable-for must be from 0 to 60000 ms; got \(stableForMs).")
+            }
+            if Double(stableForMs) / 1000 > timeout {
+                throw ValidationError("--stable-for is longer than --timeout, so the wait could never succeed. Raise --timeout or lower --stable-for.")
+            }
         }
         if settleBy != nil && !settled {
             throw ValidationError("--settle-by applies to --settled only.")
@@ -153,7 +170,7 @@ struct Wait: AsyncParsableCommand {
 
     var condition: WaitCondition {
         if let query = selector.query {
-            return .element(probe: selector.probe(for: query), gone: gone)
+            return .element(probe: selector.probe(for: query), gone: gone, stableFor: stableFor)
         }
         if settled {
             return .settled(by: settleBy ?? .tree, quiet: quiet)
@@ -189,6 +206,14 @@ struct Wait: AsyncParsableCommand {
         if region != nil { return stable ? "the region to stay still" : "the region to change" }
         return WaitLoop.seconds(seconds ?? 0)
     }
+
+    /// A `--gone` wait holds for half a second by default, so a node that flickers out for one read does not count as gone.
+    var stableFor: TimeInterval {
+        if let stableForMs { return Double(stableForMs) / 1000 }
+        return gone && timeout >= Self.defaultGoneDwell ? Self.defaultGoneDwell : 0
+    }
+
+    static let defaultGoneDwell: TimeInterval = 0.5
 
     private var quiet: TimeInterval {
         Double(quietMs ?? Self.defaultQuietMs) / 1000

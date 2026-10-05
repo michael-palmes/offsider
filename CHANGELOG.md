@@ -62,6 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `screenshot --json` `masked` now counts every rectangle painted by any mask, not only password fields.
 - `logs` redacts by default for every source: passwords, tokens, API keys, cookies, `Authorization` values, JWTs and email addresses read `[redacted]` in `message` and `raw`, `--json` adds `redacted` (the count) and stderr says how many with a pointer to `--no-redact`. `--grep` matches the text before redaction; `--raw` alone turns redaction off as before, and `--raw --redact` keeps colour codes and redacts.
 - The `screenshots` and `react-native` guide topics point to the new `evidence` topic for masking secure fields and personal data, and for log windows, `--json` and redaction.
+- `wait --gone` now needs the element to stay off screen on every read for 500 ms (when `--timeout` is at least 0.5 s), so a node that drops out of one tree read no longer counts as gone; `--stable-for <ms>` (0 to 60000) sets that hold on any selector wait, and `--stable-for 0` restores the old behaviour.
 
 ### Fixed
 

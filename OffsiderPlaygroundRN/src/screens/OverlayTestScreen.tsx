@@ -9,6 +9,9 @@ type Tab = (typeof tabs)[number];
 
 const tabBarHeight = 49;
 const scrimMs = 4000;
+const flickerHiddenMs = 300;
+const flickerCycleMs = 1000;
+const flickerCycles = 6;
 const bannerLabel = 'Connection lost. Can’t reach the server.';
 // clearAllLogs exists at runtime but is missing from React Native's LogBox typings.
 const logBox = LogBox as typeof LogBox & { clearAllLogs: () => void };
@@ -20,6 +23,8 @@ export function OverlayTestScreen() {
   const [scrim, setScrim] = useState(false);
   const [swallowed, setSwallowed] = useState(0);
   const [hiddenTaps, setHiddenTaps] = useState(0);
+  const [flickerHidden, setFlickerHidden] = useState(false);
+  const flickerTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const warnings = useRef(0);
   const errors = useRef(0);
   const scrimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -29,9 +34,21 @@ export function OverlayTestScreen() {
       if (scrimTimer.current) {
         clearTimeout(scrimTimer.current);
       }
+      flickerTimers.current.forEach(clearTimeout);
     },
     [],
   );
+
+  const flicker = () => {
+    fixtureLog('overlay-test', 'flicker');
+    flickerTimers.current.forEach(clearTimeout);
+    flickerTimers.current = [];
+    for (let cycle = 0; cycle < flickerCycles; cycle += 1) {
+      const start = cycle * flickerCycleMs;
+      flickerTimers.current.push(setTimeout(() => setFlickerHidden(true), start));
+      flickerTimers.current.push(setTimeout(() => setFlickerHidden(false), start + flickerHiddenMs));
+    }
+  };
 
   const swallow = (source: string) => {
     fixtureLog('overlay-test', `${source} swallowed a tap`);
@@ -67,6 +84,10 @@ export function OverlayTestScreen() {
           }}
         />
         <Target id="overlay-test-show-scrim" label="Show Silent Scrim" onPress={showScrim} />
+        <Target id="overlay-test-flicker" label="Flicker" onPress={flicker} />
+        <View style={styles.flickerSlot}>
+          {!flickerHidden && <Readout id="overlay-test-flicker-node" label="Flickering Node" />}
+        </View>
         <View style={styles.hiddenArea}>
           <View
             testID="overlay-test-hidden-frame"
@@ -172,6 +193,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   body: { padding: 16, gap: 12, alignItems: 'center' },
   hiddenArea: { width: 240, height: 56 },
+  flickerSlot: { height: 24 },
   hiddenFrame: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',

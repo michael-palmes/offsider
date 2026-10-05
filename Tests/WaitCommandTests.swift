@@ -53,13 +53,17 @@ struct WaitCommandTests {
     @Test("wait --gone passes when only an off-screen copy is left")
     func goneIgnoresOffScreenCopy() async throws {
         let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 10700)])
-        let wait = try Self.command(["--id", "apply", "--gone"])
+        let wait = try Self.command(["--id", "apply", "--gone", "--stable-for", "0"])
 
         let outcome = try await Self.evaluate(wait, on: backend)
 
         #expect(outcome.met)
         #expect(outcome.reason == "off screen at (20, 10700) 350x44")
         #expect(backend.treeReads == 1)
+
+        let dwelling = try await Self.evaluate(try Self.command(["--id", "apply", "--gone"]), on: FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 10700)]))
+        #expect(dwelling.met)
+        #expect(dwelling.reason == "gone for 0.5 s")
     }
 
     @Test("a zero-size or frameless match has no usable frame rather than being off screen")
@@ -190,5 +194,25 @@ struct WaitCommandTests {
     ])
     func acceptsLongWaits(arguments: [String]) {
         #expect(Self.validationMessage(arguments) == nil)
+    }
+
+    @Test("--stable-for is checked against the condition and --timeout", arguments: [
+        (["--settled", "--stable-for", "500"], "use --quiet-ms"),
+        (["--region", "0,0,10,10", "--stable", "--stable-for", "500"], "use --quiet-ms"),
+        (["--seconds", "1", "--stable-for", "500"], "--stable-for needs --id, --label or --value"),
+        (["--id", "x", "--stable-for", "60001"], "--stable-for must be from 0 to 60000"),
+        (["--id", "x", "--gone", "--timeout", "1", "--stable-for", "1500"], "--stable-for is longer than --timeout"),
+    ])
+    func stableForValidation(arguments: [String], message: String) {
+        #expect(Self.validationMessage(arguments)?.contains(message) == true, "\(Self.validationMessage(arguments) ?? "no error")")
+    }
+
+    @Test("--gone holds 500 ms by default, none at --timeout 0, and --stable-for overrides it")
+    func goneDefaultDwell() throws {
+        #expect(try Self.command(["--id", "x", "--gone"]).stableFor == 0.5)
+        #expect(try Self.command(["--id", "x", "--gone", "--timeout", "0"]).stableFor == 0)
+        #expect(try Self.command(["--id", "x", "--gone", "--stable-for", "0"]).stableFor == 0)
+        #expect(try Self.command(["--id", "x"]).stableFor == 0)
+        #expect(try Self.command(["--id", "x", "--stable-for", "300"]).stableFor == 0.3)
     }
 }

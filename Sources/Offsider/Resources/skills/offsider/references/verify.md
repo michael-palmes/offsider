@@ -21,6 +21,7 @@ After an action, `offsider describe-ui --diff --device <DEVICE_ID>` prints only 
 ## wait and assert
 
 - `offsider wait --id <id>` waits until an element is on screen; also `--label`, `--value`, `--gone`, `--has-value <text>`, `--settled` (nothing changed for `--quiet-ms`, default 500), `--region <x,y,w,h> --changed|--stable` (pixels, for content the tree cannot see) or `--seconds <n>` when your environment blocks `sleep`.
+- `--gone` holds for 500 ms by default: the element must stay off screen on every read for that long, so a node that disappears for one frame (a re-render, a list refresh) does not count as gone. `--stable-for <ms>` sets that hold for any selector wait (0 turns it off; with a plain selector the element must stay on screen that long). `--settled` and `--region --stable` use `--quiet-ms` instead.
 - `--timeout` defaults to 10 s and `--timeout` and `--seconds` go up to 900 s: a cold React Native bundle can take minutes. Exit 0 means met and 5 means timed out, with the last state in the message. When `--settled` cannot read the tree at all it exits 1: use `--settle-by screen`.
 - `offsider assert` checks once with the same selectors (and `--has-value`, `--gone`) and exits 5 on failure.
 - Both take `--json` (`met`, `elapsedMs`, `reason`, `match`).

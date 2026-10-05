@@ -84,4 +84,15 @@ struct ReactNativeOverlayTests {
         _ = try await app.waitForLabel(of: "overlay-test-swallowed") { $0 == "Swallowed Taps: 1" }
         #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
     }
+
+    @Test("wait --gone does not count a node that flickers out for 300 ms as gone", arguments: RNPlatform.enabled)
+    func flickerIsNotGone(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-flicker")
+
+        let result = try await app.offsider("wait --label 'Flickering Node' --gone --timeout 2")
+
+        #expect(result.exitCode == 5, "\(result.stderr)")
+    }
 }

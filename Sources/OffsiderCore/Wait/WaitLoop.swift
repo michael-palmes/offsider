@@ -39,7 +39,8 @@ public enum RegionMode: Sendable {
 }
 
 public enum WaitCondition {
-    case element(probe: (UITree) -> ElementProbe, gone: Bool)
+    /// `stableFor` is how long the element must stay present (or gone) across reads before the wait is met.
+    case element(probe: (UITree) -> ElementProbe, gone: Bool, stableFor: TimeInterval = 0)
     case settled(by: SettleSource, quiet: TimeInterval)
     case region(mode: RegionMode, quiet: TimeInterval, threshold: Double)
     case duration(TimeInterval)
@@ -102,6 +103,8 @@ public enum WaitLoop {
                 }
                 lastReason = step.reason
             } catch where error.isTransientFailure {
+                state.metSince = nil
+                state.metReads = 0
                 lastTransient = error
                 lastReason = error.localizedDescription
             }
@@ -143,17 +146,22 @@ public enum WaitLoop {
         var reads = 0
         var treeReads = 0
         var readableTree = false
+        /// When an element condition began to hold, and the reads since; a miss resets both.
+        var metSince: TimeInterval?
+        var metReads = 0
     }
 
     private static func evaluate(_ condition: WaitCondition, state: inout State, sources: WaitSources) async throws -> Step {
         switch condition {
-        case .element(let probe, let gone):
+        case .element(let probe, let gone, let stableFor):
+            let step: Step
             switch probe(try await sources.tree()) {
             case .present(let node):
-                return gone ? Step(met: false, reason: "still on screen") : Step(met: true, reason: "on screen", match: node)
+                step = gone ? Step(met: false, reason: "still on screen") : Step(met: true, reason: "on screen", match: node)
             case .absent(let reason):
-                return Step(met: gone, reason: reason)
+                step = Step(met: gone, reason: reason)
             }
+            return dwell(step, stableFor: stableFor, gone: gone, state: &state, sources: sources)
 
         case .settled(let source, let quiet):
             var change: String?
@@ -206,6 +214,26 @@ public enum WaitLoop {
         case .duration:
             return Step(met: true, reason: "waited")
         }
+    }
+
+    /// Holds a met step back until it has held on every read for `stableFor`, over two reads or more.
+    private static func dwell(_ step: Step, stableFor: TimeInterval, gone: Bool, state: inout State, sources: WaitSources) -> Step {
+        guard step.met else {
+            state.metSince = nil
+            state.metReads = 0
+            return step
+        }
+        guard stableFor > 0 else { return step }
+        let now = sources.now()
+        let since = state.metSince ?? now
+        state.metSince = since
+        state.metReads += 1
+        let heldFor = now - since
+        let place = gone ? "gone" : "on screen"
+        if state.metReads >= 2, heldFor + 1e-9 >= stableFor {
+            return Step(met: true, reason: "\(place) for \(seconds(heldFor))", match: step.match)
+        }
+        return Step(met: false, reason: "\(place) for \(seconds(heldFor)) of \(seconds(stableFor))")
     }
 
     /// Met once two reads exist and nothing has changed for `quiet`; a change restarts the window.
