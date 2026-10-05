@@ -88,6 +88,16 @@ extension AndroidBackend: DeviceSettingsControlling {
     }
 }
 
+extension AndroidBackend: AutoRotateControlling {
+    public func autoRotateState(on id: DeviceID) async throws -> AutoRotateState? {
+        AutoRotateState.parse(try await settingsShell(AutoRotateState.readScript, on: id.rawValue))
+    }
+
+    public func setAccelerometerRotation(_ value: Int, on id: DeviceID) async throws {
+        _ = try await settingsShell("settings put system accelerometer_rotation \(value == 0 ? 0 : 1)", on: id.rawValue)
+    }
+}
+
 extension AndroidBackend: OrientationControlling {
     /// Probes the display again each time, so a poll sees the turn.
     public func orientation(of id: DeviceID) async throws -> DeviceOrientation? {

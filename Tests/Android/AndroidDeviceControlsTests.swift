@@ -12,6 +12,8 @@ struct AndroidDeviceControlsTests {
         private var _night: String
         private var _fontScale = "null"
         private var _rotation = 0
+        private var _accelerometer = "1"
+        var accelerometer: String { lock.withLock { _accelerometer } }
         var night: String { lock.withLock { _night } }
 
         init(night: String = "no") {
@@ -39,6 +41,14 @@ struct AndroidDeviceControlsTests {
                 if command.hasPrefix("settings put system accelerometer_rotation 0; settings put system user_rotation "),
                    let rotation = Int(command.suffix(1)) {
                     _rotation = rotation
+                    _accelerometer = "0"
+                    return FakeAdbServer.shell()
+                }
+                if command == AutoRotateState.readScript {
+                    return FakeAdbServer.shell(stdout: "\(_accelerometer)\n\(_rotation)\n")
+                }
+                if command.hasPrefix("settings put system accelerometer_rotation ") {
+                    _accelerometer = String(command.dropFirst("settings put system accelerometer_rotation ".count))
                     return FakeAdbServer.shell()
                 }
                 if command.hasSuffix(AndroidDisplayGeometry.probeScript) {
@@ -128,6 +138,17 @@ struct AndroidDeviceControlsTests {
         #expect(server.services.contains("shell,v2,raw:settings put system accelerometer_rotation 0; settings put system user_rotation 1"))
         #expect(try await backend.orientation(of: Self.device) == .landscapeLeft)
         #expect(try await backend.screenInfo(for: Self.device)?.rotation == .landscapeFlipped)
+    }
+
+    @Test("auto-rotate and user_rotation are read in one round trip and auto-rotate is written back on its own")
+    func autoRotate() async throws {
+        let (backend, _, emulator) = try Self.setUp()
+
+        #expect(try await backend.autoRotateState(on: Self.device) == AutoRotateState(accelerometerRotation: 1, userRotation: 0))
+        try await backend.requestOrientation(.landscapeLeft, on: Self.device)
+        #expect(try await backend.autoRotateState(on: Self.device) == AutoRotateState(accelerometerRotation: 0, userRotation: 1))
+        try await backend.setAccelerometerRotation(1, on: Self.device)
+        #expect(emulator.accelerometer == "1")
     }
 
     @Test("a failing settings command quotes its stderr")

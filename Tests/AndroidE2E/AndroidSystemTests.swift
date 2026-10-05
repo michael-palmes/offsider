@@ -85,4 +85,27 @@ struct AndroidLandscapeTests {
         }
         try await restorePortrait()
     }
+
+    @Test("orientation turns auto-rotate off while landscape and portrait restores it")
+    func autoRotateRestored() async throws {
+        try await AndroidE2E.shell("am start -W -f 0x10008000 -a android.settings.SETTINGS")
+        try await AndroidE2E.shell("settings put system user_rotation 0")
+        try await AndroidE2E.shell("settings put system accelerometer_rotation 1")
+        do {
+            let landscape = try await AndroidE2E.run("orientation landscape-left --timeout 15 --json")
+            let turned = try #require(try JSONSerialization.jsonObject(with: Data(landscape.stdout.utf8)) as? [String: Any])
+            #expect((turned["autoRotate"] as? [String: Any])?["before"] as? Bool == true)
+            #expect((turned["autoRotate"] as? [String: Any])?["now"] as? Bool == false)
+            #expect(try await AndroidE2E.shell("settings get system accelerometer_rotation").trimmingCharacters(in: .whitespacesAndNewlines) == "0")
+
+            let portrait = try await AndroidE2E.run("orientation portrait --timeout 15 --json")
+            let back = try #require(try JSONSerialization.jsonObject(with: Data(portrait.stdout.utf8)) as? [String: Any])
+            #expect((back["autoRotate"] as? [String: Any])?["restored"] as? Bool == true)
+            #expect(try await AndroidE2E.shell("settings get system accelerometer_rotation").trimmingCharacters(in: .whitespacesAndNewlines) == "1")
+        } catch {
+            try await restorePortrait()
+            throw error
+        }
+        try await restorePortrait()
+    }
 }

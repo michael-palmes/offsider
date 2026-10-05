@@ -41,6 +41,7 @@ public enum OffsiderPrivateDirectory {
     public static let locksDirectoryName = "locks"
     public static let treesDirectoryName = "trees"
     public static let leasesDirectoryName = "leases"
+    public static let orientationDirectoryName = "orientation"
 
     public static func rootName(uid: uid_t) -> String {
         "offsider-\(uid)"
