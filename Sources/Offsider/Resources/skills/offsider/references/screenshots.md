@@ -7,7 +7,7 @@
 - `--json` prints `path`, `width`, `height`, `pixelsPerPoint`, `region`, `orientation`, `rotation`, `display` and `posture`. Landscape captures are upright.
 - `screenshot --display <id>` captures a foldable's other display (`guide foldables`).
 - On an Android phone, or an emulator without gRPC, `screenshot` uses `screencap -p`. `OFFSIDER_ANDROID_CAPTURE=raw` (raw `screencap` pixels) or `helper` (the UiAutomation helper) encodes the PNG on the Mac instead, falling back to `screencap -p`; both measured slower, so leave it unset.
-- On a physical iPhone or iPad, `screenshot` uses `devicectl device capture screenshot`, usually under a second. `--verify` may take several captures there, so it is slower than on a simulator.
+- On a physical iPhone or iPad with Xcode 27, `screenshot` takes a frame from the device's session broker, about 230 ms; the first one starts the broker (about 3 s), and `offsider session stop --device <UDID>` ends it when you are done. Without the broker (Xcode 26, or no desktop session on the Mac) it uses `devicectl device capture screenshot`, about 2.3 s. `--verify` may take several captures there, so it is slower than on a simulator.
 
 ```bash
 offsider screenshot --device <DEVICE_ID> --output screenshot.png --scale points
