@@ -143,6 +143,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 ## Android emulator caveats
 
 - Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
+- `boot --emulator-arg` refuses listener, metrics and Offsider-owned flags by name (`EmulatorArguments.refusedFlags`); add any new emulator listener flag there.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
 - A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names its serial. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
 - E2E and manual checks drive only `Offsider_E2E_Pixel_9` and the foldable `Offsider_E2E_Pixel_9_Pro_Fold`, and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.

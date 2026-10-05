@@ -34,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `offsider guide ios-device` covers physical iPhones and iPads.
 - `scripts/build.sh runner [--check]` regenerates the runner's Xcode project from its `project.yml`, or compares it with the committed one.
 - `OFFSIDER_DEVICE` is the default `--device`: a command without `--device` uses it when it is set and not blank, and an explicit `--device` wins. `doctor` prints the binding (`device.source` in `--json` is `option` or `environment`); `permission services` and the `runner` and `session` filters ignore it. A command with neither now exits 64 with `Missing --device <id>. Pass --device, or set OFFSIDER_DEVICE`.
+- `boot --memory <MB>` (1024 to 16384), `--no-snapshot-load` and a repeatable `--emulator-arg <token>` add to the emulator launch, which always keeps `-no-metrics`. `--emulator-arg` refuses flags that open a listener or connect out, send metrics, or replace Offsider's own options, with exit 64 before anything starts. An AVD that is already running is not started again, and `boot` names the options it ignored.
 
 ### Changed
 

@@ -153,9 +153,63 @@ struct EmulatorBootTests {
 
         let run = await Self.boot(host, headless: true)
 
-        #expect(try run.result.get() == EmulatorBootResult(serial: "emulator-5556", alreadyRunning: true, hasGRPC: true, logPath: nil))
+        #expect(try run.result.get() == EmulatorBootResult(serial: "emulator-5556", alreadyRunning: true, hasGRPC: true, logPath: nil, ignored: ["--headless"]))
         #expect(launcher.launches.isEmpty)
         #expect(run.lines == ["--headless ignored: \(Self.avd) is already running.", "\(Self.avd) is already running as emulator-5556."])
+    }
+
+    @Test("a running AVD is never launched again for memory, snapshot or extra arguments, and each is named as ignored")
+    func alreadyRunningIgnoresLaunchOptions() async throws {
+        let home = try Self.home()
+        Self.writeDiscovery(pid: 900, in: home)
+        let launcher = FakeLauncher()
+        let host = AndroidTestHost.make(home: home, adb: Self.server(AdbState()), liveProcesses: [900], launcher: launcher)
+        let request = EmulatorBootRequest(
+            avdName: Self.avd, headless: false, timeout: .seconds(240), memoryMB: 4096, noSnapshotLoad: true, extraArguments: ["-gpu", "host"]
+        )
+        var lines: [String] = []
+
+        let result = try await EmulatorBooter(host: host) { _, _ in }.boot(request) { lines.append($0) }
+
+        #expect(launcher.launches.isEmpty)
+        #expect(result.ignored == ["--memory", "--no-snapshot-load", "--emulator-arg"])
+        #expect(lines.first == "--memory, --no-snapshot-load and --emulator-arg ignored: \(Self.avd) is already running.")
+    }
+
+    @Test("launch arguments keep the AVD and -no-metrics first, then headless, memory, snapshot and the extra tokens in order")
+    func launchArgumentOrder() {
+        let request = EmulatorBootRequest(
+            avdName: "X", headless: true, timeout: .seconds(1), memoryMB: 3072, noSnapshotLoad: true, extraArguments: ["-gpu", "host"]
+        )
+        #expect(EmulatorBooter.launchArguments(request) == ["-avd", "X", "-no-metrics", "-no-window", "-memory", "3072", "-no-snapshot-load", "-gpu", "host"])
+        #expect(EmulatorBooter.launchArguments(EmulatorBootRequest(avdName: "X", headless: false, timeout: .seconds(1), memoryMB: 2048))
+            == ["-avd", "X", "-no-metrics", "-memory", "2048"])
+    }
+
+    @Test("--emulator-arg refuses listener, metrics and Offsider-owned flags in bare, double-dash and =value forms", arguments: [
+        "-port", "-ports", "-grpc", "-grpc-use-token", "-grpc-tls-key", "-metrics-to-console", "-metrics-collection", "-qemu",
+        "-shell-serial", "-modem-simulator-port", "-wifi-server-port", "-wifi-client-port", "-net-socket", "-net-tap",
+        "-net-tap-script-up", "-packet-streamer-endpoint", "-turncfg", "-gnss-grpc-port", "-vmnet-bridged", "-report-console",
+        "-avd", "-no-window", "-memory", "-no-snapshot-load",
+    ])
+    func refusedFlags(flag: String) {
+        for form in [flag, "-" + flag, flag + "=1", flag.uppercased()] {
+            let message = EmulatorArguments.refusal(in: ["-gpu", "host", form])
+            #expect(message?.hasPrefix("--emulator-arg \(form) is refused: ") == true, "\(form)")
+        }
+    }
+
+    @Test("--emulator-arg passes ordinary flags and values", arguments: [
+        ["-gpu", "host"], ["-no-boot-anim"], ["-camera-back", "none"], ["-feature", "-Vulkan"], ["-no-snapshot-save"], ["-wipe-data"],
+    ])
+    func allowedFlags(tokens: [String]) {
+        #expect(EmulatorArguments.refusal(in: tokens) == nil)
+    }
+
+    @Test("Offsider-owned flags point to Offsider's own options")
+    func ownedFlagsPointToOptions() {
+        #expect(EmulatorArguments.refusal(in: ["-memory", "4096"]) == "--emulator-arg -memory is refused: use --memory.")
+        #expect(EmulatorArguments.refusal(in: ["-no-window"]) == "--emulator-arg -no-window is refused: use --headless.")
     }
 
     @Test("a booted AVD without a discovery file says commands will use adb")
@@ -293,3 +347,6 @@ struct BootCommandTests {
         #expect(result.stderr.contains(message))
     }
 }
+        ("boot Pixel_9 --emulator-arg -grpc", "--emulator-arg -grpc is refused: "),
+        ("boot Pixel_9 --emulator-arg --port=5560", "--emulator-arg --port=5560 is refused: "),
+        ("boot Pixel_9 --memory 512", "--memory must be from 1024 to 16384 MB; got 512."),

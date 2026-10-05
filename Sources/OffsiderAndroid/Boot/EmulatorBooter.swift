@@ -5,11 +5,24 @@ public struct EmulatorBootRequest: Sendable {
     public let avdName: String
     public let headless: Bool
     public let timeout: Duration
+    public let memoryMB: Int?
+    public let noSnapshotLoad: Bool
+    /// Checked by `EmulatorArguments.refusal(in:)` before the request is made.
+    public let extraArguments: [String]
 
-    public init(avdName: String, headless: Bool, timeout: Duration) {
+    public init(avdName: String, headless: Bool, timeout: Duration, memoryMB: Int? = nil, noSnapshotLoad: Bool = false, extraArguments: [String] = []) {
         self.avdName = avdName
         self.headless = headless
         self.timeout = timeout
+        self.memoryMB = memoryMB
+        self.noSnapshotLoad = noSnapshotLoad
+        self.extraArguments = extraArguments
+    }
+
+    /// The launch options a running emulator cannot take, as the user wrote them.
+    var launchOnlyOptions: [String] {
+        (headless ? ["--headless"] : []) + (memoryMB != nil ? ["--memory"] : []) + (noSnapshotLoad ? ["--no-snapshot-load"] : [])
+            + (extraArguments.isEmpty ? [] : ["--emulator-arg"])
     }
 }
 
@@ -19,6 +32,8 @@ public struct EmulatorBootResult: Equatable, Sendable {
     public let hasGRPC: Bool
     /// Nil when Offsider did not start the emulator.
     public let logPath: String?
+    /// Launch options left unused because the AVD was already running or starting.
+    public var ignored: [String] = []
 }
 
 /// Starts the emulator so it outlives the command; a protocol so tests never start one.
@@ -48,7 +63,21 @@ public struct EmulatorBooter {
 
     /// Never `-port`, `-ports` or any `-grpc` flag: a plain launch serves token and JWT auth on loopback only.
     static func launchArguments(avdName: String, headless: Bool) -> [String] {
-        ["-avd", avdName, "-no-metrics"] + (headless ? ["-no-window"] : [])
+        launchArguments(EmulatorBootRequest(avdName: avdName, headless: headless, timeout: .zero))
+    }
+
+    static func launchArguments(_ request: EmulatorBootRequest) -> [String] {
+        ["-avd", request.avdName, "-no-metrics"]
+            + (request.headless ? ["-no-window"] : [])
+            + (request.memoryMB.map { ["-memory", String($0)] } ?? [])
+            + (request.noSnapshotLoad ? ["-no-snapshot-load"] : [])
+            + request.extraArguments
+    }
+
+    static func ignoredLine(_ options: [String], avdName: String, starting: Bool) -> String? {
+        guard !options.isEmpty else { return nil }
+        let list = options.count == 1 ? options[0] : options.dropLast().joined(separator: ", ") + " and " + options.last!
+        return "\(list) ignored: \(avdName) is already \(starting ? "starting" : "running")."
     }
 
     static func logPath(avdName: String, host: AndroidHost) -> String {
@@ -75,27 +104,28 @@ public struct EmulatorBooter {
         if running.count > 1 {
             throw AndroidError.avdRunningTwice(name, serials: running.map(\.serial))
         }
+        let ignored = request.launchOnlyOptions
         if let existing = running.first {
-            if request.headless { progress("--headless ignored: \(name) is already running.") }
+            if let line = Self.ignoredLine(ignored, avdName: name, starting: false) { progress(line) }
             let emulator = try await AndroidDeviceDirectory(client: client, host: host).runningEmulator(serial: existing.serial)
             if let emulator, emulator.state == .device, emulator.bootCompleted {
                 let hasGRPC = wait.discovery(for: existing.serial)?.grpcPort != nil
                 progress("\(name) is already running as \(existing.serial)" + (hasGRPC ? "." : " without gRPC; commands will use adb."))
-                return EmulatorBootResult(serial: existing.serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil)
+                return EmulatorBootResult(serial: existing.serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil, ignored: ignored)
             }
             progress("\(name) is already starting as \(existing.serial).")
             let hasGRPC = try await wait.untilBooted(existing.serial, logPath: nil, progress: progress)
-            return EmulatorBootResult(serial: existing.serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil)
+            return EmulatorBootResult(serial: existing.serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil, ignored: ignored)
         }
 
         let knownFiles = Set(EmulatorDiscovery.live(host: host).map(\.path))
         let knownSerials = Set(try await client.devices().map(\.serial))
         if let holder = instanceLockHolder(avd) {
-            if request.headless { progress("--headless ignored: \(name) is already starting.") }
+            if let line = Self.ignoredLine(ignored, avdName: name, starting: true) { progress(line) }
             progress("\(name) is already starting (pid \(holder)); waiting for it.")
             let serial = try await wait.serial(pid: holder, knownFiles: knownFiles, knownSerials: knownSerials, launched: nil, logPath: nil)
             let hasGRPC = try await wait.untilBooted(serial, logPath: nil, progress: progress)
-            return EmulatorBootResult(serial: serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil)
+            return EmulatorBootResult(serial: serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil, ignored: ignored)
         }
 
         guard host.files.isExecutableFile(atPath: sdk.emulator.path) else {
@@ -108,7 +138,7 @@ public struct EmulatorBooter {
         do {
             pid = try host.launcher.launch(
                 executable: sdk.emulator,
-                arguments: Self.launchArguments(avdName: name, headless: request.headless),
+                arguments: Self.launchArguments(request),
                 environment: environment,
                 logPath: logPath
             )
