@@ -20,7 +20,7 @@ After an action, `offsider describe-ui --diff --device <DEVICE_ID>` prints only 
 ## wait and assert
 
 - `offsider wait --id <id>` waits until an element is on screen; also `--label`, `--value`, `--gone`, `--has-value <text>`, `--settled` (nothing changed for `--quiet-ms`, default 500), `--region <x,y,w,h> --changed|--stable` (pixels, for content the tree cannot see) or `--seconds <n>` when your environment blocks `sleep`.
-- `--timeout` defaults to 10 s. Exit 0 means met and 5 means timed out, with the last state in the message. When `--settled` cannot read the tree at all it exits 1: use `--settle-by screen`.
+- `--timeout` defaults to 10 s and `--timeout` and `--seconds` go up to 900 s: a cold React Native bundle can take minutes. Exit 0 means met and 5 means timed out, with the last state in the message. When `--settled` cannot read the tree at all it exits 1: use `--settle-by screen`.
 - `offsider assert` checks once with the same selectors (and `--has-value`, `--gone`) and exits 5 on failure.
 - Both take `--json` (`met`, `elapsedMs`, `reason`, `match`).
 - Use `--wait-timeout` on selector taps, or a `wait` step in batch, for elements to come on screen, and `wait --settled` to let animations finish. Keep `sleep` steps and `--pre-delay` or `--post-delay` for when nothing observable marks the end.

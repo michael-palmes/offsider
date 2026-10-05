@@ -174,12 +174,21 @@ struct WaitCommandTests {
         (["--settled", "--quiet-ms", "50"], "--quiet-ms must be from 100 to 10000; got 50."),
         (["--settled", "--quiet-ms", "2000", "--timeout", "1"], "--quiet-ms is longer than --timeout, so the wait could never succeed. Raise --timeout or lower --quiet-ms."),
         (["--id", "a", "--threshold", "0.1"], "--threshold applies to --region only."),
-        (["--id", "a", "--timeout", "301"], "--timeout must be from 0 to 300 seconds; got 301.0."),
+        (["--id", "a", "--timeout", "901"], "--timeout must be from 0 to 900 seconds; got 901.0."),
+        (["--seconds", "901"], "--seconds must be from 0 to 900 seconds; got 901.0."),
         (["--id", "a", "--poll-interval", "0.01"], "--poll-interval must be from 0.05 to 5 seconds; got 0.01."),
         (["--id", "a", "--label", "b"], "Use only one of --id, --label, or --value."),
         (["--settled", "--has-value", "3"], "--has-value needs --id, --label or --value."),
     ])
     func rejectsInvalidConditions(arguments: [String], message: String) {
         #expect(Self.validationMessage(arguments) == message)
+    }
+
+    @Test("--timeout and --seconds accept up to 900 seconds, for cold bundles that take minutes", arguments: [
+        ["--id", "a", "--timeout", "900"],
+        ["--seconds", "900"],
+    ])
+    func acceptsLongWaits(arguments: [String]) {
+        #expect(Self.validationMessage(arguments) == nil)
     }
 }

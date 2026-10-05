@@ -104,6 +104,16 @@ struct BatchReadStepTests {
         #expect(!watchdog.isArmed)
     }
 
+    @Test("a wait step accepts a timeout above the old 300 s cap")
+    func waitStepTakesLongTimeout() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        let captured = Captured()
+
+        let code = try await Self.exitCode(["wait --id open --timeout 600"], on: backend, captured: captured)
+
+        #expect(code == 0)
+    }
+
     @Test("one batch taps, waits, asserts, captures and reads the tree, with one NDJSON line per step and a summary")
     func wholeCaseAsNDJSON() async throws {
         let directory = try Self.temporaryDirectory()

@@ -44,10 +44,10 @@ struct Wait: AsyncParsableCommand {
     @Option(help: ArgumentHelp("With --region, the fraction of tiles that may change and still count as unchanged (0 to 1, default 0).", valueName: "0-1"))
     var threshold: Double?
 
-    @Option(help: ArgumentHelp("Wait this long, from 0 to 300 seconds, then exit 0. Ignores --timeout.", valueName: "seconds"))
+    @Option(help: ArgumentHelp("Wait this long, from 0 to \(Wait.maximumSeconds) seconds, then exit 0. Ignores --timeout.", valueName: "seconds"))
     var seconds: Double?
 
-    @Option(help: ArgumentHelp("Give up after this many seconds, from 0 to 300, and exit 5.", valueName: "seconds"))
+    @Option(help: ArgumentHelp("Give up after this many seconds, from 0 to \(Wait.maximumSeconds), and exit 5.", valueName: "seconds"))
     var timeout: Double = 10
 
     @Option(name: .customLong("poll-interval"), help: ArgumentHelp("Seconds between reads, from 0.05 to 5.", valueName: "seconds"))
@@ -63,6 +63,7 @@ struct Wait: AsyncParsableCommand {
     var appOption: AppOption
 
     static let defaultQuietMs = 500
+    static let maximumSeconds = 900
 
     func validate() throws {
         if (changed || stable) && region == nil {
@@ -99,11 +100,12 @@ struct Wait: AsyncParsableCommand {
             guard settled || stable else { throw ValidationError("--quiet-ms applies to --settled and --region --stable only.") }
             guard (100...10_000).contains(quietMs) else { throw ValidationError("--quiet-ms must be from 100 to 10000; got \(quietMs).") }
         }
-        if let seconds, !(0...300).contains(seconds) {
-            throw ValidationError("--seconds must be from 0 to 300; got \(seconds).")
+        let cap = Double(Self.maximumSeconds)
+        if let seconds, !(0...cap).contains(seconds) {
+            throw ValidationError("--seconds must be from 0 to \(Self.maximumSeconds) seconds; got \(seconds).")
         }
-        guard (0...300).contains(timeout) else {
-            throw ValidationError("--timeout must be from 0 to 300 seconds; got \(timeout).")
+        guard (0...cap).contains(timeout) else {
+            throw ValidationError("--timeout must be from 0 to \(Self.maximumSeconds) seconds; got \(timeout).")
         }
         guard (0.05...5).contains(pollInterval) else {
             throw ValidationError("--poll-interval must be from 0.05 to 5 seconds; got \(pollInterval).")

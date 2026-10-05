@@ -42,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `orientation` on a physical device that does not turn in time says the screen follows only while the device is awake and unlocked and the app in front supports the orientation.
 - The bundled skill's router is shorter: `type` and `button` detail, the full `list-devices --json` shape and the Turnstile detail now live in the `selectors`, `android` and `turnstile` guide topics.
 
+- `wait --timeout` and `wait --seconds` accept up to 900 seconds (was 300), so a wait can outlast a cold React Native bundle; the error names the cap.
 ### Fixed
 
 - `screenshot` on an Android phone with several displays, such as the Galaxy Z Fold3, no longer fails when `screencap` prints a warning before the image.
