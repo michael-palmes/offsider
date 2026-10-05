@@ -160,6 +160,14 @@ public struct EmulatorBooter {
         }
     }
 
+    /// The emulator process serving `serial`, from its discovery file; nil when it has none.
+    public func bootedBy(serial: String) -> ProcessStamp? {
+        guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial),
+              let discovery = EmulatorDiscovery.live(host: host).first(where: { $0.consolePort == port }),
+              let started = host.processStartTime(discovery.pid) else { return nil }
+        return ProcessStamp(pid: discovery.pid, startedAt: started)
+    }
+
     static let unlockPoll: Duration = .milliseconds(500)
     static let unlockGrace: Duration = .seconds(10)
 

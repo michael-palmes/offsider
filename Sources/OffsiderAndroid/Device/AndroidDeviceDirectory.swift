@@ -163,7 +163,11 @@ struct AndroidDeviceDirectory {
                 name: emulator.avdName ?? emulator.serial,
                 osVersion: emulator.osRelease.map { "Android \($0)" } ?? emulator.apiLevel.map { "Android API \($0)" },
                 deviceType: avd?.deviceProfile ?? emulator.model,
-                kind: .emulator
+                kind: .emulator,
+                avd: emulator.avdName,
+                bootedBy: emulator.discovery.flatMap { discovery in
+                    host.processStartTime(discovery.pid).map { ProcessStamp(pid: discovery.pid, startedAt: $0) }
+                }
             )
         }
         let phoneRows = rows.filter { $0.consolePort == nil }.map(ConnectedPhone.init).map { phone in
@@ -186,7 +190,8 @@ struct AndroidDeviceDirectory {
                 name: avd.name,
                 osVersion: avd.apiLevel.map { "Android API \($0)" },
                 deviceType: avd.deviceProfile,
-                kind: .avd
+                kind: .avd,
+                avd: avd.name
             )
         }
         return runningRows + phoneRows + shutdownRows

@@ -49,13 +49,30 @@ struct AndroidDeviceDirectoryTests {
         let rows = try await Self.directory(Self.server(), home: home).summaries()
 
         #expect(rows == [
-            DeviceSummary(id: "emulator-5554", platform: .android, state: "Booted", name: "Work_AVD", osVersion: "Android 15", deviceType: "sdk_gphone64_arm64", kind: .emulator),
-            DeviceSummary(id: "emulator-5556", platform: .android, state: "Booting", name: "Offsider_E2E_Pixel_9", osVersion: "Android 16", deviceType: "pixel_9", kind: .emulator),
+            DeviceSummary(id: "emulator-5554", platform: .android, state: "Booted", name: "Work_AVD", osVersion: "Android 15", deviceType: "sdk_gphone64_arm64", kind: .emulator, avd: "Work_AVD"),
+            DeviceSummary(id: "emulator-5556", platform: .android, state: "Booting", name: "Offsider_E2E_Pixel_9", osVersion: "Android 16", deviceType: "pixel_9", kind: .emulator, avd: "Offsider_E2E_Pixel_9"),
             DeviceSummary(id: "emulator-5558", platform: .android, state: "Offline", name: "emulator-5558", osVersion: nil, deviceType: nil, kind: .emulator),
             DeviceSummary(id: "R5CT1234ABC", platform: .android, state: "Booted", name: "SM S928B", osVersion: nil, deviceType: "Physical (USB)", kind: .physical, connection: "usb"),
             DeviceSummary(id: "192.168.1.5:5555", platform: .android, state: "Unsupported", name: "y", osVersion: nil, deviceType: "Physical (network)", kind: .physical, connection: "network"),
-            DeviceSummary(id: "Spare_AVD", platform: .android, state: "Shutdown", name: "Spare_AVD", osVersion: "Android API 36", deviceType: "pixel_9", kind: .avd),
+            DeviceSummary(id: "Spare_AVD", platform: .android, state: "Shutdown", name: "Spare_AVD", osVersion: "Android API 36", deviceType: "pixel_9", kind: .avd, avd: "Spare_AVD"),
         ])
+    }
+
+    @Test("a running emulator names its AVD and the emulator process from its discovery file; phones have neither")
+    func avdAndBootedBy() async throws {
+        let home = try Self.homeWithAVDs(["Work_AVD"])
+        try AndroidTestHost.write("avd.id=Work_AVD\nport.serial=5554\n", to: "Library/Caches/TemporaryItems/avd/running/pid_900.ini", in: home)
+        let started = Date(timeIntervalSince1970: 1_790_000_000)
+        let server = Self.server()
+        let host = AndroidTestHost.make(home: home, adb: server, liveProcesses: [900], startTimes: [900: started])
+        let rows = try await AndroidDeviceDirectory(client: AdbClient(endpoint: .defaultAdbServer, connector: server), host: host).summaries()
+
+        let emulator = try #require(rows.first { $0.id == "emulator-5554" })
+        #expect(emulator.avd == "Work_AVD")
+        #expect(emulator.bootedBy == ProcessStamp(pid: 900, startedAt: started))
+        let phone = try #require(rows.first { $0.id == "R5CT1234ABC" })
+        #expect(phone.avd == nil && phone.bootedBy == nil)
+        #expect(rows.first { $0.id == "emulator-5556" }?.bootedBy == nil)
     }
 
     @Test("an emulator whose properties cannot be read is Unknown, not Booting; checking that serial alone fails")

@@ -114,13 +114,15 @@ Every device command takes `--device <id>`, using an ID from `offsider list-devi
       "osVersion": "iOS 27.0",
       "deviceType": "iPhone 17 Pro",
       "kind": "simulator",
-      "connection": null
+      "connection": null,
+      "avd": null,
+      "bootedBy": null
     }
   ]
 }
 ```
 
-`kind` is `simulator`, `emulator` (running), `avd` (shut down) or `physical`; `connection` is `usb` for a phone (`network` for one Offsider refuses), else null. An iPhone or iPad's `state` is `Booted` when Offsider can drive it, else `Wireless`, `Untrusted`, `Developer Mode off`, `Preparing`, `Reconnecting` or `Unavailable`, with a hint on stderr.
+`kind` is `simulator`, `emulator` (running), `avd` (shut down) or `physical`; `connection` is `usb` for a phone (`network` for one Offsider refuses), else null. `avd` is a running emulator's or shut-down AVD's name, and `bootedBy` is a running emulator's process as `{"pid": 4242, "startedAt": "2026-10-05T01:02:03Z"}` (UTC), so a restarted emulator on the same serial reads as a new one; both are null otherwise. Keys may be added within a version. An iPhone or iPad's `state` is `Booted` when Offsider can drive it, else `Wireless`, `Untrusted`, `Developer Mode off`, `Preparing`, `Reconnecting` or `Unavailable`, with a hint on stderr.
 
 In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devices`. The old names exit 64 with a hint.
 
@@ -342,10 +344,10 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 - After it has booted, `boot` reads the screen, lock screen, the user's unlock state since boot (`am get-started-user-state`) and the RAM the device sees (`MemTotal`) in one adb round trip. A device with a PIN, pattern or password that has not been unlocked since boot exits 7 with `device_locked`, naming the serial, since apps cannot start until it is unlocked; the hint asks you to save a code with `unlock-code set`, run `wake --unlock`, or unlock it by hand when the saved code failed. A device whose lock screen is up but was unlocked since boot exits 0 with a `Note:` on stderr, and one with less than about 2.75 GB of RAM gets a warning suggesting `--memory 4096`. `boot --json` prints one object instead of the serial:
 
   ```json
-  {"version":1,"ok":true,"avd":"Offsider_E2E_Pixel_9","serial":"emulator-5554","alreadyRunning":true,"grpc":true,"logPath":null,"memoryMB":6005,"ignored":[],"lock":{"type":"none","savedCode":false,"lastAttemptFailed":false,"userUnlocked":true,"screen":"on","lockScreen":"hidden"},"exitCode":0,"error":null}
+  {"version":1,"ok":true,"avd":"Offsider_E2E_Pixel_9","serial":"emulator-5554","alreadyRunning":true,"grpc":true,"logPath":null,"memoryMB":6005,"ignored":[],"bootedBy":{"pid":4242,"startedAt":"2026-10-05T01:02:03Z"},"lock":{"type":"none","savedCode":false,"lastAttemptFailed":false,"userUnlocked":true,"screen":"on","lockScreen":"hidden"},"exitCode":0,"error":null}
   ```
 
-  `memoryMB` is what the device sees, a little under its `-memory`; `ignored` lists launch options an already-running AVD did not take; `lock.type` is `none`, `pin`, `pattern` or `password`, and the `lock` fields are null when the state could not be read. A failure has `ok` false with `exitCode` and the [JSON error object](#json-errors). Keys may be added within a version.
+  `memoryMB` is what the device sees, a little under its `-memory`; `ignored` lists launch options an already-running AVD did not take; `bootedBy` is the emulator process and when it started, as in `list-devices --json`; `lock.type` is `none`, `pin`, `pattern` or `password`, and the `lock` fields are null when the state could not be read. A failure has `ok` false with `exitCode` and the [JSON error object](#json-errors). Keys may be added within a version.
 - `wake` reads the screen and lock screen in one adb round trip (`dumpsys power`, `dumpsys window policy`) and sends nothing when the screen is on and unlocked. Otherwise it sends `KEYCODE_WAKEUP`, runs `wm dismiss-keyguard` and waits about 3 s. A swipe lock screen goes; a PIN, pattern or password lock screen stays, and `wake` exits 7 (`device_locked`).
 - `wake --unlock` then types the PIN or password saved with `unlock-code set` (`input text`, then Enter), once, and only into a focused password field inside System UI's lock screen; with no such field it types nothing. A code that does not unlock the device is not typed again until the device is unlocked by hand (the next `wake` that finds it unlocked clears this) or the code is saved again, so a retrying agent cannot run up failed attempts towards a lockout or a wipe. Patterns are not supported, and a password is never typed into a PIN pad.
 - `unlock-code set --device <phone serial or AVD name>` names a connected phone by maker and model (one `getprop`), asks for the code twice with typing hidden, or reads one line with `--stdin`, and keeps it in your login Keychain as a generic password (service `com.mpalmes.offsider.unlock-code`, never synchronised). `status` says whether a code is saved and whether its last attempt failed, never the code; `remove` deletes it. A code is 4 to 64 printable ASCII characters. Save codes only for test devices: anything that can run commands as you can then unlock them, and while `input text` runs the code is in its arguments on the device. macOS asks once before a new or rebuilt `offsider` reads the Keychain.

@@ -96,7 +96,7 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         let lock = Self.lockReport(reading, key: avd, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger())
         var report = BootReport(
             avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, grpc: result.hasGRPC, logPath: result.logPath,
-            memoryMB: reading?.memTotalKB.map { $0 / 1024 }, ignored: result.ignored, lock: lock
+            memoryMB: reading?.memTotalKB.map { $0 / 1024 }, ignored: result.ignored, bootedBy: booter.bootedBy(serial: result.serial), lock: lock
         )
         if let note = BootReport.memoryNote(avd: avd, reading: reading) {
             print(note, to: &standardError)

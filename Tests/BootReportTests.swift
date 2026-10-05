@@ -19,9 +19,9 @@ struct BootReportTests {
     func keyOrder() throws {
         let report = BootReport(
             avd: "Offsider_E2E_Pixel_9", serial: "emulator-5554", alreadyRunning: true, grpc: true, logPath: nil, memoryMB: 6005, ignored: [],
-            lock: LockReport(Self.unlocked, savedCode: false, lastAttemptFailed: false)
+            bootedBy: ProcessStamp(pid: 4242, startedAt: Date(timeIntervalSince1970: 1_790_000_000)), lock: LockReport(Self.unlocked, savedCode: false, lastAttemptFailed: false)
         )
-        #expect(report.jsonLine() == #"{"version":1,"ok":true,"avd":"Offsider_E2E_Pixel_9","serial":"emulator-5554","alreadyRunning":true,"grpc":true,"logPath":null,"memoryMB":6005,"ignored":[],"lock":{"type":"none","savedCode":false,"lastAttemptFailed":false,"userUnlocked":true,"screen":"on","lockScreen":"hidden"},"exitCode":0,"error":null}"#)
+        #expect(report.jsonLine() == #"{"version":1,"ok":true,"avd":"Offsider_E2E_Pixel_9","serial":"emulator-5554","alreadyRunning":true,"grpc":true,"logPath":null,"memoryMB":6005,"ignored":[],"bootedBy":{"pid":4242,"startedAt":"2026-09-21T14:13:20Z"},"lock":{"type":"none","savedCode":false,"lastAttemptFailed":false,"userUnlocked":true,"screen":"on","lockScreen":"hidden"},"exitCode":0,"error":null}"#)
     }
 
     @Test("an unreadable state gives null lock fields")

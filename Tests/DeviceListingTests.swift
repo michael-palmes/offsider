@@ -88,7 +88,13 @@ struct DeviceListingTests {
         #expect(devices[0]["connection"] is NSNull)
         #expect(devices[1]["kind"] as? String == "avd")
 
-        let keys = ["\"version\"", "\"devices\"", "\"id\"", "\"platform\"", "\"state\"", "\"name\"", "\"osVersion\"", "\"deviceType\"", "\"kind\"", "\"connection\""]
+        #expect(devices[0]["avd"] is NSNull)
+        #expect(devices[0]["bootedBy"] is NSNull)
+
+        let keys = [
+            "\"version\"", "\"devices\"", "\"id\"", "\"platform\"", "\"state\"", "\"name\"", "\"osVersion\"", "\"deviceType\"", "\"kind\"",
+            "\"connection\"", "\"avd\"", "\"bootedBy\"",
+        ]
         let offsets = keys.compactMap { text.range(of: $0)?.lowerBound }
         #expect(offsets.count == keys.count)
         #expect(offsets == offsets.sorted())
@@ -103,6 +109,24 @@ struct DeviceListingTests {
         #expect(object["version"] as? Int == 1)
         #expect(row["kind"] as? String == "physical")
         #expect(row["connection"] as? String == "usb")
+    }
+
+    @Test("an emulator row names its AVD and the emulator process with an ISO start time; the table is unchanged")
+    func emulatorAVDAndBootedBy() throws {
+        let emulator = DeviceSummary(
+            id: "emulator-5554", platform: .android, state: "Booted", name: "Offsider_E2E_Pixel_9", osVersion: "Android 16", deviceType: "pixel_9",
+            kind: .emulator, avd: "Offsider_E2E_Pixel_9", bootedBy: ProcessStamp(pid: 4242, startedAt: Date(timeIntervalSince1970: 1_790_000_000))
+        )
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceListRenderer.json([emulator]).utf8)) as? [String: Any])
+        let row = try #require((object["devices"] as? [[String: Any]])?.first)
+        #expect(row["avd"] as? String == "Offsider_E2E_Pixel_9")
+        let bootedBy = try #require(row["bootedBy"] as? [String: Any])
+        #expect(bootedBy["pid"] as? Int == 4242)
+        #expect(bootedBy["startedAt"] as? String == "2026-09-21T14:13:20Z")
+        var plain = emulator
+        plain.avd = nil
+        plain.bootedBy = nil
+        #expect(DeviceListRenderer.table([emulator]) == DeviceListRenderer.table([plain]))
     }
 
     @Test("unauthorised and network phones get one hint each; a ready phone and emulators get none")

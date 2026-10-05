@@ -9,9 +9,7 @@ extension AndroidBackend: BootMarking {
               let discovery = EmulatorDiscovery.live(host: host).first(where: { $0.consolePort == port }) else {
             return nil
         }
-        var info = proc_bsdinfo()
-        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-        guard proc_pidinfo(discovery.pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
-        return "emulator \(info.pbi_start_tvsec).\(String(format: "%06d", info.pbi_start_tvusec))"
+        guard let start = ProcessStartTime.of(discovery.pid) else { return nil }
+        return "emulator \(start.seconds).\(String(format: "%06d", start.microseconds))"
     }
 }

@@ -83,6 +83,8 @@ public struct AndroidHost: Sendable {
     var isProcessAlive: @Sendable (Int32) -> Bool
     /// The executable of a running process, or nil when it has gone or cannot be read.
     var processPath: @Sendable (Int32) -> String?
+    /// When a running process started, or nil when it has gone.
+    var processStartTime: @Sendable (Int32) -> Date?
     var sleep: @Sendable (Duration) async throws -> Void
     var launcher: any EmulatorLaunching
     /// Monotonic time for deadlines; tests advance it with their recorded sleeps.
@@ -103,6 +105,7 @@ public struct AndroidHost: Sendable {
         processes: any HostProcessRunning = LocalProcessRunner(),
         isProcessAlive: @escaping @Sendable (Int32) -> Bool = { AndroidHost.processIsAlive($0) },
         processPath: @escaping @Sendable (Int32) -> String? = { AndroidHost.executablePath(of: $0) },
+        processStartTime: @escaping @Sendable (Int32) -> Date? = { ProcessStartTime.date(of: $0) },
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         launcher: any EmulatorLaunching = DetachedProcess(),
         uptime: @escaping @Sendable () -> Duration = { .seconds(ProcessInfo.processInfo.systemUptime) },
@@ -117,6 +120,7 @@ public struct AndroidHost: Sendable {
         self.processes = processes
         self.isProcessAlive = isProcessAlive
         self.processPath = processPath
+        self.processStartTime = processStartTime
         self.sleep = sleep
         self.launcher = launcher
         self.uptime = uptime

@@ -13,12 +13,13 @@ public struct BootReport: Equatable, Sendable {
     public var logPath: String?
     public var memoryMB: Int?
     public var ignored: [String]
+    public var bootedBy: ProcessStamp?
     public var lock: LockReport?
     public var error: ErrorPayload?
 
     public init(
         avd: String, serial: String, alreadyRunning: Bool, grpc: Bool, logPath: String?, memoryMB: Int?, ignored: [String],
-        lock: LockReport?, error: ErrorPayload? = nil
+        bootedBy: ProcessStamp? = nil, lock: LockReport?, error: ErrorPayload? = nil
     ) {
         self.avd = avd
         self.serial = serial
@@ -27,6 +28,7 @@ public struct BootReport: Equatable, Sendable {
         self.logPath = logPath
         self.memoryMB = memoryMB
         self.ignored = ignored
+        self.bootedBy = bootedBy
         self.lock = lock
         self.error = error
     }
@@ -44,6 +46,9 @@ public struct BootReport: Equatable, Sendable {
             ("logPath", .optional(logPath) { .string($0) }),
             ("memoryMB", .optional(memoryMB) { .integer($0) }),
             ("ignored", .array(ignored.map { .string($0) })),
+            ("bootedBy", .optional(bootedBy) { stamp in
+                .object([("pid", .integer(Int(stamp.pid))), ("startedAt", .string(ProcessStamp.timestamp(stamp.startedAt)))])
+            }),
             ("lock", .optional(lock) { DeviceStateReport.lock($0) }),
             ("exitCode", .integer(Int(exitCode.rawValue))),
             ("error", .optional(error) { $0.jsonValue }),
