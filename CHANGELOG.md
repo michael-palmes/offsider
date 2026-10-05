@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-05
+
 ### Added
 
 - `turnstile` taps the checkbox square of a Cloudflare Turnstile widget and waits until it passes. The checkbox's accessibility frame includes the words beside the square, so a normal tap lands on the words. The tap sits a few points off the square's centre and stays inside it (`--jitter`, `--seed`). On iOS the web view leaves the checkbox out of the tree: the command reads a point in that web view, leaves a widget that already says Success, and otherwise taps the square where the green check sits. `--id` limits the search to one wrapper. Exits 5 when the checkbox remains, and 2 when no widget is on screen. A visual challenge fails with a message. It does not bypass Turnstile: the command only taps the checkbox, and the widget passes only when Cloudflare accepts the device. `offsider guide turnstile` is that note.
@@ -226,7 +228,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/michael-palmes/offsider/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/michael-palmes/offsider/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/michael-palmes/offsider/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/michael-palmes/offsider/compare/v0.2.0...v0.3.0
