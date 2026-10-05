@@ -55,8 +55,13 @@ struct StayAwakeCommand: AsyncParsableCommand {
 
     /// Before routing, so a simulator is refused without starting its stack.
     static func requireAndroid(_ id: String, command: String) throws {
-        if DeviceIDClassifier.classify(id).platform == .ios {
+        switch DeviceIDClassifier.classify(id) {
+        case .iosSimulator:
             throw CLIError(errorDescription: "\(command) is Android only: iOS simulators never sleep or lock.", reason: .notSupported)
+        case .iosDevice:
+            throw CLIError(errorDescription: "\(command) is Android only: on an iPhone or iPad, set Auto-Lock in Settings and unlock it by hand.", reason: .notSupported)
+        default:
+            break
         }
     }
 

@@ -4,6 +4,8 @@ public enum DeviceIDClassification: Equatable, Sendable {
     case empty
     /// Canonical uppercase UUID, so lookups ignore the case the caller typed.
     case iosSimulator(udid: String)
+    /// A physical iPhone or iPad: `00008130-001C...` in uppercase, or a 40-hex UDID in lowercase.
+    case iosDevice(udid: String)
     case androidSerial(consolePort: Int)
     /// An AVD name or a USB phone's serial; the router resolves which.
     case androidName(name: String)
@@ -13,7 +15,7 @@ public enum DeviceIDClassification: Equatable, Sendable {
 
     public var platform: DevicePlatform? {
         switch self {
-        case .iosSimulator:
+        case .iosSimulator, .iosDevice:
             return .ios
         case .androidSerial, .androidName, .androidNetworkSerial:
             return .android
@@ -36,6 +38,9 @@ public enum DeviceIDClassifier {
         if let uuid = UUID(uuidString: id) {
             return .iosSimulator(udid: uuid.uuidString)
         }
+        if let udid = physicalIOSUDID(id) {
+            return .iosDevice(udid: udid)
+        }
         if let port = consolePort(in: id) {
             return .androidSerial(consolePort: port)
         }
@@ -46,6 +51,19 @@ public enum DeviceIDClassifier {
             return .androidName(name: id)
         }
         return .unrecognised
+    }
+
+    private static func physicalIOSUDID(_ id: String) -> String? {
+        let scalars = Array(id.unicodeScalars)
+        let isHex: (Unicode.Scalar) -> Bool = { $0.isASCII && $0.properties.isASCIIHexDigit }
+        if scalars.count == 25, scalars[8] == "-",
+           scalars[..<8].allSatisfy(isHex), scalars[9...].allSatisfy(isHex) {
+            return id.uppercased()
+        }
+        if scalars.count == 40, scalars.allSatisfy(isHex) {
+            return id.lowercased()
+        }
+        return nil
     }
 
     private static func consolePort(in id: String) -> Int? {

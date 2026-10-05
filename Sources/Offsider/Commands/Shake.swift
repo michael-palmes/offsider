@@ -20,6 +20,7 @@ struct Shake: AsyncParsableCommand {
     var deviceOption: DeviceOption
 
     func validate() throws {
+        try CLIError.refuseOnPhone(deviceOption.id, command: "shake", alternative: "Shake the device by hand, or use an iOS simulator.")
         if DeviceIDClassifier.classify(deviceOption.id).platform == .android {
             throw ValidationError(Self.androidMessage)
         }

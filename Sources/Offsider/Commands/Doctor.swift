@@ -19,7 +19,9 @@ struct Doctor: AsyncParsableCommand {
 
     func run() async throws {
         let report: DoctorReport
-        if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
+        if let id = deviceOption.id, case .iosDevice(let udid) = DeviceIDClassifier.classify(id) {
+            report = await iosDeviceReport(udid)
+        } else if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
             report = await androidReport(id)
         } else {
             report = await hostAndSimulatorReport()
@@ -89,6 +91,22 @@ struct Doctor: AsyncParsableCommand {
             checks: AndroidDoctorRules.hostChecks(facts.host, deviceNamed: true)
                 + AndroidDoctorRules.deviceChecks(facts.device, hostBlocker: AndroidDoctorRules.hostBlocker(facts.host)),
             fixes: fixes
+        )
+    }
+
+    /// Host checks for a physical iPhone or iPad; simulator and Android state cannot affect it.
+    private func iosDeviceReport(_ udid: String) async -> DoctorReport {
+        let result = await DoctorRunner(udid: nil, environment: ProcessInfo.processInfo.environment, logger: OffsiderLogger()).run()
+        let hostChecks: Set<DoctorCheckID> = [.developerDir, .xcodeVersion]
+        return DoctorReport(
+            offsiderVersion: VERSION,
+            udid: nil,
+            device: DoctorDevice(id: udid, platform: "ios", name: nil, kind: "physical"),
+            xcode: result.xcode,
+            booted: [],
+            android: nil,
+            checks: result.checks.filter { hostChecks.contains($0.id) },
+            fixes: []
         )
     }
 

@@ -41,6 +41,7 @@ struct BiometricCommand: AsyncParsableCommand {
     }
 
     func plan() throws -> (BiometricAction, BiometricModality?) {
+        try CLIError.refuseOnPhone(deviceOption.id, command: "biometric", alternative: "Authenticate on the device itself, or use an iOS simulator.")
         guard let parsed = BiometricAction.parse(action) else {
             throw ValidationError("Unknown action '\(action)'. Use enrol, unenrol, match, no-match or status.")
         }
