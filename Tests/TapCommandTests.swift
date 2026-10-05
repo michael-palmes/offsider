@@ -174,6 +174,16 @@ struct TapCommandTests {
         #expect(stopped.session.calls == [.perform(.tapAt(x: 67, y: 814.5))])
     }
 
+    @Test("a cover inside the keyboard is named as the keyboard and its key")
+    func keyboardCover() {
+        let key = FakeUI.node(.button, label: "v", frame: FakeUI.frame(150, 700, 30, 40))
+        let keyboard = UINode(role: .keyboard, frame: FakeUI.frame(0, 600, 402, 274), native: .ios(IOSNativeAttributes()), children: [key])
+
+        let message = Tap.coverMessage(selector: "--id 'x'", at: (x: 160, y: 710), cover: key, roots: [keyboard])
+
+        #expect(message == "--id 'x' at (160, 710) may be covered by the keyboard (key 'v'); the tap may land on it.")
+    }
+
     @Test("a long cover label is cut to 60 characters")
     func coverLabelTruncated() {
         let cover = FakeUI.node(.other, label: String(repeating: "a", count: 80), frame: FakeUI.frame(0, 0, 10, 10))

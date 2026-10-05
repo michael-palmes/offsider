@@ -75,4 +75,29 @@ struct ReactNativeFixtureSmokeTests {
         try await app.run("tap --id environment-test-log")
         _ = try await app.waitForLabel(of: "environment-test-log-count") { $0 == "Log Count: 1" }
     }
+
+    @Test("the summary names an open keyboard", arguments: RNPlatform.enabled)
+    func keyboardHeader(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("text-input")
+        try await app.run("tap --id text-input-field")
+        _ = try await app.waitForNode { $0["id"] as? String == "typing-active-indicator" }
+        try await Task.sleep(for: .seconds(1))
+
+        let summary = try await app.run("describe-ui --summary").stdout
+
+        #expect(summary.contains("\n# keyboard shown\n"), "\(summary.prefix(300))")
+    }
+
+    @Test("on Android an open React Native Modal is named as a modal window", .enabled(if: isAndroidE2EEnabled))
+    func modalHeader() async throws {
+        let app = RNApp(.android)
+        try await app.open("modal-navigation-test")
+        try await app.run("tap --id modal-navigation-test-open")
+        _ = try await app.waitForNode { $0["id"] as? String == "modal-navigation-test-modal" }
+
+        let summary = try await app.run("describe-ui --summary").stdout
+
+        #expect(summary.contains("(modal)\n"), "\(summary.prefix(300))")
+    }
 }

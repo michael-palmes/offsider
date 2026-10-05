@@ -23,6 +23,20 @@ extension UITree {
             screen: (object["screen"] as? [String: Any]).flatMap(UIScreenInfo.init(jsonObject:)),
             roots: try nodes.map { try UINode(jsonObject: $0, platform: platform) }
         )
+        decodedContext = (object["context"] as? [String: Any]).map(UITreeContext.init(jsonObject:))
+    }
+}
+
+extension UITreeContext {
+    init(jsonObject object: [String: Any]) {
+        let window = (object["window"] as? [String: Any]).flatMap { window -> Window? in
+            guard let kind = (window["kind"] as? String).flatMap(Window.Kind.init(rawValue:)) else { return nil }
+            return Window(title: window["title"] as? String, kind: kind, package: window["package"] as? String)
+        }
+        let logBox = (object["logbox"] as? [String: Any]).map { logBox in
+            LogBox(logs: (logBox["logs"] as? NSNumber)?.intValue ?? 0, inspector: logBox["inspector"] as? Bool ?? false)
+        }
+        self.init(window: window, keyboard: object["keyboard"] as? Bool ?? false, logBox: logBox)
     }
 }
 

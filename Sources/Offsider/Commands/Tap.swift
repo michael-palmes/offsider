@@ -262,7 +262,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         guard let cover = AccessibilityTargetResolver.confirmedCover(hit: hit, resolution: resolution, roots: tree.roots) else {
             return
         }
-        let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover)
+        let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover, roots: tree.roots)
         if failIfCovered {
             let underKeyboard = AccessibilityTargetResolver.isUnderKeyboard(cover, in: tree.roots)
             throw CLIError(
@@ -280,7 +280,13 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// `--id 'save' at (196, 700) may be covered by button 'Dismiss' (20, 650) 350x120; the tap may land on it.`
-    static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode) -> String {
+    /// A key of the on-screen keyboard reads `the keyboard (key 'v')`, since the key itself means little.
+    static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode, roots: [UINode] = []) -> String {
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        if AccessibilityTargetResolver.isUnderKeyboard(cover, in: roots) {
+            let key = (cover.normalizedLabel ?? cover.normalizedID).map { " (key '\(SelectorText.truncated($0))')" } ?? ""
+            return "\(selector) at \(pointText) may be covered by the keyboard\(key); the tap may land on it."
+        }
         var parts = [cover.role.rawValue]
         if let name = cover.normalizedLabel ?? cover.normalizedID {
             parts.append("'\(SelectorText.truncated(name))'")
@@ -288,7 +294,6 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         if let frame = cover.frame {
             parts.append(frame.summary)
         }
-        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         return "\(selector) at \(pointText) may be covered by \(parts.joined(separator: " ")); the tap may land on it."
     }
 

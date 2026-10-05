@@ -126,14 +126,17 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let startedAt = Date()
         let roots: [UINode]
         var truncated = false
+        var windows: [UIWindowInfo]?
         switch try await treeSource(for: serial) {
         case .helper(let session):
-            (roots, truncated) = try await helperRoots(serial, session: session)
+            let read = try await helperRoots(serial, session: session)
+            (roots, truncated, windows) = (read.roots, read.truncated, read.windows)
         case .uiautomator:
             roots = try await uiautomatorRoots(serial)
         }
         var tree = UITree(platform: .android, device: serial, roots: roots)
         tree.sourceTruncated = truncated
+        tree.windows = windows
         guard let point else {
             DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
             return tree

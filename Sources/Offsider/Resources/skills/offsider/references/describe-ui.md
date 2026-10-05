@@ -7,6 +7,7 @@
 - `--summary` folds labels a parent already shows (`# folded N repeated labels` closes the output), and lists rows past an edge as one line per side, such as `[off-screen below] 34 items: id=rows-item-9 to id=rows-end`: scroll that way to reach them.
 - It stops at 16384 bytes with a `# truncated: N more nodes` line; pass `--max-bytes 0` for everything, or narrow with `--actionable`. `# the device stopped listing nodes at its limit` means the Android tree itself is incomplete.
 - `offsider describe-ui --point <X,Y> --device <DEVICE_ID>` inspects the element at a coordinate.
+- Lines after the device line say what surrounds the elements, only when it applies: `# window: <title> (modal)` or `(system)` on Android when a dialog, a React Native `Modal` or a system window is in front (only its elements are listed), `# keyboard shown` while a keyboard is up (dismiss it before tapping near the bottom), and `# logbox: 2 logs` or `# logbox: inspector open` in a React Native debug build. JSON carries them as `context` (`window`, `keyboard`, `logbox`).
 
 ## What changed
 

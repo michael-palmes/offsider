@@ -17,4 +17,22 @@ public enum KnownOverlays {
         let bottom = max(viewport.y + viewport.height, frame.y + frame.height)
         return UIFrame(x: viewport.x, y: frame.y, width: viewport.width, height: bottom - frame.y)
     }
+
+    /// The logs a LogBox banner counts: 1 for `!, …`, n for `n, …`.
+    public static func logBoxCount(_ label: String?) -> Int? {
+        guard isLogBoxBanner(label), let label else { return nil }
+        let prefix = label.trimmingCharacters(in: .whitespacesAndNewlines).prefix { $0 != "," }
+        return prefix == "!" ? 1 : Int(prefix)
+    }
+
+    /// The on-screen LogBox banners' logs, or nil when none shows.
+    public static func logBox(in tree: UITree) -> UITreeContext.LogBox? {
+        let viewport = tree.viewport
+        let counts = tree.roots.flatMap { $0.flattened() }.compactMap { node -> Int? in
+            if let viewport, let frame = node.frame, !frame.isVisible(in: viewport) { return nil }
+            return logBoxCount(node.label)
+        }
+        guard !counts.isEmpty else { return nil }
+        return UITreeContext.LogBox(logs: counts.reduce(0, +), inspector: false)
+    }
 }
