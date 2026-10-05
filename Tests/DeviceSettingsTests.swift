@@ -200,6 +200,15 @@ struct DeviceSettingsTests {
     func timeoutMessage(target: DeviceOrientation, message: String) {
         #expect(OrientationCommand.timeoutMessage(target: target, timeout: 5, platform: .ios, device: "D") == message)
     }
+
+    @Test("an iPhone orientation timeout says the screen turns only while awake and unlocked, and offers turning it by hand")
+    func physicalTimeoutMessage() {
+        let message = OrientationCommand.timeoutMessage(target: .landscapeRight, timeout: 5, platform: .ios, device: "D", physical: true)
+        #expect(!message.contains("simulator"))
+        #expect(message.contains("awake and unlocked"))
+        #expect(message.contains("rotate the device by hand"))
+        #expect(message.hasSuffix("`offsider orientation --device D`."))
+    }
 }
 
 @Suite("State wait")
