@@ -6,9 +6,11 @@ import OffsiderCore
 public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     /// A live stream that delivers no new frame for this long has died; a still screen keeps sending frames.
     static let stallLimit: Duration = .seconds(6)
-    /// Failed re-opens in a row before the broker gives the device up.
-    static let reopenLimit = 3
+    /// The wait before re-opening a failed stream, doubling with each failure in a row up to `reopenCeiling`.
     static let reopenInterval: Duration = .seconds(5)
+    static let reopenCeiling: Duration = .seconds(60)
+    /// A failed UniversalHID open is tried again on the next input after this long.
+    static let hidRetryDelay: Duration = .seconds(2)
     static let presenceInterval: Duration = .seconds(30)
     /// The panel's orientation is read again this often while the broker is in use.
     static let panelInterval: Duration = .seconds(2)
@@ -22,6 +24,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private let version: CoreDeviceVersion?
     private var stream: IOSDeviceScreenStream?
     private var opening: Task<Void, Never>?
+    private var streamClosing: Task<Void, Never>?
     private var failure: IOSDeviceError?
     private var buttons: DeviceDTUHID?
     private var target: (identifier: String, name: String)?
@@ -35,6 +38,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private var hidOpening: Task<UniversalHIDService, Error>?
     private var buttonsOpening: Task<DeviceDTUHID, Error>?
     private var hidFailure: IOSDeviceError?
+    private var hidFailedAt = ContinuousClock.now
     private var surfaces: (touchscreen: UInt64, keyboard: UInt64) = (touchscreenFallback, keyboardFallback)
     private var panel: IOSDevicePanel?
     public private(set) var geometry: IOSDeviceGeometry?
@@ -53,7 +57,18 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         self.log = log
     }
 
-    public var supportsTouch: Bool { version?.supportsHID == true && hidFailure == nil }
+    /// Optimistic once a failed HID open is due a retry, so the client routes input here and the next request retries it.
+    public var supportsTouch: Bool { version?.supportsHID == true && (hidFailure == nil || hidRetryDue) }
+
+    private var hidRetryDue: Bool { ContinuousClock.now - hidFailedAt >= Self.hidRetryDelay }
+
+    /// How long after a failed open the stream is tried again.
+    static func reopenDelay(afterFailures failures: Int) -> Duration {
+        guard failures > 1 else { return reopenInterval }
+        return min(reopenInterval * (1 << min(failures - 1, 6)), reopenCeiling)
+    }
+
+    private var reopenDue: Bool { ContinuousClock.now - lastAttempt >= Self.reopenDelay(afterFailures: failedReopens) }
 
     /// The device's model label once listed.
     public var label: String? { target?.name }
@@ -73,16 +88,22 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
             _ = try? await self.hidService()
             _ = try? await self.buttonLink()
         }
-        await openStream()
+        await beginOpening().value
         await input.value
     }
 
-    private func openStream() async {
-        if let opening { return await opening.value }
-        let task = Task { await self.attemptOpen() }
+    /// One open at a time, after any stream still closing; it runs on even when its caller stops waiting.
+    @discardableResult
+    private func beginOpening() -> Task<Void, Never> {
+        if let opening { return opening }
+        let closing = streamClosing
+        let task = Task {
+            await closing?.value
+            await self.attemptOpen()
+            self.opening = nil
+        }
         opening = task
-        await task.value
-        opening = nil
+        return task
     }
 
     private func attemptOpen() async {
@@ -125,10 +146,15 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         return (identifier, name, device.tunnelAddress)
     }
 
+    /// A stream waiting out its back-off fails at once, so the client captures with devicectl instead of waiting.
     public func frame(_ format: IOSDeviceScreenFrame.Format) async throws -> IOSDeviceScreenFrame {
         lastUse = .now
         if stream == nil {
-            if opening == nil, failure?.kind != .streamNeedsGUISession { await openStream() } else { await opening?.value }
+            if let opening {
+                await opening.value
+            } else if failure == nil || (failure?.kind != .streamNeedsGUISession && reopenDue) {
+                await beginOpening().value
+            }
         }
         guard let stream else {
             throw failure ?? IOSDeviceError.streamFailed(udid, udid: udid, detail: "the stream did not open")
@@ -136,7 +162,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         do {
             return try await stream.latestFrame(format)
         } catch {
-            await dropStream(error)
+            dropStream(stream, error)
             throw error
         }
     }
@@ -222,9 +248,11 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     }
 
     /// The UniversalHID service, kept open; it waits out its own activation window once when it opens.
+    /// After a failed open, input fails with that failure until a retry is due.
     private func hidService() async throws -> UniversalHIDService {
         if let hid { return hid }
         if let hidOpening { return try await hidOpening.value }
+        if let hidFailure, !hidRetryDue { throw hidFailure }
         let task = Task { try await self.openHID() }
         hidOpening = task
         defer { hidOpening = nil }
@@ -243,7 +271,8 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
             log(.info, "UniversalHID open: touchscreen \(surfaces.touchscreen), keyboard \(surfaces.keyboard)")
             return service
         } catch {
-            hidFailure = error as? IOSDeviceError
+            hidFailure = (error as? IOSDeviceError) ?? IOSDeviceError.hidFailed(target?.name ?? udid, udid: udid, detail: error.localizedDescription, sent: false)
+            hidFailedAt = .now
             throw error
         }
     }
@@ -327,14 +356,21 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    private func dropStream(_ error: Error) async {
-        guard let stream else { return }
-        self.stream = nil
+    /// Only the stream that failed is dropped; it ends on the device in the background, before the next open starts.
+    private func dropStream(_ dropped: IOSDeviceScreenStream, _ error: Error) {
+        guard stream === dropped else { return }
+        stream = nil
+        lastAttempt = .now
         failure = (error as? IOSDeviceError) ?? IOSDeviceError.streamFailed(udid, udid: udid, detail: error.localizedDescription)
-        await stream.close()
+        let previous = streamClosing
+        streamClosing = Task {
+            await previous?.value
+            await dropped.close()
+        }
     }
 
-    /// A live stream must keep delivering frames; a dead one is re-opened, and a device that stays unreachable ends the broker.
+    /// Never waits on the stream: a stalled one is dropped and re-opened in the background with back-off, and input carries on
+    /// without it. Only a device that is no longer listed or reachable ends the broker.
     public func checkHealth() async -> Bool {
         let now = ContinuousClock.now
         if now - lastUse < Self.activeWindow, panel == nil || now - panelReadAt > Self.panelInterval { refreshPanelSoon() }
@@ -347,19 +383,17 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
             }
             guard now - lastProgress > Self.stallLimit, opening == nil else { return true }
             log(.info, "Stream stalled at \(frames) frames; re-opening it")
-            await dropStream(IOSDeviceError.streamFailed(target?.name ?? udid, udid: udid, detail: "the stream stopped delivering frames"))
+            dropStream(stream, IOSDeviceError.streamFailed(target?.name ?? udid, udid: udid, detail: "the stream stopped delivering frames"))
+            lastAttempt = .now - Self.reopenInterval
         }
         guard opening == nil else { return true }
+        if let failure, [.notListed, .unavailable].contains(failure.kind) { return false }
         if failure?.kind == .streamNeedsGUISession {
             guard now - lastPresence > Self.presenceInterval else { return true }
             lastPresence = now
             return (try? await currentDevice()) != nil
         }
-        if let failure, [.notListed, .unavailable].contains(failure.kind) { return false }
-        guard failedReopens < Self.reopenLimit else { return false }
-        guard now - lastAttempt >= Self.reopenInterval else { return true }
-        await openStream()
-        if let failure, [.notListed, .unavailable].contains(failure.kind) { return false }
+        if reopenDue { beginOpening() }
         return true
     }
 
@@ -372,6 +406,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
             heldButton = nil
         }
         await opening?.value
+        await streamClosing?.value
         if let stream {
             self.stream = nil
             await stream.close()

@@ -25,7 +25,7 @@ public struct IOSDeviceScreenFrame: Sendable {
 }
 
 /// A live CoreDevice screen stream from one wired device, decoded in this process as Xcode's screen sharing does.
-/// While it runs, the device treats this client's HID services as authenticated.
+/// Screenshots only: UniversalHID touches and keys reach the device whether or not a stream runs.
 @MainActor
 public final class IOSDeviceScreenStream {
     nonisolated static let replyTimeoutSeconds: Double = 15
@@ -41,7 +41,6 @@ public final class IOSDeviceScreenStream {
     private let video: MediaVideoStream
     private let rtp: Int32
     private let frames: FrameStore
-    private let answeredAt: ContinuousClock.Instant
     private let target: Target
     private let timing: IOSDeviceTiming
     private var closed = false
@@ -55,7 +54,7 @@ public final class IOSDeviceScreenStream {
 
     private init(
         answer: MediaStreamAnswer, socket: CoreDeviceServiceSocket, video: MediaVideoStream, rtp: Int32,
-        frames: FrameStore, answeredAt: ContinuousClock.Instant, target: Target, timing: IOSDeviceTiming
+        frames: FrameStore, target: Target, timing: IOSDeviceTiming
     ) {
         self.answer = answer
         width = answer.width
@@ -64,7 +63,6 @@ public final class IOSDeviceScreenStream {
         self.video = video
         self.rtp = rtp
         self.frames = frames
-        self.answeredAt = answeredAt
         self.target = target
         self.timing = timing
     }
@@ -106,7 +104,6 @@ public final class IOSDeviceScreenStream {
         let session = UUID()
         let input = MediaStreamAction.startInput(receiverIP: host.address, receiverPort: port, senderIP: tunnelAddress, offer: offer, session: session)
         let reply = await request(socket, action: MediaStreamAction.start, input: input, target: target)
-        let answeredAt = ContinuousClock.now
         let answer: MediaStreamAnswer
         do {
             answer = try startAnswer(reply, target: target)
@@ -123,12 +120,12 @@ public final class IOSDeviceScreenStream {
         )
         do {
             let (configuration, options) = try negotiator.accept(answer.negotiatorAnswer)
-            try await connectToFirstPacket(rtp)
+            try await connectToFirstPacket(rtp, from: tunnelAddress)
             let video = try MediaVideoStream(socket: rtp, options: options, session: session, delegate: delegate)
             try video.configure(configuration)
             try video.start()
             return IOSDeviceScreenStream(
-                answer: answer, socket: socket, video: video, rtp: rtp, frames: frames, answeredAt: answeredAt, target: target, timing: timing
+                answer: answer, socket: socket, video: video, rtp: rtp, frames: frames, target: target, timing: timing
             )
         } catch {
             socket.cancel()
@@ -137,19 +134,6 @@ public final class IOSDeviceScreenStream {
             let detail = (error as? MediaStreamRuntimeError)?.description ?? "\(error)"
             throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: detail)
         }
-    }
-
-    /// True once the device has had the 0.3 s it needs to treat this client's input as authenticated.
-    public var isAuthenticated: Bool {
-        !closed && frames.failure == nil && MediaStreamReadiness.remaining(answeredAt: answeredAt, now: .now) == .zero
-    }
-
-    /// Returns once `isAuthenticated` holds; throws if the stream has failed.
-    public func awaitReady() async throws {
-        try checkLive()
-        let remaining = MediaStreamReadiness.remaining(answeredAt: answeredAt, now: .now)
-        if remaining > .zero { try await Task.sleep(for: remaining) }
-        try checkLive()
     }
 
     /// The newest decoded frame, waiting up to `timeout` for the first one.
@@ -276,27 +260,63 @@ public final class IOSDeviceScreenStream {
     }
 
     /// Waits for the device's first RTP packet without consuming it, then connects the socket to its sender.
-    private static func connectToFirstPacket(_ descriptor: Int32) async throws {
+    /// Packets from any address but the device's tunnel address are read and dropped.
+    private static func connectToFirstPacket(_ descriptor: Int32, from tunnelAddress: String) async throws {
+        guard let device = ipv6Address(tunnelAddress) else {
+            throw SocketError(description: "the tunnel address \(tunnelAddress) is not an IPv6 address")
+        }
         let result: Int32 = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                var timeout = timeval(tv_sec: rtpTimeoutSeconds, tv_usec: 0)
-                setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-                var peer = sockaddr_in6()
-                var length = socklen_t(MemoryLayout<sockaddr_in6>.size)
-                var probe = [UInt8](repeating: 0, count: 4)
-                let connected = withUnsafeMutablePointer(to: &peer) {
-                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { address in
-                        recvfrom(descriptor, &probe, probe.count, MSG_PEEK, address, &length) > 0 && connect(descriptor, address, length) == 0
+                let deadline = Date().addingTimeInterval(TimeInterval(rtpTimeoutSeconds))
+                var code = ETIMEDOUT
+                while true {
+                    let remaining = deadline.timeIntervalSinceNow
+                    guard remaining > 0 else { break }
+                    var timeout = timeval(tv_sec: Int(remaining), tv_usec: Int32((remaining - remaining.rounded(.down)) * 1_000_000))
+                    setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+                    var peer = sockaddr_in6()
+                    var length = socklen_t(MemoryLayout<sockaddr_in6>.size)
+                    var probe = [UInt8](repeating: 0, count: 4)
+                    let received = withUnsafeMutablePointer(to: &peer) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { recvfrom(descriptor, &probe, probe.count, MSG_PEEK, $0, &length) }
                     }
+                    guard received >= 0 else {
+                        if errno == EINTR { continue }
+                        code = errno == EAGAIN ? ETIMEDOUT : errno
+                        break
+                    }
+                    guard isSender(peer, device) else {
+                        _ = recv(descriptor, &probe, probe.count, 0)
+                        continue
+                    }
+                    let connected = withUnsafeMutablePointer(to: &peer) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(descriptor, $0, length) == 0 }
+                    }
+                    code = connected ? 0 : errno
+                    break
                 }
                 var none = timeval()
                 setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &none, socklen_t(MemoryLayout<timeval>.size))
-                continuation.resume(returning: connected ? 0 : errno)
+                continuation.resume(returning: code)
             }
         }
         guard result == 0 else {
             throw SocketError(description: "no video packet arrived within \(rtpTimeoutSeconds) s (\(String(cString: strerror(result))))")
         }
+    }
+
+    /// An IPv6 literal, without any zone after `%`, as bytes.
+    nonisolated static func ipv6Address(_ literal: String) -> in6_addr? {
+        var address = in6_addr()
+        let bare = literal.split(separator: "%", maxSplits: 1).first.map(String.init) ?? literal
+        return inet_pton(AF_INET6, bare, &address) == 1 ? address : nil
+    }
+
+    /// True when a datagram came from the device's tunnel address.
+    nonisolated static func isSender(_ peer: sockaddr_in6, _ device: in6_addr) -> Bool {
+        var source = peer.sin6_addr
+        var expected = device
+        return peer.sin6_family == sa_family_t(AF_INET6) && memcmp(&source, &expected, MemoryLayout<in6_addr>.size) == 0
     }
 
     private static let images = CIContext(options: [.cacheIntermediates: false])

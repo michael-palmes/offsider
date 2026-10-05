@@ -193,12 +193,3 @@ struct LatestFrameSlot<Frame> {
         return true
     }
 }
-
-/// `backboardd` re-matches HID services against a new stream about 0.3 s after the start is answered.
-enum MediaStreamReadiness {
-    static let settle: Duration = .milliseconds(300)
-
-    static func remaining(answeredAt: ContinuousClock.Instant, now: ContinuousClock.Instant) -> Duration {
-        max(.zero, settle - (now - answeredAt))
-    }
-}

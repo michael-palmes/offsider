@@ -259,6 +259,7 @@ final class FakeSessionHardware: DeviceSessionHardware {
     var label: String? = "Apple iPad Pro"
     var geometry: IOSDeviceGeometry?
     var healthy = true
+    var healthDelay: Duration = .zero
     private(set) var touches: [[DeviceSessionStep]] = []
     private(set) var closed = false
     /// Set when a touch with a long wait saw its client leave before the wait ended.
@@ -278,7 +279,10 @@ final class FakeSessionHardware: DeviceSessionHardware {
         sawClientLeave = !(await CoreDeviceSessionHardware.pause(until: .now + .seconds(wait), abandoned: abandoned))
     }
     func keys(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws {}
-    func checkHealth() async -> Bool { healthy }
+    func checkHealth() async -> Bool {
+        if healthDelay > .zero { try? await Task.sleep(for: healthDelay) }
+        return healthy
+    }
     func close() async { closed = true }
 }
 
@@ -345,6 +349,43 @@ struct DeviceSessionServerTests {
         let client = DeviceSessionClient(udid: "U", link: try SocketSessionLink.connect(socket))
         try await client.stop()
         try await running.value
+    }
+
+    @Test("a slow health check, such as a stream re-opening, never holds up input")
+    func healthOutsideInput() async throws {
+        let socket = NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8)).sock"
+        let hardware = FakeSessionHardware()
+        hardware.healthDelay = .seconds(3)
+        let server = DeviceSessionServer(
+            udid: "U", socketPath: socket, hardware: hardware, store: nil, idleTimeout: .seconds(30), healthInterval: .milliseconds(10), log: { _, _ in }
+        )
+        let running = Task { try await server.run() }
+        var link: (any DeviceSessionLink)?
+        for _ in 0..<100 where link == nil {
+            link = try? SocketSessionLink.connect(socket)
+            if link == nil { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        let client = DeviceSessionClient(udid: "U", link: try #require(link))
+        try await Task.sleep(for: .milliseconds(100))
+        let started = ContinuousClock.now
+        try await client.touch([.touch(.down, x: 1, y: 2), .touch(.up, x: 1, y: 2)])
+        #expect(ContinuousClock.now - started < .seconds(1))
+        try await client.stop()
+        try await running.value
+    }
+
+    @Test("queued input is dropped unsent once its client has gone or would no longer wait for the reply")
+    func staleInput() {
+        let now = ContinuousClock.now
+        #expect(DeviceSessionServer.unsent(DeviceSessionOrigin(receivedAt: now, isGone: { false }), now: now + .seconds(1)) == nil)
+        #expect(DeviceSessionServer.unsent(DeviceSessionOrigin(receivedAt: now, isGone: { true }), now: now)?.reason == .hidBrokerFailed)
+        #expect(DeviceSessionServer.unsent(DeviceSessionOrigin(receivedAt: now, isGone: { false }), now: now + DeviceSessionClient.inputTimeout) != nil)
+    }
+
+    @Test("a failed stream is retried with a doubling back-off that stops at a minute")
+    func reopenBackOff() {
+        let delays = (1...8).map { CoreDeviceSessionHardware.reopenDelay(afterFailures: $0) }
+        #expect(delays == [.seconds(5), .seconds(10), .seconds(20), .seconds(40), .seconds(60), .seconds(60), .seconds(60), .seconds(60)])
     }
 
     @Test("the broker stops by itself once idle, and when its device goes")

@@ -109,11 +109,18 @@ struct IOSDeviceScreenStreamTests {
         #expect(slot.received == 2)
     }
 
-    @Test("input counts as authenticated 0.3 s after the stream start is answered")
-    func readiness() {
-        let answered = ContinuousClock.now
-        #expect(MediaStreamReadiness.remaining(answeredAt: answered, now: answered + .milliseconds(100)) == .milliseconds(200))
-        #expect(MediaStreamReadiness.remaining(answeredAt: answered, now: answered + .seconds(1)) == .zero)
+    @Test("only datagrams from the device's tunnel address are taken as the stream's sender")
+    func streamSender() throws {
+        let device = try #require(IOSDeviceScreenStream.ipv6Address("fd2b:1d9c:22c3::1%utun4"))
+        func peer(_ literal: String) throws -> sockaddr_in6 {
+            var address = sockaddr_in6()
+            address.sin6_family = sa_family_t(AF_INET6)
+            address.sin6_addr = try #require(IOSDeviceScreenStream.ipv6Address(literal))
+            return address
+        }
+        #expect(IOSDeviceScreenStream.isSender(try peer("fd2b:1d9c:22c3::1"), device))
+        #expect(!IOSDeviceScreenStream.isSender(try peer("fd2b:1d9c:22c3::2"), device))
+        #expect(IOSDeviceScreenStream.ipv6Address("10.0.0.1") == nil)
     }
 
     @Test("a listed device carries its tunnel address only when it is an IPv6 literal")

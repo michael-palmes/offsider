@@ -19,7 +19,7 @@ public protocol DeviceSessionHardware: AnyObject {
     func press(usagePage: UInt64, usageCode: UInt64, hold: Double, abandoned: @Sendable () -> Bool) async throws
     func touch(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws
     func keys(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws
-    /// False once the device has gone, so the broker exits; may re-open a stream that died.
+    /// False once the device has gone, so the broker exits; starts re-opening a stream that died without waiting for it.
     func checkHealth() async -> Bool
     /// Ends the stream on the device and closes every socket.
     func close() async
@@ -68,10 +68,13 @@ final class DeviceSessionStopFlag: @unchecked Sendable {
     func raise() { lock.withLock { set = true } }
 }
 
-/// The per-device broker: one 0600 Unix socket for this user, requests served one at a time, exiting on idle, `stop` or a lost device.
+/// The per-device broker: one 0600 Unix socket for this user, exiting on idle, `stop` or a lost device.
+/// Input requests run one at a time, as do frame requests, and neither waits on the other or on stream recovery.
 @MainActor
 public final class DeviceSessionServer {
     public static let defaultIdleSeconds = 300
+    /// Input that waited longer than this to start is dropped unsent: its client is about to give up on the reply.
+    static let staleInputAge: Duration = DeviceSessionClient.inputTimeout - .seconds(5)
 
     let udid: String
     let socketPath: String
@@ -80,7 +83,8 @@ public final class DeviceSessionServer {
     let idleTimeout: Duration
     let healthInterval: Duration
     let log: IOSDeviceLog
-    private let gate = DeviceSessionGate()
+    private let inputGate = DeviceSessionGate()
+    private let frameGate = DeviceSessionGate()
     private let accepting = DeviceSessionStopFlag()
     private var lastRequest = ContinuousClock.now
     private var inFlight = 0
@@ -126,7 +130,7 @@ public final class DeviceSessionServer {
                 break
             }
             if now >= nextHealth {
-                let healthy = await gate.run { await hardware.checkHealth() }
+                let healthy = await hardware.checkHealth()
                 if !healthy {
                     log(.info, "Stopping: \(udid) is no longer reachable")
                     break
@@ -137,7 +141,7 @@ public final class DeviceSessionServer {
         accepting.raise()
         Darwin.close(listener)
         if let identity, Self.socketIdentity(socketPath) == identity { unlink(socketPath) }
-        await gate.run { await hardware.close() }
+        await inputGate.run { await frameGate.run { await hardware.close() } }
         store?.remove(udid: udid, ifPID: getpid())
         log(.info, "Stopped")
     }
@@ -149,14 +153,39 @@ public final class DeviceSessionServer {
             inFlight -= 1
             lastRequest = .now
         }
-        if case .ping = request { return (pingReply(id), nil) }
-        return await gate.run {
-            do {
-                return try await self.serve(id: id, request, origin: origin)
-            } catch {
-                return (.failure(id: id, error), nil)
+        switch request {
+        case .ping:
+            return (pingReply(id), nil)
+        case .stop:
+            stopping = true
+            return (DeviceSessionReply(id: id), nil)
+        case .frame:
+            return await frameGate.run { await self.reply(id: id, request, origin: origin) }
+        case .press, .touch, .keys, .text:
+            return await inputGate.run {
+                if let unsent = Self.unsent(origin, now: .now) { return (.failure(id: id, unsent), nil) }
+                return await self.reply(id: id, request, origin: origin)
             }
         }
+    }
+
+    private func reply(id: Int, _ request: DeviceSessionRequest, origin: DeviceSessionOrigin) async -> (DeviceSessionReply, Data?) {
+        do {
+            return try await serve(id: id, request, origin: origin)
+        } catch {
+            return (.failure(id: id, error), nil)
+        }
+    }
+
+    /// Why queued input is dropped before it is sent: its client has gone, or has waited so long it will not see the reply.
+    static func unsent(_ origin: DeviceSessionOrigin, now: ContinuousClock.Instant) -> IOSDeviceError? {
+        if origin.isGone() {
+            return IOSDeviceError(.sessionFailed, "The command disconnected before its input was sent, so the device session did not send it.")
+        }
+        if now - origin.receivedAt > staleInputAge {
+            return IOSDeviceError(.sessionFailed, "The device session was busy for over \(staleInputAge.components.seconds) seconds, so it dropped this input unsent. Retry.")
+        }
+        return nil
     }
 
     private func serve(id: Int, _ request: DeviceSessionRequest, origin: DeviceSessionOrigin) async throws -> (DeviceSessionReply, Data?) {
