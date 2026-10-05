@@ -70,8 +70,10 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var upright: Bool
     public var format: ImageFormat?
     public var comparison: ScreenCompare.Result?
-    /// Secure fields painted black; nil unless masking was asked for.
-    public var masked: Int?
+    /// Rectangles painted per kind asked for; nil unless a mask was asked for.
+    public var maskedBy: [MaskKind: Int]?
+    /// The mask selectors that matched nothing, such as `--mask-id profile-email`.
+    public var maskUnmatched: [String]
 
     public init(
         path: String?,
@@ -86,7 +88,8 @@ public struct ScreenshotReport: Equatable, Sendable {
         upright: Bool,
         format: ImageFormat?,
         comparison: ScreenCompare.Result? = nil,
-        masked: Int? = nil
+        maskedBy: [MaskKind: Int]? = nil,
+        maskUnmatched: [String] = []
     ) {
         self.path = path
         self.width = width
@@ -100,7 +103,13 @@ public struct ScreenshotReport: Equatable, Sendable {
         self.upright = upright
         self.format = format
         self.comparison = comparison
-        self.masked = masked
+        self.maskedBy = maskedBy
+        self.maskUnmatched = maskUnmatched
+    }
+
+    /// Every rectangle painted, by any mask; nil unless a mask was asked for.
+    public var masked: Int? {
+        maskedBy.map { $0.values.reduce(0, +) }
     }
 
     public func jsonLine() -> String {
@@ -122,8 +131,13 @@ public struct ScreenshotReport: Equatable, Sendable {
                 ])
             }),
         ]
-        if let masked {
+        if let maskedBy, let masked {
             members.append(("masked", .integer(masked)))
+            let kinds = MaskKind.allCases.compactMap { kind in maskedBy[kind].map { (kind.rawValue, OrderedJSON.integer($0)) } }
+            members.append(("maskedBy", .object(kinds)))
+            if !maskUnmatched.isEmpty {
+                members.append(("maskUnmatched", .array(maskUnmatched.map(OrderedJSON.string))))
+            }
         }
         members += [
             ("orientation", .optional(orientation, OrderedJSON.string)),

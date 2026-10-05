@@ -25,19 +25,19 @@ public struct PointRegion: Equatable, Sendable, CustomStringConvertible {
         self.height = height
     }
 
-    /// Parses "x,y,width,height": a non-negative origin and a positive size.
-    public static func parse(_ text: String) throws -> PointRegion {
+    /// Parses "x,y,width,height": a non-negative origin and a positive size; `option` names the flag in errors.
+    public static func parse(_ text: String, option: String = "--region") throws -> PointRegion {
         let parts = text.split(separator: ",", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
         let values = parts.compactMap(Double.init)
         guard parts.count == 4, values.count == 4, values.allSatisfy(\.isFinite) else {
-            throw ScreenRegionError("--region takes x,y,width,height in points, for example 0,100,402,300; got \"\(text)\".")
+            throw ScreenRegionError("\(option) takes x,y,width,height in points, for example 0,100,402,300; got \"\(text)\".")
         }
         guard values[0] >= 0, values[1] >= 0 else {
-            throw ScreenRegionError("--region \(text) starts at a negative coordinate; x and y must be 0 or more.")
+            throw ScreenRegionError("\(option) \(text) starts at a negative coordinate; x and y must be 0 or more.")
         }
         guard values[2] > 0, values[3] > 0 else {
-            throw ScreenRegionError("--region \(text) has no area; width and height must be greater than 0.")
+            throw ScreenRegionError("\(option) \(text) has no area; width and height must be greater than 0.")
         }
         return PointRegion(x: values[0], y: values[1], width: values[2], height: values[3])
     }

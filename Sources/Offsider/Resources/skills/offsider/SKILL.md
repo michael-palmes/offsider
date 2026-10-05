@@ -1,6 +1,6 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox",, "number and mask screenshots for a report", "redact logs", "React Native dev menu or LogBox", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)".
+description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox", "number and mask screenshots for a report", "redact logs", "React Native dev menu or LogBox", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)".
 ---
 # Offsider
 
@@ -66,6 +66,7 @@ Run `offsider guide <topic>` to print one; `offsider guide` lists them.
 | `foldables` | The device folds or has more than one display |
 | `batch` | A flow has three or more steps |
 | `screenshots` | You need pixels: charts, maps, web views, masked secure fields or video |
+| `evidence` | You need numbered screenshots and logs for a report, masked or redacted, a pixel diff, or log entries as JSON |
 | `describe-ui` | You need more than `--summary`: JSON, filters, the byte budget or `--diff` |
 | `device-state` | You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked |
 | `migrate` | You know idb, Maestro or agent-device and want the Offsider equivalent |

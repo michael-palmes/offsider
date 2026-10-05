@@ -15,7 +15,11 @@ struct Screenshot: AsyncParsableCommand {
         is captured as it is, often dark. \
         --mask-secure (or OFFSIDER_MASK_SECURE=1) reads the accessibility tree first and paints every password field \
         opaque black before the image is written or compared; when a password field cannot be located, the image is \
-        withheld and no file is written. Masking follows the platform's secure flag only, and video is never masked.
+        withheld and no file is written. --mask-id, --mask-label, --mask-text and --mask-emails paint the elements \
+        they match the same way; --mask-region paints a rectangle in points before any --region crop and reads no \
+        tree. A selector that matches nothing is named in maskUnmatched and on stderr, and the image is still written. \
+        Masks cover what the tree describes: web views, canvases, images and text drawn after the tree read can \
+        still show. Video is never masked.
         """
     )
 
@@ -49,6 +53,21 @@ struct Screenshot: AsyncParsableCommand {
     @Flag(name: .customLong("mask-secure"), help: "Paint password fields black before writing the image; withhold it when one cannot be located. OFFSIDER_MASK_SECURE=1 turns this on by default.")
     var maskSecure = false
 
+    @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this id black. Repeatable.", valueName: "id"))
+    var maskIDs: [String] = []
+
+    @Option(name: .customLong("mask-label"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this label black, matched as --label matches. Repeatable.", valueName: "text"))
+    var maskLabels: [String] = []
+
+    @Option(name: .customLong("mask-text"), parsing: .upToNextOption, help: ArgumentHelp("Paint the innermost elements whose label, value, title, text, content description or hint matches this case-insensitive regular expression black. Repeatable.", valueName: "regex"))
+    var maskTexts: [String] = []
+
+    @Flag(name: .customLong("mask-emails"), help: "Paint the innermost elements showing an email address black.")
+    var maskEmails = false
+
+    @Option(name: .customLong("mask-region"), parsing: .upToNextOption, help: ArgumentHelp("Paint this rectangle, in points, black before any --region crop; reads no tree. Repeatable.", valueName: "x,y,w,h"))
+    var maskRegions: [String] = []
+
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
 
@@ -63,6 +82,13 @@ struct Screenshot: AsyncParsableCommand {
         } catch let error as UserFacingError {
             throw ValidationError(error.userFacingDescription)
         }
+        do {
+            _ = try maskPlan()
+        } catch let error as MaskPatternError {
+            throw ValidationError(error.description)
+        } catch let error as ScreenRegionError {
+            throw ValidationError(error.message)
+        }
         if let threshold {
             guard compare != nil else { throw ValidationError("--threshold applies to --compare only.") }
             guard (0...1).contains(threshold) else { throw ValidationError("--threshold must be from 0 to 1; got \(threshold).") }
@@ -72,8 +98,23 @@ struct Screenshot: AsyncParsableCommand {
     func request() throws -> ScreenshotRequest {
         ScreenshotRequest(
             scale: try scale.map(ScreenshotScale.parse) ?? .native,
-            region: try region.map(PointRegion.parse),
+            region: try region.map { try PointRegion.parse($0) },
             format: try ScreenCapture.resolveFormat(named: format, quality: quality, outputPath: output)
+        )
+    }
+
+    /// The masks the flags ask for; `secureByDefault` adds `--mask-secure`, as `batch --mask-secure` does.
+    func maskPlan(secureByDefault: Bool = false, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> MaskPlan {
+        for pattern in maskTexts {
+            _ = try MaskPlan.compile(pattern)
+        }
+        return MaskPlan(
+            secure: Self.masksSecure(flag: maskSecure || secureByDefault, environment: environment),
+            ids: maskIDs,
+            labels: maskLabels,
+            texts: maskTexts,
+            emails: maskEmails,
+            regions: try maskRegions.map { try PointRegion.parse($0, option: "--mask-region") }
         )
     }
 
@@ -81,7 +122,7 @@ struct Screenshot: AsyncParsableCommand {
         let request = try request()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        let report = try await take(request, on: route, masking: Self.masksSecure(flag: maskSecure))
+        let report = try await take(request, on: route, masks: try maskPlan())
 
         guard let comparison = report.comparison else {
             if json {
@@ -102,19 +143,19 @@ struct Screenshot: AsyncParsableCommand {
         }
     }
 
-    /// Standalone: masking reads one fresh tree; without it, no tree is read.
+    /// Standalone: a tree mask reads one fresh tree; without one, no tree is read.
     @MainActor
-    func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masking: Bool) async throws -> ScreenshotReport {
-        guard masking else { return try await take(request, on: route, secureTree: nil) }
-        return try await take(request, on: route) { try await route.backend.accessibilityTree(for: route.device) }
+    func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan) async throws -> ScreenshotReport {
+        try await take(request, on: route, masks: masks) { try await route.backend.accessibilityTree(for: route.device) }
     }
 
-    /// Captures, masks secure fields when `secureTree` is given, writes the image when asked and compares; prints only the stderr notes.
+    /// Captures, paints `masks` (reading the tree from `tree` only when a mask needs it), writes the image when asked and compares; prints only the stderr notes.
     @MainActor
     func take(
         _ request: ScreenshotRequest,
         on route: DeviceRouter.Route,
-        secureTree: (@MainActor () async throws -> UITree)? = nil
+        masks: MaskPlan,
+        tree treeSource: @MainActor () async throws -> UITree
     ) async throws -> ScreenshotReport {
         let backend = route.backend
         try await backend.prepare()
@@ -123,12 +164,12 @@ struct Screenshot: AsyncParsableCommand {
         let baseline = try compare.map(ScreenCapture.readBaseline)
         let selected = try await displayOption.resolve(on: backend, device: booted.id, deviceName: deviceOption.id)
         var tree: UITree?
-        if let secureTree {
+        if masks.needsTree {
             if let selected, !selected.display.active {
                 throw MaskUnproven(detail: "The \(selected.display.descriptor.screenDisplay.id) display is not active and the accessibility tree describes the active display only")
             }
             // Read before the capture, so the frames describe the screen the pixels show.
-            tree = try await Timings.measure("accessibility") { try await secureTree() }
+            tree = try await Timings.measure("accessibility") { try await treeSource() }
         }
         var capture: CapturedScreen
         if let selected {
@@ -139,11 +180,14 @@ struct Screenshot: AsyncParsableCommand {
         } else {
             capture = try await ScreenCapture.capture(backend, device: booted.id)
         }
-        var masked: Int?
-        if let tree {
-            let result = try Timings.measure("mask") { try ScreenCapture.maskingSecureFields(capture, tree: tree) }
+        var masked: ScreenCapture.MaskResult?
+        if !masks.isEmpty {
+            let result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree) }
             capture = result.capture
-            masked = result.painted
+            masked = result
+            if !result.unmatched.isEmpty {
+                Self.writeError("Warning: nothing matched \(result.unmatched.joined(separator: ", ")), so nothing was painted for it.")
+            }
         }
         let rendered = try ScreenCapture.render(capture, request: request)
 
@@ -157,7 +201,7 @@ struct Screenshot: AsyncParsableCommand {
         }
 
         guard let compare, let baseline else {
-            return rendered.report(path: path, format: request.format, capture: capture, masked: masked)
+            return rendered.report(path: path, format: request.format, capture: capture, masks: masked)
         }
 
         if ScreenImage.isJPEG(baseline) {
@@ -167,7 +211,7 @@ struct Screenshot: AsyncParsableCommand {
         let result = try ScreenCapture.compare(
             rendered, capture: capture, baseline: baseline, baselinePath: compare, bands: bands, threshold: threshold ?? 0
         )
-        return rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masked: masked)
+        return rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masks: masked)
     }
 
     private static func writeError(_ line: String) {

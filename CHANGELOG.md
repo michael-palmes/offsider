@@ -41,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `list-devices` names the Offsider command holding each device's lock: `heldBy {pid, command, startedAt}` in `--json` and one line per held device on stderr. A command now empties its lock record when it lets go, and a record whose pid has gone, is not `offsider`, or started after the lock was taken never counts.
 - `lease set|release|show` keeps an advisory lease on a device under its AVD name, phone serial or UDID (`--label`, `--ttl` 1 to 1440 minutes, default 240, `--force`, `--json`), so agents sharing devices can see which session uses one; a shut-down AVD can be leased by name. Another label's live lease fails with the new reason `device_leased` (exit 8) unless `--force`, and the same label renews it. Input commands never read leases. `list-devices` shows `lease {label, since, expiresAt}` with a note on stderr, and `doctor --device` adds `device.lease`, which warns about another session's lease unless `OFFSIDER_LEASE` matches its label and names any command holding the device.
 - `doctor` reports the host on every run: `host.load` warns when the 1-minute load passes 4 per CPU, `host.disk` warns under 10 GB free and fails under 2 GB, and `host.sessions` lists your other running Offsider commands by subcommand and device only (never typed text or other arguments). `--json` adds a top-level `host` object (`loadAverage`, `cpuCount`, `memoryGB`, `diskFreeGB`, `diskPath`, `sessions`), and the text report a `Host:` line.
+- `screenshot --mask-id`, `--mask-label`, `--mask-text <regex>` and `--mask-emails` paint the elements they match black from one tree read, and `--mask-region x,y,w,h` paints a rectangle in points before any `--region` crop without reading the tree; each takes several values, and `batch` screenshot steps take them too. `--json` adds `maskedBy` (rectangles per kind asked for) and `maskUnmatched` (selectors that matched nothing, also warned on stderr; the image is still written). `offsider guide evidence` covers them.
 
 ### Changed
 
@@ -52,6 +53,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --timeout` and `wait --seconds` accept up to 900 seconds (was 300), so a wait can outlast a cold React Native bundle; the error names the cap.
 - `stay-awake --json` and `wake --json` report `credential` as `none` when lock settings say no credential is set, instead of null.
 - Documentation only: `offsider guide react-native` explains that airplane mode and `svc wifi|data disable` on an emulator also cut a debug build's route to Metro at `10.0.2.2` (an `adb reverse` the user set keeps working), that per-app network blocking also blocks loopback on API 35 and 36 and is missing on API 34, so Offsider has no `network` command, and that `logs --rn` keeps working.
+- `screenshot --json` `masked` now counts every rectangle painted by any mask, not only password fields.
 
 ### Fixed
 
