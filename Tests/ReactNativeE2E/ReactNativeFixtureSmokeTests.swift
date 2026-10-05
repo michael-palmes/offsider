@@ -126,4 +126,15 @@ struct ReactNativeFixtureSmokeTests {
         #expect(result.exitCode == 2, "\(result.stderr)")
         #expect(try await app.label(of: "character-count") == nil)
     }
+
+    @Test("on Android a field that keeps two characters refuses longer replacement text with text_not_accepted", .enabled(if: isAndroidE2EEnabled))
+    func textNotAccepted() async throws {
+        let app = RNApp(.android)
+        try await app.open("text-input")
+
+        let result = try await app.offsider("type --into-id text-input-short-field --replace 'four'")
+
+        #expect(result.exitCode == 5, "\(result.stderr)")
+        #expect(result.stderr.contains("text-input-short-field"), "\(result.stderr)")
+    }
 }

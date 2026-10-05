@@ -235,6 +235,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             focusedSecureField: { await self.hasFocusedSecureField(id) },
             multiTouchHelper: { try await self.multiTouchHelper(serial) },
+            readFocusedField: { await self.focusedFieldReading(serial) },
+            pasteFocused: { try await self.pasteIntoFocusedField(serial) },
             sleep: host.sleep,
             log: log,
             timing: host.timing

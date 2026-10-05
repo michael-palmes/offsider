@@ -29,7 +29,15 @@ enum AndroidInputExecutor: Sendable {
 /// How `type --replace` went: the helper set the text, or the session must clear the field with keys and type.
 enum TextReplacement: Equatable, Sendable {
     case replaced
-    case useKeys(warning: String?)
+    /// The helper set the text, but the field reports another length, as a field with a length or character filter does.
+    case replacedWrongLength(field: AndroidFieldInfo?)
+    case useKeys(warning: String?, field: AndroidFieldInfo? = nil)
+}
+
+/// The focused field's text length as the screen shows it, after keys replaced its text.
+struct FocusedFieldReading: Equatable, Sendable {
+    var length: Int?
+    var secure: Bool
 }
 
 /// How input reaches one emulator in this command: its executor, the display scale and the clipboard endpoint.
@@ -57,6 +65,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private let replaceFocusedText: @MainActor (String) async throws -> TextReplacement
     /// Read only before a paste, the one path that puts text on a clipboard.
     private let focusedSecureField: @MainActor () async -> Bool
+    /// The focused field after a key replacement; nil when it cannot be read.
+    private let readFocusedField: @MainActor () async -> FocusedFieldReading?
+    /// The helper's `paste` op on the focused field; nil when the helper has none.
+    private let pasteFocused: @MainActor () async throws -> HelperTextResult?
     private let log: AndroidLog
     private let timing: AndroidTiming
     private var touchIsDown = false
@@ -74,6 +86,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
         replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
         focusedSecureField: @escaping @MainActor () async -> Bool = { false },
         multiTouchHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
+        readFocusedField: @escaping @MainActor () async -> FocusedFieldReading? = { nil },
+        pasteFocused: @escaping @MainActor () async throws -> HelperTextResult? = { nil },
         sleep: @escaping @Sendable (Duration) async throws -> Void,
         log: @escaping AndroidLog,
         timing: AndroidTiming = .disabled
@@ -85,6 +99,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.replaceFocusedText = replaceFocusedText
         self.focusedSecureField = focusedSecureField
         self.multiTouchHelper = multiTouchHelper
+        self.readFocusedField = readFocusedField
+        self.pasteFocused = pasteFocused
         self.sleep = sleep
         self.log = log
         self.timing = timing
@@ -211,7 +227,12 @@ final class AndroidInputSession: InputSession, TextInputSession {
             if submits {
                 try await typeText("\n")
             }
-        case .useKeys(let warning):
+        case .replacedWrongLength(let field):
+            try await confirmReplacement(submits ? String(text.dropLast()) : text, field: field)
+            if submits {
+                try await typeText("\n")
+            }
+        case .useKeys(let warning, let field):
             if let warning {
                 log(.warning, warning)
             }
@@ -219,7 +240,36 @@ final class AndroidInputSession: InputSession, TextInputSession {
             if !text.isEmpty {
                 try await typeText(text)
             }
+            if !submits {
+                try await confirmReplacement(text, field: field)
+            }
         }
+    }
+
+    /// After keys (or a set-text the field filtered) replaced a field: when its length is wrong, paste the text through the emulator's clipboard
+    /// and the helper's `paste`, never into a password field; still wrong is `text_not_accepted`.
+    private func confirmReplacement(_ text: String, field: AndroidFieldInfo?) async throws {
+        let expected = text.utf16.count
+        guard let reading = await readFocusedField(), !reading.secure, let length = reading.length, length != expected else { return }
+        log(.debug, "The focused field on \(device.rawValue) holds \(length) characters after typing \(expected)")
+        var pasted = false
+        if let clipboard = try await route().clipboard {
+            let saved = try await clipboard.clipboard()
+            try await clipboard.setClipboard(text)
+            do {
+                try await sleep(Self.clipboardSyncWait)
+                pasted = try await pasteFocused() != nil
+                if pasted { try await sleep(Self.pasteReadWait) }
+            } catch {
+                await restoreClipboard(saved, on: clipboard)
+                throw error
+            }
+            await restoreClipboard(saved, on: clipboard)
+            if pasted, let again = await readFocusedField(), again.length == expected {
+                return
+            }
+        }
+        throw AndroidError.textNotAccepted(device.rawValue, field: field, pasted: pasted)
     }
 
     private func type(_ chunks: [AndroidTextPlan.Chunk], on emulator: any EmulatorControlling) async throws {

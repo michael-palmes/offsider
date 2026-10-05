@@ -60,6 +60,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case turnstileChallenge = "turnstile_challenge"
     case focusNotConfirmed = "focus_not_confirmed"
     case focusMismatch = "focus_mismatch"
+    case textNotAccepted = "text_not_accepted"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"
@@ -112,7 +113,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
         switch self {
         case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch:
             return .selectorNotFound
-        case .notVerified, .conditionNotMet, .focusNotConfirmed:
+        case .notVerified, .conditionNotMet, .focusNotConfirmed, .textNotAccepted:
             return .unverified
         case .selectorAmbiguous, .selectorAmbiguousSwitch:
             return .ambiguousSelector

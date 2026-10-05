@@ -34,6 +34,23 @@ struct HelperSessionTests {
         await session.close()
     }
 
+    @Test("paste goes only to a helper whose hello lists it")
+    func pasteGatedOnOps() async throws {
+        let listing = FakeHelperDevice()
+        listing.answer = { _, op, _ in op == "paste" ? .ok(#"{"className":"android.widget.EditText","resourceId":"amount","inputType":2,"length":2}"#) : nil }
+        let session = try await Self.start(listing)
+        #expect(try await session.paste()?.length == 2)
+        #expect(listing.ops == ["hello", "paste"])
+        await session.close()
+
+        let older = FakeHelperDevice()
+        older.helloOps = ["hello", "dump", "setText", "quit"]
+        let oldSession = try await Self.start(older)
+        #expect(try await oldSession.paste() == nil)
+        #expect(older.ops == ["hello"])
+        await oldSession.close()
+    }
+
     @Test("a dump keeps the display, the windows and the event cursor")
     func dumpState() async throws {
         let session = try await Self.start(FakeHelperDevice())

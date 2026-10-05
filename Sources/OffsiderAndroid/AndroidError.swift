@@ -37,6 +37,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case noFocusedField
         case fieldNotEditable
         case securePasteRefused
+        case textNotAccepted
         case unsupportedKey
         case unsupportedButton
         case unsupportedControlCharacter
@@ -433,6 +434,15 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func textNotAccepted(_ serial: String, field: AndroidFieldInfo?, pasted: Bool) -> AndroidError {
+        let element = field.map { " (\($0.description))" } ?? ""
+        let tried = pasted ? "Ctrl+A, Delete, typed keys and a paste" : "Ctrl+A, Delete and typed keys"
+        return AndroidError(
+            .textNotAccepted,
+            "The focused field on \(serial)\(element) does not hold the text after \(tried): the app filters or formats what it accepts. Check it with describe-ui, and type what the field allows."
+        )
+    }
+
     static func fieldNotEditable(_ serial: String, className: String?, resourceId: String?) -> AndroidError {
         let parts = [className.map { "`\($0)`" }, resourceId.map { "id `\($0)`" }].compactMap { $0 }
         let element = parts.isEmpty ? "" : " (\(parts.joined(separator: ", ")))"
@@ -611,6 +621,7 @@ extension AndroidError: OffsiderFailure {
         case .noFocusedField: return .noFocusedField
         case .fieldNotEditable: return .fieldNotEditable
         case .securePasteRefused: return .securePasteRefused
+        case .textNotAccepted: return .textNotAccepted
         case .unsupportedKey: return .unsupportedKey
         case .unsupportedButton: return .unsupportedButton
         case .unsupportedControlCharacter: return .unsupportedText

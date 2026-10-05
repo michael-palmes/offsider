@@ -41,6 +41,14 @@ export function TextInputScreen() {
         style={styles.field}
       />
       <Readout id="text-input-second-value" label={`Second: ${second}`} value={second} />
+      <TextInput
+        testID="text-input-short-field"
+        accessibilityLabel="Two characters"
+        maxLength={2}
+        autoCorrect={false}
+        autoCapitalize="none"
+        style={styles.field}
+      />
       {focused && <Readout id="typing-active-indicator" label="✏️ Typing active" />}
       {text.length > 0 && (
         <View style={styles.analysis}>
