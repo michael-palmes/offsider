@@ -126,6 +126,8 @@ enum VerifyOutput {
             change = "accessibility tree changed" + (outcome.summary.map { " (\($0))" } ?? "")
         case .screenshot:
             change = "screen changed"
+        case .activity:
+            change = "the launcher came to the front"
         case .none:
             change = "no change"
         }

@@ -57,6 +57,11 @@ final class FakeDeviceBackend: DeviceBackend {
     private(set) var enteredCodes: [UnlockCode] = []
     /// What `listedName(of:)` serves, as a phone's model or an AVD name.
     var listedDeviceName: String?
+    /// Foreground reads in order, holding the last.
+    var foregrounds: [ForegroundActivities] = []
+    /// What the HOME intent brings to the front; nil changes nothing.
+    var foregroundAfterIntent: ForegroundActivities?
+    private(set) var homeIntents = 0
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -298,5 +303,18 @@ extension FakeDeviceBackend: AwakeControlling {
         enteredCodes.append(code)
         awake = afterCode
         return UnlockAttempt(typed: codeTyped, reading: awake)
+    }
+}
+
+extension FakeDeviceBackend: ForegroundReading {
+    func foreground(on id: DeviceID) async throws -> ForegroundActivities {
+        if homeIntents > 0, let foregroundAfterIntent { return foregroundAfterIntent }
+        let reading = foregrounds.first ?? ForegroundActivities(top: nil, home: nil)
+        if foregrounds.count > 1 { foregrounds.removeFirst() }
+        return reading
+    }
+
+    func startHomeIntent(on id: DeviceID) async throws {
+        homeIntents += 1
     }
 }

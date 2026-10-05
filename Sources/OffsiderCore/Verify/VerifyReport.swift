@@ -3,6 +3,8 @@ import Foundation
 public enum ChangeKind: String, Codable, Sendable {
     case accessibilityTree = "accessibility-tree"
     case screenshot
+    /// Android `button home`: the launcher came to the front.
+    case activity
     case none
 }
 
