@@ -41,6 +41,10 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private var panelReadAt = ContinuousClock.now
     private var panelRefresh: Task<Void, Never>?
     private var lastUse = ContinuousClock.now
+    /// What the input in flight holds down, released if it stops early or the broker closes.
+    private var heldContact: (x: UInt16, y: UInt16)?
+    private var heldKeys = false
+    private var heldButton: (page: UInt64, code: UInt64)?
 
     public init(udid: String, host: IOSDeviceHost = .live(), version: CoreDeviceVersion? = CoreDeviceVersion.installed(), log: @escaping IOSDeviceLog) {
         self.udid = udid
@@ -137,56 +141,83 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    public func button(usagePage: UInt64, usageCode: UInt64, state: DeviceSessionRequest.ButtonState) async throws {
-        lastUse = .now
-        let link = try await buttonLink()
-        link.send(DTUHIDMessage.button(usagePage: usagePage, usage: usageCode, state: state == .down ? .down : .up))
-        try await confirm(link)
-    }
-
-    public func press(usagePage: UInt64, usageCode: UInt64, hold: Double) async throws {
+    /// The button stays down for `hold` only while its client stays connected, and is always released.
+    public func press(usagePage: UInt64, usageCode: UInt64, hold: Double, abandoned: @Sendable () -> Bool) async throws {
         lastUse = .now
         let link = try await buttonLink()
         link.send(DTUHIDMessage.button(usagePage: usagePage, usage: usageCode, state: .down))
-        try? await Task.sleep(for: .seconds(hold))
+        heldButton = (usagePage, usageCode)
+        let held = await Self.pause(until: .now + .seconds(hold), abandoned: abandoned)
         link.send(DTUHIDMessage.button(usagePage: usagePage, usage: usageCode, state: .up))
+        heldButton = nil
         try await confirm(link)
+        if !held { throw Self.clientLeft }
     }
 
-    public func touch(_ steps: [DeviceSessionStep]) async throws {
+    public func touch(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws {
         lastUse = .now
         let reports = try DeviceSessionReports.touch(steps, panel: try await currentPanel())
-        try await play(reports)
+        try await play(reports, abandoned: abandoned)
     }
 
-    public func keys(_ steps: [DeviceSessionStep]) async throws {
+    public func keys(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws {
         lastUse = .now
-        try await play(try DeviceSessionReports.keys(steps))
+        try await play(try DeviceSessionReports.keys(steps), abandoned: abandoned)
+    }
+
+    static let clientLeft = IOSDeviceError(.sessionFailed, "The command that sent this input disconnected while it was held, so the device session released it early.")
+
+    /// Sleeps in short slices until `due`; false, at once, when the client has gone.
+    static func pause(until due: ContinuousClock.Instant, abandoned: () -> Bool) async -> Bool {
+        while true {
+            if abandoned() { return false }
+            let now = ContinuousClock.now
+            guard due > now else { return true }
+            try? await Task.sleep(until: min(due, now + .milliseconds(100)), clock: .continuous)
+        }
     }
 
     /// Sends each report against a clock started at the first, so many short pauses keep the gesture's total time, then confirms delivery.
-    private func play(_ reports: [DeviceSessionReport]) async throws {
+    /// A client that disconnects mid-request has what it held released at once.
+    private func play(_ reports: [DeviceSessionReport], abandoned: @Sendable () -> Bool) async throws {
         let service = try await hidService()
         let start = ContinuousClock.now
         var elapsed = 0.0
+        var completed = true
         for report in reports {
             switch report {
             case let .touch(x, y, state):
                 service.send(UniversalHIDReport.touchscreen(x: x, y: y, state: state, timestamp: UniversalHIDReport.timestamp()), to: surfaces.touchscreen)
+                heldContact = state == .contact ? (x, y) : nil
             case .keyboard(let pressed):
                 service.send(UniversalHIDReport.keyboard(pressedUsages: pressed, timestamp: UniversalHIDReport.timestamp()), to: surfaces.keyboard)
+                heldKeys = !pressed.isEmpty
             case .sleep(let seconds):
                 elapsed += seconds
-                let due = start + .seconds(elapsed)
-                if due > .now { try? await Task.sleep(until: due, clock: .continuous) }
+                completed = await Self.pause(until: start + .seconds(elapsed), abandoned: abandoned)
             }
+            if !completed { break }
         }
+        releaseHeldInput(service)
         do {
             try await service.confirm()
         } catch {
             hid = nil
             service.close()
             throw error
+        }
+        if !completed { throw Self.clientLeft }
+    }
+
+    /// Lifts a contact and releases keys an interrupted request left down.
+    private func releaseHeldInput(_ service: UniversalHIDService) {
+        if let contact = heldContact {
+            service.send(UniversalHIDReport.touchscreen(x: contact.x, y: contact.y, state: .release, timestamp: UniversalHIDReport.timestamp()), to: surfaces.touchscreen)
+            heldContact = nil
+        }
+        if heldKeys {
+            service.send(UniversalHIDReport.keyboard(pressedUsages: [], timestamp: UniversalHIDReport.timestamp()), to: surfaces.keyboard)
+            heldKeys = false
         }
     }
 
@@ -332,9 +363,14 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         return true
     }
 
-    /// Stops the stream on the device, which clears its screen-sharing indicator, and closes the button socket.
+    /// Releases anything still held, stops the stream on the device, which clears its screen-sharing indicator, and closes the button socket.
     public func close() async {
         closed = true
+        if let hid { releaseHeldInput(hid) }
+        if let button = heldButton, let buttons {
+            buttons.send(DTUHIDMessage.button(usagePage: button.page, usage: button.code, state: .up))
+            heldButton = nil
+        }
         await opening?.value
         if let stream {
             self.stream = nil

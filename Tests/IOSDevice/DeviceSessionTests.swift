@@ -66,7 +66,6 @@ struct DeviceSessionWireTests {
         DeviceSessionRequest.ping,
         .frame(.png),
         .frame(.bgra),
-        .button(usagePage: 0x0C, usageCode: 0x40, state: .up),
         .press(usagePage: 0x0C, usageCode: 0x30, hold: 0.4),
         .touch([.touch(.down, x: 10, y: 20), .wait(0.06), .touch(.up, x: 10, y: 20)]),
         .keys([.key(4, down: true), .key(4, down: false)]),
@@ -85,7 +84,7 @@ struct DeviceSessionWireTests {
     @Test("an unknown op or a request missing its fields is refused")
     func refused() {
         #expect(throws: DeviceSessionWireError.self) { try DeviceSessionWire.decodeRequest(Data(#"{"id":1,"op":"reboot"}"#.utf8)) }
-        #expect(throws: DeviceSessionWireError.self) { try DeviceSessionWire.decodeRequest(Data(#"{"id":1,"op":"button","usagePage":12}"#.utf8)) }
+        #expect(throws: DeviceSessionWireError.self) { try DeviceSessionWire.decodeRequest(Data(#"{"id":1,"op":"press","usagePage":12}"#.utf8)) }
     }
 
     @Test("a reply that announces bytes is followed by exactly that binary frame, split across writes")
@@ -131,7 +130,7 @@ struct DeviceSessionClientTests {
     @Test("a request that never left is session_failed; input whose reply was lost is input_outcome_unknown")
     func lostRequests() async throws {
         let notSent = DeviceSessionClient(udid: "U", link: FakeSessionLink { _ in throw DeviceSessionLinkError.notSent("closed") })
-        let refused = await #expect(throws: IOSDeviceError.self) { try await notSent.button(usagePage: 12, usageCode: 64, state: .down) }
+        let refused = await #expect(throws: IOSDeviceError.self) { try await notSent.press(usagePage: 12, usageCode: 64, hold: 0.1) }
         #expect(refused?.reason == .hidBrokerFailed)
         #expect(refused?.message.contains("nothing was sent") == true)
 
@@ -262,17 +261,23 @@ final class FakeSessionHardware: DeviceSessionHardware {
     var healthy = true
     private(set) var touches: [[DeviceSessionStep]] = []
     private(set) var closed = false
+    /// Set when a touch with a long wait saw its client leave before the wait ended.
+    private(set) var sawClientLeave = false
 
     func start() async { streamStatus = DeviceSessionStreamStatus(state: .live, width: 2, height: 1, framesReceived: 1) }
     func frame(_ format: IOSDeviceScreenFrame.Format) async throws -> IOSDeviceScreenFrame {
         IOSDeviceScreenFrame(data: Data([9, 8, 7, 6]), width: 2, height: 1, format: format)
     }
-    func button(usagePage: UInt64, usageCode: UInt64, state: DeviceSessionRequest.ButtonState) async throws {}
-    func press(usagePage: UInt64, usageCode: UInt64, hold: Double) async throws {
+    func press(usagePage: UInt64, usageCode: UInt64, hold: Double, abandoned: @Sendable () -> Bool) async throws {
         throw IOSDeviceError(.locked, "iPad is locked.")
     }
-    func touch(_ steps: [DeviceSessionStep]) async throws { touches.append(steps) }
-    func keys(_ steps: [DeviceSessionStep]) async throws {}
+    func touch(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws {
+        touches.append(steps)
+        let wait = DeviceSessionClient.waited(steps)
+        guard wait > 0 else { return }
+        sawClientLeave = !(await CoreDeviceSessionHardware.pause(until: .now + .seconds(wait), abandoned: abandoned))
+    }
+    func keys(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws {}
     func checkHealth() async -> Bool { healthy }
     func close() async { closed = true }
 }
@@ -313,6 +318,33 @@ struct DeviceSessionServerTests {
         try await running.value
         #expect(hardware.closed)
         #expect(lstat(socket, &info) != 0)
+    }
+
+    @Test("a client that disconnects while its touch is held ends the hold early")
+    func clientLeaves() async throws {
+        let socket = NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8)).sock"
+        let hardware = FakeSessionHardware()
+        let server = DeviceSessionServer(udid: "U", socketPath: socket, hardware: hardware, store: nil, idleTimeout: .seconds(30), log: { _, _ in })
+        let running = Task { try await server.run() }
+        var channel: DeviceSessionChannel?
+        for _ in 0..<100 where channel == nil {
+            channel = try? DeviceSessionChannel.connect(to: socket)
+            if channel == nil { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        let held = try #require(channel)
+        try held.write(try DeviceSessionWire.encode(.touch([.touch(.down, x: 1, y: 1), .wait(20), .touch(.up, x: 1, y: 1)]), id: 1))
+        try await Task.sleep(for: .milliseconds(300))
+        let started = ContinuousClock.now
+        held.close()
+        while !hardware.sawClientLeave, ContinuousClock.now - started < .seconds(5) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(hardware.sawClientLeave)
+        #expect(ContinuousClock.now - started < .seconds(5))
+
+        let client = DeviceSessionClient(udid: "U", link: try SocketSessionLink.connect(socket))
+        try await client.stop()
+        try await running.value
     }
 
     @Test("the broker stops by itself once idle, and when its device goes")
@@ -376,6 +408,36 @@ struct DeviceSessionReportsTests {
         #expect(throws: IOSDeviceError.self) { try DeviceSessionReports.keys([.touch(.down, x: 1, y: 1)]) }
         #expect(throws: IOSDeviceError.self) { try DeviceSessionReports.keys([.key(240, down: true)]) }
         #expect(throws: IOSDeviceError.self) { try DeviceSessionReports.touch([.key(4, down: true)], panel: Self.phone) }
+    }
+
+    @Test("a held key, touch or button goes out as one request with its hold and release")
+    func holdsInOneRequest() throws {
+        var lowering = DeviceSessionLowering(brokerTouches: true)
+        #expect(try lowering.actions(for: .composite([.keyboard(direction: .down, keyCode: 225), .delay(2), .keyboard(direction: .up, keyCode: 225)])) == [
+            .keys([.key(225, down: true), .wait(2), .key(225, down: false)]),
+        ])
+        #expect(try lowering.actions(for: .composite([.button(direction: .down, button: .home), .delay(1.5), .button(direction: .up, button: .home)])) == [
+            .press(.home, hold: 1.5),
+        ])
+        #expect(try lowering.actions(for: .composite([.shortKeyPress(4), .delay(0.5), .tapAt(x: 1, y: 2)])) == [
+            .keys([.key(4, down: true), .key(4, down: false)]), .wait(0.5),
+            .touch([.touch(.down, x: 1, y: 2), .wait(DeviceSessionLowering.tapHold), .touch(.up, x: 1, y: 2)]),
+        ])
+    }
+
+    @Test("input left down at the end of an event, or held while other input is sent, is refused before anything is sent", arguments: [
+        InputEvent.touch(direction: .down, x: 1, y: 1),
+        .touch(direction: .up, x: 1, y: 1),
+        .keyboard(direction: .down, keyCode: 4),
+        .button(direction: .down, button: .home),
+        .button(direction: .up, button: .home),
+        .composite([.keyboard(direction: .down, keyCode: 225), .tapAt(x: 1, y: 1), .keyboard(direction: .up, keyCode: 225)]),
+        .composite([.button(direction: .down, button: .home), .tapAt(x: 1, y: 1), .button(direction: .up, button: .home)]),
+    ])
+    func heldAcrossRequests(event: InputEvent) {
+        var lowering = DeviceSessionLowering(brokerTouches: true)
+        let error = #expect(throws: IOSDeviceError.self) { try lowering.actions(for: event) }
+        #expect(error?.reason == .notSupported)
     }
 
     @Test("lowering merges a gesture into one touch request and US text into key steps")

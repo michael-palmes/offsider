@@ -15,10 +15,10 @@ public protocol DeviceSessionHardware: AnyObject {
     /// The main display as last read, so a command can skip reading it.
     var geometry: IOSDeviceGeometry? { get }
     func frame(_ format: IOSDeviceScreenFrame.Format) async throws -> IOSDeviceScreenFrame
-    func button(usagePage: UInt64, usageCode: UInt64, state: DeviceSessionRequest.ButtonState) async throws
-    func press(usagePage: UInt64, usageCode: UInt64, hold: Double) async throws
-    func touch(_ steps: [DeviceSessionStep]) async throws
-    func keys(_ steps: [DeviceSessionStep]) async throws
+    /// Input stops early, releasing what it holds, once `abandoned` reports its client gone.
+    func press(usagePage: UInt64, usageCode: UInt64, hold: Double, abandoned: @Sendable () -> Bool) async throws
+    func touch(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws
+    func keys(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws
     /// False once the device has gone, so the broker exits; may re-open a stream that died.
     func checkHealth() async -> Bool
     /// Ends the stream on the device and closes every socket.
@@ -45,6 +45,19 @@ final class DeviceSessionGate {
         }
         return result
     }
+}
+
+/// The client behind a request: when the request arrived, and whether the client has since disconnected.
+public struct DeviceSessionOrigin: Sendable {
+    public let receivedAt: ContinuousClock.Instant
+    public let isGone: @Sendable () -> Bool
+
+    public init(receivedAt: ContinuousClock.Instant, isGone: @escaping @Sendable () -> Bool) {
+        self.receivedAt = receivedAt
+        self.isGone = isGone
+    }
+
+    static var detached: Self { Self(receivedAt: .now, isGone: { false }) }
 }
 
 /// A set-once flag the accept thread reads.
@@ -100,8 +113,8 @@ public final class DeviceSessionServer {
         let listener = try Self.listen(at: socketPath, udid: udid)
         let identity = Self.socketIdentity(socketPath)
         log(.info, "Serving \(udid) on \(socketPath)")
-        Self.acceptLoop(listener: listener, flag: accepting, udid: udid) { [weak self] id, request in
-            await self?.handle(id: id, request: request) ?? (.failure(id: id, IOSDeviceError(.sessionFailed, "The device session is shutting down.")), nil)
+        Self.acceptLoop(listener: listener, flag: accepting, udid: udid) { [weak self] id, request, origin in
+            await self?.handle(id: id, request: request, origin: origin) ?? (.failure(id: id, IOSDeviceError(.sessionFailed, "The device session is shutting down.")), nil)
         }
         Task { await hardware.start() }
         var nextHealth = ContinuousClock.now + healthInterval
@@ -129,7 +142,7 @@ public final class DeviceSessionServer {
         log(.info, "Stopped")
     }
 
-    func handle(id: Int, request: DeviceSessionRequest) async -> (DeviceSessionReply, Data?) {
+    func handle(id: Int, request: DeviceSessionRequest, origin: DeviceSessionOrigin = .detached) async -> (DeviceSessionReply, Data?) {
         lastRequest = .now
         inFlight += 1
         defer {
@@ -139,14 +152,14 @@ public final class DeviceSessionServer {
         if case .ping = request { return (pingReply(id), nil) }
         return await gate.run {
             do {
-                return try await self.serve(id: id, request)
+                return try await self.serve(id: id, request, origin: origin)
             } catch {
                 return (.failure(id: id, error), nil)
             }
         }
     }
 
-    private func serve(id: Int, _ request: DeviceSessionRequest) async throws -> (DeviceSessionReply, Data?) {
+    private func serve(id: Int, _ request: DeviceSessionRequest, origin: DeviceSessionOrigin) async throws -> (DeviceSessionReply, Data?) {
         var reply = DeviceSessionReply(id: id)
         switch request {
         case .ping:
@@ -158,19 +171,17 @@ public final class DeviceSessionServer {
             reply.height = frame.height
             reply.format = format.wireName
             return (reply, frame.data)
-        case let .button(page, code, state):
-            try await hardware.button(usagePage: page, usageCode: code, state: state)
         case let .press(page, code, hold):
             guard hold >= 0, hold <= 10 else { throw IOSDeviceError(.sessionFailed, "A button hold of \(hold) s is outside 0 to 10 s.") }
-            try await hardware.press(usagePage: page, usageCode: code, hold: hold)
+            try await hardware.press(usagePage: page, usageCode: code, hold: hold, abandoned: origin.isGone)
         case .touch(let steps):
             try Self.checkTiming(steps)
-            try await hardware.touch(steps)
+            try await hardware.touch(steps, abandoned: origin.isGone)
         case .keys(let steps):
             try Self.checkTiming(steps)
-            try await hardware.keys(steps)
+            try await hardware.keys(steps, abandoned: origin.isGone)
         case .text(let text):
-            try await hardware.keys(try DeviceSessionLowering.keySteps(typing: text))
+            try await hardware.keys(try DeviceSessionLowering.keySteps(typing: text), abandoned: origin.isGone)
         case .stop:
             stopping = true
         }
@@ -248,7 +259,7 @@ public final class DeviceSessionServer {
         return getpeereid(descriptor, &peerUID, &peerGID) == 0 && peerUID == uid
     }
 
-    typealias Handler = @Sendable (Int, DeviceSessionRequest) async -> (DeviceSessionReply, Data?)
+    typealias Handler = @Sendable (Int, DeviceSessionRequest, DeviceSessionOrigin) async -> (DeviceSessionReply, Data?)
 
     /// Accepts on its own thread and serves each client on another; another user's client is closed unread.
     nonisolated static func acceptLoop(listener: Int32, flag: DeviceSessionStopFlag, udid: String, handler: @escaping Handler) {
@@ -279,7 +290,8 @@ public final class DeviceSessionServer {
             var data: Data?
             do {
                 let (id, request) = try DeviceSessionWire.decodeRequest(payload)
-                (reply, data) = blocking { await handler(id, request) }
+                let origin = DeviceSessionOrigin(receivedAt: .now, isGone: { channel.peerClosed() })
+                (reply, data) = blocking { await handler(id, request, origin) }
             } catch {
                 let id = (try? JSONDecoder().decode(DeviceSessionRequest.Envelope.self, from: payload))?.id ?? 0
                 let detail = (error as? DeviceSessionWireError)?.detail ?? "an unreadable request"

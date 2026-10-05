@@ -35,15 +35,9 @@ public struct DeviceSessionStep: Codable, Equatable, Sendable {
 
 /// What a command asks of a device's session broker.
 public enum DeviceSessionRequest: Equatable, Sendable {
-    public enum ButtonState: String, Codable, Sendable {
-        case down
-        case up
-    }
-
     case ping
     case frame(IOSDeviceScreenFrame.Format)
-    case button(usagePage: UInt64, usageCode: UInt64, state: ButtonState)
-    /// Down, a hold in the broker, then up.
+    /// Down, a hold in the broker, then up; the broker never leaves a button down after a request.
     case press(usagePage: UInt64, usageCode: UInt64, hold: Double)
     case touch([DeviceSessionStep])
     case keys([DeviceSessionStep])
@@ -54,7 +48,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
         switch self {
         case .ping: return "ping"
         case .frame: return "frame"
-        case .button: return "button"
         case .press: return "press"
         case .touch: return "touch"
         case .keys: return "keys"
@@ -66,7 +59,7 @@ public enum DeviceSessionRequest: Equatable, Sendable {
     /// Input reaches the device, so a lost reply leaves its outcome unknown.
     public var sendsInput: Bool {
         switch self {
-        case .button, .press, .touch, .keys, .text: return true
+        case .press, .touch, .keys, .text: return true
         case .ping, .frame, .stop: return false
         }
     }
@@ -77,7 +70,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
         var format: String?
         var usagePage: UInt64?
         var usageCode: UInt64?
-        var state: ButtonState?
         var hold: Double?
         var steps: [DeviceSessionStep]?
         var text: String?
@@ -90,10 +82,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
             break
         case .frame(let format):
             envelope.format = format.wireName
-        case let .button(page, code, state):
-            envelope.usagePage = page
-            envelope.usageCode = code
-            envelope.state = state
         case let .press(page, code, hold):
             envelope.usagePage = page
             envelope.usageCode = code
@@ -118,8 +106,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
             let name = try need(envelope.format, "format")
             guard let format = IOSDeviceScreenFrame.Format(wireName: name) else { throw DeviceSessionWireError(detail: "an unknown frame format `\(name)`") }
             self = .frame(format)
-        case "button":
-            self = .button(usagePage: try need(envelope.usagePage, "usagePage"), usageCode: try need(envelope.usageCode, "usageCode"), state: try need(envelope.state, "state"))
         case "press":
             self = .press(usagePage: try need(envelope.usagePage, "usagePage"), usageCode: try need(envelope.usageCode, "usageCode"), hold: try need(envelope.hold, "hold"))
         case "touch": self = .touch(try need(envelope.steps, "steps"))
@@ -285,6 +271,13 @@ final class DeviceSessionChannel: @unchecked Sendable {
             closed = true
             Darwin.close(descriptor)
         }
+    }
+
+    /// True once the peer has closed its end; peeks without consuming or blocking.
+    func peerClosed() -> Bool {
+        var byte: UInt8 = 0
+        let count = recv(descriptor, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
+        return count == 0 || (count < 0 && errno != EAGAIN && errno != EINTR)
     }
 
     func write(_ data: Data, timeout: Duration? = .seconds(5)) throws {

@@ -132,6 +132,18 @@ struct IOSDeviceInputRoutingTests {
         #expect(link.requests.last == .touch([.touch(.down, x: 5, y: 6), .wait(0.2), .touch(.up, x: 5, y: 6)]))
     }
 
+    @Test("key and button holds reach the broker as one request each, timed inside it")
+    func holds() async throws {
+        let link = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone)
+        let session = try await Self.backend(version: "651.13.4", connector: FakeSessionConnector(link: link), runner: nil).openInputSession(for: Self.phone)
+        try await session.perform(.composite([.keyboard(direction: .down, keyCode: 4), .delay(1), .keyboard(direction: .up, keyCode: 4)]))
+        try await session.perform(.composite([.button(direction: .down, button: .home), .delay(2), .button(direction: .up, button: .home)]))
+        #expect(Array(link.requests.dropFirst()) == [
+            .keys([.key(4, down: true), .wait(1), .key(4, down: false)]),
+            .press(usagePage: DTUHIDMessage.consumerUsagePage, usageCode: 0x40, hold: 2),
+        ])
+    }
+
     @Test("US text types through broker keys; other text and --replace go to the runner")
     func text() async throws {
         let link = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone)

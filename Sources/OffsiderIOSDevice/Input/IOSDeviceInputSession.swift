@@ -66,15 +66,13 @@ final class IOSDeviceInputSession: TextInputSession {
             try await session().touch(steps)
         case .keys(let steps):
             try await session().keys(steps)
-        case .press(let button):
+        case let .press(button, hold):
             let usage = try button.requireDeviceUsage()
-            try await withRunnerFallback(button, .shortButtonPress(button)) {
-                try await $0.press(usagePage: DTUHIDMessage.consumerUsagePage, usageCode: usage, hold: button.deviceShortPressHold)
-            }
-        case .button(let button, let state):
-            let usage = try button.requireDeviceUsage()
-            try await withRunnerFallback(button, .button(direction: state == .down ? .down : .up, button: button)) {
-                try await $0.button(usagePage: DTUHIDMessage.consumerUsagePage, usageCode: usage, state: state)
+            let runnerEvent: InputEvent = hold == button.deviceShortPressHold
+                ? .shortButtonPress(button)
+                : .composite([.button(direction: .down, button: button), .delay(hold), .button(direction: .up, button: button)])
+            try await withRunnerFallback(button, runnerEvent) {
+                try await $0.press(usagePage: DTUHIDMessage.consumerUsagePage, usageCode: usage, hold: hold)
             }
         case .runner(let event):
             try await requireRunner().perform(event)

@@ -170,6 +170,10 @@ extension Touch: BatchConvertible {
 
         if touchDown && touchUp {
             let holdDelay = delay ?? TapTiming.defaultHoldDuration
+            if context.device.isPhysicalIOSDevice {
+                // The device session times the hold itself, and releases whatever a request leaves down.
+                return [.hidBarrier(.composite([touchDownEvent, .delay(holdDelay), touchUpEvent]))]
+            }
             return [
                 .hidBarrier(touchDownEvent),
                 .hostSleep(holdDelay),

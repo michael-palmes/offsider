@@ -109,10 +109,6 @@ public final class DeviceSessionClient {
         return IOSDeviceScreenFrame(data: payload, width: width, height: height, format: format)
     }
 
-    public func button(usagePage: UInt64, usageCode: UInt64, state: DeviceSessionRequest.ButtonState) async throws {
-        _ = try await call(.button(usagePage: usagePage, usageCode: usageCode, state: state), timeout: Self.inputTimeout)
-    }
-
     public func press(usagePage: UInt64, usageCode: UInt64, hold: Double) async throws {
         _ = try await call(.press(usagePage: usagePage, usageCode: usageCode, hold: hold), timeout: Self.inputTimeout + .seconds(hold))
     }

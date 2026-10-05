@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Android input through the UiAutomation helper is never sent twice: when the helper stops before it answers, the command fails with `dispatched` `unknown` instead of resending the tap, key or text.
 - Long `type` text through the Android helper no longer times out after 5 s: each request carries at most 256 characters and its timeout grows with its keys.
 - After the Android helper refuses a touch, closing the command no longer warns that it could not lift a finger the helper had already cancelled.
+- On a physical device, `key --duration`, `button --duration` and a long press (`touch --down --up --delay`, also as a `batch` step) hold for their whole time: the device session times each hold and its release in one request, so a held key or touch no longer lifts at once, and a command killed mid-hold never leaves a button, key or touch down. A `batch` touch or key left down at the end of its step is refused with `not_supported`, as a lone `touch --down` is.
 
 ## [0.6.0] - 2026-10-05
 
