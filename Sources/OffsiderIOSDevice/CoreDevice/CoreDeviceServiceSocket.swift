@@ -33,13 +33,7 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
         guard let symbols = RemoteXPC.shared else { throw Failure.symbolsUnavailable }
         let input = xpc_dictionary_create(nil, nil, 0)
         xpc_dictionary_set_string(input, "featureIdentifier", feature)
-        let request = xpc_dictionary_create(nil, nil, 0)
-        xpc_dictionary_set_string(request, "CoreDevice.actionIdentifier", action)
-        xpc_dictionary_set_string(request, "CoreDevice.deviceIdentifier", deviceIdentifier)
-        xpc_dictionary_set_value(request, "CoreDevice.coreDeviceVersion", version.xpcObject)
-        xpc_dictionary_set_int64(request, "CoreDevice.CoreDeviceDDIProtocolVersion", 1)
-        xpc_dictionary_set_string(request, "CoreDevice.invocationIdentifier", UUID().uuidString)
-        xpc_dictionary_set_value(request, "CoreDevice.input", input)
+        let request = envelope(action: action, deviceIdentifier: deviceIdentifier, version: version, input: input)
 
         let service = symbols.serviceConnection()
         defer { xpc_connection_cancel(service) }
@@ -66,6 +60,18 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
         symbols.setEventHandler(connection) { _ in }
         symbols.activate(connection)
         return CoreDeviceServiceSocket(feature: feature, connection: connection, queue: queue, symbols: symbols)
+    }
+
+    /// The `CoreDevice.*` action envelope that CoreDeviceService and the device's feature services both decode.
+    static func envelope(action: String, deviceIdentifier: String, version: CoreDeviceVersion, input: xpc_object_t) -> xpc_object_t {
+        let request = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_string(request, "CoreDevice.actionIdentifier", action)
+        xpc_dictionary_set_string(request, "CoreDevice.deviceIdentifier", deviceIdentifier)
+        xpc_dictionary_set_value(request, "CoreDevice.coreDeviceVersion", version.xpcObject)
+        xpc_dictionary_set_int64(request, "CoreDevice.CoreDeviceDDIProtocolVersion", 1)
+        xpc_dictionary_set_string(request, "CoreDevice.invocationIdentifier", UUID().uuidString)
+        xpc_dictionary_set_value(request, "CoreDevice.input", input)
+        return request
     }
 
     /// Nil when nothing came back before the timeout.

@@ -27,6 +27,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case teamMissing
         case noFocusedField
         case secureFieldRefused
+        case streamFailed
+        case streamNeedsGUISession
     }
 
     public let kind: Kind
@@ -157,6 +159,8 @@ extension IOSDeviceError: OffsiderFailure {
         case .teamMissing: return .teamMissing
         case .noFocusedField: return .noFocusedField
         case .secureFieldRefused: return .securePasteRefused
+        case .streamFailed: return .screenshotFailed
+        case .streamNeedsGUISession: return .notSupported
         }
     }
 

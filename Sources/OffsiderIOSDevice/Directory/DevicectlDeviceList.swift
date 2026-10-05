@@ -16,6 +16,8 @@ public struct DevicectlDevice: Equatable, Sendable {
     public var tunnelState: String?
     public var developerModeStatus: String?
     public var ddiServicesAvailable: Bool?
+    /// The device's end of the CoreDevice tunnel, an IPv6 literal; nil while the tunnel is down.
+    public var tunnelAddress: String?
 
     public init(
         udid: String,
@@ -29,7 +31,8 @@ public struct DevicectlDevice: Equatable, Sendable {
         connectionState: String? = nil,
         tunnelState: String? = nil,
         developerModeStatus: String? = nil,
-        ddiServicesAvailable: Bool? = nil
+        ddiServicesAvailable: Bool? = nil,
+        tunnelAddress: String? = nil
     ) {
         self.udid = udid
         self.coreDeviceIdentifier = coreDeviceIdentifier
@@ -43,6 +46,7 @@ public struct DevicectlDevice: Equatable, Sendable {
         self.tunnelState = tunnelState
         self.developerModeStatus = developerModeStatus
         self.ddiServicesAvailable = ddiServicesAvailable
+        self.tunnelAddress = tunnelAddress
     }
 
     /// `Apple iPhone 15 Pro Max`, never the owner's device name.
@@ -123,7 +127,9 @@ public struct DevicectlDeviceList: Equatable, Sendable {
             connectionState: (connection["state"] as? String) ?? tunnelState,
             tunnelState: tunnelState,
             developerModeStatus: developerMode(state["developerModeStatus"]) ?? (oldDevice["developerModeStatus"] as? String),
-            ddiServicesAvailable: oldDevice["ddiServicesAvailable"] as? Bool
+            ddiServicesAvailable: oldDevice["ddiServicesAvailable"] as? Bool,
+            tunnelAddress: ((connection["tunnelIPAddressString"] as? String) ?? (oldConnection["tunnelIPAddress"] as? String))
+                .flatMap { TunnelEndpoint.bytes($0) == nil ? nil : $0 }
         )
     }
 
