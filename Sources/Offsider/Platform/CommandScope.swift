@@ -17,6 +17,9 @@ final class CommandScope {
     /// Each device the router chose, for the screen check after a failure.
     private(set) var routes: [DeviceRouter.Route] = []
 
+    /// Set by the first screen check, so a report written before the command ends and its final error share one probe.
+    private var screenChecked = false
+
     nonisolated init(claims: DeviceClaims = .current) {
         self.claims = claims
     }
@@ -38,12 +41,19 @@ final class CommandScope {
         routes.append(route)
     }
 
+    /// The screen check for a failure, once per command; later calls return `error` unchanged.
+    func screenHint(for error: any Error, note: (String) -> Void = ScreenStateHint.writeNote) async -> any Error {
+        guard !screenChecked else { return error }
+        screenChecked = true
+        return await ScreenStateHint.annotate(error, routes: routes, note: note)
+    }
+
     /// Runs `body`, writes the tree cache, then closes every adopted backend in reverse adoption order, also when `body` throws.
     func run(_ body: () async throws -> Void) async throws {
         do {
             try await body()
         } catch {
-            let error = await ScreenStateHint.annotate(error, routes: routes)
+            let error = await screenHint(for: error)
             await commitTreeCache(failed: true)
             await closeAll()
             claims.releaseAll()

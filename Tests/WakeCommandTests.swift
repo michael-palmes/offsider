@@ -285,6 +285,37 @@ struct WakeCommandTests {
         #expect(locked.stateCalls.isEmpty)
     }
 
+    @Test("the screen check runs once per command, so an early report and the final error share one probe")
+    func hintOncePerCommand() async {
+        let backend = Self.backend(Self.locked)
+        let scope = CommandScope()
+        scope.noteRoute(DeviceRouter.Route(backend: backend, device: Self.phone))
+        let failure = CLIError(errorDescription: "missing", reason: .selectorNotFound)
+
+        #expect(await scope.screenHint(for: failure) is ScreenStateFailure)
+        #expect(await scope.screenHint(for: failure) is CLIError)
+        #expect(backend.stateCalls == ["awake read"])
+    }
+
+    @Test("a --verify --json selector failure on a locked screen carries the wake hint in its JSON error")
+    func verifyJSONHint() async throws {
+        let scope = CommandScope()
+        scope.noteRoute(DeviceRouter.Route(backend: Self.backend(Self.locked), device: Self.phone))
+        var written = Data()
+        let options = try VerificationOptions.parse(["--verify", "--json"])
+        let thrown = await #expect(throws: ReportedFailure.self) {
+            try await VerifyOutput.reportingFailures(command: "tap", target: "label=Save", options: options, scope: scope, write: { written.append($0) }) { _ in
+                throw CLIError(errorDescription: "No accessibility element matched --label 'Save'.", reason: .selectorNotFound)
+            }
+        }
+
+        let report = String(decoding: written, as: UTF8.self)
+        #expect(report.contains("offsider wake --device ZY22FAKE01"))
+        #expect(report.contains("The screen of Motorola (ZY22FAKE01) is off"))
+        #expect(thrown?.underlying is ScreenStateFailure)
+        #expect(thrown?.exitCode.rawValue == 2)
+    }
+
     @Test("a condition that was printed already gets a note line and keeps exit 5")
     func hintNote() async {
         var notes: [String] = []

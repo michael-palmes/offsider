@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- When an Android command fails because a selector matched nothing, no window was found, `--verify` saw no change, or `wait`, `assert` or `screenshot --compare` was not met, and the screen is off or locked, the error names the device, says so and its hint becomes `offsider wake --device <id>`; the reason and exit code are unchanged. Commands that printed their own report add a `Note:` line on stderr. The check uses only what the failed command had already read, plus one state read.
+- When an Android command fails because a selector matched nothing, no window was found, `--verify` saw no change, or `wait`, `assert` or `screenshot --compare` was not met, and the screen is off or locked, the error names the device, says so and its hint becomes `offsider wake --device <id>`; the reason and exit code are unchanged. A `--verify --json` error carries it too; a `--verify` that saw no change, `wait`, `assert` and `screenshot --compare` add a `Note:` line on stderr. The check uses only what the failed command had already read, plus one state read.
 
 ## [0.5.0] - 2026-10-04
 

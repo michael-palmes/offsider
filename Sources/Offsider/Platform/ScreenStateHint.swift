@@ -50,7 +50,7 @@ enum ScreenStateHint {
         return "\(state), so input and screen reads do not reach the app. Run `offsider wake --device \(serial)`, then retry."
     }
 
-    private static func writeNote(_ line: String) {
+    static func writeNote(_ line: String) {
         FileHandle.standardError.write(Data((line + "\n").utf8))
     }
 }
