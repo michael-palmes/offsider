@@ -69,6 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - When a device's session broker fails to start, the rest of the command no longer waits for it again: screenshots go straight to `devicectl` and `button home` to the runner.
 - Long `type` text on a device goes to the session in requests of at most 256 characters, so it no longer fails as possibly sent; a request too large for the session is refused unsent.
 - `boot` no longer fails to start an AVD whose earlier emulator crashed: when `hardware-qemu.ini.lock` or `multiinstance.lock` names only processes that are gone, it removes both before the launch, says so, and names them if the launch still fails.
+- `doctor` no longer says an Android screen with stay awake off turns off "after never without input": with a screen timeout of never, `android-device.stay-awake` passes with "Off: the screen never turns off on its own".
 
 ## [0.6.0] - 2026-10-05
 

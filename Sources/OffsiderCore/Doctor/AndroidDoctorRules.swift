@@ -273,6 +273,7 @@ public enum AndroidDoctorRules {
         let fix = "Run `offsider stay-awake on --device \(deviceID)`."
         let timeout = reading.screenTimeoutSummary.map { "after \($0) without input" } ?? "when it times out"
         guard !reading.stayAwake.isEmpty else {
+            if reading.screenTimeoutSummary == "never" { return (.pass, "Off: the screen never turns off on its own", nil) }
             let lock = !reading.hasCredential ? "" : ", then the \(reading.credentialName) lock screen returns"
             return (.warn, "Off: the screen turns off \(timeout)\(lock)", fix)
         }
