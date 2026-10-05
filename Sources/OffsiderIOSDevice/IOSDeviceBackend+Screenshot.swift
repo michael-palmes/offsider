@@ -8,11 +8,27 @@ final class IOSDeviceState {
     var targetApp: String?
     var runners: [String: RunnerClient] = [:]
     var connector: (any RunnerConnecting)?
+    var sessions: [String: DeviceSessionClient] = [:]
+    var sessionConnector: (any DeviceSessionConnecting)?
+    var streamNoticeShown = false
 }
 
 extension IOSDeviceBackend {
+    /// The broker's latest frame on an Xcode 27 host; `devicectl device capture screenshot` when its stream cannot serve one.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         _ = try await requireBootedDevice(id)
+        if hostHasHID, sessionsAvailable {
+            do {
+                return try await host.timing.measure("stream-capture") {
+                    try await session(for: id).frame(.png).data
+                }
+            } catch {
+                if !state.streamNoticeShown {
+                    state.streamNoticeShown = true
+                    log(.notice, "The screen stream is unavailable (\((error as? IOSDeviceError)?.message ?? error.localizedDescription)); capturing with devicectl instead.")
+                }
+            }
+        }
         return try await host.timing.measure("capture") {
             try await IOSDeviceScreenshot.capture(udid: id.rawValue, directory: directory, root: host.privateRoot)
         }
@@ -28,6 +44,10 @@ extension IOSDeviceBackend {
     public func geometry(for id: DeviceID) async throws -> IOSDeviceGeometry {
         let udid = id.rawValue
         if let known = state.geometries[udid] { return known }
+        if let live = await liveSession(for: id)?.status?.geometry {
+            state.geometries[udid] = live
+            return live
+        }
         let folder = try IOSDevicePaths.device(udid, root: host.privateRoot)
         do {
             let output = try await directory.run(

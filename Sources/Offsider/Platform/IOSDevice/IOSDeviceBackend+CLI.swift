@@ -8,6 +8,7 @@ extension IOSDeviceBackend {
         let sink = IOSDeviceLogSink(logger: logger)
         var host = IOSDeviceHost.live()
         host.runnerSource = Bundle.module.url(forResource: "runner", withExtension: nil)
+        host.sessionExecutable = Bundle.main.executableURL
         if Timings.isEnabled {
             host.timing = .printing { line in FileHandle.standardError.write(Data((line + "\n").utf8)) }
         }

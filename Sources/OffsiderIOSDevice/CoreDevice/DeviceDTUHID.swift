@@ -86,8 +86,6 @@ final class DeviceDTUHID {
     }
 }
 
-extension DeviceDTUHID: DeviceHIDLink {}
-
 /// True for exactly one caller, which resumes the continuation.
 final class OnceFlag: @unchecked Sendable {
     private let lock = NSLock()

@@ -45,7 +45,7 @@ extension IOSDeviceBackend: DeviceSettingsControlling {
 }
 
 extension IOSDeviceBackend: OrientationControlling {
-    /// Reads the displays again each time, so a poll sees the turn, and refreshes the panel input uses.
+    /// Reads the displays again each time, so a poll sees the turn.
     public func orientation(of id: DeviceID) async throws -> DeviceOrientation? {
         let output = try await directory.run(
             IOSDeviceSettings.readDisplays(udid: id.rawValue),
@@ -54,12 +54,10 @@ extension IOSDeviceBackend: OrientationControlling {
             timeout: IOSDeviceDirectory.infoTimeout
         )
         let data = Data(output.utf8)
-        input.panels[id.rawValue] = IOSDevicePanel.parse(displaysJSON: data)
         return IOSDeviceSettings.parseOrientation(displaysJSON: data)
     }
 
     public func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws {
-        input.panels[id.rawValue] = nil
         _ = try await directory.run(
             IOSDeviceSettings.setOrientation(orientation, udid: id.rawValue),
             label: "device orientation set",

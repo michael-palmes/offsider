@@ -48,8 +48,12 @@ public final class IOSDeviceBackend: DeviceBackend {
 
     /// Wired, trusted, Developer Mode on and prepared; wakes the CoreDevice tunnel once when it is down.
     /// A wired device with no developer services is woken before it is judged, since the wake can bring them back.
+    /// A live session broker vouches for the device on its own, since it exits once the device goes, so no listing is needed.
     public func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         try await prepare()
+        if let live = await liveSession(for: id) {
+            return BootedDevice(id: id, name: live.status?.label ?? id.rawValue)
+        }
         var device = try await listedDevice(id)
         let name = DeviceName.display(device.udid, label: device.label)
         var blocker = IOSDeviceReadiness.blocker(device, deviceSupportFinalized: directory.deviceSupportFinalized(device))

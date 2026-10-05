@@ -4,49 +4,63 @@ import OffsiderCore
 /// Input wiring the runner lane and tests fill in; one per backend, so per command.
 @MainActor
 public struct IOSDeviceInputHooks {
-    /// The session for hosts below the HID floor (the runner's); without it they refuse with `xcode_too_old`.
+    /// The runner's session: below the HID floor it serves all input, above it the touches the broker cannot send.
+    /// Without it, input below the floor refuses with `xcode_too_old`.
     public var fallbackInputSession: ((DeviceID) async throws -> any InputSession)?
     /// Unicode and `--replace` text; without it they refuse with `not_supported`.
     public var runnerText: (any RunnerTextTyping)?
     var coreDeviceVersion: () -> CoreDeviceVersion? = { CoreDeviceVersion.installed() }
-    var makeSink: ((_ identifier: String, _ version: CoreDeviceVersion, _ name: String, _ udid: String) -> any DTUHIDSink)?
-    var panels: [String: IOSDevicePanel] = [:]
 
     public init() {}
 }
 
 extension IOSDeviceBackend {
-    /// UI points to points on the panel's native axes for the digitizer; the runner below the HID floor takes points as they are.
+    /// UI points as they are: the broker maps them onto the touchscreen with the panel's current orientation, and the runner takes them directly.
     public func deviceCoordinates(for points: [(x: Double, y: Double)], tree: UITree?, on id: DeviceID) async throws -> [(x: Double, y: Double)] {
         _ = try await requireBootedDevice(id)
-        guard let version = input.coreDeviceVersion(), version.supportsHID else { return points }
-        let panel = try await panel(for: id)
-        return points.map { panel.panelPoint(x: $0.x, y: $0.y) }
+        if let tree, let screen = try? await geometry(for: id).screenInfo, Self.isWindowed(tree, screenWidth: screen.width, screenHeight: screen.height) {
+            throw IOSDeviceError.notSupportedOnDevice(
+                "Tapping an element of an app in a Stage Manager window",
+                instead: "Its frames are relative to the window, not the screen. Make the app full screen, or tap by coordinates with `offsider tap -x <x> -y <y>`."
+            )
+        }
+        return points
     }
 
-    /// CoreDevice HID on an Xcode 27 host; below the floor, the fallback session or `xcode_too_old` before any XPC.
+    /// An app in a Stage Manager window reports frames inside the window: its root sits at the origin, smaller than the screen.
+    static func isWindowed(_ tree: UITree, screenWidth: Double, screenHeight: Double) -> Bool {
+        guard let app = tree.roots.first(where: { $0.role == .application }), let frame = app.frame,
+              frame.x == 0, frame.y == 0, frame.width > 0, frame.height > 0, screenWidth > 0, screenHeight > 0 else { return false }
+        return frame.width * frame.height < 0.9 * screenWidth * screenHeight
+    }
+
+    var hostHasHID: Bool { input.coreDeviceVersion()?.supportsHID == true }
+
+    /// The session broker on an Xcode 27 host (falling back to the runner where it can), the runner below it,
+    /// and `xcode_too_old` when neither is available.
     public func openInputSession(for id: DeviceID) async throws -> any InputSession {
         _ = try await requireBootedDevice(id)
-        guard let device = try await directory.device(udid: id.rawValue) else {
-            throw IOSDeviceError.notListed(id.rawValue)
-        }
-        let name = DeviceName.display(device.udid, label: device.label)
-        guard let version = input.coreDeviceVersion(), version.supportsHID else {
+        guard hostHasHID, sessionsAvailable else {
             if let fallback = input.fallbackInputSession {
                 return try await fallback(id)
             }
-            throw IOSDeviceError.xcodeTooOld(name, version: input.coreDeviceVersion())
+            throw IOSDeviceError.xcodeTooOld(try await displayName(id), version: input.coreDeviceVersion())
         }
-        guard let identifier = device.coreDeviceIdentifier else {
-            throw IOSDeviceError.hidFailed(name, udid: device.udid, detail: "devicectl did not report its CoreDevice identifier", sent: false)
-        }
-        let panel = try await panel(for: id)
-        let sink = input.makeSink?(identifier, version, name, device.udid)
-            ?? CoreDeviceSession(deviceIdentifier: identifier, version: version, name: name, udid: device.udid)
-        return IOSDeviceInputSession(device: id, panel: panel, sink: sink, runnerText: input.runnerText)
+        let runner: (() async throws -> any InputSession)? = input.fallbackInputSession.map { open in { try await open(id) } }
+        return IOSDeviceInputSession(
+            device: id,
+            session: { try await self.session(for: id) },
+            runner: runner,
+            runnerText: input.runnerText
+        )
     }
 
-    /// Only a whole touch in one call: a held contact cannot outlive the command's sockets.
+    private func displayName(_ id: DeviceID) async throws -> String {
+        guard let device = try await directory.device(udid: id.rawValue) else { throw IOSDeviceError.notListed(id.rawValue) }
+        return DeviceName.display(device.udid, label: device.label)
+    }
+
+    /// Only a whole touch in one call, sent as one event so the broker times the hold on the device.
     public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         guard let touch = Self.wholeTouch(steps) else {
             throw IOSDeviceError.notSupportedOnDevice(
@@ -55,14 +69,13 @@ extension IOSDeviceBackend {
             )
         }
         let session = try await openInputSession(for: id)
-        var down = false
         do {
-            try await session.perform(.touch(direction: .down, x: touch.x, y: touch.y))
-            down = true
-            if touch.hold > 0 { try await Task.sleep(for: .seconds(touch.hold)) }
-            try await session.perform(.touch(direction: .up, x: touch.x, y: touch.y))
+            try await session.perform(.composite([
+                .touch(direction: .down, x: touch.x, y: touch.y),
+                .delay(touch.hold),
+                .touch(direction: .up, x: touch.x, y: touch.y),
+            ]))
         } catch {
-            if down { try? await session.perform(.touch(direction: .up, x: touch.x, y: touch.y)) }
             await session.close()
             throw error
         }
@@ -77,20 +90,43 @@ extension IOSDeviceBackend {
         guard case let .hold(seconds) = steps[1] else { return nil }
         return (x, y, seconds)
     }
+}
 
-    /// Read once per command from `devicectl device info displays`.
-    func panel(for id: DeviceID) async throws -> IOSDevicePanel {
-        if let panel = input.panels[id.rawValue] { return panel }
-        let output = try await directory.run(
-            ["device", "info", "displays", "--device", id.rawValue, "--timeout", "20", "--json-output", "-", "-q"],
-            label: "device info displays",
-            udid: id.rawValue,
-            timeout: IOSDeviceDirectory.infoTimeout
-        )
-        guard let panel = IOSDevicePanel.parse(displaysJSON: Data(output.utf8)) else {
-            throw IOSDeviceError.devicectlFailed("device info displays", udid: id.rawValue, detail: "it reported no display size")
+extension IOSDeviceBackend {
+    /// A broker can be reached or started: a test connector, or this `offsider` executable to spawn.
+    var sessionsAvailable: Bool { host.sessionConnector != nil || host.sessionExecutable != nil }
+
+    /// One broker connection per device per command, reused or started through `session.json`.
+    func session(for id: DeviceID) async throws -> DeviceSessionClient {
+        let udid = id.rawValue
+        if let client = state.sessions[udid] { return client }
+        let connector = try sessionConnector()
+        let client = try await host.timing.measure("session") { try await connector.connect(udid: udid) }
+        state.sessions[udid] = client
+        return client
+    }
+
+    /// A live broker already serving `id`, never started; nil when none answers.
+    func liveSession(for id: DeviceID) async -> DeviceSessionClient? {
+        if let client = state.sessions[id.rawValue] { return client }
+        guard hostHasHID, sessionsAvailable, let connector = try? sessionConnector(),
+              let client = await connector.existing(udid: id.rawValue) else { return nil }
+        state.sessions[id.rawValue] = client
+        return client
+    }
+
+    func sessionConnector() throws -> any DeviceSessionConnecting {
+        if let connector = state.sessionConnector ?? host.sessionConnector { return connector }
+        guard let executable = host.sessionExecutable else {
+            throw IOSDeviceError(.sessionFailed, "This installation of Offsider cannot start a device session. Reinstall Offsider.")
         }
-        input.panels[id.rawValue] = panel
-        return panel
+        let manager = DeviceSessionManager(
+            store: DeviceSessionStore(root: host.privateRoot),
+            processes: OffsiderSelfProcesses(executable: executable),
+            environment: host.environment,
+            log: log
+        )
+        state.sessionConnector = manager
+        return manager
     }
 }

@@ -82,6 +82,10 @@ public struct IOSDeviceHost: Sendable {
     public var runnerSource: URL?
     /// Replaces the session manager, so tests never build or start a runner.
     public var runnerConnector: (any RunnerConnecting)?
+    /// The `offsider` executable that serves device sessions; nil leaves screenshots on devicectl and buttons on the runner.
+    public var sessionExecutable: URL?
+    /// Replaces the session manager, so tests never spawn a broker.
+    public var sessionConnector: (any DeviceSessionConnecting)?
 
     public init(
         environment: [String: String],

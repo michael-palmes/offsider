@@ -8,73 +8,135 @@ public protocol RunnerTextTyping: AnyObject {
     func replaceText(_ text: String, on device: DeviceID) async throws
 }
 
-/// Where a session's `dtuhidd` messages go; `CoreDeviceSession` on a device, a recorder in tests.
-@MainActor
-protocol DTUHIDSink: AnyObject {
-    var hasSent: Bool { get }
-    func send(_ message: DTUHIDValue, feature: String) async throws
-    func close() async
-}
-
-extension CoreDeviceSession: DTUHIDSink {
-    func send(_ message: DTUHIDValue, feature: String) async throws {
-        try await link(feature).send(message)
-    }
-}
-
-/// CoreDevice HID input for one command: touches, keys and buttons lowered to `dtuhidd` messages, each feature's socket opened on first use.
+/// Input on an Xcode 27 host: everything through the device session broker when it sends touches and keys,
+/// else touches through the runner; buttons fall back to the runner only for Home. Each lane connects on first use.
 @MainActor
 final class IOSDeviceInputSession: TextInputSession {
     let device: DeviceID
-    private let sink: any DTUHIDSink
+    private let session: () async throws -> DeviceSessionClient
+    private let runner: (() async throws -> any InputSession)?
     private let runnerText: (any RunnerTextTyping)?
-    private var lowering: DTUHIDLowering
+    private var lowering: DeviceSessionLowering?
+    private var runnerSession: (any InputSession)?
 
-    init(device: DeviceID, panel: IOSDevicePanel, sink: any DTUHIDSink, runnerText: (any RunnerTextTyping)?) {
+    init(
+        device: DeviceID, session: @escaping () async throws -> DeviceSessionClient,
+        runner: (() async throws -> any InputSession)?, runnerText: (any RunnerTextTyping)?
+    ) {
         self.device = device
-        self.sink = sink
+        self.session = session
+        self.runner = runner
         self.runnerText = runnerText
-        lowering = DTUHIDLowering(panel: panel)
+    }
+
+    /// The broker when it answers and sends touches; the runner when it cannot and a runner exists; else the broker's failure.
+    private func touchLowering() async throws -> DeviceSessionLowering {
+        if let lowering { return lowering }
+        let brokerTouches: Bool
+        do {
+            brokerTouches = try await session().supportsTouch || runner == nil
+        } catch {
+            guard runner != nil else { throw error }
+            brokerTouches = false
+        }
+        let made = DeviceSessionLowering(brokerTouches: brokerTouches)
+        lowering = made
+        return made
     }
 
     /// Lowers the whole event before sending, so an unsupported part sends nothing.
     func perform(_ event: InputEvent) async throws {
-        var next = lowering
-        let steps = try next.steps(for: event)
+        var next = try await touchLowering()
+        let actions = try next.actions(for: event)
+        if !next.brokerTouches, actions.contains(where: { if case .keys = $0 { return true } else { return false } }) {
+            throw IOSDeviceError.notSupportedOnDevice(
+                "Pressing keys without the device session",
+                instead: "Retry once `offsider doctor --device \(device.rawValue)` passes, or type text with `offsider type`."
+            )
+        }
         lowering = next
-        for step in steps {
-            switch step {
-            case let .send(message, feature):
-                try await sink.send(message, feature: feature)
-            case let .wait(seconds):
-                try await Task.sleep(for: .seconds(seconds))
-            }
+        for action in actions {
+            try await run(action)
         }
     }
 
-    /// US keyboard text goes through HID keys; anything else needs the runner.
-    func typeText(_ text: String) async throws {
-        guard TextToHIDEvents.validateText(text) else {
-            try await requireRunner("Typing characters outside the US keyboard").typeText(text, on: device)
+    private func run(_ action: DeviceSessionAction) async throws {
+        switch action {
+        case .touch(let steps):
+            try await session().touch(steps)
+        case .keys(let steps):
+            try await session().keys(steps)
+        case .press(let button):
+            let usage = try button.requireDeviceUsage()
+            try await withRunnerFallback(button, .shortButtonPress(button)) {
+                try await $0.press(usagePage: DTUHIDMessage.consumerUsagePage, usageCode: usage, hold: button.deviceShortPressHold)
+            }
+        case .button(let button, let state):
+            let usage = try button.requireDeviceUsage()
+            try await withRunnerFallback(button, .button(direction: state == .down ? .down : .up, button: button)) {
+                try await $0.button(usagePage: DTUHIDMessage.consumerUsagePage, usageCode: usage, state: state)
+            }
+        case .runner(let event):
+            try await requireRunner().perform(event)
+        case .wait(let seconds):
+            try await Task.sleep(for: .seconds(seconds))
+        }
+    }
+
+    /// The broker first; when it cannot start, the runner presses Home; any other button reports the broker's failure.
+    private func withRunnerFallback(_ button: HardwareButton, _ event: InputEvent, _ body: (DeviceSessionClient) async throws -> Void) async throws {
+        let client: DeviceSessionClient
+        do {
+            client = try await session()
+        } catch {
+            guard button == .home, runner != nil else { throw error }
+            try await requireRunner().perform(event)
             return
         }
-        try await perform(.composite(try TextToHIDEvents.convertTextToHIDEvents(text)))
+        try await body(client)
+    }
+
+    func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+        guard try await touchLowering().brokerTouches else {
+            try await requireRunner().performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
+            return
+        }
+        if let preDelay, preDelay > 0 { try await Task.sleep(for: .seconds(preDelay)) }
+        try await perform(.tapAt(x: point.x, y: point.y))
+        if let postDelay, postDelay > 0 { try await Task.sleep(for: .seconds(postDelay)) }
+    }
+
+    /// US keyboard text through broker keys when it sends them; anything else through the runner.
+    func typeText(_ text: String) async throws {
+        if TextToHIDEvents.validateText(text), (try? await touchLowering())?.brokerTouches == true {
+            try await session().keys(try DeviceSessionLowering.keySteps(typing: text))
+            return
+        }
+        try await requireRunnerText("Typing text").typeText(text, on: device)
     }
 
     func replaceText(_ text: String) async throws {
-        try await requireRunner("Replacing a field's text").replaceText(text, on: device)
+        try await requireRunnerText("Replacing a field's text").replaceText(text, on: device)
     }
 
     func close() async {
-        await sink.close()
+        await runnerSession?.close()
+        runnerSession = nil
     }
 
-    private func requireRunner(_ what: String) throws -> any RunnerTextTyping {
+    private func requireRunner() async throws -> any InputSession {
+        if let runnerSession { return runnerSession }
+        guard let runner else {
+            throw IOSDeviceError.notSupportedOnDevice("Touch input", instead: "This installation of Offsider has no device runner; reinstall Offsider.")
+        }
+        let opened = try await runner()
+        runnerSession = opened
+        return opened
+    }
+
+    private func requireRunnerText(_ what: String) throws -> any RunnerTextTyping {
         guard let runnerText else {
-            throw IOSDeviceError.notSupportedOnDevice(
-                what,
-                instead: "This version of Offsider types only US keyboard characters on an iPhone or iPad; type the text without `--replace`, or clear the field first with `offsider key`."
-            )
+            throw IOSDeviceError.notSupportedOnDevice(what, instead: "This installation of Offsider has no device runner; reinstall Offsider.")
         }
         return runnerText
     }
