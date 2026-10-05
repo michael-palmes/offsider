@@ -26,6 +26,14 @@ struct VerifyReportTests {
         #expect(json["change"] as? String == "accessibility-tree")
     }
 
+    @Test("A --verify-id report says change element; a refusal before input is dispatched no with verify_target_present, exit 1")
+    func elementChange() throws {
+        let verified = VerifyReport(command: "tap", target: "id=next", dispatched: .yes, verified: true, attempts: 1, change: .element)
+        #expect(try object(verified)["change"] as? String == "element")
+        #expect(verified.exitCode == .success)
+        #expect(FailureReason.verifyTargetPresent.exitCode == .failure)
+    }
+
     @Test("A tap report carries its final style as a lowercase string")
     func tapStyle() throws {
         let report = VerifyReport(command: "tap", target: "(200, 400)", dispatched: .yes, verified: false, attempts: 2, change: .none, style: .physical)

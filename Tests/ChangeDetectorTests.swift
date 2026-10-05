@@ -133,4 +133,15 @@ struct ChangeDetectorTests {
         #expect(object == array)
         #expect(throws: (any Error).self) { try AccessibilitySnapshot(jsonData: Data("42".utf8)) }
     }
+
+    @Test("ignoring text, a ticking label, a new value and a move are unchanged, and an added element still counts")
+    func ignoreText() throws {
+        let detector = ChangeDetector(options: .init(ignoreText: true))
+        let before = try app(children: [element(id: "clock", label: "12:00:01", value: "1")])
+        let ticked = try app(children: [element(id: "clock", label: "12:00:02", value: "2", frame: [20, 140, 200, 30])])
+        #expect(detector.compare(before, ticked) == .unchanged)
+
+        let added = try app(children: [element(id: "clock", label: "12:00:02"), element(id: "toast", label: "Saved")])
+        #expect(detector.compare(before, added) == .changed(summary: "element added: StaticText#toast"))
+    }
 }

@@ -105,4 +105,16 @@ struct ReactNativeOverlayTests {
 
         #expect(result.stdout.contains(#""matched":{"by":"id","text":"overlay-test-tab"}"#), "\(result.stdout)")
     }
+
+    @Test("--verify-ignore-text does not count a ticking clock as the effect of a tap that does nothing", arguments: RNPlatform.enabled)
+    func ignoreTextOnTickingScreen(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-start-clock")
+        _ = try await app.waitForLabel(of: "overlay-test-clock") { $0 != "Clock: 0" }
+
+        let result = try await app.offsider("tap --id overlay-test-tab --verify-ignore-text --retries 0")
+
+        #expect(result.exitCode == 5, "\(result.stderr)")
+    }
 }

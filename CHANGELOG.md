@@ -49,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `touch --fingers 2 --hold <ms>` holds two fingers `--spread` points apart (default 60) around `-x`/`-y` and lifts both, for app menus behind a two-finger hold. It works on a simulator's main display and Android emulators, over gRPC or through the UiAutomation helper when input goes over adb; `input` alone refuses it, as do physical iPhones and the iPhone Duo's inner display.
 - `drag --hold-ms <ms>` (0 to 10000, default 50) holds before moving, and `gesture long-press-drag --x --y --to-x --to-y` (`--hold-ms` default 800, `--duration` default 0.6) presses, holds and drags, for items that move only after a long press.
 - `wait --any` with two or more selectors (`--id`, `--label` and `--value` repeat) waits for the first one on screen, for an action with two possible outcomes; `--json` names it in a new `matched` key (`{by, text}`), which `wait`, `assert` and batch records now always carry (null otherwise).
+- `--verify-id <id>` on `tap`, `type`, `key` and `button` verifies that an element of the next screen came on screen (`change` `element`, default `--retries 0` and `--verify-timeout 10`, no screenshot fallback), and refuses before sending anything with the new reason `verify_target_present` (exit 1) when it is already there. `--verify-ignore-text` verifies on added or removed elements and state changes only, so a ticking clock or timer no longer counts as a change.
 
 ### Changed
 

@@ -72,6 +72,7 @@ enum VerifyOutput {
                 styles: request.styles,
                 timeout: .milliseconds(Int((request.options.resolvedTimeout * 1000).rounded())),
                 dependencies: .live(backend: request.backend, device: request.device),
+                mode: request.options.mode,
                 initialTree: request.initialTree,
                 beforeAction: request.beforeAction,
                 onRetry: { failed, next in
@@ -128,6 +129,8 @@ enum VerifyOutput {
             change = "screen changed"
         case .activity:
             change = "the launcher came to the front"
+        case .element:
+            change = outcome.summary ?? "element on screen"
         case .none:
             change = "no change"
         }
@@ -148,6 +151,9 @@ enum VerifyOutput {
             styleText = " (\(only) style)"
         } else {
             styleText = ""
+        }
+        if let id = request.options.verifyID {
+            return "✗ \(request.subject) was dispatched but --verify-id '\(id)' did not come on screen within \(request.options.resolvedTimeout.formatted()) s after \(outcome.attempts) \(plural). Check the screen with describe-ui --summary."
         }
         return "✗ \(request.subject) was dispatched but nothing observable changed after \(outcome.attempts) \(plural)\(styleText). "
             + (request.device.platform == .ios

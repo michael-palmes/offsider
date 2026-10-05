@@ -10,6 +10,7 @@ type Tab = (typeof tabs)[number];
 const tabBarHeight = 49;
 const scrimMs = 4000;
 const flickerHiddenMs = 300;
+const clockMs = 500;
 const flickerCycleMs = 1000;
 const flickerCycles = 6;
 const bannerLabel = 'Connection lost. Can’t reach the server.';
@@ -24,6 +25,8 @@ export function OverlayTestScreen() {
   const [swallowed, setSwallowed] = useState(0);
   const [hiddenTaps, setHiddenTaps] = useState(0);
   const [flickerHidden, setFlickerHidden] = useState(false);
+  const [ticks, setTicks] = useState(0);
+  const [clockRunning, setClockRunning] = useState(false);
   const flickerTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const warnings = useRef(0);
   const errors = useRef(0);
@@ -38,6 +41,14 @@ export function OverlayTestScreen() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!clockRunning) {
+      return undefined;
+    }
+    const timer = setInterval(() => setTicks((current) => current + 1), clockMs);
+    return () => clearInterval(timer);
+  }, [clockRunning]);
 
   const flicker = () => {
     fixtureLog('overlay-test', 'flicker');
@@ -74,6 +85,8 @@ export function OverlayTestScreen() {
         <Readout id="overlay-test-tab" label={`Overlay Tab: ${tab}`} value={tab} />
         <Readout id="overlay-test-swallowed" label={`Swallowed Taps: ${swallowed}`} value={String(swallowed)} />
         <Readout id="overlay-test-scrim" label={`Scrim: ${scrim ? 'Shown' : 'Hidden'}`} />
+        <Target id="overlay-test-start-clock" label="Start Clock" onPress={() => setClockRunning(true)} />
+        <Readout id="overlay-test-clock" label={`Clock: ${ticks}`} value={String(ticks)} />
         <Readout id="overlay-test-hidden-taps" label={`Hidden Taps: ${hiddenTaps}`} value={String(hiddenTaps)} />
         <Target
           id="overlay-test-toggle-banner"

@@ -5,6 +5,8 @@ public enum ChangeKind: String, Codable, Sendable {
     case screenshot
     /// Android `button home`: the launcher came to the front.
     case activity
+    /// The `--verify-id` element came on screen.
+    case element
     case none
 }
 

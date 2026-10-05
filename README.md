@@ -92,7 +92,7 @@ offsider doctor --device <UDID>                                 # trust, Develop
 offsider describe-ui --summary --app com.example.app --device <UDID>   # builds the runner on first use
 ```
 
-Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. `slider` always checks its value. If input seems to be ignored, or screen reads fail, run `offsider doctor --device "$DEVICE"` (simulators, Android devices and iPhones).
+Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes. For a tap that navigates, `--verify-id <id>` waits for an element of the next screen instead (default 10 s, no retries); on a screen with ticking text, `--verify-ignore-text` ignores text and frame changes. `slider` always checks its value. If input seems to be ignored, or screen reads fail, run `offsider doctor --device "$DEVICE"` (simulators, Android devices and iPhones).
 
 A simulator can fall into a crash loop after boot, with macOS showing a "quit unexpectedly" dialog for each crash. `doctor --device <UDID>` reads the crash reports macOS wrote in the last 10 minutes (only their header and process name, never paths or stack frames): `simulator.crash-loop` warns at two to four crashes of one process and fails at five or more (a busy host sees a few daemon crashes without a loop), printing `xcrun simctl shutdown <UDID> && xcrun simctl erase <UDID>` without running it. Erasing removes the simulator's apps and settings. Plain `doctor` lists every simulator with five or more crashes of one process as `simulators.crash-loop`, and `test-runner.sh` refuses to start on a simulator in a crash loop.
 
@@ -592,6 +592,7 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `runner_unavailable` | 1 | The iPhone runner did not answer; no input was sent | Retry; `offsider doctor --device <UDID>` |
 | `run_active` | 1 | `run start` named another folder while this session's run is active | `offsider run stop`, then start the new run |
 | `run_unavailable` | 1 | The run folder cannot be written and it would hold the only copy, `OFFSIDER_RUN` names an unusable folder or is `off`, or the session cannot be found | Fix the folder, `offsider run status`, or set `OFFSIDER_RUN=<dir>` |
+| `verify_target_present` | 1 | The `--verify-id` element was already on screen before the input, so nothing was sent | Pass an id only the next screen has, or use `--verify` |
 
 ## Privacy
 

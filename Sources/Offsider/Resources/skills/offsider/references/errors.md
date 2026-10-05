@@ -15,6 +15,10 @@
 
 Resending a single command is safe after 2, 6, 7, 8, 9 and 64: nothing was sent. A batch is different, since its earlier steps may have run: exit 2 or 6 alone does not make a batch resend safe. Check the summary line's `dispatched` first (`Dispatched:` in the text output): resend the whole batch only when it is `no`; otherwise check the screen and resend from the failed step.
 
+## Reasons to act on
+
+- `verify_target_present` (exit 1, nothing sent): the `--verify-id` element was already on screen, so its appearing could not show the input worked. Pick an id that only the next screen has.
+
 ## JSON errors
 
 With `--json`, every failure prints one object on stdout: `exitCode` and `error` with `reason`, `message`, `hint` (the next command), `dispatched` and `candidates`. The README lists every `reason`.
