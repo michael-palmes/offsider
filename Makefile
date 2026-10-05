@@ -1,4 +1,4 @@
-.PHONY: help frameworks build test e2e e2e-android e2e-rn-ios e2e-rn-debug-ios e2e-rn-debug-android e2e-foldable e2e-android-fold e2e-android-phone rn-typecheck grpc-generate helper helper-check clean
+.PHONY: help frameworks build test e2e e2e-android e2e-rn-ios e2e-rn-debug-ios e2e-rn-debug-android e2e-foldable e2e-android-fold e2e-android-phone e2e-ios-device rn-typecheck grpc-generate helper helper-check clean
 
 help:
 	@echo "Common Offsider commands"
@@ -13,6 +13,7 @@ help:
 	@echo "  make e2e-foldable   Run the foldable suite on the Offsider Duo iPhone simulator, folding it with offsider posture"
 	@echo "  make e2e-android-fold  Run the foldable suite on the Offsider_E2E_Pixel_9_Pro_Fold AVD"
 	@echo "  make e2e-android-phone Run the phone suites on the USB phone OFFSIDER_ANDROID_PHONE names"
+	@echo "  make e2e-ios-device  Run the device suites on the wired iPhone or iPad OFFSIDER_IOS_DEVICE names (needs OFFSIDER_IOS_TEAM_ID)"
 	@echo "  make rn-typecheck   Typecheck the React Native playground"
 	@echo "  make grpc-generate  Regenerate the emulator gRPC client from the vendored proto"
 	@echo "  make helper         Rebuild the Android helper dex after changing AndroidHelper/ (JDK 17)"
@@ -51,6 +52,9 @@ e2e-android-fold:
 
 e2e-android-phone:
 	./test-runner.sh --android-phone
+
+e2e-ios-device:
+	./test-runner.sh --ios-device
 
 rn-typecheck:
 	pnpm --dir OffsiderPlaygroundRN typecheck

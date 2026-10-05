@@ -63,6 +63,7 @@ show_usage() {
     echo "      --foldable      Build Offsider and the playground, then run FoldableTests on the Offsider Duo iPhone"
     echo "      --android-fold  Build Offsider and run AndroidFoldableTests on the Offsider_E2E_Pixel_9_Pro_Fold AVD"
     echo "      --android-phone Build Offsider and run the AndroidPhone*Tests suites on the USB phone OFFSIDER_ANDROID_PHONE names"
+    echo "      --ios-device    Build Offsider and run the IOSDevice*E2ETests suites on the wired iPhone or iPad OFFSIDER_IOS_DEVICE names"
     echo "  -c, --clean         Clean build before building"
     echo "  -s, --sequential    Run suites one-by-one (single simulator-safe flow)"
     echo "  -v, --verbose       Verbose output"
@@ -90,6 +91,10 @@ show_usage() {
     echo "Android phone (--android-phone):"
     echo "  OFFSIDER_ANDROID_PHONE    Required: the phone's exact USB serial from adb devices -l; no other device is touched"
     echo "  OFFSIDER_ANDROID_APK      The React Native playground's release APK, installed once and left in place"
+    echo ""
+    echo "iPhone or iPad (--ios-device, needs XcodeGen):"
+    echo "  OFFSIDER_IOS_DEVICE       Required: the device's exact UDID from devicectl list devices; no other device is touched"
+    echo "  OFFSIDER_IOS_TEAM_ID      Required: the team that signs the runner and the playground, installed once and left in place"
     echo ""
     echo "React Native on iOS (--rn-ios, needs pnpm):"
     echo "  OFFSIDER_RN_IOS_APP       The Release simulator app (default: built by scripts/rn-playground.sh build-ios --if-changed)"
@@ -133,6 +138,7 @@ show_usage() {
     echo "  $0 --foldable       # Run the foldable suite on the Offsider Duo iPhone (unfold it in Device Hub when asked)"
     echo "  $0 --android-fold   # Run the foldable suite on the Pixel 9 Pro Fold AVD"
     echo "  OFFSIDER_ANDROID_PHONE=<serial> $0 --android-phone   # Run the phone suites on one USB phone"
+    echo "  OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> $0 --ios-device   # Run the device suites on one wired iPhone or iPad"
     echo "  $0 -b               # Only build, skip tests"
     echo "  $0 -c               # Clean build and run all tests"
 }
@@ -148,6 +154,7 @@ RN_METRO_STARTED=false
 FOLDABLE=false
 ANDROID_FOLD=false
 ANDROID_PHONE=false
+IOS_DEVICE=false
 FOLDABLE_SIMULATOR_NAME="Offsider Duo iPhone"
 ANDROID_FOLD_AVD="Offsider_E2E_Pixel_9_Pro_Fold"
 CLEAN_BUILD=false
@@ -224,6 +231,10 @@ while [[ $# -gt 0 ]]; do
             ANDROID_PHONE=true
             shift
             ;;
+        --ios-device)
+            IOS_DEVICE=true
+            shift
+            ;;
         -c|--clean)
             CLEAN_BUILD=true
             shift
@@ -276,6 +287,21 @@ if [[ "$ANDROID_PHONE" == true ]]; then
     fi
     if [[ -z "${OFFSIDER_ANDROID_PHONE:-}" ]]; then
         print_error "Set OFFSIDER_ANDROID_PHONE to the phone's USB serial from 'adb devices -l'."
+        exit 1
+    fi
+fi
+
+if [[ "$IOS_DEVICE" == true ]]; then
+    if [[ "$ANDROID_PHONE" == true || "$FOLDABLE" == true || "$ANDROID_FOLD" == true || "$ANDROID" == true || "$RN_IOS" == true || "$RN_DEBUG" == true || "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
+        print_error "--ios-device can only be combined with --tests-only and --verbose."
+        exit 1
+    fi
+    if [[ -z "${OFFSIDER_IOS_DEVICE:-}" ]]; then
+        print_error "Set OFFSIDER_IOS_DEVICE to the device's UDID from 'xcrun devicectl list devices'."
+        exit 1
+    fi
+    if [[ -z "${OFFSIDER_IOS_TEAM_ID:-}" ]]; then
+        print_error "Set OFFSIDER_IOS_TEAM_ID to the team that signs the runner and the playground."
         exit 1
     fi
 fi
@@ -337,7 +363,7 @@ check_prerequisites() {
         exit 1
     fi
 
-    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true && "$ANDROID_PHONE" != true ]] && ! command -v jq &> /dev/null; then
+    if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true && "$ANDROID_PHONE" != true && "$IOS_DEVICE" != true ]] && ! command -v jq &> /dev/null; then
         print_error "jq not found. Install jq to select the matching simulator runtime."
         exit 1
     fi
@@ -776,6 +802,32 @@ run_android_phone_tests() {
     print_success "Android phone suites passed"
 }
 
+# The device suites alone, on the one wired iPhone or iPad OFFSIDER_IOS_DEVICE names; every other E2E flag stays off.
+run_ios_device_tests() {
+    print_header "Running iOS Device E2E Tests"
+    ensure_test_framework_rpaths
+
+    export OFFSIDER_IOS_DEVICE_E2E=1
+    export OFFSIDER_IOS_DEVICE
+    export OFFSIDER_IOS_TEAM_ID
+    export OFFSIDER_E2E=0
+    export OFFSIDER_LANDSCAPE_E2E=0
+    export OFFSIDER_RN_E2E=0
+    export OFFSIDER_RN_DEBUG_E2E=0
+    export OFFSIDER_ANDROID_E2E=0
+    export OFFSIDER_ANDROID_FOLD_E2E=0
+    export OFFSIDER_FOLDABLE_E2E=0
+    unset OFFSIDER_ANDROID_PHONE OFFSIDER_ANDROID_DEVICE SIMULATOR_UDID
+    if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
+        OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
+    fi
+    export OFFSIDER_BIN_PATH
+    print_info "Environment: OFFSIDER_IOS_DEVICE=$OFFSIDER_IOS_DEVICE, OFFSIDER_IOS_TEAM_ID=$OFFSIDER_IOS_TEAM_ID"
+    run_suite_list "IOSDeviceListE2ETests" "IOSDeviceDoctorE2ETests" "IOSDeviceScreenshotE2ETests" "IOSDeviceSettingsE2ETests" \
+        "IOSDeviceInputE2ETests" "IOSDeviceTreeE2ETests" "IOSDeviceRunnerE2ETests"
+    print_success "iOS device suites passed"
+}
+
 # Picks the Offsider Duo iPhone unless SIMULATOR_UDID already names a simulator.
 select_foldable_simulator() {
     if [[ -n "$SIMULATOR_UDID" ]]; then
@@ -1025,6 +1077,16 @@ main() {
             build_offsider
         fi
         run_android_phone_tests
+        return
+    fi
+
+    if [[ "$IOS_DEVICE" == true ]]; then
+        if [[ "$TESTS_ONLY" != true ]]; then
+            build_idb_xcframeworks
+            generate_playground_project
+            build_offsider
+        fi
+        run_ios_device_tests
         return
     fi
 

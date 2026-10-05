@@ -99,10 +99,10 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
 /// The private libxpc RemoteXPC calls and CoreDevice's XPC service registration, resolved at run time and never linked.
 struct RemoteXPC: @unchecked Sendable {
     typealias Create = @convention(c) (Int32, UnsafeMutableRawPointer, UInt64, UInt64) -> UnsafeMutableRawPointer?
-    typealias SetEventHandler = @convention(c) (UnsafeMutableRawPointer, @convention(block) (xpc_object_t) -> Void) -> Void
+    typealias SetEventHandler = @convention(c) (UnsafeMutableRawPointer, @escaping @convention(block) (xpc_object_t) -> Void) -> Void
     typealias Activate = @convention(c) (UnsafeMutableRawPointer) -> Void
     typealias Send = @convention(c) (UnsafeMutableRawPointer, xpc_object_t) -> Void
-    typealias SendWithReply = @convention(c) (UnsafeMutableRawPointer, xpc_object_t, UnsafeMutableRawPointer, @convention(block) (xpc_object_t) -> Void) -> Void
+    typealias SendWithReply = @convention(c) (UnsafeMutableRawPointer, xpc_object_t, UnsafeMutableRawPointer, @escaping @convention(block) (xpc_object_t) -> Void) -> Void
     typealias Cancel = @convention(c) (UnsafeMutableRawPointer) -> Void
     private typealias AddBundle = @convention(c) (AnyObject) -> Void
     private typealias InitServices = @convention(c) () -> Void
