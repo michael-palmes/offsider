@@ -25,17 +25,35 @@ struct IOSDeviceRoutingTests {
         #expect(backends.contains { $0 is IOSBackend })
     }
 
-    @Test("simulator-only commands refuse a phone with not_supported before any device work", arguments: [
-        ("shake", "shake"),
-        ("status-bar clear", "status-bar"),
-        ("biometric status", "biometric"),
-        ("permission grant camera --app com.example.app", "permission"),
-        ("permission show --app com.example.app", "permission"),
-    ])
-    func simulatorOnlyCommandsRefusePhones(command: String, name: String) async throws {
-        let result = try await TestHelpers.runOffsiderWithoutAndroid("\(command) --device \(Self.phone)")
+    @Test("a simulator-only command refuses a phone with exit 1 before any device work")
+    func shakeRefusesPhone() async throws {
+        let result = try await TestHelpers.runOffsiderWithoutAndroid("shake --device \(Self.phone)")
         #expect(result.exitCode == 1)
-        #expect(result.stderr.contains("\(name) does not work on a physical iPhone or iPad, and \(Self.phone) is one."))
+        #expect(result.stderr.contains("shake does not work on a physical iPhone or iPad, and \(Self.phone) is one."))
+    }
+
+    @Test("status-bar, biometric and permission refuse a phone with not_supported while parsing", arguments: [
+        ["status-bar", "clear"],
+        ["biometric", "status"],
+        ["permission", "grant", "camera", "--app", "com.example.app"],
+        ["permission", "show", "--app", "com.example.app"],
+    ])
+    func simulatorOnlyCommandsRefusePhones(arguments: [String]) throws {
+        let error = try #require(throws: (any Error).self) {
+            switch arguments[0] {
+            case "status-bar": _ = try StatusBarCommand.parse(Array(arguments.dropFirst()) + ["--device", Self.phone])
+            case "biometric": _ = try BiometricCommand.parse(Array(arguments.dropFirst()) + ["--device", Self.phone])
+            default: _ = try PermissionCommand.parse(Array(arguments.dropFirst()) + ["--device", Self.phone])
+            }
+        }
+        let failure = try #require(Self.underlying(error) as? CLIError)
+        #expect(failure.reason == .notSupported)
+        #expect(failure.userFacingDescription.hasPrefix("\(arguments[0]) does not work on a physical iPhone or iPad, and \(Self.phone) is one."))
+    }
+
+    /// ArgumentParser may wrap an error thrown from `validate()` in its own error type.
+    static func underlying(_ error: any Error) -> any Error {
+        Mirror(reflecting: error).descendant("parserError", "userValidationError").flatMap { $0 as? any Error } ?? error
     }
 
     @Test("apple-pay is a usage error on a phone; boot points at the cable")
