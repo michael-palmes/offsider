@@ -9,6 +9,7 @@ import { ChoiceTestScreen } from './ChoiceTestScreen';
 import { ContextMenuTestScreen } from './ContextMenuTestScreen';
 import { EnvironmentTestScreen } from './EnvironmentTestScreen';
 import { GesturePresetsScreen } from './GesturePresetsScreen';
+import { HoldDragScreen } from './HoldDragScreen';
 import { KeyPressScreen } from './KeyPressScreen';
 import { KeySequenceScreen } from './KeySequenceScreen';
 import { LongScrollTestScreen } from './LongScrollTestScreen';
@@ -35,6 +36,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'touch-control': TouchControlScreen,
   'swipe-test': SwipeTestScreen,
   'multi-touch': MultiTouchScreen,
+  'hold-drag': HoldDragScreen,
   'gesture-presets': GesturePresetsScreen,
   'switch-test': SwitchTestScreen,
   'tab-view-test': TabViewTestScreen,

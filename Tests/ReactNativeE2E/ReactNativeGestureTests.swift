@@ -27,4 +27,30 @@ struct ReactNativeGestureTests {
     func twoFingersThroughHelper() async throws {
         try await Self.holdTwoFingers(RNApp(.android), environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_INPUT": "helper"])
     }
+
+    private static func drag(_ app: RNApp, _ options: String) async throws -> String {
+        try await app.open("hold-drag")
+        let tile = try await app.centre(of: "hold-drag-tile")
+        let zone = try await app.centre(of: "hold-drag-zone-b")
+        try await app.run("drag --start-x \(tile.x) --start-y \(tile.y) --end-x \(zone.x) --end-y \(zone.y) \(options)")
+        try await Task.sleep(for: .milliseconds(500))
+        return try await app.label(of: "hold-drag-zone") ?? ""
+    }
+
+    @Test("drag --hold-ms 800 picks the tile up and drops it in zone B; a plain drag does not", arguments: RNPlatform.enabled)
+    func holdThenDrag(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        #expect(try await Self.drag(app, "") == "Zone: A")
+        #expect(try await Self.drag(app, "--hold-ms 800") == "Zone: B")
+    }
+
+    @Test("gesture long-press-drag drops the tile in zone B", arguments: RNPlatform.enabled)
+    func longPressDragPreset(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("hold-drag")
+        let tile = try await app.centre(of: "hold-drag-tile")
+        let zone = try await app.centre(of: "hold-drag-zone-b")
+        try await app.run("gesture long-press-drag --x \(tile.x) --y \(tile.y) --to-x \(zone.x) --to-y \(zone.y)")
+        _ = try await app.waitForLabel(of: "hold-drag-zone") { $0 == "Zone: B" }
+    }
 }

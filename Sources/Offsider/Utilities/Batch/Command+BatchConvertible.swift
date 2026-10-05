@@ -147,8 +147,8 @@ extension Swipe: BatchConvertible {
 
 extension Gesture: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let gestureEvent = try await presetSwipe(
-            tree: try await context.accessibilityTree(),
+        let gestureEvent = try await presetEvent(
+            tree: { try await context.accessibilityTree() },
             backend: context.backend,
             device: context.device,
             logger: logger
