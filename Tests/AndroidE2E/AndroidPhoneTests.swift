@@ -25,12 +25,19 @@ extension AndroidE2E {
         try await shell(restore)
     }
 
-    /// The `x:<n>,y:<n>` value of the tap-test location readout.
+    /// The two numbers in the tap-test location readout, `Tap Location: (x, y)`.
     static func tapLocation() async throws -> (x: Int, y: Int) {
         let node = try await waitForNode { $0["id"] as? String == "last-tap-coordinates" }
-        let numbers = ((node["value"] as? String) ?? "").split(separator: ",").compactMap { Int($0.split(separator: ":").last ?? "") }
-        guard numbers.count == 2 else { throw AndroidE2EError(description: "last-tap-coordinates has no x and y: \(node)") }
+        let text = [node["label"], node["value"], node["name"]].compactMap { $0 as? String }.joined(separator: " ")
+        let numbers = text.split { !$0.isNumber && $0 != "-" }.compactMap { Int($0) }
+        guard numbers.count == 2 else { throw AndroidE2EError(description: "last-tap-coordinates has no x and y: \(text)") }
         return (numbers[0], numbers[1])
+    }
+
+    /// Taps the text-input field and waits until the phone reports it focused, which One UI does a moment after the tap.
+    static func focusField(mode: String) async throws {
+        try await run("tap --id text-input-field", environment: inputMode(mode))
+        _ = try await waitForNode { $0["id"] as? String == "text-input-field" && ($0["state"] as? [String: Any])?["focused"] as? Bool == true }
     }
 
     /// Lines of `ps -A` that belong to an Offsider helper, by nice name or main class.
@@ -154,7 +161,7 @@ struct AndroidPhoneInputTests {
     func ascii(mode: String) async throws {
         try await AndroidE2E.onAwakePhone {
             try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
-            try await AndroidE2E.run("tap --id text-input-field", environment: AndroidE2E.inputMode(mode))
+            try await AndroidE2E.focusField(mode: mode)
             try await AndroidE2E.run("type 'hello world'", environment: AndroidE2E.inputMode(mode))
             _ = try await AndroidE2E.waitForFieldValue("hello world")
             #expect(try await AndroidE2E.label(of: "character-count") == "Characters: 11")
@@ -165,7 +172,7 @@ struct AndroidPhoneInputTests {
     func nonASCIIRefused(mode: String) async throws {
         try await AndroidE2E.onAwakePhone {
             try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
-            try await AndroidE2E.run("tap --id text-input-field", environment: AndroidE2E.inputMode(mode))
+            try await AndroidE2E.focusField(mode: mode)
             let result = try await AndroidE2E.offsider("type \(AndroidE2E.quote("h\u{E9}llo"))", environment: AndroidE2E.inputMode(mode))
             #expect(result.exitCode == 1, "stderr: \(result.stderr)")
             #expect(result.stderr.contains("is a physical device"))
@@ -178,7 +185,7 @@ struct AndroidPhoneInputTests {
     func replaceUnicode(mode: String) async throws {
         try await AndroidE2E.onAwakePhone {
             try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
-            try await AndroidE2E.run("tap --id text-input-field", environment: AndroidE2E.inputMode(mode))
+            try await AndroidE2E.focusField(mode: mode)
             let text = "h\u{E9}llo 日本 🙂"
             try await AndroidE2E.run("type --replace \(AndroidE2E.quote(text))", environment: AndroidE2E.inputMode(mode))
             let field = try await AndroidE2E.waitForFieldValue(text)

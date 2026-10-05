@@ -122,7 +122,11 @@ enum AndroidE2E {
             let digest = try apkDigest(apk)
             let installed = (try? await shell("cat \(marker) 2>/dev/null; pm path \(package)")) ?? ""
             if !(installed.contains(digest) && installed.contains("package:")) {
-                try await install(apk, digest: digest)
+                if try await installedDigest() == digest {
+                    try await shell("echo \(digest) > \(marker)")
+                } else {
+                    try await install(apk, digest: digest)
+                }
             }
             if isRNDebugE2EEnabled {
                 try await run("rn prepare --bundle-id \(package)")
@@ -142,15 +146,35 @@ enum AndroidE2E {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The SHA-256 of the installed package's base APK, so a build installed by hand is adopted instead of reinstalled.
+    private static func installedDigest() async throws -> String? {
+        let path = (try? await shell("pm path \(package)"))?.split(whereSeparator: \.isNewline).first { $0.hasPrefix("package:") }
+        guard let path else { return nil }
+        let sum = try await shell("sha256sum \(path.dropFirst("package:".count)) 2>/dev/null", timeout: 120)
+        return sum.split(separator: " ").first.map(String.init)
+    }
+
+    /// Pushed and installed by `pm`, because `adb install` on a phone with Google Play waits on a Play Protect prompt.
     /// A signature mismatch with the installed build (debug over release or the reverse) needs an uninstall first.
     private static func install(_ apk: String, digest: String) async throws {
+        let remote = "/data/local/tmp/offsider-e2e-playground.apk"
+        try await adb("push \(quote(apk)) \(remote)", timeout: 300)
         do {
-            try await adb("install -r \(quote(apk))", timeout: 300)
+            try await shellInstall("pm install -r \(remote)")
         } catch let error as AndroidE2EError where error.description.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
             try await adb("uninstall \(package)", timeout: 120)
-            try await adb("install \(quote(apk))", timeout: 300)
+            try await shellInstall("pm install \(remote)")
         }
+        _ = try? await shell("rm \(remote)")
         try await shell("echo \(digest) > \(marker)")
+    }
+
+    /// `pm install` reports failure on stdout with exit 0 on some builds, so the text is checked too.
+    private static func shellInstall(_ command: String) async throws {
+        let output = try await shell(command, timeout: 300)
+        guard output.contains("Success") else {
+            throw AndroidE2EError(description: "\(command) answered \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
     }
 
     /// Restarts the playground on a screen by deep link, without waiting for the screen to render.
