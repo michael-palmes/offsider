@@ -8,21 +8,24 @@ import Testing
 struct RunnerSessionTests {
     static let udid = IOSDeviceFixtures.phone
 
-    static func record(pid: Int32 = 4242, buildKey: String = "key", version: String = RunnerClient.protocolVersion) -> RunnerSessionRecord {
+    static func record(
+        pid: Int32 = 4242, buildKey: String = "key", version: String = RunnerClient.protocolVersion,
+        process: RunnerProcessIdentity? = FakeRunnerProcesses.identity, state: RunnerSessionRecord.State = .running
+    ) -> RunnerSessionRecord {
         RunnerSessionRecord(
             udid: udid, pid: pid, port: 31337, token: "old-token",
             startedAt: Date(timeIntervalSince1970: 1_800_000_000), lastUsed: Date(timeIntervalSince1970: 1_800_000_100),
-            buildKey: buildKey, version: version, transport: .usbmux
+            buildKey: buildKey, version: version, transport: .usbmux, process: process, state: state
         )
     }
 
     static func manager(
         root: String, processes: FakeRunnerProcesses, transport: FakeRunnerTransport, builder: FakeRunnerBuilder = FakeRunnerBuilder(),
-        environment: [String: String] = [:]
+        environment: [String: String] = [:], lockTimeout: TimeInterval = 180
     ) -> RunnerSessionManager {
         RunnerSessionManager(
             store: RunnerSessionStore(root: root), builder: builder, processes: processes, environment: environment,
-            developerDirectory: "/Xcode.app/Contents/Developer", transport: { _, _ in transport }, log: { _, _ in }
+            developerDirectory: "/Xcode.app/Contents/Developer", transport: { _, _ in transport }, log: { _, _ in }, lockTimeout: lockTimeout
         )
     }
 
@@ -94,7 +97,7 @@ struct RunnerSessionTests {
 
         let launching = Task { try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone") }
         try await Task.sleep(for: .milliseconds(400))
-        processes.terminate(5151)
+        processes.exit(5151)
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await launching.value }
         #expect(error?.reason == .runnerUnavailable)
         #expect(error?.hint?.hasSuffix("runner.log") == true)
@@ -109,12 +112,134 @@ struct RunnerSessionTests {
         try store.write(Self.record())
         let processes = FakeRunnerProcesses(alive: [4242])
         let transport = FakeRunnerTransport()
-        let record = RunnerSessionRecord(udid: Self.udid, pid: 4242, port: 1, token: "t", startedAt: Date(), lastUsed: Date(), buildKey: "key", version: "1", transport: .loopback)
+        let record = Self.record()
 
         await Self.manager(root: root, processes: processes, transport: transport).stop(record)
 
         #expect(processes.terminations == [4242])
         #expect(try store.read(udid: Self.udid) == nil)
+    }
+
+    @Test("a recorded pid now running another process is forgotten and never signalled", arguments: [
+        FakeRunnerProcesses.identity.startTime + 1,
+        FakeRunnerProcesses.identity.startTime,
+    ])
+    func recycledPID(liveStart: UInt64) async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let store = RunnerSessionStore(root: root)
+        // The second case is a record from before identities were kept: the pid lives, but nothing proves it is the runner.
+        let recorded = liveStart == FakeRunnerProcesses.identity.startTime ? Self.record(process: nil) : Self.record()
+        try store.write(recorded)
+        let processes = FakeRunnerProcesses(alive: [4242], startTimes: [4242: liveStart])
+        let manager = Self.manager(root: root, processes: processes, transport: FakeRunnerTransport())
+
+        await manager.stop(recorded)
+        #expect(try store.read(udid: Self.udid) == nil)
+
+        try store.write(recorded)
+        _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone")
+
+        #expect(processes.terminations.isEmpty)
+        #expect(processes.launches.count == 1)
+        #expect(try store.read(udid: Self.udid)?.pid == 5151)
+    }
+
+    @Test("a runner that accepts the connection but is slow to answer is busy, so it is reused and never stopped")
+    func busyRunnerReused() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try RunnerSessionStore(root: root).write(Self.record())
+        let processes = FakeRunnerProcesses(alive: [4242])
+        let transport = FakeRunnerTransport()
+        transport.pingTimesOut = true
+
+        let client = try await Self.manager(root: root, processes: processes, transport: transport).connect(.device(udid: Self.udid), deviceName: "iPhone")
+
+        #expect(client.token == "old-token")
+        #expect(processes.launches.isEmpty && processes.terminations.isEmpty)
+        #expect(!transport.calls.contains { $0.path == "/stop" })
+    }
+
+    @Test("a live runner that refuses the connection is stopped and replaced")
+    func refusedRunnerRestarted() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        var recorded = Self.record()
+        recorded.port = 1
+        try RunnerSessionStore(root: root).write(recorded)
+        let processes = FakeRunnerProcesses(alive: [4242])
+        let refusing = FakeRunnerTransport()
+        refusing.refuseConnections = true
+        let fresh = FakeRunnerTransport()
+        let manager = RunnerSessionManager(
+            store: RunnerSessionStore(root: root), builder: FakeRunnerBuilder(), processes: processes, environment: [:],
+            developerDirectory: nil, transport: { _, port in port == 1 ? refusing : fresh }, log: { _, _ in }
+        )
+
+        let client = try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone")
+
+        #expect(processes.terminations == [4242])
+        #expect(processes.launches.count == 1)
+        #expect(client.token != "old-token")
+    }
+
+    @Test("the session is recorded as starting as soon as xcodebuild is spawned, before the runner answers")
+    func recordedWhileStarting() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let store = RunnerSessionStore(root: root)
+        let processes = FakeRunnerProcesses()
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let manager = Self.manager(root: root, processes: processes, transport: transport)
+
+        let launching = Task { try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone") }
+        try await Task.sleep(for: .milliseconds(400))
+        let starting = try #require(try store.read(udid: Self.udid))
+        #expect(starting.pid == 5151 && starting.state == .starting && starting.process == FakeRunnerProcesses.identity)
+
+        transport.refuseConnections = false
+        _ = try await launching.value
+        #expect(try store.read(udid: Self.udid)?.state == .running)
+    }
+
+    @Test("a start an interrupted command left behind is adopted when it answers, and runner stop ends it otherwise")
+    func interruptedStart() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let store = RunnerSessionStore(root: root)
+        try store.write(Self.record(state: .starting))
+        let processes = FakeRunnerProcesses(alive: [4242])
+        let manager = Self.manager(root: root, processes: processes, transport: FakeRunnerTransport())
+
+        let client = try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone")
+        #expect(client.token == "old-token" && processes.launches.isEmpty)
+        #expect(try store.read(udid: Self.udid)?.state == .running)
+
+        try store.write(Self.record(state: .starting))
+        await manager.stop(Self.record(state: .starting))
+        #expect(processes.terminations == [4242])
+        #expect(try store.read(udid: Self.udid) == nil)
+    }
+
+    @Test("a start lock whose owner has exited is taken over at once; one a live command holds is waited for")
+    func startLockOwner() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let lock = "\(try IOSDevicePaths.device(Self.udid, root: root))/runner.lock"
+        let exited = Process()
+        exited.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try exited.run()
+        exited.waitUntilExit()
+        try Data("\(exited.processIdentifier) 12345\n".utf8).write(to: URL(fileURLWithPath: lock))
+        let manager = Self.manager(root: root, processes: FakeRunnerProcesses(), transport: FakeRunnerTransport(), lockTimeout: 1)
+
+        let taken = try await manager.acquireStartLock(udid: Self.udid)
+        #expect(try String(contentsOfFile: taken, encoding: .utf8) == RunnerSessionManager.lockOwner(getpid()))
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.acquireStartLock(udid: Self.udid) }
+        #expect(error?.reason == .runnerUnavailable)
     }
 }
 
@@ -212,6 +337,44 @@ struct RunnerBuilderTests {
         #expect(notices.values.isEmpty)
     }
 
+    @Test("a cache folder Offsider cannot write is runner_build_failed, not a raw Foundation error")
+    func cacheFailureMapped() async throws {
+        let source = try Self.sourceDirectory()
+        let blocker = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-runner-file-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: source)
+            try? FileManager.default.removeItem(at: blocker)
+        }
+        try Data("not a folder".utf8).write(to: blocker)
+        let builder = XcodeRunnerBuilder(
+            source: source, cacheRoot: blocker.appendingPathComponent("runner"), xcode: XcodeLocation(developerDirectory: "/x", source: "t", version: "27.0", build: "27A"),
+            environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], signedInTeams: { [] }, notice: { _ in }
+        )
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await builder.build(for: .device(udid: "U"), deviceName: "iPhone") }
+        #expect(error?.reason == .runnerBuildFailed)
+        #expect(error?.message.contains(blocker.path) == true)
+    }
+
+    @Test("two builds of one key never run at once")
+    func buildLockSerialises() async throws {
+        let lock = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-runner-\(UUID().uuidString).lock")
+        defer { try? FileManager.default.removeItem(at: lock) }
+        let tracker = OverlapTracker()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<2 {
+                group.addTask {
+                    try await XcodeRunnerBuilder.withBuildLock(lock) {
+                        tracker.enter()
+                        try await Task.sleep(for: .milliseconds(300))
+                        tracker.leave()
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+        #expect(tracker.entries == 2 && tracker.peak == 1)
+    }
+
     @Test("a failed build is runner_build_failed with the log's last lines and its path as the hint")
     func buildFailure() {
         let output = (1...30).map { "line \($0)" }.joined(separator: "\n")
@@ -289,6 +452,21 @@ struct RunnerClientTests {
         #expect(transport.calls.last?.body["app"] == AnyHashable("com.mpalmes.offsider.playground"))
     }
 
+    @Test("a snapshot the runner cut short reads as truncated, and a complete one does not")
+    func truncatedSnapshot() async throws {
+        let complete = try IOSDeviceFixtures.data("runner-snapshot.json")
+        var roots = try #require(try JSONSerialization.jsonObject(with: complete) as? [[String: Any]])
+        roots[0]["truncated"] = true
+        let truncated = try JSONSerialization.data(withJSONObject: roots)
+
+        let (whole, _) = try Self.backend(FakeRunnerTransport(snapshot: complete))
+        #expect(try await whole.accessibilityTree(for: Self.phone, point: nil).sourceTruncated == false)
+        let (cut, _) = try Self.backend(FakeRunnerTransport(snapshot: truncated))
+        let tree = try await cut.accessibilityTree(for: Self.phone, point: nil)
+        #expect(tree.sourceTruncated)
+        #expect(tree.roots.first?.children.isEmpty == false)
+    }
+
     @Test("a point keeps only the deepest node there")
     func pointFilter() async throws {
         let (backend, _) = try Self.backend(FakeRunnerTransport(snapshot: try IOSDeviceFixtures.data("runner-snapshot.json")))
@@ -359,5 +537,25 @@ struct RunnerClientTests {
             try await RunnerClient(udid: "U", token: "t", transport: transport).type("x", replace: true, app: nil)
         }
         #expect(error?.reason == reason)
+    }
+}
+
+/// Counts how many bodies run at once.
+final class OverlapTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = 0
+    private(set) var peak = 0
+    private(set) var entries = 0
+
+    func enter() {
+        lock.withLock {
+            current += 1
+            entries += 1
+            peak = max(peak, current)
+        }
+    }
+
+    func leave() {
+        lock.withLock { current -= 1 }
     }
 }

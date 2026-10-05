@@ -23,6 +23,13 @@ public struct RunnerPing: Equatable, Sendable {
     }
 }
 
+/// What a reuse ping found: an answer, a runner that accepted the connection but is still busy, or nothing usable.
+public enum RunnerProbe: Equatable, Sendable {
+    case answered(RunnerPing)
+    case busy
+    case unreachable
+}
+
 /// The runner's routes, each a fresh connection through `transport`.
 public struct RunnerClient: Sendable {
     public static let protocolVersion = "1"
@@ -39,7 +46,29 @@ public struct RunnerClient: Sendable {
     }
 
     public func ping(timeout: TimeInterval = RunnerClient.timeout) async throws -> RunnerPing {
-        let data = try await call("GET", "/ping", nil, timeout: timeout) as? [String: Any] ?? [:]
+        try parsePing(try await call("GET", "/ping", nil, timeout: timeout))
+    }
+
+    /// `/ping` without mapping failures; only a timeout after the connection was made reads as busy.
+    public func probe(timeout: TimeInterval) async -> RunnerProbe {
+        let transport = transport
+        let token = token
+        let response: UsbmuxHTTPResponse
+        do {
+            response = try await Task.detached {
+                try transport.exchange(method: "GET", path: "/ping", token: token, body: nil, timeout: timeout)
+            }.value
+        } catch UsbmuxError.timedOut {
+            return .busy
+        } catch {
+            return .unreachable
+        }
+        guard let ping = try? parsePing(try Self.unwrap(response, path: "/ping", udid: udid)) else { return .unreachable }
+        return .answered(ping)
+    }
+
+    func parsePing(_ payload: Any?) throws -> RunnerPing {
+        let data = payload as? [String: Any] ?? [:]
         guard let version = data["version"] as? String, let buildKey = data["buildKey"] as? String else {
             throw malformed("/ping")
         }

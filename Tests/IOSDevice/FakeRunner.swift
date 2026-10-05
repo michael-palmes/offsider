@@ -19,6 +19,7 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
     var snapshot: Data
     var failure: (path: String, status: Int, code: String)?
     var refuseConnections = false
+    var pingTimesOut = false
 
     init(buildKey: String = "key", snapshot: Data = Data("[]".utf8)) {
         self.buildKey = buildKey
@@ -29,6 +30,7 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
 
     func exchange(method: String, path: String, token: String, body: Data?, timeout: TimeInterval) throws -> UsbmuxHTTPResponse {
         if refuseConnections { throw UsbmuxError.result(3) }
+        if pingTimesOut, path == "/ping" { throw UsbmuxError.timedOut }
         let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: AnyHashable] } ?? [:]
         lock.withLock { recorded.append(RunnerCall(method: method, path: path, token: token, body: object)) }
         if let failure, failure.path == path {
@@ -128,8 +130,11 @@ final class FakeRunnerBuilder: RunnerBuilding, @unchecked Sendable {
     }
 }
 
-/// Launches nothing; pids in `alive` are running.
+/// Launches nothing; pids in `alive` are running as `xcodebuild` started at `startTime`, unless `startTimes` names another start.
 final class FakeRunnerProcesses: RunnerProcessControlling, @unchecked Sendable {
+    static let startTime: UInt64 = 1_800_000_000_000_000
+    static let identity = RunnerProcessIdentity(startTime: startTime, executable: "xcodebuild")
+
     struct Launch {
         let arguments: [String]
         let environment: [String: String]
@@ -139,10 +144,12 @@ final class FakeRunnerProcesses: RunnerProcessControlling, @unchecked Sendable {
     private var liveSet: Set<Int32>
     private var launched: [Launch] = []
     private var terminated: [Int32] = []
+    private let startTimes: [Int32: UInt64]
     private let nextPID: Int32
 
-    init(alive: Set<Int32> = [], nextPID: Int32 = 5151) {
+    init(alive: Set<Int32> = [], startTimes: [Int32: UInt64] = [:], nextPID: Int32 = 5151) {
         liveSet = alive
+        self.startTimes = startTimes
         self.nextPID = nextPID
     }
 
@@ -157,9 +164,17 @@ final class FakeRunnerProcesses: RunnerProcessControlling, @unchecked Sendable {
         return nextPID
     }
 
-    func isAlive(_ pid: Int32) -> Bool { lock.withLock { liveSet.contains(pid) } }
+    func identity(of pid: Int32) -> RunnerProcessIdentity? {
+        lock.withLock {
+            liveSet.contains(pid) ? RunnerProcessIdentity(startTime: startTimes[pid] ?? Self.startTime, executable: "xcodebuild") : nil
+        }
+    }
 
-    func terminate(_ pid: Int32) {
+    func exit(_ pid: Int32) {
+        _ = lock.withLock { liveSet.remove(pid) }
+    }
+
+    func terminate(_ pid: Int32, identity: RunnerProcessIdentity) {
         lock.withLock {
             terminated.append(pid)
             liveSet.remove(pid)

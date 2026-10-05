@@ -15,15 +15,20 @@ struct SnapshotEncoder {
 
     mutating func encode(_ snapshot: XCUIElementSnapshot, depth: Int = 0) -> [String: Any] {
         count += 1
+        let frame = snapshot.frame
+        let parts = [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height]
+        let finite = parts.allSatisfy(\.isFinite)
         var node: [String: Any] = [
             "type": Self.typeName(snapshot.elementType),
             "frame": [
-                "x": snapshot.frame.origin.x, "y": snapshot.frame.origin.y,
-                "width": snapshot.frame.size.width, "height": snapshot.frame.size.height,
+                "x": finite ? parts[0] : 0, "y": finite ? parts[1] : 0,
+                "width": finite ? parts[2] : 0, "height": finite ? parts[3] : 0,
             ],
             "enabled": snapshot.isEnabled,
             "traits": snapshot.isSelected ? ["Selected"] : [String](),
         ]
+        // JSONSerialization raises an uncatchable exception on inf or NaN.
+        if !finite { node["frameInvalid"] = true }
         if !snapshot.label.isEmpty { node["AXLabel"] = snapshot.label }
         if !snapshot.identifier.isEmpty { node["AXUniqueId"] = snapshot.identifier }
         if !snapshot.title.isEmpty { node["title"] = snapshot.title }

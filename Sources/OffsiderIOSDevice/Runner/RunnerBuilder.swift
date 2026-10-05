@@ -133,12 +133,47 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         } else {
             team = nil
         }
-        let key = Self.key(sourceDigest: try Self.sourceDigest(of: source), xcodeBuild: xcode.build, team: team, destination: destination)
-        let directory = cacheRoot.appendingPathComponent(key, isDirectory: true)
-        if let xctestrun = Self.xctestrun(in: directory) {
-            return RunnerBuild(key: key, xctestrun: xctestrun, directory: directory)
+        do {
+            let key = Self.key(sourceDigest: try Self.sourceDigest(of: source), xcodeBuild: xcode.build, team: team, destination: destination)
+            let directory = cacheRoot.appendingPathComponent(key, isDirectory: true)
+            if let xctestrun = Self.xctestrun(in: directory) {
+                return RunnerBuild(key: key, xctestrun: xctestrun, directory: directory)
+            }
+            try Self.makePrivateDirectories(directory)
+            return try await Self.withBuildLock(cacheRoot.appendingPathComponent("\(key).lock")) {
+                if let xctestrun = Self.xctestrun(in: directory) {
+                    return RunnerBuild(key: key, xctestrun: xctestrun, directory: directory)
+                }
+                return try await runBuild(key: key, directory: directory, destination: destination, team: team, deviceName: deviceName)
+            }
+        } catch let error as IOSDeviceError {
+            throw error
+        } catch {
+            throw IOSDeviceError(
+                .runnerBuildFailed,
+                "Offsider could not prepare its runner build in \(cacheRoot.path): \(error.localizedDescription). Check that folder's permissions, or delete it and retry."
+            )
         }
-        try Self.makePrivateDirectories(directory)
+    }
+
+    /// `flock` on `<key>.lock`, polled so the task stays cancellable; the kernel drops it if this process dies.
+    static func withBuildLock<T: Sendable>(_ path: URL, _ body: () async throws -> T) async throws -> T {
+        let descriptor = open(path.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw PrivateDirectoryError(.system(operation: "open", code: errno), path: path.path) }
+        defer { close(descriptor) }
+        let deadline = Date().addingTimeInterval(buildTimeout + 60)
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            guard errno == EWOULDBLOCK || errno == EINTR else { throw PrivateDirectoryError(.system(operation: "flock", code: errno), path: path.path) }
+            guard Date() < deadline else {
+                throw IOSDeviceError(.runnerBuildFailed, "Another Offsider command is still building the runner. Retry when it finishes.")
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        defer { flock(descriptor, LOCK_UN) }
+        return try await body()
+    }
+
+    func runBuild(key: String, directory: URL, destination: RunnerDestination, team: String?, deviceName: String) async throws -> RunnerBuild {
         let project = directory.appendingPathComponent("source", isDirectory: true)
         try? FileManager.default.removeItem(at: project)
         try FileManager.default.copyItem(at: source, to: project)

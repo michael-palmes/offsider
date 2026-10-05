@@ -21,8 +21,11 @@ struct RunnerResponse {
         envelope(status, ["ok": false, "error": ["code": code, "message": message]])
     }
 
+    /// Checked first: an invalid object (a NaN, say) raises an Objective-C exception that `try?` cannot catch.
     private static func envelope(_ status: Int, _ object: [String: Any]) -> RunnerResponse {
-        let body = (try? JSONSerialization.data(withJSONObject: object, options: [.fragmentsAllowed])) ?? Data("{\"ok\":false}".utf8)
+        guard JSONSerialization.isValidJSONObject(object), let body = try? JSONSerialization.data(withJSONObject: object) else {
+            return RunnerResponse(status: 500, body: Data(#"{"ok":false,"error":{"code":"encode_failed","message":"the reply held a value JSON cannot carry"}}"#.utf8))
+        }
         return RunnerResponse(status: status, body: body)
     }
 }
@@ -60,7 +63,7 @@ enum RunnerHTTP {
     }
 
     static func encode(_ response: RunnerResponse) -> Data {
-        let reason = [200: "OK", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 409: "Conflict", 422: "Unprocessable Content"][response.status] ?? "Error"
+        let reason = [200: "OK", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 409: "Conflict", 422: "Unprocessable Content", 500: "Internal Server Error"][response.status] ?? "Error"
         let head = "HTTP/1.1 \(response.status) \(reason)\r\nContent-Type: application/json\r\nContent-Length: \(response.body.count)\r\nConnection: close\r\n\r\n"
         return Data(head.utf8) + response.body
     }

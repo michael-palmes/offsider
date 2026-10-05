@@ -29,7 +29,7 @@ struct RunnerStatus: AsyncParsableCommand {
 
     func run() async throws {
         let rows = RunnerSessions.records(device: device).map { record in
-            RunnerSessionRow(record: record, alive: XcodebuildProcesses().isAlive(record.pid))
+            RunnerSessionRow(record: record, alive: XcodebuildProcesses().isRunning(record))
         }
         print(json ? RunnerSessionRow.json(rows) : RunnerSessionRow.text(rows), terminator: "")
     }
@@ -97,7 +97,7 @@ struct RunnerSessionRow: Equatable {
         guard !rows.isEmpty else { return "No runner sessions.\n" }
         let formatter = ISO8601DateFormatter()
         return rows.map { row in
-            let state = row.alive ? "running" : "stopped"
+            let state = !row.alive ? "stopped" : row.record.state == .starting ? "starting" : "running"
             return "\(row.record.udid)  \(state)  pid \(row.record.pid)  port \(row.record.port)  started \(formatter.string(from: row.record.startedAt))  last used \(formatter.string(from: row.record.lastUsed))\n"
         }.joined()
     }

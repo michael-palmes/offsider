@@ -105,11 +105,25 @@ final class RunnerCommands {
         guard focused.elementType != .secureTextField else {
             return .failure(422, code: "secure_field", message: "replacing the text of a secure field is refused")
         }
-        let current = SnapshotEncoder.text(focused.value) ?? ""
-        let placeholder = focused.placeholderValue ?? ""
-        let length = current == placeholder ? 0 : current.count
-        focused.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: length) + text)
+        guard clear(focused) else {
+            return .failure(409, code: "replace_failed", message: "the focused field still held text after clearing it")
+        }
+        focused.typeText(text)
         return .ok([String: Any]())
+    }
+
+    /// Taps the field's right edge (the end of its text, or its clear button) and deletes the whole value, retrying while text is left.
+    private func clear(_ field: XCUIElement) -> Bool {
+        let placeholder = field.placeholderValue ?? ""
+        for attempt in 0..<3 {
+            let current = SnapshotEncoder.text(field.value) ?? ""
+            if current.isEmpty || (attempt > 0 && current == placeholder) { return true }
+            // A placeholder value may be real text: delete it without a tap, which in an empty search field lands on dictation.
+            if current != placeholder { field.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap() }
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+        }
+        let left = SnapshotEncoder.text(field.value) ?? ""
+        return left.isEmpty || left == placeholder
     }
 
     private func swipe(_ body: [String: Any]) -> RunnerResponse {
@@ -125,8 +139,10 @@ final class RunnerCommands {
         return .ok([String: Any]())
     }
 
+    /// Screen points, as snapshot frames are, so an app window that does not start at the screen's origin is allowed for.
     private func coordinate(_ x: Double, _ y: Double, in app: XCUIApplication) -> XCUICoordinate {
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: y))
+        let origin = app.frame.origin
+        return app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x - origin.x, dy: y - origin.y))
     }
 
     private func number(_ value: Any?) -> Double? {

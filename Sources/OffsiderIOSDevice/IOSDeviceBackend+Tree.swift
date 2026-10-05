@@ -22,13 +22,14 @@ extension IOSDeviceBackend: RawAccessibilitySource {
 
     static func tree(fromSnapshot data: Data, device: String) throws -> UITree {
         do {
-            return UITree(platform: .ios, device: device, roots: try IOSAccessibilityMapping.roots(fromJSON: data))
+            let parsed = try IOSAccessibilityMapping.tree(fromJSON: data)
+            return UITree(platform: .ios, device: device, roots: parsed.roots, sourceTruncated: parsed.truncated)
         } catch {
             throw IOSDeviceError(.runnerFailed, "The runner on \(device) sent a tree Offsider could not read. Run `offsider runner stop --device \(device)` and retry.")
         }
     }
 
     static func filter(_ tree: UITree, to point: UIPoint) -> UITree {
-        UITree(platform: .ios, device: tree.device, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
+        UITree(platform: .ios, device: tree.device, roots: tree.deepestNode(at: point).map { [$0] } ?? [], sourceTruncated: tree.sourceTruncated)
     }
 }
