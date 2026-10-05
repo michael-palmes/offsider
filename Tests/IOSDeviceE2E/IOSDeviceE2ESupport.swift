@@ -174,7 +174,11 @@ enum IOSDeviceE2E {
     @discardableResult
     static func devicectl(_ arguments: String, timeout: TimeInterval = 120) async throws -> String {
         let udid = try await udid()
-        let result = try await CommandRunner.runSeparated("xcrun devicectl \(arguments) --device \(udid)", timeout: timeout)
+        // `--device` goes straight after the subcommand words: after `launch`'s bundle ID everything belongs to the app.
+        let words = arguments.split(separator: " ", omittingEmptySubsequences: false)
+        let subcommand = words.prefix { !$0.hasPrefix("-") }
+        let placed = (subcommand + ["--device", Substring(udid)] + words.dropFirst(subcommand.count)).joined(separator: " ")
+        let result = try await CommandRunner.runSeparated("xcrun devicectl \(placed)", timeout: timeout)
         guard result.exitCode == 0 else {
             throw IOSDeviceE2EError(description: "devicectl \(arguments) exited \(result.exitCode): \(result.stderr)\(result.stdout)")
         }
@@ -205,8 +209,54 @@ enum IOSDeviceE2E {
         try await describeUI.waitForNode(timeout: timeout, where: predicate)
     }
 
-    static func waitForLabel(of id: String, timeout: TimeInterval = 30, _ predicate: @escaping (String) -> Bool) async throws -> String {
-        try await describeUI.waitForLabel(of: id, timeout: timeout, predicate)
+    /// The guarded device's row in `session status --json`: its runner and broker, each nil when not running.
+    static func sessions() async throws -> (runner: [String: Any]?, broker: [String: Any]?) {
+        let udid = try await udid()
+        let result = try await run("session status --json")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any], "session status printed no JSON")
+        let rows = try #require(object["sessions"] as? [[String: Any]])
+        let row = rows.first { $0["device"] as? String == udid }
+        return (row?["runner"] as? [String: Any], row?["broker"] as? [String: Any])
+    }
+
+    /// Fails unless the broker is running, answering and sending touches and keys itself, so input did not fall back to the runner.
+    static func requireBrokerInput() async throws {
+        let broker = try #require(try await sessions().broker, "no session broker is running after input")
+        #expect(broker["running"] as? Bool == true)
+        #expect(broker["answering"] as? Bool == true)
+        #expect(broker["touch"] as? Bool == true, "the broker does not send touches: \(broker)")
+    }
+
+    /// A node's frame in the points describe-ui prints.
+    static func frame(of node: [String: Any]) throws -> (x: Double, y: Double, width: Double, height: Double) {
+        let frame = try #require(node["frame"] as? [String: Any], "\(node["label"] ?? node["role"] ?? "a node") has no frame")
+        func number(_ key: String) throws -> Double { try #require((frame[key] as? NSNumber)?.doubleValue, "a frame has no \(key)") }
+        return (try number("x"), try number("y"), try number("width"), try number("height"))
+    }
+
+    /// The first node labelled `label`, waiting for it.
+    static func node(labelled label: String, timeout: TimeInterval = 30) async throws -> [String: Any] {
+        try await waitForNode(timeout: timeout) { $0["label"] as? String == label }
+    }
+
+    /// The point inside `node`'s frame at fractions of its width and height, rounded to whole points.
+    static func point(in node: [String: Any], x: Double = 0.5, y: Double = 0.5) throws -> (x: Int, y: Int) {
+        let frame = try frame(of: node)
+        return (Int((frame.x + frame.width * x).rounded()), Int((frame.y + frame.height * y).rounded()))
+    }
+
+    /// The pair in a playground label such as `End: (1,120, 600)`, whose numbers may carry grouping commas.
+    static func coordinates(in label: String) -> (x: Int, y: Int)? {
+        guard let open = label.firstIndex(of: "("), let close = label.lastIndex(of: ")"), open < close else { return nil }
+        let numbers = label[label.index(after: open)..<close].components(separatedBy: ", ").compactMap { Int($0.replacingOccurrences(of: ",", with: "")) }
+        return numbers.count == 2 ? (numbers[0], numbers[1]) : nil
+    }
+
+    /// The screen describe-ui reports for the playground, in points.
+    static func screen() async throws -> (width: Double, height: Double) {
+        let tree = try DescribeUITree.parse(try await run("describe-ui --app \(playgroundBundleID)").stdout)
+        let screen = try #require(tree["screen"] as? [String: Any], "describe-ui reported no screen")
+        return (try #require((screen["width"] as? NSNumber)?.doubleValue), try #require((screen["height"] as? NSNumber)?.doubleValue))
     }
 
     static func screenshot(_ name: String, flags: String = "") async throws -> URL {
@@ -253,11 +303,21 @@ extension IOSDeviceE2E {
         }
     }
 
-    /// Restarts the playground on one screen and waits until describe-ui shows `id`.
-    static func open(_ screen: String, waitingFor id: String) async throws {
+    /// Restarts the playground on one screen and waits until describe-ui shows a node labelled `label`.
+    /// The runner's snapshot gives every element on a screen the screen's identifier, so the suites find nodes by label and role.
+    static func open(_ screen: String, waitingForLabel label: String) async throws {
         try await ensurePlaygroundInstalled()
-        try await devicectl("device process launch --terminate-existing --timeout 60 \(playgroundBundleID) -- --launch-arg screen=\(screen)")
-        _ = try await waitForNode(timeout: 60) { $0["id"] as? String == id }
+        let launch = "device process launch --terminate-existing --timeout 60 \(playgroundBundleID) -- --launch-arg screen=\(screen)"
+        do {
+            try await devicectl(launch)
+        } catch {
+            // devicectl sometimes loses the new process's identifier as the old one is terminated; a second launch settles it.
+            try await Task.sleep(for: .seconds(1))
+            try await devicectl(launch)
+        }
+        _ = try await node(labelled: label, timeout: 60)
+        // The tree is ready before the launch animation ends, and a swipe sent during it never reaches the app.
+        try await Task.sleep(for: .seconds(2))
     }
 
     private static func playgroundDigest(team: String) throws -> String {

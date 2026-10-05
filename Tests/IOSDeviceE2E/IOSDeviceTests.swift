@@ -57,8 +57,9 @@ struct IOSDeviceScreenshotE2ETests {
         (name as? String).flatMap { Int($0.dropFirst(3)) } ?? 0
     }
 
-    @Test("a screenshot is a PNG the size of the display in its current orientation")
+    @Test("a screenshot through the broker is its stream's frame, in the display's current orientation and shape")
     func size() async throws {
+        try await IOSDeviceE2E.requireAwake()
         let displays = try #require(IOSDeviceE2EGuard.result(try await IOSDeviceE2E.info("displays"))?["displays"] as? [[String: Any]])
         let display = try #require(displays.first { $0["primary"] as? Bool == true } ?? displays.first)
         let landscape = (Self.degrees(display["nativeOrientation"]) + Self.degrees(display["currentOrientation"])) % 180 == 90
@@ -74,7 +75,15 @@ struct IOSDeviceScreenshotE2ETests {
         let file = try await IOSDeviceE2E.screenshot("plain.png")
         defer { try? FileManager.default.removeItem(at: file) }
         let png = try IOSDeviceE2E.pngSize(at: file)
-        #expect(expected.contains([png.width, png.height]), "the PNG is \(png.width) x \(png.height); devicectl reports \(expected) for this orientation")
+        let broker = try #require(try await IOSDeviceE2E.sessions().broker, "screenshot started no session broker")
+        let stream = try #require(broker["stream"] as? [String: Any], "the broker reports no stream: \(broker)")
+        #expect(stream["state"] as? String == "live", "the broker's stream is not live: \(stream)")
+        if let width = stream["width"] as? Int, let height = stream["height"] as? Int {
+            expected.append(oriented([width, height]))
+        }
+        #expect(expected.contains([png.width, png.height]), "the PNG is \(png.width) x \(png.height); devicectl and the stream report \(expected)")
+        let shape = Double(expected[0][0]) / Double(expected[0][1])
+        #expect(abs(Double(png.width) / Double(png.height) - shape) < 0.01, "the PNG's shape differs from the display's")
     }
 
     @Test("--mask-secure answers with a PNG or a clean error, never a crash")
@@ -138,85 +147,143 @@ struct IOSDeviceSettingsE2ETests {
 
 @Suite("iOS device input", .serialized, .enabled(if: isIOSDeviceE2EEnabled))
 struct IOSDeviceInputE2ETests {
-    @Test("tap --id --verify lands on the element")
-    func tapByID() async throws {
-        _ = try IOSDeviceE2E.team()
-        try await IOSDeviceE2E.requireAwake()
-        try await IOSDeviceE2E.open("tap-test", waitingFor: "tap-test-area")
-        try await IOSDeviceE2E.run("tap --id tap-test-area --verify --app \(IOSDeviceE2E.playgroundBundleID)")
-        _ = try await IOSDeviceE2E.waitForLabel(of: "tap-count") { $0 == "Tap Count: 1" }
+    static let app = "--app \(IOSDeviceE2E.playgroundBundleID)"
+
+    /// Taps at `point` and returns where the playground's tap area says it landed, in its own coordinates.
+    static func tap(_ point: (x: Int, y: Int), expectingCount count: Int) async throws -> (x: Int, y: Int) {
+        try await IOSDeviceE2E.run("tap -x \(point.x) -y \(point.y) --verify \(app)")
+        _ = try await IOSDeviceE2E.node(labelled: "Tap Count: \(count)")
+        let location = try await IOSDeviceE2E.waitForNode { ($0["label"] as? String)?.hasPrefix("Tap Location:") == true }
+        let label = try #require(location["label"] as? String)
+        return try #require(IOSDeviceE2E.coordinates(in: label), "unreadable \(label)")
     }
 
-    @Test("tap --verify on an element that does nothing exits 5")
+    @Test("taps at two points land the same distance apart on the playground, across the whole screen, through the broker")
+    func tapAtPoints() async throws {
+        _ = try IOSDeviceE2E.team()
+        try await IOSDeviceE2E.requireAwake()
+        try await IOSDeviceE2E.open("tap-test", waitingForLabel: "Tap Count: 0")
+        let screen = try await IOSDeviceE2E.screen()
+        let first = (x: Int(screen.width * 0.2), y: Int(screen.height * 0.5))
+        let second = (x: Int(screen.width * 0.8), y: Int(screen.height * 0.85))
+        let landedFirst = try await Self.tap(first, expectingCount: 1)
+        let landedSecond = try await Self.tap(second, expectingCount: 2)
+        let sent = (x: second.x - first.x, y: second.y - first.y)
+        let measured = (x: landedSecond.x - landedFirst.x, y: landedSecond.y - landedFirst.y)
+        #expect(abs(measured.x - sent.x) <= 3 && abs(measured.y - sent.y) <= 3,
+                "taps \(sent) points apart landed \(measured) apart (at \(landedFirst) and \(landedSecond))")
+        #expect(abs(landedFirst.x - first.x) <= 3, "a tap at x \(first.x) landed at x \(landedFirst.x)")
+        try await IOSDeviceE2E.requireBrokerInput()
+    }
+
+    @Test("tap --label --verify on a static text exits 5")
     func tapNoOp() async throws {
         _ = try IOSDeviceE2E.team()
         try await IOSDeviceE2E.requireAwake()
-        try await IOSDeviceE2E.open("tap-test", waitingFor: "tap-test-title")
-        let result = try await IOSDeviceE2E.offsider("tap --id tap-test-title --verify --app \(IOSDeviceE2E.playgroundBundleID)")
-        #expect(result.exitCode == 5, "tap on a static title exited \(result.exitCode): \(result.stderr)")
+        try await IOSDeviceE2E.open("swipe-test", waitingForLabel: "Swipe Playground")
+        let screen = try await IOSDeviceE2E.screen()
+        if screen.width > screen.height {
+            let note = "skipped: --verify leaves the status bar in only on a portrait screen, and the screen-sharing indicator there changes on its own"
+            FileHandle.standardError.write(Data((note + "\n").utf8))
+            try Test.cancel(Comment(rawValue: note))
+        }
+        let result = try await IOSDeviceE2E.offsider("tap --label 'Swipe Playground' --verify \(Self.app)")
+        #expect(result.exitCode == 5, "tap on a static text exited \(result.exitCode): \(result.stderr)")
     }
 
-    @Test("ASCII type reaches the focused field through the keyboard")
+    @Test("swipe through the broker draws one path that ends where it was sent")
+    func swipe() async throws {
+        _ = try IOSDeviceE2E.team()
+        try await IOSDeviceE2E.requireAwake()
+        try await IOSDeviceE2E.open("swipe-test", waitingForLabel: "Count: 0")
+        let area = try await IOSDeviceE2E.waitForNode { $0["role"] as? String == "other" && $0["id"] as? String == "swipe-test-screen" }
+        let start = try IOSDeviceE2E.point(in: area, x: 0.3, y: 0.5)
+        let end = try IOSDeviceE2E.point(in: area, x: 0.7, y: 0.5)
+        try await IOSDeviceE2E.run("swipe --start-x \(start.x) --start-y \(start.y) --end-x \(end.x) --end-y \(end.y) --duration 0.5")
+        _ = try await IOSDeviceE2E.node(labelled: "Count: 1")
+        let ended = try await IOSDeviceE2E.waitForNode { ($0["label"] as? String)?.hasPrefix("End: (") == true }
+        let label = try #require(ended["label"] as? String)
+        let landed = try #require(IOSDeviceE2E.coordinates(in: label), "unreadable \(label)")
+        #expect(abs(landed.x - end.x) <= 20 && abs(landed.y - end.y) <= 20, "the swipe ended at \(label), not near \(end)")
+        try await IOSDeviceE2E.requireBrokerInput()
+    }
+
+    @Test("ASCII type reaches the focused field through the broker's keyboard")
     func typeASCII() async throws {
         _ = try IOSDeviceE2E.team()
         try await IOSDeviceE2E.requireAwake()
-        try await IOSDeviceE2E.open("text-input", waitingFor: "text-input-field")
-        try await IOSDeviceE2E.run("tap --id text-input-field --app \(IOSDeviceE2E.playgroundBundleID)")
+        try await IOSDeviceE2E.open("text-input", waitingForLabel: "Text Input Playground")
+        let field = try await IOSDeviceE2E.waitForNode { $0["role"] as? String == "textField" }
+        let centre = try IOSDeviceE2E.point(in: field)
+        try await IOSDeviceE2E.run("tap -x \(centre.x) -y \(centre.y) \(Self.app)")
         try await IOSDeviceE2E.run("type hello")
-        _ = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == "hello" }
+        _ = try await IOSDeviceE2E.waitForNode { $0["role"] as? String == "textField" && $0["value"] as? String == "hello" }
+        try await IOSDeviceE2E.requireBrokerInput()
     }
 
-    @Test("button home leaves the app, and a relaunch brings it back")
+    @Test("button home leaves the app through the broker, and a relaunch brings it back")
     func home() async throws {
         _ = try IOSDeviceE2E.team()
         try await IOSDeviceE2E.requireAwake()
-        try await IOSDeviceE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await IOSDeviceE2E.open("tap-test", waitingForLabel: "Tap Count: 0")
         try await IOSDeviceE2E.run("button home")
         let deadline = Date().addingTimeInterval(20)
         var left = false
         while !left, Date() < deadline {
-            let read = try await IOSDeviceE2E.offsider("describe-ui --app \(IOSDeviceE2E.playgroundBundleID)")
-            left = read.exitCode != 0 || !read.stdout.contains("\"tap-test-area\"")
+            let read = try await IOSDeviceE2E.offsider("describe-ui \(Self.app)")
+            left = read.exitCode != 0 || !read.stdout.contains("Tap Count: 0")
             if !left { try await Task.sleep(for: .milliseconds(500)) }
         }
-        #expect(left, "the playground still showed tap-test-area after button home")
-        try await IOSDeviceE2E.open("tap-test", waitingFor: "tap-test-area")
+        #expect(left, "the playground still showed its tap screen after button home")
+        try await IOSDeviceE2E.requireBrokerInput()
+        try await IOSDeviceE2E.open("tap-test", waitingForLabel: "Tap Count: 0")
     }
 }
 
 @Suite("iOS device tree", .serialized, .enabled(if: isIOSDeviceE2EEnabled))
 struct IOSDeviceTreeE2ETests {
-    @Test("describe-ui --app --summary lists the playground's elements")
+    static let app = "--app \(IOSDeviceE2E.playgroundBundleID)"
+
+    @Test("describe-ui --app --summary lists the playground's elements on a full-size screen")
     func summary() async throws {
         _ = try IOSDeviceE2E.team()
         try await IOSDeviceE2E.requireAwake()
-        try await IOSDeviceE2E.open("tap-test", waitingFor: "tap-test-area")
-        let result = try await IOSDeviceE2E.run("describe-ui --app \(IOSDeviceE2E.playgroundBundleID) --summary")
-        #expect(result.stdout.contains("tap-test-title"))
-        #expect(result.stdout.contains("tap-count"))
+        try await IOSDeviceE2E.open("tap-test", waitingForLabel: "Tap Count: 0")
+        let result = try await IOSDeviceE2E.run("describe-ui \(Self.app) --summary")
+        #expect(result.stdout.contains("Detects taps sent by CLI commands"))
+        #expect(result.stdout.contains("Tap Count: 0"))
+        let tree = try DescribeUITree.parse(try await IOSDeviceE2E.run("describe-ui \(Self.app)").stdout)
+        let screen = try #require(tree["screen"] as? [String: Any])
+        let root = try #require(DescribeUITree.nodes(in: tree).first { $0["role"] as? String == "application" })
+        let frame = try IOSDeviceE2E.frame(of: root)
+        #expect(screen["width"] as? Double == frame.width && screen["height"] as? Double == frame.height,
+                "a full-screen app's frame \(frame) differs from the screen \(screen)")
     }
 
-    @Test("wait --id finds a present element and times out on a missing one")
+    @Test("wait --label finds a present element and times out on a missing one")
     func wait() async throws {
         _ = try IOSDeviceE2E.team()
         try await IOSDeviceE2E.requireAwake()
-        try await IOSDeviceE2E.open("tap-test", waitingFor: "tap-test-area")
-        try await IOSDeviceE2E.run("wait --id tap-count --timeout 20 --app \(IOSDeviceE2E.playgroundBundleID)")
-        let missing = try await IOSDeviceE2E.offsider("wait --id offsider-no-such-element --timeout 3 --app \(IOSDeviceE2E.playgroundBundleID)")
+        try await IOSDeviceE2E.open("tap-test", waitingForLabel: "Tap Count: 0")
+        try await IOSDeviceE2E.run("wait --label 'Tap Count: 0' --timeout 20 \(Self.app)")
+        let missing = try await IOSDeviceE2E.offsider("wait --id offsider-no-such-element --timeout 3 \(Self.app)")
         #expect(missing.exitCode == 5, "wait for a missing element exited \(missing.exitCode): \(missing.stderr)")
     }
 
-    @Test("Unicode type --replace sets the field, and assert --has-value sees it")
+    /// The text-input screen's field reports "empty" as its value, which the runner cannot tell from text, so this uses the search field.
+    @Test("Unicode type --replace sets the field through the runner, and assert --has-value sees it")
     func replaceAndAssert() async throws {
         _ = try IOSDeviceE2E.team()
         try await IOSDeviceE2E.requireAwake()
-        try await IOSDeviceE2E.open("text-input", waitingFor: "text-input-field")
-        try await IOSDeviceE2E.run("tap --id text-input-field --app \(IOSDeviceE2E.playgroundBundleID)")
+        try await IOSDeviceE2E.open("searchable-test", waitingForLabel: "Search Query: empty")
+        let field = try await IOSDeviceE2E.waitForNode { $0["role"] as? String == "searchField" }
+        let centre = try IOSDeviceE2E.point(in: field)
+        try await IOSDeviceE2E.run("tap -x \(centre.x) -y \(centre.y) \(Self.app)")
         let text = "héllo ✓ 你好"
         try await IOSDeviceE2E.run("type --replace \(IOSDeviceE2E.quote(text))")
-        _ = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == text }
-        try await IOSDeviceE2E.run("assert --id text-input-field --has-value \(IOSDeviceE2E.quote(text)) --app \(IOSDeviceE2E.playgroundBundleID)")
-        let wrong = try await IOSDeviceE2E.offsider("assert --id text-input-field --has-value hello --app \(IOSDeviceE2E.playgroundBundleID)")
+        _ = try await IOSDeviceE2E.waitForNode { $0["role"] as? String == "searchField" && $0["value"] as? String == text }
+        try await IOSDeviceE2E.run("assert --label 'Search Books' --element-type searchField --has-value \(IOSDeviceE2E.quote(text)) \(Self.app)")
+        let wrong = try await IOSDeviceE2E.offsider("assert --label 'Search Books' --element-type searchField --has-value hello \(Self.app)")
         #expect(wrong.exitCode != 0, "assert --has-value accepted a value the field does not hold")
     }
 }
@@ -232,6 +299,38 @@ struct IOSDeviceRunnerE2ETests {
     static func running() async throws -> Bool {
         let udid = try await IOSDeviceE2E.udid()
         return try await sessions().contains { $0["device"] as? String == udid && $0["running"] as? Bool == true }
+    }
+
+    static func bothRunning() async throws -> (runner: Bool, broker: Bool) {
+        let row = try await IOSDeviceE2E.sessions()
+        return (row.runner?["running"] as? Bool == true, row.broker?["running"] as? Bool == true && row.broker?["answering"] as? Bool == true)
+    }
+
+    @Test("session status shows the runner and the broker, session stop ends both, and the next commands start them again")
+    func sessionLifecycle() async throws {
+        _ = try IOSDeviceE2E.team()
+        try await IOSDeviceE2E.requireAwake()
+        let udid = try await IOSDeviceE2E.udid()
+        try await IOSDeviceE2E.run("describe-ui")
+        let file = try await IOSDeviceE2E.screenshot("session.png")
+        try? FileManager.default.removeItem(at: file)
+        let started = try await Self.bothRunning()
+        #expect(started.runner, "no running runner after describe-ui")
+        #expect(started.broker, "no answering broker after screenshot")
+
+        let stop = try await IOSDeviceE2E.run("session stop --json")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(stop.stdout.utf8)) as? [String: Any])
+        let entry = try #require((object["stopped"] as? [[String: Any]])?.first { $0["device"] as? String == udid }, "session stop listed nothing for \(udid)")
+        #expect(entry["runner"] as? Bool == true)
+        #expect(entry["broker"] as? Bool == true)
+        let stopped = try await Self.bothRunning()
+        #expect(!stopped.runner && !stopped.broker, "a session still runs after session stop")
+
+        try await IOSDeviceE2E.run("describe-ui")
+        let again = try await IOSDeviceE2E.screenshot("session-again.png")
+        try? FileManager.default.removeItem(at: again)
+        let restarted = try await Self.bothRunning()
+        #expect(restarted.runner && restarted.broker, "describe-ui and screenshot after session stop did not start both again")
     }
 
     @Test("runner status shows the session after a tree read, stop ends it, and the next read starts it again")
