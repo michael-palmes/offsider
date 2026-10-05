@@ -8,7 +8,7 @@
 - 3 and 4: `doctor` found warnings or failures.
 - 5: the input was sent but nothing changed, or a `wait`, `assert` or compare condition was not met. Check the screen before sending again.
 - 6: the selector matched several elements. Pick from `candidates`, add `--element-type` or use `--id`.
-- 7: the device was not found or is not booted. Run `offsider list-devices`, or `offsider boot <AVD>` on Android. With `device_locked`, a PIN, pattern or password lock screen stayed up after `wake`, or an iPhone or iPad is locked: ask the user to unlock the device (`guide device-state`). On an iPhone or iPad, `device_not_wired`, `device_untrusted`, `developer_mode_off`, `device_preparing` and `ui_automation_off` each need the user to act on the device (`guide ios-device`).
+- 7: the device was not found or is not booted. Run `offsider list-devices`, or `offsider boot <AVD>` on Android. With `device_locked`, a PIN, pattern or password lock screen stayed up after `wake`, `boot` found a device waiting for its first unlock since boot, or an iPhone or iPad is locked: ask the user to unlock the device (`guide device-state`). On an iPhone or iPad, `device_not_wired`, `device_untrusted`, `developer_mode_off`, `device_preparing` and `ui_automation_off` each need the user to act on the device (`guide ios-device`).
 - 8: the device is busy (see below).
 - 9: Xcode, adb or the Android SDK is missing. Fix the setup; retrying will not help. For an iPhone or iPad, `xcode_too_old` means the command needs Xcode 27, `team_missing` that no signing team was found for the runner, and `usbmux_unavailable` that usbmuxd is not answering.
 - 64: bad arguments. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.

@@ -3,7 +3,7 @@ import Foundation
 import OffsiderAndroid
 import OffsiderCore
 
-struct Boot: AsyncParsableCommand {
+struct Boot: AsyncParsableCommand, JSONReportingCommand {
     static let configuration = CommandConfiguration(
         abstract: "Start an Android emulator (AVD) and wait until it has booted; prints its serial.",
         discussion: """
@@ -12,6 +12,9 @@ struct Boot: AsyncParsableCommand {
         --emulator-arg refuses flags that open a listener, send metrics or replace Offsider's own options. An AVD that is \
         already running is not started again: boot prints its serial, waiting first if it is still booting, and says \
         which launch options it ignored. Ctrl+C stops the wait, not the emulator.
+
+        After the boot it reads the lock state once: a device set up with a PIN, pattern or password that has not \
+        been unlocked since boot exits 7 (device_locked), since apps cannot start until it is unlocked.
 
         Examples:
           offsider boot Pixel_9
@@ -41,6 +44,11 @@ struct Boot: AsyncParsableCommand {
         help: ArgumentHelp("One more token for the emulator command line; repeat for each token, such as --emulator-arg -gpu --emulator-arg host.", valueName: "token")
     )
     var emulatorArguments: [String] = []
+
+    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of the serial: the AVD, serial, RAM and lock state.")
+    var json = false
+
+    var wantsJSON: Bool { json }
 
     static let allowedTimeout = 10.0...1800.0
     static let allowedMemory = 1024...16384
@@ -84,6 +92,31 @@ struct Boot: AsyncParsableCommand {
         let result = try await booter.boot(request) { line in
             print(line, to: &standardError)
         }
-        print(result.serial)
+        let reading = await booter.settledState(serial: result.serial)
+        let lock = Self.lockReport(reading, key: avd, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger())
+        var report = BootReport(
+            avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, grpc: result.hasGRPC, logPath: result.logPath,
+            memoryMB: reading?.memTotalKB.map { $0 / 1024 }, ignored: result.ignored, lock: lock
+        )
+        if let note = BootReport.memoryNote(avd: avd, reading: reading) {
+            print(note, to: &standardError)
+        }
+        if let failure = BootReport.firstUnlockFailure(avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, reading: reading, lock: lock) {
+            let error = CLIError(errorDescription: failure.message, reason: .deviceLocked, hint: failure.hint)
+            guard json else { throw error }
+            report.error = ErrorReporter.payload(for: error)
+            print(report.jsonLine())
+            throw ReportedFailure(underlying: error, exitCode: report.exitCode)
+        }
+        if let note = BootReport.screenNote(avd: avd, serial: result.serial, reading: reading) {
+            print(note, to: &standardError)
+        }
+        print(json ? report.jsonLine() : result.serial)
+    }
+
+    /// Asks the Keychain (attributes only, never the code) and the ledger only when the device has a credential.
+    static func lockReport(_ reading: AwakeReading?, key: String, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger) -> LockReport {
+        guard reading?.hasCredential == true else { return LockReport(reading, savedCode: false, lastAttemptFailed: false) }
+        return LockReport(reading, savedCode: (try? store.hasCode(for: key)) ?? false, lastAttemptFailed: ledger.hasFailed(key))
     }
 }

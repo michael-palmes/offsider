@@ -160,6 +160,29 @@ public struct EmulatorBooter {
         }
     }
 
+    static let unlockPoll: Duration = .milliseconds(500)
+    static let unlockGrace: Duration = .seconds(10)
+
+    /// Screen, lock screen, first unlock and RAM in one round trip; nil when unreadable.
+    public func readState(serial: String) async -> AwakeReading? {
+        guard let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment) else { return nil }
+        let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
+        let script = AndroidAwakeState.readScript + AndroidAwakeState.userStateScript
+        guard let result = try? await client.shell(script, on: serial, timeout: .seconds(5), label: "dumpsys power; am get-started-user-state") else { return nil }
+        return AndroidAwakeState.parse(result.stdoutText)
+    }
+
+    /// A device with no credential reads as unlocking for a moment after boot, so it is read again until it settles, for up to 10 s.
+    public func settledState(serial: String) async -> AwakeReading? {
+        let deadline = host.uptime() + Self.unlockGrace
+        var reading = await readState(serial: serial)
+        while let current = reading, !current.hasCredential, current.userUnlocked == false, host.uptime() < deadline {
+            try? await host.sleep(Self.unlockPoll)
+            reading = await readState(serial: serial) ?? current
+        }
+        return reading
+    }
+
     static let instanceLockNames = ["hardware-qemu.ini.lock", "multiinstance.lock"]
 
     /// Deletes the AVD's lock files when every pid they record is gone (or is no longer an emulator); returns the names removed.

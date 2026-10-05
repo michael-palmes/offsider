@@ -295,6 +295,65 @@ struct EmulatorBootTests {
         #expect(!run.lines.contains { $0.hasPrefix("Removed ") })
     }
 
+    static func stateServer(_ outputs: ScriptedOutputs) -> FakeAdbServer {
+        let script = AndroidAwakeState.readScript + AndroidAwakeState.userStateScript
+        return FakeAdbServer(handler: FakeAdbServer.devices(
+            ["emulator-5556"],
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            device: { _, service in
+                service == AndroidAwakeStateTests.shellPrefix + script ? FakeAdbServer.shell(stdout: outputs.next()) : FakeAdbServer.shell()
+            }
+        ))
+    }
+
+    static func state(credential: String, userState: String) -> String {
+        AndroidAwakeStateTests.motoAwake.replacingOccurrences(of: "CredentialType: PIN", with: "CredentialType: \(credential)")
+            + "user_state=\(userState)\nce_available=\nmemtotal_kb=MemTotal:  3072000 kB\n"
+    }
+
+    @Test("a device with no credential that reads as unlocking is read again until it is unlocked")
+    func unlockingThenUnlocked() async throws {
+        let outputs = ScriptedOutputs([Self.state(credential: "NONE", userState: "RUNNING_UNLOCKING"), Self.state(credential: "NONE", userState: "RUNNING_UNLOCKED")])
+        let sleeps = SleepRecorder()
+        let host = AndroidTestHost.make(home: try Self.home(), adb: Self.stateServer(outputs), sleeps: sleeps)
+
+        let reading = await EmulatorBooter(host: host) { _, _ in }.settledState(serial: "emulator-5556")
+
+        #expect(reading?.userUnlocked == true)
+        #expect(reading?.memTotalKB == 3_072_000)
+        #expect(sleeps.sleeps == [.milliseconds(500)])
+    }
+
+    @Test("a PIN device waiting for its first unlock is reported at once, without polling")
+    func pinLockedNotPolled() async throws {
+        let outputs = ScriptedOutputs([Self.state(credential: "PIN", userState: "RUNNING_LOCKED")])
+        let sleeps = SleepRecorder()
+        let host = AndroidTestHost.make(home: try Self.home(), adb: Self.stateServer(outputs), sleeps: sleeps)
+
+        let reading = await EmulatorBooter(host: host) { _, _ in }.settledState(serial: "emulator-5556")
+
+        #expect(reading?.awaitsFirstUnlock == true)
+        #expect(sleeps.sleeps.isEmpty)
+    }
+
+    @Test("an unlocking device that never settles is given up on after 10 s")
+    func unlockingGivesUp() async throws {
+        let outputs = ScriptedOutputs([Self.state(credential: "NONE", userState: "RUNNING_UNLOCKING")])
+        let sleeps = SleepRecorder()
+        let host = AndroidTestHost.make(home: try Self.home(), adb: Self.stateServer(outputs), sleeps: sleeps)
+
+        let reading = await EmulatorBooter(host: host) { _, _ in }.settledState(serial: "emulator-5556")
+
+        #expect(reading?.userUnlocked == false)
+        #expect(sleeps.sleeps.count == 20)
+    }
+
+    @Test("an unreadable state gives no reading")
+    func unreadableState() async throws {
+        let host = AndroidTestHost.make(home: try Self.home(), adb: Self.stateServer(ScriptedOutputs(["garbage\n"])))
+        #expect(await EmulatorBooter(host: host) { _, _ in }.readState(serial: "emulator-5556") == nil)
+    }
+
     @Test("an emulator that exits during start-up reports its status and the last 20 lines of its log")
     func earlyExit() async throws {
         let home = try Self.home()

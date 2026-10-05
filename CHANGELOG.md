@@ -35,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `scripts/build.sh runner [--check]` regenerates the runner's Xcode project from its `project.yml`, or compares it with the committed one.
 - `OFFSIDER_DEVICE` is the default `--device`: a command without `--device` uses it when it is set and not blank, and an explicit `--device` wins. `doctor` prints the binding (`device.source` in `--json` is `option` or `environment`); `permission services` and the `runner` and `session` filters ignore it. A command with neither now exits 64 with `Missing --device <id>. Pass --device, or set OFFSIDER_DEVICE`.
 - `boot --memory <MB>` (1024 to 16384), `--no-snapshot-load` and a repeatable `--emulator-arg <token>` add to the emulator launch, which always keeps `-no-metrics`. `--emulator-arg` refuses flags that open a listener or connect out, send metrics, or replace Offsider's own options, with exit 64 before anything starts. An AVD that is already running is not started again, and `boot` names the options it ignored.
+- `boot --json` prints `{version, ok, avd, serial, alreadyRunning, grpc, logPath, memoryMB, ignored, lock, exitCode, error}` instead of the serial. After a boot, `boot` reads the user's unlock state and RAM in the same round trip as the screen: a device with a PIN, pattern or password that has not been unlocked since boot exits 7 with `device_locked` naming the serial, with a hint to save a code, run `wake --unlock`, or unlock it by hand; an unlocked device with its lock screen up gets a `Note:`, and less than about 2.75 GB of RAM a warning.
 
 ### Changed
 
@@ -44,6 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `orientation` on a physical device that does not turn in time says the screen follows only while the device is awake and unlocked and the app in front supports the orientation.
 - The bundled skill's router is shorter: `type` and `button` detail, the full `list-devices --json` shape and the Turnstile detail now live in the `selectors`, `android` and `turnstile` guide topics.
 - `wait --timeout` and `wait --seconds` accept up to 900 seconds (was 300), so a wait can outlast a cold React Native bundle; the error names the cap.
+- `stay-awake --json` and `wake --json` report `credential` as `none` when lock settings say no credential is set, instead of null.
 
 ### Fixed
 
