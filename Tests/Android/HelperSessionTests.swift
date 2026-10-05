@@ -29,7 +29,7 @@ struct HelperSessionTests {
 
         #expect(device.ops == ["hello", "dump", "dump"])
         #expect(device.frames.first?.json.contains(#""token":"token-1""#) == true)
-        #expect(device.frames.first?.json.contains(#""protocol":1"#) == true)
+        #expect(device.frames.first?.json.contains(#""protocol":2"#) == true)
         #expect(Self.ids(device) == [1, 2, 3])
         await session.close()
     }
@@ -166,9 +166,9 @@ struct HelperSessionTests {
     @Test("a hello reply with another protocol is a handshake failure, and both streams close")
     func helloProtocol() async {
         let device = FakeHelperDevice()
-        device.answer = { _, op, _ in op == "hello" ? .ok(#"{"helper":"2.0.0","protocol":2}"#) : nil }
+        device.answer = { _, op, _ in op == "hello" ? .ok(#"{"helper":"3.0.0","protocol":3}"#) : nil }
 
-        await #expect(throws: HelperStartFailure.unavailable(.handshake("the helper on the device speaks protocol 2, Offsider speaks 1"))) {
+        await #expect(throws: HelperStartFailure.unavailable(.handshake("the helper on the device speaks protocol 3, Offsider speaks 2"))) {
             _ = try await Self.start(device)
         }
         #expect(device.timeline.contains("shell closed 1"))

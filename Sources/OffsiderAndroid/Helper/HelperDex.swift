@@ -4,7 +4,7 @@ import Foundation
 /// The on-device helper's dex, checked against the manifest built beside it.
 public struct HelperDex: Equatable, Sendable {
     /// The wire protocol this Offsider speaks; the manifest, the ready line and `hello` must all agree.
-    public static let protocolVersion = 1
+    public static let protocolVersion = 2
 
     public let bytes: Data
     /// 64 lower-case hex digits.

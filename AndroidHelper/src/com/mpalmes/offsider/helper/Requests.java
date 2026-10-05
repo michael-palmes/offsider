@@ -10,13 +10,19 @@ import org.json.JSONObject;
 final class Requests {
     static final long MAX_EVENT_WAIT_MS = 5000;
 
-    /** A reply frame; quit asks the server to end after sending it. */
+    /** A reply frame, then a binary payload frame when there is one; quit asks the server to end after sending it. */
     static final class Reply {
         final byte[] bytes;
+        final byte[] payload;
         final boolean quit;
 
         Reply(byte[] bytes, boolean quit) {
+            this(bytes, null, quit);
+        }
+
+        Reply(byte[] bytes, byte[] payload, boolean quit) {
             this.bytes = bytes;
+            this.payload = payload;
             this.quit = quit;
         }
     }
@@ -24,10 +30,12 @@ final class Requests {
     private final Connection connection;
     private final EventLog events;
     private final NodeTable table = new NodeTable();
+    private final Inject inject;
 
     Requests(Connection connection, EventLog events) {
         this.connection = connection;
         this.events = events;
+        inject = new Inject(events);
     }
 
     Reply handle(byte[] payload) {
@@ -47,11 +55,17 @@ final class Requests {
             json.field("ok", true);
             long seq = -1;
             boolean quit = false;
+            byte[] frame = null;
             if ("ping".equals(op)) {
                 seq = events.latest();
             } else if ("hello".equals(op)) {
                 json.field("helper", OffsiderHelper.VERSION);
                 json.field("protocol", OffsiderHelper.PROTOCOL);
+                json.name("ops").beginArray();
+                for (String name : OffsiderHelper.OPS) {
+                    json.value(name);
+                }
+                json.endArray();
             } else if ("dump".equals(op)) {
                 seq = writeDump(json, connection, events, table, DumpOptions.from(request));
             } else if ("display".equals(op)) {
@@ -63,21 +77,35 @@ final class Requests {
                 Actions.setText(json, connection.automation(), request);
             } else if ("events".equals(op)) {
                 writeEvents(json, request);
+            } else if ("inject".equals(op)) {
+                inject.run(json, connection.automation(), request);
+            } else if ("screenshot".equals(op)) {
+                frame = Capture.run(json, connection.automation(), request);
             } else if ("quit".equals(op)) {
                 quit = true;
             } else {
                 throw new RequestFailure("unknown-op", "unknown op '" + op + "'", null);
             }
             json.field("eventSeq", seq >= 0 ? seq : events.latest());
-            return new Reply(json.endObject().bytes(), quit);
+            return new Reply(json.endObject().bytes(), frame, quit);
         } catch (RequestFailure failure) {
             return new Reply(error(id, failure, events.latest()), false);
         } catch (RuntimeException e) {
-            String code = "dump".equals(op) || "display".equals(op) ? "dump-failed" : "action-failed";
+            String code = failureCode(op);
             Log.w(OffsiderHelper.TAG, op + " failed", e);
             RequestFailure failure = new RequestFailure(code, op + " failed", HelperFailure.describe(e));
             return new Reply(error(id, failure, events.latest()), false);
         }
+    }
+
+    private static String failureCode(String op) {
+        if ("dump".equals(op) || "display".equals(op)) {
+            return "dump-failed";
+        }
+        if ("inject".equals(op)) {
+            return "inject-failed";
+        }
+        return "screenshot".equals(op) ? "capture-failed" : "action-failed";
     }
 
     /** Writes a dump's fields and returns the event sequence number read just before the walk. */
