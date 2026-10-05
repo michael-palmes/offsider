@@ -55,9 +55,22 @@ struct OffsiderCommand: AsyncParsableCommand {
             Batch.self,
             RN.self,
             RunnerCommand.self,
-            HIDBrokerCommand.self
+            SessionCommand.self,
+            HIDBrokerCommand.self,
+            DeviceSessionCommand.self
         ]
     )
+
+    /// The command's path as `CommandEffect.table` keys it, with its parent for a nested command.
+    static func path(of command: any ParsableCommand, name: String) -> String {
+        switch command {
+        case is RNPrepare: return "rn \(name)"
+        case is RunnerStatus, is RunnerStop: return "runner \(name)"
+        case is SessionStatus, is SessionStop: return "session \(name)"
+        case is DeviceSessionServe: return "device-session \(name)"
+        default: return name
+        }
+    }
 
     static func main() async {
         Timings.installTotal()
@@ -75,7 +88,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             parsed = command
             ErrorReporter.prepare(command: command, arguments: arguments)
             let name = type(of: command)._commandName
-            let path = command is RNPrepare ? "rn \(name)" : (command is RunnerStatus || command is RunnerStop) ? "runner \(name)" : name
+            let path = Self.path(of: command, name: name)
             await CommandScope.current.configure(command: path)
             await DeviceClaims.current.configure(
                 command: path,

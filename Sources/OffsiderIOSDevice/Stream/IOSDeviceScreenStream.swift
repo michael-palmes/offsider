@@ -2,6 +2,8 @@ import CoreGraphics
 import CoreImage
 import CoreMedia
 import CoreVideo
+import ImageIO
+import UniformTypeIdentifiers
 import Darwin
 import Foundation
 import OffsiderCore
@@ -188,7 +190,7 @@ public final class IOSDeviceScreenStream {
         if let failure = frames.failure { throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: failure) }
     }
 
-    private static func hasDisplay() -> Bool {
+    nonisolated static func hasDisplay() -> Bool {
         var count: UInt32 = 0
         return CGGetActiveDisplayList(0, nil, &count) == .success && count > 0
     }
@@ -299,6 +301,15 @@ public final class IOSDeviceScreenStream {
 
     private static let images = CIContext(options: [.cacheIntermediates: false])
 
+    /// Unfiltered rows: about twice as fast to encode as the default adaptive filter, for a file about a quarter larger.
+    private static func fastPNG(_ image: CGImage) -> Data? {
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil) else { return nil }
+        let options = [kCGImagePropertyPNGDictionary: [kCGImagePropertyPNGCompressionFilter: 0x08]] as CFDictionary
+        CGImageDestinationAddImage(destination, image, options)
+        return CGImageDestinationFinalize(destination) ? output as Data : nil
+    }
+
     private static func encode(_ pixels: CVPixelBuffer, as format: IOSDeviceScreenFrame.Format) -> IOSDeviceScreenFrame? {
         let width = CVPixelBufferGetWidth(pixels)
         let height = CVPixelBufferGetHeight(pixels)
@@ -309,7 +320,7 @@ public final class IOSDeviceScreenStream {
         case .jpeg:
             data = images.jpegRepresentation(of: image, colorSpace: space, options: [:])
         case .png:
-            data = images.pngRepresentation(of: image, format: .RGBA8, colorSpace: space, options: [:])
+            data = images.createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: space).flatMap(fastPNG)
         case .bgra:
             var bytes = Data(count: width * height * 4)
             bytes.withUnsafeMutableBytes { buffer in

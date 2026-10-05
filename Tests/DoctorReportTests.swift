@@ -121,6 +121,7 @@ struct DoctorReportTests {
             "ios-device.lock-state",
             "ios-device.hid",
             "ios-device.ui-automation",
+            "ios-device.session",
             "ios-device.usbmuxd",
             "ios-device.runner-signing",
         ])

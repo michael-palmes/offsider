@@ -12,6 +12,7 @@ public enum IOSDeviceDoctorRules {
     public static func checks(_ facts: IOSDeviceDoctorFacts) -> [DoctorCheckResult] {
         var checks = [DoctorCheckResult(id: .iosDeviceXcode, verdict: xcode(facts.xcode))]
         checks += deviceChecks(facts)
+        checks.append(DoctorCheckResult(id: .iosDeviceSession, verdict: session(facts.session, udid: facts.udid)))
         checks.append(DoctorCheckResult(id: .iosDeviceUsbmuxd, verdict: usbmuxd(facts.usbmuxdSocket)))
         checks.append(DoctorCheckResult(id: .iosDeviceRunnerSigning, verdict: runnerSigning(facts.team)))
         return checks
@@ -220,6 +221,26 @@ public enum IOSDeviceDoctorRules {
             return (.fail, "Probably off: the device refused input while unlocked", "Turn on \(uiAutomationPath).")
         }
         return (.skip, "not readable; it must be on in \(uiAutomationPath)", nil)
+    }
+
+    /// The broker is never started here, so one that is not running is a skip, not a failure.
+    public static func session(_ fact: IOSDeviceDoctorFacts.SessionFact?, udid: String) -> Verdict {
+        let restart = "offsider session stop --device \(udid)"
+        switch fact {
+        case nil:
+            return (.skip, "not checked: the device is not ready for input", nil)
+        case .notRunning(true)?:
+            return (.skip, "not running; the next screenshot or input on the device starts it", nil)
+        case .notRunning(false)?:
+            return (.skip, "not running, and this process has no desktop session, so screenshots would use devicectl", "Run Offsider from a terminal on the Mac's desktop for the screen stream.")
+        case .unanswered?:
+            return (.warn, "its process is running but did not answer", "Run \(restart); the next command starts a new one.")
+        case .running(let stream, let detail)?:
+            if stream == "live" || stream == "opening" {
+                return (.pass, "running; screen stream \(detail ?? stream)", nil)
+            }
+            return (.warn, "running, but its screen stream is \(stream)" + (detail.map { ": \($0)" } ?? ""), "Screenshots use devicectl meanwhile; \(restart) restarts it.")
+        }
     }
 
     public static func usbmuxd(_ socketExists: Bool) -> Verdict {

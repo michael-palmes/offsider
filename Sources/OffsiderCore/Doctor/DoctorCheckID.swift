@@ -48,6 +48,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case iosDeviceLockState = "ios-device.lock-state"
     case iosDeviceHID = "ios-device.hid"
     case iosDeviceUIAutomation = "ios-device.ui-automation"
+    case iosDeviceSession = "ios-device.session"
     case iosDeviceUsbmuxd = "ios-device.usbmuxd"
     case iosDeviceRunnerSigning = "ios-device.runner-signing"
 
@@ -115,6 +116,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .iosDeviceLockState: return "Lock state"
         case .iosDeviceUIAutomation: return "UI Automation"
         case .iosDeviceHID: return "HID input"
+        case .iosDeviceSession: return "Session broker"
         case .iosDeviceUsbmuxd: return "usbmuxd"
         case .iosDeviceRunnerSigning: return "Runner signing"
         }

@@ -36,6 +36,15 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         case ready
     }
 
+    /// The device's session broker, read without starting it or its stream.
+    public enum SessionFact: Equatable, Sendable {
+        case notRunning(guiSession: Bool)
+        /// `stream` is the broker's stream state (`opening`, `live`, `failed`, `closed`).
+        case running(stream: String, detail: String?)
+        /// Its process is alive but its socket did not answer.
+        case unanswered
+    }
+
     public var udid: String
     public var xcode: XcodeFact
     /// From the `devicectl` reply's `info.version`; nil when `devicectl` did not answer.
@@ -48,6 +57,8 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
     public var hid: HIDFact?
     public var usbmuxdSocket: Bool
     public var team: TeamFact
+    /// Nil when it was not checked.
+    public var session: SessionFact?
 
     public init(
         udid: String,

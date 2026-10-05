@@ -41,15 +41,35 @@ struct IOSDeviceDoctorTests {
 
     @Test("a wired, trusted, prepared phone passes every check in the documented order; UI Automation cannot be read")
     func healthy() {
-        let checks = IOSDeviceDoctorRules.checks(Self.facts())
+        var facts = Self.facts()
+        facts.session = .running(stream: "live", detail: "live, 2736 x 2064")
+        let checks = IOSDeviceDoctorRules.checks(facts)
         #expect(checks.map(\.id.rawValue) == [
             "ios-device.xcode", "ios-device.coredevice", "ios-device.listed", "ios-device.transport", "ios-device.pairing",
             "ios-device.developer-mode", "ios-device.ddi", "ios-device.tunnel", "ios-device.lock-state",
-            "ios-device.hid", "ios-device.ui-automation", "ios-device.usbmuxd", "ios-device.runner-signing",
+            "ios-device.hid", "ios-device.ui-automation", "ios-device.session", "ios-device.usbmuxd", "ios-device.runner-signing",
         ])
         #expect(checks.filter { $0.id != .iosDeviceUIAutomation }.allSatisfy { $0.status == .pass })
         #expect(Self.statuses(checks)["ios-device.ui-automation"] == .skip)
         #expect(checks[2].detail == "Apple iPhone 15 Pro Max (\(Self.udid)), iOS 27.2")
+    }
+
+    @Test("a broker that is not running is a skip, never started; a silent one or a failed stream warns with the restart command", arguments: [
+        (IOSDeviceDoctorFacts.SessionFact?.none, CheckStatus.skip),
+        (.notRunning(guiSession: true), .skip),
+        (.notRunning(guiSession: false), .skip),
+        (.running(stream: "opening", detail: nil), .pass),
+        (.running(stream: "failed", detail: "no desktop"), .warn),
+        (.unanswered, .warn),
+    ])
+    func session(fact: IOSDeviceDoctorFacts.SessionFact?, status: CheckStatus) {
+        var facts = Self.facts()
+        facts.session = fact
+        let check = IOSDeviceDoctorRules.checks(facts).first { $0.id == .iosDeviceSession }
+        #expect(check?.status == status)
+        if status == .warn {
+            #expect(check?.hint?.contains("offsider session stop --device \(Self.udid)") == true)
+        }
     }
 
     @Test("without Xcode every device check is skipped behind ios-device.xcode")
@@ -154,7 +174,7 @@ struct IOSDeviceDoctorTests {
     func idsFitColumn() {
         let longest = DoctorCheckID.allCases.filter { !$0.isPerIOSDevice }.map(\.rawValue.count).max() ?? 0
         #expect(DoctorCheckID.allCases.filter(\.isPerIOSDevice).allSatisfy { $0.rawValue.count <= longest })
-        #expect(DoctorCheckID.allCases.filter(\.isPerIOSDevice).count == 13)
+        #expect(DoctorCheckID.allCases.filter(\.isPerIOSDevice).count == 14)
     }
 
     // MARK: Probe

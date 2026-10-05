@@ -83,7 +83,7 @@ enum RunnerSessions {
 }
 
 /// `runner stop` never builds; a stop that reaches the builder is a bug.
-private struct UnusedRunnerBuilder: RunnerBuilding {
+struct UnusedRunnerBuilder: RunnerBuilding {
     func build(for destination: RunnerDestination, deviceName: String) async throws -> RunnerBuild {
         throw CLIError(errorDescription: "Unexpected runner build while stopping.", reason: .internalError)
     }
@@ -106,17 +106,22 @@ struct RunnerSessionRow: Equatable {
     static func json(_ rows: [RunnerSessionRow]) -> String {
         let formatter = ISO8601DateFormatter()
         let sessions: [[String: Any]] = rows.map { row in
-            [
-                "device": row.record.udid,
-                "running": row.alive,
-                "pid": Int(row.record.pid),
-                "port": Int(row.record.port),
-                "startedAt": formatter.string(from: row.record.startedAt),
-                "lastUsed": formatter.string(from: row.record.lastUsed),
-                "version": row.record.version,
-            ]
+            var fields = row.fields(formatter)
+            fields["device"] = row.record.udid
+            return fields
         }
         let data = (try? JSONSerialization.data(withJSONObject: ["sessions": sessions], options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self) + "\n"
+    }
+
+    func fields(_ formatter: ISO8601DateFormatter) -> [String: Any] {
+        [
+            "running": alive,
+            "pid": Int(record.pid),
+            "port": Int(record.port),
+            "startedAt": formatter.string(from: record.startedAt),
+            "lastUsed": formatter.string(from: record.lastUsed),
+            "version": record.version,
+        ]
     }
 }

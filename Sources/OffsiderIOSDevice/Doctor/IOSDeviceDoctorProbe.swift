@@ -13,15 +13,40 @@ public struct IOSDeviceDoctorProbe {
     let host: IOSDeviceHost
     let xcodeTeams: @Sendable () -> [String]
     let hid: HIDProbe
+    let session: SessionProbe
+
+    /// Reads a device's session broker by UDID, never starting it.
+    public typealias SessionProbe = @MainActor (_ udid: String) async -> IOSDeviceDoctorFacts.SessionFact
 
     public init(
         host: IOSDeviceHost = .live(),
         xcodeTeams: @escaping @Sendable () -> [String] = IOSDeviceDoctorProbe.signedInTeams,
-        hid: @escaping HIDProbe = IOSDeviceDoctorProbe.liveHID
+        hid: @escaping HIDProbe = IOSDeviceDoctorProbe.liveHID,
+        session: SessionProbe? = nil
     ) {
         self.host = host
         self.xcodeTeams = xcodeTeams
         self.hid = hid
+        self.session = session ?? { udid in await Self.sessionFact(udid, root: host.privateRoot) }
+    }
+
+    /// The broker's record and `ping`; a broker that is not running is reported, not started.
+    public static func sessionFact(_ udid: String, root: String) async -> IOSDeviceDoctorFacts.SessionFact {
+        let store = DeviceSessionStore(root: root)
+        guard let record = try? store.read(udid: udid) else { return .notRunning(guiSession: IOSDeviceScreenStream.hasDisplay()) }
+        let manager = DeviceSessionManager(
+            store: store, processes: OffsiderSelfProcesses(executable: URL(fileURLWithPath: "/usr/bin/false")), environment: [:], log: { _, _ in }
+        )
+        let status = await manager.status(of: record)
+        guard status.alive else { return .notRunning(guiSession: IOSDeviceScreenStream.hasDisplay()) }
+        guard let stream = status.reply?.stream else { return .unanswered }
+        let detail: String?
+        switch stream.state {
+        case .live: detail = "live, \(stream.width ?? 0) x \(stream.height ?? 0)"
+        case .failed: detail = stream.detail
+        case .opening, .closed: detail = nil
+        }
+        return .running(stream: stream.state.rawValue, detail: detail)
     }
 
     public struct Result: Sendable {
@@ -65,6 +90,7 @@ public struct IOSDeviceDoctorProbe {
             facts.lock = await lockFact(device.udid, directory: directory)
             if device.transportType == "wired", device.developerModeStatus == "enabled", device.ddiServicesAvailable == true {
                 facts.hid = await hidFact(device, coreDeviceVersion: facts.coreDeviceVersion)
+                facts.session = await session(device.udid)
             }
         }
         facts.listing = .listed(IOSDeviceDoctorRow(

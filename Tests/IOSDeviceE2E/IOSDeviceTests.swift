@@ -26,7 +26,7 @@ struct IOSDeviceDoctorE2ETests {
     static let checkIDs = [
         "ios-device.xcode", "ios-device.coredevice", "ios-device.listed", "ios-device.transport", "ios-device.pairing",
         "ios-device.developer-mode", "ios-device.ddi", "ios-device.tunnel", "ios-device.lock-state", "ios-device.hid",
-        "ios-device.ui-automation", "ios-device.usbmuxd", "ios-device.runner-signing",
+        "ios-device.ui-automation", "ios-device.session", "ios-device.usbmuxd", "ios-device.runner-signing",
     ]
 
     @Test("doctor --json reports the ios-device checks and exits 0 or 3; a dark screen may fail only the HID check")

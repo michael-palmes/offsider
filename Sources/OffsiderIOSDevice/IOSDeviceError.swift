@@ -3,7 +3,7 @@ import OffsiderCore
 
 /// Every physical iOS device failure a user can see; each message says what happened and what to do next.
 public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
-    public enum Kind: Equatable, Sendable {
+    public enum Kind: String, Equatable, Sendable {
         case notYetSupported
         case xcodeMissing
         case devicectlFailed
@@ -29,6 +29,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case secureFieldRefused
         case streamFailed
         case streamNeedsGUISession
+        case sessionFailed
+        case sessionLost
     }
 
     public let kind: Kind
@@ -161,6 +163,8 @@ extension IOSDeviceError: OffsiderFailure {
         case .secureFieldRefused: return .securePasteRefused
         case .streamFailed: return .screenshotFailed
         case .streamNeedsGUISession: return .notSupported
+        case .sessionFailed: return .hidBrokerFailed
+        case .sessionLost: return .inputOutcomeUnknown
         }
     }
 

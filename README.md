@@ -165,6 +165,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
 | `runner` | `status` lists the XCUITest runner sessions that read physical iPhones and iPads, `stop` stops one (`--device`) or all; `--json`. A runner stops by itself after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300) |
+| `session` | `status` lists each physical device's background sessions, the XCUITest runner and the session broker that holds its screen stream and HID input, without starting either; `stop` stops both on one device (`--device`) or all, ending the screen stream so the device's screen-sharing indicator clears; `--json`. A broker stops by itself after `OFFSIDER_IOS_SESSION_IDLE` seconds without a request (default 300) |
 
 ### describe-ui output
 
