@@ -47,21 +47,37 @@ public final class IOSDeviceBackend: DeviceBackend {
     }
 
     /// Wired, trusted, Developer Mode on and prepared; wakes the CoreDevice tunnel once when it is down.
+    /// A wired device with no developer services is woken before it is judged, since the wake can bring them back.
     public func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         try await prepare()
-        guard let device = try await directory.device(udid: id.rawValue) else {
-            throw IOSDeviceError.notListed(id.rawValue)
-        }
+        var device = try await listedDevice(id)
         let name = DeviceName.display(device.udid, label: device.label)
-        if let blocker = IOSDeviceReadiness.blocker(device, deviceSupportFinalized: directory.deviceSupportFinalized(device)) {
+        var blocker = IOSDeviceReadiness.blocker(device, deviceSupportFinalized: directory.deviceSupportFinalized(device))
+        if blocker == .preparing, device.transportType == "wired", !woken.contains(device.udid) {
+            try await wake(device.udid, name: name)
+            device = try await listedDevice(id)
+            blocker = IOSDeviceReadiness.blocker(device, deviceSupportFinalized: directory.deviceSupportFinalized(device))
+        }
+        if let blocker {
             throw Self.error(for: blocker, name: name, udid: device.udid)
         }
         if device.tunnelState != "connected" || device.ddiServicesAvailable != true, !woken.contains(device.udid) {
-            log(.debug, "Waking the CoreDevice tunnel to \(name)")
-            woken.insert(device.udid)
-            try await directory.wake(udid: device.udid)
+            try await wake(device.udid, name: name)
         }
         return BootedDevice(id: id, name: device.label)
+    }
+
+    private func listedDevice(_ id: DeviceID) async throws -> DevicectlDevice {
+        guard let device = try await directory.device(udid: id.rawValue) else {
+            throw IOSDeviceError.notListed(id.rawValue)
+        }
+        return device
+    }
+
+    private func wake(_ udid: String, name: String) async throws {
+        log(.debug, "Waking the CoreDevice tunnel to \(name)")
+        woken.insert(udid)
+        try await directory.wake(udid: udid)
     }
 
     static func error(for blocker: IOSDeviceReadiness, name: String, udid: String) -> IOSDeviceError {

@@ -46,10 +46,12 @@ struct IOSDeviceReadinessTests {
         #expect(IOSDeviceReadiness.blocker(device, deviceSupportFinalized: true) == nil)
     }
 
-    @Test("Wi-Fi blocks a command even while the developer services reconnect")
+    @Test("Wi-Fi blocks a command as not wired even while the developer services reconnect or are prepared")
     func wirelessReconnectingBlocks() {
         let device = Self.with { $0.ddiServicesAvailable = false; $0.transportType = "localNetwork" }
         #expect(IOSDeviceReadiness.blocker(device, deviceSupportFinalized: true) == .wireless)
+        #expect(IOSDeviceReadiness.blocker(device, deviceSupportFinalized: false) == .wireless)
+        #expect(IOSDeviceReadiness.blocker(Self.with { $0.ddiServicesAvailable = false }, deviceSupportFinalized: false) == .preparing)
         #expect(IOSDeviceReadiness.blocker(Self.ready, deviceSupportFinalized: false) == nil)
     }
 

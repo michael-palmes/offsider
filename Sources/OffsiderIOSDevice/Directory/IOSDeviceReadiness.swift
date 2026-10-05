@@ -55,13 +55,15 @@ public enum IOSDeviceReadiness: String, Equatable, Sendable, CaseIterable {
         return deviceSupportMarkerNames.map { folder.appendingPathComponent($0).path }
     }
 
-    /// The first problem that stops a command, in readiness order, with Wi-Fi refused even while reconnecting.
+    /// The first problem that stops a command, in readiness order, with Wi-Fi refused even while preparing or reconnecting.
     public static func blocker(_ device: DevicectlDevice, deviceSupportFinalized: Bool) -> IOSDeviceReadiness? {
         switch assess(device, deviceSupportFinalized: deviceSupportFinalized) {
         case .ready:
             return nil
         case .reconnecting:
             return device.transportType == "localNetwork" ? .wireless : nil
+        case .preparing:
+            return device.transportType == "localNetwork" ? .wireless : .preparing
         case let problem:
             return problem
         }

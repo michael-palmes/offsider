@@ -89,7 +89,7 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
     static func preparing(_ name: String, udid: String) -> IOSDeviceError {
         IOSDeviceError(
             .preparing,
-            "Xcode is still preparing \(name) for development. Keep it connected and unlocked until that finishes, then retry; `offsider doctor --device \(udid)` shows its state."
+            "The developer services on \(name) are not available, so Xcode may still be preparing it for development. Keep it connected and unlocked until that finishes, then retry; `offsider doctor --device \(udid)` shows its state."
         )
     }
 }

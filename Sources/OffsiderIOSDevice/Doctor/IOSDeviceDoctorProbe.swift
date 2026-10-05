@@ -63,7 +63,7 @@ public struct IOSDeviceDoctorProbe {
                 device = details
             }
             facts.lock = await lockFact(device.udid, directory: directory)
-            if device.developerModeStatus == "enabled", device.ddiServicesAvailable == true {
+            if device.transportType == "wired", device.developerModeStatus == "enabled", device.ddiServicesAvailable == true {
                 facts.hid = await hidFact(device, coreDeviceVersion: facts.coreDeviceVersion)
             }
         }
@@ -81,7 +81,7 @@ public struct IOSDeviceDoctorProbe {
         return Result(facts: facts, xcode: xcode)
     }
 
-    /// `--fix` on a phone: mounts the developer disk image, and nothing else.
+    /// `--fix` on a wired phone: mounts the developer disk image, and nothing else.
     public func mountDDI(udid: String, facts: IOSDeviceDoctorFacts) async -> DoctorFixResult {
         let action = "Mount the developer disk image with devicectl device info ddiServices --auto-mount-ddis"
         guard IOSDeviceDoctorRules.isDDIFixable(facts) else {

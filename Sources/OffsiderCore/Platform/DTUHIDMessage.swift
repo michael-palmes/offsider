@@ -17,6 +17,9 @@ public enum DTUHIDMessage {
     public static let buttonService = "com.apple.coredevice.feature.remote.hid.button"
     public static let vendorDefinedService = "com.apple.coredevice.feature.remote.hid.vendordefined"
 
+    /// `dtuhidd` opens the services it creates for a new peer 560 to 770 ms after the peer's first message, and drops events sent before then.
+    public static let activationFloor: Duration = .seconds(1)
+
     /// `HIDButtonState` for keys and buttons; `dtuhidd` rejects 0.
     public enum ButtonState: UInt64, Sendable {
         case down = 1

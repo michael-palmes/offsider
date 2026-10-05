@@ -216,7 +216,7 @@ struct CoreDeviceHIDErrorTests {
                                 underlying: Self.error(domain: "RemotePairing.RemotePairingError", code: 1016))
         let info = try #require(CoreDeviceErrorInfo(xpc: nested))
         #expect(info.isLocked)
-        let failure = IOSDeviceError.serviceSocket(info, feature: DTUHIDMessage.digitizerService, name: "iPad", udid: IOSDeviceFixtures.iPad)
+        let failure = IOSDeviceError.serviceSocket(info, feature: DTUHIDMessage.digitizerService, name: "iPad", udid: IOSDeviceFixtures.iPad, sent: false)
         #expect(failure.reason == .deviceLocked)
         #expect(failure.exitCode == .deviceUnavailable)
         #expect(failure.message.contains("Unlock"))
@@ -227,20 +227,37 @@ struct CoreDeviceHIDErrorTests {
     @Test("a disk image without the HID service asks for Xcode 27")
     func unsupportedFeature() {
         let info = CoreDeviceErrorInfo(domain: "com.apple.dt.CoreDeviceError", code: 1, description: "Create Service Socket is not supported by this device")
-        let failure = IOSDeviceError.serviceSocket(info, feature: DTUHIDMessage.digitizerService, name: "iPad", udid: IOSDeviceFixtures.iPad)
+        let failure = IOSDeviceError.serviceSocket(info, feature: DTUHIDMessage.digitizerService, name: "iPad", udid: IOSDeviceFixtures.iPad, sent: false)
         #expect(failure.reason == .xcodeTooOld)
         #expect(failure.message.contains("Install Xcode 27 for HID input"))
     }
 
     @Test("a refused barrier on an unlocked device means UI Automation is off; on a locked one, locked")
     func barrier() {
-        let unlocked = IOSDeviceError.barrierRefused(CoreDeviceErrorInfo(domain: "dtuhidd", code: 3), name: "iPad", udid: IOSDeviceFixtures.iPad)
+        let unlocked = IOSDeviceError.barrierRefused(CoreDeviceErrorInfo(domain: "dtuhidd", code: 3), name: "iPad", udid: IOSDeviceFixtures.iPad, sent: false)
         #expect(unlocked.reason == .uiAutomationOff)
         #expect(unlocked.message.contains("Settings > Developer > UI Automation"))
         let locked = IOSDeviceError.barrierRefused(
-            CoreDeviceErrorInfo(domain: "x", code: 1, underlying: [CoreDeviceErrorInfo(domain: "RemotePairingError", code: 1016)]), name: "iPad", udid: IOSDeviceFixtures.iPad
+            CoreDeviceErrorInfo(domain: "x", code: 1, underlying: [CoreDeviceErrorInfo(domain: "RemotePairingError", code: 1016)]), name: "iPad", udid: IOSDeviceFixtures.iPad, sent: false
         )
         #expect(locked.reason == .deviceLocked)
+    }
+
+    @Test("after earlier input, locked, UI Automation off, a down tunnel and an unopened feature never claim nothing was sent")
+    func afterEarlierInput() {
+        let failures = [
+            IOSDeviceError.serviceSocket(CoreDeviceErrorInfo(domain: "x", code: 1, underlying: [CoreDeviceErrorInfo(domain: "RemotePairingError", code: 1016)]),
+                                         feature: DTUHIDMessage.keyboardService, name: "iPad", udid: IOSDeviceFixtures.iPad, sent: true),
+            IOSDeviceError.serviceSocket(CoreDeviceErrorInfo(domain: "com.apple.dt.CoreDeviceError", code: 4000),
+                                         feature: DTUHIDMessage.keyboardService, name: "iPad", udid: IOSDeviceFixtures.iPad, sent: true),
+            IOSDeviceError.serviceSocket(CoreDeviceErrorInfo(domain: "x", code: 9, description: "nope"),
+                                         feature: DTUHIDMessage.keyboardService, name: "iPad", udid: IOSDeviceFixtures.iPad, sent: true),
+            IOSDeviceError.barrierRefused(CoreDeviceErrorInfo(domain: "dtuhidd", code: 3), name: "iPad", udid: IOSDeviceFixtures.iPad, sent: true),
+        ]
+        for failure in failures {
+            #expect(!failure.message.localizedCaseInsensitiveContains("no input was sent"), "\(failure.message)")
+            #expect(failure.message.localizedCaseInsensitiveContains("may have reached it"), "\(failure.message)")
+        }
     }
 
     @Test("a reply carrying an error is a refusal; any other dictionary is an answer")
@@ -271,6 +288,33 @@ final class RecordingSink: DTUHIDSink {
     func close() async {
         closed = true
     }
+}
+
+/// A feature link that logs its sends and the session's waits into one shared timeline.
+@MainActor
+final class FakeLink: DeviceHIDLink {
+    let feature: String
+    let firstMessageAt: ContinuousClock.Instant = .now
+    private let timeline: Timeline
+    private(set) var hasSent = false
+
+    init(feature: String, timeline: Timeline) {
+        self.feature = feature
+        self.timeline = timeline
+    }
+
+    func send(_ message: DTUHIDValue) {
+        hasSent = true
+        timeline.events.append("send \(feature)")
+    }
+
+    func close() async {}
+}
+
+@MainActor
+final class Timeline {
+    var events: [String] = []
+    var waits: [Duration] = []
 }
 
 @MainActor
@@ -354,6 +398,18 @@ struct IOSDeviceInputTests {
         #expect(devicectl.calls.filter { $0.contains("displays") }.count == 1)
     }
 
+    @Test("mapping points on a phone over Wi-Fi fails as not wired before the panel is read")
+    func coordinatesCheckReadinessFirst() async throws {
+        let devicectl = try FakeDevicectl.listing("devicectl-list-xcode27-connected.json", extra: [
+            "displays": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-displays.json"), stderr: ""),
+        ])
+        let error = await #expect(throws: IOSDeviceError.self) {
+            _ = try await Self.backend(devicectl, version: "651.13.4").deviceCoordinates(for: [(x: 1, y: 1)], tree: nil, on: Self.phone)
+        }
+        #expect(error?.reason == .deviceNotWired)
+        #expect(devicectl.calls.allSatisfy { $0.first == "list" })
+    }
+
     @Test("an event with an unsupported part sends nothing, not even the parts before it")
     func atomicLowering() async throws {
         let sink = RecordingSink()
@@ -417,5 +473,67 @@ struct IOSDeviceInputTests {
             .send(DTUHIDMessage.touch(x: 0.5, y: 0.5, phase: .end, target: 0), feature: DTUHIDMessage.digitizerService),
         ])
         #expect(sink.closed)
+    }
+}
+
+@Suite("CoreDevice session")
+@MainActor
+struct CoreDeviceSessionTests {
+    static let phone = DeviceID(rawValue: IOSDeviceFixtures.phone, platform: .ios)
+    static let panel = IOSDevicePanel(width: 430, height: 932, scale: 3, orientation: .portrait)
+
+    static func session(_ timeline: Timeline, floor: Duration = .seconds(1), open: CoreDeviceSession.Opener? = nil) -> CoreDeviceSession {
+        CoreDeviceSession(
+            activationFloor: floor,
+            sleep: { duration in
+                timeline.waits.append(duration)
+                timeline.events.append("wait")
+            },
+            open: open ?? { feature, _ in FakeLink(feature: feature, timeline: timeline) }
+        )
+    }
+
+    @Test("a fresh link waits out the activation floor before its first event, once per link")
+    func activationFloor() async throws {
+        let timeline = Timeline()
+        let session = IOSDeviceInputSession(device: Self.phone, panel: Self.panel, sink: Self.session(timeline), runnerText: nil)
+        try await session.perform(.tapAt(x: 10, y: 10))
+        try await session.perform(.tapAt(x: 20, y: 20))
+        try await session.perform(.shortKeyPress(4))
+
+        let digitizer = "send \(DTUHIDMessage.digitizerService)"
+        let keyboard = "send \(DTUHIDMessage.keyboardService)"
+        #expect(timeline.events == ["wait", digitizer, digitizer, digitizer, digitizer, "wait", keyboard, keyboard])
+        #expect(timeline.waits.allSatisfy { $0 > .zero && $0 <= .seconds(1) })
+    }
+
+    @Test("a link whose floor already passed while it opened sends at once")
+    func floorAlreadyPassed() async throws {
+        let timeline = Timeline()
+        let session = IOSDeviceInputSession(device: Self.phone, panel: Self.panel, sink: Self.session(timeline, floor: .zero), runnerText: nil)
+        try await session.perform(.tapAt(x: 10, y: 10))
+        #expect(!timeline.events.contains("wait"))
+    }
+
+    @Test("a session that sent a tap and then cannot open the keyboard says earlier input may have reached the device")
+    func failureAfterInput() async throws {
+        let timeline = Timeline()
+        let locked = CoreDeviceErrorInfo(domain: "x", code: 1, underlying: [CoreDeviceErrorInfo(domain: "RemotePairingError", code: 1016)])
+        var opened: [Bool] = []
+        let sink = Self.session(timeline, floor: .zero) { feature, anySent in
+            opened.append(anySent)
+            guard feature == DTUHIDMessage.digitizerService else {
+                throw IOSDeviceError.serviceSocket(locked, feature: feature, name: "iPhone", udid: IOSDeviceFixtures.phone, sent: anySent)
+            }
+            return FakeLink(feature: feature, timeline: timeline)
+        }
+        let session = IOSDeviceInputSession(device: Self.phone, panel: Self.panel, sink: sink, runnerText: nil)
+        try await session.perform(.tapAt(x: 10, y: 10))
+        let error = await #expect(throws: IOSDeviceError.self) { try await session.perform(.shortKeyPress(4)) }
+
+        #expect(opened == [false, true])
+        #expect(error?.reason == .deviceLocked)
+        #expect(error?.message.contains("no input was sent") == false)
+        #expect(error?.message.contains("earlier input in this command may have reached it") == true)
     }
 }

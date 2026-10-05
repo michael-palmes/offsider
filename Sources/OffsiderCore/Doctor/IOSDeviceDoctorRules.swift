@@ -17,11 +17,13 @@ public enum IOSDeviceDoctorRules {
         return checks
     }
 
-    /// Whether `--fix` should mount the developer disk image.
+    /// Whether `--fix` should mount the developer disk image; never over Wi-Fi.
     public static func isDDIFixable(_ facts: IOSDeviceDoctorFacts) -> Bool {
-        guard let row = facts.row, row.isConnected, row.pairingState == "paired", row.developerModeStatus == "enabled" else { return false }
+        guard let row = facts.row, row.isConnected, row.isWired, row.pairingState == "paired", row.developerModeStatus == "enabled" else { return false }
         return row.ddiServicesAvailable == false
     }
+
+    static let cableHint = "Connect its cable: Offsider drives iPhones and iPads over USB only."
 
     private static let chain: [DoctorCheckID] = [
         .iosDeviceCoreDevice, .iosDeviceListed, .iosDeviceTransport, .iosDevicePairing, .iosDeviceDeveloperMode, .iosDeviceDDI, .iosDeviceTunnel, .iosDeviceLockState,
@@ -59,7 +61,7 @@ public enum IOSDeviceDoctorRules {
         checks.append(DoctorCheckResult(id: .iosDeviceDeveloperMode, verdict: modeVerdict))
         if modeVerdict.status == .pass {
             let ddiVerdict = ddi(row, udid: facts.udid)
-            checks.append(DoctorCheckResult(id: .iosDeviceDDI, verdict: ddiVerdict, fixable: ddiVerdict.status == .warn))
+            checks.append(DoctorCheckResult(id: .iosDeviceDDI, verdict: ddiVerdict, fixable: ddiVerdict.status == .warn && row.isWired))
             checks.append(DoctorCheckResult(id: .iosDeviceTunnel, verdict: tunnel(row.tunnelState)))
         } else {
             checks += [.iosDeviceDDI, .iosDeviceTunnel].map { DoctorCheckResult.skipped($0, "requires \(DoctorCheckID.iosDeviceDeveloperMode.rawValue)") }
@@ -67,6 +69,11 @@ public enum IOSDeviceDoctorRules {
         checks.append(DoctorCheckResult(id: .iosDeviceLockState, verdict: lockState(facts.lock)))
         guard modeVerdict.status == .pass else {
             return checks + [.iosDeviceHID, .iosDeviceUIAutomation].map { DoctorCheckResult.skipped($0, "requires \(DoctorCheckID.iosDeviceDeveloperMode.rawValue)") }
+        }
+        guard row.isWired else {
+            return checks + [.iosDeviceHID, .iosDeviceUIAutomation].map {
+                DoctorCheckResult(id: $0, status: .skip, detail: "not checked: Offsider sends input only over USB", hint: cableHint)
+            }
         }
         checks.append(DoctorCheckResult(id: .iosDeviceHID, verdict: hid(facts.hid)))
         checks.append(DoctorCheckResult(id: .iosDeviceUIAutomation, verdict: uiAutomation(facts.hid)))
@@ -120,9 +127,9 @@ public enum IOSDeviceDoctorRules {
         case "wired":
             return (.pass, "USB", nil)
         case "localNetwork":
-            return (.fail, "Wi-Fi only", "Connect its cable: Offsider drives iPhones and iPads over USB only.")
+            return (.fail, "Wi-Fi only", cableHint)
         default:
-            return (.fail, "Connected over \(row.transportType ?? "an unknown transport")", "Connect its cable: Offsider drives iPhones and iPads over USB only.")
+            return (.fail, "Connected over \(row.transportType ?? "an unknown transport")", cableHint)
         }
     }
 
@@ -142,6 +149,8 @@ public enum IOSDeviceDoctorRules {
         switch row.ddiServicesAvailable {
         case true?:
             return (.pass, "Developer services available", nil)
+        case false? where !row.isWired:
+            return (.warn, "Developer services are not available", cableHint)
         case false? where row.deviceSupportFinalized:
             return (.warn, "Developer services are reconnecting", "Run offsider doctor --device \(udid) --fix, or any Offsider command, to bring them back.")
         case false?:

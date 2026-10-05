@@ -112,4 +112,6 @@ public struct IOSDeviceDoctorRow: Equatable, Sendable {
     public var isConnected: Bool {
         connectionState != "unavailable" && transportType != nil
     }
+
+    public var isWired: Bool { transportType == "wired" }
 }

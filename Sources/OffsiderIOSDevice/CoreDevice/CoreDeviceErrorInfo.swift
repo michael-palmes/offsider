@@ -113,14 +113,19 @@ public enum DTUHIDReply: Equatable, Sendable {
 }
 
 extension IOSDeviceError {
-    static func locked(_ name: String, udid: String) -> IOSDeviceError {
-        IOSDeviceError(.locked, "\(name) is locked, so no input was sent. Unlock the iPhone or iPad and retry; Offsider never types a passcode. `offsider doctor --device \(udid)` shows its state.")
+    /// A failure before this event's first message; earlier events in the same command may still have landed.
+    static func nothingSent(_ sent: Bool) -> String {
+        sent ? "this input was not sent, though earlier input in this command may have reached it" : "no input was sent"
     }
 
-    static func uiAutomationOff(_ name: String, udid: String) -> IOSDeviceError {
+    static func locked(_ name: String, udid: String, sent: Bool) -> IOSDeviceError {
+        IOSDeviceError(.locked, "\(name) is locked, so \(nothingSent(sent)). Unlock the iPhone or iPad and retry; Offsider never types a passcode. `offsider doctor --device \(udid)` shows its state.")
+    }
+
+    static func uiAutomationOff(_ name: String, udid: String, sent: Bool) -> IOSDeviceError {
         IOSDeviceError(
             .uiAutomationOff,
-            "\(name) refused input while unlocked, so UI Automation is probably off and no input was sent. Turn it on in Settings > Developer > UI Automation, then retry; `offsider doctor --device \(udid)` checks it."
+            "\(name) refused input while unlocked, so UI Automation is probably off and \(nothingSent(sent)). Turn it on in Settings > Developer > UI Automation, then retry; `offsider doctor --device \(udid)` checks it."
         )
     }
 
@@ -142,17 +147,17 @@ extension IOSDeviceError {
     }
 
     /// CoreDeviceService refused to open a feature socket.
-    static func serviceSocket(_ error: CoreDeviceErrorInfo, feature: String, name: String, udid: String) -> IOSDeviceError {
-        if error.isLocked { return locked(name, udid: udid) }
+    static func serviceSocket(_ error: CoreDeviceErrorInfo, feature: String, name: String, udid: String, sent: Bool) -> IOSDeviceError {
+        if error.isLocked { return locked(name, udid: udid, sent: sent) }
         if error.isFeatureUnsupported { return xcodeTooOld(name, version: nil) }
         if error.isTunnelDown {
-            return IOSDeviceError(.hidFailed, "The CoreDevice tunnel to \(name) is down, so no input was sent. Reconnect its cable and unlock it, then retry; `offsider doctor --device \(udid)` shows its state.")
+            return IOSDeviceError(.hidFailed, "The CoreDevice tunnel to \(name) is down, so \(nothingSent(sent)). Reconnect its cable and unlock it, then retry; `offsider doctor --device \(udid)` shows its state.")
         }
-        return hidFailed(name, udid: udid, detail: "CoreDevice did not open \(feature): \(error.summary)", sent: false)
+        return hidFailed(name, udid: udid, detail: "CoreDevice did not open \(feature): \(error.summary)", sent: sent)
     }
 
     /// The first barrier on a fresh socket was refused: locked if the error says so, else UI Automation is off.
-    static func barrierRefused(_ error: CoreDeviceErrorInfo, name: String, udid: String) -> IOSDeviceError {
-        error.isLocked ? locked(name, udid: udid) : uiAutomationOff(name, udid: udid)
+    static func barrierRefused(_ error: CoreDeviceErrorInfo, name: String, udid: String, sent: Bool) -> IOSDeviceError {
+        error.isLocked ? locked(name, udid: udid, sent: sent) : uiAutomationOff(name, udid: udid, sent: sent)
     }
 }

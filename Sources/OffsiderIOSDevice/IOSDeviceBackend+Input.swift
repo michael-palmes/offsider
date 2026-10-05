@@ -18,6 +18,7 @@ public struct IOSDeviceInputHooks {
 extension IOSDeviceBackend {
     /// UI points to points on the panel's native axes for the digitizer; the runner below the HID floor takes points as they are.
     public func deviceCoordinates(for points: [(x: Double, y: Double)], tree: UITree?, on id: DeviceID) async throws -> [(x: Double, y: Double)] {
+        _ = try await requireBootedDevice(id)
         guard let version = input.coreDeviceVersion(), version.supportsHID else { return points }
         let panel = try await panel(for: id)
         return points.map { panel.panelPoint(x: $0.x, y: $0.y) }

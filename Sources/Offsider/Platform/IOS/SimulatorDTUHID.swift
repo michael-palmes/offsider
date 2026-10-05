@@ -23,8 +23,6 @@ final class SimulatorDTUHID: @unchecked Sendable {
         }
     }
 
-    /// `dtuhidd` opens the services it creates for a new peer 560 to 770 ms after the peer's first message, and drops events sent before then.
-    static let activationFloor: Duration = .seconds(1)
     static let replyTimeoutSeconds: Double = 2
     static let replyTail: Duration = .milliseconds(200)
 
@@ -44,7 +42,7 @@ final class SimulatorDTUHID: @unchecked Sendable {
             let started = ContinuousClock.now
             let link = SimulatorDTUHID(service: service, connection: try makeConnection(simulator: simulator, service: service))
             if await link.roundTrip(DTUHIDMessage.barrier(service: service)) {
-                let remaining = activationFloor - (ContinuousClock.now - started)
+                let remaining = DTUHIDMessage.activationFloor - (ContinuousClock.now - started)
                 if remaining > .zero { try await Task.sleep(for: remaining) }
                 return link
             }

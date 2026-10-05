@@ -22,16 +22,19 @@ final class FakeDevicectl: DevicectlRunning, @unchecked Sendable {
     private var recorded: [[String]] = []
     private let xcode: Result<XcodeLocation, IOSDeviceError>
     private let replies: [String: ProcessCaptureResult]
+    private var queued: [String: [ProcessCaptureResult]]
     private let effect: (@Sendable ([String]) -> Void)?
 
-    /// `effect` runs before each reply, as devicectl writing a file would.
+    /// `effect` runs before each reply, as devicectl writing a file would; `queued` replies are used up in order before `replies`.
     init(
         xcode: Result<XcodeLocation, IOSDeviceError> = .success(XcodeLocation(developerDirectory: "/Xcode.app/Contents/Developer", source: "xcode-select", version: "27.0", build: "27A266a")),
         replies: [String: ProcessCaptureResult],
+        queued: [String: [ProcessCaptureResult]] = [:],
         effect: (@Sendable ([String]) -> Void)? = nil
     ) {
         self.xcode = xcode
         self.replies = replies
+        self.queued = queued
         self.effect = effect
     }
 
@@ -48,10 +51,18 @@ final class FakeDevicectl: DevicectlRunning, @unchecked Sendable {
     }
 
     func run(_ arguments: [String], timeout: TimeInterval) async throws -> ProcessCaptureResult {
-        lock.withLock { recorded.append(arguments) }
         effect?(arguments)
         let key = arguments.first == "list" ? "list" : (arguments.count > 2 ? arguments[2] : arguments.joined(separator: " "))
-        return replies[key] ?? ProcessCaptureResult(status: 0, stdout: "{\"info\": {\"outcome\": \"success\"}, \"result\": {}}", stderr: "")
+        let reply: ProcessCaptureResult? = lock.withLock {
+            recorded.append(arguments)
+            if var pending = queued[key], !pending.isEmpty {
+                let next = pending.removeFirst()
+                queued[key] = pending
+                return next
+            }
+            return replies[key]
+        }
+        return reply ?? ProcessCaptureResult(status: 0, stdout: "{\"info\": {\"outcome\": \"success\"}, \"result\": {}}", stderr: "")
     }
 }
 

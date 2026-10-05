@@ -70,13 +70,33 @@ struct IOSDeviceDoctorTests {
         ])
     }
 
-    @Test("Wi-Fi fails transport but the other device checks still report")
+    @Test("Wi-Fi fails transport, the read-only checks still report, and HID and UI Automation are skipped with the cable hint")
     func wifi() {
-        let checks = IOSDeviceDoctorRules.checks(Self.facts(listing: Self.row { $0.transportType = "localNetwork" }))
+        let checks = IOSDeviceDoctorRules.checks(Self.facts(listing: Self.row { $0.transportType = "localNetwork" }, hid: nil))
         let transport = checks.first { $0.id == .iosDeviceTransport }
         #expect(transport?.status == .fail)
         #expect(transport?.hint?.contains("USB only") == true)
         #expect(Self.statuses(checks)["ios-device.pairing"] == .pass)
+        #expect(Self.statuses(checks)["ios-device.lock-state"] == .pass)
+        for id in [DoctorCheckID.iosDeviceHID, .iosDeviceUIAutomation] {
+            let check = checks.first { $0.id == id }
+            #expect(check?.status == .skip)
+            #expect(check?.hint?.contains("Connect its cable") == true)
+        }
+    }
+
+    @Test("missing developer services on Wi-Fi are never fixable: --fix would mount the disk image over the network")
+    func ddiNotFixableOverWiFi() async throws {
+        let facts = Self.facts(listing: Self.row { $0.transportType = "localNetwork"; $0.ddiServicesAvailable = false; $0.deviceSupportFinalized = false }, hid: nil)
+        let ddi = IOSDeviceDoctorRules.checks(facts).first { $0.id == .iosDeviceDDI }
+        #expect(ddi?.fixable == false)
+        #expect(ddi?.hint?.contains("--fix") == false)
+        #expect(!IOSDeviceDoctorRules.isDDIFixable(facts))
+
+        let devicectl = try FakeDevicectl.listing("devicectl-list-xcode26.json")
+        let result = await IOSDeviceDoctorProbe(host: .fake(devicectl), xcodeTeams: { [] }).mountDDI(udid: Self.udid, facts: facts)
+        #expect(result.outcome == .skipped)
+        #expect(devicectl.calls.isEmpty)
     }
 
     @Test("an untrusted device skips developer mode, ddi, tunnel and lock state")
@@ -139,11 +159,31 @@ struct IOSDeviceDoctorTests {
 
     // MARK: Probe
 
-    @Test("the probe asks a connected, trusted device for details, lock state, displays and HID; the team comes from the variable")
+    static func wiredDetails() throws -> String {
+        try IOSDeviceFixtures.text("devicectl-info-details.json").replacingOccurrences(of: "\"localNetwork\"", with: "\"wired\"")
+    }
+
+    @Test("over Wi-Fi the probe reads details, lock state and displays but never opens HID")
+    func probeWirelessSkipsHID() async throws {
+        let hid = HIDRecorder(.ready)
+        let devicectl = try FakeDevicectl.listing("devicectl-list-xcode27-disconnected.json", extra: [
+            "details": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-details.json"), stderr: ""),
+            "lockState": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-lockstate.json"), stderr: ""),
+            "displays": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-displays.json"), stderr: ""),
+        ])
+        let facts = await IOSDeviceDoctorProbe(host: .fake(devicectl), xcodeTeams: { [] }, hid: hid.probe).run(udid: Self.udid).facts
+
+        #expect(devicectl.calls.map { $0.first == "list" ? "list" : $0[2] } == ["list", "details", "lockState", "displays"])
+        #expect(facts.row?.transportType == "localNetwork")
+        #expect(facts.hid == nil)
+        #expect(hid.calls.isEmpty)
+    }
+
+    @Test("the probe asks a wired, trusted device for details, lock state, displays and HID; the team comes from the variable")
     func probeConnected() async throws {
         let hid = HIDRecorder(.refused)
         let devicectl = try FakeDevicectl.listing("devicectl-list-xcode27-disconnected.json", extra: [
-            "details": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-details.json"), stderr: ""),
+            "details": ProcessCaptureResult(status: 0, stdout: try Self.wiredDetails(), stderr: ""),
             "lockState": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-lockstate.json"), stderr: ""),
             "displays": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-displays.json"), stderr: ""),
         ])
@@ -182,7 +222,7 @@ struct IOSDeviceDoctorTests {
         let listing = try IOSDeviceFixtures.text("devicectl-list-xcode27-disconnected.json").replacingOccurrences(of: "\"651.13.4\"", with: "\"518.24\"")
         let devicectl = FakeDevicectl(replies: [
             "list": ProcessCaptureResult(status: 0, stdout: listing, stderr: ""),
-            "details": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-details.json"), stderr: ""),
+            "details": ProcessCaptureResult(status: 0, stdout: try Self.wiredDetails(), stderr: ""),
         ])
         let hid = HIDRecorder(.ready)
         let facts = await IOSDeviceDoctorProbe(host: .fake(devicectl), xcodeTeams: { [] }, hid: hid.probe).run(udid: Self.udid).facts

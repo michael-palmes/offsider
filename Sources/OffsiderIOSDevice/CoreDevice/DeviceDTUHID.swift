@@ -11,10 +11,12 @@ final class DeviceDTUHID {
     let feature: String
     private let socket: CoreDeviceServiceSocket
     private(set) var hasSent = false
+    let firstMessageAt: ContinuousClock.Instant
 
     private init(feature: String, socket: CoreDeviceServiceSocket) {
         self.feature = feature
         self.socket = socket
+        firstMessageAt = .now
     }
 
     /// Opens the feature socket and proves a live, willing `dtuhidd` with a barrier before any event is sent.
@@ -27,7 +29,7 @@ final class DeviceDTUHID {
         } catch let failure as CoreDeviceServiceSocket.Failure {
             switch failure {
             case .refused(let error):
-                throw IOSDeviceError.serviceSocket(error, feature: feature, name: name, udid: udid)
+                throw IOSDeviceError.serviceSocket(error, feature: feature, name: name, udid: udid, sent: anySent)
             case .symbolsUnavailable:
                 throw IOSDeviceError.hidFailed(name, udid: udid, detail: "this macOS has no RemoteXPC client", sent: anySent)
             case .noDescriptor, .connectionFailed:
@@ -40,7 +42,7 @@ final class DeviceDTUHID {
             return link
         case .refused(let error):
             socket.cancel()
-            throw IOSDeviceError.barrierRefused(error, name: name, udid: udid)
+            throw IOSDeviceError.barrierRefused(error, name: name, udid: udid, sent: anySent)
         case .connectionLost(let detail):
             socket.cancel()
             throw IOSDeviceError.hidFailed(name, udid: udid, detail: "\(feature) closed: \(detail)", sent: anySent)
@@ -83,6 +85,8 @@ final class DeviceDTUHID {
         }
     }
 }
+
+extension DeviceDTUHID: DeviceHIDLink {}
 
 /// True for exactly one caller, which resumes the continuation.
 final class OnceFlag: @unchecked Sendable {
