@@ -100,10 +100,10 @@ extension IOSDeviceBackend {
     /// A broker can be reached or started: a test connector, or this `offsider` executable to spawn.
     var sessionsAvailable: Bool { host.sessionConnector != nil || host.sessionExecutable != nil }
 
-    /// One broker connection per device per command, reused or started through `session.json`.
+    /// One broker connection per device per command, reused or started through `session.json`; a broken one is replaced.
     func session(for id: DeviceID) async throws -> DeviceSessionClient {
         let udid = id.rawValue
-        if let client = state.sessions[udid] { return client }
+        if let client = cachedSession(udid) { return client }
         let connector = try sessionConnector()
         let client = try await host.timing.measure("session") { try await connector.connect(udid: udid) }
         state.sessions[udid] = client
@@ -112,11 +112,20 @@ extension IOSDeviceBackend {
 
     /// A live broker already serving `id`, never started; nil when none answers.
     func liveSession(for id: DeviceID) async -> DeviceSessionClient? {
-        if let client = state.sessions[id.rawValue] { return client }
+        if let client = cachedSession(id.rawValue) { return client }
         guard hostHasHID, sessionsAvailable, let connector = try? sessionConnector(),
               let client = await connector.existing(udid: id.rawValue) else { return nil }
         state.sessions[id.rawValue] = client
         return client
+    }
+
+    /// The command's connection to the broker, dropped once broken; the request that broke it is never resent.
+    private func cachedSession(_ udid: String) -> DeviceSessionClient? {
+        guard let client = state.sessions[udid] else { return nil }
+        guard client.isBroken else { return client }
+        client.close()
+        state.sessions[udid] = nil
+        return nil
     }
 
     func sessionConnector() throws -> any DeviceSessionConnecting {

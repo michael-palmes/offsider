@@ -3,24 +3,26 @@ import OffsiderCore
 @testable import OffsiderIOSDevice
 import Testing
 
-/// Hands the backend clients over fake links, or a failure; counts connections.
+/// Hands the backend clients over fake links, the queued ones first, or a failure; counts connections.
 @MainActor
 final class FakeSessionConnector: DeviceSessionConnecting {
     let link: FakeSessionLink?
     let failure: IOSDeviceError?
     let live: Bool
+    private var queued: [FakeSessionLink]
     private(set) var connections = 0
 
-    init(link: FakeSessionLink?, failure: IOSDeviceError? = nil, live: Bool = false) {
+    init(link: FakeSessionLink?, failure: IOSDeviceError? = nil, live: Bool = false, queued: [FakeSessionLink] = []) {
         self.link = link
         self.failure = failure
         self.live = live
+        self.queued = queued
     }
 
     func connect(udid: String) async throws -> DeviceSessionClient {
         connections += 1
         if let failure { throw failure }
-        guard let link else { throw IOSDeviceError(.sessionFailed, "No link.") }
+        guard let link = queued.isEmpty ? link : queued.removeFirst() else { throw IOSDeviceError(.sessionFailed, "No link.") }
         let client = DeviceSessionClient(udid: udid, link: link)
         try await client.ping()
         return client
@@ -109,6 +111,20 @@ struct IOSDeviceInputRoutingTests {
         let lock = await #expect(throws: IOSDeviceError.self) { try await session.perform(.shortButtonPress(.lock)) }
         #expect(lock == failure)
         #expect(runner.events == [.tapAt(x: 1, y: 1), .shortButtonPress(.home)])
+    }
+
+    @Test("after a lost reply the next input reconnects, and the input whose reply was lost is never resent")
+    func reconnectsAfterLostReply() async throws {
+        let first = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone) { if case .touch = $0 { return true } else { return false } }
+        let second = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone)
+        let connector = FakeSessionConnector(link: nil, queued: [first, second])
+        let session = try await Self.backend(version: "651.13.4", connector: connector, runner: nil).openInputSession(for: Self.phone)
+        let lost = await #expect(throws: IOSDeviceError.self) { try await session.perform(.tapAt(x: 1, y: 1)) }
+        #expect(lost?.reason == .inputOutcomeUnknown)
+        try await session.perform(.shortKeyPress(4))
+        #expect(connector.connections == 2)
+        #expect(first.requests.map(\.op) == ["ping", "touch"])
+        #expect(second.requests.map(\.op) == ["ping", "keys"])
     }
 
     @Test("below CoreDevice 636 the runner serves input; with no runner it is xcode_too_old, and no broker is asked")

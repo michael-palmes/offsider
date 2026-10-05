@@ -12,6 +12,8 @@ enum DeviceSessionLinkError: Error, Equatable, Sendable {
 protocol DeviceSessionLink: AnyObject, Sendable {
     /// The reply, and the binary frame when the reply announced one.
     func exchange(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?)
+    /// True once a failed write or a lost reply has ended the connection, so a new one is needed.
+    var isBroken: Bool { get }
     func close()
 }
 
@@ -19,6 +21,7 @@ protocol DeviceSessionLink: AnyObject, Sendable {
 final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
     private let channel: DeviceSessionChannel
     private let queue = DispatchQueue(label: "offsider.device-session.client")
+    private let state = NSLock()
     private var nextID = 1
     private var broken = false
 
@@ -30,6 +33,8 @@ final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
         SocketSessionLink(channel: try DeviceSessionChannel.connect(to: path))
     }
 
+    var isBroken: Bool { state.withLock { broken } }
+
     func exchange(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?) {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
@@ -38,14 +43,18 @@ final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
         }
     }
 
+    private func breakLink() {
+        state.withLock { broken = true }
+    }
+
     private func blockingExchange(_ request: DeviceSessionRequest, timeout: Duration) throws -> (DeviceSessionReply, Data?) {
-        guard !broken else { throw DeviceSessionLinkError.notSent("an earlier reply was lost") }
+        guard !isBroken else { throw DeviceSessionLinkError.notSent("its connection broke on an earlier request") }
         let id = nextID
         nextID += 1
         do {
             try channel.write(try DeviceSessionWire.encode(request, id: id))
         } catch {
-            broken = true
+            breakLink()
             throw DeviceSessionLinkError.notSent(Self.detail(error))
         }
         do {
@@ -59,7 +68,7 @@ final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
             guard frame.count == bytes else { throw DeviceSessionWireError(detail: "a frame of \(frame.count) bytes after announcing \(bytes)") }
             return (reply, frame)
         } catch {
-            broken = true
+            breakLink()
             channel.close()
             throw DeviceSessionLinkError.lost(Self.detail(error))
         }
@@ -93,6 +102,9 @@ public final class DeviceSessionClient {
 
     /// The broker sends touches and keys itself; otherwise they go through the runner.
     public var supportsTouch: Bool { status?.touch == true }
+
+    /// The connection failed or lost a reply, so every later request would be refused unsent.
+    var isBroken: Bool { link.isBroken }
 
     @discardableResult
     public func ping(timeout: Duration = pingTimeout) async throws -> DeviceSessionReply {

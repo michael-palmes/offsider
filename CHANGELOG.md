@@ -58,6 +58,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--verify` on a physical device in landscape can now exit 5: the status bar band, where the screen-sharing indicator pulses while the session streams, is left out of its screen comparison in every orientation, as it is for `screenshot --baseline` and `wait` screen checks. Simulators and Android are unchanged.
 - Two commands starting a device's runner or session broker at once can no longer both take its start lock, which a command that crashes now releases at once.
 - A device's session broker lists the device again before it reopens a touch or button link, and stops once the device is off USB, so input never goes over a Wi-Fi tunnel after a cable pull.
+- After a device session loses a reply, the command's next input reconnects instead of failing unsent; the input whose reply was lost is never resent.
 
 ## [0.6.0] - 2026-10-05
 

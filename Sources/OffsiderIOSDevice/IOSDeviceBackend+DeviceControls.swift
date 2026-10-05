@@ -53,7 +53,7 @@ extension IOSDeviceBackend: OrientationControlling {
             udid: id.rawValue,
             timeout: IOSDeviceDirectory.infoTimeout
         )
-        if let session = state.sessions[id.rawValue] { try? await session.displayChanged() }
+        if state.sessions[id.rawValue] != nil { try? await liveSession(for: id)?.displayChanged() }
         let data = Data(output.utf8)
         return IOSDeviceSettings.parseOrientation(displaysJSON: data)
     }

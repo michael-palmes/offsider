@@ -11,22 +11,27 @@ enum SessionTestPaths {
     }
 }
 
-/// Answers each request from a script; records what it was asked.
+/// Answers each request from a script; records what it was asked. A lost reply breaks it, as it does a socket link.
 final class FakeSessionLink: DeviceSessionLink, @unchecked Sendable {
     typealias Script = @Sendable (DeviceSessionRequest) throws -> (DeviceSessionReply, Data?)
 
     private let lock = NSLock()
     private var asked: [DeviceSessionRequest] = []
     private var isClosed = false
+    private var broken = false
     private let script: Script
 
     init(script: @escaping Script) {
         self.script = script
     }
 
-    /// A broker for `udid` that answers ping with `touch`, frames with `frame`, and everything else with ok.
-    static func broker(udid: String, touch: Bool = true, protocolVersion: Int = DeviceSessionWire.protocolVersion, frame: Data = Data([1, 2, 3])) -> FakeSessionLink {
+    /// A broker for `udid` that answers ping with `touch`, frames with `frame`, everything else with ok, and loses the reply to what `lose` picks.
+    static func broker(
+        udid: String, touch: Bool = true, protocolVersion: Int = DeviceSessionWire.protocolVersion, frame: Data = Data([1, 2, 3]),
+        lose: @escaping @Sendable (DeviceSessionRequest) -> Bool = { _ in false }
+    ) -> FakeSessionLink {
         FakeSessionLink { request in
+            if lose(request) { throw DeviceSessionLinkError.lost("the broker closed the connection") }
             var reply = DeviceSessionReply(id: 1)
             switch request {
             case .ping:
@@ -49,10 +54,17 @@ final class FakeSessionLink: DeviceSessionLink, @unchecked Sendable {
 
     var requests: [DeviceSessionRequest] { lock.withLock { asked } }
     var closed: Bool { lock.withLock { isClosed } }
+    var isBroken: Bool { lock.withLock { broken } }
 
     func exchange(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?) {
+        if isBroken { throw DeviceSessionLinkError.notSent("its connection broke on an earlier request") }
         lock.withLock { asked.append(request) }
-        return try script(request)
+        do {
+            return try script(request)
+        } catch let error as DeviceSessionLinkError {
+            if case .lost = error { lock.withLock { broken = true } }
+            throw error
+        }
     }
 
     func close() {
@@ -138,8 +150,26 @@ struct DeviceSessionClientTests {
         let lost = DeviceSessionClient(udid: "U", link: FakeSessionLink { _ in throw DeviceSessionLinkError.lost("closed") })
         let input = await #expect(throws: IOSDeviceError.self) { try await lost.touch([.touch(.down, x: 1, y: 1)]) }
         #expect(input?.reason == .inputOutcomeUnknown)
-        let frame = await #expect(throws: IOSDeviceError.self) { _ = try await lost.frame(.png) }
+        let lostFrame = DeviceSessionClient(udid: "U", link: FakeSessionLink { _ in throw DeviceSessionLinkError.lost("closed") })
+        let frame = await #expect(throws: IOSDeviceError.self) { _ = try await lostFrame.frame(.png) }
         #expect(frame?.reason == .hidBrokerFailed)
+    }
+
+    @Test("a lost reply breaks the socket link, so the command knows to reconnect")
+    func lostReplyBreaksLink() async throws {
+        var pair: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        let server = DeviceSessionChannel(descriptor: pair[1])
+        let link = SocketSessionLink(channel: DeviceSessionChannel(descriptor: pair[0]))
+        let thread = Thread {
+            _ = try? server.readFrame(limit: DeviceSessionWire.maxJSONBytes, timeout: .seconds(5))
+            server.close()
+        }
+        thread.start()
+        #expect(!link.isBroken)
+        let error = await #expect(throws: DeviceSessionLinkError.self) { _ = try await link.exchange(.touch([.touch(.down, x: 1, y: 1)]), timeout: .seconds(5)) }
+        #expect({ if case .lost? = error { return true } else { return false } }())
+        #expect(link.isBroken)
     }
 }
 
