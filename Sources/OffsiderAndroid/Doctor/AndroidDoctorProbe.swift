@@ -216,6 +216,14 @@ public struct AndroidDoctorProbe {
 
     private func finishDeviceFacts(_ facts: AndroidDeviceFacts, serial: String, client: AdbClient) async -> AndroidDeviceFacts {
         var facts = facts
+        let script = AndroidAwakeState.readScript + (facts.isPhysical ? AndroidAwakeState.phoneSettingsScript : "")
+        if let result = try? await client.shell(script, on: serial, timeout: .seconds(5), label: "dumpsys power; dumpsys window policy") {
+            facts.awake = AndroidAwakeState.parse(result.stdoutText)
+            if facts.isPhysical {
+                facts.adbAuthorisationTimeout = AndroidAwakeState.value(of: "adb_allowed_connection_time", in: result.stdoutText)
+                facts.automaticUpdatesDisabled = AndroidAwakeState.value(of: "ota_disable_automatic_update", in: result.stdoutText)
+            }
+        }
         if let listing = try? await client.deviceQuery("reverse:list-forward", on: serial) {
             facts.reverses = listing.split(whereSeparator: \.isNewline).map(String.init)
         }

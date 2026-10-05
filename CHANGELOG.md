@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `unlock-code set|status|remove` keeps a test device's PIN or password in the login Keychain under its phone serial or AVD name, asking twice with typing hidden or reading `--stdin`, and never prints it. `wake --unlock` types it once, only into a focused password field inside System UI's lock screen; after a code fails, Offsider does not type it again until the device is unlocked by hand or the code is saved again.
 - `stay-awake`, `wake` and `unlock-code` refuse an iOS simulator as `not_supported`: simulators never sleep or lock.
 - `stay-awake`, `wake`, `unlock-code` and their errors name a phone by maker and model, such as `Motorola moto g57 (ZY22FAKE01)`, and an emulator by its AVD name, from the state read these commands already make.
+- `doctor --device` on Android adds `android-device.screen` and `android-device.stay-awake`, and on a phone `android-device.adb-expiry` (whether this Mac's adb authorisation lapses) and `android-device.system-updates`; it names a phone by maker and model.
 
 ### Changed
 

@@ -8,6 +8,18 @@ enum AndroidAwakeState {
         + "dumpsys window policy | grep -E '^ +(showing|occluded|secure)='; "
         + "dumpsys lock_settings | grep -m1 -E '^ +CredentialType:'; true"
 
+    /// For `doctor` on a phone: the adb authorisation timeout and the automatic system update switch.
+    static let phoneSettingsScript = "; echo adb_allowed_connection_time=$(settings get global adb_allowed_connection_time)"
+        + "; echo ota_disable_automatic_update=$(settings get global ota_disable_automatic_update)"
+
+    /// The value of a `key=value` line the scripts print.
+    static func value(of key: String, in output: String) -> String? {
+        output.split(whereSeparator: \.isNewline).lazy
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { $0.hasPrefix(key + "=") }
+            .map { String($0.dropFirst(key.count + 1)) }
+    }
+
     static let afterMarker = "offsider-stay-awake-after"
 
     /// AC, USB, wireless and dock, as Developer options writes on Android 14 and later; earlier releases ignore the dock bit.
