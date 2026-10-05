@@ -49,6 +49,28 @@ struct IOSDeviceRoutingTests {
         #expect(boot.stderr.contains("is a physical iPhone or iPad"))
     }
 
+    @Test("list-devices explains every iPhone it cannot drive yet, by model and UDID", arguments: [
+        ("Untrusted", "usb", "tap Trust"),
+        ("Developer Mode off", "usb", "turn it on in Settings"),
+        ("Preparing", "usb", "prepared for development"),
+        ("Unavailable", nil, "paired but not connected"),
+        ("Wireless", "network", "connect its cable"),
+        ("Reconnecting", "network", "connect its cable"),
+    ] as [(String, String?, String)])
+    func phoneHints(state: String, connection: String?, advice: String) {
+        let row = DeviceSummary(id: Self.phone, platform: .ios, state: state, name: "Apple iPhone 15 Pro Max", osVersion: "iOS 27.2", deviceType: "iPhone 15 Pro Max", kind: .physical, connection: connection)
+        let hints = ListDevices.phoneHints([row])
+        #expect(hints.count == 1)
+        #expect(hints.first?.hasPrefix("Apple iPhone 15 Pro Max (\(Self.phone))") == true)
+        #expect(hints.first?.contains(advice) == true)
+    }
+
+    @Test("a ready wired iPhone needs no hint")
+    func readyPhoneHasNoHint() {
+        let row = DeviceSummary(id: Self.phone, platform: .ios, state: "Booted", name: "Apple iPhone 15 Pro Max", osVersion: nil, deviceType: nil, kind: .physical, connection: "usb")
+        #expect(ListDevices.phoneHints([row]).isEmpty)
+    }
+
     @Test("the other buttons pass the phone check", arguments: ["home", "lock", "side-button", "siri"])
     func otherButtonsPass(button: String) throws {
         _ = try Button.parse([button, "--device", Self.phone])

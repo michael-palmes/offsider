@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import OffsiderAndroid
 import OffsiderCore
+import OffsiderIOSDevice
 
 struct Doctor: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -95,18 +96,24 @@ struct Doctor: AsyncParsableCommand {
     }
 
     /// Host checks for a physical iPhone or iPad; simulator and Android state cannot affect it.
+    @MainActor
     private func iosDeviceReport(_ udid: String) async -> DoctorReport {
-        let result = await DoctorRunner(udid: nil, environment: ProcessInfo.processInfo.environment, logger: OffsiderLogger()).run()
-        let hostChecks: Set<DoctorCheckID> = [.developerDir, .xcodeVersion]
+        let probe = IOSDeviceDoctorProbe()
+        var result = await probe.run(udid: udid)
+        var fixes: [DoctorFixResult] = []
+        if fix {
+            fixes = [await probe.mountDDI(udid: udid, facts: result.facts)]
+            result = await probe.run(udid: udid)
+        }
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: nil,
-            device: DoctorDevice(id: udid, platform: "ios", name: nil, kind: "physical"),
-            xcode: result.xcode,
+            device: DoctorDevice(id: udid, platform: "ios", name: result.facts.row?.label, kind: "physical"),
+            xcode: XcodeSummary(developerDir: result.xcode?.developerDirectory, version: result.xcode?.version, build: result.xcode?.build, coreSimulator: nil),
             booted: [],
             android: nil,
-            checks: result.checks.filter { hostChecks.contains($0.id) },
-            fixes: []
+            checks: IOSDeviceDoctorRules.checks(result.facts),
+            fixes: fixes
         )
     }
 

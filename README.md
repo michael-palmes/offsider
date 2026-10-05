@@ -440,6 +440,11 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `device_locked` | 7 | A PIN, pattern or password lock screen stayed up after `wake`, or its saved code did not unlock it | Unlock it on the device, or `offsider wake --unlock` with a code saved by `offsider unlock-code set` |
 | `device_ambiguous` | 7 | An AVD name matches more than one running emulator, or names both a phone and an AVD | Pass one serial with `--device` |
 | `avd_not_found` | 7 | No AVD has that name | Check the name in Android Studio's Device Manager |
+| `device_not_wired` | 7 | The iPhone or iPad is connected over Wi-Fi, and Offsider drives it over USB only | Connect its cable |
+| `device_untrusted` | 7 | The iPhone or iPad has not trusted this Mac | Unlock it and tap Trust |
+| `developer_mode_off` | 7 | Developer Mode is off on the iPhone or iPad | Turn it on in Settings > Privacy & Security, then restart the device |
+| `device_preparing` | 7 | Xcode is still preparing the iPhone or iPad for development | Wait for Xcode to finish, then retry; `offsider doctor --device <UDID>` shows progress |
+| `ui_automation_off` | 7 | UI Automation is off on the iPhone or iPad | Turn it on in Settings > Developer |
 | `device_busy` | 8 | Another Offsider command holds the device; the message names its pid | Wait and retry, or pass `--wait-lock <seconds>` |
 | `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |
 | `xcode_missing` | 9 | No usable Xcode is selected | `xcode-select -s <Xcode.app>/Contents/Developer` |
@@ -450,6 +455,9 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `emulator_missing` | 9 | The Android Emulator is not installed | Install it with the SDK Manager |
 | `emulator_grpc_required` | 9 | The command needs the emulator's gRPC endpoint and it is not reachable | Restart the emulator with `offsider boot` |
 | `helper_unavailable` | 9 | The UiAutomation helper cannot run on this emulator | Unset `OFFSIDER_ANDROID_TREE`, or use another image |
+| `xcode_too_old` | 9 | The selected Xcode cannot drive this feature on an iPhone or iPad | Select Xcode 27 or later |
+| `team_missing` | 9 | No signing team was found for the iPhone runner | Set `OFFSIDER_IOS_TEAM_ID`, or sign in to one team in Xcode |
+| `usbmux_unavailable` | 9 | usbmuxd, which reaches iPhones over USB, is not answering | Reconnect the cable; restart the Mac if it persists |
 | `usage` | 64 | Invalid arguments or options | Fix the command line; see `--help` |
 | `invalid_device_id` | 64 | The device ID is empty or not a device ID | `offsider list-devices` |
 | `invalid_setting` | 64 | An `OFFSIDER_` variable has a value Offsider cannot read | Fix or unset it |
@@ -509,6 +517,8 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `init_failed` | 1 | `init` could not install or remove the skill, or `guide` could not read a bundled topic | Read `message` |
 | `device_list_failed` | 1 | Devices could not be listed | Read `message` for each platform |
 | `expo_dev_client_failed` | 1 | `rn prepare` could not prepare the Expo dev client | Read `message` |
+| `runner_build_failed` | 1 | The iPhone runner could not be built or signed | Read `message`; check the team and the device in Xcode |
+| `runner_unavailable` | 1 | The iPhone runner did not answer; no input was sent | Retry; `offsider doctor --device <UDID>` |
 
 ## Privacy
 

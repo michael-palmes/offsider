@@ -105,7 +105,7 @@ let package = Package(
             name: "OffsiderTests",
             dependencies: ["Offsider", "OffsiderCore", "OffsiderAndroid", "OffsiderIOSDevice"],
             path: "Tests",
-            exclude: ["Goldens"],
+            exclude: ["Goldens", "IOSDevice/Fixtures"],
             swiftSettings: [
                 .unsafeFlags(idbPrivateHeaderSearchFlags)
             ]

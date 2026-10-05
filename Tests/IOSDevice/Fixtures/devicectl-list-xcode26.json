@@ -1,0 +1,74 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "list",
+      "devices",
+      "--json-output",
+      "-",
+      "-q"
+    ],
+    "commandType": "devicectl.list.devices",
+    "environment": {},
+    "jsonVersion": 2,
+    "outcome": "success",
+    "version": "443.24"
+  },
+  "result": {
+    "devices": [
+      {
+        "capabilities": [],
+        "connectionProperties": {
+          "authenticationType": "manualPairing",
+          "isMobileDeviceOnly": false,
+          "pairingState": "paired",
+          "potentialHostnames": [],
+          "transportType": "wired",
+          "tunnelState": "disconnected",
+          "tunnelTransportProtocol": "tcp"
+        },
+        "deviceProperties": {
+          "bootState": "booted",
+          "ddiServicesAvailable": true,
+          "developerModeStatus": "enabled",
+          "name": "Test iPhone",
+          "osBuildUpdate": "23A341",
+          "osVersionNumber": "26.0"
+        },
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone 15 Pro Max",
+          "platform": "iOS",
+          "productType": "iPhone16,2",
+          "udid": "00008130-0000000000000ABC"
+        },
+        "identifier": "00000000-0000-4000-8000-0000000000A1",
+        "visibilityClass": "default"
+      },
+      {
+        "capabilities": [],
+        "connectionProperties": {
+          "pairingState": "unpaired",
+          "transportType": "wired",
+          "tunnelState": "disconnected"
+        },
+        "deviceProperties": {
+          "ddiServicesAvailable": false,
+          "developerModeStatus": "disabled",
+          "name": "Test iPad",
+          "osBuildUpdate": "23A340",
+          "osVersionNumber": "26.0"
+        },
+        "hardwareProperties": {
+          "deviceType": "iPad",
+          "marketingName": "iPad Air 11-inch (M2)",
+          "platform": "iOS",
+          "productType": "iPad14,8",
+          "udid": "0123456789abcdef0123456789abcdef01234567"
+        },
+        "identifier": "00000000-0000-4000-8000-0000000000D4",
+        "visibilityClass": "default"
+      }
+    ]
+  }
+}
