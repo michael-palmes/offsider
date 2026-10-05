@@ -56,13 +56,12 @@ struct CommandRunner {
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
 
-        if environment != nil || !unsetVariables.isEmpty {
-            var merged = ProcessInfo.processInfo.environment.merging(environment ?? [:]) { _, new in new }
-            for name in unsetVariables {
-                merged.removeValue(forKey: name)
-            }
-            process.environment = merged
+        // A developer's OFFSIDER_DEVICE must never pick a test's device; a test that wants one passes it.
+        var merged = ProcessInfo.processInfo.environment.filter { $0.key != "OFFSIDER_DEVICE" }.merging(environment ?? [:]) { _, new in new }
+        for name in unsetVariables {
+            merged.removeValue(forKey: name)
         }
+        process.environment = merged
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()

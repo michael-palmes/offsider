@@ -11,6 +11,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
 export ADB_MDNS=0
 # An accidental overlap with another runner on the same device waits rather than failing with exit 8.
 export OFFSIDER_WAIT_LOCK="${OFFSIDER_WAIT_LOCK:-30}"
+# Suites name their devices; a shell's default device must not pick one.
+unset OFFSIDER_DEVICE
 
 # Colors for output
 RED='\033[0;31m'

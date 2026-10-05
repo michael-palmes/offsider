@@ -100,12 +100,15 @@ public struct DoctorDevice: Codable, Equatable, Sendable {
     public let name: String?
     /// `simulator`, `emulator` or `other`.
     public let kind: String?
+    /// `option` (`--device`) or `environment` (`OFFSIDER_DEVICE`).
+    public let source: String?
 
-    public init(id: String, platform: String, name: String?, kind: String?) {
+    public init(id: String, platform: String, name: String?, kind: String?, source: String? = nil) {
         self.id = id
         self.platform = platform
         self.name = name
         self.kind = kind
+        self.source = source
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -114,6 +117,7 @@ public struct DoctorDevice: Codable, Equatable, Sendable {
         try container.encode(platform, forKey: .platform)
         try container.encode(name, forKey: .name)
         try container.encode(kind, forKey: .kind)
+        try container.encode(source, forKey: .source)
     }
 }
 

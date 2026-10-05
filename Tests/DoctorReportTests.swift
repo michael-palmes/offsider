@@ -163,6 +163,8 @@ struct DoctorReportTests {
         let device = try #require(object["device"] as? [String: Any])
         #expect(device["platform"] as? String == "android")
         #expect(device["kind"] as? String == "emulator")
+        #expect(Set(device.keys) == ["id", "platform", "name", "kind", "source"])
+        #expect(device["source"] is NSNull)
         let android = try #require(object["android"] as? [String: Any])
         #expect(Set(android.keys) == ["sdkRoot", "sdkSource", "adbPath", "adbVersion", "adbServer", "adbServerVersion", "emulatorRevision", "devices"])
         #expect(android["emulatorRevision"] is NSNull)

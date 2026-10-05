@@ -30,7 +30,7 @@ enum ErrorReporter {
     static func prepare(command: (any ParsableCommand)?, arguments: [String]) {
         let name = command.map { CommandPath.of($0) } ?? arguments.first { !$0.hasPrefix("-") }
         let wantsJSON = (command as? any JSONReportingCommand)?.wantsJSON ?? arguments.contains("--json")
-        context = Context(command: name, wantsJSON: wantsJSON, device: deviceArgument(in: arguments))
+        context = Context(command: name, wantsJSON: wantsJSON, device: deviceArgument(in: arguments) ?? DeviceDefault.resolve(explicit: nil)?.id)
     }
 
     /// The JSON `error` object for `error`; `<DEVICE_ID>` in a hint becomes the `--device` value.

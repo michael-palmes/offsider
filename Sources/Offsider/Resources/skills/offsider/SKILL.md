@@ -11,7 +11,7 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from 
 1. Find the device with `offsider list-devices`: iOS simulators, USB iPhones and iPads by UDID, running Android emulators and USB phones by serial, and shut-down AVDs by name (watchOS, tvOS and visionOS are not listed). `--json` adds each device's `kind` and `connection` (`guide android`); `--platform ios|android` filters. Simulator IDs are case-insensitive UDIDs; Android IDs are serials (`emulator-5554`) or a running AVD's name. Never choose a `physical` device yourself: drive a phone only when the user names its serial or UDID (`guide android`, `guide ios-device`).
 2. Start an Android emulator with `DEVICE=$(offsider boot <AVD>)` (`--headless` hides the window): it waits until Android has booted, prints the serial and never starts a second instance of a running AVD. Never start emulators with `emulator -port` or `-grpc` yourself: Offsider then falls back to slower adb-only input.
 3. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored or screen reads fail. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint` (`guide errors`).
-4. Pass `--device <DEVICE_ID>` to every device command. `list-devices`, `boot`, `init`, `guide` and `doctor` do not need it.
+4. Pass `--device <DEVICE_ID>` to every device command, or `export OFFSIDER_DEVICE=<DEVICE_ID>` once (`--device` wins). `list-devices`, `boot`, `init`, `guide` and `doctor` do not need it.
 
 ## The loop: look, act, verify
 

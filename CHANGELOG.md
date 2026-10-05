@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `OFFSIDER_IOS_DEVICE_E2E=1`, `OFFSIDER_IOS_DEVICE=<UDID>` and `OFFSIDER_IOS_TEAM_ID` with `./test-runner.sh --ios-device` (`make e2e-ios-device`) run the device suites on that one device.
 - `offsider guide ios-device` covers physical iPhones and iPads.
 - `scripts/build.sh runner [--check]` regenerates the runner's Xcode project from its `project.yml`, or compares it with the committed one.
+- `OFFSIDER_DEVICE` is the default `--device`: a command without `--device` uses it when it is set and not blank, and an explicit `--device` wins. `doctor` prints the binding (`device.source` in `--json` is `option` or `environment`); `permission services` and the `runner` and `session` filters ignore it. A command with neither now exits 64 with `Missing --device <id>. Pass --device, or set OFFSIDER_DEVICE`.
 
 ### Changed
 
@@ -41,8 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A physical iPhone or iPad UDID now routes to the device instead of failing as an unknown Android device name.
 - `orientation` on a physical device that does not turn in time says the screen follows only while the device is awake and unlocked and the app in front supports the orientation.
 - The bundled skill's router is shorter: `type` and `button` detail, the full `list-devices --json` shape and the Turnstile detail now live in the `selectors`, `android` and `turnstile` guide topics.
-
 - `wait --timeout` and `wait --seconds` accept up to 900 seconds (was 300), so a wait can outlast a cold React Native bundle; the error names the cap.
+
 ### Fixed
 
 - `screenshot` on an Android phone with several displays, such as the Galaxy Z Fold3, no longer fails when `screencap` prints a warning before the image.

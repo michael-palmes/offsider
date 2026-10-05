@@ -91,6 +91,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_IOS_SESSION_IDLE` | Seconds an iPhone or iPad session broker stays up after its last command (default 300) |
 | `OFFSIDER_GOLDENS_UPDATE=1` | Re-renders the tree goldens offline (`--filter TreeGoldenRefresh`), or recaptures them with the RN device variables (`--filter TreeGoldenCaptureTests`) |
 | `OFFSIDER_TREE_CACHE` | `off` stops reading and writing the per-device tree cache under the private directory's `trees/` (`describe-ui --diff` and the tap guard then see no earlier tree) |
+| `OFFSIDER_DEVICE` | The default `--device` for device commands (an explicit `--device` wins; blank is unset); `test-runner.sh` and test child processes unset it |
 | `OFFSIDER_WAIT_LOCK` | Default seconds to wait for a device another Offsider command holds (`--wait-lock` wins; `test-runner.sh` sets 30) |
 | `OFFSIDER_TIMINGS=1` | Prints iOS and Android phase timings to stderr (`offsider timing: <phase> <n> ms`) |
 | `OFFSIDER_MASK_SECURE=1` | Makes `screenshot` and `batch` mask password fields as `--mask-secure` does |

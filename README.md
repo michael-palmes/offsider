@@ -98,7 +98,7 @@ A simulator can fall into a crash loop after boot, with macOS showing a "quit un
 
 ## Commands
 
-Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), a USB iPhone or iPad's UDID (such as `00008130-001C...`), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Run `offsider <command> --help` for the full list of options.
+Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), a USB iPhone or iPad's UDID (such as `00008130-001C...`), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Without `--device`, a command uses `OFFSIDER_DEVICE` when it is set and not blank, so `export OFFSIDER_DEVICE=emulator-5554` binds a shell to one device; `--device` always wins, `doctor` prints the binding (`device.source` is `environment` in `--json`), and `permission services` and the `--device` filters of `runner` and `session` ignore it. Without either, the command exits 64. Run `offsider <command> --help` for the full list of options.
 
 `list-devices --json` prints one object with a schema version, for scripts and agents:
 

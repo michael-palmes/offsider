@@ -55,7 +55,7 @@ struct Doctor: AsyncParsableCommand {
             facts = await android.run(deviceID: nil).host
         }
         let device = udid.map { udid in
-            DoctorDevice(id: udid, platform: "ios", name: result.booted.first { $0.udid == udid }?.name, kind: "simulator")
+            DoctorDevice(id: udid, platform: "ios", name: result.booted.first { $0.udid == udid }?.name, kind: "simulator", source: deviceOption.source?.rawValue)
         }
         return DoctorReport(
             offsiderVersion: VERSION,
@@ -85,7 +85,7 @@ struct Doctor: AsyncParsableCommand {
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: nil,
-            device: DoctorDevice(id: serial, platform: "android", name: facts.device?.avdName ?? facts.device?.model, kind: kind),
+            device: DoctorDevice(id: serial, platform: "android", name: facts.device?.avdName ?? facts.device?.model, kind: kind, source: deviceOption.source?.rawValue),
             xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
             booted: [],
             android: AndroidDoctorRules.summary(facts.host, device: facts.device),
@@ -108,7 +108,7 @@ struct Doctor: AsyncParsableCommand {
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: nil,
-            device: DoctorDevice(id: udid, platform: "ios", name: result.facts.row?.label, kind: "physical"),
+            device: DoctorDevice(id: udid, platform: "ios", name: result.facts.row?.label, kind: "physical", source: deviceOption.source?.rawValue),
             xcode: XcodeSummary(developerDir: result.xcode?.developerDirectory, version: result.xcode?.version, build: result.xcode?.build, coreSimulator: nil),
             booted: [],
             android: nil,

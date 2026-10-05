@@ -26,6 +26,9 @@ public enum DoctorRenderer {
                 lines.append(androidHeader(android))
             }
         }
+        if let device = report.device, device.source == "environment" {
+            lines.append("Device: \(device.id)" + (device.name.map { " (\($0))" } ?? "") + ", from OFFSIDER_DEVICE")
+        }
         for check in report.checks {
             let detail = check.status == .skip ? "Skipped: \(check.detail)" : check.detail
             lines.append("\(symbol(for: check.status)) \(padded(check.id.rawValue, idColumnWidth))\(detail)")
