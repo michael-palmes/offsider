@@ -102,13 +102,16 @@ public struct DoctorDevice: Codable, Equatable, Sendable {
     public let kind: String?
     /// `option` (`--device`) or `environment` (`OFFSIDER_DEVICE`).
     public let source: String?
+    /// Android only: the credential, a saved code and the first unlock since boot.
+    public let lock: LockReport?
 
-    public init(id: String, platform: String, name: String?, kind: String?, source: String? = nil) {
+    public init(id: String, platform: String, name: String?, kind: String?, source: String? = nil, lock: LockReport? = nil) {
         self.id = id
         self.platform = platform
         self.name = name
         self.kind = kind
         self.source = source
+        self.lock = lock
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -118,6 +121,7 @@ public struct DoctorDevice: Codable, Equatable, Sendable {
         try container.encode(name, forKey: .name)
         try container.encode(kind, forKey: .kind)
         try container.encode(source, forKey: .source)
+        try container.encode(lock, forKey: .lock)
     }
 }
 

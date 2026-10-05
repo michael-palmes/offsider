@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -126,5 +127,26 @@ struct DoctorCommandTests {
 
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
         #expect(DoctorProbes.brokerDirectoryState(path: root.path) == .unsafe(reason: "group or other users can access it", ownedByCurrentUser: true))
+    }
+}
+
+@Suite("doctor unlock code facts")
+@MainActor
+struct DoctorUnlockCodeTests {
+    @Test("an emulator's code is looked up by AVD name and a phone's by serial, and only with a credential")
+    func unlockCodeKeys() throws {
+        let store = MemoryUnlockCodeStore()
+        store.codes["Pixel_PIN"] = try #require(UnlockCode("1234"))
+        store.codes["ZY22FAKE01"] = try #require(UnlockCode("5678"))
+        let ledger = try BootReportTests.ledger()
+        var emulator = AndroidDeviceFacts(id: "emulator-5560", serial: "emulator-5560", avdName: "Pixel_PIN", state: .booted)
+        emulator.awake = AwakeReading(screen: .on, lockScreen: .secure, credential: "pin", userUnlocked: false)
+        #expect(Doctor.withUnlockCode(emulator, store: store, ledger: ledger).unlockCode == UnlockCodeFact(saved: true, lastAttemptFailed: false))
+        var phone = AndroidDeviceFacts(id: "ZY22FAKE01", serial: "ZY22FAKE01", state: .booted)
+        phone.isPhysical = true
+        phone.awake = emulator.awake
+        #expect(Doctor.withUnlockCode(phone, store: store, ledger: ledger).unlockCode?.saved == true)
+        emulator.awake?.credential = "none"
+        #expect(Doctor.withUnlockCode(emulator, store: store, ledger: ledger).unlockCode == nil)
     }
 }

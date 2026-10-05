@@ -242,6 +242,32 @@ public enum AndroidDoctorRules {
         }
     }
 
+    /// A React Native debug build and Metro's bundle need about 2.75 GB; a phone's RAM is what it is.
+    public static func memory(memTotalKB: Int, avdName: String?, isPhysical: Bool) -> Verdict {
+        let detail = "\(BootReport.memorySummary(memTotalKB)) of RAM"
+        guard !isPhysical, memTotalKB < BootReport.lowMemoryKB else { return (.pass, detail, nil) }
+        return (
+            .warn,
+            detail + ", which is tight for a React Native debug build",
+            "Close it, then run `offsider boot \(avdName ?? "<AVD>") --memory 4096`."
+        )
+    }
+
+    /// Apps cannot start on a device set up with a credential until it is unlocked once after boot.
+    public static func lock(_ reading: AwakeReading, unlockCode: UnlockCodeFact?, deviceID: String) -> Verdict {
+        guard reading.hasCredential else { return (.pass, "No PIN, pattern or password", nil) }
+        let lock = LockReport(reading, savedCode: unlockCode?.saved ?? false, lastAttemptFailed: unlockCode?.lastAttemptFailed ?? false)
+        let saved = "code saved: " + (lock.savedCode ? (lock.lastAttemptFailed ? "yes, but it failed last time" : "yes") : "no")
+        switch reading.userUnlocked {
+        case false?:
+            return (.fail, "\(reading.credentialName) set; waiting for its first unlock since boot, so apps cannot start; \(saved)", lock.unlockHint(deviceID: deviceID))
+        case true?:
+            return (.pass, "\(reading.credentialName) set; unlocked since boot; \(saved)", nil)
+        case nil:
+            return (.pass, "\(reading.credentialName) set; \(saved)", nil)
+        }
+    }
+
     /// Off lets the screen time out, and a PIN, pattern or password lock screen return.
     public static func stayAwake(_ reading: AwakeReading, deviceID: String) -> Verdict {
         let fix = "Run `offsider stay-awake on --device \(deviceID)`."
@@ -331,7 +357,7 @@ public enum AndroidDoctorRules {
     }
 
     static let deviceDependents: [DoctorCheckID] = [
-        .androidDeviceImage, .androidDeviceScreen, .androidDeviceStayAwake, .androidDeviceGrpc, .androidDeviceUiAutomation,
+        .androidDeviceImage, .androidDeviceMemory, .androidDeviceScreen, .androidDeviceLock, .androidDeviceStayAwake, .androidDeviceGrpc, .androidDeviceUiAutomation,
         .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
     ]
 
@@ -346,11 +372,25 @@ public enum AndroidDoctorRules {
             return checks + deviceDependents.map { .skipped($0, "requires android-device.state") }
         }
         checks.append(DoctorCheckResult(id: .androidDeviceImage, verdict: image(apiLevel: facts.apiLevel, release: facts.release, abi: facts.abi)))
+        if let kilobytes = facts.awake?.memTotalKB {
+            checks.append(DoctorCheckResult(id: .androidDeviceMemory, verdict: memory(memTotalKB: kilobytes, avdName: facts.avdName, isPhysical: facts.isPhysical)))
+        } else {
+            checks.append(.skipped(.androidDeviceMemory, "could not read MemTotal"))
+        }
         if let awake = facts.awake {
             checks.append(DoctorCheckResult(id: .androidDeviceScreen, verdict: screen(awake, deviceID: facts.id)))
+            if awake.credential == nil {
+                checks.append(.skipped(.androidDeviceLock, "could not read the lock settings"))
+            } else {
+                checks.append(DoctorCheckResult(id: .androidDeviceLock, verdict: lock(awake, unlockCode: facts.unlockCode, deviceID: facts.id)))
+            }
             checks.append(DoctorCheckResult(id: .androidDeviceStayAwake, verdict: stayAwake(awake, deviceID: facts.id)))
         } else {
-            checks += [.skipped(.androidDeviceScreen, "could not read the power state"), .skipped(.androidDeviceStayAwake, "could not read the power state")]
+            checks += [
+                .skipped(.androidDeviceScreen, "could not read the power state"),
+                .skipped(.androidDeviceLock, "could not read the power state"),
+                .skipped(.androidDeviceStayAwake, "could not read the power state"),
+            ]
         }
         if let grpc = facts.grpc {
             checks.append(DoctorCheckResult(id: .androidDeviceGrpc, verdict: self.grpc(grpc)))

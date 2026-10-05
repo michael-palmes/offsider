@@ -78,6 +78,7 @@ struct Doctor: AsyncParsableCommand {
             fixes = [await probe.startAdbServerIfAbsent()]
             facts = await probe.run(deviceID: id)
         }
+        facts.device = facts.device.map { Self.withUnlockCode($0, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger()) }
         let serial = facts.device?.serial ?? id
         let kind: String? = facts.device.flatMap { device in
             device.isPhysical ? "physical" : device.serial.map { DeviceIDClassifier.classify($0).platform == .android ? "emulator" : "other" }
@@ -85,7 +86,10 @@ struct Doctor: AsyncParsableCommand {
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: nil,
-            device: DoctorDevice(id: serial, platform: "android", name: facts.device?.avdName ?? facts.device?.model, kind: kind, source: deviceOption.source?.rawValue),
+            device: DoctorDevice(
+                id: serial, platform: "android", name: facts.device?.avdName ?? facts.device?.model, kind: kind,
+                source: deviceOption.source?.rawValue, lock: facts.device?.lockReport
+            ),
             xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
             booted: [],
             android: AndroidDoctorRules.summary(facts.host, device: facts.device),
@@ -115,6 +119,15 @@ struct Doctor: AsyncParsableCommand {
             checks: IOSDeviceDoctorRules.checks(result.facts),
             fixes: fixes
         )
+    }
+
+    /// The Keychain is read (attributes only) only for a device with a credential; an emulator's code is saved under its AVD name.
+    static func withUnlockCode(_ facts: AndroidDeviceFacts, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger) -> AndroidDeviceFacts {
+        guard facts.awake?.hasCredential == true else { return facts }
+        let key = facts.isPhysical ? (facts.serial ?? facts.id) : (facts.avdName ?? facts.serial ?? facts.id)
+        var facts = facts
+        facts.unlockCode = UnlockCodeFact(saved: (try? store.hasCode(for: key)) ?? false, lastAttemptFailed: ledger.hasFailed(key))
+        return facts
     }
 
     private static func canonicalUDID(_ raw: String) -> String {

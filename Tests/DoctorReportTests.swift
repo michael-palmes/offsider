@@ -102,7 +102,9 @@ struct DoctorReportTests {
             "android.devices",
             "android-device.state",
             "android-device.image",
+            "android-device.memory",
             "android-device.screen",
+            "android-device.lock",
             "android-device.stay-awake",
             "android-device.grpc",
             "android-device.uiautomation",
@@ -127,7 +129,7 @@ struct DoctorReportTests {
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)
-        #expect(DoctorCheckID.allCases.filter(\.isPerAndroidDevice).count == 10)
+        #expect(DoctorCheckID.allCases.filter(\.isPerAndroidDevice).count == 12)
     }
 
     @Test("an iOS report encodes device and android as null")
@@ -163,8 +165,9 @@ struct DoctorReportTests {
         let device = try #require(object["device"] as? [String: Any])
         #expect(device["platform"] as? String == "android")
         #expect(device["kind"] as? String == "emulator")
-        #expect(Set(device.keys) == ["id", "platform", "name", "kind", "source"])
+        #expect(Set(device.keys) == ["id", "platform", "name", "kind", "source", "lock"])
         #expect(device["source"] is NSNull)
+        #expect(device["lock"] is NSNull)
         let android = try #require(object["android"] as? [String: Any])
         #expect(Set(android.keys) == ["sdkRoot", "sdkSource", "adbPath", "adbVersion", "adbServer", "adbServerVersion", "emulatorRevision", "devices"])
         #expect(android["emulatorRevision"] is NSNull)
