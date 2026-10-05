@@ -214,7 +214,7 @@ public final class RunnerSessionManager {
         transport: @escaping @Sendable (RunnerDestination, UInt16) -> any RunnerTransport = RunnerSessionManager.defaultTransport,
         log: @escaping IOSDeviceLog,
         now: @escaping @Sendable () -> Date = { Date() },
-        startTimeout: TimeInterval = 60,
+        startTimeout: TimeInterval = 150,
         lockTimeout: TimeInterval = 180
     ) {
         self.store = store

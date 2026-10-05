@@ -81,8 +81,14 @@ final class RunnerServer {
         self.handler = handler
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
+        #if os(macOS)
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port) ?? .any)
         listener = try NWListener(using: parameters)
+        #else
+        // A loopback-bound endpoint never becomes ready on iOS; the loopback interface requirement keeps the port off the network.
+        parameters.requiredInterfaceType = .loopback
+        listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port) ?? .any)
+        #endif
     }
 
     /// `ready` runs once with the bound port, `failed` if the listener cannot bind.
@@ -91,6 +97,7 @@ final class RunnerServer {
             switch state {
             case .ready: ready(listener.port?.rawValue ?? 0)
             case .failed(let error): failed("\(error)")
+            case .waiting(let error): NSLog("OFFSIDER_RUNNER_WAITING %@", "\(error)")
             default: break
             }
         }
