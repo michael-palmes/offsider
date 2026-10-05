@@ -85,8 +85,12 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
                 throw ValidationError("Duration must not exceed 10 seconds.")
             }
         }
-        if let platform = DeviceIDClassifier.classify(deviceOption.id).platform {
+        let classification = DeviceIDClassifier.classify(deviceOption.id)
+        if let platform = classification.platform {
             try Self.checkAvailability(buttonType, on: platform, device: deviceOption.id)
+        }
+        if case .iosDevice(let udid) = classification, buttonType == .applePay {
+            throw ValidationError("The apple-pay button needs an iOS simulator, and \(udid) is a physical iPhone or iPad. iPhone buttons: home, lock, side-button, siri.")
         }
     }
 

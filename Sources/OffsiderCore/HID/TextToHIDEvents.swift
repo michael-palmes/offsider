@@ -1,15 +1,14 @@
 import Foundation
-import OffsiderCore
 
 // MARK: - Text to HID Events Converter
-struct TextToHIDEvents {
+public struct TextToHIDEvents {
     
     // MARK: - Error Types
-    enum TextConversionError: Error, LocalizedError, UserFacingError {
+    public enum TextConversionError: Error, LocalizedError, CustomStringConvertible, OffsiderFailure, Equatable, Sendable {
         /// One-based character positions, never the characters, so a secret never reaches an error or log.
         case unsupportedCharacters(positions: [Int], length: Int)
 
-        var errorDescription: String? {
+        public var errorDescription: String? {
             switch self {
             case .unsupportedCharacters(let positions, let length):
                 let subject = positions.count == 1
@@ -25,9 +24,13 @@ struct TextToHIDEvents {
             return words.dropLast().joined(separator: ", ") + " and " + words[words.count - 1]
         }
 
-        var userFacingDescription: String {
+        public var userFacingDescription: String {
             errorDescription ?? "Offsider could not convert the requested text into simulator keyboard input."
         }
+
+        public var description: String { userFacingDescription }
+        public var reason: FailureReason { .unsupportedText }
+        public var failureMessage: String { userFacingDescription }
     }
     
     // MARK: - Simple Key Event Creation
@@ -67,19 +70,19 @@ struct TextToHIDEvents {
     /// Validates that a text string can be converted to HID events
     /// - Parameter text: The text string to validate
     /// - Returns: true if all characters are supported, false otherwise
-    static func validateText(_ text: String) -> Bool {
+    public static func validateText(_ text: String) -> Bool {
         unsupportedPositions(in: text).isEmpty
     }
 
     /// One-based positions of the characters with no US keyboard keycode.
-    static func unsupportedPositions(in text: String) -> [Int] {
+    public static func unsupportedPositions(in text: String) -> [Int] {
         text.enumerated().compactMap { offset, character in
             KeyEvent.keyCodeForString(String(character)).keyCode == 0 ? offset + 1 : nil
         }
     }
 
     /// Throws `unsupportedCharacters` naming positions only.
-    static func checkSupported(_ text: String) throws {
+    public static func checkSupported(_ text: String) throws {
         let positions = unsupportedPositions(in: text)
         guard positions.isEmpty else {
             throw TextConversionError.unsupportedCharacters(positions: positions, length: text.count)
@@ -90,7 +93,7 @@ struct TextToHIDEvents {
     /// - Parameter text: The text string to convert
     /// - Returns: An array of InputEvent values representing the key presses
     /// - Throws: TextConversionError.unsupportedCharacters if any character is not supported
-    static func convertTextToHIDEvents(_ text: String) throws -> [InputEvent] {
+    public static func convertTextToHIDEvents(_ text: String) throws -> [InputEvent] {
         try checkSupported(text)
         return text.flatMap(eventsForCharacter)
     }

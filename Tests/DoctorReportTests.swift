@@ -110,6 +110,20 @@ struct DoctorReportTests {
             "android-device.metro-reverse",
             "android-device.adb-expiry",
             "android-device.system-updates",
+            "ios-device.xcode",
+            "ios-device.coredevice",
+            "ios-device.listed",
+            "ios-device.transport",
+            "ios-device.pairing",
+            "ios-device.developer-mode",
+            "ios-device.ddi",
+            "ios-device.tunnel",
+            "ios-device.lock-state",
+            "ios-device.hid",
+            "ios-device.ui-automation",
+            "ios-device.session",
+            "ios-device.usbmuxd",
+            "ios-device.runner-signing",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)

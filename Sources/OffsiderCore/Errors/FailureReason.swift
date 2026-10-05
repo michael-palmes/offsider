@@ -52,6 +52,8 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case initFailed = "init_failed"
     case deviceListFailed = "device_list_failed"
     case expoDevClientFailed = "expo_dev_client_failed"
+    case runnerBuildFailed = "runner_build_failed"
+    case runnerUnavailable = "runner_unavailable"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"
@@ -70,6 +72,11 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case deviceLocked = "device_locked"
     case deviceAmbiguous = "device_ambiguous"
     case avdNotFound = "avd_not_found"
+    case deviceNotWired = "device_not_wired"
+    case deviceUntrusted = "device_untrusted"
+    case developerModeOff = "developer_mode_off"
+    case devicePreparing = "device_preparing"
+    case uiAutomationOff = "ui_automation_off"
 
     case deviceBusy = "device_busy"
     case uiautomationBusy = "uiautomation_busy"
@@ -82,6 +89,9 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case emulatorMissing = "emulator_missing"
     case emulatorGrpcRequired = "emulator_grpc_required"
     case helperUnavailable = "helper_unavailable"
+    case xcodeTooOld = "xcode_too_old"
+    case teamMissing = "team_missing"
+    case usbmuxUnavailable = "usbmux_unavailable"
 
     case usage
     case invalidDeviceID = "invalid_device_id"
@@ -99,12 +109,13 @@ public enum FailureReason: String, CaseIterable, Sendable {
             return .unverified
         case .selectorAmbiguous, .selectorAmbiguousSwitch:
             return .ambiguousSelector
-        case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound:
+        case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
+             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff:
             return .deviceUnavailable
         case .deviceBusy, .uiautomationBusy:
             return .deviceBusy
         case .xcodeMissing, .xcodeUnusable, .androidSdkMissing, .adbServerUnavailable, .adbServerMisconfigured,
-             .emulatorMissing, .emulatorGrpcRequired, .helperUnavailable:
+             .emulatorMissing, .emulatorGrpcRequired, .helperUnavailable, .xcodeTooOld, .teamMissing, .usbmuxUnavailable:
             return .toolMissing
         case .usage, .invalidDeviceID, .invalidSetting, .unsupportedButton, .unsupportedKey, .unknownDisplay, .legacyArgument:
             return .usage

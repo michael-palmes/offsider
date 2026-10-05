@@ -63,3 +63,87 @@ struct AndroidE2EGuardTests {
         }
     }
 }
+
+@Suite("Android phone E2E guard")
+struct AndroidPhoneGuardTests {
+    private static let devices = """
+    List of devices attached
+    emulator-5554          device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a transport_id:1
+    R5CRFAKE01            device usb:1-1 product:q2qksx model:SM_F926B device:q2q transport_id:4
+    R5CRFAKE01X           device usb:1-2 product:q2qksx model:SM_F926B device:q2q transport_id:5
+    ZYFAKE0002             unauthorized usb:2-1 transport_id:6
+    192.168.1.5:5555       device product:pixel model:Pixel_8 device:shiba transport_id:7
+    NOUSB0001              device product:x model:y device:z transport_id:8
+    """
+
+    private func refused(_ result: Result<String, AndroidE2EError>) -> String? {
+        if case .failure(let error) = result { return error.description }
+        return nil
+    }
+
+    @Test("the exact serial in state device with a usb: field passes, and only that serial is returned")
+    func exactUSBSerialPasses() throws {
+        #expect(try AndroidPhoneGuard.verdict(requested: "R5CRFAKE01", emulatorFlags: [], devices: Self.devices).get() == "R5CRFAKE01")
+    }
+
+    @Test("a serial that is only a prefix of a listed one is refused, never matched to the longer serial")
+    func prefixRefused() {
+        #expect(refused(AndroidPhoneGuard.verdict(requested: "RFCRA0TCR5", emulatorFlags: [], devices: Self.devices))?.contains("does not list it") == true)
+    }
+
+    @Test("an unauthorised phone, or one with no usb: field, is refused")
+    func stateAndTransportRefused() {
+        #expect(refused(AndroidPhoneGuard.verdict(requested: "ZYFAKE0002", emulatorFlags: [], devices: Self.devices))?.contains("unauthorized") == true)
+        #expect(refused(AndroidPhoneGuard.verdict(requested: "NOUSB0001", emulatorFlags: [], devices: Self.devices))?.contains("no usb: field") == true)
+    }
+
+    @Test("an emulator or network serial is refused before any adb call", arguments: ["emulator-5554", "192.168.1.5:5555", "R5 CR", "a;b"])
+    func shapeRefused(serial: String) {
+        guard case .failure = AndroidPhoneGuard.preflight(requested: serial, emulatorFlags: []) else {
+            Issue.record("\(serial) passed the preflight")
+            return
+        }
+    }
+
+    @Test("the phone guard refuses to run beside any emulator suite, even for a listed phone", arguments: [
+        "OFFSIDER_ANDROID_E2E", "OFFSIDER_ANDROID_FOLD_E2E", "OFFSIDER_ANDROID_LANDSCAPE_E2E", "OFFSIDER_ANDROID_BOOT_E2E",
+    ])
+    func refusesWithEmulatorSuites(flag: String) {
+        let set = AndroidPhoneGuard.emulatorFlagsSet(in: [flag: "1", "OFFSIDER_ANDROID_PHONE": "R5CRFAKE01"])
+        let message = refused(AndroidPhoneGuard.verdict(requested: "R5CRFAKE01", emulatorFlags: set, devices: Self.devices))
+        #expect(message?.contains(flag) == true)
+    }
+
+    @Test("emulator switches set to 0 or left empty do not block the phone suites")
+    func offSwitchesAllowed() throws {
+        let set = AndroidPhoneGuard.emulatorFlagsSet(in: ["OFFSIDER_ANDROID_E2E": "0", "OFFSIDER_ANDROID_FOLD_E2E": ""])
+        #expect(try AndroidPhoneGuard.verdict(requested: "R5CRFAKE01", emulatorFlags: set, devices: Self.devices).get() == "R5CRFAKE01")
+    }
+
+    @Test("every non-phone runner in test-runner.sh drops OFFSIDER_ANDROID_PHONE, and the phone runner turns the emulator suites off")
+    func runnerDropsPhone() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("test-runner.sh")
+        let script = try String(contentsOf: url, encoding: .utf8)
+        func body(_ name: String) throws -> Substring {
+            let start = try #require(script.range(of: "\n\(name)() {\n"))
+            let end = try #require(script.range(of: "\n}\n", range: start.upperBound..<script.endIndex))
+            return script[start.upperBound..<end.lowerBound]
+        }
+        for runner in ["run_unit_tests", "run_rn_ios_tests", "run_android_tests", "run_android_fold_tests", "run_foldable_tests", "run_tests", "run_ios_device_tests"] {
+            let text = try body(runner)
+            #expect(text.split(separator: "\n").contains { $0.contains("unset ") && $0.contains("OFFSIDER_ANDROID_PHONE") }, "\(runner) leaves OFFSIDER_ANDROID_PHONE set")
+        }
+        let phone = try body("run_android_phone_tests")
+        for flag in AndroidPhoneGuard.emulatorFlags {
+            #expect(phone.contains("export \(flag)=0"), "run_android_phone_tests leaves \(flag) as it was")
+        }
+    }
+
+    @Test("the phone suites never send emu commands")
+    func phoneSuitesSendNoEmu() throws {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("AndroidE2E/AndroidPhoneTests.swift")
+        let source = try String(contentsOf: file, encoding: .utf8)
+        #expect(!source.contains("emu "), "AndroidPhoneTests.swift sends an emulator console command")
+        #expect(!source.contains("emulatorClient"), "AndroidPhoneTests.swift reaches for the emulator gRPC client")
+    }
+}

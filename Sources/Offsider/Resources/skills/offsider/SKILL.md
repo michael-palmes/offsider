@@ -4,11 +4,11 @@ description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator 
 ---
 # Offsider
 
-Offsider drives iOS Simulators, Android Emulators and USB Android phones from the terminal: it reads the screen as an accessibility tree, then taps, types, swipes and captures, all on this Mac. This file is the core. `offsider guide <topic>` prints version-matched depth for each topic in the table at the end; read a topic before guessing.
+Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from the terminal: it reads the screen as an accessibility tree, then taps, types, swipes and captures, all on this Mac. This file is the core. `offsider guide <topic>` prints version-matched depth for each topic in the table at the end; read a topic before guessing.
 
 ## Every session
 
-1. Find the device with `offsider list-devices`: iOS simulators, running Android emulators and USB phones by serial, and shut-down AVDs by name (watchOS, tvOS and visionOS are not listed). `--json` prints `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType, kind, connection}]}` (`kind` is `simulator`, `emulator`, `avd` or `physical`); `--platform ios|android` filters. Simulator IDs are case-insensitive UDIDs; Android IDs are serials (`emulator-5554`) or a running AVD's name. Never choose a `physical` device yourself: drive a phone only when the user names its serial (`guide android`).
+1. Find the device with `offsider list-devices`: iOS simulators, USB iPhones and iPads by UDID, running Android emulators and USB phones by serial, and shut-down AVDs by name (watchOS, tvOS and visionOS are not listed). `--json` prints `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType, kind, connection}]}` (`kind` is `simulator`, `emulator`, `avd` or `physical`); `--platform ios|android` filters. Simulator IDs are case-insensitive UDIDs; Android IDs are serials (`emulator-5554`) or a running AVD's name. Never choose a `physical` device yourself: drive a phone only when the user names its serial or UDID (`guide android`, `guide ios-device`).
 2. Start an Android emulator with `DEVICE=$(offsider boot <AVD>)` (`--headless` hides the window): it waits until Android has booted, prints the serial and never starts a second instance of a running AVD. Never start emulators with `emulator -port` or `-grpc` yourself: Offsider then falls back to slower adb-only input.
 3. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored or screen reads fail. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint` (`guide errors`).
 4. Pass `--device <DEVICE_ID>` to every device command. `list-devices`, `boot`, `init`, `guide` and `doctor` do not need it.
@@ -37,6 +37,7 @@ offsider describe-ui --diff --device <DEVICE_ID>
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop, never kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames are in points (dp on Android). Capture with `screenshot --scale points` when you will tap what you see.
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric` and `stay-awake` change the device and stay changed: read the current value first, and set it back when done (`guide device-state`).
+- A physical iPhone or iPad works over USB only, unlocked, with Settings > Developer > UI Automation on (ask the user; `ui_automation_off` or `device_locked` means it is not). Input needs Xcode 27 on the Mac and starts a background session: run `offsider session stop --device <UDID>` when done. `describe-ui`, `tap`, `wait` and `assert` take `--app <bundle-id>` to read that app (`guide ios-device`).
 - When an Android error says the screen is off or locked, run `offsider wake --device <DEVICE_ID>`. Exit 7 `device_locked` means a PIN, pattern or password lock screen: ask the user to unlock it, or run `wake --unlock` if they saved a code. Never ask for or handle a lock screen code; the user saves it with `unlock-code set` in their own terminal.
 
 ## Exit codes
@@ -47,7 +48,7 @@ With `--json`, a failure prints `exitCode` and an `error` object. `dispatched: n
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`. Run `offsider <command> --help` for every option.
+`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`, `runner`, `session`. Run `offsider <command> --help` for every option.
 
 `button` names depend on the platform: iOS has `apple-pay`, `home`, `lock`, `side-button` and `siri`; Android has `back`, `app-switch`, `home`, `lock` (the power key), `volume-up` and `volume-down`. A button the device lacks exits 64.
 
@@ -61,6 +62,7 @@ Run `offsider guide <topic>` to print one; `offsider guide` lists them.
 | `verify` | You need proof an input worked, `--verify` exited 5, or you are waiting on a condition |
 | `errors` | A command exited non-zero, the device is busy, or doctor reports a problem |
 | `android` | The device is an Android emulator or a USB phone |
+| `ios-device` | The device is a physical iPhone or iPad, named by its UDID |
 | `react-native` | The app is React Native or Expo, debug or release |
 | `turnstile` | You need to tick a Cloudflare Turnstile checkbox, or to know the tap does not bypass the check |
 | `foldables` | The device folds or has more than one display |

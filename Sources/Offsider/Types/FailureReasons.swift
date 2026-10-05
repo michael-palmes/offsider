@@ -1,10 +1,7 @@
 import Foundation
 import OffsiderCore
 
-extension TextToHIDEvents.TextConversionError: OffsiderFailure {
-    var reason: FailureReason { .unsupportedText }
-    var failureMessage: String { userFacingDescription }
-}
+extension TextToHIDEvents.TextConversionError: UserFacingError {}
 
 extension HIDBrokerNotReadyError: OffsiderFailure {
     var reason: FailureReason { .hidBrokerFailed }

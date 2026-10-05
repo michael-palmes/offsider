@@ -51,6 +51,21 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
         CLIError(errorDescription: message, reason: .notSupported)
     }
 
+    /// `command` cannot work on a physical iPhone or iPad; `alternative` says what to do instead.
+    static func notOnPhone(command: String, device: String, alternative: String) -> CLIError {
+        CLIError(
+            errorDescription: "\(command) does not work on a physical iPhone or iPad, and \(device) is one. \(alternative)",
+            reason: .notSupported
+        )
+    }
+
+    /// Throws `notOnPhone` when `rawID` names a physical iPhone or iPad, before any device work.
+    static func refuseOnPhone(_ rawID: String, command: String, alternative: String) throws {
+        if case .iosDevice(let udid) = DeviceIDClassifier.classify(rawID) {
+            throw notOnPhone(command: command, device: udid, alternative: alternative)
+        }
+    }
+
     static func internalError(_ message: String) -> CLIError {
         CLIError(errorDescription: message, reason: .internalError)
     }

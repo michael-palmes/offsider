@@ -64,11 +64,17 @@ let package = Package(
             path: "Sources/OffsiderAndroid",
             exclude: ["Grpc/Proto"]
         ),
+        .target(
+            name: "OffsiderIOSDevice",
+            dependencies: ["OffsiderCore"],
+            path: "Sources/OffsiderIOSDevice"
+        ),
         .executableTarget(
             name: "Offsider",
             dependencies: [
                 "OffsiderCore",
                 "OffsiderAndroid",
+                "OffsiderIOSDevice",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 "FBSimulatorControl",
                 "FBDeviceControl",
@@ -78,7 +84,8 @@ let package = Package(
             path: "Sources/Offsider",
             resources: [
                 .copy("Resources/skills"),
-                .copy("Resources/helper")
+                .copy("Resources/helper"),
+                .copy("Resources/runner")
             ],
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"] + idbPrivateHeaderSearchFlags)
@@ -97,9 +104,9 @@ let package = Package(
         ),
         .testTarget(
             name: "OffsiderTests",
-            dependencies: ["Offsider", "OffsiderCore", "OffsiderAndroid"],
+            dependencies: ["Offsider", "OffsiderCore", "OffsiderAndroid", "OffsiderIOSDevice"],
             path: "Tests",
-            exclude: ["Goldens"],
+            exclude: ["Goldens", "IOSDevice/Fixtures"],
             swiftSettings: [
                 .unsafeFlags(idbPrivateHeaderSearchFlags)
             ]

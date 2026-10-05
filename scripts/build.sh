@@ -859,6 +859,55 @@ function cmd_helper() {
   print_success "${summary} (updated)"
 }
 
+# XCUITest runner: an XcodeGen project.yml with the generated OffsiderRunner.xcodeproj committed beside it.
+RUNNER_DIR="${REPO_ROOT}/Sources/Offsider/Resources/runner"
+RUNNER_TRACKED=("project.pbxproj" "xcshareddata/xcschemes/OffsiderRunner.xcscheme")
+
+function runner_fail() {
+  echo "❌ Error: $*" >&2
+  exit 1
+}
+
+function cmd_runner() {
+  local check=0 work path
+  local differs=()
+  case "${1:-}" in
+    "") ;;
+    --check) check=1 ;;
+    *) runner_fail "Unknown option for runner: $1 (use --check)" ;;
+  esac
+  [[ $# -le 1 ]] || runner_fail "runner takes at most one option (--check)"
+  command -v xcodegen > /dev/null || runner_fail "XcodeGen is not installed: brew install xcodegen"
+  print_section "🏃" "Generating the XCUITest runner project"
+  work="$(mktemp -d "${TMPDIR:-/tmp}/offsider-runner.XXXXXX")"
+  cp "${RUNNER_DIR}/project.yml" "$work/"
+  cp -R "${RUNNER_DIR}/Host" "${RUNNER_DIR}/UITests" "$work/"
+  if ! (cd "$work" && xcodegen generate --quiet --spec project.yml); then
+    rm -rf "$work"
+    runner_fail "xcodegen failed for ${RUNNER_DIR}/project.yml"
+  fi
+
+  if [[ "$check" == 1 ]]; then
+    for path in "${RUNNER_TRACKED[@]}"; do
+      cmp -s "$work/OffsiderRunner.xcodeproj/$path" "${RUNNER_DIR}/OffsiderRunner.xcodeproj/$path" || differs+=("$path")
+    done
+    rm -rf "$work"
+    if [[ ${#differs[@]} -gt 0 ]]; then
+      echo "❌ Error: the regenerated runner project differs from the committed ${differs[*]}" >&2
+      echo "   Regenerate with scripts/build.sh runner and commit OffsiderRunner.xcodeproj with project.yml." >&2
+      exit 1
+    fi
+    print_success "OffsiderRunner.xcodeproj matches project.yml"
+    return 0
+  fi
+  for path in "${RUNNER_TRACKED[@]}"; do
+    mkdir -p "$(dirname "${RUNNER_DIR}/OffsiderRunner.xcodeproj/$path")"
+    cp "$work/OffsiderRunner.xcodeproj/$path" "${RUNNER_DIR}/OffsiderRunner.xcodeproj/$path"
+  done
+  rm -rf "$work"
+  print_success "OffsiderRunner.xcodeproj regenerated"
+}
+
 # Function to print usage information
 function print_usage() {
 cat <<EOF
@@ -907,6 +956,10 @@ Commands:
     in .build/offsider-helper/, then update Sources/Offsider/Resources/helper/ when the Java source changed.
     --check rebuilds and compares with the committed dex and manifest without writing them.
 
+  runner [--check]
+    Regenerate Sources/Offsider/Resources/runner/OffsiderRunner.xcodeproj from its project.yml with XcodeGen.
+    --check regenerates in a temporary directory and compares with the committed project without writing it.
+
 Environment Variables:
   IDB_CHECKOUT_DIR       Directory for IDB repository (default: ./idb_checkout)
   IDB_GIT_URL            IDB fork URL (default: https://github.com/michael-palmes/idb.git)
@@ -922,6 +975,7 @@ Examples:
   ./build.sh executable         # Build build_products/offsider
   ./build.sh verify-arches      # Check the built payload
   ./build.sh helper --check     # Rebuild the Android helper and compare it with the committed dex
+  ./build.sh runner --check     # Regenerate the XCUITest runner project and compare it with the committed one
 EOF
 }
 
@@ -1042,6 +1096,9 @@ case $COMMAND in
   helper)
     shift
     cmd_helper "$@";;
+  runner)
+    shift
+    cmd_runner "$@";;
   *)
     echo "Unknown command: $COMMAND"
     echo ""

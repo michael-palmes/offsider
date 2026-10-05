@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The Android helper (1.1.0, protocol 2) gains `inject`, which sends taps, swipes, touches, keys and text through UiAutomation, and `screenshot`, which returns the screen's raw pixels; `hello` lists the ops it serves.
+- `OFFSIDER_ANDROID_INPUT=auto|helper|input` chooses how input reaches an Android phone, or an emulator without gRPC. `auto` uses the helper only when the command has already started it to read the screen (a selector tap, `type --replace`), and `input` otherwise; `helper` always uses it and fails with a hint when it cannot start; `input` never uses it. Separate `touch --down` and `touch --up` commands always use `input motionevent`.
+- `OFFSIDER_ANDROID_CAPTURE=auto|screencap|raw|helper` chooses how such a device is captured. `auto` and `screencap` use `screencap -p`; `raw` reads `screencap`'s raw pixels and `helper` the helper's, both encoded as PNG on the Mac and both falling back to `screencap -p`.
+- The defaults stay on `input` and `screencap -p` because, in medians on a Galaxy Z Fold3 and a moto g57, starting the helper costs 280 to 390 ms per command while an injected tap saves only 40 to 75 ms: through the helper a coordinate `tap` was 61% and 90% slower, `swipe` 40% and 52%, `type` 92% and 110% and `screenshot` 33% and 63%, while a selector tap with `--verify` was 2 to 5% faster under `auto`.
+- `OFFSIDER_TIMINGS=1` adds the Android phases `helper-inject`, `helper-capture` and `capture-encode`.
+- `OFFSIDER_ANDROID_PHONE=<serial>` with `./test-runner.sh --android-phone` (`make e2e-android-phone`) runs the `AndroidPhone*Tests` suites on that one USB phone, installing the React Native playground there and leaving it.
+- `scripts/bench-ab.sh --phone --device <serial>` benchmarks a USB phone, with the scenarios `android-tap-xy`, `android-tap-xy-input`, `android-tap-xy-helper`, `android-tap-physical`, `android-swipe`, `android-type-ascii`, `android-type-ascii-helper`, `android-screenshot`, `android-screenshot-raw`, `android-screenshot-helper` and `android-batch-tap-5`; it never installs the playground and refuses when it is missing.
+- Physical iPhones and iPads over USB, named by UDID with `--device`. A device on Wi-Fi is refused with `device_not_wired`, and Offsider never pairs one. The device must trust the Mac, have Developer Mode on and stay unlocked, and input needs Settings > Developer > UI Automation.
+- On an Xcode 27 host (CoreDevice 636 or later), a session broker per device carries screenshots and input. The first command that needs it starts it detached (`offsider device-session serve`, a hidden command) from the Mac's desktop session, in about 3 s. It holds the device's CoreDevice screen stream, its UniversalHID service (touchscreen and keyboard) and its hardware button socket; listens only on a 0600 Unix socket in the private directory's `sessions/` and refuses other users; logs to `ios-devices/<UDID>/session.log`; and exits after `OFFSIDER_IOS_SESSION_IDLE` idle seconds (default 300), on `session stop`, or when the device goes. The device shows its screen-sharing indicator while it runs.
+- Through the broker, taps, touches, swipes, gestures, drags, keys and US keyboard text are UniversalHID reports, and the `home`, `lock`, `side-button` and `siri` buttons are button events. Measured on an iPad Pro over USB with the broker running: `tap` 132 to 148 ms, `type` 69 to 84 ms, `button home` 151 to 164 ms and a 0.3 s `swipe` about 370 ms.
+- `screenshot` on a device takes the broker's latest stream frame (about 230 ms), and uses `devicectl device capture screenshot` (about 2.3 s) with a one-line notice when the stream cannot start, for example over ssh with no desktop session; `appearance`, `content-size` and `orientation` use `devicectl`.
+- When the broker cannot start, taps, swipes, `button home` and text go through the runner, and keys, touches, gestures and the other buttons are refused. On an Xcode 26 host, listing, `doctor`, screenshots, appearance, text size, orientation, the tree, `wait`, `assert`, element taps, coordinate `tap`, `swipe` and `button home` work through the runner, and the other input exits 9 with `xcode_too_old`. Non-ASCII text and `type --replace` go through the runner on both.
+- An XCUITest runner reads the accessibility tree on a device. Offsider builds it from bundled source with `xcodebuild` on first use (about a minute), caches it under `~/Library/Caches/offsider/runner/`, signs it with `OFFSIDER_IOS_TEAM_ID` or the one team signed in to Xcode, and reaches it over usbmuxd with a per-session token. It stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds idle (default 300).
+- `runner status` and `runner stop` (`--device`, `--json`) show and stop runner sessions.
+- `session status` and `session stop` (`--device`, `--json`) show and stop both of a device's background sessions, the runner and the session broker; stopping the broker ends the stream and clears the screen-sharing indicator.
+- `--app <bundle-id>` on `describe-ui`, `tap`, `wait` and `assert` names the app a device's runner reads, and later commands remember it; simulators and Android ignore it.
+- Element taps on an iPad app in a Stage Manager window are refused with `not_supported` and a hint to make the app full screen, since its frames are relative to the window; coordinate taps, screenshots and the tree still work.
+- `list-devices` shows iPhones and iPads with `kind` `physical`, `connection` `usb` or `network`, and a state (Booted, Wireless, Untrusted, Developer Mode off, Preparing, Reconnecting or Unavailable), with a hint for each problem.
+- `doctor --device <UDID>` runs the `ios-device.*` checks (`xcode`, `coredevice`, `listed`, `transport`, `pairing`, `developer-mode`, `ddi`, `tunnel`, `lock-state`, `hid`, `ui-automation`, `session`, `usbmuxd`, `runner-signing`); `--fix` only mounts the developer disk image. `ios-device.hid` opens the HID button socket and round-trips a barrier on it; `ios-device.ui-automation` is skipped with the Settings path, since iOS does not report it; `ios-device.session` reports the session broker and its stream, and is a skip when none runs, as doctor never starts one.
+- `OFFSIDER_TIMINGS=1` adds the device phases `runner`, `accessibility`, `session` (connecting to or starting the broker), `stream-capture` and `capture` (a `devicectl` screenshot); the broker logs its `stream-open` and `stream-frame` phases to its `session.log`.
+- New error reasons: `device_not_wired`, `device_untrusted`, `developer_mode_off`, `device_preparing` and `ui_automation_off` (exit 7), `xcode_too_old`, `team_missing` and `usbmux_unavailable` (exit 9), and `runner_build_failed` and `runner_unavailable` (exit 1). `device_locked` also covers a locked iPhone or iPad. `hid_broker_failed` also covers a device's session broker, and `input_outcome_unknown` input it may have sent before it stopped answering.
+- `permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, a lone `touch --down`, `boot`, `wake`, `stay-awake`, `unlock-code` and `button apple-pay` are refused on a device, most with a message naming the alternative.
+- `OFFSIDER_IOS_DEVICE_E2E=1`, `OFFSIDER_IOS_DEVICE=<UDID>` and `OFFSIDER_IOS_TEAM_ID` with `./test-runner.sh --ios-device` (`make e2e-ios-device`) run the device suites on that one device.
+- `offsider guide ios-device` covers physical iPhones and iPads.
+- `scripts/build.sh runner [--check]` regenerates the runner's Xcode project from its `project.yml`, or compares it with the committed one.
+
+### Changed
+
+- When the helper carries Android input, a key or button can stay held across other input, which `input` refuses; Android reports an accessibility service as enabled for that command, as it does for screen reads.
+- An Android input failure now asks you to check that the device is still connected, not that the emulator is running.
+- A physical iPhone or iPad UDID now routes to the device instead of failing as an unknown Android device name.
+- `orientation` on a physical device that does not turn in time says the screen follows only while the device is awake and unlocked and the app in front supports the orientation.
+
+### Fixed
+
+- `screenshot` on an Android phone with several displays, such as the Galaxy Z Fold3, no longer fails when `screencap` prints a warning before the image.
+- Android input through the UiAutomation helper is never sent twice: when the helper stops before it answers, the command fails with `dispatched` `unknown` instead of resending the tap, key or text.
+- Long `type` text through the Android helper no longer times out after 5 s: each request carries at most 256 characters and its timeout grows with its keys.
+- After the Android helper refuses a touch, closing the command no longer warns that it could not lift a finger the helper had already cancelled.
+- On a physical device, `key --duration`, `button --duration` and a long press (`touch --down --up --delay`, also as a `batch` step) hold for their whole time: the device session times each hold and its release in one request, so a held key or touch no longer lifts at once, and a command killed mid-hold never leaves a button, key or touch down. A `batch` touch or key left down at the end of its step is refused with `not_supported`, as a lone `touch --down` is.
+- A physical device's session broker keeps serving input while its screen stream recovers: input never waits behind a stream re-open, input whose command has disconnected or given up is dropped unsent (so a retried tap no longer lands twice), and a stream that keeps failing (an app using the camera, a locked device) is retried with back-off while screenshots use `devicectl`, instead of ending the broker.
+- One failed UniversalHID open no longer sends a device's touches to the runner and refuses its keys for the broker's whole life: the next input at least 2 s later retries it.
+- The device screen stream takes video only from the device's own tunnel address.
+- On a physical iPad with Display Zoom set to More Space, taps, swipes and `describe-ui` screen sizes use the UI's real point size, so input lands where `describe-ui` frames say.
+- `describe-ui` reports a landscape-native iPad's screen as landscape.
+- On a physical device, touches after the screen turns land where the turned screen's frames say: the device session reads the display again before a touch when its last read started over a second earlier, and `orientation` makes it read again at once.
+- Element taps on an iPad app in Split View are no longer refused as if it were in a Stage Manager window.
+- `--verify` on a physical device in landscape can now exit 5: the status bar band, where the screen-sharing indicator pulses while the session streams, is left out of its screen comparison in every orientation, as it is for `screenshot --baseline` and `wait` screen checks. Simulators and Android are unchanged.
+- Two commands starting a device's runner or session broker at once can no longer both take its start lock, which a command that crashes now releases at once.
+- A device's session broker lists the device again before it reopens a touch or button link, and stops once the device is off USB, so input never goes over a Wi-Fi tunnel after a cable pull.
+- After a device session loses a reply, the command's next input reconnects instead of failing unsent; the input whose reply was lost is never resent.
+- When a device's session broker fails to start, the rest of the command no longer waits for it again: screenshots go straight to `devicectl` and `button home` to the runner.
+- Long `type` text on a device goes to the session in requests of at most 256 characters, so it no longer fails as possibly sent; a request too large for the session is refused unsent.
+
 ## [0.6.0] - 2026-10-05
 
 ### Added

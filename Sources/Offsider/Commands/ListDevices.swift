@@ -26,6 +26,9 @@ struct ListDevices: AsyncParsableCommand {
     /// One line per phone Offsider cannot drive yet, saying what the user must do.
     static func phoneHints(_ devices: [DeviceSummary]) -> [String] {
         devices.filter { $0.kind == .physical }.compactMap { device in
+            if device.platform == .ios {
+                return iosHint(device)
+            }
             if device.connection == "network" {
                 return "\(device.id) is a network adb connection, which Offsider does not drive; connect the phone over USB."
             }
@@ -33,6 +36,24 @@ struct ListDevices: AsyncParsableCommand {
                 return "\(device.id) is unauthorised: unlock the phone and accept the \"Allow USB debugging?\" prompt, then run `offsider list-devices` again."
             }
             return nil
+        }
+    }
+
+    private static func iosHint(_ device: DeviceSummary) -> String? {
+        let name = DeviceName.display(device.id, label: device.name)
+        switch device.state {
+        case "Untrusted":
+            return "\(name) does not trust this Mac: unlock it and tap Trust, then run `offsider list-devices` again."
+        case "Developer Mode off":
+            return "\(name) has Developer Mode off: turn it on in Settings > Privacy & Security > Developer Mode, then restart it."
+        case "Preparing":
+            return "\(name) is being prepared for development by Xcode: keep it connected and unlocked until that finishes."
+        case "Unavailable":
+            return "\(name) is paired but not connected: connect its cable and unlock it."
+        default:
+            return device.connection == "network"
+                ? "\(name) is connected over Wi-Fi, which Offsider does not drive; connect its cable."
+                : nil
         }
     }
 

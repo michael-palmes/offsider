@@ -5,6 +5,8 @@
 !*.xcworkspace/xcshareddata/
 !*.xcworkspace/xcshareddata/xcschemes/
 *.xcuserdatad
+# The runner project ships with Offsider; `scripts/build.sh runner` regenerates it.
+!/Sources/Offsider/Resources/runner/OffsiderRunner.xcodeproj/
 
 # Swift Package Manager
 .build/

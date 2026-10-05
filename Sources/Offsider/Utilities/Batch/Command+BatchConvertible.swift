@@ -170,6 +170,10 @@ extension Touch: BatchConvertible {
 
         if touchDown && touchUp {
             let holdDelay = delay ?? TapTiming.defaultHoldDuration
+            if context.device.isPhysicalIOSDevice {
+                // The device session times the hold itself, and releases whatever a request leaves down.
+                return [.hidBarrier(.composite([touchDownEvent, .delay(holdDelay), touchUpEvent]))]
+            }
             return [
                 .hidBarrier(touchDownEvent),
                 .hostSleep(holdDelay),
@@ -254,7 +258,7 @@ extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let inputText = try resolvedText()
 
-        if context.device.platform == .android {
+        if context.device.platform == .android || context.device.isPhysicalIOSDevice {
             if replace {
                 return [.text(inputText, replace: true)]
             }

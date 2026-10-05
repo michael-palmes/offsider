@@ -14,6 +14,12 @@ let isAndroidFoldE2EEnabled = {
     let raw = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_FOLD_E2E"]?.lowercased() ?? ""
     return raw == "1" || raw == "true" || raw == "yes"
 }()
+/// OFFSIDER_ANDROID_PHONE: the one USB phone the phone suites may drive, named by its exact serial.
+let androidPhoneSerial: String? = {
+    let value = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_PHONE"]?.trimmingCharacters(in: .whitespaces) ?? ""
+    return value.isEmpty ? nil : value
+}()
+let isAndroidPhoneE2EEnabled = androidPhoneSerial != nil
 let isAndroidBootE2EEnabled = {
     let raw = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_BOOT_E2E"]?.lowercased() ?? ""
     return isAndroidE2EEnabled && (raw == "1" || raw == "true" || raw == "yes")
@@ -42,8 +48,20 @@ enum AndroidE2E {
     }
 
     /// OFFSIDER_ANDROID_DEVICE checked through its console when a serial, else through `list-devices`; any AVD but the E2E one is refused before any input.
+    /// With OFFSIDER_ANDROID_PHONE set, that phone alone, checked against `adb devices -l`.
     static func serial() async throws -> String {
-        try await GuardedEmulator.shared.serial()
+        if isAndroidPhoneE2EEnabled {
+            return try await GuardedPhone.shared.serial()
+        }
+        return try await GuardedEmulator.shared.serial()
+    }
+
+    private static func installOnce(_ body: () async throws -> Void) async throws {
+        if isAndroidPhoneE2EEnabled {
+            try await GuardedPhone.shared.installOnce(body)
+        } else {
+            try await GuardedEmulator.shared.installOnce(body)
+        }
     }
 
     static func adbPath() throws -> String {
@@ -99,12 +117,16 @@ enum AndroidE2E {
     /// Installs the APK unless the emulator already has this exact one (its SHA-256 in a marker file).
     /// The debug and release APKs share the package, so each records its own digest and the other reinstalls.
     static func ensurePlaygroundInstalled() async throws {
-        try await GuardedEmulator.shared.installOnce {
+        try await installOnce {
             let apk = try apkPath()
             let digest = try apkDigest(apk)
             let installed = (try? await shell("cat \(marker) 2>/dev/null; pm path \(package)")) ?? ""
             if !(installed.contains(digest) && installed.contains("package:")) {
-                try await install(apk, digest: digest)
+                if try await installedDigest() == digest {
+                    try await shell("echo \(digest) > \(marker)")
+                } else {
+                    try await install(apk, digest: digest)
+                }
             }
             if isRNDebugE2EEnabled {
                 try await run("rn prepare --bundle-id \(package)")
@@ -124,15 +146,35 @@ enum AndroidE2E {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The SHA-256 of the installed package's base APK, so a build installed by hand is adopted instead of reinstalled.
+    private static func installedDigest() async throws -> String? {
+        let path = (try? await shell("pm path \(package)"))?.split(whereSeparator: \.isNewline).first { $0.hasPrefix("package:") }
+        guard let path else { return nil }
+        let sum = try await shell("sha256sum \(path.dropFirst("package:".count)) 2>/dev/null", timeout: 120)
+        return sum.split(separator: " ").first.map(String.init)
+    }
+
+    /// Pushed and installed by `pm`, because `adb install` on a phone with Google Play waits on a Play Protect prompt.
     /// A signature mismatch with the installed build (debug over release or the reverse) needs an uninstall first.
     private static func install(_ apk: String, digest: String) async throws {
+        let remote = "/data/local/tmp/offsider-e2e-playground.apk"
+        try await adb("push \(quote(apk)) \(remote)", timeout: 300)
         do {
-            try await adb("install -r \(quote(apk))", timeout: 300)
+            try await shellInstall("pm install -r \(remote)")
         } catch let error as AndroidE2EError where error.description.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
             try await adb("uninstall \(package)", timeout: 120)
-            try await adb("install \(quote(apk))", timeout: 300)
+            try await shellInstall("pm install \(remote)")
         }
+        _ = try? await shell("rm \(remote)")
         try await shell("echo \(digest) > \(marker)")
+    }
+
+    /// `pm install` reports failure on stdout with exit 0 on some builds, so the text is checked too.
+    private static func shellInstall(_ command: String) async throws {
+        let output = try await shell(command, timeout: 300)
+        guard output.contains("Success") else {
+            throw AndroidE2EError(description: "\(command) answered \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
     }
 
     /// Restarts the playground on a screen by deep link, without waiting for the screen to render.
@@ -229,6 +271,82 @@ enum AndroidE2EGuard {
             return .failure(AndroidE2EError(description: "Refusing \(serial): `adb -s \(serial) emu avd name` printed \(avdName), and Android E2E only drives \(expected) (OFFSIDER_ANDROID_E2E_AVD)."))
         }
         return .success(serial)
+    }
+}
+
+/// The pure decision behind the phone suites: only the exact OFFSIDER_ANDROID_PHONE serial, attached over USB and authorised.
+enum AndroidPhoneGuard {
+    /// The emulator suites' switches; any one of them set keeps the phone suites off.
+    static let emulatorFlags = ["OFFSIDER_ANDROID_E2E", "OFFSIDER_ANDROID_FOLD_E2E", "OFFSIDER_ANDROID_LANDSCAPE_E2E", "OFFSIDER_ANDROID_BOOT_E2E"]
+
+    /// The emulator switches set to a true value in `environment`.
+    static func emulatorFlagsSet(in environment: [String: String]) -> [String] {
+        emulatorFlags.filter { ["1", "true", "yes"].contains(environment[$0]?.lowercased() ?? "") }
+    }
+
+    /// What can be decided before any adb call.
+    static func preflight(requested: String, emulatorFlags set: [String]) -> Result<Void, AndroidE2EError> {
+        if !set.isEmpty {
+            let names = set.joined(separator: ", ")
+            return .failure(AndroidE2EError(description: "OFFSIDER_ANDROID_PHONE and \(names) are both set; the phone suites and the emulator suites run one at a time, so unset \(names) or OFFSIDER_ANDROID_PHONE."))
+        }
+        if requested.wholeMatch(of: #/emulator-[0-9]+/#) != nil {
+            return .failure(AndroidE2EError(description: "Refusing \(requested): OFFSIDER_ANDROID_PHONE names a USB phone; emulators run through OFFSIDER_ANDROID_DEVICE."))
+        }
+        if requested.wholeMatch(of: #/[A-Za-z0-9._-]+/#) == nil {
+            return .failure(AndroidE2EError(description: "Refusing \(requested): OFFSIDER_ANDROID_PHONE must be a USB serial from `adb devices -l`, never a network address."))
+        }
+        return .success(())
+    }
+
+    /// The serial when `adb devices -l` lists exactly it, in state `device`, with a `usb:` field.
+    static func verdict(requested: String, emulatorFlags set: [String], devices: String) -> Result<String, AndroidE2EError> {
+        if case .failure(let error) = preflight(requested: requested, emulatorFlags: set) {
+            return .failure(error)
+        }
+        let rows = devices.split(whereSeparator: \.isNewline).map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
+        guard let row = rows.first(where: { $0.first == requested }) else {
+            return .failure(AndroidE2EError(description: "Refusing \(requested): `adb devices -l` does not list it. Connect the phone by USB and accept the debugging prompt."))
+        }
+        guard row.count > 1, row[1] == "device" else {
+            let state = row.count > 1 ? row[1] : "unknown"
+            return .failure(AndroidE2EError(description: "Refusing \(requested): its adb state is \(state), not device. Unlock it and accept the USB debugging prompt."))
+        }
+        guard row.dropFirst(2).contains(where: { $0.hasPrefix("usb:") }) else {
+            return .failure(AndroidE2EError(description: "Refusing \(requested): its `adb devices -l` row has no usb: field, so it is not attached by USB."))
+        }
+        return .success(requested)
+    }
+}
+
+/// Resolves OFFSIDER_ANDROID_PHONE once from `adb devices -l`; never sends `emu` and never falls back to another serial.
+actor GuardedPhone {
+    static let shared = GuardedPhone()
+    private var resolved: String?
+    private var installed = false
+
+    func serial() async throws -> String {
+        if let resolved { return resolved }
+        guard let requested = androidPhoneSerial else {
+            throw AndroidE2EError(description: "OFFSIDER_ANDROID_PHONE must name the phone's USB serial.")
+        }
+        let emulatorFlags = AndroidPhoneGuard.emulatorFlagsSet(in: ProcessInfo.processInfo.environment)
+        try AndroidPhoneGuard.preflight(requested: requested, emulatorFlags: emulatorFlags).get()
+        let listing = try await CommandRunner.runSeparated(
+            "\(AndroidE2E.quote(try AndroidE2E.adbPath())) devices -l", environment: ["ADB_MDNS": "0"], timeout: 30
+        )
+        guard listing.exitCode == 0 else {
+            throw AndroidE2EError(description: "adb devices -l exited \(listing.exitCode): \(listing.stderr)")
+        }
+        let serial = try AndroidPhoneGuard.verdict(requested: requested, emulatorFlags: emulatorFlags, devices: listing.stdout).get()
+        resolved = serial
+        return serial
+    }
+
+    func installOnce(_ body: () async throws -> Void) async throws {
+        guard !installed else { return }
+        try await body()
+        installed = true
     }
 }
 

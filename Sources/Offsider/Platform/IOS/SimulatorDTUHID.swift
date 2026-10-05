@@ -23,8 +23,6 @@ final class SimulatorDTUHID: @unchecked Sendable {
         }
     }
 
-    /// `dtuhidd` opens the services it creates for a new peer 560 to 770 ms after the peer's first message, and drops events sent before then.
-    static let activationFloor: Duration = .seconds(1)
     static let replyTimeoutSeconds: Double = 2
     static let replyTail: Duration = .milliseconds(200)
 
@@ -44,7 +42,7 @@ final class SimulatorDTUHID: @unchecked Sendable {
             let started = ContinuousClock.now
             let link = SimulatorDTUHID(service: service, connection: try makeConnection(simulator: simulator, service: service))
             if await link.roundTrip(DTUHIDMessage.barrier(service: service)) {
-                let remaining = activationFloor - (ContinuousClock.now - started)
+                let remaining = DTUHIDMessage.activationFloor - (ContinuousClock.now - started)
                 if remaining > .zero { try await Task.sleep(for: remaining) }
                 return link
             }
@@ -58,7 +56,7 @@ final class SimulatorDTUHID: @unchecked Sendable {
     /// Writes one message; returns once XPC has sent it.
     func send(_ message: DTUHIDValue) async {
         hasSent = true
-        let object = Self.xpcObject(message)
+        let object = message.xpcObject
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             xpc_connection_send_message(connection, object)
             xpc_connection_send_barrier(connection) { continuation.resume() }
@@ -79,16 +77,11 @@ final class SimulatorDTUHID: @unchecked Sendable {
 
     /// True when `dtuhidd` itself answered before the timeout.
     private func roundTrip(_ message: DTUHIDValue) async -> Bool {
-        let object = Self.xpcObject(message)
-        let answer = FirstAnswer()
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let queue = DispatchQueue.global(qos: .userInitiated)
-            xpc_connection_send_message_with_reply(connection, object, queue) { reply in
-                if answer.claim() { continuation.resume(returning: xpc_get_type(reply) != XPC_TYPE_ERROR) }
-            }
-            queue.asyncAfter(deadline: .now() + Self.replyTimeoutSeconds) {
-                if answer.claim() { continuation.resume(returning: false) }
-            }
+        let object = message.xpcObject
+        let connection = connection
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        return await replyOrTimeout(within: Self.replyTimeoutSeconds, timedOut: false, on: queue) { answer in
+            xpc_connection_send_message_with_reply(connection, object, queue) { answer(xpc_get_type($0) != XPC_TYPE_ERROR) }
         }
     }
 
@@ -124,35 +117,5 @@ final class SimulatorDTUHID: @unchecked Sendable {
         xpc_connection_set_event_handler(connection) { _ in }
         xpc_connection_resume(connection)
         return connection
-    }
-
-    static func xpcObject(_ value: DTUHIDValue) -> xpc_object_t {
-        switch value {
-        case let .string(text): return xpc_string_create(text)
-        case let .bool(flag): return xpc_bool_create(flag)
-        case let .uint(number): return xpc_uint64_create(number)
-        case let .double(number): return xpc_double_create(number)
-        case let .data(bytes): return bytes.withUnsafeBytes { xpc_data_create($0.baseAddress, bytes.count) }
-        case let .dictionary(entries):
-            let dictionary = xpc_dictionary_create(nil, nil, 0)
-            for (key, entry) in entries {
-                xpc_dictionary_set_value(dictionary, key, xpcObject(entry))
-            }
-            return dictionary
-        }
-    }
-}
-
-/// True for exactly one caller, which resumes the continuation.
-private final class FirstAnswer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var pending = true
-
-    func claim() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        let wasPending = pending
-        pending = false
-        return wasPending
     }
 }

@@ -43,14 +43,21 @@ public enum IOSAccessibilityMapping {
     ]
 
     public static func roots(fromJSON data: Data) throws -> [UINode] {
+        try tree(fromJSON: data).roots
+    }
+
+    /// The roots, and whether the source cut its tree short (a root's `truncated: true`, as the device runner sends).
+    public static func tree(fromJSON data: Data) throws -> (roots: [UINode], truncated: Bool) {
         let object = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        let dictionaries: [[String: Any]]
         if let array = object as? [[String: Any]] {
-            return array.map(node(from:))
+            dictionaries = array
+        } else if let dictionary = object as? [String: Any] {
+            dictionaries = [dictionary]
+        } else {
+            throw MappingError.notAnAccessibilityTree
         }
-        if let dictionary = object as? [String: Any] {
-            return [node(from: dictionary)]
-        }
-        throw MappingError.notAnAccessibilityTree
+        return (dictionaries.map(node(from:)), dictionaries.contains { $0["truncated"] as? Bool == true })
     }
 
     public static func node(from dictionary: [String: Any]) -> UINode {

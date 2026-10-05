@@ -65,7 +65,7 @@ struct AndroidInputSessionTests {
         let drag = InputEvent.composite([.touch(direction: .down, x: 10, y: 10), .touch(direction: .down, x: 60, y: 10), .touch(direction: .up, x: 60, y: 10)])
 
         let error = await #expect(throws: AndroidError.self) { try await session.perform(drag) }
-        #expect(error?.message == "Input on emulator-5556 failed: Error: injection failed. Check that the emulator is still running with `offsider list-devices`.")
+        #expect(error?.message == "Input on emulator-5556 failed: Error: injection failed. Check that the device is still connected with `offsider list-devices`.")
         await session.close()
 
         #expect(Self.scripts(server).last == "input motionevent UP 60 10")

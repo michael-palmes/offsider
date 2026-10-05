@@ -37,6 +37,20 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case androidDeviceMetroReverse = "android-device.metro-reverse"
     case androidDeviceAdbExpiry = "android-device.adb-expiry"
     case androidDeviceSystemUpdates = "android-device.system-updates"
+    case iosDeviceXcode = "ios-device.xcode"
+    case iosDeviceCoreDevice = "ios-device.coredevice"
+    case iosDeviceListed = "ios-device.listed"
+    case iosDeviceTransport = "ios-device.transport"
+    case iosDevicePairing = "ios-device.pairing"
+    case iosDeviceDeveloperMode = "ios-device.developer-mode"
+    case iosDeviceDDI = "ios-device.ddi"
+    case iosDeviceTunnel = "ios-device.tunnel"
+    case iosDeviceLockState = "ios-device.lock-state"
+    case iosDeviceHID = "ios-device.hid"
+    case iosDeviceUIAutomation = "ios-device.ui-automation"
+    case iosDeviceSession = "ios-device.session"
+    case iosDeviceUsbmuxd = "ios-device.usbmuxd"
+    case iosDeviceRunnerSigning = "ios-device.runner-signing"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -48,6 +62,10 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
 
     public var isPerAndroidDevice: Bool {
         rawValue.hasPrefix("android-device.")
+    }
+
+    public var isPerIOSDevice: Bool {
+        rawValue.hasPrefix("ios-device.")
     }
 
     public var title: String {
@@ -87,6 +105,20 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .androidDeviceMetroReverse: return "Metro reverse"
         case .androidDeviceAdbExpiry: return "adb authorisation expiry"
         case .androidDeviceSystemUpdates: return "System updates"
+        case .iosDeviceXcode: return "Xcode"
+        case .iosDeviceCoreDevice: return "CoreDevice"
+        case .iosDeviceListed: return "Device"
+        case .iosDeviceTransport: return "Connection"
+        case .iosDevicePairing: return "Trust"
+        case .iosDeviceDeveloperMode: return "Developer Mode"
+        case .iosDeviceDDI: return "Developer disk image"
+        case .iosDeviceTunnel: return "CoreDevice tunnel"
+        case .iosDeviceLockState: return "Lock state"
+        case .iosDeviceUIAutomation: return "UI Automation"
+        case .iosDeviceHID: return "HID input"
+        case .iosDeviceSession: return "Session broker"
+        case .iosDeviceUsbmuxd: return "usbmuxd"
+        case .iosDeviceRunnerSigning: return "Runner signing"
         }
     }
 }

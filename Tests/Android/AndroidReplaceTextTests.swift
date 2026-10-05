@@ -59,7 +59,8 @@ struct AndroidReplaceTextTests {
         try await Self.replace("one\ntwo\n", on: rig)
 
         #expect(try Self.sentText(rig) == "one\ntwo")
-        #expect(Self.inputScripts(rig) == ["input keyevent 66"])
+        #expect(rig.device.injected == ["key press 66 meta 0"])
+        #expect(Self.inputScripts(rig).isEmpty)
         await rig.backend.close()
     }
 
@@ -86,7 +87,7 @@ struct AndroidReplaceTextTests {
         await rig.backend.close()
     }
 
-    @Test("a field without the set-text action warns once, then clears with Ctrl+A and Delete and types the text")
+    @Test("a field without the set-text action warns once, then clears with Ctrl+A and Delete and types the text through the running helper")
     func actionUnsupported() async throws {
         let rig = try Self.rig(setText: .error(code: "action-unsupported", message: "android.widget.EditText does not offer ACTION_SET_TEXT"))
         try await Self.replace("bye\n", on: rig)
@@ -94,6 +95,23 @@ struct AndroidReplaceTextTests {
         #expect(rig.log.warnings == [
             "The focused field on emulator-5556 does not accept replacement text (android.widget.EditText does not offer ACTION_SET_TEXT), so Offsider clears it with Ctrl+A and Delete, then types.",
         ])
+        #expect(rig.device.injected == [
+            "key down 113 meta 12288", "key press 29 meta 12288", "key up 113 meta 0", "pause 50", "key press 67 meta 0",
+            "text bye", "key press 66 meta 0",
+        ])
+        #expect(Self.inputScripts(rig).isEmpty)
+        await rig.backend.close()
+    }
+
+    @Test("with OFFSIDER_ANDROID_INPUT=input, the Ctrl+A and Delete fallback goes through `input` though the helper runs")
+    func actionUnsupportedOverInput() async throws {
+        let rig = try Self.rig(
+            environment: ["OFFSIDER_ANDROID_INPUT": "input"],
+            setText: .error(code: "action-unsupported", message: "android.widget.EditText does not offer ACTION_SET_TEXT")
+        )
+        try await Self.replace("bye\n", on: rig)
+
+        #expect(rig.device.injected.isEmpty)
         let scripts = Self.inputScripts(rig)
         #expect(scripts.first == "input keycombination 113 29 && sleep 0.05 && input keyevent 67")
         #expect(scripts.dropFirst().joined(separator: " && ").contains("input text 'bye'"))

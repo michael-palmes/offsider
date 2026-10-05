@@ -164,6 +164,44 @@ enum AndroidScreenCapture {
         return result
     }
 
+    /// How far into screencap's output a header may start: a multi-display phone prints a warning before it.
+    static let maxLeadingBytes = 4096
+    static let maxRawSide = 16384
+
+    /// Raw `screencap`: little-endian u32 width, height, format (and a colour space from API 28), taken only where RGBA or RGBX rows fill the rest exactly.
+    static func pixels(fromScreencapRaw output: Data) throws -> Pixels {
+        let bytes = [UInt8](output.prefix(maxLeadingBytes + 16))
+        func word(_ at: Int) -> Int {
+            Int(bytes[at]) | Int(bytes[at + 1]) << 8 | Int(bytes[at + 2]) << 16 | Int(bytes[at + 3]) << 24
+        }
+        for offset in 0...min(maxLeadingBytes, max(0, output.count - 12)) {
+            for headerSize in [16, 12] where offset + headerSize <= bytes.count {
+                let width = word(offset)
+                let height = word(offset + 4)
+                guard (1...maxRawSide).contains(width), (1...maxRawSide).contains(height),
+                      output.count - offset == headerSize + width * height * 4 else { continue }
+                let format = word(offset + 8)
+                guard format == 1 || format == 2 else {
+                    throw ImageFailure(detail: "screencap reported pixel format \(format), not RGBA_8888 or RGBX_8888")
+                }
+                let start = output.startIndex + offset + headerSize
+                return Pixels(width: width, height: height, bytes: Data(output[start...]))
+            }
+        }
+        let text = String(decoding: output.prefix(200), as: UTF8.self)
+        let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
+        throw ImageFailure(detail: "screencap's raw output has no header Offsider can read (\(output.count) bytes, starting \(firstLine.prefix(80)))")
+    }
+
+    static let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+
+    /// The PNG within screencap's output, after any warning text it printed first; nil when there is none.
+    static func png(fromScreencap output: Data) -> Data? {
+        let window = output.prefix(maxLeadingBytes + pngSignature.count)
+        guard let range = window.firstRange(of: pngSignature) else { return nil }
+        return range.lowerBound == output.startIndex ? output : Data(output[range.lowerBound...])
+    }
+
     static func encodePNG(_ pixels: Pixels) throws -> Data {
         let image = try cgImage(pixels)
         let output = NSMutableData()

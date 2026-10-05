@@ -19,6 +19,9 @@ struct DescribeUI: AsyncParsableCommand {
     @OptionGroup
     var displayOption: DisplayOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     @Option(
         name: .customLong("point"),
         help: ArgumentHelp(
@@ -60,6 +63,7 @@ struct DescribeUI: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        await appOption.apply(to: route)
         try await route.backend.prepare()
         try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
 

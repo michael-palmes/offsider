@@ -150,7 +150,7 @@ final class Server {
             Log.w(OffsiderHelper.TAG, "could not set up the client socket: " + e.getMessage());
             return false;
         }
-        return send(requests.handle(payload).bytes);
+        return send(requests.handle(payload));
     }
 
     private static boolean isHelloWithToken(byte[] payload, byte[] token) {
@@ -193,20 +193,24 @@ final class Server {
             if (reply.quit) {
                 throw shutdown(0, "quit", null, reply.bytes);
             }
-            if (!send(reply.bytes)) {
+            if (!send(reply)) {
                 throw shutdown(0, null, "the client stopped reading", null);
             }
         }
     }
 
-    private boolean send(byte[] frame) {
+    /** The reply, then its payload frame when it has one, with nothing between them. */
+    private boolean send(Requests.Reply reply) {
         synchronized (writeLock) {
             OutputStream out = clientOut;
             if (out == null || ending.get()) {
                 return false;
             }
             try {
-                Frames.write(out, frame);
+                Frames.write(out, reply.bytes);
+                if (reply.payload != null) {
+                    Frames.write(out, reply.payload);
+                }
                 return true;
             } catch (IOException e) {
                 Log.w(OffsiderHelper.TAG, "writing a reply failed: " + e.getMessage());

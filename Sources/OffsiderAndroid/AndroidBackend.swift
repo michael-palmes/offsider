@@ -293,7 +293,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             }
         }
         let shell = AdbDeviceShell(client: try requireClient(), serial: id.rawValue)
-        if case .grpc(let driver) = try await inputExecutor(for: id.rawValue, shell: shell).executor {
+        if case .grpc(let driver) = try await inputExecutor(for: id.rawValue, shell: shell, allowingHelper: false).executor {
             try await driver.run(inputSteps)
             return
         }
@@ -314,10 +314,15 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     }
 
     /// A resized display (`wm size` override) no longer maps onto the panel, so its input stays on adb; a foldable's gRPC waits for the panel's geometry.
-    private func inputExecutor(for serial: String, shell: AdbDeviceShell) async throws -> (executor: AndroidInputExecutor, geometry: AndroidDisplayGeometry) {
+    private func inputExecutor(
+        for serial: String,
+        shell: AdbDeviceShell,
+        allowingHelper: Bool = true
+    ) async throws -> (executor: AndroidInputExecutor, geometry: AndroidDisplayGeometry) {
+        let policy = try AndroidInputPolicy.policy(host: host)
         var geometry = try await geometry(for: serial)
         guard case .grpc(let emulator) = try await transport(for: serial) else {
-            return (.adb(shell), geometry)
+            return (allowingHelper ? try await shellExecutor(serial, shell: shell, policy: policy) : .adb(shell), geometry)
         }
         let posture = await postureIfFoldable(serial)
         if posture != nil {
@@ -336,6 +341,17 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return (.grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep)), geometry)
     }
 
+    /// Without gRPC: the helper when forced or already running for this command, else `input` shell commands.
+    private func shellExecutor(_ serial: String, shell: AdbDeviceShell, policy: AndroidInputPolicy) async throws -> AndroidInputExecutor {
+        let session: HelperSession?
+        switch policy {
+        case .input: session = nil
+        case .auto: session = runningHelper(for: serial)
+        case .helper: session = try await helperForInput(serial, required: true)
+        }
+        return session.map { .helper(HelperInputDriver(session: $0)) } ?? .adb(shell)
+    }
+
     /// gRPC `getScreenshot`, turned upright when only the guest rotated; else adb's `screencap`.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         try await prepare()
@@ -345,8 +361,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     }
 
     private func capturePNG(_ serial: String) async throws -> Data {
+        let policy = try AndroidCapturePolicy.policy(host: host)
         guard case .grpc(let emulator) = try await transport(for: serial) else {
-            return try await adbScreenshot(serial)
+            return try await shellCapture(serial, policy: policy)
         }
         let geometry = try await geometry(for: serial)
         let frame = try await emulator.screenshot(.png, fitting: nil)
@@ -367,12 +384,62 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return bands
     }
 
-    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation; `-d` picks a physical display.
+    /// Without gRPC: the device's PNG, or raw pixels from screencap or the helper encoded here; those two fall back to the PNG.
+    private func shellCapture(_ serial: String, policy: AndroidCapturePolicy) async throws -> Data {
+        let pixels: AndroidScreenCapture.Pixels
+        switch policy {
+        case .auto, .screencap:
+            return try await adbScreenshot(serial)
+        case .raw:
+            let output = try await requireClient().exec("screencap", on: serial, timeout: .seconds(15))
+            do {
+                pixels = try AndroidScreenCapture.pixels(fromScreencapRaw: output)
+            } catch let failure as AndroidScreenCapture.ImageFailure {
+                log(.debug, "Raw screencap on \(serial) was unreadable (\(failure.detail)); using `screencap -p`")
+                return try await adbScreenshot(serial)
+            }
+        case .helper:
+            guard let captured = try await helperPixels(serial) else {
+                return try await adbScreenshot(serial)
+            }
+            pixels = captured
+        }
+        do {
+            return try host.timing.measure(.captureEncode) { try AndroidScreenCapture.encodePNG(pixels) }
+        } catch let failure as AndroidScreenCapture.ImageFailure {
+            throw AndroidError.screenshotFailed(serial, detail: failure.detail)
+        }
+    }
+
+    /// The helper's raw screenshot, starting the helper if needed; nil, with a warning, when it cannot serve.
+    private func helperPixels(_ serial: String) async throws -> AndroidScreenCapture.Pixels? {
+        let problem: String
+        do {
+            if let session = try await helperForInput(serial, required: false) {
+                return try await session.screenshot()
+            }
+            problem = "the helper is unavailable"
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as HelperErrorBody {
+            problem = "\(error.code): \(error.message)"
+        } catch let error as HelperProtocolError {
+            problem = error.detail
+        } catch let error as AndroidError {
+            problem = error.message
+        } catch {
+            problem = String(describing: error)
+        }
+        log(.warning, "The UiAutomation helper could not take a screenshot on \(serial) (\(problem)), so Offsider used `screencap -p`.")
+        return nil
+    }
+
+    /// `exec:screencap -p`: the guest's upright PNG from the display `-d` picks, skipping a warning printed before it.
     func adbScreenshot(_ serial: String, physicalDisplay: String? = nil) async throws -> Data {
         let command = physicalDisplay.map { "screencap -d \($0) -p" } ?? "screencap -p"
-        let png = try await requireClient().exec(command, on: serial, timeout: .seconds(15))
-        guard png.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) else {
-            let text = String(decoding: png.prefix(200), as: UTF8.self)
+        let output = try await requireClient().exec(command, on: serial, timeout: .seconds(15))
+        guard let png = AndroidScreenCapture.png(fromScreencap: output) else {
+            let text = String(decoding: output.prefix(200), as: UTF8.self)
             let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
             throw AndroidError.adbCommandFailed(serial: serial, command: command, detail: firstLine)
         }

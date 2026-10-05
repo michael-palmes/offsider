@@ -118,7 +118,10 @@ struct Verifier {
             if let shot = baselineShot {
                 let exclusion = bandPixels(pngData: shot, screenFrame: screenFrame, bands: bands)
                 if baselinePrint == nil {
-                    baselinePrint = ImageFingerprint(pngData: shot, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom)
+                    baselinePrint = ImageFingerprint(
+                        pngData: shot, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
+                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right
+                    )
                 }
                 var afterShots: [Data] = []
                 for shotIndex in 0..<screenshotCount {
@@ -126,7 +129,10 @@ struct Verifier {
                     if let data = try? await dependencies.screenshot() { afterShots.append(data) }
                 }
                 let afterPrints = afterShots.compactMap {
-                    ImageFingerprint(pngData: $0, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom)
+                    ImageFingerprint(
+                        pngData: $0, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
+                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right
+                    )
                 }
                 if let before = baselinePrint, !afterPrints.isEmpty,
                    ScreenChange.detect(before: before, after: afterPrints) {
@@ -168,16 +174,21 @@ struct Verifier {
         snapshot.roots.lazy.compactMap(\.frame).first { $0.width > 0 && $0.height > 0 }
     }
 
-    /// Portrait only: screenshots are portrait-native, so the bands cannot be placed in landscape.
-    static func bandPixels(pngData: Data, screenFrame: AccessibilitySnapshot.Frame?, bands: ScreenBands) -> (top: Int, bottom: Int) {
-        guard let screenFrame, screenFrame.height >= screenFrame.width,
+    /// Portrait only, unless the bands hold in every orientation and say how the raw screenshot turns upright.
+    static func bandPixels(pngData: Data, screenFrame: AccessibilitySnapshot.Frame?, bands: ScreenBands) -> (top: Int, bottom: Int, left: Int, right: Int) {
+        guard let screenFrame, bands.everyOrientation || screenFrame.height >= screenFrame.width,
               let source = CGImageSourceCreateWithData(pngData as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let pixelWidth = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue else {
-            return (0, 0)
+              let pixelWidth = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              let pixelHeight = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              screenFrame.width > 0, screenFrame.height > 0 else {
+            return (0, 0, 0, 0)
         }
-        let scale = pixelWidth / screenFrame.width
-        return (Int((bands.top * scale).rounded()), Int((bands.bottom * scale).rounded()))
+        guard bands.everyOrientation else {
+            let scale = pixelWidth / screenFrame.width
+            return (Int((bands.top * scale).rounded()), Int((bands.bottom * scale).rounded()), 0, 0)
+        }
+        return bands.screenshotPixels(scale: max(pixelWidth, pixelHeight) / max(screenFrame.width, screenFrame.height))
     }
 }
 

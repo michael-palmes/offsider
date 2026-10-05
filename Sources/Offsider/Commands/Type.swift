@@ -93,8 +93,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let inputText = try resolvedText()
         logger.info().log("Typing \(inputText.count) character\(inputText.count == 1 ? "" : "s")")
 
-        if device.platform == .android {
-            try await typeOnAndroid(inputText, backend: backend, device: device, progress: progress)
+        if device.platform == .android || device.isPhysicalIOSDevice {
+            try await typeThroughSession(inputText, backend: backend, device: device, progress: progress)
             return
         }
 
@@ -146,8 +146,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         logger.info().log("Text typing completed successfully")
     }
     
-    /// Android picks key events or a paste itself, so the US-keyboard check and HID conversion do not apply.
-    private func typeOnAndroid(_ inputText: String, backend: any DeviceBackend, device: DeviceID, progress: VerifyProgress?) async throws {
+    /// Android and physical iOS devices pick key events, a paste or the runner themselves, so the US-keyboard check and HID conversion do not apply here.
+    private func typeThroughSession(_ inputText: String, backend: any DeviceBackend, device: DeviceID, progress: VerifyProgress?) async throws {
         let typeText: @MainActor (any InputSession) async throws -> Void = { session in
             guard let textSession = session as? any TextInputSession else {
                 throw CLIError(errorDescription: "This device's input session cannot type text.", reason: .internalError)

@@ -21,6 +21,15 @@ public struct EmulatorBootResult: Equatable, Sendable {
     public let logPath: String?
 }
 
+/// Starts the emulator so it outlives the command; a protocol so tests never start one.
+protocol EmulatorLaunching: Sendable {
+    func launch(executable: URL, arguments: [String], environment: [String: String], logPath: String) throws -> Int32
+    /// The exit status once the launched process has exited (128 plus the signal when killed), else nil.
+    func exitStatus(of pid: Int32) -> Int32?
+}
+
+extension DetachedProcess: EmulatorLaunching {}
+
 /// `offsider boot`: finds the AVD running or starts it detached, then waits for Android and the gRPC endpoint.
 @MainActor
 public struct EmulatorBooter {
@@ -93,12 +102,19 @@ public struct EmulatorBooter {
             throw AndroidError.emulatorMissing(sdkRoot: sdk.root.path)
         }
         let logPath = Self.logPath(avdName: name, host: host)
-        let pid = try host.launcher.launch(
-            executable: sdk.emulator,
-            arguments: Self.launchArguments(avdName: name, headless: request.headless),
-            environment: host.environment,
-            logPath: logPath
-        )
+        var environment = host.environment
+        environment["ADB_MDNS"] = "0"
+        let pid: Int32
+        do {
+            pid = try host.launcher.launch(
+                executable: sdk.emulator,
+                arguments: Self.launchArguments(avdName: name, headless: request.headless),
+                environment: environment,
+                logPath: logPath
+            )
+        } catch let failure as DetachedProcessError {
+            throw AndroidError.emulatorLaunchFailed(path: failure.path, detail: failure.detail)
+        }
         log(.debug, "Started \(sdk.emulator.path) as pid \(pid); its output goes to \(logPath)")
         progress("Starting \(name)...")
         let serial = try await wait.serial(pid: pid, knownFiles: knownFiles, knownSerials: knownSerials, launched: pid, logPath: logPath)
