@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The Android helper (1.1.0, protocol 2) gains `inject`, which sends taps, swipes, touches, keys and text through UiAutomation, and `screenshot`, which returns the screen's raw pixels; `hello` lists the ops it serves.
+- `OFFSIDER_ANDROID_INPUT=auto|helper|input` chooses how input reaches an Android phone, or an emulator without gRPC. `auto` uses the helper only when the command has already started it to read the screen (a selector tap, `type --replace`), and `input` otherwise; `helper` always uses it and fails with a hint when it cannot start; `input` never uses it. Separate `touch --down` and `touch --up` commands always use `input motionevent`.
+- `OFFSIDER_ANDROID_CAPTURE=auto|screencap|raw|helper` chooses how such a device is captured. `auto` and `screencap` use `screencap -p`; `raw` reads `screencap`'s raw pixels and `helper` the helper's, both encoded as PNG on the Mac and both falling back to `screencap -p`.
+- The defaults stay on `input` and `screencap -p` because, in medians on a Galaxy Z Fold3 and a moto g57, starting the helper costs 280 to 390 ms per command while an injected tap saves only 40 to 75 ms: through the helper a coordinate `tap` was 61% and 90% slower, `swipe` 40% and 52%, `type` 92% and 110% and `screenshot` 33% and 63%, while a selector tap with `--verify` was 2 to 5% faster under `auto`.
+- `OFFSIDER_TIMINGS=1` adds the Android phases `helper-inject`, `helper-capture` and `capture-encode`.
+- `OFFSIDER_ANDROID_PHONE=<serial>` with `./test-runner.sh --android-phone` (`make e2e-android-phone`) runs the `AndroidPhone*Tests` suites on that one USB phone, installing the React Native playground there and leaving it.
+- `scripts/bench-ab.sh --phone --device <serial>` benchmarks a USB phone, with the scenarios `android-tap-xy`, `android-tap-xy-input`, `android-tap-xy-helper`, `android-tap-physical`, `android-swipe`, `android-type-ascii`, `android-type-ascii-helper`, `android-screenshot`, `android-screenshot-raw`, `android-screenshot-helper` and `android-batch-tap-5`; it never installs the playground and refuses when it is missing.
+
+### Changed
+
+- When the helper carries Android input, a key or button can stay held across other input, which `input` refuses; Android reports an accessibility service as enabled for that command, as it does for screen reads.
+- An Android input failure now asks you to check that the device is still connected, not that the emulator is running.
+
+### Fixed
+
+- `screenshot` on an Android phone with several displays, such as the Galaxy Z Fold3, no longer fails when `screencap` prints a warning before the image.
+
 ## [0.6.0] - 2026-10-05
 
 ### Added

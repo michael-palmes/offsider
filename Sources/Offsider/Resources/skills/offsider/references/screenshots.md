@@ -6,6 +6,7 @@
 - Crop with `--region <x,y,w,h>` (points, from `describe-ui`) instead of reading a full screen. `--scale <0.1-1>`, `--format jpeg` and `--quality` shrink the file.
 - `--json` prints `path`, `width`, `height`, `pixelsPerPoint`, `region`, `orientation`, `rotation`, `display` and `posture`. Landscape captures are upright.
 - `screenshot --display <id>` captures a foldable's other display (`guide foldables`).
+- On an Android phone, or an emulator without gRPC, `screenshot` uses `screencap -p`. `OFFSIDER_ANDROID_CAPTURE=raw` (raw `screencap` pixels) or `helper` (the UiAutomation helper) encodes the PNG on the Mac instead, falling back to `screencap -p`; both measured slower, so leave it unset.
 
 ```bash
 offsider screenshot --device <DEVICE_ID> --output screenshot.png --scale points
