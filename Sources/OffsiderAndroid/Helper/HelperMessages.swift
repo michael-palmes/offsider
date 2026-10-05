@@ -57,6 +57,11 @@ struct HelperRequest: Equatable, Sendable {
         HelperRequest(op: "setText", fields: ["text": .string(text)])
     }
 
+    /// Touch, key, text and pause steps, all checked by the helper before the first is injected.
+    static func inject(_ steps: [HelperValue], sync: Bool) -> HelperRequest {
+        HelperRequest(op: "inject", fields: ["steps": .array(steps), "sync": .bool(sync)])
+    }
+
     /// The JSON payload with sorted keys, so the same request always encodes the same way.
     func payload(id: Int) throws -> Data {
         var object = fields
@@ -75,6 +80,7 @@ indirect enum HelperValue: Encodable, Equatable, Sendable {
     case double(Double)
     case bool(Bool)
     case object([String: HelperValue])
+    case array([HelperValue])
 
     func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -84,6 +90,7 @@ indirect enum HelperValue: Encodable, Equatable, Sendable {
         case .double(let value): try container.encode(value)
         case .bool(let value): try container.encode(value)
         case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
         }
     }
 }
@@ -110,6 +117,20 @@ struct HelperErrorBody: Decodable, Error, Equatable, Sendable {
 struct HelperHello: Decodable, Equatable, Sendable {
     let helper: String
     let `protocol`: Int
+    /// The ops this helper answers; absent before protocol 2.
+    let ops: [String]?
+}
+
+/// The `inject` reply: one entry per step, the event sequence number read before the first event, and the total time.
+struct HelperInjectReply: Decodable, Equatable, Sendable {
+    struct Step: Decodable, Equatable, Sendable {
+        let dispatched: Bool
+        let ms: Int
+    }
+
+    let steps: [Step]
+    let eventSeqBefore: Int64
+    let totalMs: Int
 }
 
 struct HelperRange: Codable, Equatable, Sendable {

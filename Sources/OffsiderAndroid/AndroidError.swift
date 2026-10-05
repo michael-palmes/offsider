@@ -353,6 +353,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func helperUnavailableForInput(_ serial: String, reason: HelperUnavailableReason) -> AndroidError {
+        AndroidError(
+            .helperUnavailable,
+            "The UiAutomation helper is unavailable on \(serial) (\(reason)), and OFFSIDER_ANDROID_INPUT is helper. Unset it to send input with `input` instead."
+        )
+    }
+
     static func sliderNeedsHelper(_ serial: String, reason: HelperUnavailableReason) -> AndroidError {
         guard reason != .forcedOff else {
             return AndroidError(
@@ -537,7 +544,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func inputFailed(serial: String, detail: String) -> AndroidError {
-        AndroidError(.inputFailed, "Input on \(serial) failed: \(detail). Check that the emulator is still running with `offsider list-devices`.")
+        AndroidError(.inputFailed, "Input on \(serial) failed: \(detail). Check that the device is still connected with `offsider list-devices`.")
     }
 
     private static func buttonName(_ button: HardwareButton) -> String {

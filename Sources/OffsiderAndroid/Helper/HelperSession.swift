@@ -146,6 +146,13 @@ final class HelperSession {
         try await request(.setText(text), as: HelperTextResult.self, timeout: Self.requestTimeout)
     }
 
+    /// Injects the steps; `extraWait` covers their pauses and swipes. Leaves the event cursor alone, so a verifier still wakes on the input's events.
+    func inject(_ steps: [HelperValue], sync: Bool = true, extraWait: Duration) async throws -> HelperInjectReply {
+        try await launcher.timing.measure(.helperInject) {
+            try await request(.inject(steps, sync: sync), as: HelperInjectReply.self, timeout: Self.requestTimeout + extraWait)
+        }
+    }
+
     private func screenRequest<Reply: Decodable>(_ request: HelperRequest, as type: Reply.Type, timeout: Duration) async throws -> Reply {
         do {
             return try await self.request(request, as: type, timeout: timeout)

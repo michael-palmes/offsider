@@ -246,7 +246,43 @@ final class FakeHelperDevice: @unchecked Sendable {
         case "ping", "quit": return .ok("{}")
         case "dump": return .ok(lock.withLock { dump })
         case "display": return .ok(Self.displayReply)
+        case "inject": return .ok(Self.injectReply(to: json))
         default: return .error(code: "unknown-op", message: "unknown op '\(op)'")
+        }
+    }
+
+    /// Every step dispatched in 1 ms.
+    static func injectReply(to json: String) -> String {
+        let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        let count = (object?["steps"] as? [Any])?.count ?? 0
+        let steps = Array(repeating: #"{"dispatched":true,"ms":1}"#, count: count).joined(separator: ",")
+        return #"{"steps":[\#(steps)],"eventSeqBefore":7,"totalMs":\#(count)}"#
+    }
+
+    /// The steps of every `inject` the helper received, in order.
+    var injectedSteps: [[String: Any]] {
+        frames.filter { $0.op == "inject" }.flatMap { frame -> [[String: Any]] in
+            let object = try? JSONSerialization.jsonObject(with: Data(frame.json.utf8)) as? [String: Any]
+            return object?["steps"] as? [[String: Any]] ?? []
+        }
+    }
+
+    /// Each injected step as a short line, such as `key press 66 meta 0` or `touch down 100 200`.
+    var injected: [String] {
+        injectedSteps.map { step in
+            func number(_ key: String) -> String {
+                guard let value = step[key] as? NSNumber else { return "?" }
+                return value.doubleValue == value.doubleValue.rounded() ? String(value.intValue) : String(value.doubleValue)
+            }
+            switch step["kind"] as? String {
+            case "tap": return "tap \(number("x")) \(number("y"))"
+            case "swipe": return "swipe \(number("fromX")) \(number("fromY")) \(number("toX")) \(number("toY")) \(number("durationMs")) ms \(number("moves")) moves"
+            case "touch": return "touch \(step["phase"] as? String ?? "?") \(number("x")) \(number("y"))"
+            case "key": return "key \(step["phase"] as? String ?? "?") \(number("code")) meta \(number("meta"))"
+            case "text": return "text \(step["text"] as? String ?? "?")"
+            case "pause": return "pause \(number("ms"))"
+            default: return "unknown"
+            }
         }
     }
 

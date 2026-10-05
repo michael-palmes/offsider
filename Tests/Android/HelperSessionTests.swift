@@ -47,6 +47,24 @@ struct HelperSessionTests {
         await session.close()
     }
 
+    @Test("inject sends sync steps and leaves the event cursor at the dump, so the next events wait wakes on the input's events")
+    func injectKeepsCursor() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "events" ? .ok(#"{"events":[]}"#) : nil }
+        let session = try await Self.start(device)
+        _ = try await session.dump()
+        let reply = try await session.inject([.object(["kind": .string("tap"), "x": .double(1), "y": .double(2)])], extraWait: .zero)
+        _ = try await session.events(waitingUpTo: .zero)
+
+        #expect(reply.steps == [HelperInjectReply.Step(dispatched: true, ms: 1)])
+        #expect(reply.eventSeqBefore == 7)
+        #expect(session.eventCursor == 3)
+        let inject = try #require(device.frames.first { $0.op == "inject" })
+        #expect(inject.json.contains(#""sync":true"#))
+        #expect(device.frames.last?.json.contains(#""since":3"#) == true)
+        await session.close()
+    }
+
     @Test("an error reply to dump is an actionable error naming the device")
     func errorReply() async throws {
         let device = FakeHelperDevice()
