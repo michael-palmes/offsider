@@ -59,6 +59,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Documentation only: `offsider guide react-native` explains that airplane mode and `svc wifi|data disable` on an emulator also cut a debug build's route to Metro at `10.0.2.2` (an `adb reverse` the user set keeps working), that per-app network blocking also blocks loopback on API 35 and 36 and is missing on API 34, so Offsider has no `network` command, and that `logs --rn` keeps working.
 - `screenshot --json` `masked` now counts every rectangle painted by any mask, not only password fields.
 - `logs` redacts by default for every source: passwords, tokens, API keys, cookies, `Authorization` values, JWTs and email addresses read `[redacted]` in `message` and `raw`, `--json` adds `redacted` (the count) and stderr says how many with a pointer to `--no-redact`. `--grep` matches the text before redaction; `--raw` alone turns redaction off as before, and `--raw --redact` keeps colour codes and redacts.
+- The `screenshots` and `react-native` guide topics point to the new `evidence` topic for masking secure fields and personal data, and for log windows, `--json` and redaction.
 
 ### Fixed
 

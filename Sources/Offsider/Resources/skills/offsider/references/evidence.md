@@ -21,7 +21,7 @@ offsider run stop --summary
 
 Masks paint opaque black boxes over the image before it is written or compared, so the file never holds what they cover.
 
-- `--mask-secure` paints password fields; `OFFSIDER_MASK_SECURE=1` turns it on by default.
+- `--mask-secure` paints password fields; add it before sharing any screen with one. `OFFSIDER_MASK_SECURE=1` turns it on by default.
 - `--mask-id <id>` paints every element with that id; `--mask-label <text>` every element with that label, matched as `--label` matches.
 - `--mask-text <regex>` paints the innermost elements whose label, value, title, text, content description or hint matches, case-insensitively; a secure field's value is never searched. `--mask-emails` does the same for email addresses.
 - `--mask-region <x,y,w,h>` paints a rectangle in points before any `--region` crop, and reads no tree. Use it for content the tree cannot see.
@@ -32,14 +32,6 @@ Masks paint opaque black boxes over the image before it is written or compared, 
 
 ```bash
 offsider screenshot --mask-secure --mask-emails --mask-id profile-name --json --device <DEVICE_ID>
-```
-
-## Pixel diffs
-
-`screenshot --compare before.png` counts exactly which pixels changed as well as its tile verdict: `--json` adds `changedPixels`, `comparedPixels` and `changedBounds` (`{x,y,width,height}` in the image's pixels, or null). `--diff-output <png>` (a file, or a directory for a generated name) writes the capture faded to white with every changed pixel magenta and the status bar band grey, so a report can show what moved. The exit code still follows the tiles and `--threshold`: 0 changed, 5 not. A baseline of another size writes no diff.
-
-```bash
-offsider screenshot --compare before.png --diff-output diff.png --json --device <DEVICE_ID>
 ```
 
 ## Logs
@@ -54,6 +46,14 @@ Redaction is on by default for every source: `message` and `raw` read `[redacted
 - `true`, `false`, `null`, `undefined` and objects or arrays (`token: {...}`) are left; a quoted key's bare value becomes `"[redacted]"`, so JSON still parses. `Authorization` and `Cookie` values run to the end of the header.
 - `Bearer` and `Basic` credentials, JWTs (`[redacted jwt]`) and email addresses (`[redacted email]`) are masked anywhere.
 - False positives: a capitalised `Basic` before a long word, and any value under a key such as `pin`. False negatives: secrets under other keys or in free text. Read a log before you share it.
+
+## Pixel diffs
+
+`screenshot --compare before.png` counts exactly which pixels changed as well as its tile verdict: `--json` adds `changedPixels`, `comparedPixels` and `changedBounds` (`{x,y,width,height}` in the image's pixels, or null). `--diff-output <png>` (a file, or a directory for a generated name) writes the capture faded to white with every changed pixel magenta and the status bar band grey, so a report can show what moved. The exit code still follows the tiles and `--threshold`: 0 changed, 5 not. A baseline of another size writes no diff.
+
+```bash
+offsider screenshot --compare before.png --diff-output diff.png --json --device <DEVICE_ID>
+```
 
 ## Project guide
 

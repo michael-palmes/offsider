@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import OffsiderCore
 import Testing
@@ -111,6 +112,36 @@ struct GuideTests {
                     #expect(allowed.contains(flag), "\(document.name): \(flag) is not an option of '\(flags[path] == nil ? "any command" : path)' in `\(span)`")
                 }
             }
+        }
+    }
+
+    /// Every command path `--help` lists, nested ones included, in registration order.
+    static func displayedCommandPaths(_ commands: [any ParsableCommand.Type] = OffsiderCommand.configuration.subcommands, prefix: [String] = []) -> [String] {
+        commands.filter { $0.configuration.shouldDisplay }.flatMap { command -> [String] in
+            let path = prefix + [command._commandName]
+            let children = command.configuration.subcommands
+            return children.isEmpty ? [path.joined(separator: " ")] : displayedCommandPaths(children, prefix: path)
+        }
+    }
+
+    @Test("every command is in the skill's Commands paragraph and the README's Commands table, by itself or its parent")
+    func everyCommandIsDocumented() throws {
+        let skillLines = try Self.read("SKILL.md").components(separatedBy: "\n")
+        let paragraph = skillLines.drop { $0 != "## Commands" }.dropFirst().first { !$0.isEmpty } ?? ""
+        let skillNames = Set(paragraph.matches(of: #/`([^`]+)`/#).map { String($0.output.1) })
+
+        let readme = try String(contentsOf: ErrorContractDocsTests.root.appendingPathComponent("README.md"), encoding: .utf8)
+        let readmeLines = readme.components(separatedBy: "\n").drop { $0 != "## Commands" }.dropFirst().prefix { !$0.hasPrefix("## ") }
+        let readmeNames = Set(readmeLines.filter { $0.hasPrefix("| `") }.compactMap { row in
+            row.split(separator: "|").first.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " `")) }
+        })
+
+        let paths = Self.displayedCommandPaths()
+        #expect(paths.contains("run start"))
+        for path in paths {
+            let parent = String(path.split(separator: " ")[0])
+            #expect(skillNames.contains(path) || skillNames.contains(parent), "SKILL.md ## Commands does not name \(path)")
+            #expect(readmeNames.contains(path) || readmeNames.contains(parent), "README ## Commands does not list \(path)")
         }
     }
 
