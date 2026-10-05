@@ -121,7 +121,7 @@ public struct IOSDeviceDoctorProbe {
         return await hid(identifier, DeviceName.display(device.udid, label: device.label), device.udid)
     }
 
-    /// The digitizer socket, its barrier, then a harmless probe event; sends nothing the device acts on.
+    /// The button socket and its barrier; a device answers the barrier only when CoreDevice HID is reachable, and nothing is pressed.
     public static let liveHID: HIDProbe = { identifier, name, udid in
         let installed = CoreDeviceVersion.installed()
         guard let version = installed, version.supportsHID else {
@@ -130,7 +130,7 @@ public struct IOSDeviceDoctorProbe {
         let link: DeviceDTUHID
         do {
             link = try await DeviceDTUHID.connect(
-                deviceIdentifier: identifier, feature: DTUHIDMessage.digitizerService, version: version, name: name, udid: udid, anySent: false
+                deviceIdentifier: identifier, feature: DTUHIDMessage.buttonService, version: version, name: name, udid: udid, anySent: false
             )
         } catch let error as IOSDeviceError {
             switch error.kind {
@@ -142,14 +142,8 @@ public struct IOSDeviceDoctorProbe {
         } catch {
             return .socketFailed(error.localizedDescription)
         }
-        let reply = await link.probe()
         await link.close()
-        switch reply {
-        case .answered: return .ready
-        case .refused(let error): return error.isLocked ? .locked : .refused
-        case .connectionLost(let detail): return .unresponsive("closed after the barrier: \(detail)")
-        case .timedOut: return .unresponsive("an input probe did not answer")
-        }
+        return .ready
     }
 
     static func info(_ topic: String, udid: String) -> [String] {

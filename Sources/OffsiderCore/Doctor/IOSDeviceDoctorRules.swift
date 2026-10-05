@@ -194,7 +194,7 @@ public enum IOSDeviceDoctorRules {
 
     static let uiAutomationPath = "Settings > Developer > UI Automation"
 
-    /// The digitizer socket and a barrier on it; below CoreDevice 636 nothing is asked of the device.
+    /// The button socket and a barrier on it; below CoreDevice 636 nothing is asked of the device.
     public static func hid(_ fact: IOSDeviceDoctorFacts.HIDFact?) -> Verdict {
         switch fact {
         case nil:
@@ -204,13 +204,13 @@ public enum IOSDeviceDoctorRules {
         case .locked?:
             return (.fail, "The device is locked, so it refuses HID input", "Unlock the iPhone or iPad, then retry. Offsider never types a passcode.")
         case .socketFailed(let message)?:
-            return (.fail, "CoreDevice did not open the digitizer: \(message)", "Reconnect the cable and unlock the device, then retry.")
+            return (.fail, "CoreDevice did not open the HID button socket: \(message)", "Reconnect the cable and unlock the device, then retry.")
         case .unresponsive(let message)?:
-            return (.fail, "The digitizer opened but \(message)", "Reconnect the cable, then retry.")
+            return (.fail, "The HID button socket opened but \(message)", "Reconnect the cable, then retry.")
         case .refused?:
             return (.fail, "The device refused HID input while unlocked", "Turn on \(uiAutomationPath).")
         case .ready?:
-            return (.pass, "The digitizer answered", nil)
+            return (.pass, "The HID button socket answered", nil)
         }
     }
 
