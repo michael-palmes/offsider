@@ -95,4 +95,14 @@ struct ReactNativeOverlayTests {
 
         #expect(result.exitCode == 5, "\(result.stderr)")
     }
+
+    @Test("wait --any reports the selector that came on screen", arguments: RNPlatform.enabled)
+    func waitAny(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+
+        let result = try await app.run("wait --any --id never-there --id overlay-test-tab --json --timeout 5")
+
+        #expect(result.stdout.contains(#""matched":{"by":"id","text":"overlay-test-tab"}"#), "\(result.stdout)")
+    }
 }

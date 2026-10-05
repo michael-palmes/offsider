@@ -181,7 +181,7 @@ struct WaitCommandTests {
         (["--id", "a", "--timeout", "901"], "--timeout must be from 0 to 900 seconds; got 901.0."),
         (["--seconds", "901"], "--seconds must be from 0 to 900 seconds; got 901.0."),
         (["--id", "a", "--poll-interval", "0.01"], "--poll-interval must be from 0.05 to 5 seconds; got 0.01."),
-        (["--id", "a", "--label", "b"], "Use only one of --id, --label, or --value."),
+        (["--id", "a", "--label", "b"], "Use only one of --id, --label, or --value, or pass --any to wait for the first of several."),
         (["--settled", "--has-value", "3"], "--has-value needs --id, --label or --value."),
     ])
     func rejectsInvalidConditions(arguments: [String], message: String) {
@@ -214,5 +214,63 @@ struct WaitCommandTests {
         #expect(try Self.command(["--id", "x", "--gone", "--stable-for", "0"]).stableFor == 0)
         #expect(try Self.command(["--id", "x"]).stableFor == 0)
         #expect(try Self.command(["--id", "x", "--stable-for", "300"]).stableFor == 0.3)
+    }
+}
+
+@Suite("wait --any")
+@MainActor
+struct WaitAnyTests {
+    static let device = DeviceID(rawValue: "fake-device", platform: .ios)
+
+    static func screen(_ ids: [String]) -> UITree {
+        FakeUI.tree(width: 393, height: 852, ids.enumerated().map { index, id in
+            FakeUI.node(.button, id: id, label: id.capitalized, frame: FakeUI.frame(20, 100 + Double(index) * 60, 350, 44))
+        })
+    }
+
+    static func evaluate(_ arguments: [String], trees: [UITree]) async throws -> (Wait, WaitOutcome) {
+        let wait = try Wait.parse(arguments + ["--device", device.rawValue, "--poll-interval", "0.05"])
+        let outcome = try await wait.evaluate(on: DeviceRouter.Route(backend: FakeDeviceBackend(trees: trees), device: device), logger: OffsiderLogger(), clock: ScriptedClock().poll)
+        return (wait, outcome)
+    }
+
+    @Test("the first selector on screen wins, in order ids, labels, values, and the report names it")
+    func firstPresentWins() async throws {
+        let (wait, outcome) = try await Self.evaluate(["--any", "--id", "never-there", "--id", "done", "--label", "Retry"], trees: [Self.screen([]), Self.screen(["retry", "done"])])
+
+        #expect(outcome.met)
+        #expect(outcome.matched == WaitMatch(by: "id", text: "done", position: 2, of: 3))
+        #expect(wait.successLine(outcome).hasPrefix("✓ --id 'done' is on screen after "))
+        #expect(wait.successLine(outcome).hasSuffix("(2 of 3 selectors)"))
+        let json = WaitReport(outcome).jsonLine()
+        #expect(json.contains(#""matched":{"by":"id","text":"done"}"#))
+        #expect(json.range(of: #""match":"#)!.lowerBound < json.range(of: #""matched":"#)!.lowerBound)
+    }
+
+    @Test("a timeout names each selector's last reason")
+    func timeoutReasons() async throws {
+        let (wait, outcome) = try await Self.evaluate(["--any", "--id", "a", "--label", "B", "--timeout", "0.2"], trees: [Self.screen([])])
+
+        #expect(!outcome.met)
+        #expect(outcome.reason == "--id 'a' not found; --label 'B' not found")
+        #expect(wait.failureLine(outcome).contains("any of --id 'a', --label 'B'"))
+        #expect(WaitReport(outcome).jsonLine().contains(#""matched":null"#))
+    }
+
+    @Test("--any needs two selectors and refuses --gone and --has-value; several selectors need --any", arguments: [
+        (["--any", "--id", "a"], "--any needs two or more selectors"),
+        (["--any", "--id", "a", "--id", "b", "--gone"], "does not take --gone"),
+        (["--any", "--id", "a", "--id", "b", "--has-value", "1"], "does not take --has-value"),
+        (["--id", "a", "--label", "b"], "pass --any"),
+    ])
+    func validation(arguments: [String], message: String) {
+        let error = #expect(throws: (any Error).self) { try Wait.parse(arguments + ["--device", Self.device.rawValue]) }
+        #expect(error.map { Wait.message(for: $0).contains(message) } == true, "\(error.map { Wait.message(for: $0) } ?? "")")
+    }
+
+    @Test("assert still takes one selector")
+    func assertTakesOne() {
+        let error = #expect(throws: (any Error).self) { try Assert.parse(["--id", "a", "--id", "b", "--device", Self.device.rawValue]) }
+        #expect(error.map { Assert.message(for: $0).contains("Use only one of --id, --label, or --value.") } == true)
     }
 }

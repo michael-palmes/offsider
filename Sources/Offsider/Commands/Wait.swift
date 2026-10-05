@@ -23,6 +23,9 @@ struct Wait: AsyncParsableCommand {
     @Flag(name: .customLong("gone"), help: "Wait until no matching element is on screen.")
     var gone = false
 
+    @Flag(name: .customLong("any"), help: "With two or more selectors (--id, --label, --value, each repeatable), wait until the first of them is on screen.")
+    var any = false
+
     @Flag(name: .customLong("settled"), help: "Wait until nothing has changed for --quiet-ms.")
     var settled = false
 
@@ -69,6 +72,15 @@ struct Wait: AsyncParsableCommand {
     static let maximumSeconds = 900
 
     func validate() throws {
+        if any {
+            guard selector.queries.count >= 2 else {
+                throw ValidationError("--any needs two or more selectors, such as --label 'Success!' --label 'Try again'.")
+            }
+            if gone { throw ValidationError("--any waits for the first selector on screen; it does not take --gone.") }
+            if selector.hasValue != nil { throw ValidationError("--any does not take --has-value; use --value as one of the selectors.") }
+        } else if selector.queries.count > 1 {
+            throw ValidationError("Use only one of --id, --label, or --value, or pass --any to wait for the first of several.")
+        }
         if (changed || stable) && region == nil {
             throw ValidationError("--changed and --stable need --region.")
         }
@@ -169,6 +181,13 @@ struct Wait: AsyncParsableCommand {
     }
 
     var condition: WaitCondition {
+        if any {
+            let queries = selector.queries
+            let selectors = queries.enumerated().map { index, query in
+                (selector: WaitMatch(by: String(query.kind.dropFirst(2)), text: query.rawValue, position: index + 1, of: queries.count), probe: selector.probe(for: query))
+            }
+            return .anyElement(selectors, stableFor: stableFor)
+        }
         if let query = selector.query {
             return .element(probe: selector.probe(for: query), gone: gone, stableFor: stableFor)
         }
@@ -184,6 +203,9 @@ struct Wait: AsyncParsableCommand {
     /// `✓ --id 'save' is on screen after 1.2 s`, `✓ Screen settled after 0.9 s` or `✓ Waited 2 s`.
     func successLine(_ outcome: WaitOutcome) -> String {
         let after = "after \(WaitLoop.seconds(outcome.elapsed))"
+        if any, let matched = outcome.matched {
+            return "✓ --\(matched.by) '\(matched.text)' is \(selector.presentState) \(after) (\(matched.position) of \(matched.of) selectors)"
+        }
         if let query = selector.query {
             return "✓ \(query.selectorDescription) is \(gone ? "gone" : selector.presentState) \(after)"
         }
@@ -198,6 +220,9 @@ struct Wait: AsyncParsableCommand {
     }
 
     private var target: String {
+        if any {
+            return "any of " + selector.queries.map(\.selectorDescription).joined(separator: ", ")
+        }
         if let query = selector.query {
             if gone { return "\(query.selectorDescription) to be gone" }
             return selector.hasValue.map { "\(query.selectorDescription) with value '\($0)'" } ?? query.selectorDescription

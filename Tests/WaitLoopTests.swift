@@ -274,7 +274,7 @@ struct WaitLoopTests {
     @Test("the report is one compact object with the unique match or null")
     func reportShape() {
         let missed = WaitReport(WaitOutcome(met: false, elapsed: 10.0004, reason: "not found")).jsonLine()
-        #expect(missed == #"{"met":false,"elapsedMs":10000,"reason":"not found","match":null}"#)
+        #expect(missed == #"{"met":false,"elapsedMs":10000,"reason":"not found","match":null,"matched":null}"#)
 
         let found = WaitReport(WaitOutcome(met: true, elapsed: 1.2, reason: "on screen", match: Self.save)).jsonLine()
         #expect(found.hasPrefix(#"{"met":true,"elapsedMs":1200,"reason":"on screen","match":{"role":"button","id":"save","label":"Save","#))

@@ -25,4 +25,6 @@ One run taps once. A widget that already reads Success is left alone.
 - Exit 6: more than one checkbox is on screen. Pass `--id` for the wrapper you want.
 - Exit 1: the widget is showing a visual challenge.
 
+To wait for whichever comes first after the tap, the next screen or a challenge, use `wait --any --label 'Success!' --label 'Verify you are human'`.
+
 The widget can reload while the screen sits there. A Success that returns to the checkbox is a new check. Run `turnstile` again; it still taps only once, and it still passes only when Cloudflare accepts the device.

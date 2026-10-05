@@ -84,6 +84,18 @@ struct BatchReadStepTests {
         }
     }
 
+    @Test("a batch wait step takes --any and reports the selector it met")
+    func waitAnyStep() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        let captured = Captured()
+
+        try await Self.run(["wait --any --id never-there --id open --timeout 1"], on: backend, json: true, captured: captured)
+
+        let records = try captured.records()
+        #expect(records.first?["met"] as? Bool == true)
+        #expect((records.first?["matched"] as? [String: Any])?["text"] as? String == "open")
+    }
+
     @Test("wait and assert steps read the tree with the hung-device watchdog armed, and disarm it after")
     func readStepsArmWatchdog() async throws {
         let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)

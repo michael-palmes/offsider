@@ -48,6 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `guide --project <path>` prints a repository's own `OFFSIDER.md`, found in the path or its parents up to the repository root, the home directory or `/` (at most 256 KiB of UTF-8); it exits 1 when there is none and 64 with a topic. Plain `guide` names the file when one is found from the current directory, and the bundled skill tells agents to read it first.
 - `touch --fingers 2 --hold <ms>` holds two fingers `--spread` points apart (default 60) around `-x`/`-y` and lifts both, for app menus behind a two-finger hold. It works on a simulator's main display and Android emulators, over gRPC or through the UiAutomation helper when input goes over adb; `input` alone refuses it, as do physical iPhones and the iPhone Duo's inner display.
 - `drag --hold-ms <ms>` (0 to 10000, default 50) holds before moving, and `gesture long-press-drag --x --y --to-x --to-y` (`--hold-ms` default 800, `--duration` default 0.6) presses, holds and drags, for items that move only after a long press.
+- `wait --any` with two or more selectors (`--id`, `--label` and `--value` repeat) waits for the first one on screen, for an action with two possible outcomes; `--json` names it in a new `matched` key (`{by, text}`), which `wait`, `assert` and batch records now always carry (null otherwise).
 
 ### Changed
 

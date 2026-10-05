@@ -15,6 +15,17 @@ enum SelectorQuery {
         }
     }
 
+    /// `wait --any` takes several selectors; every other command takes one.
+    static func validate(ids: [String], labels: [String], values: [String], allowingSeveral: Bool) throws {
+        let named = ids.map { ("--id", $0) } + labels.map { ("--label", $0) } + values.map { ("--value", $0) }
+        if named.count > 1 && !allowingSeveral {
+            throw ValidationError("Use only one of --id, --label, or --value.")
+        }
+        for (name, text) in named where text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ValidationError("\(name) must not be empty.")
+        }
+    }
+
     static func make(id: String?, label: String?, value: String?) -> AccessibilityQuery? {
         if let id { return .id(id) }
         if let label { return .label(label) }
@@ -25,14 +36,14 @@ enum SelectorQuery {
 
 /// One element selector for commands that check state rather than tap: `wait` and `assert`.
 struct ElementSelectorOptions: ParsableArguments {
-    @Option(name: [.customLong("id")], help: "The element whose describe-ui id matches (accessibilityIdentifier, or testID in React Native).")
-    var elementID: String?
+    @Option(name: [.customLong("id")], help: "The element whose describe-ui id matches (accessibilityIdentifier, or testID in React Native); repeat with wait --any.")
+    var elementIDs: [String] = []
 
-    @Option(name: [.customLong("label")], help: "The element whose describe-ui label matches (accessibilityLabel).")
-    var elementLabel: String?
+    @Option(name: [.customLong("label")], help: "The element whose describe-ui label matches (accessibilityLabel); repeat with wait --any.")
+    var elementLabels: [String] = []
 
-    @Option(name: [.customLong("value")], help: "The element whose describe-ui value matches (the current value of a control).")
-    var elementValue: String?
+    @Option(name: [.customLong("value")], help: "The element whose describe-ui value matches (the current value of a control); repeat with wait --any.")
+    var elementValues: [String] = []
 
     @Option(name: [.customLong("element-type")], help: "Filter matches to this describe-ui role in any case (e.g. button, textField, switch) or exact native type (e.g. TextEditor).")
     var elementType: String?
@@ -43,16 +54,27 @@ struct ElementSelectorOptions: ParsableArguments {
     @Flag(name: .customLong("allow-offscreen"), help: "Count elements whose frame is outside the screen (off by default: only on-screen matches count).")
     var allowOffscreen: Bool = false
 
+    /// The count is left to the command, since only `wait --any` takes several.
     func validate() throws {
-        try SelectorQuery.validate(id: elementID, label: elementLabel, value: elementValue)
+        try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, values: elementValues, allowingSeveral: true)
         guard query == nil else { return }
         for (name, isSet) in [("--element-type", elementType != nil), ("--has-value", hasValue != nil), ("--allow-offscreen", allowOffscreen)] where isSet {
             throw ValidationError("\(name) needs --id, --label or --value.")
         }
     }
 
+    /// The first selector; the only one outside `wait --any`.
     var query: AccessibilityQuery? {
-        SelectorQuery.make(id: elementID, label: elementLabel, value: elementValue)
+        queries.first
+    }
+
+    /// Every selector, ids then labels then values.
+    var queries: [AccessibilityQuery] {
+        elementIDs.map(AccessibilityQuery.id) + elementLabels.map(AccessibilityQuery.label) + elementValues.map(AccessibilityQuery.value)
+    }
+
+    func validateCount(allowingSeveral: Bool) throws {
+        try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, values: elementValues, allowingSeveral: allowingSeveral)
     }
 
     /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen.
