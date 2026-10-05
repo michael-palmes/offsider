@@ -84,7 +84,7 @@ extension DescribeUI: BatchReadable {
 
 extension Screenshot: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
-        let masks = try maskPlan(secureByDefault: context.maskSecure)
+        let masks = masksWithRunDefaults(try maskPlan(secureByDefault: context.maskSecure), ownFlags: hasMaskFlags || context.maskSecure)
         let report = try await take(try request(), on: context.route, masks: masks) { try await context.accessibilityTree() }
         guard let comparison = report.comparison else {
             return BatchReadResult(detail: .screenshot(report), output: report.path.map { $0 + "\n" })

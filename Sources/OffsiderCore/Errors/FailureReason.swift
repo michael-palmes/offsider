@@ -54,6 +54,8 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case expoDevClientFailed = "expo_dev_client_failed"
     case runnerBuildFailed = "runner_build_failed"
     case runnerUnavailable = "runner_unavailable"
+    case runActive = "run_active"
+    case runUnavailable = "run_unavailable"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"

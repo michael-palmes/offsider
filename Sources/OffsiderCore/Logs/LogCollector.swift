@@ -10,7 +10,8 @@ public struct LogCollector {
     public let retainsEntries: Bool
     private let grep: NSRegularExpression?
     private var kept: [LogEntry] = []
-    private var matched = 0
+    /// Entries that passed `--grep`, kept or not.
+    public private(set) var matched = 0
     /// Values redacted in every entry that passed `--grep`, kept or not.
     public private(set) var redacted = 0
 

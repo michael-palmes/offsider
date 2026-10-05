@@ -133,7 +133,7 @@ struct Screenshot: AsyncParsableCommand {
         let request = try request()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        let report = try await take(request, on: route, masks: try maskPlan())
+        let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan(), ownFlags: hasMaskFlags))
 
         guard let comparison = report.comparison else {
             if json {
@@ -171,6 +171,8 @@ struct Screenshot: AsyncParsableCommand {
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
+        let recorder = EvidenceRecorder.current
+        let token = try recorder.begin(device: booted.id, kind: "screenshot")
 
         let baseline = try compare.map(ScreenCapture.readBaseline)
         let selected = try await displayOption.resolve(on: backend, device: booted.id, deviceName: deviceOption.id)
@@ -203,16 +205,30 @@ struct Screenshot: AsyncParsableCommand {
         let rendered = try ScreenCapture.render(capture, request: request)
 
         var path: String?
-        if compare == nil || output != nil {
+        if output != nil || (compare == nil && token == nil) {
             let prefix = route.device.platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
             let url = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: request.format)
             try rendered.encoded(as: request.format).write(to: url)
             path = url.path
             Self.writeError("Screenshot saved to \(url.path) (\(rendered.image.width) x \(rendered.image.height) px)")
         }
+        var runFile: String?
+        if let token {
+            runFile = try Self.writeRunCopy(rendered, format: request.format, token: token, recorder: recorder, otherCopy: path)
+            recorder.update(token) { entry in
+                entry.output = path
+                entry.masked = masked.map { $0.painted.values.reduce(0, +) }
+            }
+            if path == nil, let runFile {
+                path = runFile
+                Self.writeError("Screenshot saved to \(runFile) (\(rendered.image.width) x \(rendered.image.height) px)")
+            }
+        }
 
         guard let compare, let baseline else {
-            return rendered.report(path: path, format: request.format, capture: capture, masks: masked)
+            var report = rendered.report(path: path, format: request.format, capture: capture, masks: masked)
+            report.runFile = runFile
+            return report
         }
 
         if ScreenImage.isJPEG(baseline) {
@@ -223,13 +239,55 @@ struct Screenshot: AsyncParsableCommand {
             rendered, capture: capture, baseline: baseline, baselinePath: compare, bands: bands, threshold: threshold ?? 0
         )
         var report = rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masks: masked)
+        report.runFile = runFile
+        recorder.update(token) { $0.changed = result.outcome == .changed }
         if diffOutput != nil {
             let url = try ScreenCapture.outputURL(path: diffOutput, prefix: "Screenshot Diff", deviceName: booted.name, format: .png)
             try ScreenImage.encode(diffImage, as: .png).write(to: url)
             report.diffPath = url.path
             Self.writeError("Diff saved to \(url.path)")
         }
+        if let token, runFile != nil, let diffPath = try recorder.diffPath(token) {
+            do {
+                try ScreenImage.encode(diffImage, as: .png).write(to: URL(fileURLWithPath: diffPath))
+            } catch {
+                recorder.update(token) { $0.diff = nil }
+                Self.writeError("Warning: could not write the run's diff to \(diffPath): \(error.localizedDescription)")
+            }
+        }
         return report
+    }
+
+    /// The run's copy; when it is the only copy and cannot be written, the command fails with `run_unavailable`.
+    @MainActor
+    private static func writeRunCopy(_ rendered: RenderedScreenshot, format: ImageFormat, token: EvidenceRecorder.Token, recorder: EvidenceRecorder, otherCopy: String?) throws -> String? {
+        do {
+            let runPath = try recorder.reserveFile(token, extension: format.fileExtension)
+            try rendered.encoded(as: format).write(to: URL(fileURLWithPath: runPath))
+            return runPath
+        } catch {
+            recorder.update(token) { $0.file = nil }
+            let message = "Could not write the screenshot into the run: \(OffsiderCommand.message(for: error))"
+            guard otherCopy != nil else {
+                throw CLIError(errorDescription: message + ". Fix the run folder, or stop the run with `offsider run stop`.", reason: .runUnavailable, hint: "offsider run status")
+            }
+            writeError("Warning: \(message); the --output copy was written.")
+            return nil
+        }
+    }
+
+    /// The run's default masks when the capture asks for none of its own; `OFFSIDER_MASK_SECURE` still adds password fields.
+    @MainActor
+    func masksWithRunDefaults(_ own: MaskPlan, ownFlags: Bool) -> MaskPlan {
+        guard !ownFlags, let defaults = EvidenceRecorder.current.defaultMasks else { return own }
+        var plan = defaults
+        plan.secure = plan.secure || own.secure
+        return plan
+    }
+
+    /// True when any mask flag was passed to this capture.
+    var hasMaskFlags: Bool {
+        maskSecure || maskEmails || !maskIDs.isEmpty || !maskLabels.isEmpty || !maskTexts.isEmpty || !maskRegions.isEmpty
     }
 
     private static func writeError(_ line: String) {

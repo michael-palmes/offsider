@@ -1,5 +1,22 @@
 # Evidence for a report
 
+## Runs
+
+`offsider run start <dir> --label 'PR 123'` makes every later `screenshot`, `logs` and `batch` screenshot step from this session also write its file into `<dir>` (created 0700) as `NNN-<command>-<HH.MM.SS>.<ext>`, and adds one line per capture, failures included, to `manifest.ndjson`. End with `offsider run stop --summary` (or `--json`), which prints the timeline: one line per capture, then counts of files, failures and unrecorded files.
+
+- A screenshot without `--output` is written only into the run, and `path` is that file; with `--output` both are written and `--json` adds `runFile`. A `logs` file holds exactly what went to stdout.
+- `run start --mask-secure --mask-emails --mask-id <id>` sets masks for every capture that passes none of its own.
+- The run belongs to your session (your agent or terminal), found through the process's parents, so other agents on the Mac keep their own runs. Run commands from the same session; `run status` shows the run, `run status --all` every run.
+- `run_active` (exit 1): this session already has a run in another folder; `run stop` first. `run_unavailable`: the folder cannot be written and it would hold the only copy, or no session was found; set `OFFSIDER_RUN=<dir>` to record into a folder whatever the session, or `OFFSIDER_RUN=off` to record nothing.
+- A stopped run's folder continues its numbering when started again. A run whose session exits is ended as `owner-exited`.
+
+```bash
+offsider run start ./evidence --label 'PR 123' --mask-emails
+offsider screenshot --device <DEVICE_ID>
+offsider logs --rn --last 2m --device <DEVICE_ID>
+offsider run stop --summary
+```
+
 ## Masking personal data
 
 Masks paint opaque black boxes over the image before it is written or compared, so the file never holds what they cover.

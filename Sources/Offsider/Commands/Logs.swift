@@ -143,13 +143,21 @@ struct Logs: AsyncParsableCommand {
         }
         let query = try Self.options { try self.query() }
         let sink = LogSink(try Self.options { try self.collector() })
+        let recorder = EvidenceRecorder.current
+        let token = try recorder.begin(device: booted.id, kind: "logs")
+        let runFile = token.flatMap { Self.openRunFile($0, recorder: recorder, extension: json ? (follow ? "ndjson" : "json") : "log") }
+        defer { try? runFile?.close() }
+        let tee: @MainActor (String) -> Void = { line in
+            write(line)
+            runFile?.write(Data((line + "\n").utf8))
+        }
 
         let follow = self.follow
         let json = self.json
         let reading = Task { @MainActor in
             try await reader.readLogs(query, on: booted.id) { entry in
                 guard let shown = sink.collector.add(entry), follow else { return }
-                write(json ? LogReport.jsonLine(shown) : LogText.format(shown))
+                tee(json ? LogReport.jsonLine(shown) : LogText.format(shown))
             }
         }
         let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
@@ -161,10 +169,32 @@ struct Logs: AsyncParsableCommand {
         }
         try await reading.value
         if !follow {
-            Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, write: write)
+            Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, write: tee)
         }
         if let footer = Self.redactionFooter(sink.collector.redacted) {
             print(footer, to: &standardError)
+        }
+        let collector = sink.collector
+        recorder.update(token) { entry in
+            entry.entries = follow ? collector.matched : collector.entries.count
+            entry.redacted = collector.redacted
+        }
+    }
+
+    /// The run's copy of stdout; stdout is always the other copy, so a file that cannot be made is a warning.
+    @MainActor
+    private static func openRunFile(_ token: EvidenceRecorder.Token, recorder: EvidenceRecorder, extension pathExtension: String) -> FileHandle? {
+        do {
+            let path = try recorder.reserveFile(token, extension: pathExtension)
+            guard FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600]),
+                  let handle = FileHandle(forWritingAtPath: path) else {
+                throw CLIError(errorDescription: "could not create \(path)")
+            }
+            return handle
+        } catch {
+            recorder.update(token) { $0.file = nil }
+            print("Warning: could not write the logs into the run: \(OffsiderCommand.message(for: error)).", to: &standardError)
+            return nil
         }
     }
 

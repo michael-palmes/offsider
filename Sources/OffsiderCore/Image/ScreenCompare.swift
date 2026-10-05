@@ -74,6 +74,8 @@ public enum ScreenCompare {
 /// What `screenshot --json` prints: one object, `pixelsPerPoint` after scaling.
 public struct ScreenshotReport: Equatable, Sendable {
     public var path: String?
+    /// The copy in the evidence run's folder, when a run is active.
+    public var runFile: String?
     public var width: Int
     public var height: Int
     public var pixelsPerPoint: Double?
@@ -139,6 +141,11 @@ public struct ScreenshotReport: Equatable, Sendable {
     var jsonMembers: [(String, OrderedJSON)] {
         var members: [(String, OrderedJSON)] = [
             ("path", .optional(path, OrderedJSON.string)),
+        ]
+        if let runFile {
+            members.append(("runFile", .string(runFile)))
+        }
+        members += [
             ("width", .integer(width)),
             ("height", .integer(height)),
             ("pixelsPerPoint", .optional(pixelsPerPoint.map(Self.rounded), OrderedJSON.number)),

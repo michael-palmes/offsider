@@ -33,6 +33,7 @@ offsider describe-ui --diff --device <DEVICE_ID>
 - Wait on a condition, never a guess: `wait --id`, `--gone`, `--has-value`, `--settled`. Never tap an element just to pass time.
 - `type` adds to the focused field. Tap the field, then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
 - Secure fields read as bullets, one per character: find them by `--id` or `--label` (`--value` never matches them). To type a secret, tap the field and run `type`: Offsider never logs or echoes the text. Add `--mask-secure` to `screenshot` before sharing an image of a screen with a password field (`guide screenshots`).
+- For a report, `offsider run start <dir>` numbers screenshots and logs into one folder; mask personal data with `--mask-emails` (`guide evidence`).
 - Use `--retries 0` with `--verify` for submit, send or delete, so a late effect plus a retry cannot act twice.
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop, never kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames are in points (dp on Android). Capture with `screenshot --scale points` when you will tap what you see.
@@ -48,7 +49,7 @@ With `--json`, a failure prints `exitCode` and an `error` object. `dispatched: n
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`, `runner`, `session`. Run `offsider <command> --help` for every option; `guide selectors` lists `button` names.
+`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`, `runner`, `session`. Run `offsider <command> --help` for every option; `guide selectors` lists `button` names.
 
 ## Topics
 
@@ -78,3 +79,4 @@ Run `offsider guide <topic>` to print one; `offsider guide` lists them.
 - Outcomes that matter were checked with `assert`, `wait`, `--verify` or a region compare.
 - Labels came from `describe-ui`, targets were on screen, and screenshot coordinates came from `--scale points`.
 - Device state changed with a setter (`guide device-state`) was set back.
+- Any run was stopped with `run stop`.

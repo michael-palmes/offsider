@@ -57,7 +57,7 @@ struct CommandRunner {
         process.arguments = ["-c", command]
 
         // A developer's OFFSIDER_DEVICE must never pick a test's device; a test that wants one passes it.
-        var merged = ProcessInfo.processInfo.environment.filter { $0.key != "OFFSIDER_DEVICE" }.merging(environment ?? [:]) { _, new in new }
+        var merged = TestHelpers.childEnvironment().merging(environment ?? [:]) { _, new in new }
         for name in unsetVariables {
             merged.removeValue(forKey: name)
         }
@@ -119,6 +119,11 @@ struct CommandRunner {
 // MARK: - Test Helpers
 
 struct TestHelpers {
+    /// The test process's environment with `OFFSIDER_RUN=off`, so a developer's evidence run never collects test captures; a test that wants a run passes its own.
+    static func childEnvironment() -> [String: String] {
+        ProcessInfo.processInfo.environment.filter { $0.key != "OFFSIDER_DEVICE" }.merging(["OFFSIDER_RUN": "off"]) { _, new in new }
+    }
+
     private static func resolveSwiftBinPath(sourceRoot: String) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")

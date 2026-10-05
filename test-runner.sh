@@ -13,6 +13,8 @@ export ADB_MDNS=0
 export OFFSIDER_WAIT_LOCK="${OFFSIDER_WAIT_LOCK:-30}"
 # Suites name their devices; a shell's default device must not pick one.
 unset OFFSIDER_DEVICE
+# Captures from the suites never land in a developer's evidence run; suites that test runs set their own folder.
+export OFFSIDER_RUN=off
 
 # Colors for output
 RED='\033[0;31m'

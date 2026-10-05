@@ -54,6 +54,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             Wait.self,
             Assert.self,
             Batch.self,
+            RunCommand.self,
             RN.self,
             RunnerCommand.self,
             SessionCommand.self,
@@ -83,11 +84,16 @@ struct OffsiderCommand: AsyncParsableCommand {
                 command: path,
                 waitOption: (command as? any LockingCommand)?.waitLock
             )
-            try await CommandScope.current.run {
-                if var asyncCommand = command as? any AsyncParsableCommand {
-                    try await asyncCommand.run()
-                } else {
-                    try command.run()
+            let recorder = EvidenceRecorder.records(path)
+                ? EvidenceRecorder(environment: .live(), command: path, arguments: Self.arguments(after: path, in: arguments))
+                : EvidenceRecorder.current
+            try await EvidenceRecorder.$current.withValue(recorder) {
+                try await CommandScope.current.run {
+                    if var asyncCommand = command as? any AsyncParsableCommand {
+                        try await asyncCommand.run()
+                    } else {
+                        try command.run()
+                    }
                 }
             }
         } catch {
@@ -96,5 +102,14 @@ struct OffsiderCommand: AsyncParsableCommand {
             }
             ErrorReporter.exit(error)
         }
+    }
+
+    /// The arguments after the command's path words, as an evidence run records them.
+    static func arguments(after path: String, in arguments: [String]) -> [String] {
+        var remaining = arguments[...]
+        for word in path.split(separator: " ") where remaining.first == String(word) {
+            remaining = remaining.dropFirst()
+        }
+        return Array(remaining)
     }
 }

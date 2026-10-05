@@ -36,12 +36,13 @@ extension PrivateDirectoryError: OffsiderFailure {
     }
 }
 
-/// Offsider's per-user directory, `<user temp>/offsider-<uid>/`, mode 0700; it holds `locks/` and the tree cache in `trees/`.
+/// Offsider's per-user directory, `<user temp>/offsider-<uid>/`, mode 0700; it holds `locks/`, the tree cache in `trees/` and evidence run records in `runs/`.
 public enum OffsiderPrivateDirectory {
     public static let locksDirectoryName = "locks"
     public static let treesDirectoryName = "trees"
     public static let leasesDirectoryName = "leases"
     public static let orientationDirectoryName = "orientation"
+    public static let runsDirectoryName = "runs"
 
     public static func rootName(uid: uid_t) -> String {
         "offsider-\(uid)"

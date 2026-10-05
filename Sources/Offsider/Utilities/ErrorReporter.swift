@@ -54,6 +54,21 @@ enum ErrorReporter {
         )
     }
 
+    /// The exit code and reason a failure ends with, for an evidence run's manifest.
+    static func status(for error: any Error) -> (exit: Int32, reason: String?) {
+        if let reported = error as? ReportedFailure {
+            return (reported.exitCode.rawValue, payload(for: reported.underlying).reason.rawValue)
+        }
+        if let code = error as? ExitCode {
+            return (code.rawValue, code.rawValue == OffsiderExitCode.unverified.rawValue ? FailureReason.conditionNotMet.rawValue : nil)
+        }
+        if let failure = error as? any OffsiderFailure {
+            return (failure.exitCode.rawValue, failure.reason.rawValue)
+        }
+        let code = OffsiderCommand.exitCode(for: error).rawValue
+        return (code, payload(for: error).reason.rawValue)
+    }
+
     static func exit(_ error: any Error) -> Never {
         if let reported = error as? ReportedFailure {
             writeErrorLine(OffsiderCommand.message(for: reported.underlying))
