@@ -52,6 +52,7 @@ offsider session stop --device <UDID>
 ## Screenshots and settings
 
 - `screenshot` takes the broker's latest stream frame, about 230 ms; without the broker it uses `devicectl device capture screenshot`, about 2.3 s. The first one after the broker starts waits for the stream to settle, about 1.5 s more. `--verify` may take several screenshots, so prefer `wait` or `assert` when the tree shows the effect.
+- Screen comparisons (`--verify`, `wait` screen checks, `screenshot --compare`) average 8 by 8 pixel blocks and ignore drifts of a few colour units, the stream's compression noise; a caret, a toggle or new text still counts as a change.
 - `appearance` and `content-size` go through `devicectl`; set them back when done. `orientation` waits for the screen to turn, which needs the device awake and unlocked and an app that supports the orientation.
 
 ## Refused on a device

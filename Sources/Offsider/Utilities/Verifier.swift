@@ -120,7 +120,7 @@ struct Verifier {
                 if baselinePrint == nil {
                     baselinePrint = ImageFingerprint(
                         pngData: shot, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
-                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right
+                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right, tolerance: bands.noiseTolerance
                     )
                 }
                 var afterShots: [Data] = []
@@ -131,7 +131,7 @@ struct Verifier {
                 let afterPrints = afterShots.compactMap {
                     ImageFingerprint(
                         pngData: $0, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
-                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right
+                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right, tolerance: bands.noiseTolerance
                     )
                 }
                 if let before = baselinePrint, !afterPrints.isEmpty,
