@@ -181,4 +181,34 @@ struct AndroidHelperInputTests {
         #expect(Self.inputScripts(rig) == ["input motionevent DOWN 10 20"])
         #expect(rig.startShells == 0)
     }
+
+    @Test("two fingers on an `input` route go through the helper when the policy allows it")
+    func twoFingersUseHelper() async throws {
+        let rig = try HelperRig()
+        let session = try await Self.session(rig)
+        try await session.perform(.composite([
+            .twoFingerTouch(direction: .down, x1: 100, y1: 500, x2: 160, y2: 500), .delay(1),
+            .twoFingerTouch(direction: .up, x1: 100, y1: 500, x2: 160, y2: 500),
+        ]))
+        await session.close()
+        await rig.backend.close()
+
+        #expect(rig.device.injected == ["touch down 100 500", "touch down p1 160 500", "pause 1000", "touch up p1 160 500", "touch up 100 500"])
+        #expect(Self.inputScripts(rig).isEmpty)
+    }
+
+    @Test("OFFSIDER_ANDROID_INPUT=input refuses two fingers and sends nothing")
+    func twoFingersRefusedOnInput() async throws {
+        let rig = try HelperRig(environment: ["OFFSIDER_ANDROID_INPUT": "input"])
+        let session = try await Self.session(rig)
+        let error = await #expect(throws: AndroidError.self) {
+            try await session.perform(.twoFingerTouch(direction: .down, x1: 100, y1: 500, x2: 160, y2: 500))
+        }
+        await session.close()
+        await rig.backend.close()
+
+        #expect(error?.kind == .notSupported)
+        #expect(Self.inputScripts(rig).isEmpty)
+        #expect(rig.startShells == 0)
+    }
 }

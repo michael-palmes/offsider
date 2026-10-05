@@ -56,6 +56,11 @@ struct DeviceSessionLowering {
         instead: "Pass its down, hold and up in one command: `touch --down --up --delay`, `key --duration` or `button --duration`."
     )
 
+    static let twoFingers = IOSDeviceError.notSupportedOnDevice(
+        "A two-finger touch",
+        instead: "Open the app's menu another way, or use an iOS simulator for `touch --fingers 2`."
+    )
+
     private static func leaves(of event: InputEvent) -> [InputEvent] {
         if case .composite(let events) = event { return events.flatMap(leaves) }
         return [event]
@@ -81,6 +86,8 @@ struct DeviceSessionLowering {
         case .touch(let direction, let x, let y):
             guard brokerTouches else { return .runner(leaf) }
             return .touch(try contact(x, y, down: direction == .down))
+        case .twoFingerTouch:
+            throw Self.twoFingers
         case let .swipe(xStart, yStart, xEnd, yEnd, delta, duration):
             guard brokerTouches else { return .runner(leaf) }
             return .touch(try swipe(from: (xStart, yStart), to: (xEnd, yEnd), delta: delta, duration: duration))
@@ -118,7 +125,7 @@ struct DeviceSessionLowering {
             return seconds > 0 ? [.wait(seconds)] : []
         case .composite(let events):
             return try events.flatMap { try keySteps(for: $0) }
-        case .tapAt, .touch, .swipe, .button, .shortButtonPress:
+        case .tapAt, .touch, .twoFingerTouch, .swipe, .button, .shortButtonPress:
             throw IOSDeviceError(.sessionFailed, "Only key presses and pauses can go in a key request.")
         }
     }

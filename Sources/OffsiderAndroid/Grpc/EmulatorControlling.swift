@@ -64,6 +64,8 @@ protocol EmulatorControlling: AnyObject, Sendable {
     var endpoint: String { get }
     func status() async throws -> EmulatorStatusSummary
     func sendTouch(_ touch: PanelTouch) async throws
+    /// Several fingers in one event, each with its own identifier.
+    func sendTouches(_ touches: [PanelTouch]) async throws
     func sendKey(_ event: EmulatorKeyEvent) async throws
     func screenshot(_ format: EmulatorImageFormat, fitting box: FrameBox?) async throws -> EmulatorFrame
     func screenshotStream(_ format: EmulatorImageFormat, fitting box: FrameBox?) -> AsyncThrowingStream<EmulatorFrame, any Error>

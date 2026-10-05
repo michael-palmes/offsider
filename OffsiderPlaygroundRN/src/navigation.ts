@@ -21,6 +21,12 @@ export const routeInfo = {
     menuTitle: 'Swipe Test',
     subtitle: 'Shows CLI swipe paths',
   },
+  'multi-touch': {
+    section: 'Touch & Gestures',
+    title: 'Multi Touch',
+    menuTitle: 'Multi Touch',
+    subtitle: 'Two fingers held together',
+  },
   'gesture-presets': {
     section: 'Touch & Gestures',
     title: 'Gesture Presets',

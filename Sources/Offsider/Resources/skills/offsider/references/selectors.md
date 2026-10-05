@@ -18,6 +18,7 @@
 - `gesture` scroll presets are named for the finger: `scroll-up` swipes up and reveals content below, `scroll-down` reveals content above. Presets are sized to the foreground app's frame and go through the same orientation handling, so they fit any device and landscape; `--screen-width` and `--screen-height` override that size, in points (dp on Android) as the screen is currently oriented.
 - Use `--pre-delay` and `--post-delay` on `tap`, `swipe` and `gesture` for fixed delays around actions, and `--duration` for how long a swipe, gesture, button press or key press lasts.
 - Keep a held touch in one command (`touch --down --up`) or one `batch`.
+- `touch -x <X> -y <Y> --fingers 2 --hold <ms>` puts two fingers down `--spread` points apart (default 60) around the point, holds them and lifts both, for menus behind a two-finger hold. It works on a simulator's main display and Android emulators (gRPC, or the UiAutomation helper when input goes over adb); a physical iPhone and the iPhone Duo's inner display refuse it.
 
 ```bash
 offsider tap --label 'Weather Alerts' --device <DEVICE_ID>

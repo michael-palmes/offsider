@@ -115,6 +115,8 @@ final class RunnerInputSession: TextInputSession {
             for event in events { try await perform(event) }
         case .touch:
             throw refusal("Separate touch down and up events")
+        case .twoFingerTouch:
+            throw DeviceSessionLowering.twoFingers
         case .keyboard, .shortKeyPress:
             throw refusal("Key presses")
         case .button(_, let button), .shortButtonPress(let button):

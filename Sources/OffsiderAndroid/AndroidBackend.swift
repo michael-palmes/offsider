@@ -231,10 +231,17 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             avdName: { await self.avdName(for: serial) },
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             focusedSecureField: { await self.hasFocusedSecureField(id) },
+            multiTouchHelper: { try await self.multiTouchHelper(serial) },
             sleep: host.sleep,
             log: log,
             timing: host.timing
         )
+    }
+
+    /// The helper for a multi-finger touch on an `input` route, unless OFFSIDER_ANDROID_INPUT=input forbids it.
+    private func multiTouchHelper(_ serial: String) async throws -> HelperInputDriver? {
+        guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
+        return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
     }
 
     /// Best effort: an unreadable screen does not block typing, since the guard only keeps a password off the clipboard.

@@ -552,6 +552,12 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(.notSupported, "\(feature) is not supported on Android emulators in this build.")
     }
 
+    /// `input` has no multi-finger form, so two fingers need gRPC or the helper.
+    static let twoFingersOverInput = AndroidError(
+        .notSupported,
+        "Two-finger touches cannot go through `input`, which moves one finger. Use an emulator's gRPC input (leave OFFSIDER_ANDROID_TRANSPORT unset), or set OFFSIDER_ANDROID_INPUT=helper to send them through the UiAutomation helper."
+    )
+
     static func unsupportedButton(_ button: HardwareButton) -> AndroidError {
         AndroidError(.unsupportedButton, "The \(Self.buttonName(button)) button is iOS only. Android buttons: back, app-switch, home, lock, volume-up, volume-down.")
     }

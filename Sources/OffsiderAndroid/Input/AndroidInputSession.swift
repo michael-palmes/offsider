@@ -61,6 +61,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private let timing: AndroidTiming
     private var touchIsDown = false
     private var lastTouch: AndroidPoint?
+    /// Fingers of a multi-finger touch still down, lifted on close after a failure.
+    private var heldFingers: [AndroidPoint] = []
+    /// The helper for multi-finger input when the route is `input`, which moves one finger; nil when the policy forbids it.
+    private let multiTouchHelper: @MainActor () async throws -> HelperInputDriver?
 
     init(
         device: DeviceID,
@@ -69,6 +73,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         avdName: @escaping @MainActor () async -> String?,
         replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
         focusedSecureField: @escaping @MainActor () async -> Bool = { false },
+        multiTouchHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
         sleep: @escaping @Sendable (Duration) async throws -> Void,
         log: @escaping AndroidLog,
         timing: AndroidTiming = .disabled
@@ -79,6 +84,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.avdName = avdName
         self.replaceFocusedText = replaceFocusedText
         self.focusedSecureField = focusedSecureField
+        self.multiTouchHelper = multiTouchHelper
         self.sleep = sleep
         self.log = log
         self.timing = timing
@@ -148,9 +154,13 @@ final class AndroidInputSession: InputSession, TextInputSession {
     }
 
     private func dispatch(_ event: InputEvent) async throws {
-        let route = try await route()
+        var route = try await route()
         var down = touchIsDown
         let steps = try AndroidInputLowering.steps(for: event, touchIsDown: &down, scale: route.scale)
+        if case .adb = route.executor, steps.contains(where: \.isMultiTouch), let helper = try await multiTouchHelper() {
+            route = AndroidInputRoute(executor: .helper(helper), scale: route.scale, clipboard: route.clipboard, adbReason: route.adbReason)
+            resolvedRoute = route
+        }
         try await run(steps, through: route.executor)
         touchIsDown = down
     }
@@ -248,6 +258,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
     }
 
     func close() async {
+        await liftHeldFingers()
         guard touchIsDown, let point = lastTouch, let route = resolvedRoute else { return }
         touchIsDown = false
         do {
@@ -264,6 +275,21 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
+    private func liftHeldFingers() async {
+        guard !heldFingers.isEmpty, let route = resolvedRoute else { return }
+        let fingers = heldFingers
+        heldFingers = []
+        do {
+            switch route.executor {
+            case .adb: return
+            case .grpc(let driver): try await driver.touches(fingers, down: false)
+            case .helper(let driver): try await driver.run([.touches(.up, fingers)])
+            }
+        } catch {
+            log(.warning, "Could not lift the fingers left down on \(device.rawValue): \(error.localizedDescription)")
+        }
+    }
+
     private func run(_ steps: [AndroidInputStep], through executor: AndroidInputExecutor) async throws {
         if let last = steps.last(where: { if case .touch = $0 { return true } else { return false } }), case .touch(_, let point) = last {
             lastTouch = point
@@ -272,6 +298,12 @@ final class AndroidInputSession: InputSession, TextInputSession {
         var scripts: [String] = []
         if case .adb = executor {
             scripts = try AdbInputScript.scripts(for: steps)
+        }
+        let fingersBefore = heldFingers
+        for step in steps {
+            if case .touches(let phase, let points) = step {
+                heldFingers = phase == .up ? [] : points
+            }
         }
         do {
             switch executor {
@@ -288,10 +320,26 @@ final class AndroidInputSession: InputSession, TextInputSession {
         } catch {
             if case .helper(let driver) = executor, driver.releasedInput {
                 touchIsDown = false
-            } else if pressesDown {
-                touchIsDown = true
+                heldFingers = []
+            } else {
+                if pressesDown {
+                    touchIsDown = true
+                }
+                heldFingers = steps.lazy.compactMap(\.fingersDown).first ?? fingersBefore
             }
             throw error
         }
+    }
+}
+
+extension AndroidInputStep {
+    var isMultiTouch: Bool {
+        if case .touches = self { return true }
+        return false
+    }
+
+    var fingersDown: [AndroidPoint]? {
+        if case .touches(.down, let points) = self { return points }
+        return nil
     }
 }

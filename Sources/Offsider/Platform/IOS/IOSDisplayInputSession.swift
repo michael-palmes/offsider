@@ -24,6 +24,9 @@ final class IOSDisplayInputSession: InputSession {
     }
 
     func perform(_ event: InputEvent) async throws {
+        guard !event.hasTwoFingers else {
+            throw CLIError(errorDescription: Self.twoFingersUnsupported, reason: .notSupported, hint: "Run `offsider posture closed --device <DEVICE_ID>` to use the cover display, then try again.")
+        }
         let hidEvent = try event.hidEvent()
         guard Self.isTouchOnly(hidEvent) else {
             try await HIDInteractor.performHIDEvent(hidEvent, in: try await idb(), logger: logger)
@@ -75,6 +78,7 @@ final class IOSDisplayInputSession: InputSession {
         return session
     }
 
+    static let twoFingersUnsupported = "Two-finger touches on the iPhone Duo's inner display are not supported; idb reaches the main display only."
     static let unsupported = "Input on the iPhone Duo's inner display is not supported on this simulator; fold the simulator to use the cover display."
 
     /// Touches and delays only; anything else (keys, buttons) is not tied to a display and goes through idb.

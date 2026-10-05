@@ -3,13 +3,19 @@ import Foundation
 /// Offsider's values as proto messages and back; pure, so the wire shape is tested without an emulator.
 extension EmulatorControlClient {
     static func touchEvent(_ touch: PanelTouch) -> Android_Emulation_Control_TouchEvent {
-        var point = Android_Emulation_Control_Touch()
-        point.x = touch.x
-        point.y = touch.y
-        point.identifier = touch.identifier
-        point.pressure = touch.pressure
+        touchEvent([touch])
+    }
+
+    static func touchEvent(_ touches: [PanelTouch]) -> Android_Emulation_Control_TouchEvent {
         var event = Android_Emulation_Control_TouchEvent()
-        event.touches = [point]
+        event.touches = touches.map { touch in
+            var point = Android_Emulation_Control_Touch()
+            point.x = touch.x
+            point.y = touch.y
+            point.identifier = touch.identifier
+            point.pressure = touch.pressure
+            return point
+        }
         return event
     }
 

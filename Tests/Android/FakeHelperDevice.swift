@@ -288,7 +288,9 @@ final class FakeHelperDevice: @unchecked Sendable {
             switch step["kind"] as? String {
             case "tap": return "tap \(number("x")) \(number("y"))"
             case "swipe": return "swipe \(number("fromX")) \(number("fromY")) \(number("toX")) \(number("toY")) \(number("durationMs")) ms \(number("moves")) moves"
-            case "touch": return "touch \(step["phase"] as? String ?? "?") \(number("x")) \(number("y"))"
+            case "touch":
+                let pointer = (step["pointer"] as? NSNumber)?.intValue ?? 0
+                return "touch \(step["phase"] as? String ?? "?")\(pointer == 0 ? "" : " p\(pointer)") \(number("x")) \(number("y"))"
             case "key": return "key \(step["phase"] as? String ?? "?") \(number("code")) meta \(number("meta"))"
             case "text": return "text \(step["text"] as? String ?? "?")"
             case "pause": return "pause \(number("ms"))"

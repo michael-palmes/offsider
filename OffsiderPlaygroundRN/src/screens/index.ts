@@ -13,6 +13,7 @@ import { KeyPressScreen } from './KeyPressScreen';
 import { KeySequenceScreen } from './KeySequenceScreen';
 import { LongScrollTestScreen } from './LongScrollTestScreen';
 import { ModalNavigationTestScreen } from './ModalNavigationTestScreen';
+import { MultiTouchScreen } from './MultiTouchScreen';
 import { OverlayTestScreen } from './OverlayTestScreen';
 import { ParkedSheetTestScreen } from './ParkedSheetTestScreen';
 import { PermissionStateTestScreen } from './PermissionStateTestScreen';
@@ -33,6 +34,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'tap-test': TapTestScreen,
   'touch-control': TouchControlScreen,
   'swipe-test': SwipeTestScreen,
+  'multi-touch': MultiTouchScreen,
   'gesture-presets': GesturePresetsScreen,
   'switch-test': SwitchTestScreen,
   'tab-view-test': TabViewTestScreen,

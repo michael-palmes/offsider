@@ -143,7 +143,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` and `--delta` |
 | `drag` | Low-level point-to-point drag using explicit touch moves (`--duration`, `--steps`) |
 | `gesture` | Run a preset: `scroll-up`, `scroll-down`, `scroll-left`, `scroll-right`, `swipe-from-left-edge`, `swipe-from-right-edge`, `swipe-from-top-edge`, `swipe-from-bottom-edge`. Presets fit the foreground app's frame in the current orientation; `--screen-width` and `--screen-height` override the size |
-| `touch` | Send touch down and/or up at `-x`/`-y` (`--down`, `--up`, `--delay`) |
+| `touch` | Send touch down and/or up at `-x`/`-y` (`--down`, `--up`, `--delay`), or hold two fingers centred there with `--fingers 2 --hold <ms>` (`--spread <points>`, default 60) on a simulator's main display or an Android emulator |
 | `button` | Press a hardware button (optional `--duration`): on iOS `home`, `lock`, `side-button`, `siri`, `apple-pay`; on Android `back`, `app-switch`, `home`, `lock` (the power key), `volume-up`, `volume-down`. A button the device's platform lacks exits 64. Supports `--verify, --retries, --json`. On Android, `home` checks that the launcher came to the front and, when the image ignored the key, sends the HOME intent once; `--verify` then reports `change` `activity` (with `note` `home_intent` when the intent was needed) and exits 5 when the launcher never came up |
 | `key` | Press one HID keycode (0 to 255), optionally held for `--duration`; supports `--verify, --retries, --json` |
 | `key-sequence` | Press comma-separated `--keycodes` in order, with an optional `--delay` |

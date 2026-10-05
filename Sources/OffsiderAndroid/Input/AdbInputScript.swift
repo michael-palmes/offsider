@@ -38,6 +38,8 @@ enum AdbInputScript {
         case .touch(let phase, let point):
             let action = phase == .down ? "DOWN" : phase == .move ? "MOVE" : "UP"
             return ("input motionevent \(action) \(pixels(point))", 1)
+        case .touches:
+            throw AndroidError.twoFingersOverInput
         case .pause(let seconds):
             return ("sleep \(decimal(seconds))", 1)
         case .key(.press, let usage):

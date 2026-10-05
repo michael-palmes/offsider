@@ -159,6 +159,9 @@ extension Gesture: BatchConvertible {
 
 extension Touch: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        if fingers == 2 {
+            return [.hidBarrier(try await twoFingerEvent(backend: context.backend, device: context.device))]
+        }
         let physicalPoint = try await context.backend.deviceCoordinates(
             for: [(x: pointX, y: pointY)],
             tree: nil,

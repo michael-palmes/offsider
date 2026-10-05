@@ -30,6 +30,8 @@ public enum HardwareButton: String, CaseIterable, Equatable, Sendable {
 public indirect enum InputEvent: Equatable, Sendable {
     case tapAt(x: Double, y: Double)
     case touch(direction: InputDirection, x: Double, y: Double)
+    /// Two fingers down or up together, at (x1, y1) and (x2, y2).
+    case twoFingerTouch(direction: InputDirection, x1: Double, y1: Double, x2: Double, y2: Double)
     case swipe(Double, yStart: Double, xEnd: Double, yEnd: Double, delta: Double, duration: Double)
     case button(direction: InputDirection, button: HardwareButton)
     case shortButtonPress(HardwareButton)

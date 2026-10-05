@@ -149,4 +149,18 @@ struct AndroidInputPolicyTests {
         #expect(error?.kind == .invalidSetting)
         #expect(error?.message == "OFFSIDER_ANDROID_INPUT is grpc, which Offsider cannot read. Use auto, helper or input, or unset it.")
     }
+
+    @Test("two fingers go down as pointers 0 then 1 and lift 1 then 0, with the hold between them in one request")
+    func twoFingers() throws {
+        let fingers = [AndroidPoint(x: 100, y: 500), AndroidPoint(x: 160, y: 500)]
+        let requests = try HelperInjectPlanTests.plan([.touches(.down, fingers), .pause(1), .touches(.up, fingers)])
+
+        #expect(requests.count == 1)
+        #expect(requests.first?.waitMilliseconds == 1000)
+        #expect(try HelperInjectPlanTests.json(requests) == [
+            #"[{"kind":"touch","phase":"down","pointer":0,"x":100,"y":500},{"kind":"touch","phase":"down","pointer":1,"x":160,"y":500},"#
+                + #"{"kind":"pause","ms":1000},"#
+                + #"{"kind":"touch","phase":"up","pointer":1,"x":160,"y":500},{"kind":"touch","phase":"up","pointer":0,"x":100,"y":500}]"#,
+        ])
+    }
 }
