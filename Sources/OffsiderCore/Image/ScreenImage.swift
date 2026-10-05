@@ -167,13 +167,13 @@ public enum ScreenImage {
         )
     }
 
-    /// One `UInt32` a pixel, rows top to bottom.
-    private static func pixels(of image: CGImage) throws -> [UInt32] {
+    /// One `UInt32` a pixel (RGBA bytes in memory order), rows top to bottom, drawn into `colourSpace` or the image's own.
+    static func pixels(of image: CGImage, colourSpace: CGColorSpace? = nil) throws -> [UInt32] {
         let width = image.width
         let height = image.height
         var pixels = [UInt32](repeating: 0, count: width * height)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = context(width: width, height: height, colourSpace: colourSpace(of: image), data: buffer.baseAddress) else {
+            guard let context = context(width: width, height: height, colourSpace: colourSpace ?? self.colourSpace(of: image), data: buffer.baseAddress) else {
                 return false
             }
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -183,7 +183,7 @@ public enum ScreenImage {
         return pixels
     }
 
-    private static func makeImage(_ pixels: [UInt32], width: Int, height: Int, colourSpace: CGColorSpace) throws -> CGImage {
+    static func makeImage(_ pixels: [UInt32], width: Int, height: Int, colourSpace: CGColorSpace) throws -> CGImage {
         let data = pixels.withUnsafeBytes { Data($0) }
         guard let provider = CGDataProvider(data: data as CFData),
               let image = CGImage(

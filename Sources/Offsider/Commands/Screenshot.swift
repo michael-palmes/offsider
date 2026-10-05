@@ -10,7 +10,8 @@ struct Screenshot: AsyncParsableCommand {
         --scale points makes one image pixel one point, so image coordinates are tap coordinates. \
         --region takes points as describe-ui prints them; the crop happens before scaling. \
         --compare captures, applies the same --region and --scale, and exits 0 when more than \
-        --threshold of the screen's tiles changed, or 5 when not. \
+        --threshold of the screen's tiles changed, or 5 when not; it also counts the changed pixels, and \
+        --diff-output writes an image of where they are. \
         --display captures one display of a foldable (see `offsider displays`); a display that is not active \
         is captured as it is, often dark. \
         --mask-secure (or OFFSIDER_MASK_SECURE=1) reads the accessibility tree first and paints every password field \
@@ -46,6 +47,9 @@ struct Screenshot: AsyncParsableCommand {
 
     @Option(help: ArgumentHelp("Compare the capture with this baseline image, captured with the same --scale and --region.", valueName: "baseline"))
     var compare: String?
+
+    @Option(name: .customLong("diff-output"), help: ArgumentHelp("With --compare, write a PNG of the capture faded to white with changed pixels in magenta to this file, or a directory for a generated name.", valueName: "png"))
+    var diffOutput: String?
 
     @Option(help: ArgumentHelp("With --compare, the fraction of tiles that may change and still count as unchanged (0 to 1, default 0).", valueName: "0-1"))
     var threshold: Double?
@@ -88,6 +92,13 @@ struct Screenshot: AsyncParsableCommand {
             throw ValidationError(error.description)
         } catch let error as ScreenRegionError {
             throw ValidationError(error.message)
+        }
+        if let diffOutput {
+            guard compare != nil else { throw ValidationError("--diff-output applies to --compare only.") }
+            let pathExtension = (diffOutput as NSString).pathExtension.lowercased()
+            guard pathExtension != "jpg", pathExtension != "jpeg" else {
+                throw ValidationError("--diff-output writes a PNG; use a .png path or a directory.")
+            }
         }
         if let threshold {
             guard compare != nil else { throw ValidationError("--threshold applies to --compare only.") }
@@ -208,10 +219,17 @@ struct Screenshot: AsyncParsableCommand {
             Self.writeError("Warning: JPEG baselines can read as changed because of compression artefacts; prefer PNG.")
         }
         let bands = await backend.volatileScreenBands(for: booted.id)
-        let result = try ScreenCapture.compare(
+        let (result, diffImage) = try ScreenCapture.comparison(
             rendered, capture: capture, baseline: baseline, baselinePath: compare, bands: bands, threshold: threshold ?? 0
         )
-        return rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masks: masked)
+        var report = rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masks: masked)
+        if diffOutput != nil {
+            let url = try ScreenCapture.outputURL(path: diffOutput, prefix: "Screenshot Diff", deviceName: booted.name, format: .png)
+            try ScreenImage.encode(diffImage, as: .png).write(to: url)
+            report.diffPath = url.path
+            Self.writeError("Diff saved to \(url.path)")
+        }
+        return report
     }
 
     private static func writeError(_ line: String) {

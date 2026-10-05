@@ -223,7 +223,7 @@ enum ScreenCapture {
         return (Int((bands.top * pixelsPerPoint).rounded()), Int((bands.bottom * pixelsPerPoint).rounded()))
     }
 
-    /// Fingerprints the rendered capture against a baseline image file with the same crop and scale.
+    /// Fingerprints the rendered capture against a baseline image file with the same crop and scale, and counts its changed pixels.
     nonisolated static func compare(
         _ rendered: RenderedScreenshot,
         capture: CapturedScreen,
@@ -232,6 +232,18 @@ enum ScreenCapture {
         bands: ScreenBands,
         threshold: Double
     ) throws -> ScreenCompare.Result {
+        try comparison(rendered, capture: capture, baseline: baseline, baselinePath: baselinePath, bands: bands, threshold: threshold).result
+    }
+
+    /// The tile verdict with pixel counts, and the diff image `--diff-output` writes.
+    nonisolated static func comparison(
+        _ rendered: RenderedScreenshot,
+        capture: CapturedScreen,
+        baseline: Data,
+        baselinePath: String,
+        bands: ScreenBands,
+        threshold: Double
+    ) throws -> (result: ScreenCompare.Result, diffImage: CGImage) {
         let baselineImage: CGImage
         do {
             baselineImage = try ScreenImage.decode(baseline)
@@ -244,10 +256,12 @@ enum ScreenCapture {
         let exclusion = bandPixels(rendered, capture: capture, bands: bands)
         guard let current = ImageFingerprint(image: rendered.image, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom),
               let before = ImageFingerprint(image: baselineImage, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom),
-              let result = ScreenCompare.compare(before, current, threshold: threshold) else {
+              var result = ScreenCompare.compare(before, current, threshold: threshold) else {
             throw ImageFailure(detail: "could not compare the capture with \(baselinePath)")
         }
-        return result
+        let diff = try ScreenDiff.compare(baseline: baselineImage, current: rendered.image, excludingTop: exclusion.top, excludingBottom: exclusion.bottom)
+        result.pixels = ScreenCompare.PixelCounts(changedPixels: diff.changedPixels, comparedPixels: diff.comparedPixels, bounds: diff.bounds)
+        return (result, diff.image)
     }
 
     /// Reads a baseline image, naming the path when it cannot.

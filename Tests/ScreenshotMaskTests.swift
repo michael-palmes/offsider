@@ -16,7 +16,7 @@ struct ScreenshotMaskTests {
         try ScreenImage.encode(TestImages.make(width: 1170, height: 2532, background: 255), as: .png)
     }
 
-    static func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> [UInt8] {
+    nonisolated static func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: 4)
         bytes.withUnsafeMutableBytes { buffer in
             let context = CGContext(

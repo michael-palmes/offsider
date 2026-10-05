@@ -6,27 +6,43 @@ public enum ScreenCompare {
         case unchanged
     }
 
+    /// Exact pixel counts beside the tile verdict; they never change it.
+    public struct PixelCounts: Equatable, Sendable {
+        public let changedPixels: Int
+        public let comparedPixels: Int
+        public let bounds: PixelRect?
+
+        public init(changedPixels: Int, comparedPixels: Int, bounds: PixelRect?) {
+            self.changedPixels = changedPixels
+            self.comparedPixels = comparedPixels
+            self.bounds = bounds
+        }
+    }
+
     public struct Result: Equatable, Sendable {
         public let changedTiles: Int
         public let comparedTiles: Int
         public let changedFraction: Double
         public let outcome: Outcome
+        public var pixels: PixelCounts?
 
-        public init(changedTiles: Int, comparedTiles: Int, changedFraction: Double, outcome: Outcome) {
+        public init(changedTiles: Int, comparedTiles: Int, changedFraction: Double, outcome: Outcome, pixels: PixelCounts? = nil) {
             self.changedTiles = changedTiles
             self.comparedTiles = comparedTiles
             self.changedFraction = changedFraction
             self.outcome = outcome
+            self.pixels = pixels
         }
 
-        /// "Changed: 37 of 512 tiles (7.2%)" or "Unchanged: 0 of 512 tiles".
+        /// "Changed: 37 of 512 tiles (7.2%), 1830 pixels" or "Unchanged: 0 of 512 tiles, 0 pixels".
         public var summary: String {
             let counts = "\(changedTiles) of \(comparedTiles) tiles"
+            let pixelCount = pixels.map { ", \($0.changedPixels) \($0.changedPixels == 1 ? "pixel" : "pixels")" } ?? ""
             switch outcome {
             case .changed:
-                return "Changed: \(counts) (\(percentage))"
+                return "Changed: \(counts) (\(percentage))\(pixelCount)"
             case .unchanged:
-                return changedTiles == 0 ? "Unchanged: \(counts)" : "Unchanged: \(counts) (\(percentage)), within the threshold"
+                return changedTiles == 0 ? "Unchanged: \(counts)\(pixelCount)" : "Unchanged: \(counts) (\(percentage))\(pixelCount), within the threshold"
             }
         }
 
@@ -72,6 +88,8 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var comparison: ScreenCompare.Result?
     /// Rectangles painted per kind asked for; nil unless a mask was asked for.
     public var maskedBy: [MaskKind: Int]?
+    /// Where `--diff-output` wrote the diff image.
+    public var diffPath: String?
     /// The mask selectors that matched nothing, such as `--mask-id profile-email`.
     public var maskUnmatched: [String]
 
@@ -89,7 +107,8 @@ public struct ScreenshotReport: Equatable, Sendable {
         format: ImageFormat?,
         comparison: ScreenCompare.Result? = nil,
         maskedBy: [MaskKind: Int]? = nil,
-        maskUnmatched: [String] = []
+        maskUnmatched: [String] = [],
+        diffPath: String? = nil
     ) {
         self.path = path
         self.width = width
@@ -105,6 +124,7 @@ public struct ScreenshotReport: Equatable, Sendable {
         self.comparison = comparison
         self.maskedBy = maskedBy
         self.maskUnmatched = maskUnmatched
+        self.diffPath = diffPath
     }
 
     /// Every rectangle painted, by any mask; nil unless a mask was asked for.
@@ -154,6 +174,18 @@ public struct ScreenshotReport: Equatable, Sendable {
                 ("comparedTiles", .integer(comparison.comparedTiles)),
                 ("changedFraction", .number((comparison.changedFraction * 10_000).rounded() / 10_000)),
             ]
+            if let pixels = comparison.pixels {
+                members += [
+                    ("changedPixels", .integer(pixels.changedPixels)),
+                    ("comparedPixels", .integer(pixels.comparedPixels)),
+                    ("changedBounds", .optional(pixels.bounds) { bounds in
+                        .object([("x", .integer(bounds.x)), ("y", .integer(bounds.y)), ("width", .integer(bounds.width)), ("height", .integer(bounds.height))])
+                    }),
+                ]
+            }
+            if let diffPath {
+                members.append(("diffPath", .string(diffPath)))
+            }
         }
         return members
     }
