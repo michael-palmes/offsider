@@ -40,6 +40,16 @@ struct Verifier {
     static let pollInterval: Duration = .milliseconds(200)
     static let screenshotSpacing: Duration = .milliseconds(350)
     static let screenshotCount = 3
+    /// After-shots one attempt may take while a transition is still moving; a lagging stream may show it only from the second.
+    static let maxScreenshots = 6
+    /// The share of tiles that still differ across the latest after-shots while a transition is running; a caret or spinner moves far fewer.
+    static let movingFraction = 0.1
+
+    /// True while the oldest and newest of `prints` differ on `movingFraction` of their tiles, so more after-shots are taken.
+    static func isMoving(_ prints: [ImageFingerprint]) -> Bool {
+        guard prints.count >= 2, let first = prints.first, let last = prints.last else { return false }
+        return (first.changedFraction(comparedTo: last) ?? 1) >= movingFraction
+    }
 
     /// `initialTree`, the tree the selector was resolved on, stands in for the first read; `beforeAction` sees the second.
     static func run(
@@ -123,24 +133,26 @@ struct Verifier {
                         excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right, tolerance: bands.noiseTolerance
                     )
                 }
-                var afterShots: [Data] = []
-                for shotIndex in 0..<screenshotCount {
+                var afterShots: [(data: Data, print: ImageFingerprint)] = []
+                var shotIndex = 0
+                while shotIndex < screenshotCount || (shotIndex < maxScreenshots && Self.isMoving(afterShots.suffix(screenshotCount).map(\.print))) {
                     if shotIndex > 0 { try await dependencies.sleep(screenshotSpacing) }
-                    if let data = try? await dependencies.screenshot() { afterShots.append(data) }
-                }
-                let afterPrints = afterShots.compactMap {
-                    ImageFingerprint(
-                        pngData: $0, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
+                    shotIndex += 1
+                    if let data = try? await dependencies.screenshot(), let print = ImageFingerprint(
+                        pngData: data, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
                         excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right, tolerance: bands.noiseTolerance
-                    )
+                    ) {
+                        afterShots.append((data, print))
+                    }
                 }
+                let afterPrints = afterShots.suffix(screenshotCount).map(\.print)
                 if let before = baselinePrint, !afterPrints.isEmpty,
                    ScreenChange.detect(before: before, after: afterPrints) {
                     return Outcome(verified: true, attempts: attempt.number, change: .screenshot, style: style, summary: nil)
                 }
-                if let last = afterShots.last, let lastPrint = afterPrints.last {
-                    baselineShot = last
-                    baselinePrint = lastPrint
+                if let last = afterShots.last {
+                    baselineShot = last.data
+                    baselinePrint = last.print
                 }
             }
 

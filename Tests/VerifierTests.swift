@@ -385,6 +385,30 @@ struct VerifierTests {
         #expect(fake.treeReads == 2)
     }
 
+    @Test("With no tree, after-shots continue while a transition is still moving, so a change that settles verifies without a second action")
+    func transitionSettlesBeforeComparing() async throws {
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 60), screen(shade: 120), screen(shade: 200)])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
+
+        #expect(outcome.verified)
+        #expect(outcome.change == .screenshot)
+        #expect(actions.count == 1)
+        #expect(fake.screenReads == 6)
+    }
+
+    @Test("A screen that never settles stops the after-shots at their cap")
+    func endlessMotionIsCapped() async throws {
+        let shades: [UInt8] = [10, 40, 80, 120, 160, 200, 240, 20, 60, 100, 140]
+        let fake = FakeSimulator(trees: [emptyTree], screens: shades.map { screen(shade: $0) })
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        _ = try await run(fake, styles: [nil], actions: &actions, retries: &retries)
+
+        #expect(fake.screenReads == 1 + Verifier.maxScreenshots)
+    }
+
     @Test("The bands are scaled to pixels and excluded only in portrait")
     func bandsOnlyInPortrait() {
         let png = screen(shade: 10)
