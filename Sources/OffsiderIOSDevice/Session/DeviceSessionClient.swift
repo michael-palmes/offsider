@@ -51,8 +51,17 @@ final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
         guard !isBroken else { throw DeviceSessionLinkError.notSent("its connection broke on an earlier request") }
         let id = nextID
         nextID += 1
+        let framed: Data
         do {
-            try channel.write(try DeviceSessionWire.encode(request, id: id))
+            framed = try DeviceSessionWire.encode(request, id: id)
+        } catch {
+            throw DeviceSessionLinkError.notSent(Self.detail(error))
+        }
+        guard framed.count - 4 <= DeviceSessionWire.maxJSONBytes else {
+            throw DeviceSessionLinkError.notSent("the request is \(framed.count - 4) bytes, over the broker's \(DeviceSessionWire.maxJSONBytes)-byte limit")
+        }
+        do {
+            try channel.write(framed)
         } catch {
             breakLink()
             throw DeviceSessionLinkError.notSent(Self.detail(error))
@@ -131,10 +140,6 @@ public final class DeviceSessionClient {
 
     public func keys(_ steps: [DeviceSessionStep]) async throws {
         _ = try await call(.keys(steps), timeout: Self.inputTimeout + .seconds(Self.waited(steps)))
-    }
-
-    public func text(_ text: String) async throws {
-        _ = try await call(.text(text), timeout: Self.inputTimeout + .seconds(Double(text.count) * 0.1))
     }
 
     public func displayChanged() async throws {

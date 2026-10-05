@@ -107,10 +107,35 @@ final class IOSDeviceInputSession: TextInputSession {
     /// US keyboard text through broker keys when it sends them; anything else through the runner.
     func typeText(_ text: String) async throws {
         if TextToHIDEvents.validateText(text), (try? await touchLowering())?.brokerTouches == true {
-            try await session().keys(try DeviceSessionLowering.keySteps(typing: text))
+            let requests = try Self.keyRequests(typing: text)
+            for (index, steps) in requests.enumerated() {
+                do {
+                    try await session().keys(steps)
+                } catch let error as IOSDeviceError where index > 0 {
+                    throw IOSDeviceError(
+                        .sessionLost,
+                        "Offsider typed the first \(index * Self.typingChunk) of \(text.count) characters on \(device.rawValue), then: \(error.message) Check the field before typing the rest."
+                    )
+                }
+            }
             return
         }
         try await requireRunnerText("Typing text").typeText(text, on: device)
+    }
+
+    /// Characters per `keys` request, so a long text never outgrows the broker's request limit or its reply timeout.
+    static let typingChunk = 256
+
+    /// The whole text lowered before anything is sent, one request per `typingChunk` characters.
+    static func keyRequests(typing text: String) throws -> [[DeviceSessionStep]] {
+        var requests: [[DeviceSessionStep]] = []
+        var start = text.startIndex
+        while start < text.endIndex {
+            let end = text.index(start, offsetBy: typingChunk, limitedBy: text.endIndex) ?? text.endIndex
+            requests.append(try DeviceSessionLowering.keySteps(typing: String(text[start..<end])))
+            start = end
+        }
+        return requests
     }
 
     func replaceText(_ text: String) async throws {

@@ -41,7 +41,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
     case press(usagePage: UInt64, usageCode: UInt64, hold: Double)
     case touch([DeviceSessionStep])
     case keys([DeviceSessionStep])
-    case text(String)
     /// The screen turned, so the broker reads the display again before the next touch.
     case displayChanged
     case stop
@@ -53,7 +52,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
         case .press: return "press"
         case .touch: return "touch"
         case .keys: return "keys"
-        case .text: return "text"
         case .displayChanged: return "display"
         case .stop: return "stop"
         }
@@ -62,7 +60,7 @@ public enum DeviceSessionRequest: Equatable, Sendable {
     /// Input reaches the device, so a lost reply leaves its outcome unknown.
     public var sendsInput: Bool {
         switch self {
-        case .press, .touch, .keys, .text: return true
+        case .press, .touch, .keys: return true
         case .ping, .frame, .displayChanged, .stop: return false
         }
     }
@@ -75,7 +73,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
         var usageCode: UInt64?
         var hold: Double?
         var steps: [DeviceSessionStep]?
-        var text: String?
     }
 
     func envelope(id: Int) -> Envelope {
@@ -91,8 +88,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
             envelope.hold = hold
         case .touch(let steps), .keys(let steps):
             envelope.steps = steps
-        case .text(let text):
-            envelope.text = text
         }
         return envelope
     }
@@ -114,7 +109,6 @@ public enum DeviceSessionRequest: Equatable, Sendable {
             self = .press(usagePage: try need(envelope.usagePage, "usagePage"), usageCode: try need(envelope.usageCode, "usageCode"), hold: try need(envelope.hold, "hold"))
         case "touch": self = .touch(try need(envelope.steps, "steps"))
         case "keys": self = .keys(try need(envelope.steps, "steps"))
-        case "text": self = .text(try need(envelope.text, "text"))
         default: throw DeviceSessionWireError(detail: "an unknown op `\(envelope.op)`")
         }
     }

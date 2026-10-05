@@ -166,7 +166,7 @@ public final class DeviceSessionServer {
             return (DeviceSessionReply(id: id), nil)
         case .frame:
             return await frameGate.run { await self.reply(id: id, request, origin: origin) }
-        case .press, .touch, .keys, .text:
+        case .press, .touch, .keys:
             return await inputGate.run {
                 if let unsent = Self.unsent(origin, now: .now) { return (.failure(id: id, unsent), nil) }
                 return await self.reply(id: id, request, origin: origin)
@@ -214,8 +214,6 @@ public final class DeviceSessionServer {
         case .keys(let steps):
             try Self.checkTiming(steps)
             try await hardware.keys(steps, abandoned: origin.isGone)
-        case .text(let text):
-            try await hardware.keys(try DeviceSessionLowering.keySteps(typing: text), abandoned: origin.isGone)
         case .stop:
             stopping = true
         case .displayChanged:

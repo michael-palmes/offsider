@@ -145,6 +145,35 @@ struct IOSDeviceInputRoutingTests {
         #expect(runner.events == [.tapAt(x: 1, y: 1), .shortButtonPress(.home), .shortButtonPress(.home)])
     }
 
+    @Test("long US text types in requests under the broker's size limit that together are the whole text")
+    func longText() async throws {
+        let link = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone)
+        let backend = try Self.backend(version: "651.13.4", connector: FakeSessionConnector(link: link), runner: nil)
+        let session = try #require(try await backend.openInputSession(for: Self.phone) as? any TextInputSession)
+        let text = String(repeating: "Hello, World! ", count: 2_000)
+        let whole = try DeviceSessionLowering.keySteps(typing: text)
+        try #require(try DeviceSessionWire.encode(.keys(whole), id: 1).count > DeviceSessionWire.maxJSONBytes)
+        try await session.typeText(text)
+        let sent = link.requests.compactMap { if case .keys(let steps) = $0 { return steps } else { return nil } }
+        #expect(sent.count > 1)
+        #expect(sent.flatMap { $0 } == whole)
+        #expect(try sent.allSatisfy { try DeviceSessionWire.encode(.keys($0), id: 1).count <= DeviceSessionWire.maxJSONBytes })
+    }
+
+    @Test("when a later part of long text fails, the error says how much was typed")
+    func longTextPartlyTyped() async throws {
+        let keysSeen = OnceFlag()
+        let link = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone) { request in
+            guard case .keys = request else { return false }
+            return !keysSeen.claim()
+        }
+        let backend = try Self.backend(version: "651.13.4", connector: FakeSessionConnector(link: link), runner: nil)
+        let session = try #require(try await backend.openInputSession(for: Self.phone) as? any TextInputSession)
+        let error = await #expect(throws: IOSDeviceError.self) { try await session.typeText(String(repeating: "a", count: 600)) }
+        #expect(error?.reason == .inputOutcomeUnknown)
+        #expect(error?.message.contains("typed the first 256 of 600 characters") == true)
+    }
+
     @Test("below CoreDevice 636 the runner serves input; with no runner it is xcode_too_old, and no broker is asked")
     func belowFloor() async throws {
         let connector = FakeSessionConnector(link: FakeSessionLink.broker(udid: IOSDeviceFixtures.phone))

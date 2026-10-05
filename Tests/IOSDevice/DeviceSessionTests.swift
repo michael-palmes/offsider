@@ -81,7 +81,6 @@ struct DeviceSessionWireTests {
         .press(usagePage: 0x0C, usageCode: 0x30, hold: 0.4),
         .touch([.touch(.down, x: 10, y: 20), .wait(0.06), .touch(.up, x: 10, y: 20)]),
         .keys([.key(4, down: true), .key(4, down: false)]),
-        .text("hi there"),
         .displayChanged,
         .stop,
     ])
@@ -170,6 +169,28 @@ struct DeviceSessionClientTests {
         let error = await #expect(throws: DeviceSessionLinkError.self) { _ = try await link.exchange(.touch([.touch(.down, x: 1, y: 1)]), timeout: .seconds(5)) }
         #expect({ if case .lost? = error { return true } else { return false } }())
         #expect(link.isBroken)
+    }
+
+    @Test("a request over the broker's size limit is refused unsent, and the link stays usable")
+    func oversizeRefused() async throws {
+        var pair: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        let server = DeviceSessionChannel(descriptor: pair[1])
+        let link = SocketSessionLink(channel: DeviceSessionChannel(descriptor: pair[0]))
+        defer {
+            link.close()
+            server.close()
+        }
+        let huge = DeviceSessionRequest.keys(Array(repeating: .key(4, down: true), count: 50_000))
+        let error = await #expect(throws: DeviceSessionLinkError.self) { _ = try await link.exchange(huge, timeout: .seconds(1)) }
+        #expect({ if case .notSent? = error { return true } else { return false } }())
+        #expect(!link.isBroken)
+        #expect(throws: DeviceSessionWireError(detail: "the reply timed out")) { _ = try server.readFrame(limit: DeviceSessionWire.maxJSONBytes, timeout: .milliseconds(200)) }
+
+        let client = DeviceSessionClient(udid: "U", link: link)
+        let refused = await #expect(throws: IOSDeviceError.self) { try await client.keys(Array(repeating: .key(4, down: true), count: 50_000)) }
+        #expect(refused?.reason == .hidBrokerFailed)
+        #expect(refused?.message.contains("nothing was sent") == true)
     }
 }
 
