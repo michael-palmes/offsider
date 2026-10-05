@@ -9,6 +9,7 @@
 - Run `offsider doctor --device <UDID> --json` first. Its `ios-device.*` checks cover Xcode, CoreDevice, the listing, the connection, trust, Developer Mode, the developer disk image, the tunnel, the lock state, HID input (`hid` round-trips a barrier on the button socket), UI Automation, the session broker, usbmuxd and runner signing. `--fix` only mounts the developer disk image.
 - iOS does not report UI Automation, so `ios-device.ui-automation` is a skip naming the Settings path: ask the user to check it. `ios-device.session` is a skip when no broker is running; doctor never starts one.
 - The device must stay unlocked. A locked device refuses input with exit 7 `device_locked`: ask the user to unlock it. Offsider never types an iPhone passcode, and `wake`, `stay-awake` and `unlock-code` are Android only.
+- Ask the user to set Settings > Display & Brightness > Auto-Lock to Never while you drive the device: once the screen dims, the next press may only brighten it.
 
 ## The session broker (Xcode 27)
 
