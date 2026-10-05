@@ -12,6 +12,7 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from 
 2. Start an Android emulator with `DEVICE=$(offsider boot <AVD>)` (`--headless` hides the window): it waits until Android has booted, prints the serial and never starts a second instance of a running AVD. Never start emulators with `emulator -port` or `-grpc` yourself: Offsider then falls back to slower adb-only input.
 3. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored or screen reads fail. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint` (`guide errors`).
 4. Pass `--device <DEVICE_ID>` to every device command, or `export OFFSIDER_DEVICE=<DEVICE_ID>` once (`--device` wins). `list-devices`, `boot`, `init`, `guide` and `doctor` do not need it.
+5. If the repository has an `OFFSIDER.md`, read `offsider guide --project .` first.
 
 ## The loop: look, act, verify
 

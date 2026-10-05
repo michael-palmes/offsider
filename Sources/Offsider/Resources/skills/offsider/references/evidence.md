@@ -54,3 +54,7 @@ Redaction is on by default for every source: `message` and `raw` read `[redacted
 - `true`, `false`, `null`, `undefined` and objects or arrays (`token: {...}`) are left; a quoted key's bare value becomes `"[redacted]"`, so JSON still parses. `Authorization` and `Cookie` values run to the end of the header.
 - `Bearer` and `Basic` credentials, JWTs (`[redacted jwt]`) and email addresses (`[redacted email]`) are masked anywhere.
 - False positives: a capitalised `Basic` before a long word, and any value under a key such as `pin`. False negatives: secrets under other keys or in free text. Read a log before you share it.
+
+## Project guide
+
+A repository can keep its own recipes for agents in `OFFSIDER.md`: test accounts, how to reach a screen, which elements to mask in a report. `offsider guide --project .` prints it, searching the path and its parents up to the repository root, your home directory or `/`, and exits 1 when there is none. Read it at the start of a session, before these generic topics.

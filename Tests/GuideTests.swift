@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -111,6 +112,77 @@ struct GuideTests {
                 }
             }
         }
+    }
+
+    // MARK: - Project guide
+
+    /// A temp tree: `outer/OFFSIDER.md` above `outer/repo/app/src`, with `repo` holding `.git` when `git` is set.
+    private static func projectTree(git: GitMarker?, guideIn: String?) throws -> (root: String, src: String) {
+        let root = (NSTemporaryDirectory() as NSString).appendingPathComponent("offsider-guide-\(UUID().uuidString)")
+        let src = root + "/outer/repo/app/src"
+        try FileManager.default.createDirectory(atPath: src, withIntermediateDirectories: true)
+        switch git {
+        case .directory: try FileManager.default.createDirectory(atPath: root + "/outer/repo/.git", withIntermediateDirectories: true)
+        case .worktreeFile: try Data("gitdir: /elsewhere\n".utf8).write(to: URL(fileURLWithPath: root + "/outer/repo/.git"))
+        case nil: break
+        }
+        if let guideIn {
+            try Data("# Recipes\nLog in with the test account.\n".utf8).write(to: URL(fileURLWithPath: root + "/" + guideIn + "/OFFSIDER.md"))
+        }
+        return (root, src)
+    }
+
+    private enum GitMarker { case directory, worktreeFile }
+
+    @Test("the project guide is found in a parent directory")
+    func projectGuideInParent() throws {
+        let tree = try Self.projectTree(git: .directory, guideIn: "outer/repo")
+        defer { try? FileManager.default.removeItem(atPath: tree.root) }
+        let found = try ProjectGuide.locate(from: tree.src + "/", home: "/nonexistent")
+        #expect(found.path.hasSuffix("/outer/repo/OFFSIDER.md"))
+        #expect(found.text.contains("test account"))
+    }
+
+    @Test("the search stops at the repository root, a .git directory or a worktree's .git file", arguments: [true, false])
+    func projectGuideStopsAtRepository(directory: Bool) throws {
+        let tree = try Self.projectTree(git: directory ? .directory : .worktreeFile, guideIn: "outer")
+        defer { try? FileManager.default.removeItem(atPath: tree.root) }
+        #expect(throws: ProjectGuide.Failure.self) { try ProjectGuide.locate(from: tree.src, home: "/nonexistent") }
+        #expect { try Guide.projectGuide(from: tree.src, home: "/nonexistent") } throws: { error in
+            "\(error)".contains("No OFFSIDER.md in") && "\(error)".contains("/outer/repo.") && "\(error)".contains("Add one")
+        }
+    }
+
+    @Test("a project guide over 256 KiB is refused")
+    func projectGuideTooLarge() throws {
+        let tree = try Self.projectTree(git: .directory, guideIn: nil)
+        defer { try? FileManager.default.removeItem(atPath: tree.root) }
+        try Data(repeating: 0x61, count: 256 * 1024 + 1).write(to: URL(fileURLWithPath: tree.src + "/OFFSIDER.md"))
+        #expect { try ProjectGuide.locate(from: tree.src, home: "/nonexistent") } throws: { "\($0)".contains("256 KiB") }
+    }
+
+    @Test("--project with a topic, or a missing path, is a usage error")
+    func projectGuideUsage() async throws {
+        #expect(try await TestHelpers.runOffsiderCommandAllowFailure("guide selectors --project .").exitCode == 64)
+        #expect(try await TestHelpers.runOffsiderCommandAllowFailure("guide --project /nonexistent/offsider").exitCode == 64)
+    }
+
+    @Test("guide --project prints the file, and plain guide names it only when there is one")
+    func projectGuideFromBinary() async throws {
+        let tree = try Self.projectTree(git: .directory, guideIn: "outer/repo")
+        defer { try? FileManager.default.removeItem(atPath: tree.root) }
+        let binary = try TestHelpers.getOffsiderPath()
+
+        let printed = try await CommandRunner.runSeparated("cd '\(tree.src)' && '\(binary)' guide --project .")
+        #expect(printed.exitCode == 0)
+        #expect(printed.stdout == "# Recipes\nLog in with the test account.\n")
+        #expect(printed.stderr.contains("Project guide: ") && printed.stderr.contains("/outer/repo/OFFSIDER.md"))
+
+        let listed = try await CommandRunner.runSeparated("cd '\(tree.src)' && '\(binary)' guide")
+        #expect(listed.stdout.contains("/outer/repo/OFFSIDER.md (offsider guide --project .)"))
+        try FileManager.default.removeItem(atPath: tree.root + "/outer/repo/OFFSIDER.md")
+        let none = try await CommandRunner.runSeparated("cd '\(tree.src)' && '\(binary)' guide")
+        #expect(!none.stdout.contains("Project guide"))
     }
 
     /// Inline code spans and fenced code lines, with each single-quoted part (such as a batch step) as its own span.
