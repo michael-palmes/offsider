@@ -101,8 +101,9 @@ extension AndroidBackend: DisplayControlling {
         return (display, foldable ? reading?.committed.posture : nil)
     }
 
+    /// Logical display 0's panel, else the probe's viewport, else the only lit panel (One UI names no panel for display 0).
     func activeDisplay(in list: AndroidDisplayList, serial: String) -> AndroidDisplayList.Physical? {
-        list.active ?? list.displays.first { $0.uniqueId == activeUniqueIds[serial] }
+        list.active ?? list.displays.first { $0.uniqueId == activeUniqueIds[serial] } ?? list.soleLitPanel
     }
 }
 
@@ -250,7 +251,7 @@ extension AndroidBackend: DisplayCapturing {
             throw AndroidError.unknownDisplay(serial, requested: display, available: list.displays.map(\.descriptor))
         }
         guard physical.on else {
-            throw AndroidError.displayOff(serial, display: physical.descriptor, posture: await postureIfFoldable(serial))
+            throw AndroidError.displayOff(serial, display: physical.descriptor, posture: await postureIfFoldable(serial), phone: id.isPhysicalAndroidDevice)
         }
         return try await adbScreenshot(serial, physicalDisplay: physical.descriptor.platformId)
     }

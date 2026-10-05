@@ -111,6 +111,18 @@ struct AndroidMultiDisplayCaptureTests {
         #expect(Self.execs(server) == ["exec:screencap", "exec:screencap -d \(Self.cover)"])
     }
 
+    @Test("before any probe, the screen status names the lit panel and One UI's posture, not main")
+    func screenStatusNamesLitPanel() async throws {
+        for (closed, display, posture) in [(false, ScreenDisplay(id: "inner", platformId: Self.inner), Posture.open), (true, ScreenDisplay(id: "cover", platformId: Self.cover), .closed)] {
+            let server = Self.fold(closed: closed, picks: Self.inner)
+            let backend = try Self.backend(server)
+            let status = await backend.screenStatus("R58M123ABC")
+            #expect(status.display == display)
+            #expect(status.posture == posture)
+            #expect(!server.services.contains("shell,v2,raw:\(AndroidDisplayGeometry.probeScript)"))
+        }
+    }
+
     @Test("a failed capture reports screencap's own error, not its multi-display warning")
     func failureSkipsWarning() async throws {
         let server = FakeAdbServer(handler: FakeAdbServer.devices(["R58M123ABC"], host: Self.host) { _, service in
@@ -123,5 +135,13 @@ struct AndroidMultiDisplayCaptureTests {
         let error = await #expect(throws: AndroidError.self) { try await backend.screenshotPNG(for: Self.phone) }
         #expect(error?.message == "`screencap -p` failed on R58M123ABC: screencap: no display.")
         #expect(AndroidScreenCapture.failureDetail(ScreencapRawTests.warning) == "no output")
+    }
+
+    @Test("an off panel on a phone is folded or unfolded by hand, not with offsider posture")
+    func displayOffOnPhone() async throws {
+        let backend = try Self.backend(Self.fold(closed: false, picks: Self.inner))
+
+        let error = await #expect(throws: AndroidError.self) { try await backend.screenshotPNG(for: Self.phone, display: Self.cover) }
+        #expect(error?.message == "The cover display (\(Self.cover)) of R58M123ABC is off (posture open), so it has nothing to capture. Fold the phone, then retry.")
     }
 }

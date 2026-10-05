@@ -40,10 +40,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - An Android input failure now asks you to check that the device is still connected, not that the emulator is running.
 - A physical iPhone or iPad UDID now routes to the device instead of failing as an unknown Android device name.
 - `orientation` on a physical device that does not turn in time says the screen follows only while the device is awake and unlocked and the app in front supports the orientation.
+- The `--display` help names `main` as the display of a device with one, and `cover` or `inner` on a foldable; `--display main` on a foldable still exits 64 with `unknown_display`, now saying why.
 
 ### Fixed
 
 - `screenshot` on an Android phone with several displays, such as the Galaxy Z Fold3, captures the active display and no longer fails when `screencap` prints a warning before the image. It keeps `screencap`'s own pick when that has the active display's size, and otherwise captures again with `screencap -d` and the active display's ID; later captures in the same command (`batch`, `wait`, `--verify` and `record-video` frames) pass `-d` straight away. A failed capture reports `screencap`'s own error instead of the first line of that warning.
+- On a Samsung foldable, `describe-ui` and `screenshot --json` name the active display `inner` or `cover` instead of `main`, and `posture` reads One UI's `CLOSE`, `HALF_FOLDED` and `OPEN` states as `closed`, `half-opened` and `open` instead of `unknown`. One UI's `dumpsys display` does not say which panel logical display 0 shows, so Offsider takes the only panel that is on.
+- On a foldable phone, the hints for a display that is off or not active say to fold or unfold the phone, instead of pointing to `offsider posture`, which only an emulator accepts.
 - Android input through the UiAutomation helper is never sent twice: when the helper stops before it answers, the command fails with `dispatched` `unknown` instead of resending the tap, key or text.
 - Long `type` text through the Android helper no longer times out after 5 s: each request carries at most 256 characters and its timeout grows with its keys.
 - After the Android helper refuses a touch, closing the command no longer warns that it could not lift a finger the helper had already cancelled.

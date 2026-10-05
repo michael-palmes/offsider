@@ -91,7 +91,9 @@ public struct DisplayList: Equatable, Sendable {
             return match
         }
         let names = displays.map { "\($0.descriptor.role.rawValue) (\($0.descriptor.platformId))" }.joined(separator: ", ")
-        throw DeviceSettingsError("Unknown display '\(text)' on \(device). Use one of: \(names).")
+        let foldable = displays.contains { $0.descriptor.role == .inner }
+        let reason = wanted == DisplayRole.main.rawValue && foldable ? ": main is the display of a device with one, and a foldable has cover and inner" : ""
+        throw DeviceSettingsError("Unknown display '\(text)' on \(device)\(reason). Use one of: \(names).")
     }
 }
 

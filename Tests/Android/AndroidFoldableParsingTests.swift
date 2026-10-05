@@ -64,6 +64,33 @@ struct AndroidFoldableParsingTests {
         #expect(closed.active?.descriptor.pointWidth.rounded() == 443)
     }
 
+    @Test("One UI's CLOSE, HALF_FOLDED and OPEN are postures; its tent and dual-screen states are unknown")
+    func galaxyFoldStates() {
+        let states = AndroidDeviceState.parseStates(GalaxyFoldFixtures.printStates)
+        #expect(states.map(\.posture) == [.closed, .unknown, .halfOpened, .open, .unknown, .unknown])
+        #expect(AndroidDeviceState.parseReading(GalaxyFoldFixtures.state(closed: true))?.committed.posture == .closed)
+        #expect(AndroidDeviceState.parseReading(GalaxyFoldFixtures.state(closed: false))?.committed.posture == .open)
+    }
+
+    @Test("One UI names no panel for logical display 0, so the only lit panel is the active one")
+    func galaxyFoldDisplays() {
+        let open = AndroidDisplayList.parse(dumpsys: GalaxyFoldFixtures.dumpsys(closed: false))
+        #expect(open.displays.map(\.descriptor.role) == [.inner, .cover])
+        #expect(open.displays.map(\.descriptor.platformId) == [GalaxyFoldFixtures.innerId, GalaxyFoldFixtures.coverId])
+        #expect(open.activeUniqueId == nil)
+        #expect(open.active == nil)
+        #expect(open.soleLitPanel?.descriptor.role == .inner)
+
+        let closed = AndroidDisplayList.parse(dumpsys: GalaxyFoldFixtures.dumpsys(closed: true))
+        #expect(closed.soleLitPanel?.descriptor.role == .cover)
+    }
+
+    @Test("with both panels lit, as in a dual-screen state, no panel is assumed active")
+    func bothPanelsLit() {
+        let output = GalaxyFoldFixtures.dumpsys(closed: false).replacingOccurrences(of: "state OFF, committedState OFF", with: "state ON, committedState ON")
+        #expect(AndroidDisplayList.parse(dumpsys: output).soleLitPanel == nil)
+    }
+
     @Test("a probe fits only the panel its sizes describe, so one taken mid-unfold does not fit the inner panel its viewport names")
     func probeFitsPanel() throws {
         let open = AndroidDisplayList.parse(dumpsys: FoldableFixtures.foldDumpsysOpen)
