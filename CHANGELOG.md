@@ -52,6 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--verify-id <id>` on `tap`, `type`, `key` and `button` verifies that an element of the next screen came on screen (`change` `element`, default `--retries 0` and `--verify-timeout 10`, no screenshot fallback), and refuses before sending anything with the new reason `verify_target_present` (exit 1) when it is already there. `--verify-ignore-text` verifies on added or removed elements and state changes only, so a ticking clock or timer no longer counts as a change.
 - `turnstile --status` reads a Cloudflare Turnstile widget once without a tap and prints `checkbox`, `verifying`, `passed`, `challenge` or `absent` (`--json`: `{version, state, source, frame}`); a visual challenge now fails with the new reason `turnstile_challenge` (exit 1). The skill now tells agents testing sign-in to run `turnstile` themselves and hand back only after exit 1 or 5.
 - `describe-ui` text output says what surrounds the elements after the device line, only when it applies: `# window: <title> (modal)` or `(system)` on Android, `# keyboard shown` and `# logbox: N logs`; JSON gains an always-present `context` object (`window`, `keyboard`, `logbox`), and the schema stays version 2.
+- `rn logbox status` reads React Native LogBox toasts and the inspector without a tap, and `rn logbox dismiss` clears every log through each toast's clear button, or the inspector's Dismiss when that does nothing, exiting 5 (`not_verified`) when logs remain.
 
 ### Changed
 
@@ -93,6 +94,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `doctor` no longer says an Android screen with stay awake off turns off "after never without input": with a screen timeout of never, `android-device.stay-awake` passes with "Off: the screen never turns off on its own".
 - `orientation` on Android no longer leaves auto-rotate off for good: the first turn away from portrait records auto-rotate and `user_rotation` for that boot, and `orientation portrait` restores auto-rotate. `orientation --json` adds `autoRotate {before, now, restored}` and `userRotation {before, now}`, null on iOS and when reading.
 - `button home` on Android no longer reports success while an app stays in front: it checks the launcher came to the front within 2 s and, when the image ignored the key, sends the HOME intent once. Without `--verify` a launcher that never came up is a warning; with `--verify`, `change` is the new value `activity` (and `note` the new value `home_intent` when the intent was needed), and the command exits 5 when the app stayed in front.
+- A LogBox toast is now recognised by its place at the bottom of the screen as well as its `!, ` or `n, ` label, so a full-width button labelled like `10, AUD` is no longer treated as one in cover warnings.
 
 ## [0.6.0] - 2026-10-05
 

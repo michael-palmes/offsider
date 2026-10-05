@@ -6,7 +6,7 @@ struct RN: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "rn",
         abstract: "React Native helpers.",
-        subcommands: [RNPrepare.self]
+        subcommands: [RNPrepare.self, RNLogBox.self]
     )
 }
 

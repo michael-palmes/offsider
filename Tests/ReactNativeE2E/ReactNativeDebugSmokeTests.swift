@@ -117,6 +117,38 @@ struct ReactNativeDebugSmokeTests {
         #expect(try await !Self.hasNode(app) { Self.label($0).contains("OffsiderFixture error") })
     }
 
+    @Test("rn logbox reads two errors, the summary names them, dismiss clears both and the tab tap then lands", arguments: RNPlatform.enabled)
+    func logBoxStatusAndDismiss(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-clear-logs")
+        try await app.run("tap --id overlay-test-log-two-errors")
+        _ = try await app.waitForNode { Self.label($0).hasPrefix("2, ") }
+
+        let status = try await app.run("rn logbox status --json").stdout
+        #expect(status.contains(#""logs":2"#), "\(status)")
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(summary.contains("\n# logbox: 2 logs\n"), "\(summary.prefix(400))")
+
+        let dismissed = try await app.run("rn logbox dismiss --json").stdout
+        #expect(dismissed.contains(#""cleared":2,"remaining":0"#), "\(dismissed)")
+        let after = try await app.run("rn logbox status --json").stdout
+        #expect(after.contains(#""logs":0"#) && !after.contains("10, AUD"), "\(after)")
+        try await app.run("tap --id overlay-test-tab-search --fail-if-covered")
+        _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
+    }
+
+    @Test("a full-width 10, AUD button near the bottom is never read as LogBox", arguments: RNPlatform.enabled)
+    func amountIsNotLogBox(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-clear-logs")
+
+        let status = try await app.run("rn logbox status --json").stdout
+        #expect(status.contains(#""logs":0,"toasts":[]"#), "\(status)")
+        #expect(!(try await app.run("describe-ui --summary").stdout.contains("# logbox")))
+    }
+
     @Test("shake opens the dev menu, which closes with its Close button", arguments: RNPlatform.enabled.filter { $0 == .ios })
     func shakeOpensDevMenu(platform: RNPlatform) async throws {
         let app = RNApp(platform)

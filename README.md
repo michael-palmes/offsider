@@ -167,6 +167,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `displays` | List the device's built-in displays (`main`, or `cover` and `inner` on a foldable) with platform ID, size, scale, rotation and which one is active, then the posture; `--json` |
 | `posture` | Read a foldable's posture (`closed`, `half-opened`, `open`) and its active display, or set it: Android emulators through the emulator, the iPhone Duo simulator through its hinge (`--angle 0-180`, `--timeout`, `--json`), waiting until the display has swapped |
 | `shake` | Send the shake gesture (iOS only) |
+| `rn logbox` | `status` reads React Native LogBox toasts and the inspector without a tap (`--json`: `{version, logs, toasts, inspector}`); `dismiss` clears every log (`--timeout`, `--json`: `{version, cleared, remaining, method}`), exiting 5 when some remain |
 | `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`); stops the app first if it is running |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
@@ -320,7 +321,7 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 - `offsider logs --rn` prints `console.log`, `console.warn` and `console.error` output, in release builds too.
 - A Cloudflare Turnstile checkbox's frame includes the words beside the square, so `tap` on that label misses the box. `offsider turnstile` taps the square and waits until the widget passes. On iOS the web view leaves the checkbox out of the tree, and the tap is the square where the green check sits. It does not bypass the check: see [Cloudflare Turnstile](#cloudflare-turnstile).
 - `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off while the device is turned: the first turn away from portrait records auto-rotate and `user_rotation` in the private directory's `orientation/` (one 0600 file per serial, for that emulator boot), and `orientation portrait` writes auto-rotate back and removes the record. `orientation` names the device turn, so `landscape-left` is what React Native's and UIKit's interface orientation call landscape-right; `describe-ui` and `screenshot --json` report the shape as `orientation` and the turn as `rotation`.
-- Debug builds: `rn prepare` skips an Expo dev client's first-launch intro. A LogBox error banner sits over the bottom of the screen and swallows taps; `tap` warns about it on both platforms, and `tap --verify` shows the tap had no effect.
+- Debug builds: `rn prepare` skips an Expo dev client's first-launch intro. A LogBox error toast sits over the bottom of the screen and swallows taps; `tap` warns about it on both platforms, `describe-ui --summary` says `# logbox: N logs`, and `rn logbox dismiss` clears it.
 
 ### Cloudflare Turnstile
 

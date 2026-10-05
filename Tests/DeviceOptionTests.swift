@@ -16,11 +16,14 @@ struct DeviceOptionTests {
         #expect(names.contains("doctor"))
         #expect(!rootHelp.contains("list-simulators"))
         var commands: [String] = []
-        for name in names {
+        var pending = names
+        while let name = pending.first {
+            pending.removeFirst()
             let nested = TestHelpers.listedSubcommands(in: try await TestHelpers.runOffsiderCommand("\(name) --help").output)
-            commands += nested.isEmpty ? [name] : nested.map { "\(name) \($0)" }
+            if nested.isEmpty { commands.append(name) } else { pending += nested.map { "\(name) \($0)" } }
         }
         #expect(commands.contains("rn prepare"))
+        #expect(commands.contains("rn logbox dismiss"))
         for name in commands {
             let help = try await TestHelpers.runOffsiderCommand("\(name) --help").output
             #expect(help.contains("--device <id>"), "\(name) --help does not show --device <id>")
