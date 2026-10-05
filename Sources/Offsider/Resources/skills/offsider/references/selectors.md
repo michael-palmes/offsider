@@ -27,6 +27,12 @@ offsider gesture scroll-up --device <DEVICE_ID>
 offsider slider --label <text> --value 40 --element-type slider --device <DEVICE_ID>
 ```
 
+## Text and buttons
+
+- `type` adds to the focused field. Tap the field, then `type --replace 'text'` sets it exactly and `--replace ''` clears it; it works with `--stdin`, `--file`, `--verify` and as a batch step. iOS selects all with Command-A and deletes, then types (secure fields included); Android sets the text in one step.
+- A trailing newline presses Return on both platforms, so `$'query\n'` submits. Use single quotes inline, and `--stdin` or `--file` for shell-sensitive text.
+- `button` names depend on the platform: iOS has `apple-pay`, `home`, `lock`, `side-button` and `siri`; Android has `back`, `app-switch`, `home`, `lock` (the power key), `volume-up` and `volume-down`. A button the device lacks exits 64.
+
 ## Sliders
 
 - Use `offsider slider --id <identifier> --value <0-100>` instead of approximating with raw swipe coordinates. It always checks its own result: it re-reads the slider's `value` and fails clearly if the observed 0 to 100 value stays outside tolerance.

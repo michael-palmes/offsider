@@ -2,7 +2,7 @@
 
 ## Devices
 
-- `offsider list-devices` shows running emulators and USB phones by serial and shut-down AVDs by name; `--json` gives each device's `kind` (`simulator`, `emulator`, `avd` or `physical`) and `connection`.
+- `offsider list-devices` shows running emulators and USB phones by serial and shut-down AVDs by name; `--json` prints `{"version": 1, "devices": [{id, platform, state, name, osVersion, deviceType, kind, connection}]}`, where `kind` is `simulator`, `emulator`, `avd` or `physical` and `connection` is `usb` for a phone, else null.
 - Start an emulator with `DEVICE=$(offsider boot <AVD>)`; add `--headless` to hide the window. Never start emulators with `emulator -port` or `-grpc` yourself: Offsider then falls back to slower adb-only input.
 - Coordinates, frames and `--delta` are in dp; take them from `describe-ui` as usual.
 

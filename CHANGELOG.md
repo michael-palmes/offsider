@@ -40,6 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - An Android input failure now asks you to check that the device is still connected, not that the emulator is running.
 - A physical iPhone or iPad UDID now routes to the device instead of failing as an unknown Android device name.
 - `orientation` on a physical device that does not turn in time says the screen follows only while the device is awake and unlocked and the app in front supports the orientation.
+- The bundled skill's router is shorter: `type` and `button` detail, the full `list-devices --json` shape and the Turnstile detail now live in the `selectors`, `android` and `turnstile` guide topics.
 
 ### Fixed
 

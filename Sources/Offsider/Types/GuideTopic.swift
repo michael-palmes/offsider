@@ -17,7 +17,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
 
     var readItWhen: String {
         switch self {
-        case .selectors: "A selector misses, matches twice, or the target is off screen, covered or moving; you need coordinates, gestures or sliders"
+        case .selectors: "A selector misses, matches twice, or the target is off screen, covered or moving; you need coordinates, gestures, sliders, text replacement or button names"
         case .verify: "You need proof an input worked, `--verify` exited 5, or you are waiting on a condition"
         case .errors: "A command exited non-zero, the device is busy, or doctor reports a problem"
         case .android: "The device is an Android emulator or a USB phone"
