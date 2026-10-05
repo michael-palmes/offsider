@@ -38,7 +38,7 @@ struct EmulatorTransportSelectorTests {
         let connector = FakeEmulatorConnector(.success(FakeEmulator()))
         let logs = LogRecorder()
 
-        for serial in ["RFCRA0TCR5B", "R58M123ABC", "emulator5B"] {
+        for serial in ["R5CRFAKE03", "R58M123ABC", "emulator5B"] {
             let transport = try await Self.choose(home: home, emulator: connector, logs: logs, serial: serial)
             #expect(Self.reason(transport) == .physicalDevice)
         }
