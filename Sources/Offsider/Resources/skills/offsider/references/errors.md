@@ -8,7 +8,7 @@
 - 3 and 4: `doctor` found warnings or failures.
 - 5: the input was sent but nothing changed, or a `wait`, `assert` or compare condition was not met. Check the screen before sending again.
 - 6: the selector matched several elements. Pick from `candidates`, add `--element-type` or use `--id`.
-- 7: the device was not found or is not booted. Run `offsider list-devices`, or `offsider boot <AVD>` on Android.
+- 7: the device was not found or is not booted. Run `offsider list-devices`, or `offsider boot <AVD>` on Android. With `device_locked`, a PIN, pattern or password lock screen stayed up after `wake`: ask the user to unlock the device (`guide device-state`).
 - 8: the device is busy (see below).
 - 9: Xcode, adb or the Android SDK is missing. Fix the setup; retrying will not help.
 - 64: bad arguments. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.

@@ -126,7 +126,8 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 - E2E and manual checks drive only `Offsider_E2E_Pixel_9` and the foldable `Offsider_E2E_Pixel_9_Pro_Fold`, and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
 - Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
 - The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
-- `permission`, `status-bar` and `biometric` change state that outlives the command on both platforms; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).
+- `permission`, `status-bar` and `biometric` change state that outlives the command on both platforms, as `stay-awake` does on Android; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).
+- Never type, pipe or ask for a device's unlock code: the user saves it with `offsider unlock-code set` in their own terminal. `wake --unlock` types a saved code once; never loop on it.
 - The helper holds Android's single UiAutomation slot only while one command runs, and `accessibility_enabled` reads 1 until it exits. Keep its reflection to the four UiAutomation members and the display probe with its public fallback; never implement a hidden Binder interface.
 
 ## Collaboration

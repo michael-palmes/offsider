@@ -16,6 +16,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case deviceOffline
         case deviceUnauthorised
         case stillBooting
+        case deviceLocked
         case avdNotRunning
         case noDeviceNamed
         case avdRunningTwice
@@ -462,6 +463,19 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         return AndroidError(.unknownDisplay, "Unknown display '\(requested)' on \(serial). Use one of: \(names).")
     }
 
+    static func awakeStateUnreadable(_ serial: String, output: String) -> AndroidError {
+        let firstLine = output.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
+        return AndroidError.adbCommandFailed(
+            serial: serial,
+            command: "dumpsys power; dumpsys window policy",
+            detail: "expected mWakefulness and the keyguard state but got \(firstLine)"
+        )
+    }
+
+    static func codeFieldMissing(_ serial: String) -> AndroidError {
+        AndroidError(.deviceLocked, "The lock screen of \(serial) showed no PIN or password field, so Offsider typed nothing. Unlock it on the device.")
+    }
+
     static func displayOff(_ serial: String, display: DisplayDescriptor, posture: Posture?) -> AndroidError {
         let state = "The \(display.role.rawValue) display (\(display.platformId)) of \(serial) is off (posture \(posture?.rawValue ?? "unknown")), so it has nothing to capture."
         switch display.role {
@@ -555,6 +569,7 @@ extension AndroidError: OffsiderFailure {
         case .avdNotRunning: return .deviceNotBooted
         case .deviceOffline, .stillBooting: return .deviceNotReady
         case .deviceUnauthorised: return .deviceUnauthorised
+        case .deviceLocked: return .deviceLocked
         case .avdRunningTwice, .ambiguousDeviceName: return .deviceAmbiguous
         case .unsupportedDevice: return .notSupported
         case .appNotInstalled: return .appNotInstalled
@@ -597,6 +612,8 @@ extension AndroidError: OffsiderFailure {
     /// The message's first backticked Offsider or adb command; never the failed command itself, which can carry typed text.
     public var hint: String? {
         switch reason.exitCode {
+        case .deviceUnavailable where kind == .deviceLocked:
+            return Self.firstCommand(in: message)
         case .deviceUnavailable where kind == .avdNotRunning || kind == .stillBooting || kind == .deviceOffline:
             return Self.firstCommand(in: message) ?? "offsider list-devices"
         case .deviceUnavailable:

@@ -104,9 +104,11 @@ extension Screenshot: DeviceOptionCommand {}
 extension Shake: DeviceOptionCommand {}
 extension Slider: DeviceOptionCommand {}
 extension StatusBarCommand: DeviceOptionCommand {}
+extension StayAwakeCommand: DeviceOptionCommand {}
 extension Swipe: DeviceOptionCommand {}
 extension Tap: DeviceOptionCommand {}
 extension Touch: DeviceOptionCommand {}
 extension Turnstile: DeviceOptionCommand {}
 extension Type: DeviceOptionCommand {}
 extension Wait: DeviceOptionCommand {}
+extension Wake: DeviceOptionCommand {}

@@ -1,6 +1,6 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, waits and assertions, screenshots, logs, appearance, permissions, status bar, biometrics, orientation, foldable displays and postures, video, and batch workflows.
+description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)". Covers all commands including boot, touch, gestures, sliders, text input, keyboard, buttons, accessibility, waits and assertions, screenshots, logs, appearance, permissions, status bar, biometrics, stay awake and unlocking, orientation, foldables, video, and batch workflows.
 ---
 # Offsider
 
@@ -36,17 +36,18 @@ offsider describe-ui --diff --device <DEVICE_ID>
 - Use `--retries 0` with `--verify` for submit, send or delete, so a late effect plus a retry cannot act twice.
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop, never kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames are in points (dp on Android). Capture with `screenshot --scale points` when you will tap what you see.
-- `appearance`, `content-size`, `orientation`, `permission`, `status-bar` and `biometric` change the device and stay changed: read the current value first, and set it back when done (`guide device-state`).
+- `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric` and `stay-awake` change the device and stay changed: read the current value first, and set it back when done (`guide device-state`).
+- When an Android error says the screen is off or locked, run `offsider wake --device <DEVICE_ID>`. Exit 7 `device_locked` means a PIN, pattern or password lock screen: ask the user to unlock it, or run `wake --unlock` if they saved a code. Never ask for or handle a lock screen code; the user saves it with `unlock-code set` in their own terminal.
 
 ## Exit codes
 
-Exit codes: 0 ok, 1 failure, 2 selector not found, 3 doctor warnings, 4 doctor failures, 5 unverified or condition unmet, 6 ambiguous selector, 7 device not found or not booted, 8 device busy, 9 Xcode, adb or SDK missing, 64 usage.
+Exit codes: 0 ok, 1 failure, 2 selector not found, 3 doctor warnings, 4 doctor failures, 5 unverified or condition unmet, 6 ambiguous selector, 7 device not found, not booted or locked, 8 device busy, 9 Xcode, adb or SDK missing, 64 usage.
 
 With `--json`, a failure prints `exitCode` and an `error` object. `dispatched: no` means nothing was sent, so a resend is safe; after exit 5 or `dispatched: unknown`, check the screen before sending again (`guide errors`). After a batch fails, check its summary line's `dispatched` before resending: earlier steps may have run, so exit 2 or 6 alone does not make a batch resend safe.
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`. Run `offsider <command> --help` for every option.
+`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `orientation`, `displays`, `posture`, `shake`, `rn prepare`, `record-video`, `stream-video`. Run `offsider <command> --help` for every option.
 
 `button` names depend on the platform: iOS has `apple-pay`, `home`, `lock`, `side-button` and `siri`; Android has `back`, `app-switch`, `home`, `lock` (the power key), `volume-up` and `volume-down`. A button the device lacks exits 64.
 
@@ -66,7 +67,7 @@ Run `offsider guide <topic>` to print one; `offsider guide` lists them.
 | `batch` | A flow has three or more steps |
 | `screenshots` | You need pixels: charts, maps, web views, masked secure fields or video |
 | `describe-ui` | You need more than `--summary`: JSON, filters, the byte budget or `--diff` |
-| `device-state` | You change appearance, text size, orientation, permissions, the status bar or biometrics |
+| `device-state` | You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked |
 | `migrate` | You know idb, Maestro or agent-device and want the Offsider equivalent |
 
 ## Before finishing

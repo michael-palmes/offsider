@@ -28,6 +28,18 @@ public protocol BiometricControlling: DeviceBackend {
     func sendBiometric(_ outcome: BiometricOutcome, modality: BiometricModality, fingerID: Int?, on id: DeviceID) async throws -> String
 }
 
+/// Optional capability: the screen's power and lock state, stay awake, and waking the screen.
+@MainActor
+public protocol AwakeControlling: DeviceBackend {
+    func awakeState(on id: DeviceID) async throws -> AwakeReading
+    /// Stay awake on every power source, or off; returns the readings before and after.
+    func setStayAwake(_ on: Bool, on id: DeviceID) async throws -> (previous: AwakeReading, current: AwakeReading)
+    /// Turns the screen on and dismisses the lock screen, which a PIN, pattern or password leaves showing.
+    func wake(on id: DeviceID) async throws -> WakeOutcome
+    /// Types `code` once into the lock screen's focused PIN or password field, then Enter; returns the reading afterwards.
+    func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> AwakeReading
+}
+
 /// The JSON objects `permission`, `status-bar` and `biometric` print with `--json`, in schema order.
 public enum DeviceStateReport {
     static func header(_ action: String, device: DeviceID) -> [(String, OrderedJSON)] {

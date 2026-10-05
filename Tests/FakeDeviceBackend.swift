@@ -47,6 +47,13 @@ final class FakeDeviceBackend: DeviceBackend {
     var statusBarReading = StatusBarReading(overrides: [:])
     /// What `bootMarker(for:)` serves.
     var bootMarkerValue: String?
+    /// What screen reads serve; on and unlocked unless a test sets otherwise.
+    var awake = AwakeReading(screen: .on, lockScreen: .hidden)
+    /// What `wake` leaves when the screen was not usable; nil leaves `awake` as it was.
+    var afterWake: AwakeReading?
+    /// What typing a code leaves.
+    var afterCode = AwakeReading(screen: .on, lockScreen: .hidden)
+    private(set) var enteredCodes: [UnlockCode] = []
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -256,4 +263,33 @@ extension FakeDeviceBackend: PermissionControlling, StatusBarControlling, Biomet
 
 extension FakeDeviceBackend: BootMarking {
     func bootMarker(for id: DeviceID) async -> String? { bootMarkerValue }
+}
+
+extension FakeDeviceBackend: AwakeControlling {
+    func awakeState(on id: DeviceID) async throws -> AwakeReading {
+        stateCalls.append("awake read")
+        return awake
+    }
+
+    func setStayAwake(_ on: Bool, on id: DeviceID) async throws -> (previous: AwakeReading, current: AwakeReading) {
+        stateCalls.append("stay-awake \(on)")
+        let previous = awake
+        awake.stayAwake = on ? [.ac, .usb, .wireless, .dock] : []
+        return (previous, awake)
+    }
+
+    func wake(on id: DeviceID) async throws -> WakeOutcome {
+        stateCalls.append("wake")
+        let previous = awake
+        guard !previous.isUsable else { return WakeOutcome(previous: previous, current: previous, sent: []) }
+        awake = afterWake ?? awake
+        return WakeOutcome(previous: previous, current: awake, sent: ["KEYCODE_WAKEUP", "dismiss-keyguard"])
+    }
+
+    func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> AwakeReading {
+        stateCalls.append("enter code")
+        enteredCodes.append(code)
+        awake = afterCode
+        return awake
+    }
 }
