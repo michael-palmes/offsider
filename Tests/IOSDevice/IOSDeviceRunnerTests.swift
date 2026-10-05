@@ -195,8 +195,12 @@ struct RunnerSessionTests {
         let manager = Self.manager(root: root, processes: processes, transport: transport)
 
         let launching = Task { try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone") }
-        try await Task.sleep(for: .milliseconds(400))
-        let starting = try #require(try store.read(udid: Self.udid))
+        var recorded: RunnerSessionRecord?
+        for _ in 0..<100 where recorded == nil {
+            try await Task.sleep(for: .milliseconds(50))
+            recorded = try store.read(udid: Self.udid)
+        }
+        let starting = try #require(recorded)
         #expect(starting.pid == 5151 && starting.state == .starting && starting.process == FakeRunnerProcesses.identity)
 
         transport.refuseConnections = false
