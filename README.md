@@ -169,6 +169,8 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `shake` | Send the shake gesture (iOS only) |
 | `rn logbox` | `status` reads React Native LogBox toasts and the inspector without a tap (`--json`: `{version, logs, toasts, inspector}`); `dismiss` clears every log (`--timeout`, `--json`: `{version, cleared, remaining, method}`), exiting 5 when some remain |
 | `rn open` | Load an Expo dev client's bundle from Metro on this Mac and wait until the app is up (`--port`, `--bundle-id`, `--scheme`, `--wait-id`, `--timeout` 10 to 900, `--json`); exits 9 when Metro does not answer and 1 on a load error |
+| `rn devmenu` | Open a React Native debug build's dev menu and list its items (`--json`), or choose `reload`, `home`, `inspector`, `perf-monitor`, `fast-refresh`, `debugger`, `close` or `--label <text>` and wait for the menu to close |
+| `rn tools off` | Turn off the element inspector and the performance monitor when they show, through the dev menu (`--json`) |
 | `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`); stops the app first if it is running |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`) |
@@ -322,7 +324,7 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 - `offsider logs --rn` prints `console.log`, `console.warn` and `console.error` output, in release builds too.
 - A Cloudflare Turnstile checkbox's frame includes the words beside the square, so `tap` on that label misses the box. `offsider turnstile` taps the square and waits until the widget passes. On iOS the web view leaves the checkbox out of the tree, and the tap is the square where the green check sits. It does not bypass the check: see [Cloudflare Turnstile](#cloudflare-turnstile).
 - `appearance`, `content-size` and `orientation` change the device for every later screen; set them back when done. On Android, `orientation` turns auto-rotate off while the device is turned: the first turn away from portrait records auto-rotate and `user_rotation` in the private directory's `orientation/` (one 0600 file per serial, for that emulator boot), and `orientation portrait` writes auto-rotate back and removes the record. `orientation` names the device turn, so `landscape-left` is what React Native's and UIKit's interface orientation call landscape-right; `describe-ui` and `screenshot --json` report the shape as `orientation` and the turn as `rotation`.
-- Debug builds: `rn prepare` skips an Expo dev client's first-launch intro, and `rn open` loads its bundle from Metro and waits for the app. A LogBox error toast sits over the bottom of the screen and swallows taps; `tap` warns about it on both platforms, `describe-ui --summary` says `# logbox: N logs`, and `rn logbox dismiss` clears it.
+- Debug builds: `rn prepare` skips an Expo dev client's first-launch intro, and `rn open` loads its bundle from Metro and waits for the app; `rn devmenu` opens and drives the dev menu, and `rn tools off` hides the inspector and performance monitor. A LogBox error toast sits over the bottom of the screen and swallows taps; `tap` warns about it on both platforms, `describe-ui --summary` says `# logbox: N logs`, and `rn logbox dismiss` clears it.
 
 ### Cloudflare Turnstile
 

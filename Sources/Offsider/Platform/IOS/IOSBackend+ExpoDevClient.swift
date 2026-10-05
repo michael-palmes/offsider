@@ -89,3 +89,10 @@ extension IOSBackend: ExpoDevClientOpening {
         }
     }
 }
+
+extension IOSBackend: ReactNativeDevMenuOpening {
+    /// A debug build opens its dev menu on a shake.
+    func openDevMenu(_ id: DeviceID) async throws {
+        try await shake(id)
+    }
+}

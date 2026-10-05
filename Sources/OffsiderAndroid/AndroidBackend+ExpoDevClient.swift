@@ -73,3 +73,14 @@ extension AndroidBackend: ExpoDevClientOpening {
         }
     }
 }
+
+extension AndroidBackend: ReactNativeDevMenuOpening {
+    /// KEYCODE_MENU opens a debug build's dev menu.
+    public func openDevMenu(_ id: DeviceID) async throws {
+        try await prepare()
+        let result = try await requireClient().shell("input keyevent 82", on: id.rawValue, label: "input keyevent 82")
+        guard result.status == 0 else {
+            throw AndroidError.inputFailed(serial: id.rawValue, detail: "`input keyevent 82` exited \(result.status)")
+        }
+    }
+}

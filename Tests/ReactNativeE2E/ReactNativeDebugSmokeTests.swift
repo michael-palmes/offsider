@@ -176,6 +176,23 @@ struct ReactNativeDebugSmokeTests {
         #expect(noMetro.exitCode == 9, "\(noMetro.stderr)")
     }
 
+    @Test("rn devmenu reload reloads the app, and inspector then rn tools off leaves no panel", arguments: RNPlatform.enabled)
+    func devMenu(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+
+        let listed = try await app.run("rn devmenu --json")
+        #expect(listed.stdout.contains(#""label":"Reload""#), "\(listed.stdout)")
+        try await app.run("rn devmenu close")
+        try await app.run("rn devmenu reload", timeout: 240)
+        _ = try await app.waitForNode(timeout: 180) { $0["id"] as? String != nil }
+
+        try await app.run("rn devmenu inspector")
+        let off = try await app.run("rn tools off --json")
+        #expect(off.stdout.contains(#""inspector":"turned-off""#), "\(off.stdout)")
+        #expect(try await !Self.hasNode(app) { Self.label($0) == "Touchables" })
+    }
+
     @Test("shake opens the dev menu, which closes with its Close button", arguments: RNPlatform.enabled.filter { $0 == .ios })
     func shakeOpensDevMenu(platform: RNPlatform) async throws {
         let app = RNApp(platform)

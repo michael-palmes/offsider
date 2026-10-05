@@ -66,6 +66,7 @@ final class FakeDeviceBackend: DeviceBackend {
     var expoSchemes = ["exp+playground"]
     var metroHostAnswer = "127.0.0.1"
     private(set) var openedURLs: [String] = []
+    private(set) var devMenuOpens = 0
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -314,6 +315,14 @@ extension FakeDeviceBackend: ExpoDevClientOpening {
     func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String] { expoSchemes }
     func metroHost(port: Int, on id: DeviceID) async throws -> String { metroHostAnswer }
     func openURL(_ url: String, appID: String, on id: DeviceID) async throws { openedURLs.append(url) }
+}
+
+extension FakeDeviceBackend: ReactNativeDevMenuOpening {
+    /// Counts as input, so a backend that advances on input shows the next tree.
+    func openDevMenu(_ id: DeviceID) async throws {
+        devMenuOpens += 1
+        if advanceTreeOnInput { session.onPerform?(.shortKeyPress(0)) }
+    }
 }
 
 extension FakeDeviceBackend: ForegroundReading {
