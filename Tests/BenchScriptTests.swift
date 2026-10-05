@@ -41,7 +41,7 @@ struct BenchScriptTests {
         defer { try? FileManager.default.removeItem(at: sdk) }
 
         let otherAVD = try await Self.run(["--device", "emulator-5554", "--scenario", "android-describe"], sdk: sdk)
-        let phone = try await Self.run(["--device", "R58TEST0001", "--scenario", "android-describe"], sdk: sdk)
+        let phone = try await Self.run(["--device", "R5CRFAKE03", "--scenario", "android-describe"], sdk: sdk)
 
         #expect(otherAVD.status == 2)
         #expect(otherAVD.stderr.contains("runs AVD 'SomeoneElsesAVD'"))

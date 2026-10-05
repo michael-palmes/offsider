@@ -8,7 +8,7 @@
 - 3 and 4: `doctor` found warnings or failures.
 - 5: the input was sent but nothing changed, or a `wait`, `assert` or compare condition was not met. Check the screen before sending again.
 - 6: the selector matched several elements. Pick from `candidates`, add `--element-type` or use `--id`.
-- 7: the device was not found or is not booted. Run `offsider list-devices`, or `offsider boot <AVD>` on Android.
+- 7: the device was not found or is not booted. Run `offsider list-devices`, or `offsider boot <AVD>` on Android. With `device_locked`, a PIN, pattern or password lock screen stayed up after `wake`: ask the user to unlock the device (`guide device-state`).
 - 8: the device is busy (see below).
 - 9: Xcode, adb or the Android SDK is missing. Fix the setup; retrying will not help.
 - 64: bad arguments. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.
@@ -30,6 +30,6 @@ With `--json`, every failure prints one object on stdout: `exitCode` and `error`
 
 - `offsider doctor --device <DEVICE_ID> --json` checks iOS simulators and Android emulators alike. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint`.
 - `--fix` opens Device Hub or the device window and removes a stale HID broker directory on iOS, or starts an absent adb server on Android, then checks again.
-- On Android it checks the SDK, the adb server, the emulator, its gRPC endpoint, the UiAutomation slot and one helper start, which holds UiAutomation for about half a second; do not run it while another command drives the same emulator.
+- On Android it checks the SDK, the adb server, the emulator, the screen and lock screen, stay awake, its gRPC endpoint, the UiAutomation slot and one helper start, which holds UiAutomation for about half a second; do not run it while another command drives the same emulator. On a phone it also checks whether adb authorisation lapses and whether automatic system updates can restart it.
 - If a simulator shows repeated "quit unexpectedly" dialogs, run `offsider doctor --device <UDID>`. When `simulator.crash-loop` fails, ask the user before erasing it with the printed command, which removes its apps and settings.
 - Offsider uses the Xcode that `DEVELOPER_DIR` or `xcode-select` selects, and doctor prints which. When the project builds with a different Xcode from the selected one, set the same `DEVELOPER_DIR` on every `offsider` call. If doctor reports Simulator.app running from another Xcode, follow its `DEVELOPER_DIR=...` hint before quitting anything.

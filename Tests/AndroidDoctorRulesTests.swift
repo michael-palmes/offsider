@@ -15,6 +15,7 @@ struct AndroidDoctorRulesTests {
         facts.uiAutomation = UiAutomationFact(accessibilityEnabled: false, enabledServices: [], offsiderHelperPids: [])
         facts.helper = .ready(launchMilliseconds: 412, pushed: false, helloMilliseconds: 7, pingMilliseconds: 3, protocolVersion: 1, sdkInt: 36)
         facts.reverses = []
+        facts.awake = AwakeReading(screen: .on, lockScreen: .hidden, stayAwake: [.ac, .usb, .wireless, .dock], charging: [.ac], screenTimeoutMilliseconds: 1_800_000)
         configure(&facts)
         return facts
     }
@@ -164,13 +165,92 @@ struct AndroidDoctorRulesTests {
         #expect(metro.detail == "tcp:8742 to tcp:8742 (Metro)")
     }
 
-    @Test("a healthy booted emulator passes every device check")
+    @Test("a healthy booted emulator passes every device check and skips the phone-only ones")
     func healthyDevice() {
         let checks = AndroidDoctorRules.deviceChecks(Self.booted(), hostBlocker: nil)
         #expect(checks.map(\.id) == [
-            .androidDeviceState, .androidDeviceImage, .androidDeviceGrpc, .androidDeviceUiAutomation, .androidDeviceHelper, .androidDeviceMetroReverse,
+            .androidDeviceState, .androidDeviceImage, .androidDeviceScreen, .androidDeviceStayAwake, .androidDeviceGrpc, .androidDeviceUiAutomation,
+            .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
         ])
-        #expect(checks.allSatisfy { $0.status == .pass })
+        #expect(checks.dropLast(2).allSatisfy { $0.status == .pass })
+        #expect(checks.suffix(2).allSatisfy { $0.status == .skip && $0.detail == "applies to phones only" })
+    }
+
+    @Test("a phone is named by its maker and model, an emulator by its AVD name")
+    func deviceNames() {
+        let phone = Self.booted {
+            $0.isPhysical = true
+            $0.avdName = nil
+            $0.serial = "ZY22FAKE01"
+            $0.model = "moto g"
+            $0.awake?.maker = "motorola"
+        }
+        #expect(AndroidDoctorRules.deviceState(phone).detail == "Motorola moto g (ZY22FAKE01), a phone connected over USB")
+        #expect(AndroidDoctorRules.deviceState(Self.booted()).detail == "Offsider_E2E (emulator-5556), booted")
+    }
+
+    @Test("a phone reports its adb expiry and system update settings")
+    func phoneSettings() {
+        let facts = Self.booted {
+            $0.isPhysical = true
+            $0.adbAuthorisationTimeout = "0"
+            $0.automaticUpdatesDisabled = "null"
+        }
+        let checks = AndroidDoctorRules.deviceChecks(facts, hostBlocker: nil)
+        #expect(Self.check(.androidDeviceAdbExpiry, in: checks)?.status == .pass)
+        #expect(Self.check(.androidDeviceSystemUpdates, in: checks)?.status == .warn)
+    }
+
+    @Test("an unreadable power state skips the screen and stay-awake checks")
+    func unreadablePowerState() {
+        let checks = AndroidDoctorRules.deviceChecks(Self.booted { $0.awake = nil }, hostBlocker: nil)
+        #expect(Self.check(.androidDeviceScreen, in: checks)?.status == .skip)
+        #expect(Self.check(.androidDeviceStayAwake, in: checks)?.status == .skip)
+    }
+
+    @Test("a screen that is off or locked warns and names the command that helps")
+    func screenVerdicts() {
+        let off = AndroidDoctorRules.screen(AwakeReading(screen: .off, lockScreen: .secure, credential: "pin"), deviceID: "ZY22FAKE01")
+        let locked = AndroidDoctorRules.screen(AwakeReading(screen: .on, lockScreen: .secure, credential: "password"), deviceID: "ZY22FAKE01")
+        let usable = AndroidDoctorRules.screen(AwakeReading(screen: .on, lockScreen: .hidden), deviceID: "ZY22FAKE01")
+        #expect(off.status == .warn)
+        #expect(off.hint == "Run `offsider wake --device ZY22FAKE01`.")
+        #expect(locked.detail.hasPrefix("On, password lock screen showing"))
+        #expect(locked.hint?.contains("offsider wake --unlock --device ZY22FAKE01") == true)
+        #expect(usable.status == .pass)
+    }
+
+    @Test("stay awake warns when off, when not charging, when charging over another source and when a policy caps the timeout")
+    func stayAwakeVerdicts() {
+        func verdict(_ stayAwake: PowerSources, charging: PowerSources, capped: Bool = false) -> AndroidDoctorRules.Verdict {
+            AndroidDoctorRules.stayAwake(
+                AwakeReading(screen: .on, lockScreen: .hidden, credential: "pin", stayAwake: stayAwake, charging: charging, screenTimeoutMilliseconds: 600_000, timeoutCappedByPolicy: capped),
+                deviceID: "FA7AFAKE02"
+            )
+        }
+        let off = verdict([], charging: [.usb])
+        #expect(off.status == .warn)
+        #expect(off.detail == "Off: the screen turns off after 10 min without input, then the PIN lock screen returns")
+        #expect(off.hint == "Run `offsider stay-awake on --device FA7AFAKE02`.")
+        #expect(verdict([.usb], charging: []).detail == "On, but the device is not charging, so the screen turns off after 10 min without input")
+        #expect(verdict([.usb], charging: [.ac]).detail == "On while charging over USB, but the device charges over AC")
+        #expect(verdict([.ac, .usb], charging: [.ac], capped: true).status == .warn)
+        #expect(verdict([.ac, .usb], charging: [.ac]) == (.pass, "On; charging over AC", nil))
+    }
+
+    @Test("adb authorisation passes only when it never lapses; null is the 7-day default")
+    func adbExpiry() {
+        #expect(AndroidDoctorRules.adbAuthorisation("0").status == .pass)
+        #expect(AndroidDoctorRules.adbAuthorisation("null").detail.hasPrefix("Lapses after 7 days"))
+        #expect(AndroidDoctorRules.adbAuthorisation("86400000").detail.hasPrefix("Lapses after 1 day "))
+        #expect(AndroidDoctorRules.adbAuthorisation("604800000").status == .warn)
+    }
+
+    @Test("automatic system updates pass only when Developer options turns them off")
+    func systemUpdates() {
+        #expect(AndroidDoctorRules.systemUpdates("1").status == .pass)
+        #expect(AndroidDoctorRules.systemUpdates("null").status == .warn)
+        #expect(AndroidDoctorRules.systemUpdates("0").status == .warn)
     }
 
     @Test("a missing device fails android-device.state and skips the rest")

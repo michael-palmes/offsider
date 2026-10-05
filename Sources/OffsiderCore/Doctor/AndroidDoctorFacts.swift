@@ -143,6 +143,12 @@ public struct AndroidDeviceFacts: Equatable, Sendable {
     /// A USB phone: its state comes from the device list, and emulator-only checks are skipped.
     public var isPhysical = false
     public var model: String?
+    /// Screen, lock screen and stay awake; nil when they could not be read.
+    public var awake: AwakeReading?
+    /// `adb_allowed_connection_time` as read, where `null` is the 7-day default; phones only.
+    public var adbAuthorisationTimeout: String?
+    /// `ota_disable_automatic_update` as read, where `1` turns automatic system updates off; phones only.
+    public var automaticUpdatesDisabled: String?
 
     public init(id: String, serial: String? = nil, avdName: String? = nil, state: AndroidDeviceStateFact) {
         self.id = id

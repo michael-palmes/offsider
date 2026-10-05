@@ -102,14 +102,18 @@ struct DoctorReportTests {
             "android.devices",
             "android-device.state",
             "android-device.image",
+            "android-device.screen",
+            "android-device.stay-awake",
             "android-device.grpc",
             "android-device.uiautomation",
             "android-device.helper",
             "android-device.metro-reverse",
+            "android-device.adb-expiry",
+            "android-device.system-updates",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)
-        #expect(DoctorCheckID.allCases.filter(\.isPerAndroidDevice).count == 6)
+        #expect(DoctorCheckID.allCases.filter(\.isPerAndroidDevice).count == 10)
     }
 
     @Test("an iOS report encodes device and android as null")

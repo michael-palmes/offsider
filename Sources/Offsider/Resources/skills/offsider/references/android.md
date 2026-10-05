@@ -12,6 +12,7 @@
 - An `Unauthorised` phone needs the user to unlock it and accept the "Allow USB debugging?" prompt; never try to automate that. `Unsupported` rows are Wi-Fi or TCP adb connections, which Offsider refuses.
 - On a phone everything runs over adb. `boot`, setting a `posture`, `stream-video --format bgra` and non-ASCII plain `type` are emulator-only: use `type --replace` for non-ASCII text and `--format mjpeg` for streams. `biometric` is refused on a phone.
 - Offsider never sets `adb reverse` on a phone; ask the user before running it.
+- A phone's screen sleeps and locks when it times out. For long runs ask the user before running `offsider stay-awake on --device <serial>`; after a reboot or unplug it needs unlocking again (`guide device-state`).
 
 ## The helper
 

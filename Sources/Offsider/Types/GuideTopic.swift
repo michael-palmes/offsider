@@ -26,7 +26,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
         case .batch: "A flow has three or more steps"
         case .screenshots: "You need pixels: charts, maps, web views, masked secure fields or video"
         case .describeUI: "You need more than `--summary`: JSON, filters, the byte budget or `--diff`"
-        case .deviceState: "You change appearance, text size, orientation, permissions, the status bar or biometrics"
+        case .deviceState: "You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked"
         case .migrate: "You know idb, Maestro or agent-device and want the Offsider equivalent"
         }
     }
