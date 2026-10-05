@@ -8,7 +8,7 @@ public struct ImageFingerprint: Equatable, Sendable {
     public let height: Int
     public let columns: Int
     public let rows: Int
-    /// Tiles with at least one pixel row outside the excluded bands.
+    /// Tiles with at least one pixel outside the excluded bands.
     public let comparedTileCount: Int
     private let tiles: [UInt64]
 
@@ -20,7 +20,9 @@ public struct ImageFingerprint: Equatable, Sendable {
         columns: Int = 16,
         rows: Int = 32,
         excludingTopPixels: Int = 0,
-        excludingBottomPixels: Int = 0
+        excludingBottomPixels: Int = 0,
+        excludingLeftPixels: Int = 0,
+        excludingRightPixels: Int = 0
     ) {
         let columns = max(1, min(columns, max(width, 1)))
         let rows = max(1, min(rows, max(height, 1)))
@@ -33,7 +35,11 @@ public struct ImageFingerprint: Equatable, Sendable {
         let columnStarts = (0...columns).map { $0 * width / columns }
         let firstRow = max(0, min(excludingTopPixels, height))
         let endRow = max(firstRow, height - max(0, excludingBottomPixels))
-        comparedTileCount = endRow > firstRow ? ((endRow - 1) * rows / height - firstRow * rows / height + 1) * columns : 0
+        let firstColumn = max(0, min(excludingLeftPixels, width))
+        let endColumn = max(firstColumn, width - max(0, excludingRightPixels))
+        let spans = (0..<columns).map { (max(columnStarts[$0], firstColumn), min(columnStarts[$0 + 1], endColumn)) }
+        let comparedColumns = spans.filter { $0.1 > $0.0 }.count
+        comparedTileCount = endRow > firstRow ? ((endRow - 1) * rows / height - firstRow * rows / height + 1) * comparedColumns : 0
         guard let base = rgba.baseAddress, width > 0 else {
             self.tiles = tiles
             return
@@ -41,9 +47,9 @@ public struct ImageFingerprint: Equatable, Sendable {
         for y in firstRow..<endRow {
             let tileRow = y * rows / height
             let rowStart = base + y * bytesPerRow
-            for column in 0..<columns {
-                let start = rowStart + columnStarts[column] * 4
-                let count = (columnStarts[column + 1] - columnStarts[column]) * 4
+            for column in 0..<columns where spans[column].1 > spans[column].0 {
+                let start = rowStart + spans[column].0 * 4
+                let count = (spans[column].1 - spans[column].0) * 4
                 tiles[tileRow * columns + column] = Self.hash(start, count: count, seed: tiles[tileRow * columns + column])
             }
         }
@@ -67,9 +73,15 @@ public struct ImageFingerprint: Equatable, Sendable {
         return hash
     }
 
-    public init?(pngData: Data, columns: Int = 16, rows: Int = 32, excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0) {
+    public init?(
+        pngData: Data, columns: Int = 16, rows: Int = 32, excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0,
+        excludingLeftPixels: Int = 0, excludingRightPixels: Int = 0
+    ) {
         guard let image = try? ScreenImage.decode(pngData) else { return nil }
-        self.init(image: image, columns: columns, rows: rows, excludingTopPixels: excludingTopPixels, excludingBottomPixels: excludingBottomPixels)
+        self.init(
+            image: image, columns: columns, rows: rows, excludingTopPixels: excludingTopPixels, excludingBottomPixels: excludingBottomPixels,
+            excludingLeftPixels: excludingLeftPixels, excludingRightPixels: excludingRightPixels
+        )
     }
 
     /// With `region`, only that part of the image is fingerprinted, and the bands count from its top and bottom.
@@ -79,7 +91,9 @@ public struct ImageFingerprint: Equatable, Sendable {
         columns: Int = 16,
         rows: Int = 32,
         excludingTopPixels: Int = 0,
-        excludingBottomPixels: Int = 0
+        excludingBottomPixels: Int = 0,
+        excludingLeftPixels: Int = 0,
+        excludingRightPixels: Int = 0
     ) {
         guard let image = try? region.map({ try ScreenImage.cropped(image, to: $0) }) ?? image,
               let colourSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
@@ -106,7 +120,9 @@ public struct ImageFingerprint: Equatable, Sendable {
                 columns: columns,
                 rows: rows,
                 excludingTopPixels: excludingTopPixels,
-                excludingBottomPixels: excludingBottomPixels
+                excludingBottomPixels: excludingBottomPixels,
+                excludingLeftPixels: excludingLeftPixels,
+                excludingRightPixels: excludingRightPixels
             )
         }
     }

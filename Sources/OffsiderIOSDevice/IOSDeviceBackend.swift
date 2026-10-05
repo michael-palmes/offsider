@@ -98,8 +98,10 @@ public final class IOSDeviceBackend: DeviceBackend {
         try await runnerTree(for: id, point: point)
     }
 
-    /// The status bar and Dynamic Island, which change on their own.
+    /// The status bar and Dynamic Island, which change on their own, and with a stream running its screen-sharing indicator,
+    /// along the UI's top edge in every orientation.
     public func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
-        ScreenBands(top: 62, bottom: 0)
+        guard let rotation = try? await geometry(for: id).screenInfo.rotation else { return ScreenBands(top: 62, bottom: 0) }
+        return ScreenBands(top: 62, bottom: 0, everyOrientation: true, screenshotQuarterTurns: rotation.uprightQuarterTurnsCounterclockwise)
     }
 }

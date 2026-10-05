@@ -176,17 +176,11 @@ struct IOSDeviceInputE2ETests {
         try await IOSDeviceE2E.requireBrokerInput()
     }
 
-    @Test("tap --label --verify on a static text exits 5")
+    @Test("tap --label --verify on a static text exits 5, in any orientation")
     func tapNoOp() async throws {
         _ = try IOSDeviceE2E.team()
         try await IOSDeviceE2E.requireAwake()
         try await IOSDeviceE2E.open("swipe-test", waitingForLabel: "Swipe Playground")
-        let screen = try await IOSDeviceE2E.screen()
-        if screen.width > screen.height {
-            let note = "skipped: --verify leaves the status bar in only on a portrait screen, and the screen-sharing indicator there changes on its own"
-            FileHandle.standardError.write(Data((note + "\n").utf8))
-            try Test.cancel(Comment(rawValue: note))
-        }
         let result = try await IOSDeviceE2E.offsider("tap --label 'Swipe Playground' --verify \(Self.app)")
         #expect(result.exitCode == 5, "tap on a static text exited \(result.exitCode): \(result.stderr)")
     }

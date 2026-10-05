@@ -55,6 +55,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `describe-ui` reports a landscape-native iPad's screen as landscape.
 - On a physical device, touches after the screen turns land where the turned screen's frames say: the device session reads the display again before a touch when its last read started over a second earlier, and `orientation` makes it read again at once.
 - Element taps on an iPad app in Split View are no longer refused as if it were in a Stage Manager window.
+- `--verify` on a physical device in landscape can now exit 5: the status bar band, where the screen-sharing indicator pulses while the session streams, is left out of its screen comparison in every orientation, as it is for `screenshot --baseline` and `wait` screen checks. Simulators and Android are unchanged.
 
 ## [0.6.0] - 2026-10-05
 
