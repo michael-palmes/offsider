@@ -434,8 +434,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return nil
     }
 
-    /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation; `-d` picks a physical display.
-    /// A phone with several displays prints a warning before the PNG, which is skipped.
+    /// `exec:screencap -p`: the guest's upright PNG from the display `-d` picks, skipping a warning printed before it.
     func adbScreenshot(_ serial: String, physicalDisplay: String? = nil) async throws -> Data {
         let command = physicalDisplay.map { "screencap -d \($0) -p" } ?? "screencap -p"
         let output = try await requireClient().exec(command, on: serial, timeout: .seconds(15))

@@ -4,8 +4,7 @@ import OffsiderCore
 /// Input wiring the runner lane and tests fill in; one per backend, so per command.
 @MainActor
 public struct IOSDeviceInputHooks {
-    /// The runner's session: below the HID floor it serves all input, above it the touches the broker cannot send.
-    /// Without it, input below the floor refuses with `xcode_too_old`.
+    /// The runner's session: all input below the HID floor (else `xcode_too_old`), and above it the touches the broker cannot send.
     public var fallbackInputSession: ((DeviceID) async throws -> any InputSession)?
     /// Unicode and `--replace` text; without it they refuse with `not_supported`.
     public var runnerText: (any RunnerTextTyping)?
@@ -27,8 +26,7 @@ extension IOSDeviceBackend {
         return points
     }
 
-    /// An app in a Stage Manager window reports frames inside the window: its root sits at the origin, smaller than the screen
-    /// and clear of the screen's far edges. A Split View app spans the screen's height or width, so its frames are the screen's.
+    /// A Stage Manager window's root sits at the origin, short of both far screen edges; a Split View app spans the screen's height or width.
     static func isWindowed(_ tree: UITree, screenWidth: Double, screenHeight: Double) -> Bool {
         guard let app = tree.roots.first(where: { $0.role == .application }), let frame = app.frame,
               frame.x == 0, frame.y == 0, frame.width > 0, frame.height > 0, screenWidth > 0, screenHeight > 0 else { return false }
@@ -40,8 +38,7 @@ extension IOSDeviceBackend {
 
     var hostHasHID: Bool { input.coreDeviceVersion()?.supportsHID == true }
 
-    /// The session broker on an Xcode 27 host (falling back to the runner where it can), the runner below it,
-    /// and `xcode_too_old` when neither is available.
+    /// The session broker on an Xcode 27 host (with the runner as fallback), the runner below it, else `xcode_too_old`.
     public func openInputSession(for id: DeviceID) async throws -> any InputSession {
         _ = try await requireBootedDevice(id)
         guard hostHasHID, sessionsAvailable else {

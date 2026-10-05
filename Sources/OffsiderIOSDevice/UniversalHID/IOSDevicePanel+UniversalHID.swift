@@ -1,8 +1,7 @@
 import Foundation
 
 extension IOSDevicePanel {
-    /// A UI point as the main touchscreen's 0...65535 coordinates. The touchscreen runs along the panel's portrait axes:
-    /// on a landscape-native iPad its x climbs from the UI's bottom edge to its top and its y from left to right.
+    /// A UI point as 0...65535 touchscreen coordinates on the panel's portrait axes (a landscape-native iPad's x runs bottom to top, y left to right).
     public func touchscreenPoint(x: Double, y: Double) -> (x: UInt16, y: UInt16) {
         let native = panelPoint(x: x, y: y)
         let fraction = fraction(x: native.x, y: native.y)

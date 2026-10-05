@@ -99,8 +99,7 @@ enum IOSDeviceSettings {
         "axxl": .accessibilityExtraExtraLarge, "axxxl": .accessibilityExtraExtraExtraLarge,
     ]
 
-    /// The primary display's turn from portrait: its native orientation plus the UI's turn on it, both clockwise in devicectl.
-    /// Without a display, the device's own `currentDeviceOrientation`; face up or down is unknown.
+    /// The primary display's clockwise turn from portrait (native plus the UI's turn), else `currentDeviceOrientation`; face up or down is unknown.
     static func parseOrientation(displaysJSON data: Data) -> DeviceOrientation? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let result = root["result"] as? [String: Any] else { return nil }

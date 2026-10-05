@@ -70,8 +70,7 @@ final class DeviceSessionStopFlag: @unchecked Sendable {
     func raise() { lock.withLock { set = true } }
 }
 
-/// The per-device broker: one 0600 Unix socket for this user, exiting on idle, `stop` or a lost device.
-/// Input requests run one at a time, as do frame requests, and neither waits on the other or on stream recovery.
+/// The per-device broker on a 0600 socket, ending on idle, `stop` or a lost device; input and frames each run one at a time, never waiting on the other.
 @MainActor
 public final class DeviceSessionServer {
     public static let defaultIdleSeconds = 300

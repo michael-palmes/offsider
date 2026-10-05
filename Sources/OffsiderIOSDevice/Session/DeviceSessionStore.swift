@@ -29,8 +29,7 @@ public struct DeviceSessionRecord: Codable, Equatable, Sendable {
     }
 }
 
-/// The broker's files: `session.json`, `session.log` and `session.lock` under `<private>/ios-devices/<udid>/`,
-/// and its socket under `<private>/sessions/`, short enough for `sun_path`.
+/// The broker's `session.json`, `session.log` and `session.lock` under `<private>/ios-devices/<udid>/`, and its socket under the shorter `<private>/sessions/`.
 public struct DeviceSessionStore: Sendable {
     static let fileName = "session.json"
     static let logName = "session.log"

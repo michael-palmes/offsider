@@ -46,9 +46,7 @@ public final class IOSDeviceBackend: DeviceBackend {
         return try await directory.summaries()
     }
 
-    /// Wired, trusted, Developer Mode on and prepared; wakes the CoreDevice tunnel once when it is down.
-    /// A wired device with no developer services is woken before it is judged, since the wake can bring them back.
-    /// A live session broker vouches for the device on its own, since it exits once the device goes, so no listing is needed.
+    /// Wired, trusted, Developer Mode on and prepared, waking its tunnel or services once; a live broker vouches alone, as it exits once the device goes.
     public func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         try await prepare()
         if let live = await liveSession(for: id) {
@@ -98,8 +96,7 @@ public final class IOSDeviceBackend: DeviceBackend {
         try await runnerTree(for: id, point: point)
     }
 
-    /// The status bar and Dynamic Island, which change on their own, and with a stream running its screen-sharing indicator,
-    /// along the UI's top edge in every orientation.
+    /// The status bar, Dynamic Island and, while streaming, the screen-sharing indicator, along the UI's top edge in every orientation.
     public func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
         guard let rotation = try? await geometry(for: id).screenInfo.rotation else { return ScreenBands(top: 62, bottom: 0) }
         return ScreenBands(top: 62, bottom: 0, everyOrientation: true, screenshotQuarterTurns: rotation.uprightQuarterTurnsCounterclockwise)

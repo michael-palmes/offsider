@@ -8,8 +8,7 @@ public protocol RunnerTextTyping: AnyObject {
     func replaceText(_ text: String, on device: DeviceID) async throws
 }
 
-/// Input on an Xcode 27 host: everything through the device session broker when it sends touches and keys,
-/// else touches through the runner; buttons fall back to the runner only for Home. Each lane connects on first use.
+/// Xcode 27 input: the broker when it sends touches and keys, else the runner for touches and Home; each lane connects on first use.
 @MainActor
 final class IOSDeviceInputSession: TextInputSession {
     let device: DeviceID

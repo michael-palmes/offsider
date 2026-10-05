@@ -24,8 +24,7 @@ public struct IOSDeviceScreenFrame: Sendable {
     public let format: Format
 }
 
-/// A live CoreDevice screen stream from one wired device, decoded in this process as Xcode's screen sharing does.
-/// Screenshots only: UniversalHID touches and keys reach the device whether or not a stream runs.
+/// A live CoreDevice screen stream from one wired device, decoded here as Xcode's screen sharing does; for screenshots only, never input.
 @MainActor
 public final class IOSDeviceScreenStream {
     nonisolated static let replyTimeoutSeconds: Double = 15
@@ -253,8 +252,7 @@ public final class IOSDeviceScreenStream {
         return (descriptor, UInt16(bigEndian: address.sin6_port))
     }
 
-    /// Waits for the device's first RTP packet without consuming it, then connects the socket to its sender.
-    /// Packets from any address but the device's tunnel address are read and dropped.
+    /// Waits for the device's first RTP packet unread, then connects to its sender; packets from any address but the tunnel's are dropped.
     private static func connectToFirstPacket(_ descriptor: Int32, from tunnelAddress: String) async throws {
         guard let device = ipv6Address(tunnelAddress) else {
             throw SocketError(description: "the tunnel address \(tunnelAddress) is not an IPv6 address")

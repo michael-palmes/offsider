@@ -1,8 +1,7 @@
 import Foundation
 import OffsiderCore
 
-/// A device's touch panel in points, on its native axes, and how the UI currently sits on it.
-/// The digitizer takes fractions of this panel, as a simulator's does of its framebuffer.
+/// A device's touch panel in points on its native axes, and how the UI sits on it; the digitizer takes fractions of it.
 public struct IOSDevicePanel: Equatable, Sendable {
     /// Points along the panel's native axes: a phone is taller than wide, an iPad Pro is wider than tall.
     public var width: Double
@@ -18,8 +17,7 @@ public struct IOSDevicePanel: Equatable, Sendable {
         self.orientation = orientation
     }
 
-    /// The primary integrated display from `devicectl device info displays`: `nativeSize` pixels over `pointScale`, measured in
-    /// the UI's points from `bounds` when it reports them, and turned by `currentOrientation`, which devicectl reports clockwise.
+    /// The primary display from `devicectl device info displays`: `nativeSize` over `pointScale`, in `bounds` points when given, turned clockwise by `currentOrientation`.
     public static func parse(displaysJSON data: Data) -> IOSDevicePanel? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let result = root["result"] as? [String: Any],
@@ -38,8 +36,7 @@ public struct IOSDevicePanel: Equatable, Sendable {
         ).rebased(onPoints: IOSDevicePoints.parse(display: display, scale: scale))
     }
 
-    /// The same panel measured in the UI's points, given in either order; the panel keeps its native axes, so the touchscreen's
-    /// fractions stay fractions of the UI.
+    /// The same panel in the UI's points, given in either order, on its native axes so touchscreen fractions stay fractions of the UI.
     public func rebased(onPoints points: IOSDevicePoints?) -> IOSDevicePanel {
         guard let points, points.width > 0, points.height > 0 else { return self }
         let long = max(points.width, points.height)
@@ -65,8 +62,7 @@ public struct IOSDevicePanel: Equatable, Sendable {
     }
 }
 
-/// The UI's size in points: devicectl's `bounds` over `pointScale`, the framebuffer the UI renders into.
-/// Display Zoom scales it away from `nativeSize` (an iPad Pro 13-inch at More Space renders 3200 x 2400 for a 2752 x 2064 panel).
+/// The UI's size in points, `bounds` over `pointScale`; Display Zoom moves it off `nativeSize` (3200 x 2400 on a 2752 x 2064 iPad Pro at More Space).
 public struct IOSDevicePoints: Codable, Equatable, Sendable {
     public var width: Double
     public var height: Double

@@ -12,8 +12,7 @@ enum DeviceSessionAction: Equatable {
     case wait(TimeInterval)
 }
 
-/// Lowers `InputEvent`s for the broker. A touch, key or button held down goes to the broker in one request with its
-/// pauses and its release, since the broker releases everything a request leaves held; nothing stays down between events.
+/// Lowers `InputEvent`s for the broker: anything held goes in one request with its pauses and release, so nothing stays down between events.
 struct DeviceSessionLowering {
     static let tapHold: TimeInterval = 0.06
     /// idb's swipe step when the caller gives none.

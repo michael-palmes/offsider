@@ -362,8 +362,7 @@ final class HelperConnection {
         throw HelperStartFailure.unavailable(.handshake(detail))
     }
 
-    /// Sends one request and reads frames until its reply or a `bye`; never throws for a lost or silent helper.
-    /// `expectingPayload`: a successful reply is followed by one binary frame, read as it is.
+    /// One request, then frames until its reply (and its binary frame when `expectingPayload`) or a `bye`; a lost or silent helper never throws.
     func exchange(_ request: HelperRequest, id: Int, timeout: Duration, expectingPayload: Bool = false) async throws -> Outcome {
         let deadline = ContinuousClock.now + timeout
         var reply: Data?

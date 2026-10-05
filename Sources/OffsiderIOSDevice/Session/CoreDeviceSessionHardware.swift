@@ -236,8 +236,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    /// Sends each report against a clock started at the first, so many short pauses keep the gesture's total time, then confirms delivery.
-    /// A client that disconnects mid-request has what it held released at once.
+    /// Sends each report on a clock started at the first, so short pauses keep the total time, then confirms; a client that leaves has its input released.
     private func play(_ reports: [DeviceSessionReport], abandoned: @Sendable () -> Bool) async throws {
         let service = try await hidService()
         let start = ContinuousClock.now
@@ -280,8 +279,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    /// The UniversalHID service, kept open; it waits out its own activation window once when it opens.
-    /// After a failed open, input fails with that failure until a retry is due.
+    /// The UniversalHID service, kept open after its one activation wait; after a failed open, input fails with that failure until a retry is due.
     private func hidService() async throws -> UniversalHIDService {
         if let hid { return hid }
         if let hidOpening { return try await hidOpening.value }
@@ -313,8 +311,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    /// The panel from a read that started at most `panelMaxAge` before this touch, read now when the cached one is older;
-    /// when the read fails, the last panel serves.
+    /// The panel from a read started within `panelMaxAge` of this touch, read now if older; the last panel serves when the read fails.
     private func currentPanel() async throws -> IOSDevicePanel {
         let asked = ContinuousClock.now
         for _ in 0..<2 {

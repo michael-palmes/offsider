@@ -72,8 +72,7 @@ enum HelperInjectPlan {
         return builder.finish()
     }
 
-    /// ASCII runs as `text` steps (the helper maps them through the virtual keyboard), Return and Tab as key presses.
-    /// A request carries at most `maxTextCharacters` of text, so a long string becomes several requests.
+    /// ASCII runs as `text` steps and Return and Tab as key presses, with at most `maxTextCharacters` of text per request.
     static func requests(for chunks: [AndroidTextPlan.Chunk]) throws -> [Request] {
         var builder = Builder()
         for chunk in chunks {

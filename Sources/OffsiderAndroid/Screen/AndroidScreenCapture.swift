@@ -168,8 +168,7 @@ enum AndroidScreenCapture {
     static let maxLeadingBytes = 4096
     static let maxRawSide = 16384
 
-    /// `screencap` without `-p`: width, height and pixel format (plus a colour space word from API 28) as little-endian
-    /// u32s, then RGBA or RGBX rows. A header counts only where the pixel bytes fill the rest of the output exactly.
+    /// Raw `screencap`: little-endian u32 width, height, format (and a colour space from API 28), taken only where RGBA or RGBX rows fill the rest exactly.
     static func pixels(fromScreencapRaw output: Data) throws -> Pixels {
         let bytes = [UInt8](output.prefix(maxLeadingBytes + 16))
         func word(_ at: Int) -> Int {

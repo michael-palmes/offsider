@@ -3,8 +3,7 @@ import OffsiderAndroid
 import OffsiderCore
 import OffsiderIOSDevice
 
-/// Picks the backend from the device ID's shape: UUIDs are iOS simulators, iPhone UDIDs physical iOS devices; emulator-NNNN, AVD names and USB phone serials Android.
-/// Every backend it builds is adopted by `scope`, which closes it when the command ends.
+/// Picks the backend by ID shape (UUIDs simulators, iPhone UDIDs devices, the rest Android); `scope` closes each one when the command ends.
 @MainActor
 enum DeviceRouter {
     struct Route {
