@@ -175,7 +175,7 @@ final class HelperSession {
         }
     }
 
-    /// An error reply throws `HelperErrorBody`; an idle `bye` restarts and resends each time; a lost helper restarts once.
+    /// An error reply throws `HelperErrorBody`; an idle `bye` restarts and resends each time; a lost helper restarts once, except under `inject`.
     func request<Reply: Decodable>(_ request: HelperRequest, as type: Reply.Type, timeout: Duration) async throws -> Reply {
         try Self.decodeReply(try await send(request, timeout: timeout, expectingPayload: false).reply, as: type)
     }
@@ -211,9 +211,9 @@ final class HelperSession {
                 await drop(connection)
                 try await restart()
             case .bye(let reason, let detail):
-                try await recover(connection, from: "it ended with \(reason)\(detail.map { ": \($0)" } ?? "")")
+                try await recover(connection, from: "it ended with \(reason)\(detail.map { ": \($0)" } ?? "")", resending: request)
             case .lost(let detail):
-                try await recover(connection, from: detail)
+                try await recover(connection, from: detail, resending: request)
             case .timedOut:
                 await shutdown()
                 throw AndroidError.helperTimedOut(serial, op: request.op, seconds: Int(timeout.components.seconds))
@@ -221,8 +221,12 @@ final class HelperSession {
         }
     }
 
-    private func recover(_ lost: HelperConnection, from detail: String) async throws {
+    /// An `inject` may have reached the device before the helper went, so it is never sent again; a later request restarts the helper.
+    private func recover(_ lost: HelperConnection, from detail: String, resending request: HelperRequest) async throws {
         await drop(lost)
+        guard request.op != "inject" else {
+            throw AndroidError.helperLostInput(serial, detail: detail)
+        }
         guard !restartedAfterLoss else {
             throw AndroidError.helperCrashed(serial, detail: detail)
         }

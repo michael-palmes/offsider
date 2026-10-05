@@ -7,6 +7,8 @@ final class HelperInputDriver {
     let session: HelperSession
     /// Modifiers held down so far in this command, for the meta state of later keys.
     private var held: Set<UInt32> = []
+    /// The last inject failed with `inject-refused` or `inject-failed`, after which the helper has cancelled every finger and key.
+    private(set) var releasedInput = false
 
     init(session: HelperSession) {
         self.session = session
@@ -37,10 +39,12 @@ final class HelperInputDriver {
     }
 
     private func send(_ requests: [HelperInjectPlan.Request]) async throws {
+        releasedInput = false
         for request in requests {
             do {
-                _ = try await session.inject(request.steps, extraWait: .milliseconds(request.waitMilliseconds))
+                _ = try await session.inject(request.steps, extraWait: .milliseconds(request.deviceMilliseconds))
             } catch let error as HelperErrorBody {
+                releasedInput = error.code == "inject-refused" || error.code == "inject-failed"
                 throw AndroidError.inputFailed(serial: serial, detail: "the UiAutomation helper reported \(error.code): \(error.message)")
             } catch let error as HelperProtocolError {
                 throw AndroidError.inputFailed(serial: serial, detail: "the UiAutomation helper failed (\(error.detail))")

@@ -286,7 +286,11 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 try await driver.run(steps)
             }
         } catch {
-            if pressesDown { touchIsDown = true }
+            if case .helper(let driver) = executor, driver.releasedInput {
+                touchIsDown = false
+            } else if pressesDown {
+                touchIsDown = true
+            }
             throw error
         }
     }

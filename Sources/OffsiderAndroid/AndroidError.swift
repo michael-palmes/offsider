@@ -394,6 +394,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func helperLostInput(_ serial: String, detail: String) -> AndroidError {
+        AndroidError(
+            .helperCrashed,
+            "The UiAutomation helper on \(serial) stopped while sending input (\(detail)). The input may have reached the device, so Offsider did not send it again; check the screen with `offsider describe-ui --device \(serial)` before retrying."
+        )
+    }
+
     static func helperTimedOut(_ serial: String, op: String, seconds: Int) -> AndroidError {
         AndroidError(
             .helperTimedOut,

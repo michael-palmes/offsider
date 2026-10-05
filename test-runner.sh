@@ -556,7 +556,7 @@ run_unit_tests() {
     export OFFSIDER_E2E=0
     export OFFSIDER_LANDSCAPE_E2E=0
     # Unit tests spawn offsider against held locks and expect it to fail at once.
-    unset OFFSIDER_WAIT_LOCK
+    unset OFFSIDER_WAIT_LOCK OFFSIDER_ANDROID_PHONE
 
     local args=(--skip-build --no-parallel)
     [[ "$VERBOSE" == true ]] && args+=(--verbose)
@@ -649,7 +649,7 @@ run_rn_ios_tests() {
     export OFFSIDER_E2E=0
     export OFFSIDER_LANDSCAPE_E2E=0
     export OFFSIDER_ANDROID_E2E=0
-    unset OFFSIDER_ANDROID_DEBUG_APK
+    unset OFFSIDER_ANDROID_DEBUG_APK OFFSIDER_ANDROID_PHONE
     if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
@@ -691,7 +691,7 @@ run_android_tests() {
     export OFFSIDER_E2E=0
     export OFFSIDER_LANDSCAPE_E2E=0
     export OFFSIDER_RN_E2E=0
-    unset OFFSIDER_RN_IOS_DEBUG_APP
+    unset OFFSIDER_RN_IOS_DEBUG_APP OFFSIDER_ANDROID_PHONE
     if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
@@ -767,6 +767,7 @@ run_android_fold_tests() {
     export OFFSIDER_LANDSCAPE_E2E=0
     export OFFSIDER_RN_E2E=0
     export OFFSIDER_RN_DEBUG_E2E=0
+    unset OFFSIDER_ANDROID_PHONE
     if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
@@ -786,6 +787,8 @@ run_android_phone_tests() {
     export OFFSIDER_ANDROID_PHONE
     export OFFSIDER_ANDROID_E2E=0
     export OFFSIDER_ANDROID_FOLD_E2E=0
+    export OFFSIDER_ANDROID_LANDSCAPE_E2E=0
+    export OFFSIDER_ANDROID_BOOT_E2E=0
     export OFFSIDER_E2E=0
     export OFFSIDER_LANDSCAPE_E2E=0
     export OFFSIDER_RN_E2E=0
@@ -851,6 +854,7 @@ run_foldable_tests() {
     export OFFSIDER_LANDSCAPE_E2E=0
     export OFFSIDER_RN_E2E=0
     export OFFSIDER_ANDROID_E2E=0
+    unset OFFSIDER_ANDROID_PHONE
     if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
@@ -932,6 +936,7 @@ run_tests() {
     export OFFSIDER_E2E=1
     export OFFSIDER_RN_E2E=0
     export OFFSIDER_RN_DEBUG_E2E=0
+    unset OFFSIDER_ANDROID_PHONE
     if [[ -z "${OFFSIDER_BIN_PATH:-}" ]]; then
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi

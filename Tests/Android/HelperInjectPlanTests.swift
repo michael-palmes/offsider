@@ -87,6 +87,41 @@ struct HelperInjectPlanTests {
         ])
     }
 
+    static func typed(_ text: String) throws -> [HelperInjectPlan.Request] {
+        let chunks = try #require({ if case .keys(let chunks) = try AndroidTextPlan.make(for: text) { return chunks } else { return nil } }())
+        return try HelperInjectPlan.requests(for: chunks)
+    }
+
+    @Test("a request's device time grows with its text, and a shifted character costs twice a plain one")
+    func typingTimeGrows() throws {
+        let short = try #require(try Self.typed("ab").first).deviceMilliseconds
+        let long = try #require(try Self.typed(String(repeating: "ab", count: 100)).first).deviceMilliseconds
+        let shifted = try #require(try Self.typed("AB").first).deviceMilliseconds
+
+        #expect(short > 0)
+        #expect(long == short * 100)
+        #expect(shifted == short * 2)
+        #expect(try Self.typed("ab\n").first?.deviceMilliseconds ?? 0 > short)
+    }
+
+    @Test("long text splits across requests, so no request's typing outgrows its timeout")
+    func longTextSplits() throws {
+        let text = String(repeating: "A", count: 600)
+        let requests = try Self.typed(text)
+
+        #expect(requests.map(\.textCharacters) == [256, 256, 88])
+        #expect(requests.allSatisfy { $0.deviceMilliseconds <= 256 * 4 * HelperInjectPlan.keyEventMilliseconds })
+        #expect(try Self.json(requests).joined().filter { $0 == "A" }.count == 600)
+    }
+
+    @Test("key presses add device time, and pauses still count against the helper's 60 s limit alone")
+    func keyTime() throws {
+        let requests = try Self.plan([.key(.press, usage: 4), .pause(1)])
+
+        #expect(requests.first?.waitMilliseconds == 1_000)
+        #expect(requests.first?.deviceMilliseconds ?? 0 > 1_000)
+    }
+
     @Test("more than 2,000 steps split across requests")
     func stepLimit() throws {
         let requests = try Self.plan(Array(repeating: .tap(AndroidPoint(x: 1, y: 1)), count: 2_001))

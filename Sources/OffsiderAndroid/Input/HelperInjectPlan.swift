@@ -8,11 +8,21 @@ enum HelperInjectPlan {
     static let maxRequestMilliseconds = 60_000
     static let maxSteps = 2_000
     static let maxMoves = 1_000
+    /// The helper injects each key event synchronously; an estimate per event, so a request's timeout grows with its keys.
+    static let keyEventMilliseconds = 8
+    /// Text characters in one request, so one request's typing stays well inside its timeout.
+    static let maxTextCharacters = AndroidTextPlan.maxChunkBytes
 
     struct Request: Equatable, Sendable {
         var steps: [HelperValue] = []
-        /// Device-side waiting, so the caller can give the request enough time.
+        /// Pauses and swipes, which the helper's 60 s request limit counts.
         var waitMilliseconds = 0
+        /// The estimated time to inject the request's key events.
+        var typingMilliseconds = 0
+        var textCharacters = 0
+
+        /// Device-side time the caller adds to the request timeout.
+        var deviceMilliseconds: Int { waitMilliseconds + typingMilliseconds }
     }
 
     /// `held` carries the modifiers down across calls in one session, so later keys carry their meta state.
@@ -44,9 +54,12 @@ enum HelperInjectPlan {
                     case .press: break
                     }
                 }
-                builder.add(key(phase, code: code, meta: AndroidKeyMeta.state(holding: held)))
+                builder.add(key(phase, code: code, meta: AndroidKeyMeta.state(holding: held)), typing: typingMilliseconds(phase))
             case let .button(phase, button):
-                builder.add(key(phase, code: try AndroidButtonMap.requireKeyCode(for: button), meta: AndroidKeyMeta.state(holding: held)))
+                builder.add(
+                    key(phase, code: try AndroidButtonMap.requireKeyCode(for: button), meta: AndroidKeyMeta.state(holding: held)),
+                    typing: typingMilliseconds(phase)
+                )
             case .pause(let seconds):
                 var left = milliseconds(seconds)
                 while left > 0 {
@@ -60,17 +73,40 @@ enum HelperInjectPlan {
     }
 
     /// ASCII runs as `text` steps (the helper maps them through the virtual keyboard), Return and Tab as key presses.
+    /// A request carries at most `maxTextCharacters` of text, so a long string becomes several requests.
     static func requests(for chunks: [AndroidTextPlan.Chunk]) throws -> [Request] {
         var builder = Builder()
         for chunk in chunks {
             switch chunk {
             case .text(let run):
-                builder.add(["kind": .string("text"), "text": .string(run)])
+                var rest = Substring(run)
+                while !rest.isEmpty {
+                    let room = maxTextCharacters - builder.current.textCharacters
+                    let part = rest.prefix(room > 0 ? room : maxTextCharacters)
+                    rest = rest.dropFirst(part.count)
+                    builder.add(["kind": .string("text"), "text": .string(String(part))], typing: typingMilliseconds(of: part), text: part.count)
+                }
             case .key(let usage):
-                builder.add(key(.press, code: try AndroidKeyTable.requireKeyCode(for: usage), meta: 0))
+                builder.add(key(.press, code: try AndroidKeyTable.requireKeyCode(for: usage), meta: 0), typing: typingMilliseconds(.press))
             }
         }
         return builder.finish()
+    }
+
+    /// A press is a down and an up.
+    private static func typingMilliseconds(_ phase: KeyPhase) -> Int {
+        (phase == .press ? 2 : 1) * keyEventMilliseconds
+    }
+
+    /// The virtual keyboard sends a down and an up per character, wrapped in Shift down and up for a shifted one.
+    static func typingMilliseconds(of text: Substring) -> Int {
+        text.unicodeScalars.reduce(0) { total, scalar in
+            total + (isShifted(scalar) ? 4 : 2) * keyEventMilliseconds
+        }
+    }
+
+    private static func isShifted(_ scalar: Unicode.Scalar) -> Bool {
+        ("A"..."Z").contains(scalar) || #"~!@#$%^&*()_+{}|:"<>?"#.unicodeScalars.contains(scalar)
     }
 
     private static func key(_ phase: KeyPhase, code: Int, meta: UInt32) -> [String: HelperValue] {
@@ -82,18 +118,22 @@ enum HelperInjectPlan {
         max(0, Int((seconds * 1000).rounded()))
     }
 
-    /// Starts a new request when the next step would pass the step count or the wait limit.
+    /// Starts a new request when the next step would pass the step count, the wait limit or the text limit.
     private struct Builder {
         var done: [Request] = []
         var current = Request()
 
-        mutating func add(_ step: [String: HelperValue], waiting ms: Int = 0) {
-            if !current.steps.isEmpty, current.steps.count == maxSteps || current.waitMilliseconds + ms > maxRequestMilliseconds {
+        mutating func add(_ step: [String: HelperValue], waiting ms: Int = 0, typing: Int = 0, text: Int = 0) {
+            if !current.steps.isEmpty, current.steps.count == maxSteps
+                || current.waitMilliseconds + ms > maxRequestMilliseconds
+                || current.textCharacters + text > maxTextCharacters {
                 done.append(current)
                 current = Request()
             }
             current.steps.append(.object(step))
             current.waitMilliseconds += ms
+            current.typingMilliseconds += typing
+            current.textCharacters += text
         }
 
         mutating func finish() -> [Request] {

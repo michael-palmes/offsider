@@ -276,10 +276,19 @@ enum AndroidE2EGuard {
 
 /// The pure decision behind the phone suites: only the exact OFFSIDER_ANDROID_PHONE serial, attached over USB and authorised.
 enum AndroidPhoneGuard {
+    /// The emulator suites' switches; any one of them set keeps the phone suites off.
+    static let emulatorFlags = ["OFFSIDER_ANDROID_E2E", "OFFSIDER_ANDROID_FOLD_E2E", "OFFSIDER_ANDROID_LANDSCAPE_E2E", "OFFSIDER_ANDROID_BOOT_E2E"]
+
+    /// The emulator switches set to a true value in `environment`.
+    static func emulatorFlagsSet(in environment: [String: String]) -> [String] {
+        emulatorFlags.filter { ["1", "true", "yes"].contains(environment[$0]?.lowercased() ?? "") }
+    }
+
     /// What can be decided before any adb call.
-    static func preflight(requested: String, emulatorE2E: Bool) -> Result<Void, AndroidE2EError> {
-        if emulatorE2E {
-            return .failure(AndroidE2EError(description: "OFFSIDER_ANDROID_PHONE and OFFSIDER_ANDROID_E2E are both set; the phone suites and the emulator suites run one at a time, so unset OFFSIDER_ANDROID_E2E."))
+    static func preflight(requested: String, emulatorFlags set: [String]) -> Result<Void, AndroidE2EError> {
+        if !set.isEmpty {
+            let names = set.joined(separator: ", ")
+            return .failure(AndroidE2EError(description: "OFFSIDER_ANDROID_PHONE and \(names) are both set; the phone suites and the emulator suites run one at a time, so unset \(names) or OFFSIDER_ANDROID_PHONE."))
         }
         if requested.wholeMatch(of: #/emulator-[0-9]+/#) != nil {
             return .failure(AndroidE2EError(description: "Refusing \(requested): OFFSIDER_ANDROID_PHONE names a USB phone; emulators run through OFFSIDER_ANDROID_DEVICE."))
@@ -291,8 +300,8 @@ enum AndroidPhoneGuard {
     }
 
     /// The serial when `adb devices -l` lists exactly it, in state `device`, with a `usb:` field.
-    static func verdict(requested: String, emulatorE2E: Bool, devices: String) -> Result<String, AndroidE2EError> {
-        if case .failure(let error) = preflight(requested: requested, emulatorE2E: emulatorE2E) {
+    static func verdict(requested: String, emulatorFlags set: [String], devices: String) -> Result<String, AndroidE2EError> {
+        if case .failure(let error) = preflight(requested: requested, emulatorFlags: set) {
             return .failure(error)
         }
         let rows = devices.split(whereSeparator: \.isNewline).map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
@@ -321,15 +330,15 @@ actor GuardedPhone {
         guard let requested = androidPhoneSerial else {
             throw AndroidE2EError(description: "OFFSIDER_ANDROID_PHONE must name the phone's USB serial.")
         }
-        let emulatorE2E = isAndroidE2EEnabled
-        try AndroidPhoneGuard.preflight(requested: requested, emulatorE2E: emulatorE2E).get()
+        let emulatorFlags = AndroidPhoneGuard.emulatorFlagsSet(in: ProcessInfo.processInfo.environment)
+        try AndroidPhoneGuard.preflight(requested: requested, emulatorFlags: emulatorFlags).get()
         let listing = try await CommandRunner.runSeparated(
             "\(AndroidE2E.quote(try AndroidE2E.adbPath())) devices -l", environment: ["ADB_MDNS": "0"], timeout: 30
         )
         guard listing.exitCode == 0 else {
             throw AndroidE2EError(description: "adb devices -l exited \(listing.exitCode): \(listing.stderr)")
         }
-        let serial = try AndroidPhoneGuard.verdict(requested: requested, emulatorE2E: emulatorE2E, devices: listing.stdout).get()
+        let serial = try AndroidPhoneGuard.verdict(requested: requested, emulatorFlags: emulatorFlags, devices: listing.stdout).get()
         resolved = serial
         return serial
     }

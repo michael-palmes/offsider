@@ -1,6 +1,7 @@
 import Foundation
 import OffsiderCore
 import Testing
+@testable import Offsider
 @testable import OffsiderAndroid
 
 /// Input on a device without gRPC (the rig's emulator refuses it), routed by `OFFSIDER_ANDROID_INPUT`.
@@ -67,8 +68,8 @@ struct AndroidHelperInputTests {
         #expect(Self.inputScripts(rig).isEmpty)
     }
 
-    @Test("a refused inject is an input error, and the finger it left down is lifted through the helper on close")
-    func refusedLiftsFinger() async throws {
+    @Test("a refused inject is an input error, and close lifts nothing, since the helper already cancelled the finger")
+    func refusedLeavesNothingDown() async throws {
         let device = FakeHelperDevice()
         device.answer = { _, op, json in
             op == "inject" && json.contains(#""phase":"move""#) ? .error(code: "inject-refused", message: "Android did not dispatch step 0 (touch)") : nil
@@ -84,7 +85,43 @@ struct AndroidHelperInputTests {
         await session.close()
         await rig.backend.close()
 
-        #expect(rig.device.injected.last == "touch up 60 10")
+        #expect(rig.device.ops.filter { $0 == "inject" }.count == 2)
+        #expect(!rig.device.injected.contains { $0.hasPrefix("touch up") })
+    }
+
+    @Test("a helper lost before it answers an inject is never sent the input again, and the failure reports dispatched unknown")
+    func lostInjectNotResent() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "inject" ? .hangUp : nil }
+        let rig = try HelperRig(device, environment: Self.forced)
+        let session = TrackedInputSession.wrapping(try await Self.session(rig))
+        let tracker = DispatchTracker()
+
+        let error = await #expect(throws: AndroidError.self) {
+            try await DispatchTracker.$current.withValue(tracker) { try await session.perform(.tapAt(x: 5, y: 6)) }
+        }
+        await session.close()
+        await rig.backend.close()
+
+        #expect(error?.kind == .helperCrashed)
+        #expect(error?.message.contains("The input may have reached the device, so Offsider did not send it again") == true)
+        #expect(tracker.state == .unknown)
+        #expect(rig.device.ops.filter { $0 == "inject" }.count == 1)
+        #expect(rig.device.startedProcesses == 1)
+    }
+
+    @Test("a crash bye in answer to an inject is not resent either")
+    func crashByeInjectNotResent() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "inject" ? .bye("crash") : nil }
+        let rig = try HelperRig(device, environment: Self.forced)
+        let session = try await Self.session(rig)
+
+        await #expect(throws: AndroidError.self) { try await session.typeText("hello") }
+        await session.close()
+        await rig.backend.close()
+
+        #expect(rig.device.ops.filter { $0 == "inject" }.count == 1)
     }
 
     @Test("helper with a helper that cannot start is an error naming OFFSIDER_ANDROID_INPUT, and nothing goes through `input`")

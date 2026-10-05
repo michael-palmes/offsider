@@ -39,6 +39,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `screenshot` on an Android phone with several displays, such as the Galaxy Z Fold3, no longer fails when `screencap` prints a warning before the image.
+- Android input through the UiAutomation helper is never sent twice: when the helper stops before it answers, the command fails with `dispatched` `unknown` instead of resending the tap, key or text.
+- Long `type` text through the Android helper no longer times out after 5 s: each request carries at most 256 characters and its timeout grows with its keys.
+- After the Android helper refuses a touch, closing the command no longer warns that it could not lift a finger the helper had already cancelled.
 
 ## [0.6.0] - 2026-10-05
 
