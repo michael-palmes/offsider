@@ -528,6 +528,12 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(.emulatorLaunchFailed, "Could not start \(path): \(detail).")
     }
 
+    /// Names the stale lock files boot removed before this launch, which the failure may be about.
+    func namingStaleLocks(_ names: [String], in directory: String) -> AndroidError {
+        guard !names.isEmpty else { return self }
+        return AndroidError(kind, message + " Before this launch Offsider removed \(names.joined(separator: " and ")) from \(directory), left by an emulator that was no longer running.")
+    }
+
     static func emulatorExited(status: Int32, logPath: String, tail: String) -> AndroidError {
         let lines = tail.isEmpty ? " The log is empty." : " Last lines of \(logPath):\n\(tail)"
         return AndroidError(.emulatorExited, "The emulator exited during start-up (status \(status)).\(lines)")

@@ -18,6 +18,13 @@ protocol FileSystemProbe: Sendable {
     /// Entry names, or an empty list when the directory is missing or unreadable.
     func contentsOfDirectory(atPath path: String) -> [String]
     func resolvingSymlinks(inPath path: String) -> String
+    func removeItem(atPath path: String) throws
+}
+
+extension FileSystemProbe {
+    func removeItem(atPath path: String) throws {
+        try FileManager.default.removeItem(atPath: path)
+    }
 }
 
 protocol HostProcessRunning: Sendable {

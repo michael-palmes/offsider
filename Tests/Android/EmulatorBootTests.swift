@@ -259,6 +259,42 @@ struct EmulatorBootTests {
         #expect(run.lines.first == "\(Self.avd) is already starting (pid 777); waiting for it.")
     }
 
+    @Test("lock files whose pid is gone are removed before the launch, and an early exit names them")
+    func staleLocksRemoved() async throws {
+        let home = try Self.home()
+        let directory = home.appendingPathComponent(".android/avd/\(Self.avd).avd")
+        try AndroidTestHost.write("31337", to: ".android/avd/\(Self.avd).avd/hardware-qemu.ini.lock/pid", in: home)
+        try AndroidTestHost.write("31337", to: ".android/avd/\(Self.avd).avd/multiinstance.lock", in: home)
+        let launcher = FakeLauncher(pid: 4242, exitStatus: 1)
+        let host = AndroidTestHost.make(home: home, environment: ["TMPDIR": home.path], adb: Self.server(AdbState(hiddenFor: .max)), launcher: launcher)
+
+        let run = await Self.boot(host)
+
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("hardware-qemu.ini.lock").path))
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("multiinstance.lock").path))
+        #expect(run.lines.first == "Removed hardware-qemu.ini.lock and multiinstance.lock left by an emulator that is no longer running.")
+        guard case .failure(let error) = run.result else {
+            Issue.record("expected the boot to fail")
+            return
+        }
+        #expect(error.reason == .emulatorLaunchFailed)
+        #expect(error.message.hasSuffix("Before this launch Offsider removed hardware-qemu.ini.lock and multiinstance.lock from \(directory.path), left by an emulator that was no longer running."))
+    }
+
+    @Test("lock files are kept when they name no pid", arguments: ["", "not a pid"])
+    func locksWithoutPidKept(contents: String) async throws {
+        let home = try Self.home()
+        let lock = home.appendingPathComponent(".android/avd/\(Self.avd).avd/multiinstance.lock")
+        try AndroidTestHost.write(contents, to: ".android/avd/\(Self.avd).avd/multiinstance.lock", in: home)
+        let launcher = FakeLauncher(pid: 4242, exitStatus: 1)
+        let host = AndroidTestHost.make(home: home, environment: ["TMPDIR": home.path], adb: Self.server(AdbState(hiddenFor: .max)), launcher: launcher)
+
+        let run = await Self.boot(host)
+
+        #expect(FileManager.default.fileExists(atPath: lock.path))
+        #expect(!run.lines.contains { $0.hasPrefix("Removed ") })
+    }
+
     @Test("an emulator that exits during start-up reports its status and the last 20 lines of its log")
     func earlyExit() async throws {
         let home = try Self.home()
@@ -340,6 +376,9 @@ struct BootCommandTests {
         ("boot \(UUID().uuidString)", "boot starts Android emulators. Boot an iOS simulator with `xcrun simctl boot <udid>`."),
         ("boot emulator-5556", "boot takes an AVD name, not a serial."),
         ("boot Pixel_9 --timeout 5", "--timeout must be between 10 and 1800 seconds."),
+        ("boot Pixel_9 --emulator-arg -grpc", "--emulator-arg -grpc is refused: "),
+        ("boot Pixel_9 --emulator-arg --port=5560", "--emulator-arg --port=5560 is refused: "),
+        ("boot Pixel_9 --memory 512", "--memory must be from 1024 to 16384 MB; got 512."),
     ])
     func validation(command: String, message: String) async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid(command)
@@ -347,6 +386,3 @@ struct BootCommandTests {
         #expect(result.stderr.contains(message))
     }
 }
-        ("boot Pixel_9 --emulator-arg -grpc", "--emulator-arg -grpc is refused: "),
-        ("boot Pixel_9 --emulator-arg --port=5560", "--emulator-arg --port=5560 is refused: "),
-        ("boot Pixel_9 --memory 512", "--memory must be from 1024 to 16384 MB; got 512."),

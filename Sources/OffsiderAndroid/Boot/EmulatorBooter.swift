@@ -131,6 +131,10 @@ public struct EmulatorBooter {
         guard host.files.isExecutableFile(atPath: sdk.emulator.path) else {
             throw AndroidError.emulatorMissing(sdkRoot: sdk.root.path)
         }
+        let staleLocks = removeStaleLocks(avd)
+        if !staleLocks.isEmpty {
+            progress("Removed \(staleLocks.joined(separator: " and ")) left by an emulator that is no longer running.")
+        }
         let logPath = Self.logPath(avdName: name, host: host)
         var environment = host.environment
         environment["ADB_MDNS"] = "0"
@@ -143,26 +147,42 @@ public struct EmulatorBooter {
                 logPath: logPath
             )
         } catch let failure as DetachedProcessError {
-            throw AndroidError.emulatorLaunchFailed(path: failure.path, detail: failure.detail)
+            throw AndroidError.emulatorLaunchFailed(path: failure.path, detail: failure.detail).namingStaleLocks(staleLocks, in: avd.directory.path)
         }
         log(.debug, "Started \(sdk.emulator.path) as pid \(pid); its output goes to \(logPath)")
         progress("Starting \(name)...")
-        let serial = try await wait.serial(pid: pid, knownFiles: knownFiles, knownSerials: knownSerials, launched: pid, logPath: logPath)
-        let hasGRPC = try await wait.untilBooted(serial, logPath: logPath, progress: progress)
-        return EmulatorBootResult(serial: serial, alreadyRunning: false, hasGRPC: hasGRPC, logPath: logPath)
+        do {
+            let serial = try await wait.serial(pid: pid, knownFiles: knownFiles, knownSerials: knownSerials, launched: pid, logPath: logPath)
+            let hasGRPC = try await wait.untilBooted(serial, logPath: logPath, progress: progress)
+            return EmulatorBootResult(serial: serial, alreadyRunning: false, hasGRPC: hasGRPC, logPath: logPath)
+        } catch let error as AndroidError where error.kind == .emulatorExited {
+            throw error.namingStaleLocks(staleLocks, in: avd.directory.path)
+        }
+    }
+
+    static let instanceLockNames = ["hardware-qemu.ini.lock", "multiinstance.lock"]
+
+    /// Deletes the AVD's lock files when every pid they record is gone (or is no longer an emulator); returns the names removed.
+    func removeStaleLocks(_ avd: AVDInfo) -> [String] {
+        let present = Self.instanceLockNames.filter { host.files.fileExists(atPath: avd.directory.appendingPathComponent($0).path) }
+        let pids = present.compactMap { lockPID(avd.directory.appendingPathComponent($0)) }
+        guard !pids.isEmpty, !pids.contains(where: isLiveEmulator) else { return [] }
+        return present.filter { (try? host.files.removeItem(atPath: avd.directory.appendingPathComponent($0).path)) != nil }
+    }
+
+    /// The pid in a lock file, or in `pid` inside a lock directory.
+    private func lockPID(_ lock: URL) -> Int32? {
+        let data = host.files.contents(atPath: lock.path) ?? host.files.contents(atPath: lock.appendingPathComponent("pid").path)
+        return data.flatMap { Int32(String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    private func isLiveEmulator(_ pid: Int32) -> Bool {
+        host.isProcessAlive(pid) && host.processPath(pid).map(EmulatorDiscovery.isEmulatorExecutable) == true
     }
 
     /// The emulator's own instance lock (`hardware-qemu.ini.lock` holds its pid), when a live emulator holds it.
     func instanceLockHolder(_ avd: AVDInfo) -> Int32? {
-        let lock = avd.directory.appendingPathComponent("hardware-qemu.ini.lock")
-        let data = host.files.contents(atPath: lock.path) ?? host.files.contents(atPath: lock.appendingPathComponent("pid").path)
-        guard let data,
-              let pid = Int32(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)),
-              host.isProcessAlive(pid),
-              let executable = host.processPath(pid),
-              EmulatorDiscovery.isEmulatorExecutable(executable) else {
-            return nil
-        }
+        guard let pid = lockPID(avd.directory.appendingPathComponent("hardware-qemu.ini.lock")), isLiveEmulator(pid) else { return nil }
         return pid
     }
 }
