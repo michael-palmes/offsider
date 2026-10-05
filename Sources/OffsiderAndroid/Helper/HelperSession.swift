@@ -153,6 +153,18 @@ final class HelperSession {
         }
     }
 
+    /// Display 0 as raw RGBA pixels from `UiAutomation.takeScreenshot`; an error reply throws `HelperErrorBody`.
+    func screenshot() async throws -> AndroidScreenCapture.Pixels {
+        let (reply, bytes) = try await launcher.timing.measure(.helperCapture) {
+            try await requestWithPayload(.screenshot(format: "raw"), as: HelperScreenshotReply.self, timeout: Self.dumpTimeout)
+        }
+        let frame = reply.frame
+        guard frame.format == "rgba8888", bytes.count == frame.bytes, frame.width > 0, frame.height > 0, bytes.count == frame.width * frame.height * 4 else {
+            throw HelperProtocolError(detail: "its screenshot frame (\(frame.format), \(frame.width) x \(frame.height), \(bytes.count) bytes) does not match its header")
+        }
+        return AndroidScreenCapture.Pixels(width: frame.width, height: frame.height, bytes: bytes)
+    }
+
     private func screenRequest<Reply: Decodable>(_ request: HelperRequest, as type: Reply.Type, timeout: Duration) async throws -> Reply {
         do {
             return try await self.request(request, as: type, timeout: timeout)
@@ -165,6 +177,20 @@ final class HelperSession {
 
     /// An error reply throws `HelperErrorBody`; an idle `bye` restarts and resends each time; a lost helper restarts once.
     func request<Reply: Decodable>(_ request: HelperRequest, as type: Reply.Type, timeout: Duration) async throws -> Reply {
+        try Self.decodeReply(try await send(request, timeout: timeout, expectingPayload: false).reply, as: type)
+    }
+
+    /// As `request`, for an op whose successful reply is followed by one binary frame.
+    func requestWithPayload<Reply: Decodable>(_ request: HelperRequest, as type: Reply.Type, timeout: Duration) async throws -> (Reply, Data) {
+        let (frame, payload) = try await send(request, timeout: timeout, expectingPayload: true)
+        let reply = try Self.decodeReply(frame, as: type)
+        guard let payload else {
+            throw HelperProtocolError(detail: "its `\(request.op)` reply came without its frame")
+        }
+        return (reply, payload)
+    }
+
+    private func send(_ request: HelperRequest, timeout: Duration, expectingPayload: Bool) async throws -> (reply: Data, payload: Data?) {
         while true {
             guard !isClosed else {
                 throw AndroidError.helperCrashed(serial, detail: "Offsider had already stopped it")
@@ -175,9 +201,11 @@ final class HelperSession {
             }
             let id = nextID
             nextID += 1
-            switch try await connection.exchange(request, id: id, timeout: timeout) {
+            switch try await connection.exchange(request, id: id, timeout: timeout, expectingPayload: expectingPayload) {
             case .reply(let frame):
-                return try Self.decodeReply(frame, as: type)
+                return (frame, nil)
+            case .replyWithPayload(let frame, let payload):
+                return (frame, payload)
             case .bye(let reason, let detail) where reason == "idle":
                 log(.debug, "The UiAutomation helper on \(serial) left after idling (\(detail ?? "no detail")); starting it again")
                 await drop(connection)
@@ -280,6 +308,7 @@ struct HelperEmpty: Decodable, Sendable {}
 final class HelperConnection {
     enum Outcome: Equatable {
         case reply(Data)
+        case replyWithPayload(Data, Data)
         case bye(reason: String, detail: String?)
         case lost(String)
         case timedOut
@@ -321,6 +350,7 @@ final class HelperConnection {
                 ))
             }
             return
+        case .replyWithPayload: detail = "it answered hello with a frame it never announced"
         case .bye(let reason, _): detail = "it ended with \(reason) before answering hello"
         case .lost(let lost): detail = lost
         case .timedOut: detail = "no reply to hello within \(HelperSession.helloTimeout.components.seconds) s"
@@ -329,8 +359,10 @@ final class HelperConnection {
     }
 
     /// Sends one request and reads frames until its reply or a `bye`; never throws for a lost or silent helper.
-    func exchange(_ request: HelperRequest, id: Int, timeout: Duration) async throws -> Outcome {
+    /// `expectingPayload`: a successful reply is followed by one binary frame, read as it is.
+    func exchange(_ request: HelperRequest, id: Int, timeout: Duration, expectingPayload: Bool = false) async throws -> Outcome {
         let deadline = ContinuousClock.now + timeout
+        var reply: Data?
         let frame = try HelperWire.frame(try request.payload(id: id))
         do {
             try await socket.write(frame, deadline: deadline)
@@ -342,6 +374,9 @@ final class HelperConnection {
         while true {
             while !frames.isEmpty {
                 let payload = frames.removeFirst()
+                if let reply {
+                    return .replyWithPayload(reply, payload)
+                }
                 guard let envelope = try? JSONDecoder().decode(HelperEnvelope.self, from: payload) else {
                     return .lost("it sent a frame Offsider could not read")
                 }
@@ -349,14 +384,15 @@ final class HelperConnection {
                     return .bye(reason: envelope.reason ?? "unknown", detail: envelope.detail)
                 }
                 if envelope.id == id {
-                    return .reply(payload)
+                    guard expectingPayload, envelope.ok == true else { return .reply(payload) }
+                    reply = payload
                 }
             }
             var chunk = unread
             unread = Data()
             if chunk.isEmpty {
                 do {
-                    chunk = try await socket.read(upTo: 64 * 1024, deadline: deadline)
+                    chunk = try await socket.read(upTo: reply == nil ? 64 * 1024 : 1 << 20, deadline: deadline)
                 } catch AdbConnectError.timedOut {
                     return .timedOut
                 } catch {

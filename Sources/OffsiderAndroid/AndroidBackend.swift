@@ -361,8 +361,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     }
 
     private func capturePNG(_ serial: String) async throws -> Data {
+        let policy = try AndroidCapturePolicy.policy(host: host)
         guard case .grpc(let emulator) = try await transport(for: serial) else {
-            return try await adbScreenshot(serial)
+            return try await shellCapture(serial, policy: policy)
         }
         let geometry = try await geometry(for: serial)
         let frame = try await emulator.screenshot(.png, fitting: nil)
@@ -383,12 +384,63 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return bands
     }
 
+    /// Without gRPC: the device's PNG, or raw pixels from screencap or the helper encoded here; those two fall back to the PNG.
+    private func shellCapture(_ serial: String, policy: AndroidCapturePolicy) async throws -> Data {
+        let pixels: AndroidScreenCapture.Pixels
+        switch policy {
+        case .auto, .screencap:
+            return try await adbScreenshot(serial)
+        case .raw:
+            let output = try await requireClient().exec("screencap", on: serial, timeout: .seconds(15))
+            do {
+                pixels = try AndroidScreenCapture.pixels(fromScreencapRaw: output)
+            } catch let failure as AndroidScreenCapture.ImageFailure {
+                log(.debug, "Raw screencap on \(serial) was unreadable (\(failure.detail)); using `screencap -p`")
+                return try await adbScreenshot(serial)
+            }
+        case .helper:
+            guard let captured = try await helperPixels(serial) else {
+                return try await adbScreenshot(serial)
+            }
+            pixels = captured
+        }
+        do {
+            return try host.timing.measure(.captureEncode) { try AndroidScreenCapture.encodePNG(pixels) }
+        } catch let failure as AndroidScreenCapture.ImageFailure {
+            throw AndroidError.screenshotFailed(serial, detail: failure.detail)
+        }
+    }
+
+    /// The helper's raw screenshot, starting the helper if needed; nil, with a warning, when it cannot serve.
+    private func helperPixels(_ serial: String) async throws -> AndroidScreenCapture.Pixels? {
+        let problem: String
+        do {
+            if let session = try await helperForInput(serial, required: false) {
+                return try await session.screenshot()
+            }
+            problem = "the helper is unavailable"
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as HelperErrorBody {
+            problem = "\(error.code): \(error.message)"
+        } catch let error as HelperProtocolError {
+            problem = error.detail
+        } catch let error as AndroidError {
+            problem = error.message
+        } catch {
+            problem = String(describing: error)
+        }
+        log(.warning, "The UiAutomation helper could not take a screenshot on \(serial) (\(problem)), so Offsider used `screencap -p`.")
+        return nil
+    }
+
     /// `exec:screencap -p`: the guest's own PNG, already upright for its current rotation; `-d` picks a physical display.
+    /// A phone with several displays prints a warning before the PNG, which is skipped.
     func adbScreenshot(_ serial: String, physicalDisplay: String? = nil) async throws -> Data {
         let command = physicalDisplay.map { "screencap -d \($0) -p" } ?? "screencap -p"
-        let png = try await requireClient().exec(command, on: serial, timeout: .seconds(15))
-        guard png.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) else {
-            let text = String(decoding: png.prefix(200), as: UTF8.self)
+        let output = try await requireClient().exec(command, on: serial, timeout: .seconds(15))
+        guard let png = AndroidScreenCapture.png(fromScreencap: output) else {
+            let text = String(decoding: output.prefix(200), as: UTF8.self)
             let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
             throw AndroidError.adbCommandFailed(serial: serial, command: command, detail: firstLine)
         }

@@ -30,6 +30,8 @@ final class FakeHelperDevice: @unchecked Sendable {
     enum Answer {
         /// `"ok": true` with these fields, a JSON object.
         case ok(String)
+        /// An ok reply with these fields, then this binary frame, as `screenshot` answers.
+        case okWithPayload(String, Data)
         /// The focused element's class and id ride along, as `setText` errors carry them.
         case error(code: String, message: String, className: String? = nil, resourceId: String? = nil)
         /// A `bye` frame instead of a reply, then the helper exits.
@@ -251,6 +253,15 @@ final class FakeHelperDevice: @unchecked Sendable {
         }
     }
 
+    /// A raw screenshot reply and its frame: `width` x `height` RGBA pixels, each red = its index.
+    static func screenshot(width: Int, height: Int) -> Answer {
+        let pixels = Data((0..<(width * height)).flatMap { [UInt8($0 & 0xFF), 0, 0, 255] })
+        return .okWithPayload(
+            #"{"frame":{"width":\#(width),"height":\#(height),"format":"rgba8888","bytes":\#(pixels.count)},"captureMs":40,"copyMs":5,"encodeMs":3}"#,
+            pixels
+        )
+    }
+
     /// Every step dispatched in 1 ms.
     static func injectReply(to json: String) -> String {
         let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
@@ -365,6 +376,10 @@ final class FakeHelperSocket: FakeServiceSession, @unchecked Sendable {
                     device.exit(process, status: 0)
                     return (out, true)
                 }
+            case .okWithPayload(let fields, let payload):
+                out += Self.frame(Self.ok(id: id, fields: fields))
+                let count = UInt32(payload.count)
+                out += Data([UInt8(count >> 24), UInt8(count >> 16 & 0xFF), UInt8(count >> 8 & 0xFF), UInt8(count & 0xFF)]) + payload
             case .error(let code, let message, let className, let resourceId):
                 let node = [className.map { #","className":"\#($0)""# }, resourceId.map { #","resourceId":"\#($0)""# }].compactMap { $0 }.joined()
                 out += Self.frame(#"{"id":\#(id),"ok":false,"error":{"code":"\#(code)","message":"\#(message)","detail":null\#(node)},"eventSeq":7}"#)

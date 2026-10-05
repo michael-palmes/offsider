@@ -62,6 +62,13 @@ struct HelperRequest: Equatable, Sendable {
         HelperRequest(op: "inject", fields: ["steps": .array(steps), "sync": .bool(sync)])
     }
 
+    /// Display 0 as "raw" RGBA, "png" or "jpeg"; the frame follows the reply as its own binary frame.
+    static func screenshot(format: String, quality: Int? = nil) -> HelperRequest {
+        var fields: [String: HelperValue] = ["format": .string(format)]
+        fields["quality"] = quality.map(HelperValue.int)
+        return HelperRequest(op: "screenshot", fields: fields)
+    }
+
     /// The JSON payload with sorted keys, so the same request always encodes the same way.
     func payload(id: Int) throws -> Data {
         var object = fields
@@ -131,6 +138,22 @@ struct HelperInjectReply: Decodable, Equatable, Sendable {
     let steps: [Step]
     let eventSeqBefore: Int64
     let totalMs: Int
+}
+
+/// The `screenshot` reply; the frame's bytes arrive as the next frame on the socket.
+struct HelperScreenshotReply: Decodable, Equatable, Sendable {
+    struct Frame: Decodable, Equatable, Sendable {
+        let width: Int
+        let height: Int
+        /// "rgba8888", "png" or "jpeg".
+        let format: String
+        let bytes: Int
+    }
+
+    let frame: Frame
+    let captureMs: Int
+    let copyMs: Int
+    let encodeMs: Int
 }
 
 struct HelperRange: Codable, Equatable, Sendable {
