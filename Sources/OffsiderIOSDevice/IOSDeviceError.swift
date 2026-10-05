@@ -13,6 +13,9 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case untrusted
         case developerModeOff
         case preparing
+        case usbmuxUnavailable
+        case usbmuxFailed
+        case runnerUnavailable
     }
 
     public let kind: Kind
@@ -77,6 +80,44 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
     }
 }
 
+extension IOSDeviceError {
+    /// A failure listing devices or opening a stream through usbmuxd.
+    public static func usbmux(_ error: UsbmuxError, udid: String) -> IOSDeviceError {
+        switch error {
+        case .socketUnavailable(let detail):
+            return IOSDeviceError(.usbmuxUnavailable, "usbmuxd, which reaches iPhones over USB, is not answering (\(detail)). Reconnect the cable; restart the Mac if it persists.")
+        case .timedOut:
+            return IOSDeviceError(.usbmuxUnavailable, "usbmuxd, which reaches iPhones over USB, did not answer in time. Reconnect the cable; restart the Mac if it persists.")
+        case .notOnUSB:
+            return .notWired(udid)
+        case .notAttached, .result(2):
+            return IOSDeviceError(.unavailable, "\(udid) is not attached over USB. Connect its cable and unlock it, then run `offsider list-devices`.")
+        case .result(3):
+            return runnerNotListening(udid)
+        case .result(let number):
+            return IOSDeviceError(.usbmuxFailed, "usbmuxd refused the request for \(udid) (result \(number)). Run `offsider doctor --device \(udid)`.")
+        case .closed, .malformed:
+            return IOSDeviceError(.usbmuxFailed, "usbmuxd sent a reply Offsider could not read for \(udid). Run `offsider doctor --device \(udid)`.")
+        }
+    }
+
+    /// A failure on the stream to the device runner, after usbmuxd connected it; nothing was sent to the app.
+    public static func runner(_ error: UsbmuxError, udid: String) -> IOSDeviceError {
+        switch error {
+        case .timedOut:
+            return IOSDeviceError(.runnerUnavailable, "The runner on \(udid) did not answer in time, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
+        case .socketUnavailable, .notOnUSB, .notAttached, .result:
+            return usbmux(error, udid: udid)
+        case .closed, .malformed:
+            return IOSDeviceError(.runnerUnavailable, "The runner on \(udid) closed the connection or sent a reply Offsider could not read, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
+        }
+    }
+
+    static func runnerNotListening(_ udid: String) -> IOSDeviceError {
+        IOSDeviceError(.runnerUnavailable, "Nothing on \(udid) accepted the runner connection, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
+    }
+}
+
 extension IOSDeviceError: OffsiderFailure {
     public var reason: FailureReason {
         switch kind {
@@ -88,6 +129,9 @@ extension IOSDeviceError: OffsiderFailure {
         case .untrusted: return .deviceUntrusted
         case .developerModeOff: return .developerModeOff
         case .preparing: return .devicePreparing
+        case .usbmuxUnavailable: return .usbmuxUnavailable
+        case .usbmuxFailed: return .commandFailed
+        case .runnerUnavailable: return .runnerUnavailable
         }
     }
 
