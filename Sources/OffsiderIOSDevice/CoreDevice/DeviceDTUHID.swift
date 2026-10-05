@@ -54,7 +54,7 @@ final class DeviceDTUHID {
 
     func send(_ message: DTUHIDValue) {
         hasSent = true
-        socket.send(message.xpcObject)
+        socket.send(DTUHIDMessage.forDevice(message).xpcObject)
     }
 
     /// A harmless keyboard usage 0 that is not a barrier, which a device refuses when UI Automation is off.
@@ -71,7 +71,7 @@ final class DeviceDTUHID {
     }
 
     func roundTrip(_ message: DTUHIDValue) async -> DTUHIDReply {
-        let object = message.xpcObject
+        let object = DTUHIDMessage.forDevice(message).xpcObject
         let socket = socket
         let once = OnceFlag()
         return await withCheckedContinuation { (continuation: CheckedContinuation<DTUHIDReply, Never>) in

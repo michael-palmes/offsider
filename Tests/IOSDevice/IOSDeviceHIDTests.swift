@@ -6,6 +6,15 @@ import XPC
 
 @Suite("Device DTUHID messages")
 struct DeviceDTUHIDMessageTests {
+    @Test("a device event drops a false isBarrier and keeps a barrier's true one")
+    func forDevice() {
+        let event = DTUHIDMessage.button(usagePage: 0x0C, usage: 0x40, state: .down)
+        guard case .dictionary(let fields) = DTUHIDMessage.forDevice(event) else { Issue.record("not a dictionary"); return }
+        #expect(fields["isBarrier"] == nil)
+        #expect(fields["messageType"] == .string("IndigoButtonEvent"))
+        #expect(DTUHIDMessage.forDevice(DTUHIDMessage.barrier(service: DTUHIDMessage.buttonService)) == DTUHIDMessage.barrier(service: DTUHIDMessage.buttonService))
+    }
+
     @Test("a key carries its usage and a 1-based state on the keyboard feature")
     func keyboard() {
         #expect(DTUHIDMessage.keyboard(usage: 4, state: .down) == .dictionary([

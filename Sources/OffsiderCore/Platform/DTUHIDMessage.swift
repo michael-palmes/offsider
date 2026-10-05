@@ -35,14 +35,19 @@ public enum DTUHIDMessage {
         case end = 2
     }
 
-    /// `isBarrier` travels only on a barrier: a device's `dtuhidd` drops the connection on an event that carries the key.
     public static func envelope(_ type: String, service: String, isBarrier: Bool = false, payload: [String: DTUHIDValue]) -> DTUHIDValue {
-        var fields: [String: DTUHIDValue] = [
+        .dictionary([
             "messageType": .string(type),
+            "isBarrier": .bool(isBarrier),
             "featureIdentifier": .string(service),
             "payload": .dictionary(payload),
-        ]
-        if isBarrier { fields["isBarrier"] = .bool(true) }
+        ])
+    }
+
+    /// A device's `dtuhidd` drops the connection on an event that carries a false `isBarrier`; the simulator's expects the key.
+    public static func forDevice(_ message: DTUHIDValue) -> DTUHIDValue {
+        guard case .dictionary(var fields) = message, fields["isBarrier"] == .bool(false) else { return message }
+        fields["isBarrier"] = nil
         return .dictionary(fields)
     }
 
