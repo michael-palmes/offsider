@@ -22,13 +22,17 @@ final class FakeDevicectl: DevicectlRunning, @unchecked Sendable {
     private var recorded: [[String]] = []
     private let xcode: Result<XcodeLocation, IOSDeviceError>
     private let replies: [String: ProcessCaptureResult]
+    private let effect: (@Sendable ([String]) -> Void)?
 
+    /// `effect` runs before each reply, as devicectl writing a file would.
     init(
         xcode: Result<XcodeLocation, IOSDeviceError> = .success(XcodeLocation(developerDirectory: "/Xcode.app/Contents/Developer", source: "xcode-select", version: "27.0", build: "27A266a")),
-        replies: [String: ProcessCaptureResult]
+        replies: [String: ProcessCaptureResult],
+        effect: (@Sendable ([String]) -> Void)? = nil
     ) {
         self.xcode = xcode
         self.replies = replies
+        self.effect = effect
     }
 
     static func listing(_ fixture: String, extra: [String: ProcessCaptureResult] = [:]) throws -> FakeDevicectl {
@@ -45,18 +49,27 @@ final class FakeDevicectl: DevicectlRunning, @unchecked Sendable {
 
     func run(_ arguments: [String], timeout: TimeInterval) async throws -> ProcessCaptureResult {
         lock.withLock { recorded.append(arguments) }
+        effect?(arguments)
         let key = arguments.first == "list" ? "list" : (arguments.count > 2 ? arguments[2] : arguments.joined(separator: " "))
         return replies[key] ?? ProcessCaptureResult(status: 0, stdout: "{\"info\": {\"outcome\": \"success\"}, \"result\": {}}", stderr: "")
     }
 }
 
 extension IOSDeviceHost {
-    static func fake(_ devicectl: FakeDevicectl, environment: [String: String] = [:], existing: Set<String> = []) -> IOSDeviceHost {
+    static func fake(
+        _ devicectl: FakeDevicectl,
+        environment: [String: String] = [:],
+        existing: Set<String> = [],
+        privateRoot: String = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-ios-tests-\(UUID().uuidString)").path,
+        timing: IOSDeviceTiming = .disabled
+    ) -> IOSDeviceHost {
         IOSDeviceHost(
             environment: environment,
             homeDirectory: URL(fileURLWithPath: "/Users/tester", isDirectory: true),
             devicectl: devicectl,
-            fileExists: { existing.contains($0) }
+            fileExists: { existing.contains($0) },
+            privateRoot: privateRoot,
+            timing: timing
         )
     }
 }

@@ -6,7 +6,11 @@ extension IOSDeviceBackend {
     /// Debug and info go to the Offsider logger; warnings print one `Warning:` line on stderr.
     static func make(logger: OffsiderLogger) -> IOSDeviceBackend {
         let sink = IOSDeviceLogSink(logger: logger)
-        return IOSDeviceBackend { level, message in sink.write(level, message) }
+        var host = IOSDeviceHost.live()
+        if Timings.isEnabled {
+            host.timing = .printing { line in FileHandle.standardError.write(Data((line + "\n").utf8)) }
+        }
+        return IOSDeviceBackend(host: host) { level, message in sink.write(level, message) }
     }
 }
 

@@ -75,17 +75,24 @@ public struct IOSDeviceHost: Sendable {
     public var homeDirectory: URL
     public var devicectl: any DevicectlRunning
     public var fileExists: @Sendable (String) -> Bool
+    /// Offsider's private directory; `ios-devices/<udid>/` under it holds captures, geometry and the runner session.
+    public var privateRoot: String
+    public var timing: IOSDeviceTiming
 
     public init(
         environment: [String: String],
         homeDirectory: URL,
         devicectl: any DevicectlRunning,
-        fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+        fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        privateRoot: String = OffsiderPrivateDirectory.root,
+        timing: IOSDeviceTiming = .disabled
     ) {
         self.environment = environment
         self.homeDirectory = homeDirectory
         self.devicectl = devicectl
         self.fileExists = fileExists
+        self.privateRoot = privateRoot
+        self.timing = timing
     }
 
     public static func live() -> IOSDeviceHost {

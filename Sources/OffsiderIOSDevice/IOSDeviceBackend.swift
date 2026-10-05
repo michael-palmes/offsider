@@ -16,6 +16,7 @@ public final class IOSDeviceBackend: DeviceBackend {
     let log: IOSDeviceLog
     public let directory: IOSDeviceDirectory
     public var input = IOSDeviceInputHooks()
+    let state = IOSDeviceState()
     private var xcode: XcodeLocation?
     private var woken: Set<String> = []
 
@@ -72,12 +73,6 @@ public final class IOSDeviceBackend: DeviceBackend {
 
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         throw IOSDeviceError.notYetSupported(id.rawValue, feature: "Reading the accessibility tree")
-    }
-
-    public func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? { nil }
-
-    public func screenshotPNG(for id: DeviceID) async throws -> Data {
-        throw IOSDeviceError.notYetSupported(id.rawValue, feature: "Taking a screenshot")
     }
 
     /// The status bar and Dynamic Island, which change on their own.
