@@ -32,7 +32,7 @@ offsider describe-ui --diff --device <DEVICE_ID>
 ## Rules
 
 - Wait on a condition, never a guess: `wait --id`, `--gone`, `--has-value`, `--settled`. Never tap an element just to pass time.
-- `type` adds to the focused field. Tap the field, then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
+- `type` adds to the focused field. Tap the field (or pass `--into-id <id>`), then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
 - Secure fields read as bullets, one per character: find them by `--id` or `--label` (`--value` never matches them). To type a secret, tap the field and run `type`: Offsider never logs or echoes the text. Add `--mask-secure` to `screenshot` before sharing an image of a screen with a password field (`guide evidence`).
 - For a report, `offsider run start <dir>` numbers screenshots and logs into one folder; mask personal data with `--mask-emails` (`guide evidence`).
 - Use `--retries 0` with `--verify` for submit, send or delete, so a late effect plus a retry cannot act twice.

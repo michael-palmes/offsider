@@ -17,6 +17,7 @@ Resending a single command is safe after 2, 6, 7, 8, 9 and 64: nothing was sent.
 
 ## Reasons to act on
 
+- `focus_not_confirmed` (exit 5) and `focus_mismatch` (exit 2): `type --into-id` or `--require-focus-id` sent no text because the field did not have focus. Check it with `describe-ui --summary`; never retype without checking which field has the text.
 - `turnstile_challenge` (exit 1): Cloudflare showed a visual challenge. Hand back to a person; never retry `turnstile` in a loop (`guide turnstile`).
 - `verify_target_present` (exit 1, nothing sent): the `--verify-id` element was already on screen, so its appearing could not show the input worked. Pick an id that only the next screen has.
 

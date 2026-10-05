@@ -262,6 +262,18 @@ extension KeyCombo: BatchConvertible {
 
 extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        let typed = try await typingPrimitives(context: context)
+        guard intoQuery != nil || requireFocusID != nil else { return typed }
+        let focus = BatchPrimitive.run { session in
+            try await ensureFocus(backend: context.backend, device: context.device, logger: logger) { event in
+                try await session.perform(event)
+            }
+            context.invalidateTree(sentInput: true)
+        }
+        return [focus] + typed
+    }
+
+    private func typingPrimitives(context: BatchContext) async throws -> [BatchPrimitive] {
         let inputText = try resolvedText()
 
         if context.device.platform == .android || context.device.isPhysicalIOSDevice {

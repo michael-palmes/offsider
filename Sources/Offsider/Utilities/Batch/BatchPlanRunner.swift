@@ -43,6 +43,9 @@ struct BatchPlanRunner {
                 } else {
                     try await textSession.typeText(text)
                 }
+            case .run(let body):
+                try await flushPending()
+                try await body(session)
             }
         }
 

@@ -32,6 +32,7 @@ offsider slider --label <text> --value 40 --element-type slider --device <DEVICE
 ## Text and buttons
 
 - `type` adds to the focused field. Tap the field, then `type --replace 'text'` sets it exactly and `--replace ''` clears it; it works with `--stdin`, `--file`, `--verify` and as a batch step. iOS selects all with Command-A and deletes, then types (secure fields included); Android sets the text in one step.
+- `type --into-id <id>` (or `--into-label`) taps the field and waits up to 2 s for it to take focus (on an iOS simulator, for the keyboard) before typing; when it never does, nothing is typed and it exits 5 (`focus_not_confirmed`). `type --require-focus-id <id>` types only when that field already has focus and exits 2 (`focus_mismatch`, naming the focused field) otherwise; iOS simulators do not report focus, so use `--into-id` there.
 - A trailing newline presses Return on both platforms, so `$'query\n'` submits. Use single quotes inline, and `--stdin` or `--file` for shell-sensitive text.
 - `button` names depend on the platform: iOS has `apple-pay`, `home`, `lock`, `side-button` and `siri`; Android has `back`, `app-switch`, `home`, `lock` (the power key), `volume-up` and `volume-down`. A button the device lacks exits 64.
 

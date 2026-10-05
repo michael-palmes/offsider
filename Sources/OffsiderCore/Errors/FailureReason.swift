@@ -58,6 +58,8 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case runUnavailable = "run_unavailable"
     case verifyTargetPresent = "verify_target_present"
     case turnstileChallenge = "turnstile_challenge"
+    case focusNotConfirmed = "focus_not_confirmed"
+    case focusMismatch = "focus_mismatch"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"
@@ -108,9 +110,9 @@ public enum FailureReason: String, CaseIterable, Sendable {
 
     public var exitCode: OffsiderExitCode {
         switch self {
-        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen:
+        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch:
             return .selectorNotFound
-        case .notVerified, .conditionNotMet:
+        case .notVerified, .conditionNotMet, .focusNotConfirmed:
             return .unverified
         case .selectorAmbiguous, .selectorAmbiguousSwitch:
             return .ambiguousSelector
