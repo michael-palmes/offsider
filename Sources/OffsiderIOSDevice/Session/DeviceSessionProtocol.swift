@@ -42,6 +42,8 @@ public enum DeviceSessionRequest: Equatable, Sendable {
     case touch([DeviceSessionStep])
     case keys([DeviceSessionStep])
     case text(String)
+    /// The screen turned, so the broker reads the display again before the next touch.
+    case displayChanged
     case stop
 
     public var op: String {
@@ -52,6 +54,7 @@ public enum DeviceSessionRequest: Equatable, Sendable {
         case .touch: return "touch"
         case .keys: return "keys"
         case .text: return "text"
+        case .displayChanged: return "display"
         case .stop: return "stop"
         }
     }
@@ -60,7 +63,7 @@ public enum DeviceSessionRequest: Equatable, Sendable {
     public var sendsInput: Bool {
         switch self {
         case .press, .touch, .keys, .text: return true
-        case .ping, .frame, .stop: return false
+        case .ping, .frame, .displayChanged, .stop: return false
         }
     }
 
@@ -78,7 +81,7 @@ public enum DeviceSessionRequest: Equatable, Sendable {
     func envelope(id: Int) -> Envelope {
         var envelope = Envelope(id: id, op: op)
         switch self {
-        case .ping, .stop:
+        case .ping, .displayChanged, .stop:
             break
         case .frame(let format):
             envelope.format = format.wireName
@@ -102,6 +105,7 @@ public enum DeviceSessionRequest: Equatable, Sendable {
         switch envelope.op {
         case "ping": self = .ping
         case "stop": self = .stop
+        case "display": self = .displayChanged
         case "frame":
             let name = try need(envelope.format, "format")
             guard let format = IOSDeviceScreenFrame.Format(wireName: name) else { throw DeviceSessionWireError(detail: "an unknown frame format `\(name)`") }
@@ -196,7 +200,7 @@ public struct DeviceSessionReply: Codable, Equatable, Sendable {
     public var udid: String?
     /// The device's model label, so a command with a live broker skips listing devices.
     public var label: String?
-    /// The main display as the broker last read it, at most a couple of seconds old while it is in use.
+    /// The main display from a read the broker started within the last second; nil when it has none that fresh.
     public var geometry: IOSDeviceGeometry?
     public var stream: DeviceSessionStreamStatus?
     /// True when the broker sends touches and keys itself.

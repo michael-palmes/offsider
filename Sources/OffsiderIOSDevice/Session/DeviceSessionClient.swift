@@ -125,6 +125,10 @@ public final class DeviceSessionClient {
         _ = try await call(.text(text), timeout: Self.inputTimeout + .seconds(Double(text.count) * 0.1))
     }
 
+    public func displayChanged() async throws {
+        _ = try await call(.displayChanged, timeout: Self.pingTimeout)
+    }
+
     public func stop(timeout: Duration = .seconds(8)) async throws {
         _ = try await call(.stop, timeout: timeout)
     }

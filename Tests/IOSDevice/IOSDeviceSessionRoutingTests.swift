@@ -158,14 +158,26 @@ struct IOSDeviceInputRoutingTests {
         #expect(runnerText.calls == ["type 4", "replace 2"])
     }
 
-    @Test("an element in a Stage Manager window cannot be tapped from its frames; a full-screen app can")
-    func stageManager() {
-        func tree(_ width: Double, _ height: Double) -> UITree {
-            UITree(platform: .ios, device: "U", roots: [UINode(role: .application, frame: UIFrame(x: 0, y: 0, width: width, height: height), native: .ios(IOSNativeAttributes()))])
-        }
-        #expect(IOSDeviceBackend.isWindowed(tree(704, 864.5), screenWidth: 1376, screenHeight: 1032))
-        #expect(!IOSDeviceBackend.isWindowed(tree(1376, 1032), screenWidth: 1376, screenHeight: 1032))
-        #expect(!IOSDeviceBackend.isWindowed(tree(1032, 1376), screenWidth: 1376, screenHeight: 1032))
+    @Test("an element in a Stage Manager window cannot be tapped from its frames; a full-screen or Split View app can", arguments: [
+        (UIFrame(x: 0, y: 0, width: 704, height: 864.5), true),
+        (UIFrame(x: 0, y: 0, width: 1000, height: 700), true),
+        (UIFrame(x: 0, y: 0, width: 1376, height: 1032), false),
+        (UIFrame(x: 0, y: 0, width: 1032, height: 1376), false),
+        (UIFrame(x: 0, y: 0, width: 684, height: 1032), false),
+        (UIFrame(x: 692, y: 0, width: 684, height: 1032), false),
+        (UIFrame(x: 0, y: 0, width: 452, height: 1032), false),
+    ])
+    func stageManager(frame: UIFrame, windowed: Bool) {
+        let tree = UITree(platform: .ios, device: "U", roots: [UINode(role: .application, frame: frame, native: .ios(IOSNativeAttributes()))])
+        #expect(IOSDeviceBackend.isWindowed(tree, screenWidth: 1376, screenHeight: 1032) == windowed)
+    }
+
+    @Test("turning the screen tells the device's live broker to read the display again")
+    func turnResetsBroker() async throws {
+        let link = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone)
+        let backend = try Self.backend(version: "651.13.4", connector: FakeSessionConnector(link: link, live: true), runner: nil)
+        try await backend.requestOrientation(.landscapeLeft, on: Self.phone)
+        #expect(link.requests.contains(.displayChanged))
     }
 }
 

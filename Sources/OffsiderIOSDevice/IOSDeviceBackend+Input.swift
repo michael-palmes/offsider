@@ -27,11 +27,15 @@ extension IOSDeviceBackend {
         return points
     }
 
-    /// An app in a Stage Manager window reports frames inside the window: its root sits at the origin, smaller than the screen.
+    /// An app in a Stage Manager window reports frames inside the window: its root sits at the origin, smaller than the screen
+    /// and clear of the screen's far edges. A Split View app spans the screen's height or width, so its frames are the screen's.
     static func isWindowed(_ tree: UITree, screenWidth: Double, screenHeight: Double) -> Bool {
         guard let app = tree.roots.first(where: { $0.role == .application }), let frame = app.frame,
               frame.x == 0, frame.y == 0, frame.width > 0, frame.height > 0, screenWidth > 0, screenHeight > 0 else { return false }
-        return frame.width * frame.height < 0.9 * screenWidth * screenHeight
+        let slack = 0.02
+        let spansHeight = frame.height >= screenHeight * (1 - slack)
+        let spansWidth = frame.width >= screenWidth * (1 - slack)
+        return !spansHeight && !spansWidth
     }
 
     var hostHasHID: Bool { input.coreDeviceVersion()?.supportsHID == true }

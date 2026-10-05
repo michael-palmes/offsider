@@ -12,8 +12,10 @@ public protocol DeviceSessionHardware: AnyObject {
     var supportsTouch: Bool { get }
     /// The device's model label, once known.
     var label: String? { get }
-    /// The main display as last read, so a command can skip reading it.
-    var geometry: IOSDeviceGeometry? { get }
+    /// The main display if read within the last second, so a command can skip reading it; nil starts a read.
+    func freshGeometry() -> IOSDeviceGeometry?
+    /// The screen turned, so the display is read again before the next touch.
+    func displayChanged()
     func frame(_ format: IOSDeviceScreenFrame.Format) async throws -> IOSDeviceScreenFrame
     /// Input stops early, releasing what it holds, once `abandoned` reports its client gone.
     func press(usagePage: UInt64, usageCode: UInt64, hold: Double, abandoned: @Sendable () -> Bool) async throws
@@ -159,6 +161,9 @@ public final class DeviceSessionServer {
         case .stop:
             stopping = true
             return (DeviceSessionReply(id: id), nil)
+        case .displayChanged:
+            hardware.displayChanged()
+            return (DeviceSessionReply(id: id), nil)
         case .frame:
             return await frameGate.run { await self.reply(id: id, request, origin: origin) }
         case .press, .touch, .keys, .text:
@@ -213,6 +218,8 @@ public final class DeviceSessionServer {
             try await hardware.keys(try DeviceSessionLowering.keySteps(typing: text), abandoned: origin.isGone)
         case .stop:
             stopping = true
+        case .displayChanged:
+            hardware.displayChanged()
         }
         return (reply, nil)
     }
@@ -229,7 +236,7 @@ public final class DeviceSessionServer {
         reply.pid = getpid()
         reply.udid = udid
         reply.label = hardware.label
-        reply.geometry = hardware.geometry
+        reply.geometry = hardware.freshGeometry()
         reply.stream = hardware.streamStatus
         reply.touch = hardware.supportsTouch
         reply.idleSeconds = Int(idleTimeout.components.seconds)

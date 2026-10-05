@@ -70,6 +70,7 @@ struct DeviceSessionWireTests {
         .touch([.touch(.down, x: 10, y: 20), .wait(0.06), .touch(.up, x: 10, y: 20)]),
         .keys([.key(4, down: true), .key(4, down: false)]),
         .text("hi there"),
+        .displayChanged,
         .stop,
     ])
     func roundTrip(request: DeviceSessionRequest) throws {
@@ -258,6 +259,7 @@ final class FakeSessionHardware: DeviceSessionHardware {
     var supportsTouch = true
     var label: String? = "Apple iPad Pro"
     var geometry: IOSDeviceGeometry?
+    private(set) var displayChanges = 0
     var healthy = true
     var healthDelay: Duration = .zero
     private(set) var touches: [[DeviceSessionStep]] = []
@@ -279,6 +281,8 @@ final class FakeSessionHardware: DeviceSessionHardware {
         sawClientLeave = !(await CoreDeviceSessionHardware.pause(until: .now + .seconds(wait), abandoned: abandoned))
     }
     func keys(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws {}
+    func freshGeometry() -> IOSDeviceGeometry? { geometry }
+    func displayChanged() { displayChanges += 1 }
     func checkHealth() async -> Bool {
         if healthDelay > .zero { try? await Task.sleep(for: healthDelay) }
         return healthy
@@ -311,6 +315,8 @@ struct DeviceSessionServerTests {
         #expect(ping.touch == true)
         let frame = try await client.frame(.png)
         #expect(frame.data == Data([9, 8, 7, 6]))
+        try await client.displayChanged()
+        #expect(hardware.displayChanges == 1)
         try await client.touch([.touch(.down, x: 1, y: 2), .touch(.up, x: 1, y: 2)])
         #expect(hardware.touches.count == 1)
         let refused = await #expect(throws: IOSDeviceError.self) { try await client.press(usagePage: 12, usageCode: 64, hold: 0.1) }

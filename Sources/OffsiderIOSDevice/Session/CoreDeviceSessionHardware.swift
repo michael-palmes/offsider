@@ -12,8 +12,10 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     /// A failed UniversalHID open is tried again on the next input after this long.
     static let hidRetryDelay: Duration = .seconds(2)
     static let presenceInterval: Duration = .seconds(30)
-    /// The panel's orientation is read again this often while the broker is in use.
+    /// The panel's orientation is read again this often in the background while the broker is in use.
     static let panelInterval: Duration = .seconds(2)
+    /// Touches and `ping`'s geometry use a display read that started at most this long ago, so a turn of the screen is seen.
+    static let panelMaxAge: Duration = .seconds(1)
     static let activeWindow: Duration = .seconds(60)
     static let touchscreenFallback: UInt64 = 257
     static let keyboardFallback: UInt64 = 512
@@ -41,9 +43,14 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private var hidFailedAt = ContinuousClock.now
     private var surfaces: (touchscreen: UInt64, keyboard: UInt64) = (touchscreenFallback, keyboardFallback)
     private var panel: IOSDevicePanel?
-    public private(set) var geometry: IOSDeviceGeometry?
+    private var geometry: IOSDeviceGeometry?
     private var panelReadAt = ContinuousClock.now
     private var panelRefresh: Task<Void, Never>?
+    private var panelRefreshID = 0
+    private var panelError: Error?
+    /// Bumped when the display changes, so a read that started before it is discarded.
+    private var panelGeneration = 0
+    private var refreshGeneration = 0
     private var lastUse = ContinuousClock.now
     /// What the input in flight holds down, released if it stops early or the broker closes.
     private var heldContact: (x: UInt16, y: UInt16)?
@@ -277,35 +284,68 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    /// The cached panel, read again in the background once it is older than `panelInterval`; the first read waits.
+    /// The panel from a read that started at most `panelMaxAge` before this touch, read now when the cached one is older;
+    /// when the read fails, the last panel serves.
     private func currentPanel() async throws -> IOSDevicePanel {
+        let asked = ContinuousClock.now
+        for _ in 0..<2 {
+            if let panel, panelReadAt >= asked - Self.panelMaxAge { return panel }
+            await refreshPanel().value
+        }
         if let panel {
-            if ContinuousClock.now - panelReadAt > Self.panelInterval { refreshPanelSoon() }
+            log(.info, "Mapping touches with the last display read: \(panelError.map { "\($0)" } ?? "no newer read")")
             return panel
         }
-        try await readPanel()
-        guard let panel else { throw IOSDeviceError.devicectlFailed("device info displays", udid: udid, detail: "it reported no display size") }
-        return panel
+        throw panelError ?? IOSDeviceError.devicectlFailed("device info displays", udid: udid, detail: "it reported no display size")
     }
 
-    private func refreshPanelSoon() {
-        guard panelRefresh == nil else { return }
-        panelRefresh = Task {
-            try? await self.readPanel()
-            self.panelRefresh = nil
+    /// The main display when it was read within `panelMaxAge`; otherwise nil, and a read starts for the next caller.
+    public func freshGeometry() -> IOSDeviceGeometry? {
+        if let geometry, ContinuousClock.now - panelReadAt <= Self.panelMaxAge { return geometry }
+        refreshPanel()
+        return nil
+    }
+
+    /// The screen turned: the next touch reads the display again, and a read already under way is discarded.
+    public func displayChanged() {
+        panelGeneration += 1
+        panel = nil
+        geometry = nil
+    }
+
+    /// The read under way, unless it started before the display last changed; otherwise a new one.
+    @discardableResult
+    private func refreshPanel() -> Task<Void, Never> {
+        if let panelRefresh, refreshGeneration == panelGeneration { return panelRefresh }
+        panelRefreshID += 1
+        let id = panelRefreshID
+        refreshGeneration = panelGeneration
+        let task = Task {
+            do {
+                try await self.readPanel()
+                self.panelError = nil
+            } catch {
+                self.panelError = error
+            }
+            if self.panelRefreshID == id { self.panelRefresh = nil }
         }
+        panelRefresh = task
+        return task
     }
 
     private func readPanel() async throws {
+        let generation = panelGeneration
+        let started = ContinuousClock.now
         let output = try await IOSDeviceDirectory(host: host).run(
             IOSDeviceSettings.readDisplays(udid: udid), label: "device info displays", udid: udid, timeout: IOSDeviceDirectory.infoTimeout
         )
         guard let read = IOSDevicePanel.parse(displaysJSON: Data(output.utf8)) else {
             throw IOSDeviceError.devicectlFailed("device info displays", udid: udid, detail: "it reported no display size")
         }
+        guard generation == panelGeneration else { return }
         panel = read
         geometry = try? IOSDeviceGeometry.parse(Data(output.utf8))
-        panelReadAt = .now
+        panelReadAt = started
     }
 
     /// The button socket, kept open; a fresh one waits out the activation floor so its first press is not dropped.
@@ -373,7 +413,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     /// without it. Only a device that is no longer listed or reachable ends the broker.
     public func checkHealth() async -> Bool {
         let now = ContinuousClock.now
-        if now - lastUse < Self.activeWindow, panel == nil || now - panelReadAt > Self.panelInterval { refreshPanelSoon() }
+        if now - lastUse < Self.activeWindow, panel == nil || now - panelReadAt > Self.panelInterval { refreshPanel() }
         if let stream {
             let frames = stream.framesReceived
             if frames != lastFrames {

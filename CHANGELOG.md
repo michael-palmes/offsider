@@ -51,6 +51,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A physical device's session broker keeps serving input while its screen stream recovers: input never waits behind a stream re-open, input whose command has disconnected or given up is dropped unsent (so a retried tap no longer lands twice), and a stream that keeps failing (an app using the camera, a locked device) is retried with back-off while screenshots use `devicectl`, instead of ending the broker.
 - One failed UniversalHID open no longer sends a device's touches to the runner and refuses its keys for the broker's whole life: the next input at least 2 s later retries it.
 - The device screen stream takes video only from the device's own tunnel address.
+- On a physical iPad with Display Zoom set to More Space, taps, swipes and `describe-ui` screen sizes use the UI's real point size, so input lands where `describe-ui` frames say.
+- `describe-ui` reports a landscape-native iPad's screen as landscape.
+- On a physical device, touches after the screen turns land where the turned screen's frames say: the device session reads the display again before a touch when its last read started over a second earlier, and `orientation` makes it read again at once.
+- Element taps on an iPad app in Split View are no longer refused as if it were in a Stage Manager window.
 
 ## [0.6.0] - 2026-10-05
 

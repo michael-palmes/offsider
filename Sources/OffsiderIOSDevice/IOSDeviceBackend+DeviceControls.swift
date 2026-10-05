@@ -45,7 +45,7 @@ extension IOSDeviceBackend: DeviceSettingsControlling {
 }
 
 extension IOSDeviceBackend: OrientationControlling {
-    /// Reads the displays again each time, so a poll sees the turn.
+    /// Reads the displays again each time, so a poll sees the turn; a broker this command already reached reads them again too.
     public func orientation(of id: DeviceID) async throws -> DeviceOrientation? {
         let output = try await directory.run(
             IOSDeviceSettings.readDisplays(udid: id.rawValue),
@@ -53,10 +53,12 @@ extension IOSDeviceBackend: OrientationControlling {
             udid: id.rawValue,
             timeout: IOSDeviceDirectory.infoTimeout
         )
+        if let session = state.sessions[id.rawValue] { try? await session.displayChanged() }
         let data = Data(output.utf8)
         return IOSDeviceSettings.parseOrientation(displaysJSON: data)
     }
 
+    /// Forgets the display this command and the device's broker hold, so later input maps onto the turned screen.
     public func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws {
         _ = try await directory.run(
             IOSDeviceSettings.setOrientation(orientation, udid: id.rawValue),
@@ -64,5 +66,7 @@ extension IOSDeviceBackend: OrientationControlling {
             udid: id.rawValue,
             timeout: IOSDeviceDirectory.infoTimeout
         )
+        state.geometries[id.rawValue] = nil
+        try? await liveSession(for: id)?.displayChanged()
     }
 }
