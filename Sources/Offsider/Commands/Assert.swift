@@ -24,6 +24,9 @@ struct Assert: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func validate() throws {
         guard selector.query != nil else {
             throw ValidationError("Provide --id, --label or --value to choose the element to check.")
@@ -50,6 +53,7 @@ struct Assert: AsyncParsableCommand {
         guard let query = selector.query else {
             throw CLIError(errorDescription: "Unexpected state: no element query.", reason: .internalError)
         }
+        appOption.apply(to: route)
         try await route.backend.prepare()
         onPrepared()
         return try await WaitLoop.run(

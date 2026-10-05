@@ -4,6 +4,8 @@ import OffsiderCore
 public enum IOSDeviceLogLevel: Sendable {
     case debug
     case info
+    /// A plain line on stderr, such as the first runner build.
+    case notice
     case warning
 }
 
@@ -24,6 +26,7 @@ public final class IOSDeviceBackend: DeviceBackend {
         self.host = host
         self.log = log
         directory = IOSDeviceDirectory(host: host)
+        installRunnerHooks()
     }
 
     public var platform: DevicePlatform { .ios }
@@ -72,7 +75,7 @@ public final class IOSDeviceBackend: DeviceBackend {
     }
 
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
-        throw IOSDeviceError.notYetSupported(id.rawValue, feature: "Reading the accessibility tree")
+        try await runnerTree(for: id, point: point)
     }
 
     /// The status bar and Dynamic Island, which change on their own.

@@ -5,6 +5,9 @@ import OffsiderCore
 @MainActor
 final class IOSDeviceState {
     var geometries: [String: IOSDeviceGeometry] = [:]
+    var targetApp: String?
+    var runners: [String: RunnerClient] = [:]
+    var connector: (any RunnerConnecting)?
 }
 
 extension IOSDeviceBackend {

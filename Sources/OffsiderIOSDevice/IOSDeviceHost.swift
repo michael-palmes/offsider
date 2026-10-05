@@ -78,6 +78,10 @@ public struct IOSDeviceHost: Sendable {
     /// Offsider's private directory; `ios-devices/<udid>/` under it holds captures, geometry and the runner session.
     public var privateRoot: String
     public var timing: IOSDeviceTiming
+    /// The bundled runner project; nil leaves tree reads and runner input unavailable.
+    public var runnerSource: URL?
+    /// Replaces the session manager, so tests never build or start a runner.
+    public var runnerConnector: (any RunnerConnecting)?
 
     public init(
         environment: [String: String],

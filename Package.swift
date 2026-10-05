@@ -84,7 +84,8 @@ let package = Package(
             path: "Sources/Offsider",
             resources: [
                 .copy("Resources/skills"),
-                .copy("Resources/helper")
+                .copy("Resources/helper"),
+                .copy("Resources/runner")
             ],
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"] + idbPrivateHeaderSearchFlags)

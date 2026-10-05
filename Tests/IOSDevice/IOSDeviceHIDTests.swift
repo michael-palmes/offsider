@@ -309,11 +309,12 @@ struct IOSDeviceInputTests {
         return backend
     }
 
-    @Test("below CoreDevice 636 input refuses with xcode_too_old before reading the panel or opening a socket")
+    @Test("below CoreDevice 636 with no runner, input refuses with xcode_too_old before reading the panel or opening a socket")
     func belowFloor() async throws {
         let devicectl = try Self.devicectl()
         let sink = RecordingSink()
         let backend = Self.backend(devicectl, version: "518.24", sink: sink)
+        backend.input.fallbackInputSession = nil
         let error = await #expect(throws: IOSDeviceError.self) { try await backend.openInputSession(for: Self.phone) }
         #expect(error?.reason == .xcodeTooOld)
         #expect(error?.exitCode == .toolMissing)
@@ -369,6 +370,7 @@ struct IOSDeviceInputTests {
     func text() async throws {
         let sink = RecordingSink()
         let backend = Self.backend(try Self.devicectl(), version: "651.13.4", sink: sink)
+        backend.input.runnerText = nil
         let session = try #require(try await backend.openInputSession(for: Self.phone) as? any TextInputSession)
         try await session.typeText("hI")
         #expect(sink.sent == [

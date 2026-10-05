@@ -22,14 +22,22 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case notSupported
         case unsupportedButton
         case hidFailed
+        case runnerBuildFailed
+        case runnerFailed
+        case teamMissing
+        case noFocusedField
+        case secureFieldRefused
     }
 
     public let kind: Kind
     public let message: String
+    /// Overrides the hint read from the message, for one that names a file rather than a command.
+    public let explicitHint: String?
 
-    public init(_ kind: Kind, _ message: String) {
+    public init(_ kind: Kind, _ message: String, hint: String? = nil) {
         self.kind = kind
         self.message = message
+        self.explicitHint = hint
     }
 
     public var errorDescription: String? { message }
@@ -144,6 +152,11 @@ extension IOSDeviceError: OffsiderFailure {
         case .notSupported: return .notSupported
         case .unsupportedButton: return .unsupportedButton
         case .hidFailed: return .inputFailed
+        case .runnerBuildFailed: return .runnerBuildFailed
+        case .runnerFailed: return .treeReadFailed
+        case .teamMissing: return .teamMissing
+        case .noFocusedField: return .noFocusedField
+        case .secureFieldRefused: return .securePasteRefused
         }
     }
 
@@ -151,6 +164,7 @@ extension IOSDeviceError: OffsiderFailure {
 
     /// The message's first backticked Offsider or xcode-select command.
     public var hint: String? {
+        if let explicitHint { return explicitHint }
         let quoted = message.split(separator: "`", omittingEmptySubsequences: false).enumerated().filter { $0.offset % 2 == 1 }
         return quoted.map { String($0.element) }.first { $0.hasPrefix("offsider ") || $0.hasPrefix("xcode-select ") }
     }

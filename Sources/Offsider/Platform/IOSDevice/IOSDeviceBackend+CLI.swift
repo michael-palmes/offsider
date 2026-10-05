@@ -7,6 +7,7 @@ extension IOSDeviceBackend {
     static func make(logger: OffsiderLogger) -> IOSDeviceBackend {
         let sink = IOSDeviceLogSink(logger: logger)
         var host = IOSDeviceHost.live()
+        host.runnerSource = Bundle.module.url(forResource: "runner", withExtension: nil)
         if Timings.isEnabled {
             host.timing = .printing { line in FileHandle.standardError.write(Data((line + "\n").utf8)) }
         }
@@ -28,6 +29,8 @@ private final class IOSDeviceLogSink: @unchecked Sendable {
             logger.debug().log(message)
         case .info:
             logger.info().log(message)
+        case .notice:
+            FileHandle.standardError.write(Data("\(message)\n".utf8))
         case .warning:
             FileHandle.standardError.write(Data("Warning: \(message)\n".utf8))
         }

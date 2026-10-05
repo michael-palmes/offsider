@@ -54,6 +54,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             Assert.self,
             Batch.self,
             RN.self,
+            RunnerCommand.self,
             HIDBrokerCommand.self
         ]
     )
@@ -74,7 +75,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             parsed = command
             ErrorReporter.prepare(command: command, arguments: arguments)
             let name = type(of: command)._commandName
-            let path = command is RNPrepare ? "rn \(name)" : name
+            let path = command is RNPrepare ? "rn \(name)" : (command is RunnerStatus || command is RunnerStop) ? "runner \(name)" : name
             await CommandScope.current.configure(command: path)
             await DeviceClaims.current.configure(
                 command: path,
