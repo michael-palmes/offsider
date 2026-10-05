@@ -53,6 +53,7 @@ enum CommandEffect: String, Sendable {
         "run start": .none,
         "run stop": .none,
         "run status": .none,
+        "rn open": .input,
         "rn logbox status": .read,
         "rn logbox dismiss": .input,
         "hid-broker": .none,

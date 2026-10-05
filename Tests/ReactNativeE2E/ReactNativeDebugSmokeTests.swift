@@ -149,6 +149,33 @@ struct ReactNativeDebugSmokeTests {
         #expect(!(try await app.run("describe-ui --summary").stdout.contains("# logbox")))
     }
 
+    /// Stops the debug app and starts it with no link, so the dev client shows its launcher.
+    private static func plainLaunch(_ platform: RNPlatform) async throws {
+        switch platform {
+        case .ios:
+            let udid = try IOSRNPlayground.udid()
+            _ = try await CommandRunner.runSeparated("xcrun simctl launch --terminate-running-process \(udid) \(IOSRNPlayground.bundleID)", timeout: 60)
+        case .android:
+            try await AndroidE2E.shell("am force-stop \(AndroidE2E.package)")
+            try await AndroidE2E.shell("monkey -p \(AndroidE2E.package) -c android.intent.category.LAUNCHER 1")
+        }
+    }
+
+    @Test("rn open loads the bundle from Metro after a plain launch, and a port with no Metro is exit 9", arguments: RNPlatform.enabled)
+    func rnOpen(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await Self.plainLaunch(platform)
+        try await Task.sleep(for: .seconds(3))
+
+        let opened = try await app.run("rn open --port \(RNMetro.port) --bundle-id \(IOSRNPlayground.bundleID) --wait-id menu-title --json", timeout: 240)
+        #expect(opened.stdout.contains(#""metro":"running""#), "\(opened.stdout)")
+        #expect(opened.stdout.contains(#""launcherSeen":true"#), "\(opened.stdout)")
+        _ = try await app.waitForNode { $0["id"] as? String == "menu-title" }
+
+        let noMetro = try await app.offsider("rn open --port \(RNMetro.port + 1) --bundle-id \(IOSRNPlayground.bundleID) --timeout 10")
+        #expect(noMetro.exitCode == 9, "\(noMetro.stderr)")
+    }
+
     @Test("shake opens the dev menu, which closes with its Close button", arguments: RNPlatform.enabled.filter { $0 == .ios })
     func shakeOpensDevMenu(platform: RNPlatform) async throws {
         let app = RNApp(platform)

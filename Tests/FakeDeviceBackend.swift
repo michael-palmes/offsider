@@ -62,6 +62,10 @@ final class FakeDeviceBackend: DeviceBackend {
     /// What the HOME intent brings to the front; nil changes nothing.
     var foregroundAfterIntent: ForegroundActivities?
     private(set) var homeIntents = 0
+    /// `rn open`: the schemes the app registers, the Metro host, and every link sent.
+    var expoSchemes = ["exp+playground"]
+    var metroHostAnswer = "127.0.0.1"
+    private(set) var openedURLs: [String] = []
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -304,6 +308,12 @@ extension FakeDeviceBackend: AwakeControlling {
         awake = afterCode
         return UnlockAttempt(typed: codeTyped, reading: awake)
     }
+}
+
+extension FakeDeviceBackend: ExpoDevClientOpening {
+    func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String] { expoSchemes }
+    func metroHost(port: Int, on id: DeviceID) async throws -> String { metroHostAnswer }
+    func openURL(_ url: String, appID: String, on id: DeviceID) async throws { openedURLs.append(url) }
 }
 
 extension FakeDeviceBackend: ForegroundReading {

@@ -100,6 +100,7 @@ extension KeySequence: DeviceOptionCommand {}
 extension OrientationCommand: DeviceOptionCommand {}
 extension PostureCommand: DeviceOptionCommand {}
 extension RNPrepare: DeviceOptionCommand {}
+extension RNOpen: DeviceOptionCommand {}
 extension RNLogBoxStatus: DeviceOptionCommand {}
 extension RNLogBoxDismiss: DeviceOptionCommand {}
 extension Screenshot: DeviceOptionCommand {}

@@ -61,6 +61,8 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case focusNotConfirmed = "focus_not_confirmed"
     case focusMismatch = "focus_mismatch"
     case textNotAccepted = "text_not_accepted"
+    case metroNotRunning = "metro_not_running"
+    case rnLoadFailed = "rn_load_failed"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"
@@ -123,7 +125,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
         case .deviceBusy, .uiautomationBusy, .deviceLeased:
             return .deviceBusy
         case .xcodeMissing, .xcodeUnusable, .androidSdkMissing, .adbServerUnavailable, .adbServerMisconfigured,
-             .emulatorMissing, .emulatorGrpcRequired, .helperUnavailable, .xcodeTooOld, .teamMissing, .usbmuxUnavailable:
+             .emulatorMissing, .emulatorGrpcRequired, .helperUnavailable, .xcodeTooOld, .teamMissing, .usbmuxUnavailable, .metroNotRunning:
             return .toolMissing
         case .usage, .invalidDeviceID, .invalidSetting, .unsupportedButton, .unsupportedKey, .unknownDisplay, .legacyArgument:
             return .usage
