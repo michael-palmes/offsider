@@ -149,7 +149,7 @@ struct ReactNativeDebugSmokeTests {
         #expect(!(try await app.run("describe-ui --summary").stdout.contains("# logbox")))
     }
 
-    /// Stops the debug app and starts it with no link, so the dev client shows its launcher.
+    /// Stops the debug app and starts it with no link, so the dev client shows its launcher or reopens the last Metro.
     private static func plainLaunch(_ platform: RNPlatform) async throws {
         switch platform {
         case .ios:
@@ -169,6 +169,7 @@ struct ReactNativeDebugSmokeTests {
 
         let opened = try await app.run("rn open --port \(RNMetro.port) --bundle-id \(IOSRNPlayground.bundleID) --wait-id menu-title --json", timeout: 240)
         #expect(opened.stdout.contains(#""metro":"running""#), "\(opened.stdout)")
+        // A dev client may reopen the last Metro it loaded instead of showing its launcher, so only a send is required.
         let report = try #require(try JSONSerialization.jsonObject(with: Data(opened.stdout.utf8)) as? [String: Any])
         #expect((report["sends"] as? Int ?? 0) >= 1, "\(opened.stdout)")
         _ = try await app.waitForNode { $0["id"] as? String == "menu-title" }
