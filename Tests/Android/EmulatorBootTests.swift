@@ -199,8 +199,48 @@ struct EmulatorBootTests {
         }
     }
 
-    @Test("--emulator-arg passes ordinary flags and values", arguments: [
-        ["-gpu", "host"], ["-no-boot-anim"], ["-camera-back", "none"], ["-feature", "-Vulkan"], ["-no-snapshot-save"], ["-wipe-data"],
+    @Test("--emulator-arg refuses every flag off the allow-list, naming the allowed flags", arguments: [
+        ["-network-user-mode-options", "hostfwd=tcp::5555-:5555"], ["-wifi-user-mode-options", "hostfwd=tcp::5555-:5555"],
+        ["-skip-adb-auth"], ["-crash-report-mode", "always"], ["-netsim-args", "--host"], ["-dns-server", "8.8.8.8"],
+        ["-http-proxy", "127.0.0.1:8080"], ["-tcpdump", "/tmp/capture.pcap"], ["-logcat-output", "/tmp/logcat.txt"],
+        ["-unix-pipe", "/tmp/pipe"], ["-adb-path", "/tmp/adb"],
+    ])
+    func refusesUnlisted(tokens: [String]) throws {
+        let message = try #require(EmulatorArguments.refusal(in: ["-no-boot-anim"] + tokens))
+        #expect(message.hasPrefix("--emulator-arg \(tokens[0]) is refused: boot passes only -accel <auto|off|on>, "), "\(message)")
+        #expect(message.contains("-gpu <auto|host|software|lavapipe|swiftshader|swangle>"), "\(message)")
+        #expect(message.hasSuffix(" and -wipe-data, each value in its own --emulator-arg."), "\(message)")
+    }
+
+    @Test("an @ token, a bare value, -- and a flag=value token are refused", arguments: [
+        (["@Work_AVD"], "@Work_AVD"), (["-gpu", "host", "@Work_AVD"], "@Work_AVD"), (["host"], "host"), (["--"], "--"),
+        (["-gpu=host"], "-gpu=host"), (["-no-boot-anim", "1"], "1"),
+    ])
+    func refusesStrayTokens(tokens: [String], refused: String) {
+        #expect(EmulatorArguments.refusal(in: tokens)?.hasPrefix("--emulator-arg \(refused) is refused: ") == true)
+    }
+
+    @Test("an allowed flag's value outside what it takes, or a missing value, is refused naming what it takes", arguments: [
+        (["-gpu", "bogus"], "--emulator-arg -gpu bogus is refused: -gpu takes auto|host|software|lavapipe|swiftshader|swangle."),
+        (["-cores", "1000"], "--emulator-arg -cores 1000 is refused: -cores takes 1 to 16."),
+        (["-cores", "two"], "--emulator-arg -cores two is refused: -cores takes 1 to 16."),
+        (["-camera-back", "imagefile:/etc/hosts"], "--emulator-arg -camera-back imagefile:/etc/hosts is refused: -camera-back takes emulated|none|webcamN."),
+        (["-skin", "../../skins/x"], "--emulator-arg -skin ../../skins/x is refused: -skin takes WIDTHxHEIGHT|name."),
+        (["-partition-size", "99999999"], "--emulator-arg -partition-size 99999999 is refused: -partition-size takes 512 to 65536."),
+        (["-gpu"], "--emulator-arg -gpu is refused: it needs a value (auto|host|software|lavapipe|swiftshader|swangle) in the next --emulator-arg."),
+        (["-accel", "-no-audio"], "--emulator-arg -accel -no-audio is refused: -accel takes auto|off|on."),
+        (["-feature", "NetsimWebUi"], "--emulator-arg -feature NetsimWebUi is refused: -feature takes Vulkan|-Vulkan|GLESDynamicVersion|-GLESDynamicVersion."),
+    ])
+    func refusesBadValues(tokens: [String], message: String) {
+        #expect(EmulatorArguments.refusal(in: tokens) == message)
+    }
+
+    @Test("--emulator-arg passes the allowed flags and values", arguments: [
+        ["-gpu", "host"], ["-gpu", "swiftshader"], ["-no-boot-anim"], ["-camera-back", "none"], ["-camera-front", "webcam0"],
+        ["-camera-back", "emulated"], ["-feature", "-Vulkan"], ["-feature", "GLESDynamicVersion"], ["-no-snapshot-save"], ["-wipe-data"],
+        ["-cores", "4"], ["-accel", "auto"], ["-no-audio"], ["-read-only"], ["-verbose"], ["-no-cache"], ["-noskin"], ["-no-snapshot"],
+        ["-skin", "1080x2400"], ["-skin", "pixel_9"], ["-partition-size", "8192"],
+        ["-gpu", "host", "-no-boot-anim", "-cores", "2", "-camera-back", "none"],
     ])
     func allowedFlags(tokens: [String]) {
         #expect(EmulatorArguments.refusal(in: tokens) == nil)
@@ -210,6 +250,8 @@ struct EmulatorBootTests {
     func ownedFlagsPointToOptions() {
         #expect(EmulatorArguments.refusal(in: ["-memory", "4096"]) == "--emulator-arg -memory is refused: use --memory.")
         #expect(EmulatorArguments.refusal(in: ["-no-window"]) == "--emulator-arg -no-window is refused: use --headless.")
+        #expect(EmulatorArguments.refusal(in: ["--avd=Work_AVD"]) == "--emulator-arg --avd=Work_AVD is refused: boot takes the AVD name as its argument.")
+        #expect(EmulatorArguments.refusal(in: ["-no-metrics"]) == "--emulator-arg -no-metrics is refused: Offsider always passes it.")
     }
 
     @Test("a booted AVD without a discovery file says commands will use adb")
@@ -437,6 +479,8 @@ struct BootCommandTests {
         ("boot Pixel_9 --timeout 5", "--timeout must be between 10 and 1800 seconds."),
         ("boot Pixel_9 --emulator-arg -grpc", "--emulator-arg -grpc is refused: "),
         ("boot Pixel_9 --emulator-arg --port=5560", "--emulator-arg --port=5560 is refused: "),
+        ("boot Pixel_9 --emulator-arg @Work_AVD", "--emulator-arg @Work_AVD is refused: "),
+        ("boot Pixel_9 --emulator-arg -network-user-mode-options --emulator-arg hostfwd=tcp::5555-:5555", "--emulator-arg -network-user-mode-options is refused: "),
         ("boot Pixel_9 --memory 512", "--memory must be from 1024 to 16384 MB; got 512."),
     ])
     func validation(command: String, message: String) async throws {
