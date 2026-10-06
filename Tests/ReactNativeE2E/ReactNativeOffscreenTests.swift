@@ -199,9 +199,11 @@ struct ReactNativeOffscreenTests {
         try await app.open("stack-test")
 
         let pushed = try await app.run("tap --id stack-test-next --verify-id stack-test-page-2 --json")
-        let report = try #require(try JSONSerialization.jsonObject(with: Data(pushed.stdout.utf8)) as? [String: Any])
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(pushed.stdout.utf8)) as? [String: Any], "\(pushed.stdout)")
+        #expect(report["verified"] as? Bool == true, "\(pushed.stdout)")
         #expect(report["change"] as? String == "element", "\(pushed.stdout)")
 
+        // Page 1 stays 30% on screen beneath page 2, so its Previous Page button also matches.
         let present = try await app.offsider("tap --id stack-test-back --topmost --verify-id stack-test-page-2")
         #expect(present.exitCode == 1, "\(present.stderr)")
         #expect(present.stderr.contains("already on screen"), "\(present.stderr)")
