@@ -401,30 +401,28 @@ struct AccessibilityTargetResolver {
         )
     }
 
-    /// Plausible occluders whose frame holds `point`; tree order is not z-order on iOS, so a real hit-test must confirm one.
-    /// Android draws in tree order, so a node listed before the target (a screen kept mounted beneath it) or not visible to the user cannot cover it.
+    /// Plausible occluders whose frame holds `point`; tree order is not z-order on either platform, so a real hit-test must confirm one.
+    /// On Android a node in a lower window (the app beneath a keyboard) or not visible to the user cannot cover the target;
+    /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top.
     static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, roots: [UINode]) -> [UINode] {
         let related = family(of: target, in: roots) + family(of: matched, in: roots)
-        let drawOrder = target.isAndroid
-        var seenTarget = false
+        let android = target.isAndroid
+        let targetRoot = roots.firstIndex { root in root.flattened().contains { $0.isSameElement(as: target) || $0.isSameElement(as: matched) } } ?? 0
         var found: [UINode] = []
-        func visit(_ node: UINode, underKeyboard: Bool) {
+        func visit(_ node: UINode, root: Int, underKeyboard: Bool) {
             let underKeyboard = underKeyboard || node.role == .keyboard
-            if node.isSameElement(as: target) || node.isSameElement(as: matched) {
-                seenTarget = true
-            }
-            let beneath = drawOrder && (!seenTarget || node.androidVisibleToUser == false)
+            let beneath = android && (root < targetRoot || node.androidVisibleToUser == false)
             if !beneath, let frame = coverArea(of: node, in: viewport), frame.contains(point), frame.isVisible(in: viewport),
                isPlausibleOccluder(node, underKeyboard: underKeyboard),
                !related.contains(where: { $0.isSameElement(as: node) }) {
                 found.append(node)
             }
             for child in node.children {
-                visit(child, underKeyboard: underKeyboard)
+                visit(child, root: root, underKeyboard: underKeyboard)
             }
         }
-        for root in roots {
-            visit(root, underKeyboard: false)
+        for (index, root) in roots.enumerated() {
+            visit(root, root: index, underKeyboard: false)
         }
         return found
     }

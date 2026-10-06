@@ -12,7 +12,7 @@
 
 - Closed bottom sheets and the previous screens of a JavaScript stack often stay mounted. On iOS they stay in `describe-ui` with frames outside the screen; on Android nodes the user cannot see are left out.
 - Selectors, `wait` and `assert` count only on-screen matches, so open the sheet, then `wait --id <id>` before tapping inside it; add `wait --settled` when it slides in. A partly visible element is tapped at the centre of its visible part.
-- A previous screen still partly on screen under the current one keeps its ids: when `--id` reports multiple matches, add `--topmost` to tap the page on top (or `--nth <n>` from the candidates' `index`). On Android an earlier page in the tree is drawn beneath the later one, so it never counts as covering it.
+- A previous screen still partly on screen under the current one keeps its ids: when `--id` reports multiple matches, add `--topmost` to tap the page on top (or `--nth <n>` from the candidates' `index`). On Android a page reported as not visible to the user never counts as covering it.
 - On Android a `Modal` is its own window, so only the modal is in the tree while it is open; `describe-ui --summary` then starts with `# window: <title> (modal)`, or the package when the modal has no title.
 - Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` (apps often wrap charts and web views this way) is missing from the tree, buttons included, but still takes taps. Tap by coordinates and say so, or ask for the wrapper to expose its controls.
 - Charts, maps, canvases and web views change pixels, not the tree: check them with `wait --region <x,y,w,h> --changed` or `screenshot --region <x,y,w,h> --compare before.png`, and with the app's logs.

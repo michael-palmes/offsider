@@ -753,7 +753,7 @@ struct AccessibilityTargetResolverTests {
         let roots = Self.sheetOverScrim()
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("apply"))
 
-        #expect(resolution.coverCandidates.isEmpty)
+        #expect(resolution.coverCandidates.map(\.label) == ["Dismiss"])
         #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots) == nil)
     }
 
@@ -894,14 +894,28 @@ struct StackedScreenTests {
         return FakeUI.tree(platform: platform, [page(1, x: -30, visible: !hidePageOne), page(2, x: 0)]).roots
     }
 
-    @Test("on Android a page listed earlier is drawn beneath, so it never covers the page above it")
-    func earlierSiblingIsNotCover() throws {
+    @Test("on Android a sibling listed earlier may still be drawn on top, since Android sorts siblings by position")
+    func earlierSiblingStaysCandidate() throws {
         let roots = Self.stack(platform: .android)
         let top = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"), pick: .last)
-        #expect(top.coverCandidates.isEmpty)
+        #expect(top.coverCandidates.map(\.id) == ["page-1", "stack-back"])
 
         let beneath = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"), pick: .nth(1))
         #expect(beneath.coverCandidates.map(\.id) == ["page-2", "stack-back"])
+    }
+
+    @Test("on Android an app node beneath a keyboard window never covers a key, while the keyboard still covers the app")
+    func lowerWindowIsNotCover() throws {
+        let key = FakeUI.node(.button, label: "q", frame: FakeUI.frame(0, 650, 41, 50), platform: .android)
+        let field = FakeUI.node(.button, label: "Pay", frame: FakeUI.frame(0, 640, 412, 70), platform: .android)
+        let app = FakeUI.node(.application, frame: FakeUI.frame(0, 0, 412, 915), platform: .android, children: [field])
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 600, 412, 315), platform: .android, children: [key])
+
+        let onKey = try AccessibilityTargetResolver.resolveTap(roots: [app, keyboard], query: .label("q"))
+        #expect(onKey.coverCandidates.isEmpty)
+
+        let onApp = try AccessibilityTargetResolver.resolveTap(roots: [app, keyboard], query: .label("Pay"))
+        #expect(onApp.coverCandidates.map(\.role) == [.keyboard])
     }
 
     @Test("on Android a node not visible to the user is never a cover")

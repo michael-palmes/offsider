@@ -101,7 +101,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `orientation` on Android no longer leaves auto-rotate off for good: the first turn away from portrait records auto-rotate and `user_rotation` for that boot, and `orientation portrait` restores auto-rotate. `orientation --json` adds `autoRotate {before, now, restored}` and `userRotation {before, now}`, null on iOS and when reading.
 - `button home` on Android no longer reports success while an app stays in front: it checks the launcher came to the front within 2 s (or `--verify-timeout`) and, when the image ignored the key, sends the HOME intent once. Without `--verify` a launcher that never came up is a warning; with `--verify`, `change` is the new value `activity` (and `note` the new value `home_intent` when the intent was needed), and the command exits 5 when the app stayed in front. It refuses `--verify-id` and `--verify-ignore-text`, and `--retries` does not apply.
 - A LogBox toast is now recognised by its place at the bottom of the screen as well as its `!, ` or `n, ` label, so a full-width button labelled like `10, AUD` is no longer treated as one in cover warnings.
-- On Android a node listed before the tap target (an earlier page of a stack kept mounted beneath it) or not visible to the user no longer counts as covering it, so `tap --fail-if-covered` stops failing on the top page of a stack.
+- On Android a node Android reports as not visible to the user (an earlier page of a stack hidden beneath the current one), or one in a window beneath the target's (the app under a keyboard), no longer counts as covering the tap target.
 
 ## [0.6.0] - 2026-10-05
 
