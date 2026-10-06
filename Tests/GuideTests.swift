@@ -124,7 +124,7 @@ struct GuideTests {
         }
     }
 
-    @Test("every command is in the skill's Commands paragraph and the README's Commands table, by itself or its parent")
+    @Test("every command is in the skill's Commands paragraph and the README's Commands table, by itself or a parent")
     func everyCommandIsDocumented() throws {
         let skillLines = try Self.read("SKILL.md").components(separatedBy: "\n")
         let paragraph = skillLines.drop { $0 != "## Commands" }.dropFirst().first { !$0.isEmpty } ?? ""
@@ -139,9 +139,10 @@ struct GuideTests {
         let paths = Self.displayedCommandPaths()
         #expect(paths.contains("run start"))
         for path in paths {
-            let parent = String(path.split(separator: " ")[0])
-            #expect(skillNames.contains(path) || skillNames.contains(parent), "SKILL.md ## Commands does not name \(path)")
-            #expect(readmeNames.contains(path) || readmeNames.contains(parent), "README ## Commands does not list \(path)")
+            let words = path.split(separator: " ")
+            let names = Set(words.indices.map { words[...$0].joined(separator: " ") })
+            #expect(!skillNames.isDisjoint(with: names), "SKILL.md ## Commands does not name \(path)")
+            #expect(!readmeNames.isDisjoint(with: names), "README ## Commands does not list \(path)")
         }
     }
 
