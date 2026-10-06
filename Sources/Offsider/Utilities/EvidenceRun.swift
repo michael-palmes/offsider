@@ -97,10 +97,12 @@ enum RunRegistry {
         let state: RunState
         /// True when the folder held a stopped run whose numbering continues.
         let continued: Bool
-        /// True when this caller's run already writes to the folder, so nothing changed.
+        /// True when this caller's run already writes to the folder, so only new masks were added.
         let unchanged: Bool
         /// True when the existing folder's group or others can write to it.
         var writableByOthers = false
+        /// True when `unchanged` and this start added masks the run did not have.
+        var addedMasks = false
     }
 
     static func start(_ path: String, label: String?, masks: RunMasks, in environment: EvidenceRunEnvironment) throws -> Started {
@@ -122,8 +124,7 @@ enum RunRegistry {
                         reason: .runActive, hint: "offsider run stop"
                     )
                 }
-                let state = try RunFolder(path: dir).readState() ?? RunState(label: existing.label, startedAt: existing.startedAt, masks: existing.masks)
-                return Started(folder: RunFolder(path: dir), state: state, continued: false, unchanged: true)
+                return try addMasks(masks, to: existing, in: environment)
             }
             guard let found = ProcessAncestry.owner(from: environment.parentPID, in: environment.processes) else {
                 throw unavailable("Could not find the session that runs this command, so a run cannot be tied to it. Set OFFSIDER_RUN=<dir> instead.")
@@ -139,9 +140,16 @@ enum RunRegistry {
         }
         let folder = prepared.folder
         let now = environment.now()
+        var addedMasks = false
         let (state, continued, unchanged) = try folder.locked { () throws -> (RunState, Bool, Bool) in
             if var state = try folder.readState() {
                 if state.stoppedAt == nil, owner == nil {
+                    let merged = state.masks.union(masks)
+                    if merged != state.masks {
+                        state.masks = merged
+                        try folder.writeState(state)
+                        addedMasks = true
+                    }
                     return (state, false, true)
                 }
                 state.stoppedAt = nil
@@ -159,7 +167,33 @@ enum RunRegistry {
             let record = RunRecord(dir: dir, label: state.label, startedAt: now, masks: masks, owner: owner)
             try OffsiderPrivateDirectory.writeAtomically(try record.encoded(), named: RunRecord.fileName(for: owner), in: try environment.runsDirectory())
         }
-        return Started(folder: folder, state: state, continued: continued, unchanged: unchanged, writableByOthers: prepared.writableByOthers)
+        return Started(folder: folder, state: state, continued: continued, unchanged: unchanged, writableByOthers: prepared.writableByOthers, addedMasks: addedMasks)
+    }
+
+    /// `run start` on the session's active folder adds new masks to its record and `run.json` under the folder lock, and never removes one.
+    static func addMasks(_ masks: RunMasks, to existing: RunRecord, in environment: EvidenceRunEnvironment) throws -> Started {
+        let folder = RunFolder(path: existing.dir)
+        guard existing.masks.union(masks) != existing.masks else {
+            var state = try folder.readState() ?? RunState(label: existing.label, startedAt: existing.startedAt, masks: existing.masks)
+            state.masks = existing.masks
+            return Started(folder: folder, state: state, continued: false, unchanged: true)
+        }
+        let state: RunState
+        do {
+            state = try folder.locked {
+                let current = try record(of: environment).flatMap { $0.dir == existing.dir ? $0 : nil } ?? existing
+                var state = try folder.readState() ?? RunState(label: current.label, startedAt: current.startedAt, masks: current.masks)
+                var updated = current
+                updated.masks = current.masks.union(state.masks).union(masks)
+                state.masks = updated.masks
+                try folder.writeState(state)
+                try OffsiderPrivateDirectory.writeAtomically(try updated.encoded(), named: RunRecord.fileName(for: updated.owner), in: try environment.runsDirectory())
+                return state
+            }
+        } catch {
+            throw unavailable("Could not add masks to the run in \(existing.dir): \(OffsiderCommand.message(for: error)).")
+        }
+        return Started(folder: folder, state: state, continued: false, unchanged: true, addedMasks: true)
     }
 
     /// Ends the caller's run and returns its timeline; nil when none is active.

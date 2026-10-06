@@ -39,6 +39,23 @@ public struct MaskPlan: Equatable, Sendable {
 
     public static let none = MaskPlan()
 
+    /// Every mask in this plan and in `other`, each selector once.
+    public func union(_ other: MaskPlan) -> MaskPlan {
+        func merged<T: Equatable>(_ mine: [T], _ theirs: [T]) -> [T] {
+            theirs.reduce(into: mine) { result, value in
+                if !result.contains(value) { result.append(value) }
+            }
+        }
+        return MaskPlan(
+            secure: secure || other.secure,
+            ids: merged(ids, other.ids),
+            labels: merged(labels, other.labels),
+            texts: merged(texts, other.texts),
+            emails: emails || other.emails,
+            regions: merged(regions, other.regions)
+        )
+    }
+
     public var isEmpty: Bool { kinds.isEmpty }
 
     /// Only regions can be painted without reading the accessibility tree.

@@ -66,7 +66,7 @@ final class EvidenceRecorder {
         return cachedRun
     }
 
-    /// The run's default masks, applied to a capture that asks for none of its own.
+    /// The run's masks, added to every capture's own.
     var defaultMasks: MaskPlan? {
         guard let masks = (try? run())??.masks, !masks.isEmpty else { return nil }
         return masks.plan
