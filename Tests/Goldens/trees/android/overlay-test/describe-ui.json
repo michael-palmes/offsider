@@ -280,7 +280,7 @@
               "label": "Start Clock",
               "value": null,
               "frame": {
-                "x": 147.05,
+                "x": 110.48,
                 "y": 220.57,
                 "width": 117.71,
                 "height": 44.19
@@ -296,7 +296,7 @@
                 "resourceId": "overlay-test-start-clock",
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
-                  "x": 386,
+                  "x": 290,
                   "y": 579,
                   "width": 309,
                   "height": 116
@@ -316,8 +316,8 @@
               "label": "Clock: 0",
               "value": null,
               "frame": {
-                "x": 175.24,
-                "y": 276.57,
+                "x": 240.38,
+                "y": 230.86,
                 "width": 60.95,
                 "height": 23.24
               },
@@ -332,8 +332,8 @@
                 "resourceId": "overlay-test-clock",
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
-                  "x": 460,
-                  "y": 726,
+                  "x": 631,
+                  "y": 606,
                   "width": 160,
                   "height": 61
                 },
@@ -353,7 +353,7 @@
               "value": null,
               "frame": {
                 "x": 149.33,
-                "y": 311.62,
+                "y": 276.57,
                 "width": 113.14,
                 "height": 23.24
               },
@@ -369,7 +369,7 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 392,
-                  "y": 818,
+                  "y": 726,
                   "width": 297,
                   "height": 61
                 },
@@ -389,9 +389,9 @@
               "value": null,
               "frame": {
                 "x": 139.05,
-                "y": 347.05,
+                "y": 311.62,
                 "width": 133.33,
-                "height": 44.19
+                "height": 43.81
               },
               "enabled": true,
               "state": {
@@ -405,9 +405,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 365,
-                  "y": 911,
+                  "y": 818,
                   "width": 350,
-                  "height": 116
+                  "height": 115
                 },
                 "text": null,
                 "contentDescription": "Show Banner",
@@ -425,9 +425,9 @@
               "value": null,
               "frame": {
                 "x": 120,
-                "y": 403.05,
+                "y": 367.62,
                 "width": 171.81,
-                "height": 44.19
+                "height": 43.81
               },
               "enabled": true,
               "state": {
@@ -441,9 +441,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 315,
-                  "y": 1058,
+                  "y": 965,
                   "width": 451,
-                  "height": 116
+                  "height": 115
                 },
                 "text": null,
                 "contentDescription": "Show Silent Scrim",
@@ -461,9 +461,9 @@
               "value": null,
               "frame": {
                 "x": 163.81,
-                "y": 459.05,
+                "y": 423.62,
                 "width": 83.81,
-                "height": 44.19
+                "height": 43.81
               },
               "enabled": true,
               "state": {
@@ -477,9 +477,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 430,
-                  "y": 1205,
+                  "y": 1112,
                   "width": 220,
-                  "height": 116
+                  "height": 115
                 },
                 "text": null,
                 "contentDescription": "Flicker",
@@ -497,7 +497,7 @@
               "value": null,
               "frame": {
                 "x": 146.29,
-                "y": 515.05,
+                "y": 479.62,
                 "width": 118.86,
                 "height": 23.24
               },
@@ -513,7 +513,7 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 384,
-                  "y": 1352,
+                  "y": 1259,
                   "width": 312,
                   "height": 61
                 },
@@ -533,7 +533,7 @@
               "value": null,
               "frame": {
                 "x": 85.71,
-                "y": 550.86,
+                "y": 515.81,
                 "width": 240,
                 "height": 56
               },
@@ -549,7 +549,7 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 225,
-                  "y": 1446,
+                  "y": 1354,
                   "width": 630,
                   "height": 147
                 },
@@ -569,9 +569,9 @@
               "value": null,
               "frame": {
                 "x": 83.81,
-                "y": 619.05,
+                "y": 583.62,
                 "width": 128.76,
-                "height": 44.19
+                "height": 43.81
               },
               "enabled": true,
               "state": {
@@ -585,9 +585,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 220,
-                  "y": 1625,
+                  "y": 1532,
                   "width": 338,
-                  "height": 116
+                  "height": 115
                 },
                 "text": null,
                 "contentDescription": "Log Warning",
@@ -605,9 +605,9 @@
               "value": null,
               "frame": {
                 "x": 224.76,
-                "y": 619.05,
+                "y": 583.62,
                 "width": 102.86,
-                "height": 44.19
+                "height": 43.81
               },
               "enabled": true,
               "state": {
@@ -621,9 +621,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 590,
-                  "y": 1625,
+                  "y": 1532,
                   "width": 270,
-                  "height": 116
+                  "height": 115
                 },
                 "text": null,
                 "contentDescription": "Log Error",
@@ -641,9 +641,9 @@
               "value": null,
               "frame": {
                 "x": 68.57,
-                "y": 675.05,
+                "y": 639.62,
                 "width": 148.19,
-                "height": 44.19
+                "height": 43.81
               },
               "enabled": true,
               "state": {
@@ -657,9 +657,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 180,
-                  "y": 1772,
+                  "y": 1679,
                   "width": 389,
-                  "height": 116
+                  "height": 115
                 },
                 "text": null,
                 "contentDescription": "Log Two Errors",
@@ -677,9 +677,9 @@
               "value": null,
               "frame": {
                 "x": 228.95,
-                "y": 675.05,
+                "y": 639.62,
                 "width": 114.29,
-                "height": 44.19
+                "height": 43.81
               },
               "enabled": true,
               "state": {
@@ -693,9 +693,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 601,
-                  "y": 1772,
+                  "y": 1679,
                   "width": 300,
-                  "height": 116
+                  "height": 115
                 },
                 "text": null,
                 "contentDescription": "Clear Logs",

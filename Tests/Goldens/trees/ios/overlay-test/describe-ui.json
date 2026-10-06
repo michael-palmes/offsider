@@ -851,7 +851,7 @@
                                                       "label": "Log Warning",
                                                       "value": null,
                                                       "frame": {
-                                                        "x": 53.66666793823242,
+                                                        "x": 76.66666412353516,
                                                         "y": 579.6666793823242,
                                                         "width": 131.66665649414062,
                                                         "height": 44
@@ -872,69 +872,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{53.666667938232422, 579.66667938232422}, {131.66665649414062, 44}}"
-                                                      },
-                                                      "children": []
-                                                    },
-                                                    {
-                                                      "role": "button",
-                                                      "id": "overlay-test-log-two-errors",
-                                                      "label": "Log Two Errors",
-                                                      "value": null,
-                                                      "frame": {
-                                                        "x": 197.3333396911621,
-                                                        "y": 579.6666793823242,
-                                                        "width": 151.00001525878906,
-                                                        "height": 44
-                                                      },
-                                                      "enabled": true,
-                                                      "state": {
-                                                        "checked": null,
-                                                        "selected": null,
-                                                        "focused": null
-                                                      },
-                                                      "native": {
-                                                        "type": "Button",
-                                                        "role": "AXButton",
-                                                        "subrole": null,
-                                                        "roleDescription": "button",
-                                                        "title": null,
-                                                        "help": null,
-                                                        "customActions": [],
-                                                        "contentRequired": false,
-                                                        "pid": 1000,
-                                                        "axFrame": "{{197.33333969116211, 579.66667938232422}, {151.00001525878906, 44}}"
-                                                      },
-                                                      "children": []
-                                                    },
-                                                    {
-                                                      "role": "button",
-                                                      "id": "overlay-test-clear-logs",
-                                                      "label": "Clear Logs",
-                                                      "value": null,
-                                                      "frame": {
-                                                        "x": 84.33333587646484,
-                                                        "y": 635.6666488647461,
-                                                        "width": 116.33333587646484,
-                                                        "height": 44
-                                                      },
-                                                      "enabled": true,
-                                                      "state": {
-                                                        "checked": null,
-                                                        "selected": null,
-                                                        "focused": null
-                                                      },
-                                                      "native": {
-                                                        "type": "Button",
-                                                        "role": "AXButton",
-                                                        "subrole": null,
-                                                        "roleDescription": "button",
-                                                        "title": null,
-                                                        "help": null,
-                                                        "customActions": [],
-                                                        "contentRequired": false,
-                                                        "pid": 1000,
-                                                        "axFrame": "{{84.333335876464844, 635.66664886474609}, {116.33333587646484, 44}}"
+                                                        "axFrame": "{{76.666664123535156, 579.66667938232422}, {131.66665649414062, 44}}"
                                                       },
                                                       "children": []
                                                     },
@@ -944,8 +882,8 @@
                                                       "label": "Log Error",
                                                       "value": null,
                                                       "frame": {
-                                                        "x": 212.66666412353516,
-                                                        "y": 635.6666488647461,
+                                                        "x": 220.33333587646484,
+                                                        "y": 579.6666793823242,
                                                         "width": 105.33332824707031,
                                                         "height": 44
                                                       },
@@ -965,7 +903,69 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{212.66666412353516, 635.66664886474609}, {105.33332824707031, 44}}"
+                                                        "axFrame": "{{220.33333587646484, 579.66667938232422}, {105.33332824707031, 44}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "button",
+                                                      "id": "overlay-test-log-two-errors",
+                                                      "label": "Log Two Errors",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 61.33333206176758,
+                                                        "y": 635.6666488647461,
+                                                        "width": 151,
+                                                        "height": 44
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Button",
+                                                        "role": "AXButton",
+                                                        "subrole": null,
+                                                        "roleDescription": "button",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{61.333332061767578, 635.66664886474609}, {151, 44}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "button",
+                                                      "id": "overlay-test-clear-logs",
+                                                      "label": "Clear Logs",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 224.33333206176758,
+                                                        "y": 635.6666488647461,
+                                                        "width": 116.33332824707031,
+                                                        "height": 44
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Button",
+                                                        "role": "AXButton",
+                                                        "subrole": null,
+                                                        "roleDescription": "button",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{224.33333206176758, 635.66664886474609}, {116.33332824707031, 44}}"
                                                       },
                                                       "children": []
                                                     }
