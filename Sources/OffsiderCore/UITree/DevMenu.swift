@@ -95,12 +95,13 @@ public enum DevMenu {
         node.label?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Which developer tools show: the element inspector's panel (its Inspect and Touchables tabs) and the performance monitor (`UI` and `JS` frame rates).
+    /// Which developer tools show: the element inspector's panel (its Inspect and Touchables tabs) and the performance monitor (`UI` and `JS` frame rates, which iOS draws as a `RAM` cell beside `UI` and `JS` columns).
     public static func tools(in tree: UITree) -> (inspector: Bool, perfMonitor: Bool) {
         let texts = tree.roots.flatMap { $0.flattened() }.flatMap { [$0.label, $0.value] }.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
         let inspector = texts.contains("Inspect") && texts.contains("Touchables")
-        let perf = texts.contains { $0.range(of: #"^(UI|JS)[: ]+[0-9.]+ ?fps"#, options: [.regularExpression, .caseInsensitive]) != nil }
-        return (inspector, perf)
+        let fps = texts.contains { $0.range(of: #"^(UI|JS)[: ]+[0-9.]+ ?fps"#, options: [.regularExpression, .caseInsensitive]) != nil }
+        let columns = texts.contains("UI") && texts.contains("JS") && texts.contains { $0.range(of: #"^RAM [0-9.]+ ?MB$"#, options: .regularExpression) != nil }
+        return (inspector, fps || columns)
     }
 
     public static func jsonLine(_ state: State) -> String {

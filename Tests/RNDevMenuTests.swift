@@ -70,6 +70,23 @@ struct RNDevMenuTests {
         #expect(DevMenu.jsonLine(state!).hasPrefix(#"{"version":1,"menu":"expo","items":[{"label":"Reload","role":"button"}"#))
     }
 
+    /// A tree captured from the Expo 57 playground on an iOS 27 simulator, in `Tests/Fixtures`.
+    static func captured(_ name: String) throws -> UITree {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/\(name).json")
+        let capture = try RawTreeCapture(jsonData: try Data(contentsOf: url))
+        return UITree(platform: .ios, device: "IOS-UDID", screen: capture.screen, roots: try IOSAccessibilityMapping.roots(fromJSON: capture.source))
+    }
+
+    @Test("the captured iOS inspector panel and performance monitor are each read as showing, and neither is a menu")
+    func capturedTools() throws {
+        let inspector = try Self.captured("devmenu-inspector-ios")
+        let perf = try Self.captured("devmenu-perf-monitor-ios")
+
+        #expect(DevMenu.tools(in: inspector) == (inspector: true, perfMonitor: false))
+        #expect(DevMenu.tools(in: perf) == (inspector: false, perfMonitor: true))
+        #expect(DevMenu.read(inspector) == nil && DevMenu.read(perf) == nil)
+    }
+
     @Test("each item maps to its label in the menu, and the close control also by its xmark id")
     func mapping() {
         let menu = Self.expoMenu()
