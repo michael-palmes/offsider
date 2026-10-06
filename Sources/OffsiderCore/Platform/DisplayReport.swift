@@ -67,10 +67,11 @@ public enum DisplayReport {
     }
 
     /// For `describe-ui --display` naming a display that is not showing anything.
-    public static func inactiveDisplay(_ requested: DisplayInfo, posture: Posture?, platform: DevicePlatform, device: String) -> String {
+    public static func inactiveDisplay(_ requested: DisplayInfo, posture: Posture?, platform: DevicePlatform, physical: Bool = false, device: String) -> String {
         let role = requested.descriptor.role.rawValue
         let state = "describe-ui reads the active display only, and \(role) is not active (posture \(posture?.rawValue ?? "unknown"))."
         let verb = requested.descriptor.role == .cover ? "Fold" : "Unfold"
+        guard !physical else { return "\(state) \(verb) the phone, then retry." }
         let target = requested.descriptor.role == .cover ? "closed" : "open"
         let noun = platform == .ios ? "simulator" : "emulator"
         return "\(state) \(verb) the \(noun) with `offsider posture \(target) --device \(device)`, then retry."
