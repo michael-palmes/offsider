@@ -276,6 +276,12 @@ struct AndroidDoctorRulesTests {
         #expect(AndroidDoctorRules.stayAwake(reading, deviceID: "emulator-5554") == (.pass, "Off: the screen never turns off on its own", nil))
     }
 
+    @Test("stay awake on with no charger passes when the screen timeout is never, instead of saying it turns off after never")
+    func stayAwakeOnNeverTimesOut() {
+        let reading = AwakeReading(screen: .on, lockScreen: .hidden, credential: "none", stayAwake: [.ac, .usb, .wireless, .dock], charging: [], screenTimeoutMilliseconds: Int(Int32.max))
+        #expect(AndroidDoctorRules.stayAwake(reading, deviceID: "emulator-5554") == (.pass, "On; not charging, but the screen never turns off on its own", nil))
+    }
+
     @Test("adb authorisation passes only when it never lapses; null is the 7-day default")
     func adbExpiry() {
         #expect(AndroidDoctorRules.adbAuthorisation("0").status == .pass)

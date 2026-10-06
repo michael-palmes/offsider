@@ -280,6 +280,9 @@ public enum AndroidDoctorRules {
         if reading.timeoutCappedByPolicy {
             return (.warn, "On, but a device policy caps the screen timeout, so Android ignores it", "Remove the work profile or device admin policy that limits the screen timeout.")
         }
+        if !reading.staysAwake, reading.screenTimeoutSummary == "never" {
+            return (.pass, "On; not charging, but the screen never turns off on its own", nil)
+        }
         if reading.charging.isEmpty {
             return (.warn, "On, but the device is not charging, so the screen turns off \(timeout)", "Connect it to power.")
         }
