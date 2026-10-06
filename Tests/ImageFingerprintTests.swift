@@ -79,6 +79,21 @@ struct ImageFingerprintTests {
         #expect(before.changedTiles(comparedTo: fingerprint(caret, columns: 2, rows: 4, tolerance: 6)) == [0])
     }
 
+    @Test("Exact and tolerant fingerprints put a pixel row in the same tile when the height does not divide evenly")
+    func rowsMapAlikeInBothModes() {
+        let width = 4, height = 10
+        func print(_ shade: UInt8, tolerance: Int) -> ImageFingerprint {
+            var bytes = [UInt8](repeating: 200, count: width * height * 4)
+            for x in 0..<width { bytes[(3 * width + x) * 4] = shade }
+            return bytes.withUnsafeBytes {
+                ImageFingerprint(rgba: $0, width: width, height: height, bytesPerRow: width * 4, columns: 1, rows: 3, tolerance: tolerance)
+            }
+        }
+        for tolerance in [0, 6] {
+            #expect(print(200, tolerance: tolerance).changedTiles(comparedTo: print(0, tolerance: tolerance)) == [0], "tolerance \(tolerance)")
+        }
+    }
+
     @Test("Fingerprints taken with different tolerances cannot be compared and count as changed")
     func differentTolerances() {
         #expect(fingerprint(pixels(), tolerance: 6).changedTiles(comparedTo: fingerprint(pixels())) == nil)

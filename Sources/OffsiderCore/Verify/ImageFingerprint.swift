@@ -16,7 +16,9 @@ public struct ImageFingerprint: Equatable, Sendable {
     /// How far a block's mean red, green or blue may move before its tile counts as changed; 0 compares pixels exactly.
     public let tolerance: Int
     private let tiles: [UInt64]
-    private let blocks: [[UInt8]]
+    /// With a tolerance: every tile's block means, back to back, tile `i` at `blockStarts[i]..<blockStarts[i + 1]`.
+    private let blocks: [UInt8]
+    private let blockStarts: [Int]
 
     public init(
         rgba: UnsafeRawBufferPointer,
@@ -39,7 +41,6 @@ public struct ImageFingerprint: Equatable, Sendable {
         self.rows = rows
         self.tolerance = max(0, tolerance)
 
-        var tiles = [UInt64](repeating: 0xcbf2_9ce4_8422_2325, count: columns * rows)
         let columnStarts = (0...columns).map { $0 * width / columns }
         let firstRow = max(0, min(excludingTopPixels, height))
         let endRow = max(firstRow, height - max(0, excludingBottomPixels))
@@ -48,28 +49,34 @@ public struct ImageFingerprint: Equatable, Sendable {
         let spans = (0..<columns).map { (max(columnStarts[$0], firstColumn), min(columnStarts[$0 + 1], endColumn)) }
         let comparedColumns = spans.filter { $0.1 > $0.0 }.count
         comparedTileCount = endRow > firstRow ? ((endRow - 1) * rows / height - firstRow * rows / height + 1) * comparedColumns : 0
-        guard let base = rgba.baseAddress, width > 0 else {
-            self.tiles = tiles
-            blocks = []
-            return
-        }
         guard self.tolerance == 0 else {
-            var blocks = [[UInt8]](repeating: [], count: columns * rows)
+            tiles = []
+            var blocks: [UInt8] = []
+            var blockStarts = [0]
+            blockStarts.reserveCapacity(columns * rows + 1)
             for tileRow in 0..<rows {
-                let top = max(tileRow * height / rows, firstRow)
-                let bottom = min((tileRow + 1) * height / rows, endRow)
-                guard bottom > top else { continue }
-                for column in 0..<columns where spans[column].1 > spans[column].0 {
-                    blocks[tileRow * columns + column] = Self.blockMeans(
-                        base, bytesPerRow: bytesPerRow, columns: spans[column].0..<spans[column].1, rows: top..<bottom
-                    )
+                let top = max((tileRow * height + rows - 1) / rows, firstRow)
+                let bottom = min(((tileRow + 1) * height + rows - 1) / rows, endRow)
+                for column in 0..<columns {
+                    if let base = rgba.baseAddress, bottom > top, spans[column].1 > spans[column].0 {
+                        Self.appendBlockMeans(
+                            to: &blocks, base, bytesPerRow: bytesPerRow, columns: spans[column].0..<spans[column].1, rows: top..<bottom
+                        )
+                    }
+                    blockStarts.append(blocks.count)
                 }
             }
-            self.tiles = tiles
             self.blocks = blocks
+            self.blockStarts = blockStarts
             return
         }
         blocks = []
+        blockStarts = []
+        var tiles = [UInt64](repeating: 0xcbf2_9ce4_8422_2325, count: columns * rows)
+        guard let base = rgba.baseAddress, width > 0 else {
+            self.tiles = tiles
+            return
+        }
         for y in firstRow..<endRow {
             let tileRow = y * rows / height
             let rowStart = base + y * bytesPerRow
@@ -82,11 +89,9 @@ public struct ImageFingerprint: Equatable, Sendable {
         self.tiles = tiles
     }
 
-    /// The rounded mean red, green and blue of each `blockSize` square in the span, row by row, two pixels per 8-byte word.
-    private static func blockMeans(_ base: UnsafeRawPointer, bytesPerRow: Int, columns: Range<Int>, rows: Range<Int>) -> [UInt8] {
+    /// Appends the rounded mean red, green and blue of each `blockSize` square in the span, row by row, two pixels per 8-byte word.
+    private static func appendBlockMeans(to means: inout [UInt8], _ base: UnsafeRawPointer, bytesPerRow: Int, columns: Range<Int>, rows: Range<Int>) {
         let lanes: UInt64 = 0x00FF_00FF_00FF_00FF
-        var means: [UInt8] = []
-        means.reserveCapacity(3 * ((columns.count + blockSize - 1) / blockSize) * ((rows.count + blockSize - 1) / blockSize))
         var top = rows.lowerBound
         while top < rows.upperBound {
             let bottom = min(top + blockSize, rows.upperBound)
@@ -123,7 +128,6 @@ public struct ImageFingerprint: Equatable, Sendable {
             }
             top = bottom
         }
-        return means
     }
 
     /// FNV-1a over 8-byte words, so a full-resolution screenshot hashes quickly even in debug builds.
@@ -205,9 +209,10 @@ public struct ImageFingerprint: Equatable, Sendable {
             return nil
         }
         guard tolerance > 0 else { return Set(tiles.indices.filter { tiles[$0] != other.tiles[$0] }) }
-        return Set(blocks.indices.filter { index in
-            blocks[index].count != other.blocks[index].count
-                || zip(blocks[index], other.blocks[index]).contains { abs(Int($0) - Int($1)) > tolerance }
+        return Set((0..<(columns * rows)).filter { tile in
+            let mine = blocks[blockStarts[tile]..<blockStarts[tile + 1]]
+            let theirs = other.blocks[other.blockStarts[tile]..<other.blockStarts[tile + 1]]
+            return mine.count != theirs.count || zip(mine, theirs).contains { abs(Int($0) - Int($1)) > tolerance }
         })
     }
 
