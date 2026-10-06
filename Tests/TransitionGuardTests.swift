@@ -104,6 +104,33 @@ struct TransitionGuardTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
     }
 
+    @Test("type --into-id right after an input on a moving field focuses it where it settled")
+    func typeIntoKeepsGuard() async throws {
+        let fixture = try TreeCacheFixture()
+        let android = DeviceID(rawValue: "emulator-5554", platform: .android)
+        func form(fieldY: Double, focused: Bool) -> UITree {
+            FakeUI.tree(platform: .android, [
+                FakeUI.node(.textField, id: "email", label: "Email", frame: FakeUI.frame(20, fieldY, 360, 44), state: UIState(focused: focused ? true : nil), platform: .android),
+            ])
+        }
+        let cached = form(fieldY: 900, focused: false)
+        try fixture.write(TreeCacheRecord(
+            platform: .android, device: android.rawValue, command: "tap", writtenAt: fixture.now - 0.05,
+            lastInputAt: fixture.now - 0.1, treeRole: .preAction, appFrame: cached.applicationFrame, roots: cached.roots
+        ))
+        let backend = FakeDeviceBackend(platform: .android, trees: [form(fieldY: 650, focused: false), form(fieldY: 600, focused: false), form(fieldY: 600, focused: true)])
+        var sent: [InputEvent] = []
+
+        try await fixture.run {
+            try await Type.parse(["--into-id", "email", "text", "--device", android.rawValue]).ensureFocus(
+                backend: backend, device: android, logger: OffsiderLogger(), clock: ScriptedClock().poll, warn: { _ in }
+            ) { sent.append($0) }
+        }
+
+        #expect(fixture.sleeps == [.milliseconds(400)])
+        #expect(sent == [.tapAt(x: 200, y: 622)])
+    }
+
     @Test("a selector tap with no record waits 150 ms and reads once more")
     func noRecordRechecks() async throws {
         let fixture = try TreeCacheFixture()

@@ -18,12 +18,23 @@ struct TypeIntoTests {
         return FakeUI.tree(platform: platform, children)
     }
 
+    /// Runs `body` with its own tree cache in which the test devices saw no recent input, so the transition guard acts at once.
+    static func quiet<T>(_ body: () async throws -> T) async throws -> T {
+        let fixture = try TreeCacheFixture()
+        for device in [android, simulator, iPhone] {
+            try fixture.write(TreeCacheRecord(platform: device.platform, device: device.rawValue, command: "tap", writtenAt: fixture.now - 5))
+        }
+        return try await fixture.run(body)
+    }
+
     static func focus(_ arguments: [String], trees: [UITree], device: DeviceID = android, warnings: Box<[String]> = Box([])) async throws -> [InputEvent] {
         let backend = FakeDeviceBackend(platform: device.platform, trees: trees)
         var sent: [InputEvent] = []
-        try await Type.parse(arguments + ["text", "--device", device.rawValue]).ensureFocus(
-            backend: backend, device: device, logger: OffsiderLogger(), clock: ScriptedClock().poll, warn: { warnings.value.append($0) }
-        ) { sent.append($0) }
+        try await quiet {
+            try await Type.parse(arguments + ["text", "--device", device.rawValue]).ensureFocus(
+                backend: backend, device: device, logger: OffsiderLogger(), clock: ScriptedClock().poll, warn: { warnings.value.append($0) }
+            ) { sent.append($0) }
+        }
         return sent
     }
 
@@ -59,8 +70,8 @@ struct TypeIntoTests {
         #expect(warnings.value == ["the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value."])
 
         let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: nil, keyboard: true, platform: .ios)])
-        try await Type.parse(["--into-id", "second-field", "hi", "--device", Self.simulator.rawValue])
-            .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger())
+        try await Self.quiet { try await Type.parse(["--into-id", "second-field", "hi", "--device", Self.simulator.rawValue])
+            .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger()) }
         #expect(backend.session.calls.count == 2)
         #expect(backend.session.calls.first == .perform(.tapAt(x: 200, y: 322)))
     }
@@ -69,8 +80,8 @@ struct TypeIntoTests {
     func simulatorNoKeyboard() async throws {
         let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: nil, platform: .ios)])
         let error = await #expect(throws: CLIError.self) {
-            try await Type.parse(["--into-id", "second-field", "hi", "--device", Self.simulator.rawValue])
-                .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger())
+            try await Self.quiet { try await Type.parse(["--into-id", "second-field", "hi", "--device", Self.simulator.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger()) }
         }
         #expect(error?.reason == .focusNotConfirmed)
         #expect(error?.exitCode == .unverified)
@@ -81,8 +92,8 @@ struct TypeIntoTests {
     func neverConfirmed() async throws {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.form(focused: "first-field")])
         let error = await #expect(throws: CLIError.self) {
-            try await Type.parse(["--into-id", "second-field", "--replace", "secret", "--device", Self.android.rawValue])
-                .execute(on: DeviceRouter.Route(backend: backend, device: Self.android), progress: nil, logger: OffsiderLogger())
+            try await Self.quiet { try await Type.parse(["--into-id", "second-field", "--replace", "secret", "--device", Self.android.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.android), progress: nil, logger: OffsiderLogger()) }
         }
         #expect(error?.reason == .focusNotConfirmed)
         #expect(error?.exitCode == .unverified)
@@ -130,8 +141,8 @@ struct TypeIntoTests {
         let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: nil, keyboard: false, platform: .ios)])
 
         await #expect(throws: (any Error).self) {
-            try await Type.parse(["--into-id", "second-field", "price €5", "--device", Self.simulator.rawValue])
-                .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger())
+            try await Self.quiet { try await Type.parse(["--into-id", "second-field", "price €5", "--device", Self.simulator.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger()) }
         }
 
         #expect(backend.session.calls.isEmpty)
@@ -145,7 +156,7 @@ struct TypeIntoTests {
         let thrown = await #expect(throws: ReportedFailure.self) {
             try await DispatchTracker.$current.withValue(tracker) {
                 try await VerifyOutput.reportingFailures(command: "type", target: "text", options: command.verification, scope: CommandScope(), write: { written.append($0) }) { progress in
-                    try await command.execute(on: DeviceRouter.Route(backend: backend, device: Self.android), progress: progress, logger: OffsiderLogger())
+                    try await Self.quiet { try await command.execute(on: DeviceRouter.Route(backend: backend, device: Self.android), progress: progress, logger: OffsiderLogger()) }
                 }
             }
         }

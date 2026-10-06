@@ -136,7 +136,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         }
         guard let query = intoQuery else { return }
         let polled = try await AccessibilityPoller.resolveWithPolling(
-            query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25, logger: logger
+            query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25,
+            settle: .guarded(record: await TreeCache.load(for: device, backend: backend)), logger: logger
         )
         let field = polled.value.matched ?? polled.value.target
         let point = try await backend.deviceCoordinates(for: [polled.value.point], tree: polled.tree, on: device)[0]
