@@ -109,6 +109,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         logger: OffsiderLogger,
         clock: PollClock = .live,
         warn: @MainActor (String) -> Void = { FileHandle.standardError.write(Data("Warning: \($0)\n".utf8)) },
+        beforeTap: @MainActor (UITree) throws -> Void = { _ in },
         tap: @MainActor (InputEvent) async throws -> Void
     ) async throws {
         let simulator = device.platform == .ios && !device.isPhysicalIOSDevice
@@ -140,6 +141,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let field = polled.value.matched ?? polled.value.target
         let point = try await backend.deviceCoordinates(for: [polled.value.point], tree: polled.tree, on: device)[0]
         let keyboardAlreadyUp = simulator && polled.tree.roots.flatMap { $0.flattened() }.contains { $0.role == .keyboard }
+        try beforeTap(polled.tree)
         try await tap(.tapAt(x: point.x, y: point.y))
         if keyboardAlreadyUp {
             try await clock.sleep(Self.focusPoll)
@@ -207,36 +209,22 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         try await backend.prepare()
 
         let inputText = try resolvedText()
-        try await ensureFocus(backend: backend, device: device, logger: logger) { event in
+        let throughSession = device.platform == .android || device.isPhysicalIOSDevice
+        let hidEvents = throughSession ? [] : try Self.checkedIOSEvents(for: inputText, replacing: replace, logger: logger)
+        try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
+            if progress != nil, case .appearing(let id) = verification.mode {
+                try Verifier.refuseIfOnScreen(id, in: tree)
+            }
+        }) { event in
             try await backend.performTracked(event, on: device)
         }
         logger.info().log("Typing \(inputText.count) character\(inputText.count == 1 ? "" : "s")")
 
-        if device.platform == .android || device.isPhysicalIOSDevice {
+        if throughSession {
             try await typeThroughSession(inputText, backend: backend, device: device, progress: progress)
             return
         }
 
-        do {
-            try TextToHIDEvents.checkSupported(inputText)
-        } catch {
-            logger.error().log(error.localizedDescription)
-            throw error
-        }
-
-        // Convert text to HID events using the new utility
-        let hidEvents: [InputEvent]
-        do {
-            hidEvents = try Self.iosEvents(for: inputText, replacing: replace)
-            logger.info().log("Successfully converted text to \(hidEvents.count) HID events")
-        } catch let error as TextToHIDEvents.TextConversionError {
-            logger.error().log("Text conversion failed: \(error.localizedDescription)")
-            throw error
-        } catch {
-            logger.error().log("Unexpected error during text conversion: \(error.localizedDescription)")
-            throw error
-        }
-        
         logger.info().log("Performing HID event sequence for text typing")
 
         if let progress {
@@ -300,6 +288,19 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         )
         try await VerifyOutput.perform(request, progress: progress) { _, session in
             try await typeText(session)
+        }
+    }
+
+    /// The simulator's key events, checked before any focus tap so text the HID keyboard cannot type sends nothing.
+    static func checkedIOSEvents(for text: String, replacing: Bool, logger: OffsiderLogger) throws -> [InputEvent] {
+        do {
+            try TextToHIDEvents.checkSupported(text)
+            let events = try iosEvents(for: text, replacing: replacing)
+            logger.info().log("Converted text to \(events.count) HID events")
+            return events
+        } catch {
+            logger.error().log("Text conversion failed: \(error.localizedDescription)")
+            throw error
         }
     }
 

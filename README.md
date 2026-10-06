@@ -606,7 +606,7 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `metro_not_running` | 9 | `rn open` found no Metro answering on 127.0.0.1 at `--port` | Start Metro on that port, then retry |
 | `rn_load_failed` | 1 | `rn open` saw the app's load error or red box | Read `logs --rn` and Metro's output |
 | `turnstile_challenge` | 1 | `turnstile` found a visual challenge, which a checkbox tap cannot complete | Hand back to a person; do not retry |
-| `verify_target_present` | 1 | The `--verify-id` element was already on screen before the input, so nothing was sent | Pass an id only the next screen has, or use `--verify` |
+| `verify_target_present` | 1 | The `--verify-id` element was already on screen before the input, so nothing was sent (with `type --into-id`, only the tap that focused the field, when that tap brought it on screen) | Pass an id only the next screen has, or use `--verify` |
 
 ## Privacy
 

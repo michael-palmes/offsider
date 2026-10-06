@@ -125,6 +125,62 @@ struct TypeIntoTests {
         #expect(try await Self.focus(["--into-id", "password"], trees: [tree], device: Self.iPhone) == [.tapAt(x: 215, y: 382)])
     }
 
+    @Test("text the simulator keyboard cannot type fails before the focus tap, so nothing is sent")
+    func unsupportedTextSendsNoTap() async throws {
+        let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: nil, keyboard: false, platform: .ios)])
+
+        await #expect(throws: (any Error).self) {
+            try await Type.parse(["--into-id", "second-field", "price €5", "--device", Self.simulator.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger())
+        }
+
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    /// Runs `type` with `--verify-id done --json` as the CLI does and returns the refusal and the JSON report.
+    static func verifyIDRefusal(trees: [UITree], tracker: DispatchTracker) async throws -> (message: String?, report: [String: Any], backend: FakeDeviceBackend) {
+        let backend = FakeDeviceBackend(platform: .android, trees: trees)
+        let command = try Type.parse(["--into-id", "second-field", "hi", "--verify-id", "done", "--json", "--device", Self.android.rawValue])
+        var written = Data()
+        let thrown = await #expect(throws: ReportedFailure.self) {
+            try await DispatchTracker.$current.withValue(tracker) {
+                try await VerifyOutput.reportingFailures(command: "type", target: "text", options: command.verification, scope: CommandScope(), write: { written.append($0) }) { progress in
+                    try await command.execute(on: DeviceRouter.Route(backend: backend, device: Self.android), progress: progress, logger: OffsiderLogger())
+                }
+            }
+        }
+        let report = try #require(try JSONSerialization.jsonObject(with: written) as? [String: Any])
+        return ((thrown?.underlying as? CLIError)?.userFacingDescription, report, backend)
+    }
+
+    static func done() -> UINode {
+        FakeUI.node(.text, id: "done", label: "Done", frame: FakeUI.frame(20, 500, 360, 44), platform: .android)
+    }
+
+    @Test("--verify-id already on screen with --into-id is refused before the focus tap, and the JSON says nothing was dispatched")
+    func verifyIDPresentBeforeFocus() async throws {
+        var form = Self.form(focused: nil)
+        form.roots[0].children.append(Self.done())
+
+        let (message, report, backend) = try await Self.verifyIDRefusal(trees: [form], tracker: DispatchTracker())
+
+        #expect(message?.hasSuffix("cannot show the input worked. Nothing was sent.") == true)
+        #expect(report["dispatched"] as? String == "no")
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("--verify-id the focus tap brought on screen is refused with only that tap sent, and the JSON agrees")
+    func verifyIDPresentAfterFocus() async throws {
+        var focused = Self.form(focused: "second-field")
+        focused.roots[0].children.append(Self.done())
+
+        let (message, report, backend) = try await Self.verifyIDRefusal(trees: [Self.form(focused: nil), focused], tracker: DispatchTracker())
+
+        #expect(message?.hasSuffix("Only earlier input, such as the tap that focused the field, was sent.") == true)
+        #expect(report["dispatched"] as? String == "yes")
+        #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 322))])
+    }
+
     @Test("the focus options exclude each other")
     func exclusive() {
         #expect(throws: (any Error).self) { try Type.parse(["--into-id", "a", "--require-focus-id", "a", "x", "--device", "emulator-5554"]) }

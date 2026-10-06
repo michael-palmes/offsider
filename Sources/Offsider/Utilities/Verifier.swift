@@ -210,13 +210,7 @@ struct Verifier {
     ) async throws -> Outcome {
         let baseline: UITree
         if let initialTree { baseline = initialTree } else { baseline = try await dependencies.tree() }
-        if isOnScreen(id, in: baseline) {
-            throw CLIError(
-                errorDescription: "--verify-id '\(id)' is already on screen before the input, so it cannot show the input worked. Nothing was sent.",
-                reason: .verifyTargetPresent,
-                hint: "Pass an id that only the next screen has, or use --verify."
-            )
-        }
+        try refuseIfOnScreen(id, in: baseline)
         try await beforeAction(baseline)
         for (index, style) in attempts.enumerated() {
             let attempt = Attempt(number: index + 1, style: style)
@@ -237,6 +231,17 @@ struct Verifier {
             }
         }
         return Outcome(verified: false, attempts: attempts.count, change: .none, style: attempts.last ?? nil, summary: nil)
+    }
+
+    /// `--verify-id` cannot prove an input when its element shows already; the refusal says whether this command sent anything before it.
+    static func refuseIfOnScreen(_ id: String, in tree: UITree) throws {
+        guard isOnScreen(id, in: tree) else { return }
+        let sent = DispatchTracker.current.state == .no ? "Nothing was sent." : "Only earlier input, such as the tap that focused the field, was sent."
+        throw CLIError(
+            errorDescription: "--verify-id '\(id)' is already on screen before the input, so it cannot show the input worked. \(sent)",
+            reason: .verifyTargetPresent,
+            hint: "Pass an id that only the next screen has, or use --verify."
+        )
     }
 
     /// On screen when the tree has a screen to compare with; any match otherwise.

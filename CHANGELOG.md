@@ -118,6 +118,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `type --into-id`, `--into-label` and `--require-focus-id` work on a physical iPhone or iPad: the device runner reports the field with keyboard focus (XCTest's `hasKeyboardFocus`, not the focus engine's `hasFocus`, which a tap leaves unset), and `describe-ui` shows it as `state.focused`. Each device rebuilds its runner on next use. Simulators are unchanged.
 - `tap --verify-id` right after another input waits out a transition again, as a selector `tap` without `--verify` does, so a target still sliding in is tapped where it settles instead of where it was first found.
 - `tap --topmost` on iOS hit-tests the matches of the tree it taps from, on every read while it waits, instead of an earlier read that could have none. Under `--verify`, `--nth` and `--topmost` keep their pick when the verifier finds the target moved before the tap.
+- `type --into-id` checks that the simulator keyboard can type the text, and that a `--verify-id` element is not already on screen, before its focus tap, so either refusal sends nothing. When the focus tap itself brings the `--verify-id` element on screen, the refusal says only that tap was sent, as `dispatched` `yes` does.
 
 ## [0.6.0] - 2026-10-05
 
