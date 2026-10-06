@@ -1,6 +1,6 @@
 import ArgumentParser
 import Foundation
-import OffsiderCore
+@testable import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -68,6 +68,53 @@ struct LeaseCommandTests {
         let later = Self.now.addingTimeInterval(61)
         #expect(store.all(now: later).isEmpty)
         _ = try Self.set("PR 456", store: store, at: later)
+        #expect(store.lease(platform: .android, key: Self.avd.key, now: later)?.label == "PR 456")
+    }
+
+    @Test("of two setters racing for a free device, the second waits for the first's write and is refused with device_leased")
+    func concurrentSetters() throws {
+        let root = try makePrivateLockRoot()
+        let first = DeviceLeaseStore(root: root)
+        let second = DeviceLeaseStore(root: root)
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let outcomes = LeaseOutcomes()
+        let group = DispatchGroup()
+        func claim(_ label: String, _ existing: DeviceLease?) throws -> DeviceLease {
+            try LeaseCommand.claim(existing, key: Self.avd.key, label: label, minutes: 240, force: false, now: Self.now, pid: 77)
+        }
+
+        DispatchQueue.global().async(group: group) {
+            outcomes.record("PR 123") {
+                try first.set(platform: .android, key: Self.avd.key, now: Self.now) { existing in
+                    entered.signal()
+                    release.wait()
+                    return try claim("PR 123", existing)
+                }
+            }
+        }
+        entered.wait()
+        DispatchQueue.global().async(group: group) {
+            outcomes.record("PR 456") { try second.set(platform: .android, key: Self.avd.key, now: Self.now) { try claim("PR 456", $0) } }
+        }
+        Thread.sleep(forTimeInterval: 0.3)
+        release.signal()
+        group.wait()
+
+        #expect(outcomes.winners == ["PR 123"])
+        #expect(outcomes.refusals == [.deviceLeased])
+        #expect(first.lease(platform: .android, key: Self.avd.key, now: Self.now)?.label == "PR 123")
+    }
+
+    @Test("a reader removing a lease it saw expire never deletes the fresh lease written after its read")
+    func expiredRemovalKeepsFreshLease() throws {
+        let store = try Self.store()
+        _ = try Self.set("PR 123", store: store, minutes: 1)
+        let later = Self.now.addingTimeInterval(61)
+        _ = try Self.set("PR 456", store: store, at: later)
+
+        store.removeExpired(named: DeviceLeaseStore.fileName(platform: .android, key: Self.avd.key), now: later)
+
         #expect(store.lease(platform: .android, key: Self.avd.key, now: later)?.label == "PR 456")
     }
 
@@ -141,4 +188,23 @@ struct LeaseCommandTests {
         #expect(other.detail.hasSuffix("; held now by pid 42 (offsider tap)"))
         #expect(other.hint?.contains("offsider list-devices") == true)
     }
+}
+
+/// Which labels a set of racing `lease set` calls left holding the device, and why the others were refused.
+final class LeaseOutcomes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var won: [String] = []
+    private var refused: [FailureReason?] = []
+
+    func record(_ label: String, _ body: () throws -> Any) {
+        do {
+            _ = try body()
+            lock.withLock { won.append(label) }
+        } catch {
+            lock.withLock { refused.append((error as? CLIError)?.reason) }
+        }
+    }
+
+    var winners: [String] { lock.withLock { won } }
+    var refusals: [FailureReason?] { lock.withLock { refused } }
 }

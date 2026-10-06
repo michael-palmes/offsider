@@ -114,6 +114,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `manifest.ndjson` records `--mask-text`, `--mask-label` and `--grep` values as `<N characters>`, in a capture's `args` and in batch step lines (and so in `batch --json` records), since they often spell the personal data they hide; `--mask-id` values (the app's own element ids) and `--mask-region` coordinates are kept.
 - A run's `logs` copy is created new at mode 0600 and never through a link, so a file or symlink already at its name is neither replaced nor followed; the capture warns and stdout carries on.
 - `screenshot --mask-region` with a huge value such as `0,0,1e19,40` no longer crashes: mask rectangles are clamped to the image before they become pixels, and a tree frame with a NaN coordinate withholds the image.
+- `lease set` reads, checks and writes a device's lease under a per-device lock in `leases/`, so two agents setting a free device at once can no longer both get it, and removing an expired lease or `lease release` can no longer delete a fresh lease written in between.
 
 ## [0.6.0] - 2026-10-05
 
