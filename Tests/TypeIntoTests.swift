@@ -18,13 +18,18 @@ struct TypeIntoTests {
         return FakeUI.tree(platform: platform, children)
     }
 
-    static func focus(_ arguments: [String], trees: [UITree], device: DeviceID = android) async throws -> [InputEvent] {
+    static func focus(_ arguments: [String], trees: [UITree], device: DeviceID = android, warnings: Box<[String]> = Box([])) async throws -> [InputEvent] {
         let backend = FakeDeviceBackend(platform: device.platform, trees: trees)
         var sent: [InputEvent] = []
         try await Type.parse(arguments + ["text", "--device", device.rawValue]).ensureFocus(
-            backend: backend, device: device, logger: OffsiderLogger(), clock: ScriptedClock().poll
+            backend: backend, device: device, logger: OffsiderLogger(), clock: ScriptedClock().poll, warn: { warnings.value.append($0) }
         ) { sent.append($0) }
         return sent
+    }
+
+    final class Box<T> {
+        var value: T
+        init(_ value: T) { self.value = value }
     }
 
     @Test("--into-id taps the field and returns once it has focus")
@@ -33,10 +38,43 @@ struct TypeIntoTests {
         #expect(sent == [.tapAt(x: 200, y: 322)])
     }
 
-    @Test("on an iOS simulator a keyboard with the field still on screen confirms focus")
+    @Test("on an iOS simulator a keyboard that appears after the tap, with the field still on screen, confirms focus with no warning")
     func simulatorKeyboard() async throws {
-        let sent = try await Self.focus(["--into-id", "second-field"], trees: [Self.form(focused: nil, platform: .ios), Self.form(focused: nil, keyboard: true, platform: .ios)], device: Self.simulator)
+        let warnings = Box<[String]>([])
+        let sent = try await Self.focus(
+            ["--into-id", "second-field"], trees: [Self.form(focused: nil, platform: .ios), Self.form(focused: nil, keyboard: true, platform: .ios)],
+            device: Self.simulator, warnings: warnings
+        )
         #expect(sent.count == 1)
+        #expect(warnings.value.isEmpty)
+    }
+
+    @Test("on an iOS simulator a keyboard already up before the tap cannot prove focus: it warns, then types into the tapped field")
+    func simulatorKeyboardAlreadyUp() async throws {
+        let warnings = Box<[String]>([])
+        let sent = try await Self.focus(
+            ["--into-id", "second-field"], trees: [Self.form(focused: nil, keyboard: true, platform: .ios)], device: Self.simulator, warnings: warnings
+        )
+        #expect(sent == [.tapAt(x: 200, y: 322)])
+        #expect(warnings.value == ["the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value."])
+
+        let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: nil, keyboard: true, platform: .ios)])
+        try await Type.parse(["--into-id", "second-field", "hi", "--device", Self.simulator.rawValue])
+            .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger())
+        #expect(backend.session.calls.count == 2)
+        #expect(backend.session.calls.first == .perform(.tapAt(x: 200, y: 322)))
+    }
+
+    @Test("on an iOS simulator a keyboard that never appears is exit 5 focus_not_confirmed, and nothing is typed")
+    func simulatorNoKeyboard() async throws {
+        let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: nil, platform: .ios)])
+        let error = await #expect(throws: CLIError.self) {
+            try await Type.parse(["--into-id", "second-field", "hi", "--device", Self.simulator.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger())
+        }
+        #expect(error?.reason == .focusNotConfirmed)
+        #expect(error?.exitCode == .unverified)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 322))])
     }
 
     @Test("a field that never takes focus is exit 5 focus_not_confirmed, and the command types nothing")
