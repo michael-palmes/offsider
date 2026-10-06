@@ -54,10 +54,10 @@ struct DevMenuDriver {
             )
         }
         try await tap(frame.center, tree: tree)
-        if try await closed() { return }
+        if try await closed(leaving: state.menu) { return }
         if item?.isToggle == true || label != nil, let close = DevMenu.node(for: .close, label: nil, in: try await read()), let closeFrame = close.frame {
             try await tap(closeFrame.center, tree: nil)
-            if try await closed() { return }
+            if try await closed(leaving: state.menu) { return }
         }
         throw CLIError(
             errorDescription: "Tapped \(node.label ?? item?.rawValue ?? "the item"), but the dev menu is still open.",
@@ -66,11 +66,12 @@ struct DevMenuDriver {
         )
     }
 
-    private func closed() async throws -> Bool {
+    /// True once `menu` is gone: no menu shows, or the item opened the other one, as Expo's "Open React Native dev menu" does.
+    private func closed(leaving menu: String) async throws -> Bool {
         let deadline = clock.now() + Self.closeWait
         repeat {
             try await clock.sleep(Self.poll)
-            if let tree = try? await read(), DevMenu.read(tree) == nil { return true }
+            if let tree = try? await read(), DevMenu.read(tree)?.menu != menu { return true }
         } while clock.now() < deadline
         return false
     }

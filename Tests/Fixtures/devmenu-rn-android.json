@@ -1,0 +1,390 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "context": {
+    "window": {
+      "title": null,
+      "kind": "modal",
+      "package": "com.mpalmes.offsider.playground.rn"
+    },
+    "keyboard": false,
+    "logbox": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": null,
+      "value": null,
+      "frame": {
+        "x": 10.67,
+        "y": 264.38,
+        "width": 390.1,
+        "height": 424.76
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 28,
+          "y": 694,
+          "width": 1024,
+          "height": 1115
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "text",
+          "id": null,
+          "label": "React Native Dev Menu",
+          "value": null,
+          "frame": {
+            "x": 26.67,
+            "y": 280.38,
+            "width": 358.1,
+            "height": 40.76
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": null,
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 70,
+              "y": 736,
+              "width": 940,
+              "height": 107
+            },
+            "text": "React Native Dev Menu",
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "list",
+          "id": "android:id/select_dialog_listview",
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 26.67,
+            "y": 329.14,
+            "width": 358.1,
+            "height": 344
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.ListView",
+            "resourceId": "android:id/select_dialog_listview",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 70,
+              "y": 864,
+              "width": 940,
+              "height": 903
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "text",
+              "id": "android:id/text1",
+              "label": "Reload",
+              "value": null,
+              "frame": {
+                "x": 26.67,
+                "y": 329.14,
+                "width": 358.1,
+                "height": 48
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "android:id/text1",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 70,
+                  "y": 864,
+                  "width": 940,
+                  "height": 126
+                },
+                "text": "Reload",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "android:id/text1",
+              "label": "Open DevTools",
+              "value": null,
+              "frame": {
+                "x": 26.67,
+                "y": 377.14,
+                "width": 358.1,
+                "height": 48
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "android:id/text1",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 70,
+                  "y": 990,
+                  "width": 940,
+                  "height": 126
+                },
+                "text": "Open DevTools",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "android:id/text1",
+              "label": "Change Bundle Location",
+              "value": null,
+              "frame": {
+                "x": 26.67,
+                "y": 425.14,
+                "width": 358.1,
+                "height": 48
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "android:id/text1",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 70,
+                  "y": 1116,
+                  "width": 940,
+                  "height": 126
+                },
+                "text": "Change Bundle Location",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "android:id/text1",
+              "label": "Toggle Element Inspector",
+              "value": null,
+              "frame": {
+                "x": 26.67,
+                "y": 473.14,
+                "width": 358.1,
+                "height": 48
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "android:id/text1",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 70,
+                  "y": 1242,
+                  "width": 940,
+                  "height": 126
+                },
+                "text": "Toggle Element Inspector",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "android:id/text1",
+              "label": "Disable Fast Refresh",
+              "value": null,
+              "frame": {
+                "x": 26.67,
+                "y": 521.14,
+                "width": 358.1,
+                "height": 48
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "android:id/text1",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 70,
+                  "y": 1368,
+                  "width": 940,
+                  "height": 126
+                },
+                "text": "Disable Fast Refresh",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "android:id/text1",
+              "label": "Show Perf Monitor",
+              "value": null,
+              "frame": {
+                "x": 26.67,
+                "y": 569.14,
+                "width": 358.1,
+                "height": 48
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "android:id/text1",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 70,
+                  "y": 1494,
+                  "width": 940,
+                  "height": 126
+                },
+                "text": "Show Perf Monitor",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "android:id/text1",
+              "label": "Settings",
+              "value": null,
+              "frame": {
+                "x": 26.67,
+                "y": 617.14,
+                "width": 358.1,
+                "height": 48
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "android:id/text1",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 70,
+                  "y": 1620,
+                  "width": 940,
+                  "height": 126
+                },
+                "text": "Settings",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -25,6 +25,42 @@ struct RNDevMenuTests {
         FakeUI.tree(platform: .android, [FakeUI.node(.text, label: "UI: 60.0 fps", frame: FakeUI.frame(0, 60, 120, 20), platform: .android)])
     }
 
+    /// A describe-ui capture from the React Native playground (Expo 57) on the Offsider E2E emulator.
+    static func capture(_ name: String) throws -> UITree {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/\(name).json")
+        return try UITree(jsonData: try Data(contentsOf: url))
+    }
+
+    @Test("the Expo menu captured on Android is read by its buttons, whose labels lead with the icon's name")
+    func expoMenuOnAndroid() throws {
+        let menu = try Self.capture("devmenu-expo-android")
+        let state = try #require(DevMenu.read(menu))
+        #expect(state.menu == "expo")
+        #expect(state.items.map(\.label) == ["Close", "Reload", "Go home", "Toggle performance monitor", "Toggle element inspector", "Open DevTools", "Fast Refresh"])
+        #expect(state.items.allSatisfy { $0.role == .button })
+        #expect(DevMenu.node(for: .home, label: nil, in: menu)?.label == "Home Go home")
+        #expect(DevMenu.node(for: .reload, label: nil, in: menu)?.role == .button)
+        #expect(DevMenu.node(for: nil, label: "Open React Native dev menu", in: menu)?.label == "React Native dev menu Open React Native dev menu")
+        #expect(DevMenu.tools(in: menu) == (inspector: false, perfMonitor: false))
+    }
+
+    @Test("React Native's own menu captured on Android is read under its title, though it has no close control")
+    func reactNativeMenuOnAndroid() throws {
+        let menu = try Self.capture("devmenu-rn-android")
+        let state = try #require(DevMenu.read(menu))
+        #expect(state.menu == "react-native")
+        #expect(state.items.map(\.label) == ["Reload", "Open DevTools", "Toggle Element Inspector", "Disable Fast Refresh", "Show Perf Monitor"])
+        #expect(DevMenu.node(for: .inspector, label: nil, in: menu)?.label == "Toggle Element Inspector")
+        #expect(DevMenu.node(for: .close, label: nil, in: menu) == nil)
+    }
+
+    @Test("the element inspector's panel captured on Android shows as the inspector, and the app beneath it as no menu")
+    func inspectorPanelOnAndroid() throws {
+        let panel = try Self.capture("devtools-inspector-android")
+        #expect(DevMenu.tools(in: panel) == (inspector: true, perfMonitor: false))
+        #expect(DevMenu.read(panel) == nil)
+    }
+
     @Test("the Expo menu is read with its items; an app screen is no menu")
     func readsMenu() {
         let state = DevMenu.read(Self.expoMenu())
@@ -55,6 +91,17 @@ struct RNDevMenuTests {
         #expect(state == nil)
         #expect(backend.devMenuOpens == 1)
         #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 324))])
+    }
+
+    @Test("a label that opens React Native's own menu from Expo's counts as chosen, with no close tap")
+    func switchesMenus() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [try Self.capture("devmenu-expo-android"), try Self.capture("devmenu-rn-android")], advanceTreeOnInput: true)
+        let command = try RNDevMenu.parse(["--label", "Open React Native dev menu", "--device", Self.device.rawValue])
+
+        let state = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(state == nil)
+        #expect(backend.session.calls.count == 1)
     }
 
     @Test("an item the menu lacks is exit 2 with the menu's items as candidates")

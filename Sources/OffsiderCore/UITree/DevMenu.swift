@@ -17,13 +17,14 @@ public enum DevMenu {
         case debugger
         case close
 
-        /// Labels the item has in the Expo dev menu and in React Native's, exact after trimming.
+        /// Labels the item has in the Expo dev menu and in React Native's, exact after trimming. On Android the Expo
+        /// menu's buttons read "<icon> <label>", such as "Home Go home", so a button also matches on a trailing label.
         public var labels: [String] {
             switch self {
             case .reload: return ["Reload"]
             case .home: return ["Go home", "Go Home", "Go to home"]
-            case .inspector: return ["Element inspector", "Toggle element inspector", "Show Element Inspector", "Hide Element Inspector", "Toggle Inspector"]
-            case .perfMonitor: return ["Performance monitor", "Toggle performance monitor", "Show Perf Monitor", "Hide Perf Monitor", "Perf Monitor"]
+            case .inspector: return ["Toggle element inspector", "Toggle Element Inspector", "Element inspector", "Show Element Inspector", "Hide Element Inspector", "Toggle Inspector"]
+            case .perfMonitor: return ["Toggle performance monitor", "Performance monitor", "Show Perf Monitor", "Hide Perf Monitor", "Perf Monitor"]
             case .fastRefresh: return ["Fast refresh", "Fast Refresh", "Enable Fast Refresh", "Disable Fast Refresh"]
             case .debugger: return ["Open JS debugger", "Open DevTools", "Open React Native DevTools", "Open Debugger"]
             case .close: return ["Close", "Cancel", "Dismiss"]
@@ -48,37 +49,50 @@ public enum DevMenu {
         public var items: [Entry]
     }
 
-    /// The open menu: a Reload item beside a Go home or close control; nil when no menu shows.
+    /// The title React Native's own dev menu shows on Android, which has no close control.
+    static let reactNativeTitle = "React Native Dev Menu"
+
+    /// The open menu: a Reload item beside a Go home or close control, or under React Native's title; nil when no menu shows.
     public static func read(_ tree: UITree) -> State? {
         let nodes = tree.roots.flatMap { $0.flattened() }
-        let known = Set(Item.allCases.flatMap(\.labels))
-        func label(_ node: UINode) -> String? { node.label?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let hasReload = nodes.contains { label($0) == "Reload" }
-        let hasHome = nodes.contains { Item.home.labels.contains(label($0) ?? "") }
-        let hasClose = nodes.contains { $0.id == "xmark" || Item.close.labels.contains(label($0) ?? "") }
-        guard hasReload, hasHome || hasClose else { return nil }
-        var seen = Set<String>()
-        let items = nodes.compactMap { node -> Entry? in
-            guard let text = label(node), known.contains(text), seen.insert(text).inserted else { return nil }
-            return Entry(label: text, role: node.role, frame: node.frame)
+        let titled = nodes.contains { trimmedLabel($0) == reactNativeTitle }
+        let hasReload = nodes.contains { matchedLabel($0, Item.reload.labels) != nil }
+        let hasHome = nodes.contains { matchedLabel($0, Item.home.labels) != nil }
+        let hasClose = nodes.contains { $0.id == "xmark" || matchedLabel($0, Item.close.labels) != nil }
+        guard hasReload, hasHome || hasClose || titled else { return nil }
+        let items = Item.allCases.compactMap { item -> (Int, Entry)? in
+            guard let (index, node, text) = best(item.labels, in: nodes) else { return nil }
+            return (index, Entry(label: text, role: node.role, frame: node.frame))
         }
-        return State(menu: hasHome ? "expo" : "react-native", items: items)
+        return State(menu: hasHome ? "expo" : "react-native", items: items.sorted { $0.0 < $1.0 }.map(\.1))
     }
 
     /// The node for `item`, or for an exact `label`; the close control also by its `xmark` id.
     public static func node(for item: Item?, label: String?, in tree: UITree) -> UINode? {
         let nodes = tree.roots.flatMap { $0.flattened() }.filter { $0.frame != nil }
-        let wanted = label.map { [$0] } ?? item?.labels ?? []
         if item == .close, let xmark = nodes.first(where: { $0.id == "xmark" }) {
             return xmark
         }
-        for text in wanted {
-            let matches = nodes.filter { $0.label?.trimmingCharacters(in: .whitespacesAndNewlines) == text }
-            if let actionable = matches.first(where: { $0.role.isActionable || $0.role == .switch }) ?? matches.first {
-                return actionable
-            }
-        }
-        return nil
+        let wanted = label.map { [$0] } ?? item?.labels ?? []
+        return best(wanted, in: nodes)?.node
+    }
+
+    /// The first actionable node carrying one of `labels`, else the first node at all, with its pre-order index and the label it matched.
+    private static func best(_ labels: [String], in nodes: [UINode]) -> (index: Int, node: UINode, label: String)? {
+        let matches = nodes.enumerated().compactMap { index, node in matchedLabel(node, labels).map { (index, node, $0) } }
+        return matches.first { $0.1.role.isActionable || $0.1.role == .switch } ?? matches.first
+    }
+
+    /// The label of `labels` the node shows: its whole label, or for a button the end of "<icon> <label>".
+    static func matchedLabel(_ node: UINode, _ labels: [String]) -> String? {
+        guard let text = trimmedLabel(node) else { return nil }
+        if let exact = labels.first(where: { $0 == text }) { return exact }
+        guard node.role.isActionable else { return nil }
+        return labels.first { text.hasSuffix(" " + $0) }
+    }
+
+    private static func trimmedLabel(_ node: UINode) -> String? {
+        node.label?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Which developer tools show: the element inspector's panel (its Inspect and Touchables tabs) and the performance monitor (`UI` and `JS` frame rates).
