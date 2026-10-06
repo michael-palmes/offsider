@@ -1,17 +1,22 @@
 import XCTest
 
-/// The app a command reads: the one named, else XCTest's private active application, else the last one named while it is in front, else SpringBoard.
+/// The app a command reads: the one named; else, when XCTest's private lookup finds no app or only SpringBoard, the last one named while it is in front; else the lookup's app, else SpringBoard.
 enum ActiveApplication {
     static let springBoard = "com.apple.springboard"
 
     static func resolve(requested: String?, remembered: String?) -> XCUIApplication {
         if let requested { return XCUIApplication(bundleIdentifier: requested) }
-        if let active = privateActive() { return active }
-        if let remembered {
+        let active = privateActive()
+        if let remembered, active.map(isSpringBoard) ?? true {
             let app = XCUIApplication(bundleIdentifier: remembered)
             if app.state == .runningForeground { return app }
         }
-        return XCUIApplication(bundleIdentifier: springBoard)
+        return active ?? XCUIApplication(bundleIdentifier: springBoard)
+    }
+
+    /// An iPad with Stage Manager can report SpringBoard over the app in front.
+    static func isSpringBoard(_ app: XCUIApplication) -> Bool {
+        bundleID(of: app) == springBoard
     }
 
     static func privateActive() -> XCUIApplication? {
