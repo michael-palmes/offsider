@@ -98,7 +98,7 @@ struct ReactNativeEvidenceTests {
     @Test("logs --rn redacts the login's email and password by default, and --no-redact shows them", arguments: RNPlatform.enabled)
     func logsRedactLogin(platform: RNPlatform) async throws {
         let app = RNApp(platform)
-        try await app.open("batch-login-flow")
+        try await app.open("batch-login-flow", waitingFor: "batch-login-email-field")
         try await app.run("tap --id batch-login-email-field")
         try await app.run("type --replace \(Self.email)")
         try await app.run("tap --id batch-login-continue")
