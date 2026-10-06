@@ -85,8 +85,10 @@ export function OverlayTestScreen() {
         <Readout id="overlay-test-tab" label={`Overlay Tab: ${tab}`} value={tab} />
         <Readout id="overlay-test-swallowed" label={`Swallowed Taps: ${swallowed}`} value={String(swallowed)} />
         <Readout id="overlay-test-scrim" label={`Scrim: ${scrim ? 'Shown' : 'Hidden'}`} />
-        <Target id="overlay-test-start-clock" label="Start Clock" onPress={() => setClockRunning(true)} />
-        <Readout id="overlay-test-clock" label={`Clock: ${ticks}`} value={String(ticks)} />
+        <View style={styles.row}>
+          <Target id="overlay-test-start-clock" label="Start Clock" onPress={() => setClockRunning(true)} />
+          <Readout id="overlay-test-clock" label={`Clock: ${ticks}`} value={String(ticks)} />
+        </View>
         <Readout id="overlay-test-hidden-taps" label={`Hidden Taps: ${hiddenTaps}`} value={String(hiddenTaps)} />
         <Target
           id="overlay-test-toggle-banner"
@@ -127,7 +129,7 @@ export function OverlayTestScreen() {
             />
           </View>
         </View>
-        <View style={styles.logRow}>
+        <View style={styles.row}>
           <Target
             id="overlay-test-log-warning"
             label="Log Warning"
@@ -147,7 +149,7 @@ export function OverlayTestScreen() {
             }}
           />
         </View>
-        <View style={styles.logRow}>
+        <View style={styles.row}>
           <Target
             id="overlay-test-log-two-errors"
             label="Log Two Errors"
@@ -225,7 +227,7 @@ const styles = StyleSheet.create({
   body: { padding: 16, gap: 12, alignItems: 'center' },
   hiddenArea: { width: 240, height: 56 },
   flickerSlot: { height: 24 },
-  logRow: { flexDirection: 'row', gap: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   amountRow: { paddingHorizontal: 16, paddingVertical: 4 },
   amount: { height: 56 },
   hiddenFrame: {
