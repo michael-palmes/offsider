@@ -45,10 +45,15 @@ struct Verifier {
     /// The share of tiles that still differ across the latest after-shots while a transition is running; a caret or spinner moves far fewer.
     static let movingFraction = 0.1
 
-    /// True while the oldest and newest of `prints` differ on `movingFraction` of their tiles, so more after-shots are taken.
+    /// True while the oldest and newest of `prints` differ on more than `movingFraction` of their tiles.
     static func isMoving(_ prints: [ImageFingerprint]) -> Bool {
         guard prints.count >= 2, let first = prints.first, let last = prints.last else { return false }
-        return (first.changedFraction(comparedTo: last) ?? 1) >= movingFraction
+        return ScreenCompare.outcome(changedFraction: first.changedFraction(comparedTo: last) ?? 1, threshold: movingFraction) == .changed
+    }
+
+    /// While the screen moves: one after-shot past `screenshotCount` always, more only before the attempt's deadline, never past `maxScreenshots`.
+    static func takesAnotherShot(taken: Int, moving: Bool, withinDeadline: Bool) -> Bool {
+        moving && taken < maxScreenshots && (taken == screenshotCount || withinDeadline)
     }
 
     /// `initialTree`, the tree the selector was resolved on, stands in for the first read; `beforeAction` sees the second.
@@ -135,7 +140,9 @@ struct Verifier {
                 }
                 var afterShots: [(data: Data, print: ImageFingerprint)] = []
                 var shotIndex = 0
-                while shotIndex < screenshotCount || (shotIndex < maxScreenshots && Self.isMoving(afterShots.suffix(screenshotCount).map(\.print))) {
+                while shotIndex < screenshotCount || Self.takesAnotherShot(
+                    taken: shotIndex, moving: Self.isMoving(afterShots.suffix(screenshotCount).map(\.print)), withinDeadline: dependencies.now() < deadline
+                ) {
                     if shotIndex > 0 { try await dependencies.sleep(screenshotSpacing) }
                     shotIndex += 1
                     if let data = try? await dependencies.screenshot(), let print = ImageFingerprint(

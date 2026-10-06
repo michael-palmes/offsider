@@ -398,15 +398,17 @@ struct VerifierTests {
         #expect(fake.screenReads == 6)
     }
 
-    @Test("A screen that never settles stops the after-shots at their cap")
-    func endlessMotionIsCapped() async throws {
+    @Test("A screen that never settles stops the after-shots at their cap, or after one extra once the attempt's time is up", arguments: [
+        (2000, 1 + Verifier.maxScreenshots), (500, 1 + Verifier.screenshotCount + 1),
+    ])
+    func endlessMotionIsCapped(timeoutMilliseconds: Int, reads: Int) async throws {
         let shades: [UInt8] = [10, 40, 80, 120, 160, 200, 240, 20, 60, 100, 140]
         let fake = FakeSimulator(trees: [emptyTree], screens: shades.map { screen(shade: $0) })
         var actions: [Verifier.Attempt] = []
         var retries: [Int] = []
-        _ = try await run(fake, styles: [nil], actions: &actions, retries: &retries)
+        _ = try await run(fake, styles: [nil], timeout: .milliseconds(timeoutMilliseconds), actions: &actions, retries: &retries)
 
-        #expect(fake.screenReads == 1 + Verifier.maxScreenshots)
+        #expect(fake.screenReads == reads)
     }
 
     @Test("The bands are scaled to pixels and excluded only in portrait")
