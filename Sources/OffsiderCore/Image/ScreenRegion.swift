@@ -73,20 +73,22 @@ public enum ScreenGeometry {
 
     /// Rounds outward (floor the origin, ceil the far edge) and clamps to the image; throws when nothing is left.
     public static func pixelRect(for region: PointRegion, pixelsPerPoint: Double, imageWidth: Int, imageHeight: Int) throws -> PixelRect {
-        func pixel(_ points: Double, _ rule: FloatingPointRoundingRule, limit: Int) -> Int {
-            let value = (points * pixelsPerPoint).rounded(rule)
-            return value.isNaN ? 0 : Int(min(Double(limit), max(0, value)))
-        }
-        let left = pixel(region.x, .down, limit: imageWidth)
-        let top = pixel(region.y, .down, limit: imageHeight)
-        let right = pixel(region.x + region.width, .up, limit: imageWidth)
-        let bottom = pixel(region.y + region.height, .up, limit: imageHeight)
+        let left = pixel(region.x, pixelsPerPoint: pixelsPerPoint, .down, limit: imageWidth)
+        let top = pixel(region.y, pixelsPerPoint: pixelsPerPoint, .down, limit: imageHeight)
+        let right = pixel(region.x + region.width, pixelsPerPoint: pixelsPerPoint, .up, limit: imageWidth)
+        let bottom = pixel(region.y + region.height, pixelsPerPoint: pixelsPerPoint, .up, limit: imageHeight)
         guard pixelsPerPoint > 0, right > left, bottom > top else {
             let width = format(Double(imageWidth) / pixelsPerPoint)
             let height = format(Double(imageHeight) / pixelsPerPoint)
             throw ScreenRegionError("--region \(region) lies outside the \(width) x \(height) pt screen. Take coordinates from describe-ui.")
         }
         return PixelRect(x: left, y: top, width: right - left, height: bottom - top)
+    }
+
+    /// A point coordinate as a pixel from 0 to `limit`, clamped while still a Double so a huge or infinite value cannot trap; NaN is 0.
+    public static func pixel(_ points: Double, pixelsPerPoint: Double, _ rule: FloatingPointRoundingRule, limit: Int) -> Int {
+        let value = (points * pixelsPerPoint).rounded(rule)
+        return value.isNaN ? 0 : Int(min(Double(limit), max(0, value)))
     }
 
     /// The points a pixel rectangle covers, for reporting the region actually captured.

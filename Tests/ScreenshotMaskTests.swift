@@ -158,6 +158,32 @@ struct ScreenshotMaskTests {
         #expect(Self.pixel(result.image, 200, 200) == Self.white)
     }
 
+    @Test("a --mask-region far past the screen is clamped to the image instead of trapping", arguments: ["0,0,1e19,40", "0,0,40,1e300", "1e19,0,40,40"])
+    func hugeRegionIsClamped(region: String) async throws {
+        let backend = try Self.backend([])
+        let result = try await Self.capture(["--mask-region", region], on: backend)
+        defer { try? FileManager.default.removeItem(atPath: result.path) }
+
+        let painted = region.hasPrefix("1e19") ? 0 : 1
+        #expect(result.report.maskedBy == [.region: painted])
+        if painted == 1 {
+            #expect(Self.point(result.image, 10, 10) == Self.black)
+        }
+        #expect(Self.point(result.image, 200, 400) == Self.white)
+    }
+
+    @Test("tree frames that are huge, infinite or NaN are clamped or withheld, never converted unchecked")
+    func extremeTreeFrames() throws {
+        let rects = try SecureMask.pixelRects(
+            frames: [UIFrame(x: 0, y: 0, width: .infinity, height: 1e308), UIFrame(x: -1e308, y: -.infinity, width: 1e308, height: 10)],
+            pixelsPerPoint: 3, imageWidth: 1170, imageHeight: 2532
+        )
+        #expect(rects == [CGRect(x: 0, y: 0, width: 1170, height: 2532)])
+        #expect(throws: MaskUnproven.self) {
+            try SecureMask.pixelRects(frames: [UIFrame(x: .nan, y: 0, width: 10, height: 10)], pixelsPerPoint: 3, imageWidth: 1170, imageHeight: 2532)
+        }
+    }
+
     @Test("a plain screenshot reads no tree and reports no masks")
     func plainReadsNoTree() async throws {
         let backend = try Self.backend([SecureTextTests.passwordField()])
