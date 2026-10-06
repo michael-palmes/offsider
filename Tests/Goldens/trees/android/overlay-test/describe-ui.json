@@ -140,7 +140,7 @@
             "x": 0,
             "y": 98.67,
             "width": 411.43,
-            "height": 751.24
+            "height": 687.24
           },
           "enabled": true,
           "state": {
@@ -156,7 +156,7 @@
               "x": 0,
               "y": 259,
               "width": 1080,
-              "height": 1972
+              "height": 1804
             },
             "text": null,
             "contentDescription": null,
@@ -275,13 +275,85 @@
               "children": []
             },
             {
+              "role": "button",
+              "id": "overlay-test-start-clock",
+              "label": "Start Clock",
+              "value": null,
+              "frame": {
+                "x": 147.05,
+                "y": 220.57,
+                "width": 117.71,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-start-clock",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 386,
+                  "y": 579,
+                  "width": 309,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "Start Clock",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "overlay-test-clock",
+              "label": "Clock: 0",
+              "value": null,
+              "frame": {
+                "x": 175.24,
+                "y": 276.57,
+                "width": 60.95,
+                "height": 23.24
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "overlay-test-clock",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 460,
+                  "y": 726,
+                  "width": 160,
+                  "height": 61
+                },
+                "text": null,
+                "contentDescription": "Clock: 0",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
               "role": "text",
               "id": "overlay-test-hidden-taps",
               "label": "Hidden Taps: 0",
               "value": null,
               "frame": {
                 "x": 149.33,
-                "y": 220.57,
+                "y": 311.62,
                 "width": 113.14,
                 "height": 23.24
               },
@@ -297,7 +369,7 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 392,
-                  "y": 579,
+                  "y": 818,
                   "width": 297,
                   "height": 61
                 },
@@ -317,9 +389,9 @@
               "value": null,
               "frame": {
                 "x": 139.05,
-                "y": 255.62,
+                "y": 347.05,
                 "width": 133.33,
-                "height": 43.81
+                "height": 44.19
               },
               "enabled": true,
               "state": {
@@ -333,9 +405,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 365,
-                  "y": 671,
+                  "y": 911,
                   "width": 350,
-                  "height": 115
+                  "height": 116
                 },
                 "text": null,
                 "contentDescription": "Show Banner",
@@ -353,9 +425,9 @@
               "value": null,
               "frame": {
                 "x": 120,
-                "y": 311.62,
+                "y": 403.05,
                 "width": 171.81,
-                "height": 43.81
+                "height": 44.19
               },
               "enabled": true,
               "state": {
@@ -369,12 +441,84 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 315,
-                  "y": 818,
+                  "y": 1058,
                   "width": 451,
-                  "height": 115
+                  "height": 116
                 },
                 "text": null,
                 "contentDescription": "Show Silent Scrim",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-flicker",
+              "label": "Flicker",
+              "value": null,
+              "frame": {
+                "x": 163.81,
+                "y": 459.05,
+                "width": 83.81,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-flicker",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 430,
+                  "y": 1205,
+                  "width": 220,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "Flicker",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "text",
+              "id": "overlay-test-flicker-node",
+              "label": "Flickering Node",
+              "value": null,
+              "frame": {
+                "x": 146.29,
+                "y": 515.05,
+                "width": 118.86,
+                "height": 23.24
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": "overlay-test-flicker-node",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 384,
+                  "y": 1352,
+                  "width": 312,
+                  "height": 61
+                },
+                "text": null,
+                "contentDescription": "Flickering Node",
                 "hint": null,
                 "stateDescription": null,
                 "roleDescription": null,
@@ -389,7 +533,7 @@
               "value": null,
               "frame": {
                 "x": 85.71,
-                "y": 367.62,
+                "y": 550.86,
                 "width": 240,
                 "height": 56
               },
@@ -405,7 +549,7 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 225,
-                  "y": 965,
+                  "y": 1446,
                   "width": 630,
                   "height": 147
                 },
@@ -424,8 +568,8 @@
               "label": "Log Warning",
               "value": null,
               "frame": {
-                "x": 141.33,
-                "y": 435.81,
+                "x": 83.81,
+                "y": 619.05,
                 "width": 128.76,
                 "height": 44.19
               },
@@ -440,8 +584,8 @@
                 "resourceId": "overlay-test-log-warning",
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
-                  "x": 371,
-                  "y": 1144,
+                  "x": 220,
+                  "y": 1625,
                   "width": 338,
                   "height": 116
                 },
@@ -456,48 +600,12 @@
             },
             {
               "role": "button",
-              "id": "overlay-test-clear-logs",
-              "label": "Clear Logs",
-              "value": null,
-              "frame": {
-                "x": 148.57,
-                "y": 491.81,
-                "width": 114.29,
-                "height": 44.19
-              },
-              "enabled": true,
-              "state": {
-                "checked": null,
-                "selected": false,
-                "focused": false
-              },
-              "native": {
-                "className": "android.widget.Button",
-                "resourceId": "overlay-test-clear-logs",
-                "package": "com.mpalmes.offsider.playground.rn",
-                "pixelFrame": {
-                  "x": 390,
-                  "y": 1291,
-                  "width": 300,
-                  "height": 116
-                },
-                "text": null,
-                "contentDescription": "Clear Logs",
-                "hint": null,
-                "stateDescription": null,
-                "roleDescription": null,
-                "testTag": null
-              },
-              "children": []
-            },
-            {
-              "role": "button",
               "id": "overlay-test-log-error",
               "label": "Log Error",
               "value": null,
               "frame": {
-                "x": 154.29,
-                "y": 547.81,
+                "x": 224.76,
+                "y": 619.05,
                 "width": 102.86,
                 "height": 44.19
               },
@@ -512,8 +620,8 @@
                 "resourceId": "overlay-test-log-error",
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
-                  "x": 405,
-                  "y": 1438,
+                  "x": 590,
+                  "y": 1625,
                   "width": 270,
                   "height": 116
                 },
@@ -525,8 +633,116 @@
                 "testTag": null
               },
               "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-log-two-errors",
+              "label": "Log Two Errors",
+              "value": null,
+              "frame": {
+                "x": 68.57,
+                "y": 675.05,
+                "width": 148.19,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-log-two-errors",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 180,
+                  "y": 1772,
+                  "width": 389,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "Log Two Errors",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-clear-logs",
+              "label": "Clear Logs",
+              "value": null,
+              "frame": {
+                "x": 228.95,
+                "y": 675.05,
+                "width": 114.29,
+                "height": 44.19
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-clear-logs",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 601,
+                  "y": 1772,
+                  "width": 300,
+                  "height": 116
+                },
+                "text": null,
+                "contentDescription": "Clear Logs",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
             }
           ]
+        },
+        {
+          "role": "button",
+          "id": "overlay-test-amount",
+          "label": "10, AUD",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 790.48,
+            "width": 379.43,
+            "height": 56
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Button",
+            "resourceId": "overlay-test-amount",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 2075,
+              "width": 996,
+              "height": 147
+            },
+            "text": null,
+            "contentDescription": "10, AUD",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
         },
         {
           "role": "group",
