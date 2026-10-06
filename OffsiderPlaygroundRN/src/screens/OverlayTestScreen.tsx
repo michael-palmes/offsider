@@ -127,43 +127,47 @@ export function OverlayTestScreen() {
             />
           </View>
         </View>
-        <Target
-          id="overlay-test-log-warning"
-          label="Log Warning"
-          onPress={() => {
-            warnings.current += 1;
-            fixtureLog('overlay-test', `log warning ${warnings.current}`);
-            console.warn(`OffsiderFixture warning ${warnings.current}`);
-          }}
-        />
-        <Target
-          id="overlay-test-log-two-errors"
-          label="Log Two Errors"
-          onPress={() => {
-            for (let count = 0; count < 2; count += 1) {
+        <View style={styles.logRow}>
+          <Target
+            id="overlay-test-log-warning"
+            label="Log Warning"
+            onPress={() => {
+              warnings.current += 1;
+              fixtureLog('overlay-test', `log warning ${warnings.current}`);
+              console.warn(`OffsiderFixture warning ${warnings.current}`);
+            }}
+          />
+          <Target
+            id="overlay-test-log-error"
+            label="Log Error"
+            onPress={() => {
               errors.current += 1;
               fixtureLog('overlay-test', `log error ${errors.current}`);
               console.error(`OffsiderFixture error ${errors.current}`);
-            }
-          }}
-        />
-        <Target
-          id="overlay-test-clear-logs"
-          label="Clear Logs"
-          onPress={() => {
-            fixtureLog('overlay-test', 'clear logs');
-            logBox.clearAllLogs();
-          }}
-        />
-        <Target
-          id="overlay-test-log-error"
-          label="Log Error"
-          onPress={() => {
-            errors.current += 1;
-            fixtureLog('overlay-test', `log error ${errors.current}`);
-            console.error(`OffsiderFixture error ${errors.current}`);
-          }}
-        />
+            }}
+          />
+        </View>
+        <View style={styles.logRow}>
+          <Target
+            id="overlay-test-log-two-errors"
+            label="Log Two Errors"
+            onPress={() => {
+              for (let count = 0; count < 2; count += 1) {
+                errors.current += 1;
+                fixtureLog('overlay-test', `log error ${errors.current}`);
+                console.error(`OffsiderFixture error ${errors.current}`);
+              }
+            }}
+          />
+          <Target
+            id="overlay-test-clear-logs"
+            label="Clear Logs"
+            onPress={() => {
+              fixtureLog('overlay-test', 'clear logs');
+              logBox.clearAllLogs();
+            }}
+          />
+        </View>
       </ScrollView>
       <View style={styles.amountRow}>
         <Target id="overlay-test-amount" label="10, AUD" style={styles.amount} />
@@ -221,6 +225,7 @@ const styles = StyleSheet.create({
   body: { padding: 16, gap: 12, alignItems: 'center' },
   hiddenArea: { width: 240, height: 56 },
   flickerSlot: { height: 24 },
+  logRow: { flexDirection: 'row', gap: 12 },
   amountRow: { paddingHorizontal: 16, paddingVertical: 4 },
   amount: { height: 56 },
   hiddenFrame: {
