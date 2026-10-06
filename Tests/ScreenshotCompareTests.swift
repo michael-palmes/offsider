@@ -224,4 +224,96 @@ struct ScreenshotCompareTests {
         #expect(TestImages.markedPixels(screen.image).map { [$0.x, $0.y] } == [[2700, 100]])
         #expect(report.jsonLine() == #"{"path":null,"width":951,"height":669,"pixelsPerPoint":1,"region":null,"orientation":"landscape","rotation":0,"display":{"id":"inner","platformId":"3"},"posture":"open","upright":true,"format":null}"#)
     }
+
+    // MARK: - Pixel diff
+
+    @Test("one changed pixel counts as one, with a 1 x 1 bounds")
+    func onePixel() throws {
+        let diff = try ScreenDiff.compare(baseline: TestImages.make(width: 40, height: 30), current: TestImages.make(width: 40, height: 30, marked: [(7, 9)]))
+        #expect(diff.changedPixels == 1)
+        #expect(diff.comparedPixels == 1200)
+        #expect(diff.bounds == PixelRect(x: 7, y: 9, width: 1, height: 1))
+    }
+
+    @Test("identical images change no pixels and have no bounds")
+    func identical() throws {
+        let diff = try ScreenDiff.compare(baseline: TestImages.make(width: 40, height: 30), current: TestImages.make(width: 40, height: 30))
+        #expect(diff.changedPixels == 0)
+        #expect(diff.bounds == nil)
+    }
+
+    @Test("rows in the excluded bands are neither counted nor compared, and show grey")
+    func bandsNotCounted() throws {
+        let diff = try ScreenDiff.compare(
+            baseline: TestImages.make(width: 40, height: 30), current: TestImages.make(width: 40, height: 30, marked: [(5, 1), (5, 28)]),
+            excludingTop: 3, excludingBottom: 4
+        )
+        #expect(diff.changedPixels == 0)
+        #expect(diff.comparedPixels == 40 * 23)
+        #expect(ScreenshotMaskTests.pixel(diff.image, 5, 1) == [128, 128, 128])
+    }
+
+    @Test("the diff image marks a changed pixel magenta and fades the rest toward white")
+    func diffImageColours() throws {
+        let diff = try ScreenDiff.compare(baseline: TestImages.make(width: 40, height: 30), current: TestImages.make(width: 40, height: 30, marked: [(7, 9)]))
+        #expect(ScreenshotMaskTests.pixel(diff.image, 7, 9) == [255, 0, 255])
+        #expect(ScreenshotMaskTests.pixel(diff.image, 20, 20) == [221, 221, 221])
+    }
+
+    @Test("a compare reports changed pixels and their bounds after the tile keys, and the diff image is written only when asked")
+    @MainActor
+    func diffOutputWritten() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-diff-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let baselinePath = directory.appendingPathComponent("before.png").path
+        try ScreenImage.encode(TestImages.make(width: 1206, height: 2622), as: .png).write(to: URL(fileURLWithPath: baselinePath))
+        let device = DeviceID(rawValue: "fake-device", platform: .ios)
+        let backend = FakeDeviceBackend(
+            trees: [], screenshots: [try ScreenImage.encode(TestImages.make(width: 1206, height: 2622, marked: [(600, 1500)]), as: .png)], screen: portrait
+        )
+
+        for wantsDiff in [false, true] {
+            let arguments = ["--compare", baselinePath, "--device", device.rawValue] + (wantsDiff ? ["--diff-output", directory.path] : [])
+            let command = try Screenshot.parse(arguments)
+            let report = try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: .none)
+            let line = report.jsonLine()
+
+            #expect(line.contains(#""changedPixels":1,"comparedPixels":"#))
+            #expect(line.contains(#""changedBounds":{"x":600,"y":1500,"width":1,"height":1}"#))
+            #expect(report.comparison?.summary.hasSuffix(", 1 pixel") == true)
+            #expect((report.diffPath != nil) == wantsDiff)
+            #expect(line.contains("diffPath") == wantsDiff)
+            if let diffPath = report.diffPath {
+                #expect(diffPath.hasPrefix(directory.path + "/Screenshot Diff - "))
+                #expect(try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: diffPath))).width == 1206)
+            }
+        }
+    }
+
+    @Test("a baseline of another size writes no diff")
+    @MainActor
+    func mismatchWritesNoDiff() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-diff-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let baselinePath = directory.appendingPathComponent("before.png").path
+        try ScreenImage.encode(TestImages.make(width: 100, height: 100), as: .png).write(to: URL(fileURLWithPath: baselinePath))
+        let device = DeviceID(rawValue: "fake-device", platform: .ios)
+        let backend = FakeDeviceBackend(trees: [], screenshots: [try ScreenImage.encode(TestImages.make(width: 1206, height: 2622), as: .png)], screen: portrait)
+        let diffPath = directory.appendingPathComponent("diff.png").path
+        let command = try Screenshot.parse(["--compare", baselinePath, "--diff-output", diffPath, "--device", device.rawValue])
+
+        await #expect(throws: CLIError.self) {
+            try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: .none)
+        }
+        #expect(!FileManager.default.fileExists(atPath: diffPath))
+    }
+
+    @Test("--diff-output needs --compare and a PNG path", arguments: ["--diff-output d.png", "--compare b.png --diff-output d.jpg"])
+    func diffOutputUsage(arguments: String) async throws {
+        let result = try await TestHelpers.runOffsiderCommandSeparated("screenshot \(arguments) --device \(UUID().uuidString)")
+        #expect(result.exitCode == 64)
+        #expect(result.stderr.contains("--diff-output"))
+    }
 }

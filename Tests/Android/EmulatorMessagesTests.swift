@@ -55,4 +55,12 @@ struct EmulatorMessagesTests {
         image.format.width = 0
         #expect(EmulatorControlClient.frame(from: image) == nil)
     }
+
+    @Test("several fingers are one event with a contact each, keeping identifiers and pressure")
+    func touches() {
+        let event = EmulatorControlClient.touchEvent([PanelTouch(x: 10, y: 20, pressure: 1, identifier: 0), PanelTouch(x: 70, y: 20, pressure: 1, identifier: 1)])
+        #expect(event.touches.map(\.identifier) == [0, 1])
+        #expect(event.touches.map(\.x) == [10, 70])
+        #expect(event.touches.allSatisfy { $0.pressure == 1 })
+    }
 }

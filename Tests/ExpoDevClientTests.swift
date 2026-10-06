@@ -170,3 +170,52 @@ private final class BooleanCollector: NSObject, XMLParserDelegate {
         }
     }
 }
+
+@Suite("Expo dev client opening")
+struct ExpoDevClientOpeningTests {
+    @Test("the dev client link percent-encodes Metro's URL as expo start prints it")
+    func link() {
+        #expect(ExpoDevClient.devClientURL(scheme: "exp+offsiderplaygroundrn", host: "127.0.0.1", port: 8742)
+            == "exp+offsiderplaygroundrn://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742")
+        #expect(ExpoDevClient.devClientURL(scheme: "exp+app", host: "10.0.2.2", port: 8081).hasSuffix("url=http%3A%2F%2F10.0.2.2%3A8081"))
+    }
+
+    @Test("exp+ schemes come from dumpsys package lines, once each, and from Info.plist URL types")
+    func schemes() throws {
+        let dump = """
+              Scheme: "com.example.app"
+              Scheme: "exp+offsiderplaygroundrn"
+                Authority: "expo-development-client"
+              Scheme: "exp+offsiderplaygroundrn"
+        """
+        #expect(ExpoDevClient.schemes(fromPackageDump: dump) == ["exp+offsiderplaygroundrn"])
+        let plist = try PropertyListSerialization.data(fromPropertyList: [
+            "CFBundleURLTypes": [["CFBundleURLSchemes": ["myapp", "exp+myapp"]], ["CFBundleURLSchemes": ["com.example.app"]]],
+        ], format: .xml, options: 0)
+        #expect(ExpoDevClient.schemes(fromInfoPlist: plist) == ["exp+myapp"])
+        #expect(throws: ExpoDevClientError.self) { try ExpoDevClient.singleScheme([], appID: "com.example.app") }
+        #expect(throws: ExpoDevClientError.self) { try ExpoDevClient.singleScheme(["exp+a", "exp+b"], appID: "com.example.app") }
+    }
+
+    @Test("Android reaches Metro on loopback through an adb reverse, else the emulator's alias; a phone without one has no route")
+    func androidHost() {
+        #expect(ExpoDevClient.androidMetroHost(reverseList: "emulator-5554 tcp:8742 tcp:8742\n", port: 8742, isEmulator: true) == "127.0.0.1")
+        #expect(ExpoDevClient.androidMetroHost(reverseList: "emulator-5554 tcp:8081 tcp:8081\n", port: 8742, isEmulator: true) == "10.0.2.2")
+        #expect(ExpoDevClient.androidMetroHost(reverseList: "", port: 8742, isEmulator: false) == nil)
+    }
+
+    @Test("the launcher, a load error and the Bundling banner are read from the tree")
+    func launcherStates() {
+        func tree(_ labels: [String]) -> UITree {
+            UITree(platform: .ios, device: "D", roots: [UINode(role: .application, native: .ios(IOSNativeAttributes()), children: labels.map {
+                UINode(role: .text, label: $0, native: .ios(IOSNativeAttributes()))
+            })])
+        }
+        #expect(ExpoDevLauncher.isLauncher(tree(["Development Build", "Searching for development servers..."])))
+        #expect(ExpoDevLauncher.isLauncher(tree(["Development Build", "RECENTLY OPENED"])))
+        #expect(!ExpoDevLauncher.isLauncher(tree(["Development Build"])))
+        #expect(ExpoDevLauncher.loadError(in: tree(["There was a problem loading the project."])) != nil)
+        #expect(ExpoDevLauncher.isLoading(tree(["Bundling 42%"])))
+        #expect(!ExpoDevLauncher.isLoading(tree(["Home"])))
+    }
+}

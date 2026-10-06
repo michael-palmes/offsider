@@ -75,6 +75,8 @@ final class Requests {
                 Actions.setProgress(json, table, request);
             } else if ("setText".equals(op)) {
                 Actions.setText(json, connection.automation(), request);
+            } else if ("paste".equals(op)) {
+                Actions.paste(json, connection.automation());
             } else if ("events".equals(op)) {
                 writeEvents(json, request);
             } else if ("inject".equals(op)) {
@@ -185,6 +187,9 @@ final class Requests {
         if (failure.className != null || failure.resourceId != null) {
             json.field("className", failure.className);
             json.field("resourceId", failure.resourceId);
+            if (failure.inputType >= 0) {
+                json.field("inputType", failure.inputType);
+            }
         }
         json.endObject();
         json.field("eventSeq", eventSeq);

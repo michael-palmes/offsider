@@ -69,6 +69,22 @@ enum HelperTreeMapping {
             ?? walked.first
     }
 
+    /// Every listed window in dp, with the package of its root when the helper walked it.
+    static func windows(from dump: HelperDump, scale: Double) -> [UIWindowInfo] {
+        dump.windows.map { window in
+            let bounds = window.bounds.count == 4 && scale > 0
+                ? UIFrame(
+                    x: Double(window.bounds[0]) / scale, y: Double(window.bounds[1]) / scale,
+                    width: Double(window.bounds[2] - window.bounds[0]) / scale, height: Double(window.bounds[3] - window.bounds[1]) / scale
+                )
+                : nil
+            return UIWindowInfo(
+                id: window.id, kind: window.type, layer: window.layer, title: window.title,
+                active: window.active, focused: window.focused, package: window.root?.package, bounds: bounds
+            )
+        }
+    }
+
     /// The app window as `application`, then each keyboard as `keyboard`, both titled; bars are left out.
     static func roots(from dump: HelperDump, scale: Double, pid: Int32) -> (roots: [UINode], index: HelperTreeIndex) {
         guard let app = appWindow(in: dump), let appRoot = app.root else {

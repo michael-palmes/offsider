@@ -51,6 +51,19 @@ struct IOSAccessibilityMappingTests {
         #expect(nodes.map(\.id) == ["legacy-id", "unique-id"])
     }
 
+    @Test("the iOS 27 keyboard layout group is the keyboard, so the summary and focus checks see it")
+    func keyboardLayoutGroup() throws {
+        let tree = UITree(platform: .ios, device: "IOS-UDID", roots: try roots("""
+        [{"type": "Application", "AXLabel": "App", "children": [
+          {"type": "Group", "AXUniqueId": "UIKeyboardLayoutStar Preview", "children": [{"type": "Button", "AXLabel": "q"}]},
+          {"type": "Group", "AXUniqueId": "keyboard-help-panel"}]}]
+        """))
+
+        #expect(tree.roots[0].children.map(\.role) == [.keyboard, .group])
+        #expect(tree.roots[0].children[0].children[0].role == .button)
+        #expect(UITreeContext(tree: tree).keyboard)
+    }
+
     @Test("numeric AX values become strings")
     func numericValues() throws {
         let nodes = try roots(#"[{"type": "StaticText", "AXValue": 5}, {"type": "Slider", "AXValue": 0.25}]"#)

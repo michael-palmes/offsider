@@ -9,8 +9,9 @@ struct Logs: AsyncParsableCommand {
         discussion: """
         Reads the last 30 seconds by default. Choose one source (--rn, --app or --process) and one window \
         (--last, --since, --duration or --follow). ANSI colour codes, including escaped forms such as \\u001b[32m, \
-        are removed unless --raw. Exits 0 even when nothing matches. On iOS this reads the simulator's unified log; \
-        on Android, logcat.
+        are removed unless --raw. Passwords, tokens, keys, cookies, JWTs and email addresses are replaced with \
+        [redacted] unless --no-redact (or --raw alone); --grep matches the text before redaction. Exits 0 even when \
+        nothing matches. On iOS this reads the simulator's unified log; on Android, logcat.
         """
     )
 
@@ -44,8 +45,11 @@ struct Logs: AsyncParsableCommand {
     @Option(name: .customLong("max-lines"), help: ArgumentHelp("Keep the newest this many entries; 0 keeps all. Ignored with --follow.", valueName: "n"))
     var maxLines: Int = 500
 
-    @Flag(help: "Keep ANSI colour codes in messages.")
+    @Flag(help: "Keep ANSI colour codes in messages; also turns redaction off unless --redact is given.")
     var raw = false
+
+    @Flag(inversion: .prefixedNo, help: "Replace passwords, tokens, keys, cookies, JWTs and email addresses with [redacted] (default on, off with --raw).")
+    var redact: Bool?
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
@@ -108,7 +112,12 @@ struct Logs: AsyncParsableCommand {
     }
 
     func collector() throws -> LogCollector {
-        try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, keepsANSI: raw, retainsEntries: !follow)
+        try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, keepsANSI: raw, redacts: redacts, retainsEntries: !follow)
+    }
+
+    /// `--redact` or `--no-redact` when given, else on unless `--raw`.
+    var redacts: Bool {
+        redact ?? !raw
     }
 
     func run() async throws {
@@ -116,8 +125,16 @@ struct Logs: AsyncParsableCommand {
         try await read(from: try await DeviceRouter.route(deviceOption.id, logger: logger))
     }
 
+    /// Prints one line of stdout at once, so a reader of `--follow` sees each entry as it arrives.
     @MainActor
-    func read(from route: DeviceRouter.Route) async throws {
+    static func printLine(_ line: String) {
+        print(line)
+        fflush(stdout)
+    }
+
+    /// `write` receives each line meant for stdout, without its newline.
+    @MainActor
+    func read(from route: DeviceRouter.Route, write: @escaping @MainActor (String) -> Void = Logs.printLine) async throws {
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
@@ -126,14 +143,22 @@ struct Logs: AsyncParsableCommand {
         }
         let query = try Self.options { try self.query() }
         let sink = LogSink(try Self.options { try self.collector() })
+        let recorder = EvidenceRecorder.current
+        let token = try recorder.begin(device: booted.id, kind: "logs")
+        let runFile = token.flatMap { Self.openRunFile($0, recorder: recorder, extension: json ? (follow ? "ndjson" : "json") : "log") }
+        let teeing = RunLogTee(stdout: write, runFile: runFile) { error in
+            recorder.update(token) { $0.file = nil }
+            Self.warnRunWriteFailed(error)
+        }
+        defer { teeing.close() }
+        let tee: @MainActor (String) -> Void = { teeing.write($0) }
 
         let follow = self.follow
         let json = self.json
         let reading = Task { @MainActor in
             try await reader.readLogs(query, on: booted.id) { entry in
                 guard let shown = sink.collector.add(entry), follow else { return }
-                print(json ? LogReport.jsonLine(shown) : LogText.format(shown))
-                fflush(stdout)
+                tee(json ? LogReport.jsonLine(shown) : LogText.format(shown))
             }
         }
         let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
@@ -144,19 +169,55 @@ struct Logs: AsyncParsableCommand {
             print("Following logs on \(booted.id.rawValue); press Ctrl+C to stop.", to: &standardError)
         }
         try await reading.value
-        guard !follow else { return }
-        Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json)
+        if !follow {
+            Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, write: tee)
+        }
+        if let footer = Self.redactionFooter(sink.collector.redacted) {
+            print(footer, to: &standardError)
+        }
+        let collector = sink.collector
+        recorder.update(token) { entry in
+            entry.entries = follow ? collector.matched : collector.entries.count
+            entry.redacted = collector.redacted
+        }
     }
 
-    static func emit(_ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool) {
+    /// The run's copy of stdout; stdout is always the other copy, so a file that cannot be made is a warning.
+    @MainActor
+    private static func openRunFile(_ token: EvidenceRecorder.Token, recorder: EvidenceRecorder, extension pathExtension: String) -> FileHandle? {
+        do {
+            let path = try recorder.reserveFile(token, extension: pathExtension)
+            guard FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600]),
+                  let handle = FileHandle(forWritingAtPath: path) else {
+                throw CLIError(errorDescription: "could not create \(path)")
+            }
+            return handle
+        } catch {
+            recorder.update(token) { $0.file = nil }
+            warnRunWriteFailed(error)
+            return nil
+        }
+    }
+
+    static func warnRunWriteFailed(_ error: any Error) {
+        print("Warning: could not write the logs into the run: \(OffsiderCommand.message(for: error)).", to: &standardError)
+    }
+
+    /// The stderr line after a read that redacted something; nil when nothing was.
+    static func redactionFooter(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return "Redacted \(count) \(count == 1 ? "value" : "values") (passwords, tokens, emails); --no-redact shows them."
+    }
+
+    @MainActor
+    static func emit(_ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool, write: (String) -> Void) {
         let entries = collector.entries
         if json {
-            print(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated).jsonLine())
+            write(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated, redacted: collector.redacted).jsonLine())
         } else if !entries.isEmpty {
-            print(entries.map { LogText.format($0) }.joined(separator: "\n"))
+            write(entries.map { LogText.format($0) }.joined(separator: "\n"))
         }
         if collector.truncated > 0 {
-            fflush(stdout)
             print("Showing the newest \(entries.count) of \(entries.count + collector.truncated) entries; raise --max-lines or narrow with --grep.", to: &standardError)
         }
     }
@@ -188,5 +249,36 @@ private final class LogSink {
 
     init(_ collector: LogCollector) {
         self.collector = collector
+    }
+}
+
+/// Every line to stdout and to the run's copy; the first failed run write closes the copy and reports once, and stdout carries on.
+@MainActor
+final class RunLogTee {
+    private let stdout: @MainActor (String) -> Void
+    private var runFile: FileHandle?
+    private let failed: @MainActor (any Error) -> Void
+
+    init(stdout: @escaping @MainActor (String) -> Void, runFile: FileHandle?, failed: @escaping @MainActor (any Error) -> Void) {
+        self.stdout = stdout
+        self.runFile = runFile
+        self.failed = failed
+    }
+
+    func write(_ line: String) {
+        stdout(line)
+        guard let handle = runFile else { return }
+        do {
+            try handle.write(contentsOf: Data((line + "\n").utf8))
+        } catch {
+            runFile = nil
+            try? handle.close()
+            failed(error)
+        }
+    }
+
+    func close() {
+        try? runFile?.close()
+        runFile = nil
     }
 }

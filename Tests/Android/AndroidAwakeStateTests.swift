@@ -250,3 +250,58 @@ struct AndroidAwakeStateTests {
         #expect(error?.message.contains(AndroidAwakeState.codeLabel) == true)
     }
 }
+
+@Suite("Android first unlock and RAM")
+struct AndroidUserStateTests {
+    /// The E2E AVD (API 36, no credential) as `userStateScript` prints it.
+    static let e2eUserState = """
+    user_state=RUNNING_UNLOCKED
+    ce_available=true
+    memtotal_kb=MemTotal:        6149664 kB
+
+    """
+
+    static func reading(credential: String = "PIN", userState: String, ceAvailable: String = "") -> AwakeReading? {
+        let output = AndroidAwakeStateTests.motoAwake.replacingOccurrences(of: "CredentialType: PIN", with: "CredentialType: \(credential)")
+            + "user_state=\(userState)\nce_available=\(ceAvailable)\nmemtotal_kb=\n"
+        return AndroidAwakeState.parse(output)
+    }
+
+    @Test("the user state decides first unlock, with ce_available as the fallback", arguments: [
+        ("RUNNING_UNLOCKED", "", true), ("RUNNING_LOCKED", "true", false), ("RUNNING_UNLOCKING", "", false),
+        ("", "true", true), ("", "false", false), ("", "", nil), ("Unknown user: 0", "", nil),
+    ] as [(String, String, Bool?)])
+    func userUnlocked(state: String, ceAvailable: String, expected: Bool?) {
+        #expect(Self.reading(userState: state, ceAvailable: ceAvailable)?.userUnlocked == expected)
+    }
+
+    @Test("a PIN device not yet unlocked since boot awaits its first unlock; one with no credential never does")
+    func awaitsFirstUnlock() throws {
+        #expect(try #require(Self.reading(userState: "RUNNING_LOCKED")).awaitsFirstUnlock)
+        let none = try #require(Self.reading(credential: "NONE", userState: "RUNNING_UNLOCKING"))
+        #expect(none.credential == "none")
+        #expect(!none.hasCredential)
+        #expect(!none.awaitsFirstUnlock)
+    }
+
+    @Test("the E2E AVD's real output reads as unlocked with its RAM")
+    func e2eFixture() throws {
+        let reading = try #require(AndroidAwakeState.parse(AndroidAwakeStateTests.motoAwake + Self.e2eUserState))
+        #expect(reading.userUnlocked == true)
+        #expect(reading.memTotalKB == 6_149_664)
+    }
+
+    @Test("output without the user state lines still parses, with nothing known about first unlock or RAM")
+    func backwardsCompatible() throws {
+        let reading = try #require(AndroidAwakeState.parse(AndroidAwakeStateTests.motoAwake))
+        #expect(reading.userUnlocked == nil)
+        #expect(reading.memTotalKB == nil)
+        #expect(reading.credential == "pin")
+    }
+
+    @Test("the user state script is appended only for boot and doctor, never to the read wake uses")
+    func scriptStaysOutOfWake() {
+        #expect(!AndroidAwakeState.readScript.contains("get-started-user-state"))
+        #expect(AndroidAwakeState.userStateScript.contains("am get-started-user-state"))
+    }
+}

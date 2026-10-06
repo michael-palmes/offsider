@@ -8,6 +8,14 @@ enum TapStyle: String, CaseIterable, ExpressibleByArgument {
     case physical
 }
 
+/// Which of several on-screen matches to take, in tree order, instead of failing as ambiguous.
+enum MatchPick: Equatable, Sendable {
+    /// 1-based.
+    case nth(Int)
+    /// The last, which Android draws on top.
+    case last
+}
+
 struct TapResolution {
     let point: (x: Double, y: Double)
     let isSwitchLikeControl: Bool

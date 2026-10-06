@@ -44,7 +44,13 @@ enum HelperInjectPlan {
                 ], waiting: ms)
             case .touch(let phase, let point):
                 let name = phase == .down ? "down" : phase == .move ? "move" : "up"
-                builder.add(["kind": .string("touch"), "phase": .string(name), "x": .double(point.x), "y": .double(point.y), "pointer": .int(0)])
+                builder.add(touch(name, point, pointer: 0))
+            case .touches(let phase, let points):
+                let name = phase == .down ? "down" : phase == .move ? "move" : "up"
+                let fingers = Array(points.enumerated())
+                for (pointer, point) in phase == .up ? fingers.reversed() : fingers {
+                    builder.add(touch(name, point, pointer: pointer))
+                }
             case let .key(phase, usage):
                 let code = try AndroidKeyTable.requireKeyCode(for: usage)
                 if AndroidKeyMeta.bits(for: usage) != nil {
@@ -106,6 +112,10 @@ enum HelperInjectPlan {
 
     private static func isShifted(_ scalar: Unicode.Scalar) -> Bool {
         ("A"..."Z").contains(scalar) || #"~!@#$%^&*()_+{}|:"<>?"#.unicodeScalars.contains(scalar)
+    }
+
+    private static func touch(_ phase: String, _ point: AndroidPoint, pointer: Int) -> [String: HelperValue] {
+        ["kind": .string("touch"), "phase": .string(phase), "x": .double(point.x), "y": .double(point.y), "pointer": .int(pointer)]
     }
 
     private static func key(_ phase: KeyPhase, code: Int, meta: UInt32) -> [String: HelperValue] {

@@ -6,6 +6,16 @@ public protocol ExpoDevClientPreparing: DeviceBackend {
     func prepareExpoDevClient(_ appID: String, on id: DeviceID) async throws
 }
 
+/// Optional capability: sending an Expo dev client the link that loads a bundle from Metro.
+@MainActor
+public protocol ExpoDevClientOpening: DeviceBackend {
+    /// The `exp+` schemes the installed app registers.
+    func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String]
+    /// The host the device reaches Metro on: loopback, or the emulator's alias for the Mac.
+    func metroHost(port: Int, on id: DeviceID) async throws -> String
+    func openURL(_ url: String, appID: String, on id: DeviceID) async throws
+}
+
 public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError, Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case invalidAppID
@@ -14,6 +24,8 @@ public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError
         case notDebuggable
         case notDevClient
         case writeFailed
+        case noScheme
+        case noRoute
     }
 
     public let kind: Kind
@@ -179,5 +191,109 @@ public enum ExpoDevClient {
 
     static func shellQuote(_ text: String) -> String {
         "'" + text.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
+
+    // MARK: Opening
+
+    /// The emulator's alias for the Mac's loopback, used when no `adb reverse` maps the port.
+    public static let emulatorHostAlias = "10.0.2.2"
+    public static let loopback = "127.0.0.1"
+
+    /// `<scheme>://expo-development-client/?url=<http://host:port, percent-encoded>`, as `expo start --dev-client` prints it.
+    public static func devClientURL(scheme: String, host: String, port: Int) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        let metro = "http://\(host):\(port)".addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+        return "\(scheme)://expo-development-client/?url=\(metro)"
+    }
+
+    /// The `exp+` schemes among `dumpsys package` lines such as `Scheme: "exp+offsiderplaygroundrn"`, in order, once each.
+    public static func schemes(fromPackageDump dump: String) -> [String] {
+        var found: [String] = []
+        for line in dump.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("Scheme: \"") else { continue }
+            let scheme = trimmed.dropFirst("Scheme: \"".count).prefix { $0 != "\"" }
+            if scheme.hasPrefix("exp+"), !found.contains(String(scheme)) {
+                found.append(String(scheme))
+            }
+        }
+        return found
+    }
+
+    /// The `exp+` schemes in an app's `Info.plist` `CFBundleURLTypes`.
+    public static func schemes(fromInfoPlist data: Data) -> [String] {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let types = plist["CFBundleURLTypes"] as? [[String: Any]] else { return [] }
+        var found: [String] = []
+        for scheme in types.flatMap({ $0["CFBundleURLSchemes"] as? [String] ?? [] }) where scheme.hasPrefix("exp+") && !found.contains(scheme) {
+            found.append(scheme)
+        }
+        return found
+    }
+
+    /// The one `exp+` scheme, or an error that names `--scheme`.
+    public static func singleScheme(_ schemes: [String], appID: String) throws -> String {
+        guard schemes.count == 1 else {
+            let listed = schemes.isEmpty ? "no exp+ scheme" : "\(schemes.count) exp+ schemes (\(schemes.joined(separator: ", ")))"
+            throw ExpoDevClientError(.noScheme, "\(appID) registers \(listed), so Offsider cannot tell which link opens its dev client. Pass --scheme exp+<slug>.")
+        }
+        return schemes[0]
+    }
+
+    /// Loopback when `adb reverse` maps the port (lines such as `emulator-5554 tcp:8081 tcp:8081`), else the emulator's alias for the Mac; nil for a phone without one.
+    public static func androidMetroHost(reverseList: String, port: Int, isEmulator: Bool) -> String? {
+        let mapped = reverseList.split(whereSeparator: \.isNewline).contains { line in
+            line.split(separator: " ").dropFirst().first == "tcp:\(port)"
+        }
+        if mapped { return loopback }
+        return isEmulator ? emulatorHostAlias : nil
+    }
+
+    public static func androidOpenCommand(url: String, package: String) -> String {
+        "am start -W -a android.intent.action.VIEW -d \(shellQuote(url)) \(package)"
+    }
+
+    public static func iosOpenURLArguments(udid: String, url: String) -> [String] {
+        ["simctl", "openurl", udid, url]
+    }
+}
+
+/// The Expo dev launcher and React Native's loading states, read from the tree.
+public enum ExpoDevLauncher {
+    /// The launcher: `Development Build` with its server search or its recent list.
+    public static func isLauncher(_ tree: UITree) -> Bool {
+        let labels = texts(in: tree)
+        return labels.contains { $0 == "Development Build" }
+            && labels.contains { $0.hasPrefix("Searching for development servers") || $0 == "RECENTLY OPENED" || $0 == "Recently opened" }
+    }
+
+    /// A load failure: the dev client's error screen or React Native's red box.
+    public static func loadError(in tree: UITree) -> String? {
+        texts(in: tree).first { text in
+            text.contains("There was a problem loading the project") || text.contains("Unable to load script") || text.contains("Could not connect to development server")
+        }
+    }
+
+    /// The Open button of the `Open in “App”?` alert an iOS 27 simulator shows before it follows a custom-scheme link.
+    public static func openLinkPrompt(in tree: UITree) -> UINode? {
+        let nodes = tree.roots.flatMap { $0.flattened() }
+        guard let alert = nodes.first(where: { node in
+            let text = node.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return text.hasPrefix("Open in “") && text.hasSuffix("”?")
+        }), let box = alert.frame else { return nil }
+        return nodes.first { node in
+            guard node.role == .button, node.label == "Open", let frame = node.frame else { return false }
+            return box.contains(frame.center)
+        }
+    }
+
+    /// The `Bundling` or `Downloading` banner while Metro sends the bundle.
+    public static func isLoading(_ tree: UITree) -> Bool {
+        texts(in: tree).contains { $0.hasPrefix("Bundling") || $0.hasPrefix("Downloading") }
+    }
+
+    private static func texts(in tree: UITree) -> [String] {
+        tree.roots.flatMap { $0.flattened() }.flatMap { [$0.label, $0.value] }.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 }

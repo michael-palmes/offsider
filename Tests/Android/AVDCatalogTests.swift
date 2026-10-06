@@ -44,6 +44,17 @@ struct AVDCatalogTests {
         #expect(info.deviceProfile == "pixel_9")
     }
 
+    @Test("hw.ramSize is read in MB from its bare, M and G forms", arguments: [
+        ("2048", 2048), ("2048M", 2048), ("2048MB", 2048), ("2G", 2048), ("4gb", 4096), (" 3072 ", 3072), ("", nil), ("lots", nil), ("2T", nil),
+    ] as [(String, Int?)])
+    func ramSize(value: String, expected: Int?) throws {
+        #expect(AVDCatalog.megabytes(value) == expected)
+        let home = try AndroidTestHost.temporaryHome()
+        let avdHome = home.appendingPathComponent(".android/avd")
+        try Self.addAVD("Ram", in: avdHome, config: Self.config + "\nhw.ramSize=\(value)\n")
+        #expect(try #require(AVDCatalog(host: AndroidTestHost.make(home: home)).info(named: "Ram")).ramMB == expected)
+    }
+
     @Test("path.rel is used when path is missing, and target gives the API level without a system image")
     func relativePathAndTarget() throws {
         let home = try AndroidTestHost.temporaryHome()

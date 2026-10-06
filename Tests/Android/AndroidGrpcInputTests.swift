@@ -176,4 +176,53 @@ struct AndroidGrpcInputTests {
         #expect(rig.adbScripts == ["input tap 525 1050"])
         #expect(rig.connector.connections.isEmpty)
     }
+
+    @Test("two fingers are one gRPC event down with identifiers 0 and 1, a host-timed hold, and one event up at pressure 0")
+    func twoFingers() async throws {
+        let rig = try Self.rig()
+        try await rig.backend.perform(.composite([
+            .twoFingerTouch(direction: .down, x1: 100, y1: 1000, x2: 160, y2: 1000), .delay(1),
+            .twoFingerTouch(direction: .up, x1: 100, y1: 1000, x2: 160, y2: 1000),
+        ]), on: Self.device)
+
+        #expect(rig.emulator.calls == [
+            .touches([PanelTouch(x: 100, y: 1000, pressure: 1, identifier: 0), PanelTouch(x: 160, y: 1000, pressure: 1, identifier: 1)]),
+            .touches([PanelTouch(x: 100, y: 1000, pressure: 0, identifier: 0), PanelTouch(x: 160, y: 1000, pressure: 0, identifier: 1)]),
+        ])
+        #expect(rig.sleeps.sleeps == [.seconds(1)])
+        #expect(rig.adbScripts.isEmpty)
+    }
+
+    @Test("in landscape, both fingers follow the portrait panel rule")
+    func twoFingersLandscape() async throws {
+        let rig = try Self.rig(geometry: Self.landscape)
+        try await rig.backend.perform(.twoFingerTouch(direction: .down, x1: 570, y1: 714, x2: 630, y2: 714), on: Self.device)
+
+        #expect(rig.emulator.calls.first == .touches([PanelTouch(x: 365, y: 570, pressure: 1, identifier: 0), PanelTouch(x: 365, y: 630, pressure: 1, identifier: 1)]))
+    }
+
+    @Test("a two-finger down that fails lifts both fingers, best effort")
+    func twoFingersFailureLifts() async throws {
+        let failure = AndroidError.grpcDeadlineExceeded(method: "sendTouch", seconds: 2)
+        let emulator = FakeEmulator { call in
+            if case .touches(let touches) = call, touches.first?.pressure == 1 { return failure }
+            return nil
+        }
+        let rig = try Self.rig(emulator: emulator)
+        let error = await #expect(throws: AndroidError.self) {
+            try await rig.backend.perform(.twoFingerTouch(direction: .down, x1: 10, y1: 10, x2: 70, y2: 10), on: Self.device)
+        }
+        #expect(error == failure)
+        #expect(emulator.calls.last == .touches([PanelTouch(x: 10, y: 10, pressure: 0, identifier: 0), PanelTouch(x: 70, y: 10, pressure: 0, identifier: 1)]))
+    }
+
+    @Test("two fingers left down by a failed hold are lifted when the session closes")
+    func twoFingersLiftedOnClose() async throws {
+        let rig = try Self.rig()
+        let session = try await rig.backend.openInputSession(for: Self.device)
+        try await session.perform(.twoFingerTouch(direction: .down, x1: 10, y1: 10, x2: 70, y2: 10))
+        await session.close()
+
+        #expect(rig.emulator.calls.last == .touches([PanelTouch(x: 10, y: 10, pressure: 0, identifier: 0), PanelTouch(x: 70, y: 10, pressure: 0, identifier: 1)]))
+    }
 }

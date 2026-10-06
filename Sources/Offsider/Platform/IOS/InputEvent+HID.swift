@@ -1,4 +1,5 @@
 import FBSimulatorControl
+import Foundation
 import OffsiderCore
 
 extension InputDirection {
@@ -39,6 +40,8 @@ extension InputEvent {
             return .tapAt(x: x, y: y)
         case let .touch(direction, x, y):
             return .touch(direction: direction.hidDirection, x: x, y: y)
+        case let .twoFingerTouch(direction, x1, y1, x2, y2):
+            return .twoFingerTouch(direction: direction.hidDirection, finger1: CGPoint(x: x1, y: y1), finger2: CGPoint(x: x2, y: y2))
         case let .swipe(xStart, yStart, xEnd, yEnd, delta, duration):
             return .swipe(xStart, yStart: yStart, xEnd: xEnd, yEnd: yEnd, delta: delta, duration: duration)
         case let .button(direction, button):
@@ -53,6 +56,14 @@ extension InputEvent {
             return .delay(seconds)
         case let .composite(events):
             return .composite(try events.map { try $0.hidEvent() })
+        }
+    }
+
+    var hasTwoFingers: Bool {
+        switch self {
+        case .twoFingerTouch: return true
+        case let .composite(events): return events.contains { $0.hasTwoFingers }
+        default: return false
         }
     }
 }

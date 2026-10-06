@@ -14,6 +14,15 @@
     },
     "posture": null
   },
+  "context": {
+    "window": {
+      "title": "OffsiderPlaygroundRN",
+      "kind": "app",
+      "package": "com.mpalmes.offsider.playground.rn"
+    },
+    "keyboard": true,
+    "logbox": null
+  },
   "roots": [
     {
       "role": "application",
@@ -195,13 +204,121 @@
           "children": []
         },
         {
+          "role": "textField",
+          "id": "text-input-second-field",
+          "label": "Second field",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 254.1,
+            "width": 379.43,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.EditText",
+            "resourceId": "text-input-second-field",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 667,
+              "width": 996,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Second field",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "text-input-second-value",
+          "label": "Second: ",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 314.29,
+            "width": 379.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "text-input-second-value",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 825,
+              "width": 996,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Second: ",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "textField",
+          "id": "text-input-short-field",
+          "label": "Two characters",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 353.52,
+            "width": 379.43,
+            "height": 44.19
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.EditText",
+            "resourceId": "text-input-short-field",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 928,
+              "width": 996,
+              "height": 116
+            },
+            "text": null,
+            "contentDescription": "Two characters",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
           "role": "text",
           "id": "typing-active-indicator",
           "label": "✏️ Typing active",
           "value": null,
           "frame": {
             "x": 16,
-            "y": 254.48,
+            "y": 413.71,
             "width": 379.43,
             "height": 23.24
           },
@@ -217,7 +334,7 @@
             "package": "com.mpalmes.offsider.playground.rn",
             "pixelFrame": {
               "x": 42,
-              "y": 668,
+              "y": 1086,
               "width": 996,
               "height": 61
             },
@@ -677,7 +794,7 @@
               "state": {
                 "checked": null,
                 "selected": false,
-                "focused": true
+                "focused": false
               },
               "native": {
                 "className": "android.widget.FrameLayout",

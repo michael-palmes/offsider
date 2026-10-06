@@ -21,20 +21,26 @@ struct Turnstile: AsyncParsableCommand {
         This does not bypass Turnstile. It only taps the checkbox. The widget passes only when Cloudflare \
         accepts the device. The command never mints or submits a token, and a checkbox that stays put, or \
         a visual challenge, means this device was not accepted.
+
+        --status reads the widget once and taps nothing: checkbox, verifying, passed, challenge or absent, \
+        always exit 0 (6 when several checkboxes are on screen).
         """
     )
 
     @Option(name: .customLong("id"), help: "Only look inside the element with this id, such as the app's wrapper around the widget.")
     var elementID: String?
 
-    @Option(help: ArgumentHelp("Give up after this many seconds, from 1 to 60, and exit 5. Covers finding the checkbox and waiting for it to pass.", valueName: "seconds"))
-    var timeout: Double = 15
+    @Flag(name: .customLong("status"), help: "Read the widget's state once and tap nothing: checkbox, verifying, passed, challenge or absent.")
+    var status = false
+
+    @Option(name: .customLong("timeout"), help: ArgumentHelp("Give up after this many seconds, from 1 to 60, and exit 5 (default 15). Covers finding the checkbox and waiting for it to pass.", valueName: "seconds"))
+    var timeoutOption: Double?
 
     @Option(name: .customLong("poll-interval"), help: ArgumentHelp("Seconds between reads, from 0.05 to 5.", valueName: "seconds"))
     var pollInterval: Double = 0.25
 
-    @Option(help: ArgumentHelp("How far the tap may sit from the square's centre, in points (dp on Android), from 0 to 8. Kept inside the square.", valueName: "points"))
-    var jitter: Double = TurnstileWidget.defaultJitter
+    @Option(name: .customLong("jitter"), help: ArgumentHelp("How far the tap may sit from the square's centre, in points (dp on Android), from 0 to 8 (default 3). Kept inside the square.", valueName: "points"))
+    var jitterOption: Double?
 
     @Option(help: ArgumentHelp("Repeat the same offset. Omit it for a different point each run.", valueName: "n"))
     var seed: Int?
@@ -45,9 +51,19 @@ struct Turnstile: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    static let defaultTimeout: Double = 15
+
+    var timeout: Double { timeoutOption ?? Self.defaultTimeout }
+    var jitter: Double { jitterOption ?? TurnstileWidget.defaultJitter }
+
     func validate() throws {
         if let elementID, elementID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ValidationError("--id must not be empty.")
+        }
+        if status {
+            for (name, isSet) in [("--jitter", jitterOption != nil), ("--seed", seed != nil), ("--timeout", timeoutOption != nil)] where isSet {
+                throw ValidationError("--status reads the widget without a tap, so it does not take \(name).")
+            }
         }
         guard timeout.isFinite, (1...60).contains(timeout) else {
             throw ValidationError("--timeout must be from 1 to 60 seconds; got \(timeout).")
@@ -63,6 +79,21 @@ struct Turnstile: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
+        if status {
+            // An Android tree read locks the device, as `wait` does; iOS reads never lock.
+            let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
+            let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
+            let report = try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
+                try await readStatus(on: route, onPrepared: ready)
+            }
+            if json {
+                print(report.jsonLine())
+                print(report.textLine(), to: &standardError)
+            } else {
+                print(report.textLine())
+            }
+            return
+        }
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         let report = try await watchdog.guarding(setupThen: timeout, device: deviceOption.id) { ready in
             try await perform(on: route, logger: logger, onPrepared: ready)
@@ -73,6 +104,37 @@ struct Turnstile: AsyncParsableCommand {
         } else {
             print(report.textLine())
         }
+    }
+
+    /// One read, no input: the tree first, then on iOS points in the web view.
+    @MainActor
+    func readStatus(on route: DeviceRouter.Route, onPrepared: @Sendable () -> Void = {}) async throws -> TurnstileStatus {
+        try await route.backend.prepare()
+        onPrepared()
+        let tree = try await route.backend.accessibilityTree(for: route.device)
+        var phase = TurnstileWidget.phase(in: tree.roots, viewport: tree.viewport, scopeID: elementID)
+        var source = TurnstileStatus.Source.tree
+        if phase == .absent || phase == .checking {
+            let shell = await shellPhase(in: tree, on: route)
+            if shell != .absent {
+                phase = shell
+                source = .webViewPoints
+            }
+        }
+        guard let status = TurnstileStatus(phase: phase, source: source) else {
+            throw Self.ambiguous(phase, device: route.device)
+        }
+        return status
+    }
+
+    private static func ambiguous(_ phase: TurnstilePhase, device: DeviceID) -> CLIError {
+        let count: Int
+        if case .ambiguous(let found) = phase { count = found } else { count = 2 }
+        return CLIError(
+            errorDescription: "\(count) Turnstile checkboxes are on screen. Pass --id to choose the wrapper that holds the one you want.",
+            reason: .selectorAmbiguous,
+            hint: "offsider describe-ui --summary --device \(device.rawValue)"
+        )
     }
 
     /// Finds the widget, taps the square once, and waits for Success.
@@ -115,14 +177,11 @@ struct Turnstile: AsyncParsableCommand {
             case .visualChallenge:
                 throw CLIError(
                     errorDescription: "The Turnstile widget is showing a visual challenge. A tap on the checkbox cannot complete it.",
+                    reason: .turnstileChallenge,
                     hint: "offsider describe-ui --summary --device \(route.device.rawValue)"
                 )
-            case .ambiguous(let count):
-                throw CLIError(
-                    errorDescription: "\(count) Turnstile checkboxes are on screen. Pass --id to choose the wrapper that holds the one you want.",
-                    reason: .selectorAmbiguous,
-                    hint: "offsider describe-ui --summary --device \(route.device.rawValue)"
-                )
+            case .ambiguous:
+                throw Self.ambiguous(phase, device: route.device)
             case .checking:
                 sawWidget = true
             case .absent:

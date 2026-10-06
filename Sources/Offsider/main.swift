@@ -41,6 +41,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             StayAwakeCommand.self,
             Wake.self,
             UnlockCodeCommand.self,
+            LeaseCommand.self,
             Key.self,
             KeySequence.self,
             KeyCombo.self,
@@ -53,6 +54,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             Wait.self,
             Assert.self,
             Batch.self,
+            RunCommand.self,
             RN.self,
             RunnerCommand.self,
             SessionCommand.self,
@@ -60,17 +62,6 @@ struct OffsiderCommand: AsyncParsableCommand {
             DeviceSessionCommand.self
         ]
     )
-
-    /// The command's path as `CommandEffect.table` keys it, with its parent for a nested command.
-    static func path(of command: any ParsableCommand, name: String) -> String {
-        switch command {
-        case is RNPrepare: return "rn \(name)"
-        case is RunnerStatus, is RunnerStop: return "runner \(name)"
-        case is SessionStatus, is SessionStop: return "session \(name)"
-        case is DeviceSessionServe: return "device-session \(name)"
-        default: return name
-        }
-    }
 
     static func main() async {
         Timings.installTotal()
@@ -87,18 +78,22 @@ struct OffsiderCommand: AsyncParsableCommand {
             var command = try parseAsRoot(nil)
             parsed = command
             ErrorReporter.prepare(command: command, arguments: arguments)
-            let name = type(of: command)._commandName
-            let path = Self.path(of: command, name: name)
+            let path = CommandPath.of(command)
             await CommandScope.current.configure(command: path)
             await DeviceClaims.current.configure(
                 command: path,
                 waitOption: (command as? any LockingCommand)?.waitLock
             )
-            try await CommandScope.current.run {
-                if var asyncCommand = command as? any AsyncParsableCommand {
-                    try await asyncCommand.run()
-                } else {
-                    try command.run()
+            let recorder = EvidenceRecorder.records(path)
+                ? EvidenceRecorder(environment: .live(), command: path, arguments: Self.arguments(after: path, in: arguments))
+                : EvidenceRecorder.current
+            try await EvidenceRecorder.$current.withValue(recorder) {
+                try await CommandScope.current.run {
+                    if var asyncCommand = command as? any AsyncParsableCommand {
+                        try await asyncCommand.run()
+                    } else {
+                        try command.run()
+                    }
                 }
             }
         } catch {
@@ -107,5 +102,14 @@ struct OffsiderCommand: AsyncParsableCommand {
             }
             ErrorReporter.exit(error)
         }
+    }
+
+    /// The arguments after the command's path words, as an evidence run records them.
+    static func arguments(after path: String, in arguments: [String]) -> [String] {
+        var remaining = arguments[...]
+        for word in path.split(separator: " ") where remaining.first == String(word) {
+            remaining = remaining.dropFirst()
+        }
+        return Array(remaining)
     }
 }

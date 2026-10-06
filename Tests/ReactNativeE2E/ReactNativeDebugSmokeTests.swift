@@ -117,6 +117,84 @@ struct ReactNativeDebugSmokeTests {
         #expect(try await !Self.hasNode(app) { Self.label($0).contains("OffsiderFixture error") })
     }
 
+    @Test("rn logbox reads two errors, the summary names them, dismiss clears both and the tab tap then lands", arguments: RNPlatform.enabled)
+    func logBoxStatusAndDismiss(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-clear-logs")
+        try await app.run("tap --id overlay-test-log-two-errors")
+        _ = try await app.waitForNode { Self.label($0).hasPrefix("2, ") }
+
+        let status = try await app.run("rn logbox status --json").stdout
+        #expect(status.contains(#""logs":2"#), "\(status)")
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(summary.contains("\n# logbox: 2 logs\n"), "\(summary.prefix(400))")
+
+        let dismissed = try await app.run("rn logbox dismiss --json").stdout
+        #expect(dismissed.contains(#""cleared":2,"remaining":0"#), "\(dismissed)")
+        let after = try await app.run("rn logbox status --json").stdout
+        #expect(after.contains(#""logs":0"#) && !after.contains("10, AUD"), "\(after)")
+        try await app.run("tap --id overlay-test-tab-search --fail-if-covered")
+        _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
+    }
+
+    @Test("a full-width 10, AUD button near the bottom is never read as LogBox", arguments: RNPlatform.enabled)
+    func amountIsNotLogBox(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-clear-logs")
+
+        let status = try await app.run("rn logbox status --json").stdout
+        #expect(status.contains(#""logs":0,"toasts":[]"#), "\(status)")
+        #expect(!(try await app.run("describe-ui --summary").stdout.contains("# logbox")))
+    }
+
+    /// Stops the debug app and starts it with no link, so the dev client shows its launcher or reopens the last Metro.
+    private static func plainLaunch(_ platform: RNPlatform) async throws {
+        switch platform {
+        case .ios:
+            let udid = try IOSRNPlayground.udid()
+            _ = try await CommandRunner.runSeparated("xcrun simctl launch --terminate-running-process \(udid) \(IOSRNPlayground.bundleID)", timeout: 60)
+        case .android:
+            try await AndroidE2E.shell("am force-stop \(AndroidE2E.package)")
+            try await AndroidE2E.shell("monkey -p \(AndroidE2E.package) -c android.intent.category.LAUNCHER 1")
+        }
+    }
+
+    @Test("rn open loads the bundle from Metro after a plain launch, whether or not the launcher showed, and a port with no Metro is exit 9", arguments: RNPlatform.enabled)
+    func rnOpen(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await Self.plainLaunch(platform)
+        try await Task.sleep(for: .seconds(3))
+
+        let opened = try await app.run("rn open --port \(RNMetro.port) --bundle-id \(IOSRNPlayground.bundleID) --wait-id menu-title --json", timeout: 240)
+        #expect(opened.stdout.contains(#""metro":"running""#), "\(opened.stdout)")
+        // A dev client may reopen the last Metro it loaded instead of showing its launcher, so only a send is required.
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(opened.stdout.utf8)) as? [String: Any])
+        #expect((report["sends"] as? Int ?? 0) >= 1, "\(opened.stdout)")
+        _ = try await app.waitForNode { $0["id"] as? String == "menu-title" }
+
+        let noMetro = try await app.offsider("rn open --port \(RNMetro.port + 1) --bundle-id \(IOSRNPlayground.bundleID) --timeout 10")
+        #expect(noMetro.exitCode == 9, "\(noMetro.stderr)")
+    }
+
+    @Test("rn devmenu reload reloads the app, and inspector then rn tools off leaves no panel", arguments: RNPlatform.enabled)
+    func devMenu(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+
+        let listed = try await app.run("rn devmenu --json")
+        #expect(listed.stdout.contains(#""label":"Reload""#), "\(listed.stdout)")
+        try await app.run("rn devmenu close")
+        try await app.run("rn devmenu reload", timeout: 240)
+        _ = try await app.waitForNode(timeout: 180) { $0["id"] as? String != nil }
+
+        try await app.run("rn devmenu inspector")
+        let off = try await app.run("rn tools off --json")
+        #expect(off.stdout.contains(#""inspector":"turned-off""#), "\(off.stdout)")
+        #expect(try await !Self.hasNode(app) { Self.label($0) == "Touchables" })
+    }
+
     @Test("shake opens the dev menu, which closes with its Close button", arguments: RNPlatform.enabled.filter { $0 == .ios })
     func shakeOpensDevMenu(platform: RNPlatform) async throws {
         let app = RNApp(platform)

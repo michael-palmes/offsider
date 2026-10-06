@@ -15,6 +15,12 @@ struct Verifier {
         var waitForChange: (@MainActor (Duration) async throws -> Void)? = nil
     }
 
+    /// What proves the input worked: a settled change (text and frames optional), or one element coming on screen.
+    enum Mode: Equatable {
+        case change(ignoringText: Bool)
+        case appearing(id: String)
+    }
+
     struct Attempt: Equatable {
         let number: Int
         let style: TapDeliveryStyle?
@@ -61,7 +67,8 @@ struct Verifier {
         styles: [TapDeliveryStyle?],
         timeout: Duration,
         dependencies: Dependencies,
-        detector: ChangeDetector = ChangeDetector(),
+        mode: Mode = .change(ignoringText: false),
+        detector: ChangeDetector? = nil,
         initialTree: UITree? = nil,
         beforeAction: (UITree) async throws -> Void = { _ in },
         onRetry: (Attempt, Attempt) -> Void = { _, _ in },
@@ -69,6 +76,17 @@ struct Verifier {
     ) async throws -> Outcome {
         let attempts = styles.isEmpty ? [nil] : styles
         let timeoutSeconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
+        let ignoringText: Bool
+        switch mode {
+        case .appearing(let id):
+            return try await runAppearing(
+                id: id, attempts: attempts, timeoutSeconds: timeoutSeconds, dependencies: dependencies,
+                initialTree: initialTree, beforeAction: beforeAction, onRetry: onRetry, action: action
+            )
+        case .change(let ignore):
+            ignoringText = ignore
+        }
+        let detector = detector ?? ChangeDetector(options: .init(ignoreText: ignoringText))
 
         let firstRead: Read
         if let initialTree {
@@ -77,7 +95,7 @@ struct Verifier {
             firstRead = await read(dependencies)
         }
         let first = firstRead.snapshot
-        let firstShot = try? await dependencies.screenshot()
+        let firstShot = ignoringText ? nil : try? await dependencies.screenshot()
         let firstShotTime = dependencies.now()
         try await dependencies.sleep(pollInterval)
         var baselineRead = await read(dependencies)
@@ -93,7 +111,7 @@ struct Verifier {
         if firstShot != nil, gap > 0 {
             try await dependencies.sleep(.seconds(gap))
         }
-        var baselineShots = [firstShot, try? await dependencies.screenshot()].compactMap { $0 }
+        var baselineShots = ignoringText ? [] : [firstShot, try? await dependencies.screenshot()].compactMap { $0 }
         var baselinePrints: [ImageFingerprint] = []
 
         for (index, style) in attempts.enumerated() {
@@ -136,7 +154,7 @@ struct Verifier {
                     .listing(from: baselineRead.tree, to: seenRead?.tree, skipping: volatileIdentities)
             }
 
-            if let shot = baselineShots.last {
+            if !ignoringText, let shot = baselineShots.last {
                 let exclusion = bandPixels(pngData: shot, screenFrame: screenFrame, bands: bands)
                 func fingerprint(_ data: Data) -> ImageFingerprint? {
                     ImageFingerprint(
@@ -177,6 +195,54 @@ struct Verifier {
             }
         }
         return Outcome(verified: false, attempts: attempts.count, change: .none, style: attempts.last ?? nil, summary: nil)
+    }
+
+    /// Refuses before any input when the element is already on screen, then waits up to the timeout per attempt for it to come on screen.
+    private static func runAppearing(
+        id: String,
+        attempts: [TapDeliveryStyle?],
+        timeoutSeconds: TimeInterval,
+        dependencies: Dependencies,
+        initialTree: UITree?,
+        beforeAction: (UITree) async throws -> Void,
+        onRetry: (Attempt, Attempt) -> Void,
+        action: (Attempt) async throws -> Void
+    ) async throws -> Outcome {
+        let baseline: UITree
+        if let initialTree { baseline = initialTree } else { baseline = try await dependencies.tree() }
+        if isOnScreen(id, in: baseline) {
+            throw CLIError(
+                errorDescription: "--verify-id '\(id)' is already on screen before the input, so it cannot show the input worked. Nothing was sent.",
+                reason: .verifyTargetPresent,
+                hint: "Pass an id that only the next screen has, or use --verify."
+            )
+        }
+        try await beforeAction(baseline)
+        for (index, style) in attempts.enumerated() {
+            let attempt = Attempt(number: index + 1, style: style)
+            try await action(attempt)
+            let deadline = dependencies.now() + timeoutSeconds
+            repeat {
+                if let waitForChange = dependencies.waitForChange {
+                    try await waitForChange(pollInterval)
+                } else {
+                    try await dependencies.sleep(pollInterval)
+                }
+                if let tree = try? await dependencies.tree(), isOnScreen(id, in: tree) {
+                    return Outcome(verified: true, attempts: attempt.number, change: .element, style: style, summary: "--id '\(id)' is on screen")
+                }
+            } while dependencies.now() < deadline
+            if index + 1 < attempts.count {
+                onRetry(attempt, Attempt(number: index + 2, style: attempts[index + 1]))
+            }
+        }
+        return Outcome(verified: false, attempts: attempts.count, change: .none, style: attempts.last ?? nil, summary: nil)
+    }
+
+    /// On screen when the tree has a screen to compare with; any match otherwise.
+    static func isOnScreen(_ id: String, in tree: UITree) -> Bool {
+        let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: .id(id), elementType: nil)
+        return !(found.viewport == nil ? found.matches : found.onScreen).isEmpty
     }
 
     private static func read(_ dependencies: Dependencies) async -> Read {

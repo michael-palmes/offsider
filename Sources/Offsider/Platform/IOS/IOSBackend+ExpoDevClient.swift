@@ -65,3 +65,34 @@ extension IOSBackend: ExpoDevClientPreparing {
         return ExpoDevClientError(.writeFailed, "Could not write the Expo dev menu preferences of \(bundleID) on simulator \(udid): \(line)")
     }
 }
+
+extension IOSBackend: ExpoDevClientOpening {
+    func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String] {
+        let bundleID = try ExpoDevClient.validate(appID: appID)
+        guard let app = try await Self.appContainer(udid: id.rawValue, bundleID: bundleID, kind: "app") else {
+            throw ExpoDevClient.iosNotInstalled(bundleID: bundleID, udid: id.rawValue)
+        }
+        let plist = (try? Data(contentsOf: URL(fileURLWithPath: app).appendingPathComponent("Info.plist"))) ?? Data()
+        return ExpoDevClient.schemes(fromInfoPlist: plist)
+    }
+
+    /// A simulator shares the Mac's loopback.
+    func metroHost(port: Int, on id: DeviceID) async throws -> String {
+        ExpoDevClient.loopback
+    }
+
+    func openURL(_ url: String, appID: String, on id: DeviceID) async throws {
+        let result = try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: ExpoDevClient.iosOpenURLArguments(udid: id.rawValue, url: url), timeout: 30)
+        guard result.status == 0 else {
+            let line = result.stderr.split(whereSeparator: \.isNewline).first.map(String.init) ?? "exit status \(result.status)"
+            throw ExpoDevClientError(.writeFailed, "Could not open the dev client link on simulator \(id.rawValue): \(line)")
+        }
+    }
+}
+
+extension IOSBackend: ReactNativeDevMenuOpening {
+    /// A debug build opens its dev menu on a shake.
+    func openDevMenu(_ id: DeviceID) async throws {
+        try await shake(id)
+    }
+}

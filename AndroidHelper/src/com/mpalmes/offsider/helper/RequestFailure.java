@@ -8,6 +8,8 @@ final class RequestFailure extends Exception {
     final String detail;
     String className;
     String resourceId;
+    /** The field's InputType bits, or -1 when the failure names no field. */
+    int inputType = -1;
 
     RequestFailure(String code, String message, String detail) {
         super(message);
@@ -32,5 +34,11 @@ final class RequestFailure extends Exception {
         this.className = nodeClass == null ? null : nodeClass.toString();
         this.resourceId = nodeId;
         return this;
+    }
+
+    /** Names the field and its InputType bits. */
+    RequestFailure field(CharSequence nodeClass, String nodeId, int type) {
+        this.inputType = type;
+        return node(nodeClass, nodeId);
     }
 }

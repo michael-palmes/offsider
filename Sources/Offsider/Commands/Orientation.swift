@@ -13,8 +13,9 @@ struct OrientationCommand: AsyncParsableCommand {
         gives the same turns in degrees anticlockwise from the display's natural orientation; landscape-left is 90. \
         Without a value, prints the current one.
         iOS reports the frontmost app's orientation, so a portrait-only app or the home screen stays portrait, and \
-        iPhones without a home button never turn upside down. On Android this turns auto-rotate off \
-        (`accelerometer_rotation 0`) and sets `user_rotation`; auto-rotate stays off afterwards.
+        iPhones without a home button never turn upside down. On Android, Offsider turns auto-rotate off while the \
+        device is turned and restores it on `orientation portrait`: the first turn away from portrait records \
+        auto-rotate and `user_rotation`, and portrait writes auto-rotate back and forgets the record.
 
         Examples:
           offsider orientation --device DEVICE_ID
@@ -88,8 +89,18 @@ struct OrientationCommand: AsyncParsableCommand {
             try await report(previous, previous: nil, backend: backend, device: device)
             return
         }
+        let rotation = backend as? any AutoRotateControlling
+        let before = try? await rotation?.autoRotateState(on: device)
+        var plan: RotationPlan?
+        if rotation != nil {
+            let marker = await (backend as? any BootMarking)?.bootMarker(for: device)
+            let made = RotationPlan.make(before: before, target: target, record: RotationRecordStore().read(device.rawValue), bootMarker: marker)
+            if let record = made.recordToWrite { try? RotationRecordStore().write(record, serial: device.rawValue) }
+            plan = made
+        }
         guard previous != target else {
-            try await report(target, previous: previous, backend: backend, device: device)
+            let restored = await finish(plan, rotation: rotation, device: device)
+            try await report(target, previous: previous, backend: backend, device: device, rotation: rotation == nil ? nil : RotationReport(before: before, now: try? await rotation?.autoRotateState(on: device), restored: restored))
             return
         }
 
@@ -105,7 +116,21 @@ struct OrientationCommand: AsyncParsableCommand {
         guard outcome == .reached else {
             throw CLIError(errorDescription: Self.timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceOption.id, physical: device.isPhysicalIOSDevice), reason: .stateNotReached)
         }
-        try await report(target, previous: previous, backend: backend, device: device)
+        let restored = await finish(plan, rotation: rotation, device: device)
+        try await report(target, previous: previous, backend: backend, device: device, rotation: rotation == nil ? nil : RotationReport(before: before, now: try? await rotation?.autoRotateState(on: device), restored: restored))
+    }
+
+    /// Once the device is portrait, writes auto-rotate back from this boot's record and forgets it; true when it was restored.
+    private func finish(_ plan: RotationPlan?, rotation: (any AutoRotateControlling)?, device: DeviceID) async -> Bool {
+        guard let plan, let rotation else { return false }
+        var restored = false
+        if let value = plan.restoreAccelerometer {
+            restored = (try? await rotation.setAccelerometerRotation(value, on: device)) != nil
+        }
+        if plan.deleteRecord, restored || plan.restoreAccelerometer == nil {
+            RotationRecordStore().remove(serial: device.rawValue)
+        }
+        return restored
     }
 
     static func timeoutMessage(target: DeviceOrientation, timeout: Double, platform: DevicePlatform, device: String, physical: Bool = false) -> String {
@@ -122,10 +147,10 @@ struct OrientationCommand: AsyncParsableCommand {
         }
     }
 
-    private func report(_ current: DeviceOrientation, previous: DeviceOrientation?, backend: any DeviceBackend, device: DeviceID) async throws {
+    private func report(_ current: DeviceOrientation, previous: DeviceOrientation?, backend: any DeviceBackend, device: DeviceID, rotation: RotationReport? = nil) async throws {
         let screen = try? await backend.screenInfo(for: device)
         if json {
-            print(DeviceSettingsReport.orientation(current, previous: previous, screen: screen))
+            print(DeviceSettingsReport.orientation(current, previous: previous, screen: screen, rotation: rotation))
         } else {
             print(Self.line(current, screen: screen, platform: device.platform))
         }

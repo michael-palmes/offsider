@@ -44,8 +44,7 @@ struct Wake: AsyncParsableCommand {
 
     /// A phone's serial, or an emulator's AVD name; nil when the AVD name is unknown.
     static func unlockKey(_ booted: BootedDevice) -> String? {
-        guard case .androidSerial = DeviceIDClassifier.classify(booted.id.rawValue) else { return booted.id.rawValue }
-        return booted.name == booted.id.rawValue ? nil : booted.name
+        StableDeviceKey.of(booted)
     }
 
     /// Messages name the device for people; the commands in them keep the serial, so they still run.

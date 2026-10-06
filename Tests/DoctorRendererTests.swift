@@ -94,6 +94,20 @@ struct DoctorRendererTests {
         """)
     }
 
+    @Test("a device from OFFSIDER_DEVICE is named under the header")
+    func environmentDeviceLine() {
+        let report = DoctorReport(
+            offsiderVersion: "0.8.0",
+            udid: nil,
+            device: DoctorDevice(id: "emulator-5554", platform: "android", name: "Other_API34", kind: "emulator", source: "environment"),
+            xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
+            booted: [],
+            checks: []
+        )
+        let lines = DoctorRenderer.render(report).split(separator: "\n")
+        #expect(lines.dropFirst().first == "Device: emulator-5554 (Other_API34), from OFFSIDER_DEVICE")
+    }
+
     @Test("Android checks render under the same id column, with the SDK header and running emulators")
     func androidLayout() {
         let android = DoctorReport(

@@ -96,6 +96,8 @@ public struct AndroidNativeAttributes: Equatable, Sendable {
     public var stateDescription: String?
     public var roleDescription: String?
     public var testTag: String?
+    /// Android's own visible-to-user flag; describe-ui JSON does not carry it, and equality ignores it.
+    public var visibleToUser: Bool?
 
     public init(
         className: String? = nil,
@@ -107,7 +109,8 @@ public struct AndroidNativeAttributes: Equatable, Sendable {
         hint: String? = nil,
         stateDescription: String? = nil,
         roleDescription: String? = nil,
-        testTag: String? = nil
+        testTag: String? = nil,
+        visibleToUser: Bool? = nil
     ) {
         self.className = className
         self.resourceId = resourceId
@@ -119,6 +122,14 @@ public struct AndroidNativeAttributes: Equatable, Sendable {
         self.stateDescription = stateDescription
         self.roleDescription = roleDescription
         self.testTag = testTag
+        self.visibleToUser = visibleToUser
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.className == rhs.className && lhs.resourceId == rhs.resourceId && lhs.package == rhs.package
+            && lhs.pixelFrame == rhs.pixelFrame && lhs.text == rhs.text && lhs.contentDescription == rhs.contentDescription
+            && lhs.hint == rhs.hint && lhs.stateDescription == rhs.stateDescription && lhs.roleDescription == rhs.roleDescription
+            && lhs.testTag == rhs.testTag
     }
 }
 

@@ -29,7 +29,9 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case androidDevices = "android.devices"
     case androidDeviceState = "android-device.state"
     case androidDeviceImage = "android-device.image"
+    case androidDeviceMemory = "android-device.memory"
     case androidDeviceScreen = "android-device.screen"
+    case androidDeviceLock = "android-device.lock"
     case androidDeviceStayAwake = "android-device.stay-awake"
     case androidDeviceGrpc = "android-device.grpc"
     case androidDeviceUiAutomation = "android-device.uiautomation"
@@ -51,6 +53,10 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case iosDeviceSession = "ios-device.session"
     case iosDeviceUsbmuxd = "ios-device.usbmuxd"
     case iosDeviceRunnerSigning = "ios-device.runner-signing"
+    case deviceLease = "device.lease"
+    case hostLoad = "host.load"
+    case hostDisk = "host.disk"
+    case hostSessions = "host.sessions"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -97,7 +103,9 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .androidDevices: return "Android devices"
         case .androidDeviceState: return "Device state"
         case .androidDeviceImage: return "System image"
+        case .androidDeviceMemory: return "Memory"
         case .androidDeviceScreen: return "Screen"
+        case .androidDeviceLock: return "First unlock"
         case .androidDeviceStayAwake: return "Stay awake"
         case .androidDeviceGrpc: return "Emulator gRPC"
         case .androidDeviceUiAutomation: return "UiAutomation"
@@ -119,6 +127,10 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .iosDeviceSession: return "Session broker"
         case .iosDeviceUsbmuxd: return "usbmuxd"
         case .iosDeviceRunnerSigning: return "Runner signing"
+        case .deviceLease: return "Lease"
+        case .hostLoad: return "Load"
+        case .hostDisk: return "Free disk"
+        case .hostSessions: return "Offsider commands"
         }
     }
 }

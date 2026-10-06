@@ -1,4 +1,5 @@
 # ios <ios-device> 402x874 @3x portrait 0°
+# keyboard shown
 application "OffsiderPlaygroundRN" (0,0 402x874)
   button "Offsider Playground" id=BackButton (8,62 44x44)
   header "Batch Login" id=batch-login-screen (60,74 282x20.3)
@@ -7,7 +8,7 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
   textField id=batch-login-email-field (17,221.7 368x42)
   button "Continue" id=batch-login-continue (16,276.7 370x44)
   group id=inputView (0,573 402x301)
-  group id="UIKeyboardLayoutStar Preview" (0,590 402x226)
+  keyboard id="UIKeyboardLayoutStar Preview" (0,590 402x226)
     button "q" (4.7,597 39.3x54)
     button "w" (44,597 39.7x54)
     button "e" (83.7,597 39.3x54)

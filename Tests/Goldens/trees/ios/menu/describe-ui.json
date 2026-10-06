@@ -14,6 +14,11 @@
     },
     "posture": null
   },
+  "context": {
+    "window": null,
+    "keyboard": false,
+    "logbox": null
+  },
   "roots": [
     {
       "role": "application",
@@ -450,7 +455,7 @@
                                                 "x": 0,
                                                 "y": 0,
                                                 "width": 402,
-                                                "height": 1922.3333740234375
+                                                "height": 2093.333251953125
                                               },
                                               "enabled": true,
                                               "state": {
@@ -468,7 +473,7 @@
                                                 "customActions": [],
                                                 "contentRequired": false,
                                                 "pid": 1000,
-                                                "axFrame": "{{0, 0}, {402, 1922.3333740234375}}"
+                                                "axFrame": "{{0, 0}, {402, 2093.333251953125}}"
                                               },
                                               "children": [
                                                 {
@@ -480,7 +485,7 @@
                                                     "x": 0,
                                                     "y": 0,
                                                     "width": 402,
-                                                    "height": 1922.3333740234375
+                                                    "height": 2093.333251953125
                                                   },
                                                   "enabled": true,
                                                   "state": {
@@ -498,7 +503,7 @@
                                                     "customActions": [],
                                                     "contentRequired": false,
                                                     "pid": 1000,
-                                                    "axFrame": "{{0, 0}, {402, 1922.3333740234375}}"
+                                                    "axFrame": "{{0, 0}, {402, 2093.333251953125}}"
                                                   },
                                                   "children": [
                                                     {
@@ -572,7 +577,7 @@
                                                         "x": 16,
                                                         "y": 156.33333778381348,
                                                         "width": 370,
-                                                        "height": 399
+                                                        "height": 513
                                                       },
                                                       "enabled": true,
                                                       "state": {
@@ -590,7 +595,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{16, 156.33333778381348}, {370, 399}}"
+                                                        "axFrame": "{{16, 156.33333778381348}, {370, 513}}"
                                                       },
                                                       "children": [
                                                         {
@@ -688,8 +693,8 @@
                                                         },
                                                         {
                                                           "role": "button",
-                                                          "id": "menu-gesture-presets",
-                                                          "label": "Gesture Presets",
+                                                          "id": "menu-multi-touch",
+                                                          "label": "Multi Touch",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -709,7 +714,7 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Drag gesture classification",
+                                                            "help": "Two fingers held together",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
@@ -719,8 +724,8 @@
                                                         },
                                                         {
                                                           "role": "button",
-                                                          "id": "menu-switch-test",
-                                                          "label": "Switch Test",
+                                                          "id": "menu-hold-drag",
+                                                          "label": "Hold Drag",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -740,7 +745,7 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Native and custom switch controls",
+                                                            "help": "A tile that drags only after a long press",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
@@ -750,8 +755,8 @@
                                                         },
                                                         {
                                                           "role": "button",
-                                                          "id": "menu-tab-view-test",
-                                                          "label": "TabView Test",
+                                                          "id": "menu-gesture-presets",
+                                                          "label": "Gesture Presets",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -771,7 +776,7 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Tab switching",
+                                                            "help": "Drag gesture classification",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
@@ -781,8 +786,8 @@
                                                         },
                                                         {
                                                           "role": "button",
-                                                          "id": "menu-choice-test",
-                                                          "label": "Choice Test",
+                                                          "id": "menu-switch-test",
+                                                          "label": "Switch Test",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -802,11 +807,73 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Checkboxes, radios, a switch and a combo box",
+                                                            "help": "Native and custom switch controls",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
                                                             "axFrame": "{{16, 498.33333778381348}, {370, 56.999969482421875}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-tab-view-test",
+                                                          "label": "TabView Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 555.3333377838135,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Tab switching",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 555.33333778381348}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-choice-test",
+                                                          "label": "Choice Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 612.3333377838135,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Checkboxes, radios, a switch and a combo box",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 612.33333778381348}, {370, 57}}"
                                                           },
                                                           "children": []
                                                         }
@@ -819,7 +886,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 0,
-                                                        "y": 571.3333129882812,
+                                                        "y": 685.3333129882812,
                                                         "width": 402,
                                                         "height": 21.66668701171875
                                                       },
@@ -839,7 +906,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{0, 571.33331298828125}, {402, 21.66668701171875}}"
+                                                        "axFrame": "{{0, 685.33331298828125}, {402, 21.66668701171875}}"
                                                       },
                                                       "children": []
                                                     },
@@ -850,7 +917,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 16,
-                                                        "y": 592.999979019165,
+                                                        "y": 706.999979019165,
                                                         "width": 370,
                                                         "height": 171
                                                       },
@@ -870,75 +937,13 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{16, 592.99997901916504}, {370, 171}}"
+                                                        "axFrame": "{{16, 706.99997901916504}, {370, 171}}"
                                                       },
                                                       "children": [
                                                         {
                                                           "role": "button",
                                                           "id": "menu-text-input",
                                                           "label": "Text Input",
-                                                          "value": null,
-                                                          "frame": {
-                                                            "x": 16,
-                                                            "y": 592.999979019165,
-                                                            "width": 370,
-                                                            "height": 57
-                                                          },
-                                                          "enabled": true,
-                                                          "state": {
-                                                            "checked": null,
-                                                            "selected": null,
-                                                            "focused": null
-                                                          },
-                                                          "native": {
-                                                            "type": "Button",
-                                                            "role": "AXButton",
-                                                            "subrole": null,
-                                                            "roleDescription": "button",
-                                                            "title": null,
-                                                            "help": "Text typed by CLI commands",
-                                                            "customActions": [],
-                                                            "contentRequired": false,
-                                                            "pid": 1000,
-                                                            "axFrame": "{{16, 592.99997901916504}, {370, 57}}"
-                                                          },
-                                                          "children": []
-                                                        },
-                                                        {
-                                                          "role": "button",
-                                                          "id": "menu-key-press",
-                                                          "label": "Key Press",
-                                                          "value": null,
-                                                          "frame": {
-                                                            "x": 16,
-                                                            "y": 649.999979019165,
-                                                            "width": 370,
-                                                            "height": 57
-                                                          },
-                                                          "enabled": true,
-                                                          "state": {
-                                                            "checked": null,
-                                                            "selected": null,
-                                                            "focused": null
-                                                          },
-                                                          "native": {
-                                                            "type": "Button",
-                                                            "role": "AXButton",
-                                                            "subrole": null,
-                                                            "roleDescription": "button",
-                                                            "title": null,
-                                                            "help": "Detects CLI key events",
-                                                            "customActions": [],
-                                                            "contentRequired": false,
-                                                            "pid": 1000,
-                                                            "axFrame": "{{16, 649.99997901916504}, {370, 57}}"
-                                                          },
-                                                          "children": []
-                                                        },
-                                                        {
-                                                          "role": "button",
-                                                          "id": "menu-key-sequence",
-                                                          "label": "Key Sequence",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -958,11 +963,73 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Detects CLI key sequences",
+                                                            "help": "Text typed by CLI commands",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
                                                             "axFrame": "{{16, 706.99997901916504}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-key-press",
+                                                          "label": "Key Press",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 763.999979019165,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Detects CLI key events",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 763.99997901916504}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-key-sequence",
+                                                          "label": "Key Sequence",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 820.999979019165,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Detects CLI key sequences",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 820.99997901916504}, {370, 57}}"
                                                           },
                                                           "children": []
                                                         }
@@ -975,7 +1042,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 0,
-                                                        "y": 780,
+                                                        "y": 894,
                                                         "width": 402,
                                                         "height": 21.66668701171875
                                                       },
@@ -995,7 +1062,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{0, 780}, {402, 21.66668701171875}}"
+                                                        "axFrame": "{{0, 894}, {402, 21.66668701171875}}"
                                                       },
                                                       "children": []
                                                     },
@@ -1006,7 +1073,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 16,
-                                                        "y": 801.6666660308838,
+                                                        "y": 915.6666660308838,
                                                         "width": 370,
                                                         "height": 57
                                                       },
@@ -1026,7 +1093,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{16, 801.66666603088379}, {370, 57}}"
+                                                        "axFrame": "{{16, 915.66666603088379}, {370, 57}}"
                                                       },
                                                       "children": [
                                                         {
@@ -1036,7 +1103,7 @@
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
-                                                            "y": 801.6666660308838,
+                                                            "y": 915.6666660308838,
                                                             "width": 370,
                                                             "height": 57
                                                           },
@@ -1056,7 +1123,7 @@
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
-                                                            "axFrame": "{{16, 801.66666603088379}, {370, 57}}"
+                                                            "axFrame": "{{16, 915.66666603088379}, {370, 57}}"
                                                           },
                                                           "children": []
                                                         }
@@ -1069,7 +1136,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 0,
-                                                        "y": 874.6666870117188,
+                                                        "y": 988.6666870117188,
                                                         "width": 402,
                                                         "height": 21.6666259765625
                                                       },
@@ -1089,7 +1156,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{0, 874.66668701171875}, {402, 21.6666259765625}}"
+                                                        "axFrame": "{{0, 988.66668701171875}, {402, 21.6666259765625}}"
                                                       },
                                                       "children": []
                                                     },
@@ -1100,9 +1167,9 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 16,
-                                                        "y": 896.3333530426025,
+                                                        "y": 1010.3333530426025,
                                                         "width": 370,
-                                                        "height": 114
+                                                        "height": 114.00006103515625
                                                       },
                                                       "enabled": true,
                                                       "state": {
@@ -1120,7 +1187,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{16, 896.33335304260254}, {370, 114}}"
+                                                        "axFrame": "{{16, 1010.3333530426025}, {370, 114.00006103515625}}"
                                                       },
                                                       "children": [
                                                         {
@@ -1130,9 +1197,9 @@
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
-                                                            "y": 896.3333530426025,
+                                                            "y": 1010.3333530426025,
                                                             "width": 370,
-                                                            "height": 57
+                                                            "height": 57.00006103515625
                                                           },
                                                           "enabled": true,
                                                           "state": {
@@ -1150,7 +1217,7 @@
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
-                                                            "axFrame": "{{16, 896.33335304260254}, {370, 57}}"
+                                                            "axFrame": "{{16, 1010.3333530426025}, {370, 57.00006103515625}}"
                                                           },
                                                           "children": []
                                                         },
@@ -1161,7 +1228,7 @@
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
-                                                            "y": 953.3333530426025,
+                                                            "y": 1067.3333530426025,
                                                             "width": 370,
                                                             "height": 57
                                                           },
@@ -1181,7 +1248,7 @@
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
-                                                            "axFrame": "{{16, 953.33335304260254}, {370, 57}}"
+                                                            "axFrame": "{{16, 1067.3333530426025}, {370, 57}}"
                                                           },
                                                           "children": []
                                                         }
@@ -1194,7 +1261,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 0,
-                                                        "y": 1026.3333740234375,
+                                                        "y": 1140.3333740234375,
                                                         "width": 402,
                                                         "height": 21.6666259765625
                                                       },
@@ -1214,7 +1281,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{0, 1026.3333740234375}, {402, 21.6666259765625}}"
+                                                        "axFrame": "{{0, 1140.3333740234375}, {402, 21.6666259765625}}"
                                                       },
                                                       "children": []
                                                     },
@@ -1225,7 +1292,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 16,
-                                                        "y": 1048.0000400543213,
+                                                        "y": 1162.0000400543213,
                                                         "width": 370,
                                                         "height": 171
                                                       },
@@ -1245,75 +1312,13 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{16, 1048.0000400543213}, {370, 171}}"
+                                                        "axFrame": "{{16, 1162.0000400543213}, {370, 171}}"
                                                       },
                                                       "children": [
                                                         {
                                                           "role": "button",
                                                           "id": "menu-slider-value-test",
                                                           "label": "Slider Value Test",
-                                                          "value": null,
-                                                          "frame": {
-                                                            "x": 16,
-                                                            "y": 1048.0000400543213,
-                                                            "width": 370,
-                                                            "height": 57
-                                                          },
-                                                          "enabled": true,
-                                                          "state": {
-                                                            "checked": null,
-                                                            "selected": null,
-                                                            "focused": null
-                                                          },
-                                                          "native": {
-                                                            "type": "Button",
-                                                            "role": "AXButton",
-                                                            "subrole": null,
-                                                            "roleDescription": "button",
-                                                            "title": null,
-                                                            "help": "Numeric value with selector tap",
-                                                            "customActions": [],
-                                                            "contentRequired": false,
-                                                            "pid": 1000,
-                                                            "axFrame": "{{16, 1048.0000400543213}, {370, 57}}"
-                                                          },
-                                                          "children": []
-                                                        },
-                                                        {
-                                                          "role": "button",
-                                                          "id": "menu-searchable-test",
-                                                          "label": "Searchable Test",
-                                                          "value": null,
-                                                          "frame": {
-                                                            "x": 16,
-                                                            "y": 1105.0000400543213,
-                                                            "width": 370,
-                                                            "height": 57
-                                                          },
-                                                          "enabled": true,
-                                                          "state": {
-                                                            "checked": null,
-                                                            "selected": null,
-                                                            "focused": null
-                                                          },
-                                                          "native": {
-                                                            "type": "Button",
-                                                            "role": "AXButton",
-                                                            "subrole": null,
-                                                            "roleDescription": "button",
-                                                            "title": null,
-                                                            "help": "Search field targeting",
-                                                            "customActions": [],
-                                                            "contentRequired": false,
-                                                            "pid": 1000,
-                                                            "axFrame": "{{16, 1105.0000400543213}, {370, 57}}"
-                                                          },
-                                                          "children": []
-                                                        },
-                                                        {
-                                                          "role": "button",
-                                                          "id": "menu-toolbar-picker-test",
-                                                          "label": "Toolbar Picker Test",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -1333,11 +1338,73 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Header segmented picker targeting",
+                                                            "help": "Numeric value with selector tap",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
                                                             "axFrame": "{{16, 1162.0000400543213}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-searchable-test",
+                                                          "label": "Searchable Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1219.0000400543213,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Search field targeting",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1219.0000400543213}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-toolbar-picker-test",
+                                                          "label": "Toolbar Picker Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1276.0000400543213,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Header segmented picker targeting",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1276.0000400543213}, {370, 57}}"
                                                           },
                                                           "children": []
                                                         }
@@ -1350,7 +1417,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 0,
-                                                        "y": 1235,
+                                                        "y": 1349,
                                                         "width": 402,
                                                         "height": 21.6666259765625
                                                       },
@@ -1370,7 +1437,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{0, 1235}, {402, 21.6666259765625}}"
+                                                        "axFrame": "{{0, 1349}, {402, 21.6666259765625}}"
                                                       },
                                                       "children": []
                                                     },
@@ -1381,7 +1448,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 16,
-                                                        "y": 1256.6666660308838,
+                                                        "y": 1370.6666660308838,
                                                         "width": 370,
                                                         "height": 285
                                                       },
@@ -1401,75 +1468,13 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{16, 1256.6666660308838}, {370, 285}}"
+                                                        "axFrame": "{{16, 1370.6666660308838}, {370, 285}}"
                                                       },
                                                       "children": [
                                                         {
                                                           "role": "button",
                                                           "id": "menu-alert-test",
                                                           "label": "Alert Test",
-                                                          "value": null,
-                                                          "frame": {
-                                                            "x": 16,
-                                                            "y": 1256.6666660308838,
-                                                            "width": 370,
-                                                            "height": 57
-                                                          },
-                                                          "enabled": true,
-                                                          "state": {
-                                                            "checked": null,
-                                                            "selected": null,
-                                                            "focused": null
-                                                          },
-                                                          "native": {
-                                                            "type": "Button",
-                                                            "role": "AXButton",
-                                                            "subrole": null,
-                                                            "roleDescription": "button",
-                                                            "title": null,
-                                                            "help": "Alert presentation and button targeting",
-                                                            "customActions": [],
-                                                            "contentRequired": false,
-                                                            "pid": 1000,
-                                                            "axFrame": "{{16, 1256.6666660308838}, {370, 57}}"
-                                                          },
-                                                          "children": []
-                                                        },
-                                                        {
-                                                          "role": "button",
-                                                          "id": "menu-sheet-test",
-                                                          "label": "Sheet Test",
-                                                          "value": null,
-                                                          "frame": {
-                                                            "x": 16,
-                                                            "y": 1313.6666660308838,
-                                                            "width": 370,
-                                                            "height": 57
-                                                          },
-                                                          "enabled": true,
-                                                          "state": {
-                                                            "checked": null,
-                                                            "selected": null,
-                                                            "focused": null
-                                                          },
-                                                          "native": {
-                                                            "type": "Button",
-                                                            "role": "AXButton",
-                                                            "subrole": null,
-                                                            "roleDescription": "button",
-                                                            "title": null,
-                                                            "help": "Sheet presentation and actions",
-                                                            "customActions": [],
-                                                            "contentRequired": false,
-                                                            "pid": 1000,
-                                                            "axFrame": "{{16, 1313.6666660308838}, {370, 57}}"
-                                                          },
-                                                          "children": []
-                                                        },
-                                                        {
-                                                          "role": "button",
-                                                          "id": "menu-context-menu-test",
-                                                          "label": "Context Menu Test",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -1489,7 +1494,7 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Long press menu targeting",
+                                                            "help": "Alert presentation and button targeting",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
@@ -1499,8 +1504,8 @@
                                                         },
                                                         {
                                                           "role": "button",
-                                                          "id": "menu-modal-navigation-test",
-                                                          "label": "Modal Navigation Test",
+                                                          "id": "menu-sheet-test",
+                                                          "label": "Sheet Test",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -1520,7 +1525,7 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Modal route and nested navigation",
+                                                            "help": "Sheet presentation and actions",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
@@ -1530,8 +1535,8 @@
                                                         },
                                                         {
                                                           "role": "button",
-                                                          "id": "menu-long-scroll-test",
-                                                          "label": "Long Scroll Test",
+                                                          "id": "menu-context-menu-test",
+                                                          "label": "Context Menu Test",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -1551,11 +1556,73 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Dedicated long scroll coverage",
+                                                            "help": "Long press menu targeting",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
                                                             "axFrame": "{{16, 1484.6666660308838}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-modal-navigation-test",
+                                                          "label": "Modal Navigation Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1541.6666660308838,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Modal route and nested navigation",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1541.6666660308838}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-long-scroll-test",
+                                                          "label": "Long Scroll Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1598.6666660308838,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Dedicated long scroll coverage",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1598.6666660308838}, {370, 57}}"
                                                           },
                                                           "children": []
                                                         }
@@ -1568,7 +1635,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 0,
-                                                        "y": 1557.6666259765625,
+                                                        "y": 1671.6666259765625,
                                                         "width": 402,
                                                         "height": 21.666748046875
                                                       },
@@ -1588,7 +1655,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{0, 1557.6666259765625}, {402, 21.666748046875}}"
+                                                        "axFrame": "{{0, 1671.6666259765625}, {402, 21.666748046875}}"
                                                       },
                                                       "children": []
                                                     },
@@ -1599,9 +1666,9 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 16,
-                                                        "y": 1579.3332920074463,
+                                                        "y": 1693.3332920074463,
                                                         "width": 370,
-                                                        "height": 285
+                                                        "height": 342
                                                       },
                                                       "enabled": true,
                                                       "state": {
@@ -1619,75 +1686,13 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{16, 1579.3332920074463}, {370, 285}}"
+                                                        "axFrame": "{{16, 1693.3332920074463}, {370, 342}}"
                                                       },
                                                       "children": [
                                                         {
                                                           "role": "button",
                                                           "id": "menu-parked-sheet-test",
                                                           "label": "Parked Sheet Test",
-                                                          "value": null,
-                                                          "frame": {
-                                                            "x": 16,
-                                                            "y": 1579.3332920074463,
-                                                            "width": 370,
-                                                            "height": 57
-                                                          },
-                                                          "enabled": true,
-                                                          "state": {
-                                                            "checked": null,
-                                                            "selected": null,
-                                                            "focused": null
-                                                          },
-                                                          "native": {
-                                                            "type": "Button",
-                                                            "role": "AXButton",
-                                                            "subrole": null,
-                                                            "roleDescription": "button",
-                                                            "title": null,
-                                                            "help": "Sheet kept mounted and parked off screen",
-                                                            "customActions": [],
-                                                            "contentRequired": false,
-                                                            "pid": 1000,
-                                                            "axFrame": "{{16, 1579.3332920074463}, {370, 57}}"
-                                                          },
-                                                          "children": []
-                                                        },
-                                                        {
-                                                          "role": "button",
-                                                          "id": "menu-stack-test",
-                                                          "label": "Mounted Stack Test",
-                                                          "value": null,
-                                                          "frame": {
-                                                            "x": 16,
-                                                            "y": 1636.3332920074463,
-                                                            "width": 370,
-                                                            "height": 57
-                                                          },
-                                                          "enabled": true,
-                                                          "state": {
-                                                            "checked": null,
-                                                            "selected": null,
-                                                            "focused": null
-                                                          },
-                                                          "native": {
-                                                            "type": "Button",
-                                                            "role": "AXButton",
-                                                            "subrole": null,
-                                                            "roleDescription": "button",
-                                                            "title": null,
-                                                            "help": "Previous pages stay mounted with the same ids",
-                                                            "customActions": [],
-                                                            "contentRequired": false,
-                                                            "pid": 1000,
-                                                            "axFrame": "{{16, 1636.3332920074463}, {370, 57}}"
-                                                          },
-                                                          "children": []
-                                                        },
-                                                        {
-                                                          "role": "button",
-                                                          "id": "menu-overlay-test",
-                                                          "label": "Overlay Test",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -1707,7 +1712,7 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Banners, silent scrims and hidden controls",
+                                                            "help": "Sheet kept mounted and parked off screen",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
@@ -1717,8 +1722,8 @@
                                                         },
                                                         {
                                                           "role": "button",
-                                                          "id": "menu-rows-test",
-                                                          "label": "Rows Test",
+                                                          "id": "menu-stack-test",
+                                                          "label": "Mounted Stack Test",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -1738,7 +1743,7 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Merged row labels, live values, long list",
+                                                            "help": "Previous pages stay mounted with the same ids",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
@@ -1748,8 +1753,8 @@
                                                         },
                                                         {
                                                           "role": "button",
-                                                          "id": "menu-environment-test",
-                                                          "label": "Environment Test",
+                                                          "id": "menu-overlay-test",
+                                                          "label": "Overlay Test",
                                                           "value": null,
                                                           "frame": {
                                                             "x": 16,
@@ -1769,11 +1774,104 @@
                                                             "subrole": null,
                                                             "roleDescription": "button",
                                                             "title": null,
-                                                            "help": "Appearance, size, canvas and logging",
+                                                            "help": "Banners, silent scrims and hidden controls",
                                                             "customActions": [],
                                                             "contentRequired": false,
                                                             "pid": 1000,
                                                             "axFrame": "{{16, 1807.3332920074463}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-rows-test",
+                                                          "label": "Rows Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1864.3332920074463,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Merged row labels, live values, long list",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1864.3332920074463}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-environment-test",
+                                                          "label": "Environment Test",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1921.3332920074463,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Appearance, size, canvas and logging",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1921.3332920074463}, {370, 57}}"
+                                                          },
+                                                          "children": []
+                                                        },
+                                                        {
+                                                          "role": "button",
+                                                          "id": "menu-permission-state",
+                                                          "label": "Permission State",
+                                                          "value": null,
+                                                          "frame": {
+                                                            "x": 16,
+                                                            "y": 1978.3332920074463,
+                                                            "width": 370,
+                                                            "height": 57
+                                                          },
+                                                          "enabled": true,
+                                                          "state": {
+                                                            "checked": null,
+                                                            "selected": null,
+                                                            "focused": null
+                                                          },
+                                                          "native": {
+                                                            "type": "Button",
+                                                            "role": "AXButton",
+                                                            "subrole": null,
+                                                            "roleDescription": "button",
+                                                            "title": null,
+                                                            "help": "Camera and notification permissions",
+                                                            "customActions": [],
+                                                            "contentRequired": false,
+                                                            "pid": 1000,
+                                                            "axFrame": "{{16, 1978.3332920074463}, {370, 57}}"
                                                           },
                                                           "children": []
                                                         }
@@ -1822,7 +1920,7 @@
                                                     "x": 396,
                                                     "y": 65,
                                                     "width": 3,
-                                                    "height": 338.3333333333333
+                                                    "height": 310.6666666666667
                                                   },
                                                   "enabled": true,
                                                   "state": {
@@ -1840,7 +1938,7 @@
                                                     "customActions": [],
                                                     "contentRequired": false,
                                                     "pid": 1000,
-                                                    "axFrame": "{{396, 65}, {3, 338.33333333333331}}"
+                                                    "axFrame": "{{396, 65}, {3, 310.66666666666669}}"
                                                   },
                                                   "children": []
                                                 }
@@ -1948,7 +2046,7 @@
                                                     "x": 396,
                                                     "y": 65,
                                                     "width": 3,
-                                                    "height": 338.3333333333333
+                                                    "height": 310.6666666666667
                                                   },
                                                   "enabled": true,
                                                   "state": {
@@ -1966,7 +2064,7 @@
                                                     "customActions": [],
                                                     "contentRequired": false,
                                                     "pid": 1000,
-                                                    "axFrame": "{{396, 65}, {3, 338.33333333333331}}"
+                                                    "axFrame": "{{396, 65}, {3, 310.66666666666669}}"
                                                   },
                                                   "children": []
                                                 }

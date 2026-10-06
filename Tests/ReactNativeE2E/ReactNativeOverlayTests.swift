@@ -84,4 +84,38 @@ struct ReactNativeOverlayTests {
         _ = try await app.waitForLabel(of: "overlay-test-swallowed") { $0 == "Swallowed Taps: 1" }
         #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
     }
+
+    @Test("wait --gone does not count a node that flickers out for 300 ms as gone", arguments: RNPlatform.enabled)
+    func flickerIsNotGone(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-flicker")
+
+        // The node is back for 1.2 s between flickers, longer than a slow read takes, so no two reads both land in a gap.
+        let result = try await app.offsider("wait --label 'Flickering Node' --gone --timeout 3")
+
+        #expect(result.exitCode == 5, "\(result.stderr)")
+    }
+
+    @Test("wait --any reports the selector that came on screen", arguments: RNPlatform.enabled)
+    func waitAny(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+
+        let result = try await app.run("wait --any --id never-there --id overlay-test-tab --json --timeout 5")
+
+        #expect(result.stdout.contains(#""matched":{"by":"id","text":"overlay-test-tab"}"#), "\(result.stdout)")
+    }
+
+    @Test("--verify-ignore-text does not count a ticking clock as the effect of a tap that does nothing", arguments: RNPlatform.enabled)
+    func ignoreTextOnTickingScreen(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-start-clock")
+        _ = try await app.waitForLabel(of: "overlay-test-clock") { $0 != "Clock: 0" }
+
+        let result = try await app.offsider("tap --id overlay-test-tab --verify-ignore-text --retries 0")
+
+        #expect(result.exitCode == 5, "\(result.stderr)")
+    }
 }

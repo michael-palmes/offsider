@@ -1,0 +1,2291 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "context": {
+    "window": {
+      "title": null,
+      "kind": "modal",
+      "package": "com.mpalmes.offsider.playground.rn"
+    },
+    "keyboard": false,
+    "logbox": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": null,
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "group",
+          "id": null,
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 411.43,
+            "height": 923.43
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "androidx.compose.ui.platform.ComposeView",
+            "resourceId": null,
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2424
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "group",
+              "id": null,
+              "label": null,
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 411.43,
+                "height": 923.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.view.View",
+                "resourceId": null,
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1080,
+                  "height": 2424
+                },
+                "text": null,
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": [
+                {
+                  "role": "group",
+                  "id": null,
+                  "label": null,
+                  "value": null,
+                  "frame": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 411.43,
+                    "height": 923.43
+                  },
+                  "enabled": true,
+                  "state": {
+                    "checked": null,
+                    "selected": false,
+                    "focused": false
+                  },
+                  "native": {
+                    "className": "android.view.View",
+                    "resourceId": null,
+                    "package": "com.mpalmes.offsider.playground.rn",
+                    "pixelFrame": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 1080,
+                      "height": 2424
+                    },
+                    "text": null,
+                    "contentDescription": null,
+                    "hint": null,
+                    "stateDescription": null,
+                    "roleDescription": null,
+                    "testTag": null
+                  },
+                  "children": [
+                    {
+                      "role": "group",
+                      "id": null,
+                      "label": null,
+                      "value": null,
+                      "frame": {
+                        "x": 0,
+                        "y": 0,
+                        "width": 411.43,
+                        "height": 461.33
+                      },
+                      "enabled": true,
+                      "state": {
+                        "checked": null,
+                        "selected": false,
+                        "focused": false
+                      },
+                      "native": {
+                        "className": "android.view.View",
+                        "resourceId": null,
+                        "package": "com.mpalmes.offsider.playground.rn",
+                        "pixelFrame": {
+                          "x": 0,
+                          "y": 0,
+                          "width": 1080,
+                          "height": 1211
+                        },
+                        "text": null,
+                        "contentDescription": null,
+                        "hint": null,
+                        "stateDescription": null,
+                        "roleDescription": null,
+                        "testTag": null
+                      },
+                      "children": [
+                        {
+                          "role": "group",
+                          "id": null,
+                          "label": null,
+                          "value": null,
+                          "frame": {
+                            "x": 0,
+                            "y": 0,
+                            "width": 411.43,
+                            "height": 461.33
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": false,
+                            "focused": false
+                          },
+                          "native": {
+                            "className": "android.view.View",
+                            "resourceId": null,
+                            "package": "com.mpalmes.offsider.playground.rn",
+                            "pixelFrame": {
+                              "x": 0,
+                              "y": 0,
+                              "width": 1080,
+                              "height": 1211
+                            },
+                            "text": null,
+                            "contentDescription": null,
+                            "hint": null,
+                            "stateDescription": null,
+                            "roleDescription": null,
+                            "testTag": null
+                          },
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "role": "group",
+                      "id": null,
+                      "label": null,
+                      "value": null,
+                      "frame": {
+                        "x": 0,
+                        "y": 369.14,
+                        "width": 411.43,
+                        "height": 554.29
+                      },
+                      "enabled": true,
+                      "state": {
+                        "checked": null,
+                        "selected": false,
+                        "focused": false
+                      },
+                      "native": {
+                        "className": "android.view.View",
+                        "resourceId": null,
+                        "package": "com.mpalmes.offsider.playground.rn",
+                        "pixelFrame": {
+                          "x": 0,
+                          "y": 969,
+                          "width": 1080,
+                          "height": 1455
+                        },
+                        "text": null,
+                        "contentDescription": null,
+                        "hint": null,
+                        "stateDescription": null,
+                        "roleDescription": null,
+                        "testTag": null
+                      },
+                      "children": [
+                        {
+                          "role": "group",
+                          "id": null,
+                          "label": null,
+                          "value": null,
+                          "frame": {
+                            "x": 22.1,
+                            "y": 391.24,
+                            "width": 48,
+                            "height": 48
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": false,
+                            "focused": false
+                          },
+                          "native": {
+                            "className": "android.view.View",
+                            "resourceId": null,
+                            "package": "com.mpalmes.offsider.playground.rn",
+                            "pixelFrame": {
+                              "x": 58,
+                              "y": 1027,
+                              "width": 126,
+                              "height": 126
+                            },
+                            "text": null,
+                            "contentDescription": null,
+                            "hint": null,
+                            "stateDescription": null,
+                            "roleDescription": null,
+                            "testTag": null
+                          },
+                          "children": [
+                            {
+                              "role": "group",
+                              "id": null,
+                              "label": null,
+                              "value": null,
+                              "frame": {
+                                "x": 22.1,
+                                "y": 391.24,
+                                "width": 48,
+                                "height": 48
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": false,
+                                "focused": false
+                              },
+                              "native": {
+                                "className": "android.view.View",
+                                "resourceId": null,
+                                "package": "com.mpalmes.offsider.playground.rn",
+                                "pixelFrame": {
+                                  "x": 58,
+                                  "y": 1027,
+                                  "width": 126,
+                                  "height": 126
+                                },
+                                "text": null,
+                                "contentDescription": null,
+                                "hint": null,
+                                "stateDescription": null,
+                                "roleDescription": null,
+                                "testTag": null
+                              },
+                              "children": [
+                                {
+                                  "role": "image",
+                                  "id": null,
+                                  "label": "App Icon",
+                                  "value": null,
+                                  "frame": {
+                                    "x": 24,
+                                    "y": 393.14,
+                                    "width": 44.19,
+                                    "height": 44.19
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.widget.ImageView",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 63,
+                                      "y": 1032,
+                                      "width": 116,
+                                      "height": 116
+                                    },
+                                    "text": null,
+                                    "contentDescription": "App Icon",
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": []
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "role": "text",
+                          "id": null,
+                          "label": "OffsiderPlaygroundRN",
+                          "value": null,
+                          "frame": {
+                            "x": 84.19,
+                            "y": 395.05,
+                            "width": 166.86,
+                            "height": 19.43
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": false,
+                            "focused": false
+                          },
+                          "native": {
+                            "className": "android.widget.TextView",
+                            "resourceId": null,
+                            "package": "com.mpalmes.offsider.playground.rn",
+                            "pixelFrame": {
+                              "x": 221,
+                              "y": 1037,
+                              "width": 438,
+                              "height": 51
+                            },
+                            "text": "OffsiderPlaygroundRN",
+                            "contentDescription": null,
+                            "hint": null,
+                            "stateDescription": null,
+                            "roleDescription": null,
+                            "testTag": null
+                          },
+                          "children": []
+                        },
+                        {
+                          "role": "text",
+                          "id": null,
+                          "label": "Runtime version: exposdk:57.0.0",
+                          "value": null,
+                          "frame": {
+                            "x": 84.19,
+                            "y": 418.67,
+                            "width": 198.86,
+                            "height": 17.14
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": false,
+                            "focused": false
+                          },
+                          "native": {
+                            "className": "android.widget.TextView",
+                            "resourceId": null,
+                            "package": "com.mpalmes.offsider.playground.rn",
+                            "pixelFrame": {
+                              "x": 221,
+                              "y": 1099,
+                              "width": 522,
+                              "height": 45
+                            },
+                            "text": "Runtime version: exposdk:57.0.0",
+                            "contentDescription": null,
+                            "hint": null,
+                            "stateDescription": null,
+                            "roleDescription": null,
+                            "testTag": null
+                          },
+                          "children": []
+                        },
+                        {
+                          "role": "button",
+                          "id": null,
+                          "label": "Close",
+                          "value": null,
+                          "frame": {
+                            "x": 345.52,
+                            "y": 391.62,
+                            "width": 48,
+                            "height": 48
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": false,
+                            "focused": false
+                          },
+                          "native": {
+                            "className": "android.view.View",
+                            "resourceId": null,
+                            "package": "com.mpalmes.offsider.playground.rn",
+                            "pixelFrame": {
+                              "x": 907,
+                              "y": 1028,
+                              "width": 126,
+                              "height": 126
+                            },
+                            "text": null,
+                            "contentDescription": null,
+                            "hint": null,
+                            "stateDescription": null,
+                            "roleDescription": null,
+                            "testTag": null
+                          },
+                          "children": [
+                            {
+                              "role": "group",
+                              "id": null,
+                              "label": "Close",
+                              "value": null,
+                              "frame": {
+                                "x": 361.52,
+                                "y": 407.62,
+                                "width": 16,
+                                "height": 16
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": false,
+                                "focused": false
+                              },
+                              "native": {
+                                "className": "android.view.View",
+                                "resourceId": null,
+                                "package": "com.mpalmes.offsider.playground.rn",
+                                "pixelFrame": {
+                                  "x": 949,
+                                  "y": 1070,
+                                  "width": 42,
+                                  "height": 42
+                                },
+                                "text": null,
+                                "contentDescription": "Close",
+                                "hint": null,
+                                "stateDescription": null,
+                                "roleDescription": null,
+                                "testTag": null
+                              },
+                              "children": []
+                            },
+                            {
+                              "role": "button",
+                              "id": null,
+                              "label": null,
+                              "value": null,
+                              "frame": {
+                                "x": 351.24,
+                                "y": 397.33,
+                                "width": 36.19,
+                                "height": 36.19
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": false,
+                                "focused": false
+                              },
+                              "native": {
+                                "className": "android.widget.Button",
+                                "resourceId": null,
+                                "package": "com.mpalmes.offsider.playground.rn",
+                                "pixelFrame": {
+                                  "x": 922,
+                                  "y": 1043,
+                                  "width": 95,
+                                  "height": 95
+                                },
+                                "text": null,
+                                "contentDescription": null,
+                                "hint": null,
+                                "stateDescription": null,
+                                "roleDescription": null,
+                                "testTag": null
+                              },
+                              "children": []
+                            }
+                          ]
+                        },
+                        {
+                          "role": "scrollView",
+                          "id": null,
+                          "label": null,
+                          "value": null,
+                          "frame": {
+                            "x": 0,
+                            "y": 461.33,
+                            "width": 411.43,
+                            "height": 462.1
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": false,
+                            "focused": false
+                          },
+                          "native": {
+                            "className": "android.widget.ScrollView",
+                            "resourceId": null,
+                            "package": "com.mpalmes.offsider.playground.rn",
+                            "pixelFrame": {
+                              "x": 0,
+                              "y": 1211,
+                              "width": 1080,
+                              "height": 1213
+                            },
+                            "text": null,
+                            "contentDescription": null,
+                            "hint": null,
+                            "stateDescription": null,
+                            "roleDescription": null,
+                            "testTag": null
+                          },
+                          "children": [
+                            {
+                              "role": "group",
+                              "id": null,
+                              "label": null,
+                              "value": null,
+                              "frame": {
+                                "x": 24,
+                                "y": 461.33,
+                                "width": 177.52,
+                                "height": 64
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": false,
+                                "focused": false
+                              },
+                              "native": {
+                                "className": "android.view.View",
+                                "resourceId": null,
+                                "package": "com.mpalmes.offsider.playground.rn",
+                                "pixelFrame": {
+                                  "x": 63,
+                                  "y": 1211,
+                                  "width": 466,
+                                  "height": 168
+                                },
+                                "text": null,
+                                "contentDescription": null,
+                                "hint": null,
+                                "stateDescription": null,
+                                "roleDescription": null,
+                                "testTag": null
+                              },
+                              "children": [
+                                {
+                                  "role": "button",
+                                  "id": null,
+                                  "label": "Reload Reload",
+                                  "value": null,
+                                  "frame": {
+                                    "x": 24,
+                                    "y": 461.33,
+                                    "width": 177.52,
+                                    "height": 64
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.view.View",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 63,
+                                      "y": 1211,
+                                      "width": 466,
+                                      "height": 168
+                                    },
+                                    "text": null,
+                                    "contentDescription": null,
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 40,
+                                        "y": 469.33,
+                                        "width": 145.52,
+                                        "height": 48
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.view.View",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 105,
+                                          "y": 1232,
+                                          "width": 382,
+                                          "height": 126
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": "Reload",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 40,
+                                            "y": 483.43,
+                                            "width": 20.19,
+                                            "height": 20.19
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 105,
+                                              "y": 1269,
+                                              "width": 53,
+                                              "height": 53
+                                            },
+                                            "text": null,
+                                            "contentDescription": "Reload",
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        },
+                                        {
+                                          "role": "text",
+                                          "id": null,
+                                          "label": "Reload",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 68.19,
+                                            "y": 484.95,
+                                            "width": 43.05,
+                                            "height": 17.14
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.widget.TextView",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 179,
+                                              "y": 1273,
+                                              "width": 113,
+                                              "height": 45
+                                            },
+                                            "text": "Reload",
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 24,
+                                        "y": 461.33,
+                                        "width": 177.52,
+                                        "height": 64
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.widget.Button",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 63,
+                                          "y": 1211,
+                                          "width": 466,
+                                          "height": 168
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "role": "group",
+                              "id": null,
+                              "label": null,
+                              "value": null,
+                              "frame": {
+                                "x": 209.52,
+                                "y": 461.33,
+                                "width": 177.9,
+                                "height": 64
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": false,
+                                "focused": false
+                              },
+                              "native": {
+                                "className": "android.view.View",
+                                "resourceId": null,
+                                "package": "com.mpalmes.offsider.playground.rn",
+                                "pixelFrame": {
+                                  "x": 550,
+                                  "y": 1211,
+                                  "width": 467,
+                                  "height": 168
+                                },
+                                "text": null,
+                                "contentDescription": null,
+                                "hint": null,
+                                "stateDescription": null,
+                                "roleDescription": null,
+                                "testTag": null
+                              },
+                              "children": [
+                                {
+                                  "role": "button",
+                                  "id": null,
+                                  "label": "Home Go home",
+                                  "value": null,
+                                  "frame": {
+                                    "x": 209.52,
+                                    "y": 461.33,
+                                    "width": 177.9,
+                                    "height": 64
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.view.View",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 550,
+                                      "y": 1211,
+                                      "width": 467,
+                                      "height": 168
+                                    },
+                                    "text": null,
+                                    "contentDescription": null,
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 225.52,
+                                        "y": 469.33,
+                                        "width": 145.9,
+                                        "height": 48
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.view.View",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 592,
+                                          "y": 1232,
+                                          "width": 383,
+                                          "height": 126
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": "Home",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 225.52,
+                                            "y": 483.43,
+                                            "width": 20.19,
+                                            "height": 20.19
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 592,
+                                              "y": 1269,
+                                              "width": 53,
+                                              "height": 53
+                                            },
+                                            "text": null,
+                                            "contentDescription": "Home",
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        },
+                                        {
+                                          "role": "text",
+                                          "id": null,
+                                          "label": "Go home",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 253.71,
+                                            "y": 484.95,
+                                            "width": 57.14,
+                                            "height": 17.14
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.widget.TextView",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 666,
+                                              "y": 1273,
+                                              "width": 150,
+                                              "height": 45
+                                            },
+                                            "text": "Go home",
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 209.52,
+                                        "y": 461.33,
+                                        "width": 177.9,
+                                        "height": 64
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.widget.Button",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 550,
+                                          "y": 1211,
+                                          "width": 467,
+                                          "height": 168
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "role": "text",
+                              "id": null,
+                              "label": "TOOLS",
+                              "value": null,
+                              "frame": {
+                                "x": 24,
+                                "y": 557.33,
+                                "width": 36.19,
+                                "height": 15.62
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": false,
+                                "focused": false
+                              },
+                              "native": {
+                                "className": "android.widget.TextView",
+                                "resourceId": null,
+                                "package": "com.mpalmes.offsider.playground.rn",
+                                "pixelFrame": {
+                                  "x": 63,
+                                  "y": 1463,
+                                  "width": 95,
+                                  "height": 41
+                                },
+                                "text": "TOOLS",
+                                "contentDescription": null,
+                                "hint": null,
+                                "stateDescription": null,
+                                "roleDescription": null,
+                                "testTag": null
+                              },
+                              "children": []
+                            },
+                            {
+                              "role": "group",
+                              "id": null,
+                              "label": null,
+                              "value": null,
+                              "frame": {
+                                "x": 24,
+                                "y": 588.95,
+                                "width": 363.43,
+                                "height": 334.48
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": false,
+                                "focused": false
+                              },
+                              "native": {
+                                "className": "android.view.View",
+                                "resourceId": null,
+                                "package": "com.mpalmes.offsider.playground.rn",
+                                "pixelFrame": {
+                                  "x": 63,
+                                  "y": 1546,
+                                  "width": 954,
+                                  "height": 878
+                                },
+                                "text": null,
+                                "contentDescription": null,
+                                "hint": null,
+                                "stateDescription": null,
+                                "roleDescription": null,
+                                "testTag": null
+                              },
+                              "children": [
+                                {
+                                  "role": "button",
+                                  "id": null,
+                                  "label": "Performance monitor Toggle performance monitor",
+                                  "value": null,
+                                  "frame": {
+                                    "x": 24,
+                                    "y": 588.95,
+                                    "width": 363.43,
+                                    "height": 64
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.view.View",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 63,
+                                      "y": 1546,
+                                      "width": 954,
+                                      "height": 168
+                                    },
+                                    "text": null,
+                                    "contentDescription": null,
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 40,
+                                        "y": 596.95,
+                                        "width": 331.43,
+                                        "height": 48
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.view.View",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 105,
+                                          "y": 1567,
+                                          "width": 870,
+                                          "height": 126
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": "Performance monitor",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 40,
+                                            "y": 611.05,
+                                            "width": 20.19,
+                                            "height": 20.19
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 105,
+                                              "y": 1604,
+                                              "width": 53,
+                                              "height": 53
+                                            },
+                                            "text": null,
+                                            "contentDescription": "Performance monitor",
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        },
+                                        {
+                                          "role": "text",
+                                          "id": null,
+                                          "label": "Toggle performance monitor",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 68.19,
+                                            "y": 612.57,
+                                            "width": 176.38,
+                                            "height": 17.14
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.widget.TextView",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 179,
+                                              "y": 1608,
+                                              "width": 463,
+                                              "height": 45
+                                            },
+                                            "text": "Toggle performance monitor",
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 24,
+                                        "y": 588.95,
+                                        "width": 363.43,
+                                        "height": 64
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.widget.Button",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 63,
+                                          "y": 1546,
+                                          "width": 954,
+                                          "height": 168
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                },
+                                {
+                                  "role": "button",
+                                  "id": null,
+                                  "label": "Element inspector Toggle element inspector",
+                                  "value": null,
+                                  "frame": {
+                                    "x": 24,
+                                    "y": 653.33,
+                                    "width": 363.43,
+                                    "height": 64
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.view.View",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 63,
+                                      "y": 1715,
+                                      "width": 954,
+                                      "height": 168
+                                    },
+                                    "text": null,
+                                    "contentDescription": null,
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 40,
+                                        "y": 661.33,
+                                        "width": 331.43,
+                                        "height": 48
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.view.View",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 105,
+                                          "y": 1736,
+                                          "width": 870,
+                                          "height": 126
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": "Element inspector",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 40,
+                                            "y": 675.43,
+                                            "width": 20.19,
+                                            "height": 20.19
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 105,
+                                              "y": 1773,
+                                              "width": 53,
+                                              "height": 53
+                                            },
+                                            "text": null,
+                                            "contentDescription": "Element inspector",
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        },
+                                        {
+                                          "role": "text",
+                                          "id": null,
+                                          "label": "Toggle element inspector",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 68.19,
+                                            "y": 676.95,
+                                            "width": 156.95,
+                                            "height": 17.14
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.widget.TextView",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 179,
+                                              "y": 1777,
+                                              "width": 412,
+                                              "height": 45
+                                            },
+                                            "text": "Toggle element inspector",
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 24,
+                                        "y": 653.33,
+                                        "width": 363.43,
+                                        "height": 64
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.widget.Button",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 63,
+                                          "y": 1715,
+                                          "width": 954,
+                                          "height": 168
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                },
+                                {
+                                  "role": "button",
+                                  "id": null,
+                                  "label": "DevTools Open DevTools",
+                                  "value": null,
+                                  "frame": {
+                                    "x": 24,
+                                    "y": 717.71,
+                                    "width": 363.43,
+                                    "height": 64
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.view.View",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 63,
+                                      "y": 1884,
+                                      "width": 954,
+                                      "height": 168
+                                    },
+                                    "text": null,
+                                    "contentDescription": null,
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 40,
+                                        "y": 725.71,
+                                        "width": 331.43,
+                                        "height": 48
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.view.View",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 105,
+                                          "y": 1905,
+                                          "width": 870,
+                                          "height": 126
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": "DevTools",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 40,
+                                            "y": 739.81,
+                                            "width": 20.19,
+                                            "height": 20.19
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 105,
+                                              "y": 1942,
+                                              "width": 53,
+                                              "height": 53
+                                            },
+                                            "text": null,
+                                            "contentDescription": "DevTools",
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        },
+                                        {
+                                          "role": "text",
+                                          "id": null,
+                                          "label": "Open DevTools",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 68.19,
+                                            "y": 741.33,
+                                            "width": 94.48,
+                                            "height": 17.14
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.widget.TextView",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 179,
+                                              "y": 1946,
+                                              "width": 248,
+                                              "height": 45
+                                            },
+                                            "text": "Open DevTools",
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 24,
+                                        "y": 717.71,
+                                        "width": 363.43,
+                                        "height": 64
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.widget.Button",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 63,
+                                          "y": 1884,
+                                          "width": 954,
+                                          "height": 168
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                },
+                                {
+                                  "role": "button",
+                                  "id": null,
+                                  "label": "React Native dev menu Open React Native dev menu",
+                                  "value": null,
+                                  "frame": {
+                                    "x": 24,
+                                    "y": 782.1,
+                                    "width": 363.43,
+                                    "height": 64
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.view.View",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 63,
+                                      "y": 2053,
+                                      "width": 954,
+                                      "height": 168
+                                    },
+                                    "text": null,
+                                    "contentDescription": null,
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 40,
+                                        "y": 790.1,
+                                        "width": 331.43,
+                                        "height": 48
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.view.View",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 105,
+                                          "y": 2074,
+                                          "width": 870,
+                                          "height": 126
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": "React Native dev menu",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 40,
+                                            "y": 804.19,
+                                            "width": 20.19,
+                                            "height": 20.19
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 105,
+                                              "y": 2111,
+                                              "width": 53,
+                                              "height": 53
+                                            },
+                                            "text": null,
+                                            "contentDescription": "React Native dev menu",
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        },
+                                        {
+                                          "role": "text",
+                                          "id": null,
+                                          "label": "Open React Native dev menu",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 68.19,
+                                            "y": 805.71,
+                                            "width": 180.57,
+                                            "height": 17.14
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.widget.TextView",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 179,
+                                              "y": 2115,
+                                              "width": 474,
+                                              "height": 45
+                                            },
+                                            "text": "Open React Native dev menu",
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 24,
+                                        "y": 782.1,
+                                        "width": 363.43,
+                                        "height": 64
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.widget.Button",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 63,
+                                          "y": 2053,
+                                          "width": 954,
+                                          "height": 168
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                },
+                                {
+                                  "role": "button",
+                                  "id": null,
+                                  "label": "Fast Refresh Fast Refresh",
+                                  "value": null,
+                                  "frame": {
+                                    "x": 24,
+                                    "y": 846.48,
+                                    "width": 363.43,
+                                    "height": 64
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.view.View",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 63,
+                                      "y": 2222,
+                                      "width": 954,
+                                      "height": 168
+                                    },
+                                    "text": null,
+                                    "contentDescription": null,
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 40,
+                                        "y": 854.48,
+                                        "width": 331.43,
+                                        "height": 48
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.view.View",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 105,
+                                          "y": 2243,
+                                          "width": 870,
+                                          "height": 126
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": "Fast Refresh",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 40,
+                                            "y": 868.57,
+                                            "width": 20.19,
+                                            "height": 20.19
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 105,
+                                              "y": 2280,
+                                              "width": 53,
+                                              "height": 53
+                                            },
+                                            "text": null,
+                                            "contentDescription": "Fast Refresh",
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        },
+                                        {
+                                          "role": "text",
+                                          "id": null,
+                                          "label": "Fast Refresh",
+                                          "value": null,
+                                          "frame": {
+                                            "x": 68.19,
+                                            "y": 870.1,
+                                            "width": 77.33,
+                                            "height": 17.14
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.widget.TextView",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 179,
+                                              "y": 2284,
+                                              "width": 203,
+                                              "height": 45
+                                            },
+                                            "text": "Fast Refresh",
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": []
+                                        },
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": null,
+                                          "value": null,
+                                          "frame": {
+                                            "x": 319.24,
+                                            "y": 854.48,
+                                            "width": 52.19,
+                                            "height": 48
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 838,
+                                              "y": 2243,
+                                              "width": 137,
+                                              "height": 126
+                                            },
+                                            "text": null,
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": [
+                                            {
+                                              "role": "group",
+                                              "id": null,
+                                              "label": null,
+                                              "value": null,
+                                              "frame": {
+                                                "x": 331.43,
+                                                "y": 854.48,
+                                                "width": 48,
+                                                "height": 48
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": false,
+                                                "focused": false
+                                              },
+                                              "native": {
+                                                "className": "android.view.View",
+                                                "resourceId": null,
+                                                "package": "com.mpalmes.offsider.playground.rn",
+                                                "pixelFrame": {
+                                                  "x": 870,
+                                                  "y": 2243,
+                                                  "width": 126,
+                                                  "height": 126
+                                                },
+                                                "text": null,
+                                                "contentDescription": null,
+                                                "hint": null,
+                                                "stateDescription": null,
+                                                "roleDescription": null,
+                                                "testTag": null
+                                              },
+                                              "children": []
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 24,
+                                        "y": 846.48,
+                                        "width": 363.43,
+                                        "height": 64
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.widget.Button",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 63,
+                                          "y": 2222,
+                                          "width": 954,
+                                          "height": 168
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                },
+                                {
+                                  "role": "button",
+                                  "id": null,
+                                  "label": null,
+                                  "value": null,
+                                  "frame": {
+                                    "x": 24,
+                                    "y": 910.86,
+                                    "width": 363.43,
+                                    "height": 12.57
+                                  },
+                                  "enabled": true,
+                                  "state": {
+                                    "checked": null,
+                                    "selected": false,
+                                    "focused": false
+                                  },
+                                  "native": {
+                                    "className": "android.view.View",
+                                    "resourceId": null,
+                                    "package": "com.mpalmes.offsider.playground.rn",
+                                    "pixelFrame": {
+                                      "x": 63,
+                                      "y": 2391,
+                                      "width": 954,
+                                      "height": 33
+                                    },
+                                    "text": null,
+                                    "contentDescription": null,
+                                    "hint": null,
+                                    "stateDescription": null,
+                                    "roleDescription": null,
+                                    "testTag": null
+                                  },
+                                  "children": [
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 40,
+                                        "y": 918.86,
+                                        "width": 331.43,
+                                        "height": 4.57
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.view.View",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 105,
+                                          "y": 2412,
+                                          "width": 870,
+                                          "height": 12
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "group",
+                                          "id": null,
+                                          "label": null,
+                                          "value": null,
+                                          "frame": {
+                                            "x": 319.24,
+                                            "y": 918.86,
+                                            "width": 52.19,
+                                            "height": 4.57
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": false,
+                                            "focused": false
+                                          },
+                                          "native": {
+                                            "className": "android.view.View",
+                                            "resourceId": null,
+                                            "package": "com.mpalmes.offsider.playground.rn",
+                                            "pixelFrame": {
+                                              "x": 838,
+                                              "y": 2412,
+                                              "width": 137,
+                                              "height": 12
+                                            },
+                                            "text": null,
+                                            "contentDescription": null,
+                                            "hint": null,
+                                            "stateDescription": null,
+                                            "roleDescription": null,
+                                            "testTag": null
+                                          },
+                                          "children": [
+                                            {
+                                              "role": "group",
+                                              "id": null,
+                                              "label": null,
+                                              "value": null,
+                                              "frame": {
+                                                "x": 331.43,
+                                                "y": 918.86,
+                                                "width": 48,
+                                                "height": 4.57
+                                              },
+                                              "enabled": true,
+                                              "state": {
+                                                "checked": null,
+                                                "selected": false,
+                                                "focused": false
+                                              },
+                                              "native": {
+                                                "className": "android.view.View",
+                                                "resourceId": null,
+                                                "package": "com.mpalmes.offsider.playground.rn",
+                                                "pixelFrame": {
+                                                  "x": 870,
+                                                  "y": 2412,
+                                                  "width": 126,
+                                                  "height": 12
+                                                },
+                                                "text": null,
+                                                "contentDescription": null,
+                                                "hint": null,
+                                                "stateDescription": null,
+                                                "roleDescription": null,
+                                                "testTag": null
+                                              },
+                                              "children": []
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 24,
+                                        "y": 910.86,
+                                        "width": 363.43,
+                                        "height": 64
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": false,
+                                        "focused": false
+                                      },
+                                      "native": {
+                                        "className": "android.widget.Button",
+                                        "resourceId": null,
+                                        "package": "com.mpalmes.offsider.playground.rn",
+                                        "pixelFrame": {
+                                          "x": 63,
+                                          "y": 2391,
+                                          "width": 954,
+                                          "height": 168
+                                        },
+                                        "text": null,
+                                        "contentDescription": null,
+                                        "hint": null,
+                                        "stateDescription": null,
+                                        "roleDescription": null,
+                                        "testTag": null
+                                      },
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -11,13 +11,14 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
     case foldables
     case batch
     case screenshots
+    case evidence
     case describeUI = "describe-ui"
     case deviceState = "device-state"
     case migrate
 
     var readItWhen: String {
         switch self {
-        case .selectors: "A selector misses, matches twice, or the target is off screen, covered or moving; you need coordinates, gestures or sliders"
+        case .selectors: "A selector misses, matches twice, or the target is off screen, covered or moving; you need coordinates, gestures, sliders, text replacement or button names"
         case .verify: "You need proof an input worked, `--verify` exited 5, or you are waiting on a condition"
         case .errors: "A command exited non-zero, the device is busy, or doctor reports a problem"
         case .android: "The device is an Android emulator or a USB phone"
@@ -27,6 +28,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
         case .foldables: "The device folds or has more than one display"
         case .batch: "A flow has three or more steps"
         case .screenshots: "You need pixels: charts, maps, web views, masked secure fields or video"
+        case .evidence: "You need numbered screenshots and logs for a report, masked or redacted, a pixel diff, or log entries as JSON"
         case .describeUI: "You need more than `--summary`: JSON, filters, the byte budget or `--diff`"
         case .deviceState: "You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked"
         case .migrate: "You know idb, Maestro or agent-device and want the Offsider equivalent"

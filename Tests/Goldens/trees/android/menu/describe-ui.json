@@ -14,6 +14,15 @@
     },
     "posture": null
   },
+  "context": {
+    "window": {
+      "title": "OffsiderPlaygroundRN",
+      "kind": "app",
+      "package": "com.mpalmes.offsider.playground.rn"
+    },
+    "keyboard": false,
+    "logbox": null
+  },
   "roots": [
     {
       "role": "application",
@@ -267,8 +276,8 @@
             },
             {
               "role": "button",
-              "id": "menu-gesture-presets",
-              "label": "Gesture Presets",
+              "id": "menu-multi-touch",
+              "label": "Multi Touch",
               "value": null,
               "frame": {
                 "x": 16,
@@ -284,13 +293,85 @@
               },
               "native": {
                 "className": "android.widget.Button",
-                "resourceId": "menu-gesture-presets",
+                "resourceId": "menu-multi-touch",
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 42,
                   "y": 898,
                   "width": 996,
                   "height": 163
+                },
+                "text": null,
+                "contentDescription": "Multi Touch",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-hold-drag",
+              "label": "Hold Drag",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 404.19,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-hold-drag",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 1061,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Hold Drag",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-gesture-presets",
+              "label": "Gesture Presets",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 466.29,
+                "width": 379.43,
+                "height": 61.71
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-gesture-presets",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 1224,
+                  "width": 996,
+                  "height": 162
                 },
                 "text": null,
                 "contentDescription": "Gesture Presets",
@@ -308,7 +389,7 @@
               "value": null,
               "frame": {
                 "x": 16,
-                "y": 404.19,
+                "y": 528.38,
                 "width": 379.43,
                 "height": 62.1
               },
@@ -324,7 +405,7 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 42,
-                  "y": 1061,
+                  "y": 1387,
                   "width": 996,
                   "height": 163
                 },
@@ -344,9 +425,9 @@
               "value": null,
               "frame": {
                 "x": 16,
-                "y": 466.29,
+                "y": 590.1,
                 "width": 379.43,
-                "height": 61.71
+                "height": 62.1
               },
               "enabled": true,
               "state": {
@@ -360,9 +441,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 42,
-                  "y": 1224,
+                  "y": 1549,
                   "width": 996,
-                  "height": 162
+                  "height": 163
                 },
                 "text": null,
                 "contentDescription": "TabView Test",
@@ -380,9 +461,9 @@
               "value": null,
               "frame": {
                 "x": 16,
-                "y": 528.38,
+                "y": 652.19,
                 "width": 379.43,
-                "height": 61.71
+                "height": 62.1
               },
               "enabled": true,
               "state": {
@@ -396,9 +477,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 42,
-                  "y": 1387,
+                  "y": 1712,
                   "width": 996,
-                  "height": 162
+                  "height": 163
                 },
                 "text": null,
                 "contentDescription": "Choice Test",
@@ -416,9 +497,9 @@
               "value": null,
               "frame": {
                 "x": 0,
-                "y": 606.1,
+                "y": 730.29,
                 "width": 411.43,
-                "height": 24
+                "height": 23.62
               },
               "enabled": true,
               "state": {
@@ -432,9 +513,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 0,
-                  "y": 1591,
+                  "y": 1917,
                   "width": 1080,
-                  "height": 63
+                  "height": 62
                 },
                 "text": null,
                 "contentDescription": "Input & Text",
@@ -452,7 +533,7 @@
               "value": null,
               "frame": {
                 "x": 16,
-                "y": 630.1,
+                "y": 754.29,
                 "width": 379.43,
                 "height": 62.1
               },
@@ -468,7 +549,7 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 42,
-                  "y": 1654,
+                  "y": 1980,
                   "width": 996,
                   "height": 163
                 },
@@ -488,9 +569,9 @@
               "value": null,
               "frame": {
                 "x": 16,
-                "y": 692.19,
+                "y": 816.38,
                 "width": 379.43,
-                "height": 61.71
+                "height": 62.1
               },
               "enabled": true,
               "state": {
@@ -504,9 +585,9 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 42,
-                  "y": 1817,
+                  "y": 2143,
                   "width": 996,
-                  "height": 162
+                  "height": 163
                 },
                 "text": null,
                 "contentDescription": "Key Press",
@@ -524,9 +605,9 @@
               "value": null,
               "frame": {
                 "x": 16,
-                "y": 754.29,
+                "y": 878.48,
                 "width": 379.43,
-                "height": 61.71
+                "height": 44.95
               },
               "enabled": true,
               "state": {
@@ -540,84 +621,12 @@
                 "package": "com.mpalmes.offsider.playground.rn",
                 "pixelFrame": {
                   "x": 42,
-                  "y": 1980,
+                  "y": 2306,
                   "width": 996,
-                  "height": 162
+                  "height": 118
                 },
                 "text": null,
                 "contentDescription": "Key Sequence",
-                "hint": null,
-                "stateDescription": null,
-                "roleDescription": null,
-                "testTag": null
-              },
-              "children": []
-            },
-            {
-              "role": "group",
-              "id": "menu-section-hardware",
-              "label": "Hardware",
-              "value": null,
-              "frame": {
-                "x": 0,
-                "y": 832,
-                "width": 411.43,
-                "height": 24
-              },
-              "enabled": true,
-              "state": {
-                "checked": null,
-                "selected": false,
-                "focused": false
-              },
-              "native": {
-                "className": "android.view.View",
-                "resourceId": "menu-section-hardware",
-                "package": "com.mpalmes.offsider.playground.rn",
-                "pixelFrame": {
-                  "x": 0,
-                  "y": 2184,
-                  "width": 1080,
-                  "height": 63
-                },
-                "text": null,
-                "contentDescription": "Hardware",
-                "hint": null,
-                "stateDescription": null,
-                "roleDescription": null,
-                "testTag": null
-              },
-              "children": []
-            },
-            {
-              "role": "button",
-              "id": "menu-button-test",
-              "label": "Button Test",
-              "value": null,
-              "frame": {
-                "x": 16,
-                "y": 856,
-                "width": 379.43,
-                "height": 62.1
-              },
-              "enabled": true,
-              "state": {
-                "checked": null,
-                "selected": false,
-                "focused": false
-              },
-              "native": {
-                "className": "android.widget.Button",
-                "resourceId": "menu-button-test",
-                "package": "com.mpalmes.offsider.playground.rn",
-                "pixelFrame": {
-                  "x": 42,
-                  "y": 2247,
-                  "width": 996,
-                  "height": 163
-                },
-                "text": null,
-                "contentDescription": "Button Test",
                 "hint": null,
                 "stateDescription": null,
                 "roleDescription": null,

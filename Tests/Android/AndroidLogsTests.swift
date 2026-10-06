@@ -60,6 +60,7 @@ struct AndroidLogsTests {
         #expect(entries[1].message == "careful: slow")
         #expect(entries[2].tag == "ReactNative")
         #expect(entries[2].level == "Error")
+        #expect(entries[0].raw == Self.dump.split(separator: "\n").first { $0.contains("tapped save") }.map(String.init))
     }
 
     @Test("a padded tag is trimmed and an empty message is kept empty")
@@ -80,6 +81,7 @@ struct AndroidLogsTests {
         #expect(continuation?.tag == "ReactNativeJS")
         #expect(continuation?.pid == 4100)
         #expect(continuation?.level == "Error")
+        #expect(continuation?.raw == "    at onPress (index.bundle:1:2)")
     }
 
     // MARK: Commands

@@ -67,29 +67,71 @@ final class Actions {
     /** Replaces the text of the input-focused field; "length" is in UTF-16 units, null for passwords. */
     static void setText(Json out, UiAutomation automation, JSONObject request) throws RequestFailure {
         String text = Requests.string(request, "text", true);
-        AccessibilityNodeInfo node = automation.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-        if (node == null) {
-            throw new RequestFailure("no-focus", "nothing has input focus", null);
-        }
+        AccessibilityNodeInfo node = editableFocus(automation);
         CharSequence nodeClass = node.getClassName();
         String nodeId = node.getViewIdResourceName();
-        if (!node.isEditable()) {
-            throw new RequestFailure("not-editable", "the element with input focus (" + nodeClass
-                    + (nodeId == null ? "" : ", id " + nodeId) + ") is not editable", null).node(nodeClass, nodeId);
-        }
+        int type = node.getInputType();
         int action = AccessibilityAction.ACTION_SET_TEXT.getId();
         if (!hasAction(node, action)) {
-            throw RequestFailure.unsupported(nodeClass + " does not offer ACTION_SET_TEXT").node(nodeClass, nodeId);
+            throw RequestFailure.unsupported(nodeClass + " does not offer ACTION_SET_TEXT").field(nodeClass, nodeId, type);
         }
         Bundle arguments = new Bundle();
         arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
         if (!node.performAction(action, arguments)) {
             throw new RequestFailure("action-failed", nodeClass + " refused ACTION_SET_TEXT", null)
-                    .node(nodeClass, nodeId);
+                    .field(nodeClass, nodeId, type);
         }
         node.refresh();
-        out.field("className", nodeClass);
-        out.field("resourceId", nodeId);
+        writeField(out, node);
+    }
+
+    /** Selects all of the input-focused field's text and pastes the clipboard over it; never on a password field. */
+    static void paste(Json out, UiAutomation automation) throws RequestFailure {
+        AccessibilityNodeInfo node = editableFocus(automation);
+        CharSequence nodeClass = node.getClassName();
+        String nodeId = node.getViewIdResourceName();
+        int type = node.getInputType();
+        if (node.isPassword()) {
+            throw new RequestFailure("secure-refused", "the field with input focus is a password field", null)
+                    .field(nodeClass, nodeId, type);
+        }
+        int paste = AccessibilityAction.ACTION_PASTE.getId();
+        if (!hasAction(node, paste)) {
+            throw RequestFailure.unsupported(nodeClass + " does not offer ACTION_PASTE").field(nodeClass, nodeId, type);
+        }
+        CharSequence current = node.isShowingHintText() ? null : node.getText();
+        Bundle selection = new Bundle();
+        selection.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
+        selection.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, current == null ? 0 : current.length());
+        node.performAction(AccessibilityAction.ACTION_SET_SELECTION.getId(), selection);
+        if (!node.performAction(paste)) {
+            throw new RequestFailure("action-failed", nodeClass + " refused ACTION_PASTE", null).field(nodeClass, nodeId, type);
+        }
+        node.refresh();
+        writeField(out, node);
+    }
+
+    /** The input-focused node, which must be editable. */
+    private static AccessibilityNodeInfo editableFocus(UiAutomation automation) throws RequestFailure {
+        AccessibilityNodeInfo node = automation.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        if (node == null) {
+            throw new RequestFailure("no-focus", "nothing has input focus", null);
+        }
+        if (!node.isEditable()) {
+            CharSequence nodeClass = node.getClassName();
+            String nodeId = node.getViewIdResourceName();
+            throw new RequestFailure("not-editable", "the element with input focus (" + nodeClass
+                    + (nodeId == null ? "" : ", id " + nodeId) + ") is not editable", null)
+                    .field(nodeClass, nodeId, node.getInputType());
+        }
+        return node;
+    }
+
+    /** "className", "resourceId", "inputType", then "length" in UTF-16 units, null for passwords. */
+    private static void writeField(Json out, AccessibilityNodeInfo node) {
+        out.field("className", node.getClassName());
+        out.field("resourceId", node.getViewIdResourceName());
+        out.field("inputType", node.getInputType());
         out.name("length");
         if (node.isPassword()) {
             out.nullValue();

@@ -33,6 +33,16 @@ struct AndroidButtonTests {
         _ = try await AndroidE2E.waitForNode { $0["id"] as? String == "menu-title" }
     }
 
+    @Test("home --verify --json confirms the launcher came to the front")
+    func homeVerified() async throws {
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        let result = try await AndroidE2E.run("button home --verify --json")
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        #expect(report["verified"] as? Bool == true)
+        #expect(report["change"] as? String == "activity")
+        #expect(try await focusedWindow().contains("Launcher"))
+    }
+
     @Test("home shows the launcher")
     func home() async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")

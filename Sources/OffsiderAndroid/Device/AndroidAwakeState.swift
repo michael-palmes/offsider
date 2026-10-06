@@ -8,6 +8,10 @@ enum AndroidAwakeState {
         + "dumpsys window policy | grep -E '^ +(showing|occluded|secure)='; "
         + "dumpsys lock_settings | grep -m1 -E '^ +CredentialType:'; true"
 
+    /// For `boot` and `doctor` only: whether the user has unlocked since boot, and the RAM the device sees.
+    static let userStateScript = "; u=$(am get-current-user); echo user_state=$(am get-started-user-state ${u:-0}); echo ce_available=$(getprop sys.user.${u:-0}.ce_available)"
+        + "; echo memtotal_kb=$(grep MemTotal /proc/meminfo)"
+
     /// For `doctor` on a phone: the adb authorisation timeout and the automatic system update switch.
     static let phoneSettingsScript = "; echo adb_allowed_connection_time=$(settings get global adb_allowed_connection_time)"
         + "; echo ota_disable_automatic_update=$(settings get global ota_disable_automatic_update)"
@@ -76,8 +80,29 @@ enum AndroidAwakeState {
             charging: powered ? PowerSources(rawValue: values["mPlugType"].flatMap { Int($0) } ?? 0) : [],
             screenTimeoutMilliseconds: values["mScreenOffTimeoutSetting"].flatMap { Int($0) },
             timeoutCappedByPolicy: values["mMaximumScreenOffTimeoutFromDeviceAdmin"]?.contains("enforced=true") == true,
-            maker: values["maker"].flatMap { $0.isEmpty ? nil : $0 }
+            maker: values["maker"].flatMap { $0.isEmpty ? nil : $0 },
+            userUnlocked: userUnlocked(state: values["user_state"], ceAvailable: values["ce_available"]),
+            memTotalKB: values["memtotal_kb"].flatMap(kilobytes)
         )
+    }
+
+    /// `RUNNING_UNLOCKED` is unlocked; `RUNNING_LOCKED` and `RUNNING_UNLOCKING` are not; otherwise `ce_available` decides.
+    static func userUnlocked(state: String?, ceAvailable: String?) -> Bool? {
+        let state = state?.uppercased() ?? ""
+        if state.contains("RUNNING_UNLOCKED") { return true }
+        if state.contains("RUNNING_LOCKED") || state.contains("RUNNING_UNLOCKING") { return false }
+        switch ceAvailable {
+        case "true": return true
+        case "false": return false
+        default: return nil
+        }
+    }
+
+    /// `MemTotal:        6149664 kB` gives 6149664.
+    static func kilobytes(_ line: String) -> Int? {
+        let fields = line.split(whereSeparator: \.isWhitespace)
+        guard let index = fields.firstIndex(where: { Int($0) != nil }) else { return nil }
+        return Int(fields[index])
     }
 
     /// The reading before the change, and the setting's value read back after it.
@@ -103,6 +128,7 @@ enum AndroidAwakeState {
         case "PIN": return "pin"
         case "PATTERN": return "pattern"
         case "PASSWORD", "PASSWORD_OR_PIN": return "password"
+        case "NONE": return "none"
         default: return nil
         }
     }

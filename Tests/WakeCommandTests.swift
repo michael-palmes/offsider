@@ -86,6 +86,9 @@ struct WakeCommandTests {
         #expect(StayAwakeCommand.line(notCharging, previous: nil, name: "moto g (ZY22FAKE01)") == "moto g (ZY22FAKE01): stay awake on while charging over USB, but it is not charging, so the screen still turns off after 10 min")
         #expect(StayAwakeCommand.line(otherSource, previous: nil, name: "moto g (ZY22FAKE01)") == "moto g (ZY22FAKE01): stay awake on while charging over USB, but it charges over AC, so the screen still turns off after 10 min")
         #expect(StayAwakeCommand.line(AwakeReading(screen: .on, lockScreen: .hidden, screenTimeoutMilliseconds: 600_000), previous: notCharging, name: "X") == "X: stay awake off (was on, screen timeout 10 min)")
+        var never = notCharging
+        never.screenTimeoutMilliseconds = Int(Int32.max)
+        #expect(StayAwakeCommand.line(never, previous: nil, name: "X") == "X: stay awake on while charging over USB; the screen timeout is never, so the screen stays on anyway")
     }
 
     @Test("the stay-awake JSON keeps its schema order")

@@ -56,6 +56,28 @@ struct DragCommandSurfaceTests {
     }
 }
 
+@Suite("Drag hold")
+struct DragHoldTests {
+    static func holds(_ arguments: [String]) throws -> [TimeInterval] {
+        let drag = try Drag.parse(["--start-x", "10", "--start-y", "10", "--end-x", "10", "--end-y", "110", "--steps", "2"] + arguments + ["--device", "emulator-5554"])
+        guard case .composite(let events) = try drag.dragEvent(from: (x: 10, y: 10), to: (x: 10, y: 110)) else { return [] }
+        return events.compactMap { if case .delay(let seconds) = $0 { return seconds } else { return nil } }
+    }
+
+    @Test("the finger holds 50 ms before it moves by default, and --hold-ms sets that hold")
+    func holdBeforeMoving() throws {
+        #expect(try Self.holds([]).first == 0.05)
+        #expect(try Self.holds(["--hold-ms", "800"]).first == 0.8)
+        #expect(try Self.holds(["--hold-ms", "0"]).first == 0)
+    }
+
+    @Test("--hold-ms outside 0 to 10000 is a usage error", arguments: ["-1", "10001"])
+    func holdRange(value: String) {
+        let error = #expect(throws: (any Error).self) { try Self.holds(["--hold-ms=\(value)"]) }
+        #expect(error.map { Drag.message(for: $0).contains("--hold-ms must be from 0 to 10000") } == true)
+    }
+}
+
 @Suite("Drag Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct DragTests {
     @Test("Low-level drag records requested start and end points")

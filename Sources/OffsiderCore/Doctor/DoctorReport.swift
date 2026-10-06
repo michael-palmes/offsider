@@ -100,12 +100,18 @@ public struct DoctorDevice: Codable, Equatable, Sendable {
     public let name: String?
     /// `simulator`, `emulator` or `other`.
     public let kind: String?
+    /// `option` (`--device`) or `environment` (`OFFSIDER_DEVICE`).
+    public let source: String?
+    /// Android only: the credential, a saved code and the first unlock since boot.
+    public let lock: LockReport?
 
-    public init(id: String, platform: String, name: String?, kind: String?) {
+    public init(id: String, platform: String, name: String?, kind: String?, source: String? = nil, lock: LockReport? = nil) {
         self.id = id
         self.platform = platform
         self.name = name
         self.kind = kind
+        self.source = source
+        self.lock = lock
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -114,6 +120,8 @@ public struct DoctorDevice: Codable, Equatable, Sendable {
         try container.encode(platform, forKey: .platform)
         try container.encode(name, forKey: .name)
         try container.encode(kind, forKey: .kind)
+        try container.encode(source, forKey: .source)
+        try container.encode(lock, forKey: .lock)
     }
 }
 
@@ -174,6 +182,7 @@ public struct DoctorReport: Codable, Equatable, Sendable {
     public let android: AndroidSummary?
     public let checks: [DoctorCheckResult]
     public let fixes: [DoctorFixResult]
+    public let host: HostFacts?
 
     public init(
         offsiderVersion: String,
@@ -183,7 +192,8 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         booted: [BootedSimulator],
         android: AndroidSummary? = nil,
         checks: [DoctorCheckResult],
-        fixes: [DoctorFixResult] = []
+        fixes: [DoctorFixResult] = [],
+        host: HostFacts? = nil
     ) {
         self.version = Self.schemaVersion
         self.offsiderVersion = offsiderVersion
@@ -194,6 +204,7 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         self.android = android
         self.checks = checks
         self.fixes = fixes
+        self.host = host
     }
 
     public var status: CheckStatus {
@@ -219,11 +230,11 @@ public struct DoctorReport: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, offsiderVersion, udid, device, xcode, booted, android, checks, fixes
+        case version, offsiderVersion, udid, device, xcode, booted, android, checks, fixes, host
     }
 
     private enum EncodingKeys: String, CodingKey {
-        case version, offsiderVersion, status, udid, device, xcode, booted, android, checks, fixes
+        case version, offsiderVersion, status, udid, device, xcode, booted, android, checks, fixes, host
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -238,5 +249,6 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         try container.encode(android, forKey: .android)
         try container.encode(checks, forKey: .checks)
         try container.encode(fixes, forKey: .fixes)
+        try container.encode(host, forKey: .host)
     }
 }

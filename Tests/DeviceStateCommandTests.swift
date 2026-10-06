@@ -71,7 +71,7 @@ struct DeviceStateCommandTests {
         (["permission", "grant", "camera", "--app", "com.example.app", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD"], "camera is not offered on iOS simulators"),
         (["permission", "grant", "camera", "--device", "emulator-5554"], "permission grant needs --app"),
         (["permission", "grant", "--app", "com.example.app", "--device", "emulator-5554"], "Name at least one service"),
-        (["permission", "grant", "camera", "--app", "com.example.app"], "permission grant needs --device."),
+        (["permission", "grant", "camera", "--app", "com.example.app"], "permission grant needs --device or OFFSIDER_DEVICE."),
         (["permission", "show", "--app", "com.example.app", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD"], "permission show is Android only"),
         (["permission", "allow", "camera"], "Unknown action 'allow'. Use grant, revoke, reset, show or services."),
         (["permission", "services", "--platform", "windows"], "--platform takes ios or android; got windows."),

@@ -35,8 +35,15 @@ struct PermissionCommand: AsyncParsableCommand {
     @Option(name: .customLong("app"), help: ArgumentHelp("The app's bundle ID or Android package (required except for services).", valueName: "id"))
     var app: String?
 
-    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (required except for services).", valueName: "id"))
-    var device: String?
+    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE; required except for services).", valueName: "id"))
+    var explicitDevice: String?
+
+    /// `services` needs no device, so only it ignores `OFFSIDER_DEVICE`.
+    var device: String? {
+        isServices ? explicitDevice : DeviceDefault.resolve(explicit: explicitDevice)?.id
+    }
+
+    private var isServices: Bool { action.trimmingCharacters(in: .whitespaces).lowercased() == "services" }
 
     @Option(name: .customLong("platform"), help: ArgumentHelp("For services: list only what this platform offers.", valueName: "ios|android"))
     var platform: String?
@@ -68,7 +75,7 @@ struct PermissionCommand: AsyncParsableCommand {
             throw ValidationError("Unknown action '\(action)'. Use grant, revoke, reset, show or services.")
         }
         if platform != nil { throw ValidationError("--platform is only for permission services.") }
-        guard let device, !device.isEmpty else { throw ValidationError("permission \(name) needs --device.") }
+        guard let device, !device.isEmpty else { throw ValidationError("permission \(name) needs --device or OFFSIDER_DEVICE.") }
         guard let app else {
             throw ValidationError("permission \(name) needs --app with the bundle ID or package; Offsider never changes every app's permissions at once.")
         }

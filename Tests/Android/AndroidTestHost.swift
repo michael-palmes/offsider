@@ -50,6 +50,7 @@ enum AndroidTestHost {
         files: (any FileSystemProbe)? = nil,
         liveProcesses: Set<Int32> = [],
         processPaths: [Int32: String] = [:],
+        startTimes: [Int32: Date] = [:],
         sleeps: SleepRecorder = SleepRecorder(),
         launcher: FakeLauncher = FakeLauncher(),
         helperDex: HelperDex? = nil
@@ -64,6 +65,7 @@ enum AndroidTestHost {
             processes: processes,
             isProcessAlive: { liveProcesses.contains($0) },
             processPath: { pid in processPaths[pid] ?? (liveProcesses.contains(pid) ? emulatorExecutable : nil) },
+            processStartTime: { startTimes[$0] },
             sleep: { sleeps.sleep($0) },
             launcher: launcher,
             uptime: { sleeps.total },

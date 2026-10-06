@@ -154,4 +154,181 @@ struct AndroidReplaceTextTests {
         #expect(error?.kind == .helperBusy)
         #expect(Self.inputScripts(rig).isEmpty)
     }
+
+    /// A dump whose focused EditText holds `text`, or is a password field.
+    nonisolated static func fieldDump(text: String, password: Bool = false) -> String {
+        let field = #"{"i":1,"class":"android.widget.EditText","package":"com.mpalmes.offsider.playground.rn","resourceId":"amount","text":"\#(text)","bounds":[42,510,1038,626],"clickable":true,"focusable":true,"focused":true,"editable":true\#(password ? #","password":true"# : "")}"#
+        return #"{"generation":1,"idle":true,\#(FakeHelperDevice.display),"windows":[{"id":2292,"type":"application","layer":0,"title":"OffsiderPlaygroundRN","displayId":0,"bounds":[0,0,1080,2424],"active":true,"focused":true,"root":{"i":0,"class":"android.widget.FrameLayout","package":"com.mpalmes.offsider.playground.rn","bounds":[0,0,1080,2424],"children":[\#(field)]}}],"truncated":false,"eventSeq":3}"#
+    }
+
+    nonisolated static let refusedNumber = FakeHelperDevice.Answer.error(
+        code: "action-unsupported", message: "android.widget.EditText does not offer ACTION_SET_TEXT",
+        className: "android.widget.EditText", resourceId: "amount", inputType: 0x2002
+    )
+
+    /// emulator-5556 with gRPC for the clipboard, its focused field holding `before` until a paste sets `after`.
+    static func grpcRig(before: String, after: String, password: Bool = false, emulator: FakeEmulator = FakeEmulator(clipboard: "saved")) throws -> HelperRig {
+        let device = FakeHelperDevice()
+        device.dump = fieldDump(text: before, password: password)
+        device.answer = { _, op, _ in
+            switch op {
+            case "setText": return refusedNumber
+            case "paste":
+                device.dump = fieldDump(text: after, password: password)
+                return .ok(#"{"className":"android.widget.EditText","resourceId":"amount","inputType":8194,"length":\#(after.utf16.count)}"#)
+            default: return nil
+            }
+        }
+        let home = try AndroidTestHost.homeWithSDK()
+        try AndroidTestHost.write(
+            "avd.id=Offsider_E2E\nport.serial=5556\ngrpc.port=8556\ngrpc.token=t\n",
+            to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini",
+            in: home
+        )
+        return try HelperRig(device, emulator: FakeEmulatorConnector(.success(emulator)), home: home)
+    }
+
+    @Test("the key fallback's warning names the field's class, id and decoded inputType")
+    func warningNamesInputType() async throws {
+        let device = FakeHelperDevice()
+        device.dump = Self.fieldDump(text: "bye")
+        let rig = try Self.rig(device, setText: Self.refusedNumber)
+        try await Self.replace("bye", on: rig)
+
+        #expect(rig.log.warnings.first?.contains("on emulator-5556 (android.widget.EditText, id amount, inputType number|decimal) does not accept replacement text") == true)
+        await rig.backend.close()
+    }
+
+    @Test("when keys leave the wrong text, an emulator with gRPC pastes it with the helper and puts the clipboard back")
+    func pasteWithGrpc() async throws {
+        let emulator = FakeEmulator(clipboard: "saved")
+        let rig = try Self.grpcRig(before: "12", after: "bye", emulator: emulator)
+        try await Self.replace("bye", on: rig)
+
+        #expect(rig.device.ops.contains("paste"))
+        #expect(emulator.calls.contains(.setClipboard("bye")))
+        #expect(emulator.clipboardNow == "saved")
+        await rig.backend.close()
+    }
+
+    @Test("without gRPC there is no paste: wrong text is exit 5 text_not_accepted naming the field")
+    func noPasteWithoutGrpc() async throws {
+        let device = FakeHelperDevice()
+        device.dump = Self.fieldDump(text: "12")
+        let rig = try Self.rig(device, setText: Self.refusedNumber)
+        let error = await #expect(throws: AndroidError.self) { try await Self.replace("bye", on: rig) }
+
+        #expect(error?.kind == .textNotAccepted)
+        #expect(error?.reason == .textNotAccepted)
+        #expect(error?.message.contains("(android.widget.EditText, id amount, inputType number|decimal)") == true)
+        #expect(!rig.device.ops.contains("paste"))
+        await rig.backend.close()
+    }
+
+    @Test("a paste that still leaves the wrong text is text_not_accepted")
+    func pasteStillWrong() async throws {
+        let rig = try Self.grpcRig(before: "12", after: "12")
+        let error = await #expect(throws: AndroidError.self) { try await Self.replace("bye", on: rig) }
+
+        #expect(error?.kind == .textNotAccepted)
+        #expect(rig.device.ops.contains("paste"))
+        await rig.backend.close()
+    }
+
+    @Test("a password field is never checked or pasted into")
+    func secureNeverPasted() async throws {
+        let emulator = FakeEmulator(clipboard: "saved")
+        let rig = try Self.grpcRig(before: "", after: "", password: true, emulator: emulator)
+        try await Self.replace("secret", on: rig)
+
+        #expect(!rig.device.ops.contains("paste"))
+        #expect(!emulator.calls.contains(.setClipboard("secret")))
+        await rig.backend.close()
+    }
+
+    @Test("a set-text the field cuts short is checked like the key fallback: pasted with gRPC, and still short is text_not_accepted")
+    func setTextCutShort() async throws {
+        let device = FakeHelperDevice()
+        device.dump = Self.fieldDump(text: "by")
+        device.answer = { _, op, _ in
+            switch op {
+            case "setText": return .ok(#"{"className":"android.widget.EditText","resourceId":"amount","inputType":1,"length":2}"#)
+            case "paste": return .ok(#"{"className":"android.widget.EditText","resourceId":"amount","inputType":1,"length":2}"#)
+            default: return nil
+            }
+        }
+        let home = try AndroidTestHost.homeWithSDK()
+        try AndroidTestHost.write(
+            "avd.id=Offsider_E2E\nport.serial=5556\ngrpc.port=8556\ngrpc.token=t\n",
+            to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini",
+            in: home
+        )
+        let rig = try HelperRig(device, emulator: FakeEmulatorConnector(.success(FakeEmulator(clipboard: "saved"))), home: home)
+        let error = await #expect(throws: AndroidError.self) { try await Self.replace("bye", on: rig) }
+
+        #expect(error?.kind == .textNotAccepted)
+        #expect(rig.device.ops.contains("paste"))
+        #expect(error?.message.contains("inputType text") == true)
+        await rig.backend.close()
+    }
+
+    /// emulator-5556 with gRPC whose set-text succeeds reporting `length` while the field reads `reads`, until a paste sets `afterPaste`.
+    static func setTextRig(length: Int, reads: String, afterPaste: String) throws -> HelperRig {
+        let device = FakeHelperDevice()
+        device.dump = fieldDump(text: reads)
+        device.answer = { _, op, _ in
+            switch op {
+            case "setText": return .ok(#"{"className":"android.widget.EditText","resourceId":"amount","inputType":2,"length":\#(length)}"#)
+            case "paste":
+                device.dump = fieldDump(text: afterPaste)
+                return .ok(#"{"className":"android.widget.EditText","resourceId":"amount","inputType":2,"length":\#(afterPaste.utf16.count)}"#)
+            default: return nil
+            }
+        }
+        let home = try AndroidTestHost.homeWithSDK()
+        try AndroidTestHost.write(
+            "avd.id=Offsider_E2E\nport.serial=5556\ngrpc.port=8556\ngrpc.token=t\n",
+            to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini",
+            in: home
+        )
+        return try HelperRig(device, emulator: FakeEmulatorConnector(.success(FakeEmulator(clipboard: "saved"))), home: home)
+    }
+
+    @Test("a set-text the field formats longer (1,000 for 1000) is accepted with no paste")
+    func setTextFormattedLonger() async throws {
+        let rig = try Self.setTextRig(length: 5, reads: "1,000", afterPaste: "1,000")
+        try await Self.replace("1000", on: rig)
+
+        #expect(!rig.device.ops.contains("paste"))
+        #expect(rig.log.warnings.isEmpty)
+        await rig.backend.close()
+    }
+
+    @Test("after the key fallback, a field that formats the text longer is accepted with no paste")
+    func keysFormattedLonger() async throws {
+        let rig = try Self.grpcRig(before: "1,000", after: "1,000")
+        try await Self.replace("1000", on: rig)
+
+        #expect(!rig.device.ops.contains("paste"))
+        await rig.backend.close()
+    }
+
+    @Test("a set-text that leaves the field empty goes through paste, then text_not_accepted")
+    func setTextLeftEmpty() async throws {
+        let rig = try Self.setTextRig(length: 0, reads: "", afterPaste: "")
+        let error = await #expect(throws: AndroidError.self) { try await Self.replace("1000", on: rig) }
+
+        #expect(error?.kind == .textNotAccepted)
+        #expect(rig.device.ops.contains("paste"))
+        await rig.backend.close()
+    }
+
+    @Test("a set-text that reads shorter goes through paste, and a paste that fills the field is accepted")
+    func setTextShortThenPasted() async throws {
+        let rig = try Self.setTextRig(length: 2, reads: "10", afterPaste: "1,000")
+        try await Self.replace("1000", on: rig)
+
+        #expect(rig.device.ops.contains("paste"))
+        await rig.backend.close()
+    }
 }

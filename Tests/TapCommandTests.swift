@@ -128,7 +128,7 @@ struct TapCommandTests {
             let tabs = FakeUI.node(.group, frame: FakeUI.frame(0, 790, 402, 84), platform: .android, children: [
                 FakeUI.node(.button, id: "tab-search", label: "Search", frame: FakeUI.frame(134, 790, 134, 49), platform: .android),
             ])
-            return FakeUI.tree(platform: .android, width: 402, height: 874, [banner, tabs])
+            return FakeUI.tree(platform: .android, width: 402, height: 874, [tabs, banner])
         }
 
         let covered = FakeDeviceBackend(platform: .android, trees: [screen()])
@@ -172,6 +172,40 @@ struct TapCommandTests {
         #expect(error?.exitCode == .failure)
         #expect(error?.userFacingDescription.hasPrefix("Step 2 failed: [tap]\n--id 'tab-search' at (201, 814.5) may be covered by other") == true)
         #expect(stopped.session.calls == [.perform(.tapAt(x: 67, y: 814.5))])
+    }
+
+    @Test("a cover inside the keyboard is named as the keyboard and its key")
+    func keyboardCover() {
+        let key = FakeUI.node(.button, label: "v", frame: FakeUI.frame(150, 700, 30, 40))
+        let keyboard = UINode(role: .keyboard, frame: FakeUI.frame(0, 600, 402, 274), native: .ios(IOSNativeAttributes()), children: [key])
+
+        let message = Tap.coverMessage(selector: "--id 'x'", at: (x: 160, y: 710), cover: key, roots: [keyboard])
+
+        #expect(message == "--id 'x' at (160, 710) may be covered by the keyboard (key 'v'); the tap may land on it.")
+    }
+
+    @Test("--topmost on Android taps the last on-screen match, and --nth taps the one asked for")
+    func topmostAndNth() async throws {
+        let roots = StackedScreenTests.stack(platform: .android)
+        let topmost = FakeDeviceBackend(platform: .android, trees: [UITree(platform: .android, device: "emulator-5554", roots: roots)])
+        try await Tap.parse(["--label", "Back", "--topmost", "--no-settle", "--device", "emulator-5554"])
+            .execute(on: DeviceRouter.Route(backend: topmost, device: DeviceID(rawValue: "emulator-5554", platform: .android)), progress: nil, logger: OffsiderLogger())
+        #expect(topmost.session.calls == [.perform(.tapAt(x: 76, y: 222))])
+
+        let first = FakeDeviceBackend(platform: .android, trees: [UITree(platform: .android, device: "emulator-5554", roots: roots)])
+        try await Tap.parse(["--label", "Back", "--nth", "1", "--no-settle", "--device", "emulator-5554"])
+            .execute(on: DeviceRouter.Route(backend: first, device: DeviceID(rawValue: "emulator-5554", platform: .android)), progress: nil, logger: OffsiderLogger())
+        #expect(first.session.calls == [.perform(.tapAt(x: 46, y: 222))])
+    }
+
+    @Test("--nth and --topmost need a selector, exclude each other and count from 1", arguments: [
+        (["-x", "1", "-y", "1", "--nth", "1"], "use them with --id, --label or --value"),
+        (["--id", "a", "--nth", "1", "--topmost"], "Use only one of --nth or --topmost."),
+        (["--id", "a", "--nth", "0"], "--nth must be 1 or more"),
+    ])
+    func pickValidation(arguments: [String], message: String) {
+        let error = #expect(throws: (any Error).self) { try Tap.parse(arguments + ["--device", "emulator-5554"]) }
+        #expect(error.map { Tap.message(for: $0).contains(message) } == true)
     }
 
     @Test("a long cover label is cut to 60 characters")

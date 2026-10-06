@@ -46,6 +46,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Flag(name: .customLong("fail-if-covered"), help: "Fail instead of warning when another element may cover the tap point.")
     var failIfCovered: Bool = false
 
+    @Option(name: .customLong("nth"), help: ArgumentHelp("With several on-screen matches, tap the nth in tree order (1-based) instead of failing as ambiguous.", valueName: "n"))
+    var nth: Int?
+
+    @Flag(name: .customLong("topmost"), help: "With several on-screen matches, tap the one drawn on top: the last in tree order on Android, the one a hit-test at its point reaches on iOS.")
+    var topmost: Bool = false
+
     @Flag(name: .customLong("no-settle"), help: "Tap a selector's target at once, without waiting out a transition an input under 500 ms ago may have started.")
     var noSettle: Bool = false
 
@@ -71,6 +77,18 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             try SelectorQuery.validate(id: elementID, label: elementLabel, value: elementValue)
             if query == nil {
                 throw ValidationError("Either provide both -x/-y, or use --id/--label/--value to tap an element.")
+            }
+        }
+
+        if nth != nil || topmost {
+            guard query != nil, pointX == nil else {
+                throw ValidationError("--nth and --topmost choose among selector matches; use them with --id, --label or --value.")
+            }
+            guard nth == nil || !topmost else {
+                throw ValidationError("Use only one of --nth or --topmost.")
+            }
+            if let nth, nth < 1 {
+                throw ValidationError("--nth must be 1 or more; got \(nth).")
             }
         }
 
@@ -163,6 +181,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 elementType: elementType,
                 allowOffscreen: allowOffscreen,
                 settle: settle,
+                pick: try await matchPick(query: query, backend: backend, device: device),
                 logger: logger
             )
             resolution = polled.value
@@ -238,6 +257,27 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         return "Warning: \(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing."
     }
 
+    /// `--nth` as given; `--topmost` the last match on Android, and on iOS the first whose own point hit-tests back to it.
+    func matchPick(query: AccessibilityQuery, backend: any DeviceBackend, device: DeviceID) async throws -> MatchPick? {
+        if let nth { return .nth(nth) }
+        guard topmost else { return nil }
+        guard device.platform == .ios else { return .last }
+        let tree = try await backend.accessibilityTree(for: device)
+        let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType)
+        let pool = allowOffscreen ? found.matches : found.onScreen
+        for index in pool.indices {
+            guard let resolution = try? AccessibilityTargetResolver.resolveTap(
+                roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: .nth(index + 1)
+            ), let matched = resolution.matched else { continue }
+            let point = UIPoint(x: resolution.point.x, y: resolution.point.y)
+            if let hit = (try? await backend.accessibilityTree(for: device, point: point))?.roots.first,
+               AccessibilityTargetResolver.isFamily(hit, of: matched, in: tree.roots) {
+                return .nth(index + 1)
+            }
+        }
+        return .last
+    }
+
     /// Warns when a selector's point is outside the screen, which only `--allow-offscreen` lets through.
     static func warnIfOffScreen(subject: String, at point: (x: Double, y: Double), in tree: UITree) {
         guard let viewport = tree.viewport, !viewport.contains(UIPoint(x: point.x, y: point.y)) else {
@@ -262,7 +302,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         guard let cover = AccessibilityTargetResolver.confirmedCover(hit: hit, resolution: resolution, roots: tree.roots) else {
             return
         }
-        let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover)
+        let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover, roots: tree.roots)
         if failIfCovered {
             let underKeyboard = AccessibilityTargetResolver.isUnderKeyboard(cover, in: tree.roots)
             throw CLIError(
@@ -280,7 +320,13 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// `--id 'save' at (196, 700) may be covered by button 'Dismiss' (20, 650) 350x120; the tap may land on it.`
-    static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode) -> String {
+    /// A key of the on-screen keyboard reads `the keyboard (key 'v')`, since the key itself means little.
+    static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode, roots: [UINode] = []) -> String {
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        if AccessibilityTargetResolver.isUnderKeyboard(cover, in: roots) {
+            let key = (cover.normalizedLabel ?? cover.normalizedID).map { " (key '\(SelectorText.truncated($0))')" } ?? ""
+            return "\(selector) at \(pointText) may be covered by the keyboard\(key); the tap may land on it."
+        }
         var parts = [cover.role.rawValue]
         if let name = cover.normalizedLabel ?? cover.normalizedID {
             parts.append("'\(SelectorText.truncated(name))'")
@@ -288,7 +334,6 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         if let frame = cover.frame {
             parts.append(frame.summary)
         }
-        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         return "\(selector) at \(pointText) may be covered by \(parts.joined(separator: " ")); the tap may land on it."
     }
 

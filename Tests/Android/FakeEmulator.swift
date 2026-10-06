@@ -6,6 +6,7 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
     enum Call: Equatable {
         case status
         case touch(PanelTouch)
+        case touches([PanelTouch])
         case key(EmulatorKeyEvent)
         case screenshot(EmulatorImageFormat, FrameBox?)
         case stream(EmulatorImageFormat, FrameBox?)
@@ -60,6 +61,7 @@ final class FakeEmulator: EmulatorControlling, @unchecked Sendable {
     }
 
     func sendTouch(_ touch: PanelTouch) async throws { try record(.touch(touch)) }
+    func sendTouches(_ touches: [PanelTouch]) async throws { try record(.touches(touches)) }
     func sendKey(_ event: EmulatorKeyEvent) async throws { try record(.key(event)) }
 
     func screenshot(_ format: EmulatorImageFormat, fitting box: FrameBox?) async throws -> EmulatorFrame {

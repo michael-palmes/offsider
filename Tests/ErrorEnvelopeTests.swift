@@ -33,6 +33,24 @@ struct ErrorEnvelopeTests {
         #expect(result.stderr.contains("No device with ID \(udid) was found."))
     }
 
+    @Test("OFFSIDER_DEVICE alone names the device, and an unknown one exits 7 naming it")
+    func environmentDeviceIsUsed() async throws {
+        let udid = TestDevices.simulatorUDID()
+        defer { TestDevices.removePrivateFiles(platform: .ios, id: udid) }
+        let result = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1", environment: ["OFFSIDER_DEVICE": udid])
+        #expect(result.exitCode == 7)
+        #expect(result.stderr.contains("No device with ID \(udid) was found."))
+    }
+
+    @Test("without --device or OFFSIDER_DEVICE a device command exits 64 naming both")
+    func missingDeviceIsUsage() async throws {
+        let result = try await TestHelpers.runOffsiderCommandSeparated("screenshot --json", environment: ["OFFSIDER_DEVICE": " "])
+        #expect(result.exitCode == 64)
+        let error = try #require(try Self.envelope(result.stdout)["error"] as? [String: Any])
+        #expect(error["reason"] as? String == "usage")
+        #expect(result.stderr.contains("Missing --device <id>. Pass --device, or set OFFSIDER_DEVICE; run offsider list-devices to see IDs."))
+    }
+
     @Test("a usage error under --json still prints an envelope and exits 64")
     func usageEnvelope() async throws {
         let result = try await TestHelpers.runOffsiderCommandSeparated("screenshot --json --scale bogus --device \(UUID().uuidString)")

@@ -10,6 +10,7 @@ function countParts(text: string, separator: string): number {
 export function TextInputScreen() {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
+  const [second, setSecond] = useState('');
 
   return (
     <Screen route="text-input" style={styles.content}>
@@ -27,6 +28,25 @@ export function TextInputScreen() {
         spellCheck={false}
         autoComplete="off"
         smartInsertDelete={false}
+        style={styles.field}
+      />
+      <TextInput
+        testID="text-input-second-field"
+        accessibilityLabel="Second field"
+        onChangeText={setSecond}
+        autoCorrect={false}
+        autoCapitalize="none"
+        spellCheck={false}
+        autoComplete="off"
+        style={styles.field}
+      />
+      <Readout id="text-input-second-value" label={`Second: ${second}`} value={second} />
+      <TextInput
+        testID="text-input-short-field"
+        accessibilityLabel="Two characters"
+        maxLength={2}
+        autoCorrect={false}
+        autoCapitalize="none"
         style={styles.field}
       />
       {focused && <Readout id="typing-active-indicator" label="✏️ Typing active" />}

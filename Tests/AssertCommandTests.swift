@@ -31,7 +31,7 @@ struct AssertCommandTests {
         #expect(command.failureLine(outcome) == "✗ Assertion failed: --id 'count' has value '2', expected '3'.")
         let json = WaitReport(outcome).jsonLine()
         #expect(json.hasPrefix(#"{"met":false,"elapsedMs":"#))
-        #expect(json.hasSuffix(#""reason":"has value '2', expected '3'","match":null}"#))
+        #expect(json.hasSuffix(#""reason":"has value '2', expected '3'","match":null,"matched":null}"#))
     }
 
     @Test("a matching value passes and reports the element")

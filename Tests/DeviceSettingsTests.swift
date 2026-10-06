@@ -121,7 +121,12 @@ struct DeviceSettingsTests {
         #expect(DeviceSettingsReport.contentSize(ContentSizeReading(category: .extraExtraLarge, fontScale: 1.3), previous: nil)
             == #"{"contentSize":"extra-extra-large","previous":null,"fontScale":1.3}"#)
         #expect(DeviceSettingsReport.orientation(.landscapeLeft, previous: .portrait, screen: UIScreenInfo(width: 874, height: 402))
-            == #"{"orientation":"landscape-left","rotation":90,"previous":"portrait","screen":{"width":874,"height":402}}"#)
+            == #"{"orientation":"landscape-left","rotation":90,"previous":"portrait","screen":{"width":874,"height":402},"autoRotate":null,"userRotation":null}"#)
+        let rotation = RotationReport(
+            before: AutoRotateState(accelerometerRotation: 1, userRotation: 0), now: AutoRotateState(accelerometerRotation: 0, userRotation: 1), restored: false
+        )
+        #expect(DeviceSettingsReport.orientation(.landscapeLeft, previous: .portrait, screen: nil, rotation: rotation)
+            == #"{"orientation":"landscape-left","rotation":90,"previous":"portrait","screen":null,"autoRotate":{"before":true,"now":false,"restored":false},"userRotation":{"before":0,"now":1}}"#)
     }
 
     @Test("human lines say what changed")
@@ -279,5 +284,56 @@ struct StateWaitTests {
         )
         #expect(outcome == .reached)
         #expect(reads.isEmpty)
+    }
+}
+
+@Suite("Android rotation plan")
+struct RotationPlanTests {
+    static let autoOn = AutoRotateState(accelerometerRotation: 1, userRotation: 0)
+    static let boot = "emulator 1790000000.000001"
+
+    @Test("the first turn away from portrait records auto-rotate and user_rotation for this boot")
+    func recordsFirstTurn() {
+        let plan = RotationPlan.make(before: Self.autoOn, target: .landscapeLeft, record: nil, bootMarker: Self.boot)
+        #expect(plan == RotationPlan(recordToWrite: RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot), deleteRecord: false, restoreAccelerometer: nil))
+    }
+
+    @Test("a later turn keeps the first record, since auto-rotate is already off by then")
+    func keepsFirstRecord() {
+        let record = RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot)
+        let plan = RotationPlan.make(before: AutoRotateState(accelerometerRotation: 0, userRotation: 1), target: .landscapeRight, record: record, bootMarker: Self.boot)
+        #expect(plan.recordToWrite == nil)
+        #expect(!plan.deleteRecord)
+    }
+
+    @Test("portrait restores auto-rotate from this boot's record and forgets it")
+    func portraitRestores() {
+        let record = RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot)
+        #expect(RotationPlan.make(before: nil, target: .portrait, record: record, bootMarker: Self.boot)
+            == RotationPlan(recordToWrite: nil, deleteRecord: true, restoreAccelerometer: 1))
+    }
+
+    @Test("portrait without a record leaves auto-rotate off")
+    func portraitWithoutRecord() {
+        #expect(RotationPlan.make(before: Self.autoOn, target: .portrait, record: nil, bootMarker: Self.boot)
+            == RotationPlan(recordToWrite: nil, deleteRecord: false, restoreAccelerometer: nil))
+    }
+
+    @Test("a record from an earlier boot is never restored: portrait drops it, a turn replaces it")
+    func staleBootMarker() {
+        let stale = RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: "emulator 1.000000")
+        #expect(RotationPlan.make(before: Self.autoOn, target: .portrait, record: stale, bootMarker: Self.boot)
+            == RotationPlan(recordToWrite: nil, deleteRecord: true, restoreAccelerometer: nil))
+        let turn = RotationPlan.make(before: AutoRotateState(accelerometerRotation: 0, userRotation: 0), target: .landscapeLeft, record: stale, bootMarker: Self.boot)
+        #expect(turn.recordToWrite == RotationRecord(accelerometerRotation: 0, userRotation: 0, bootMarker: Self.boot))
+    }
+
+    @Test("the read script's two lines parse, with null as 0; the record round-trips")
+    func parsing() {
+        #expect(AutoRotateState.parse("1\n0\n") == AutoRotateState(accelerometerRotation: 1, userRotation: 0))
+        #expect(AutoRotateState.parse("null\n3\n") == AutoRotateState(accelerometerRotation: 0, userRotation: 3))
+        #expect(AutoRotateState.parse("1\n") == nil)
+        let record = RotationRecord(accelerometerRotation: 1, userRotation: 2, bootMarker: nil)
+        #expect(RotationRecord.parse(record.fileContents) == record)
     }
 }

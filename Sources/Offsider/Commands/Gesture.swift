@@ -14,6 +14,7 @@ struct Gesture: AsyncParsableCommand {
           scroll-up, scroll-down, scroll-left, scroll-right
           swipe-from-left-edge, swipe-from-right-edge
           swipe-from-top-edge, swipe-from-bottom-edge
+          long-press-drag (needs --x, --y, --to-x and --to-y)
 
         Scroll presets are named for the finger's direction, not the content's:
           scroll-up: swipe up, moving content up to reveal what is below
@@ -26,8 +27,12 @@ struct Gesture: AsyncParsableCommand {
         --screen-width and --screen-height override that size, in points
         (dp on Android) as the screen is currently oriented.
 
+        long-press-drag presses at --x,--y, holds for --hold-ms (default 800), then drags to --to-x,--to-y \
+        over --duration (default 0.6 s), for lists that reorder or tiles that move only after a long press.
+
         Examples:
           offsider gesture scroll-up --device DEVICE_ID
+          offsider gesture long-press-drag --x 200 --y 300 --to-x 200 --to-y 600 --device DEVICE_ID
           offsider gesture scroll-down --duration 1.5 --device DEVICE_ID
           offsider gesture swipe-from-left-edge --screen-width 430 --screen-height 932 --device DEVICE_ID
         """
@@ -48,6 +53,21 @@ struct Gesture: AsyncParsableCommand {
     @Option(name: .customLong("delta"), help: "Distance in points (dp on Android) between touch points (uses preset default if not specified).")
     var delta: Double?
     
+    @Option(name: .customLong("x"), help: "long-press-drag: the X coordinate to press.")
+    var startX: Double?
+
+    @Option(name: .customLong("y"), help: "long-press-drag: the Y coordinate to press.")
+    var startY: Double?
+
+    @Option(name: .customLong("to-x"), help: "long-press-drag: the X coordinate to drag to.")
+    var endX: Double?
+
+    @Option(name: .customLong("to-y"), help: "long-press-drag: the Y coordinate to drag to.")
+    var endY: Double?
+
+    @Option(name: .customLong("hold-ms"), help: ArgumentHelp("long-press-drag: milliseconds to hold before moving, from 0 to 10000 (default 800).", valueName: "ms"))
+    var holdMs: Int?
+
     @Option(name: .customLong("pre-delay"), help: "Delay before starting the gesture in seconds.")
     var preDelay: Double?
     
@@ -58,6 +78,7 @@ struct Gesture: AsyncParsableCommand {
     var deviceOption: DeviceOption
 
     func validate() throws {
+        try validatePoints()
         // Validate screen dimensions if provided
         if let screenWidth = screenWidth {
             guard screenWidth > 0 && screenWidth <= 2000 else {
@@ -99,6 +120,59 @@ struct Gesture: AsyncParsableCommand {
         }
     }
 
+    private func validatePoints() throws {
+        let points = [("--x", startX), ("--y", startY), ("--to-x", endX), ("--to-y", endY)]
+        guard preset.kind == .longPressDrag else {
+            for (name, value) in points where value != nil {
+                throw ValidationError("\(name) applies to long-press-drag only.")
+            }
+            if holdMs != nil { throw ValidationError("--hold-ms applies to long-press-drag only.") }
+            return
+        }
+        let missing = points.filter { $0.1 == nil }.map(\.0)
+        guard missing.isEmpty else {
+            throw ValidationError("long-press-drag needs \(missing.joined(separator: ", ")).")
+        }
+        guard points.allSatisfy({ ($0.1 ?? 0) >= 0 }) else {
+            throw ValidationError("Coordinates must be non-negative values.")
+        }
+        guard startX != endX || startY != endY else {
+            throw ValidationError("The start and end points must be different.")
+        }
+        for (name, isSet) in [("--screen-width", screenWidth != nil), ("--screen-height", screenHeight != nil), ("--delta", delta != nil)] where isSet {
+            throw ValidationError("\(name) applies to swipe presets only, not long-press-drag.")
+        }
+        if let holdMs, !(0...10_000).contains(holdMs) {
+            throw ValidationError("--hold-ms must be from 0 to 10000; got \(holdMs).")
+        }
+    }
+
+    /// The preset's input: a sized swipe, or a held press and drag between the given points.
+    @MainActor
+    func presetEvent(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID, logger: OffsiderLogger) async throws -> InputEvent {
+        guard preset.kind == .longPressDrag else {
+            return try await presetSwipe(tree: try await tree(), backend: backend, device: device, logger: logger)
+        }
+        return try await presetDrag(backend: backend, device: device)
+    }
+
+    @MainActor
+    func presetDrag(backend: any DeviceBackend, device: DeviceID) async throws -> InputEvent {
+        let points = try await backend.deviceCoordinates(
+            for: [(x: startX ?? 0, y: startY ?? 0), (x: endX ?? 0, y: endY ?? 0)],
+            tree: nil,
+            on: device
+        )
+        return try InputEvent.compositeDrag(
+            from: points[0],
+            to: points[1],
+            duration: duration ?? preset.defaultDuration,
+            steps: GesturePreset.dragSteps,
+            initialHold: Double(holdMs ?? GesturePreset.defaultHoldMilliseconds) / 1000,
+            finalHold: 0.05
+        )
+    }
+
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
@@ -107,8 +181,7 @@ struct Gesture: AsyncParsableCommand {
         try await backend.prepare()
 
         logger.info().log("Performing \(preset.description)")
-        let tree = try await backend.accessibilityTree(for: device)
-        let gestureEvent = try await presetSwipe(tree: tree, backend: backend, device: device, logger: logger)
+        let gestureEvent = try await presetEvent(tree: { try await backend.accessibilityTree(for: device) }, backend: backend, device: device, logger: logger)
 
         if let preDelay = preDelay, preDelay > 0 {
             logger.info().log("Pre-delay: \(preDelay)s")

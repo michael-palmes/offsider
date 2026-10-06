@@ -75,4 +75,66 @@ struct ReactNativeFixtureSmokeTests {
         try await app.run("tap --id environment-test-log")
         _ = try await app.waitForLabel(of: "environment-test-log-count") { $0 == "Log Count: 1" }
     }
+
+    @Test("the summary names an open keyboard", arguments: RNPlatform.enabled)
+    func keyboardHeader(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("text-input")
+        try await app.run("tap --id text-input-field")
+        _ = try await app.waitForNode { $0["id"] as? String == "typing-active-indicator" }
+        try await Task.sleep(for: .seconds(1))
+
+        let summary = try await app.run("describe-ui --summary").stdout
+
+        #expect(summary.contains("\n# keyboard shown\n"), "\(summary.prefix(300))")
+    }
+
+    @Test("on Android an open React Native Modal is named as a modal window", .enabled(if: isAndroidE2EEnabled))
+    func modalHeader() async throws {
+        let app = RNApp(.android)
+        try await app.open("modal-navigation-test")
+        try await app.run("tap --id modal-navigation-test-open")
+        _ = try await app.waitForNode { $0["id"] as? String == "modal-navigation-test-modal" }
+
+        let summary = try await app.run("describe-ui --summary").stdout
+
+        #expect(summary.contains("(modal)\n"), "\(summary.prefix(300))")
+    }
+
+    @Test("type --into-id lands in the second field while the first has focus", arguments: RNPlatform.enabled)
+    func typeIntoSecondField(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("text-input")
+        try await app.run("tap --id text-input-field")
+        _ = try await app.waitForNode { $0["id"] as? String == "typing-active-indicator" }
+
+        try await app.run("type --into-id text-input-second-field --replace 'second'")
+
+        _ = try await app.waitForLabel(of: "text-input-second-value") { $0 == "Second: second" }
+        #expect(try await app.label(of: "character-count") == nil)
+    }
+
+    @Test("on Android --require-focus-id with the other field focused is exit 2 and types nothing", .enabled(if: isAndroidE2EEnabled))
+    func requireFocusMismatch() async throws {
+        let app = RNApp(.android)
+        try await app.open("text-input")
+        try await app.run("tap --id text-input-field")
+        _ = try await app.waitForNode { $0["id"] as? String == "typing-active-indicator" }
+
+        let result = try await app.offsider("type --require-focus-id text-input-second-field 'nope'")
+
+        #expect(result.exitCode == 2, "\(result.stderr)")
+        #expect(try await app.label(of: "character-count") == nil)
+    }
+
+    @Test("on Android a field that keeps two characters refuses longer replacement text with text_not_accepted", .enabled(if: isAndroidE2EEnabled))
+    func textNotAccepted() async throws {
+        let app = RNApp(.android)
+        try await app.open("text-input")
+
+        let result = try await app.offsider("type --into-id text-input-short-field --replace 'four'")
+
+        #expect(result.exitCode == 5, "\(result.stderr)")
+        #expect(result.stderr.contains("text-input-short-field"), "\(result.stderr)")
+    }
 }

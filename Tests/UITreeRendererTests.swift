@@ -127,6 +127,27 @@ struct UITreeRendererTests {
         """)
     }
 
+    @Test("the summary names an open keyboard and LogBox logs after the device line, and JSON always carries the context")
+    func contextHeaders() throws {
+        let screen = UIFrame(x: 0, y: 0, width: 402, height: 874)
+        let tree = UITree(platform: .ios, device: "IOS-UDID", screen: UIScreenInfo(width: 402, height: 874, scale: 3, rotation: .portrait), roots: [
+            UINode(role: .application, label: "Playground", frame: screen, native: .ios(IOSNativeAttributes()), children: [
+                UINode(role: .other, label: "2, Request failed", frame: UIFrame(x: 10, y: 806, width: 382, height: 48), native: .ios(IOSNativeAttributes())),
+            ]),
+            UINode(role: .keyboard, frame: UIFrame(x: 0, y: 574, width: 402, height: 300), native: .ios(IOSNativeAttributes())),
+        ])
+
+        let summary = string(tree, .summary)
+        #expect(summary.hasPrefix("# ios IOS-UDID 402x874 @3x portrait 0°\n# keyboard shown\n# logbox: 2 logs\napplication"))
+
+        let context = try #require(try json(string(tree, UITreeRenderOptions(compact: true)))["context"] as? [String: Any])
+        #expect(context["window"] is NSNull)
+        #expect(context["keyboard"] as? Bool == true)
+        #expect((context["logbox"] as? [String: Any])?["logs"] as? Int == 2)
+
+        #expect(!string(Self.iosTree, .summary).contains("\n# "))
+    }
+
     @Test("text escapes strings, rounds fractions, and shows disabled, state and missing frames")
     func textDetails() {
         let output = string(Self.androidTree, UITreeRenderOptions(format: .text))

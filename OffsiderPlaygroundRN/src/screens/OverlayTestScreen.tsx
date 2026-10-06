@@ -9,6 +9,10 @@ type Tab = (typeof tabs)[number];
 
 const tabBarHeight = 49;
 const scrimMs = 4000;
+const flickerHiddenMs = 300;
+const clockMs = 500;
+const flickerCycleMs = 1500;
+const flickerCycles = 6;
 const bannerLabel = 'Connection lost. Can’t reach the server.';
 // clearAllLogs exists at runtime but is missing from React Native's LogBox typings.
 const logBox = LogBox as typeof LogBox & { clearAllLogs: () => void };
@@ -20,6 +24,10 @@ export function OverlayTestScreen() {
   const [scrim, setScrim] = useState(false);
   const [swallowed, setSwallowed] = useState(0);
   const [hiddenTaps, setHiddenTaps] = useState(0);
+  const [flickerHidden, setFlickerHidden] = useState(false);
+  const [ticks, setTicks] = useState(0);
+  const [clockRunning, setClockRunning] = useState(false);
+  const flickerTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const warnings = useRef(0);
   const errors = useRef(0);
   const scrimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -29,9 +37,29 @@ export function OverlayTestScreen() {
       if (scrimTimer.current) {
         clearTimeout(scrimTimer.current);
       }
+      flickerTimers.current.forEach(clearTimeout);
     },
     [],
   );
+
+  useEffect(() => {
+    if (!clockRunning) {
+      return undefined;
+    }
+    const timer = setInterval(() => setTicks((current) => current + 1), clockMs);
+    return () => clearInterval(timer);
+  }, [clockRunning]);
+
+  const flicker = () => {
+    fixtureLog('overlay-test', 'flicker');
+    flickerTimers.current.forEach(clearTimeout);
+    flickerTimers.current = [];
+    for (let cycle = 0; cycle < flickerCycles; cycle += 1) {
+      const start = cycle * flickerCycleMs;
+      flickerTimers.current.push(setTimeout(() => setFlickerHidden(true), start));
+      flickerTimers.current.push(setTimeout(() => setFlickerHidden(false), start + flickerHiddenMs));
+    }
+  };
 
   const swallow = (source: string) => {
     fixtureLog('overlay-test', `${source} swallowed a tap`);
@@ -57,6 +85,10 @@ export function OverlayTestScreen() {
         <Readout id="overlay-test-tab" label={`Overlay Tab: ${tab}`} value={tab} />
         <Readout id="overlay-test-swallowed" label={`Swallowed Taps: ${swallowed}`} value={String(swallowed)} />
         <Readout id="overlay-test-scrim" label={`Scrim: ${scrim ? 'Shown' : 'Hidden'}`} />
+        <View style={styles.row}>
+          <Target id="overlay-test-start-clock" label="Start Clock" onPress={() => setClockRunning(true)} />
+          <Readout id="overlay-test-clock" label={`Clock: ${ticks}`} value={String(ticks)} />
+        </View>
         <Readout id="overlay-test-hidden-taps" label={`Hidden Taps: ${hiddenTaps}`} value={String(hiddenTaps)} />
         <Target
           id="overlay-test-toggle-banner"
@@ -67,6 +99,10 @@ export function OverlayTestScreen() {
           }}
         />
         <Target id="overlay-test-show-scrim" label="Show Silent Scrim" onPress={showScrim} />
+        <Target id="overlay-test-flicker" label="Flicker" onPress={flicker} />
+        <View style={styles.flickerSlot}>
+          {!flickerHidden && <Readout id="overlay-test-flicker-node" label="Flickering Node" />}
+        </View>
         <View style={styles.hiddenArea}>
           <View
             testID="overlay-test-hidden-frame"
@@ -93,33 +129,51 @@ export function OverlayTestScreen() {
             />
           </View>
         </View>
-        <Target
-          id="overlay-test-log-warning"
-          label="Log Warning"
-          onPress={() => {
-            warnings.current += 1;
-            fixtureLog('overlay-test', `log warning ${warnings.current}`);
-            console.warn(`OffsiderFixture warning ${warnings.current}`);
-          }}
-        />
-        <Target
-          id="overlay-test-clear-logs"
-          label="Clear Logs"
-          onPress={() => {
-            fixtureLog('overlay-test', 'clear logs');
-            logBox.clearAllLogs();
-          }}
-        />
-        <Target
-          id="overlay-test-log-error"
-          label="Log Error"
-          onPress={() => {
-            errors.current += 1;
-            fixtureLog('overlay-test', `log error ${errors.current}`);
-            console.error(`OffsiderFixture error ${errors.current}`);
-          }}
-        />
+        <View style={styles.row}>
+          <Target
+            id="overlay-test-log-warning"
+            label="Log Warning"
+            onPress={() => {
+              warnings.current += 1;
+              fixtureLog('overlay-test', `log warning ${warnings.current}`);
+              console.warn(`OffsiderFixture warning ${warnings.current}`);
+            }}
+          />
+          <Target
+            id="overlay-test-log-error"
+            label="Log Error"
+            onPress={() => {
+              errors.current += 1;
+              fixtureLog('overlay-test', `log error ${errors.current}`);
+              console.error(`OffsiderFixture error ${errors.current}`);
+            }}
+          />
+        </View>
+        <View style={styles.row}>
+          <Target
+            id="overlay-test-log-two-errors"
+            label="Log Two Errors"
+            onPress={() => {
+              for (let count = 0; count < 2; count += 1) {
+                errors.current += 1;
+                fixtureLog('overlay-test', `log error ${errors.current}`);
+                console.error(`OffsiderFixture error ${errors.current}`);
+              }
+            }}
+          />
+          <Target
+            id="overlay-test-clear-logs"
+            label="Clear Logs"
+            onPress={() => {
+              fixtureLog('overlay-test', 'clear logs');
+              logBox.clearAllLogs();
+            }}
+          />
+        </View>
       </ScrollView>
+      <View style={styles.amountRow}>
+        <Target id="overlay-test-amount" label="10, AUD" style={styles.amount} />
+      </View>
       <View
         testID="overlay-test-tab-bar"
         accessibilityRole={Platform.OS === 'ios' ? 'tabbar' : 'tablist'}
@@ -172,6 +226,10 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   body: { padding: 16, gap: 12, alignItems: 'center' },
   hiddenArea: { width: 240, height: 56 },
+  flickerSlot: { height: 24 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  amountRow: { paddingHorizontal: 16, paddingVertical: 4 },
+  amount: { height: 56 },
   hiddenFrame: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',

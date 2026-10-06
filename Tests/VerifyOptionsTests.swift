@@ -32,6 +32,13 @@ struct VerifyOptionsTests {
         #expect(result.stderr.contains("--retries must be between 0 and 3"))
     }
 
+    @Test("Android button home refuses --verify-id and --verify-ignore-text, since it verifies by the foreground activity", arguments: ["--verify-id settings", "--verify-ignore-text"])
+    func androidHomeRefusesTreeVerification(option: String) async throws {
+        let result = try await TestHelpers.runOffsiderCommandSeparated("button home \(option) --device emulator-5554")
+        #expect(result.exitCode == 64)
+        #expect(result.stderr.contains("button home on Android verifies by the foreground activity"))
+    }
+
     @Test("--verify-timeout below half a second is a usage error")
     func timeoutOutOfRange() async throws {
         let result = try await run("button home --verify --verify-timeout 0")

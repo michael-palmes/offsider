@@ -544,3 +544,63 @@ struct VerifierTests {
         #expect(await android.volatileScreenBands(for: DeviceID(rawValue: "emulator-5556", platform: .android)) == ScreenBands(top: 60, bottom: 48))
     }
 }
+
+
+@MainActor
+@Suite("Verifier --verify-id and --verify-ignore-text")
+struct VerifierModeTests {
+    private static func page(_ ids: [String], clock: String = "1") -> UITree {
+        FakeUI.tree(width: 64, height: 128, [FakeUI.node(.text, id: "clock", label: clock)] + ids.map { FakeUI.node(.button, id: $0, label: $0, frame: FakeUI.frame(0, 10, 60, 20)) })
+    }
+
+    @Test("an element that appears 3 s after the input verifies within a 10 s timeout, with no screenshot read")
+    func slowAppearVerifies() async throws {
+        let fake = FakeSimulator(trees: Array(repeating: Self.page(["next"]), count: 11) + [Self.page(["page-2"])], screens: [screen(shade: 10)])
+        var sent = 0
+        let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(10), dependencies: fake.dependencies, mode: .appearing(id: "page-2")) { _ in sent += 1 }
+
+        #expect(sent == 1)
+        #expect(outcome.verified && outcome.change == .element)
+        #expect(fake.screenReads == 0)
+        #expect(fake.clock >= 3 && fake.clock <= 10)
+    }
+
+    @Test("an element already on screen before the input is refused before anything is sent")
+    func presentAtBaselineRefused() async throws {
+        let fake = FakeSimulator(trees: [Self.page(["page-2"])])
+        var sent = 0
+        let error = await #expect(throws: CLIError.self) {
+            try await Verifier.run(styles: [nil], timeout: .seconds(10), dependencies: fake.dependencies, mode: .appearing(id: "page-2")) { _ in sent += 1 }
+        }
+        #expect(error?.reason == .verifyTargetPresent)
+        #expect(sent == 0)
+    }
+
+    @Test("an element that never appears is unverified, and the screen is never compared")
+    func neverAppears() async throws {
+        let fake = FakeSimulator(trees: [Self.page(["next"])], screens: [screen(shade: 10), screen(shade: 200)])
+        let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(2), dependencies: fake.dependencies, mode: .appearing(id: "page-2")) { _ in }
+        #expect(!outcome.verified && outcome.change == .none)
+        #expect(fake.screenReads == 0)
+    }
+
+    @Test("ignoring text, a screen whose only change is a ticking label is unverified, even when its pixels change")
+    func ignoreTextTickIsUnverified() async throws {
+        var ticks = 0
+        let trees = (0..<40).map { _ -> UITree in ticks += 1; return Self.page(["next"], clock: String(ticks)) }
+        let fake = FakeSimulator(trees: trees, screens: [screen(shade: 10), screen(shade: 200)])
+        let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(2), dependencies: fake.dependencies, mode: .change(ignoringText: true)) { _ in }
+        #expect(!outcome.verified)
+        #expect(fake.screenReads == 0)
+    }
+
+    @Test("--verify-id defaults to no retries and a 10 s timeout, and conflicts with --verify-ignore-text")
+    func options() throws {
+        let appearing = try VerificationOptions.parse(["--verify-id", "page-2"])
+        #expect(appearing.verify && appearing.resolvedRetries == 0 && appearing.resolvedTimeout == 10)
+        #expect(appearing.mode == .appearing(id: "page-2"))
+        #expect(try VerificationOptions.parse(["--verify-ignore-text"]).mode == .change(ignoringText: true))
+        #expect(try VerificationOptions.parse(["--verify-id", "a", "--retries", "2"]).resolvedRetries == 2)
+        #expect(throws: (any Error).self) { try VerificationOptions.parse(["--verify-id", "a", "--verify-ignore-text"]) }
+    }
+}

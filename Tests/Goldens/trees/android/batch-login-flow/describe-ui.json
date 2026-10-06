@@ -14,6 +14,15 @@
     },
     "posture": null
   },
+  "context": {
+    "window": {
+      "title": "OffsiderPlaygroundRN",
+      "kind": "app",
+      "package": "com.mpalmes.offsider.playground.rn"
+    },
+    "keyboard": true,
+    "logbox": null
+  },
   "roots": [
     {
       "role": "application",

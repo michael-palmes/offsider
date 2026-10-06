@@ -25,6 +25,10 @@ final class TimedEmulator: EmulatorControlling {
         try await inner.sendTouch(touch)
     }
 
+    func sendTouches(_ touches: [PanelTouch]) async throws {
+        try await inner.sendTouches(touches)
+    }
+
     func sendKey(_ event: EmulatorKeyEvent) async throws {
         try await timing.measure(.grpcCall) { try await inner.sendKey(event) }
     }

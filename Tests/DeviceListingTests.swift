@@ -88,7 +88,13 @@ struct DeviceListingTests {
         #expect(devices[0]["connection"] is NSNull)
         #expect(devices[1]["kind"] as? String == "avd")
 
-        let keys = ["\"version\"", "\"devices\"", "\"id\"", "\"platform\"", "\"state\"", "\"name\"", "\"osVersion\"", "\"deviceType\"", "\"kind\"", "\"connection\""]
+        #expect(devices[0]["avd"] is NSNull)
+        #expect(devices[0]["bootedBy"] is NSNull)
+
+        let keys = [
+            "\"version\"", "\"devices\"", "\"id\"", "\"platform\"", "\"state\"", "\"name\"", "\"osVersion\"", "\"deviceType\"", "\"kind\"",
+            "\"connection\"", "\"avd\"", "\"bootedBy\"", "\"heldBy\"", "\"lease\"",
+        ]
         let offsets = keys.compactMap { text.range(of: $0)?.lowerBound }
         #expect(offsets.count == keys.count)
         #expect(offsets == offsets.sorted())
@@ -103,6 +109,43 @@ struct DeviceListingTests {
         #expect(object["version"] as? Int == 1)
         #expect(row["kind"] as? String == "physical")
         #expect(row["connection"] as? String == "usb")
+    }
+
+    @Test("an emulator row names its AVD and the emulator process with an ISO start time; the table is unchanged")
+    func emulatorAVDAndBootedBy() throws {
+        let emulator = DeviceSummary(
+            id: "emulator-5554", platform: .android, state: "Booted", name: "Offsider_E2E", osVersion: "Android 16", deviceType: "pixel_9",
+            kind: .emulator, avd: "Offsider_E2E", bootedBy: ProcessStamp(pid: 4242, startedAt: Date(timeIntervalSince1970: 1_790_000_000))
+        )
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceListRenderer.json([emulator]).utf8)) as? [String: Any])
+        let row = try #require((object["devices"] as? [[String: Any]])?.first)
+        #expect(row["avd"] as? String == "Offsider_E2E")
+        let bootedBy = try #require(row["bootedBy"] as? [String: Any])
+        #expect(bootedBy["pid"] as? Int == 4242)
+        #expect(bootedBy["startedAt"] as? String == "2026-09-21T14:13:20Z")
+        var plain = emulator
+        plain.avd = nil
+        plain.bootedBy = nil
+        #expect(DeviceListRenderer.table([emulator]) == DeviceListRenderer.table([plain]))
+    }
+
+    @Test("held rows carry heldBy in JSON and one stderr note each; a shut-down AVD is never looked up")
+    func heldBy() throws {
+        let started = Date(timeIntervalSince1970: 1_790_000_000)
+        var looked: [String] = []
+        let rows = ListDevices.withHolders([phone, pixel]) { key in
+            looked.append(key.id)
+            return DeviceLockHolder(pid: 4321, command: "wait", startedAt: started)
+        }
+        #expect(looked == [phone.id])
+        #expect(ListDevices.holderNotes(rows, now: started.addingTimeInterval(3)) == ["\(phone.id) is in use by pid 4321 (offsider wait, started 3 s ago)."])
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceListRenderer.json(rows).utf8)) as? [String: Any])
+        let devices = try #require(object["devices"] as? [[String: Any]])
+        let heldBy = try #require(devices[0]["heldBy"] as? [String: Any])
+        #expect(heldBy["pid"] as? Int == 4321)
+        #expect(heldBy["command"] as? String == "wait")
+        #expect(heldBy["startedAt"] as? String == "2026-09-21T14:13:20Z")
+        #expect(devices[1]["heldBy"] is NSNull)
     }
 
     @Test("unauthorised and network phones get one hint each; a ready phone and emulators get none")

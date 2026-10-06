@@ -91,6 +91,7 @@ public enum UITreeRenderer {
             ("platform", .string(tree.platform.rawValue)),
             ("device", .string(tree.device)),
             ("screen", tree.screen.map { $0.jsonValue(on: tree.platform) } ?? .null),
+            ("context", tree.context.jsonValue),
         ]
     }
 
@@ -129,7 +130,7 @@ public enum UITreeRenderer {
         }
         return UITreeEconomy.budgeted(
             result.lines,
-            header: header(tree),
+            header: ([header(tree)] + tree.context.headerLines).joined(separator: "\n"),
             folded: result.folded,
             sourceTruncated: tree.sourceTruncated,
             maxBytes: options.maxBytes

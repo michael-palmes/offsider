@@ -19,7 +19,7 @@ struct Doctor: AsyncParsableCommand {
     var fix = false
 
     func run() async throws {
-        let report: DoctorReport
+        var report: DoctorReport
         if let id = deviceOption.id, case .iosDevice(let udid) = DeviceIDClassifier.classify(id) {
             report = await iosDeviceReport(udid)
         } else if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
@@ -27,6 +27,7 @@ struct Doctor: AsyncParsableCommand {
         } else {
             report = await hostAndSimulatorReport()
         }
+        report = Self.withHost(report, HostProbe.live.facts())
         try write(report)
         if report.exitCode != .success {
             throw ExitCode(report.exitCode.rawValue)
@@ -55,7 +56,7 @@ struct Doctor: AsyncParsableCommand {
             facts = await android.run(deviceID: nil).host
         }
         let device = udid.map { udid in
-            DoctorDevice(id: udid, platform: "ios", name: result.booted.first { $0.udid == udid }?.name, kind: "simulator")
+            DoctorDevice(id: udid, platform: "ios", name: result.booted.first { $0.udid == udid }?.name, kind: "simulator", source: deviceOption.source?.rawValue)
         }
         return DoctorReport(
             offsiderVersion: VERSION,
@@ -64,7 +65,7 @@ struct Doctor: AsyncParsableCommand {
             xcode: result.xcode,
             booted: result.booted,
             android: AndroidDoctorRules.summary(facts, device: nil),
-            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false),
+            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false) + (udid.map { [Self.leaseCheck(platform: .ios, key: $0.uppercased(), lockID: $0)] } ?? []),
             fixes: fixes
         )
     }
@@ -78,6 +79,7 @@ struct Doctor: AsyncParsableCommand {
             fixes = [await probe.startAdbServerIfAbsent()]
             facts = await probe.run(deviceID: id)
         }
+        facts.device = facts.device.map { Self.withUnlockCode($0, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger()) }
         let serial = facts.device?.serial ?? id
         let kind: String? = facts.device.flatMap { device in
             device.isPhysical ? "physical" : device.serial.map { DeviceIDClassifier.classify($0).platform == .android ? "emulator" : "other" }
@@ -85,12 +87,16 @@ struct Doctor: AsyncParsableCommand {
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: nil,
-            device: DoctorDevice(id: serial, platform: "android", name: facts.device?.avdName ?? facts.device?.model, kind: kind),
+            device: DoctorDevice(
+                id: serial, platform: "android", name: facts.device?.avdName ?? facts.device?.model, kind: kind,
+                source: deviceOption.source?.rawValue, lock: facts.device?.lockReport
+            ),
             xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
             booted: [],
             android: AndroidDoctorRules.summary(facts.host, device: facts.device),
             checks: AndroidDoctorRules.hostChecks(facts.host, deviceNamed: true)
-                + AndroidDoctorRules.deviceChecks(facts.device, hostBlocker: AndroidDoctorRules.hostBlocker(facts.host)),
+                + AndroidDoctorRules.deviceChecks(facts.device, hostBlocker: AndroidDoctorRules.hostBlocker(facts.host))
+                + [Self.leaseCheck(platform: .android, key: Self.leaseKey(facts.device, id: id), lockID: serial)],
             fixes: fixes
         )
     }
@@ -108,13 +114,48 @@ struct Doctor: AsyncParsableCommand {
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: nil,
-            device: DoctorDevice(id: udid, platform: "ios", name: result.facts.row?.label, kind: "physical"),
+            device: DoctorDevice(id: udid, platform: "ios", name: result.facts.row?.label, kind: "physical", source: deviceOption.source?.rawValue),
             xcode: XcodeSummary(developerDir: result.xcode?.developerDirectory, version: result.xcode?.version, build: result.xcode?.build, coreSimulator: nil),
             booted: [],
             android: nil,
-            checks: IOSDeviceDoctorRules.checks(result.facts),
+            checks: IOSDeviceDoctorRules.checks(result.facts) + [Self.leaseCheck(platform: .ios, key: udid.uppercased(), lockID: udid)],
             fixes: fixes
         )
+    }
+
+    /// Host facts and checks join every report, after its own checks.
+    static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
+        DoctorReport(
+            offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host), fixes: report.fixes, host: host
+        )
+    }
+
+    /// An emulator's lease is kept under its AVD name, a phone's under its serial.
+    static func leaseKey(_ facts: AndroidDeviceFacts?, id: String) -> String {
+        guard let facts else { return StableDeviceKey.of(id: id)?.key ?? id }
+        return facts.isPhysical ? (facts.serial ?? id) : (facts.avdName ?? facts.serial ?? id)
+    }
+
+    static func leaseCheck(
+        platform: DevicePlatform, key: String, lockID: String,
+        store: DeviceLeaseStore = DeviceLeaseStore(),
+        sessionLabel: String? = ProcessInfo.processInfo.environment[DeviceLeaseRules.sessionVariable],
+        holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
+    ) -> DoctorCheckResult {
+        let verdict = DeviceLeaseRules.lease(
+            store.lease(platform: platform, key: key), sessionLabel: sessionLabel, holder: holder(DeviceLockKey(platform: platform, id: lockID))
+        )
+        return DoctorCheckResult(id: .deviceLease, verdict: verdict)
+    }
+
+    /// The Keychain is read (attributes only) only for a device with a credential; an emulator's code is saved under its AVD name.
+    static func withUnlockCode(_ facts: AndroidDeviceFacts, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger) -> AndroidDeviceFacts {
+        guard facts.awake?.hasCredential == true else { return facts }
+        let key = facts.isPhysical ? (facts.serial ?? facts.id) : (facts.avdName ?? facts.serial ?? facts.id)
+        var facts = facts
+        facts.unlockCode = UnlockCodeFact(saved: (try? store.hasCode(for: key)) ?? false, lastAttemptFailed: ledger.hasFailed(key))
+        return facts
     }
 
     private static func canonicalUDID(_ raw: String) -> String {

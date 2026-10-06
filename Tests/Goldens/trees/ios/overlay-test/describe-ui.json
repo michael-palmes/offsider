@@ -14,6 +14,11 @@
     },
     "posture": null
   },
+  "context": {
+    "window": null,
+    "keyboard": false,
+    "logbox": null
+  },
   "roots": [
     {
       "role": "application",
@@ -388,7 +393,7 @@
                                         "x": 0,
                                         "y": 106.33333587646484,
                                         "width": 402,
-                                        "height": 684.3333740234375
+                                        "height": 620.3333740234375
                                       },
                                       "enabled": true,
                                       "state": {
@@ -406,7 +411,7 @@
                                         "customActions": [],
                                         "contentRequired": false,
                                         "pid": 1000,
-                                        "axFrame": "{{0, 106.33333587646484}, {402, 684.3333740234375}}"
+                                        "axFrame": "{{0, 106.33333587646484}, {402, 620.3333740234375}}"
                                       },
                                       "children": [
                                         {
@@ -418,7 +423,7 @@
                                             "x": 0,
                                             "y": 106.33333587646484,
                                             "width": 402,
-                                            "height": 684.3333333333333
+                                            "height": 620.3333333333333
                                           },
                                           "enabled": true,
                                           "state": {
@@ -436,7 +441,7 @@
                                             "customActions": [],
                                             "contentRequired": false,
                                             "pid": 1000,
-                                            "axFrame": "{{0, 106.33333587646484}, {402, 684.33333333333326}}"
+                                            "axFrame": "{{0, 106.33333587646484}, {402, 620.33333333333326}}"
                                           },
                                           "children": [
                                             {
@@ -448,7 +453,7 @@
                                                 "x": 0,
                                                 "y": 106.33333587646484,
                                                 "width": 402,
-                                                "height": 497.3333435058594
+                                                "height": 589.3333740234375
                                               },
                                               "enabled": true,
                                               "state": {
@@ -466,7 +471,7 @@
                                                 "customActions": [],
                                                 "contentRequired": false,
                                                 "pid": 1000,
-                                                "axFrame": "{{0, 106.33333587646484}, {402, 497.33334350585938}}"
+                                                "axFrame": "{{0, 106.33333587646484}, {402, 589.3333740234375}}"
                                               },
                                               "children": [
                                                 {
@@ -478,7 +483,7 @@
                                                     "x": 0,
                                                     "y": 106.33333587646484,
                                                     "width": 402,
-                                                    "height": 497.3333435058594
+                                                    "height": 589.3333740234375
                                                   },
                                                   "enabled": true,
                                                   "state": {
@@ -496,7 +501,7 @@
                                                     "customActions": [],
                                                     "contentRequired": false,
                                                     "pid": 1000,
-                                                    "axFrame": "{{0, 106.33333587646484}, {402, 497.33334350585938}}"
+                                                    "axFrame": "{{0, 106.33333587646484}, {402, 589.3333740234375}}"
                                                   },
                                                   "children": [
                                                     {
@@ -593,14 +598,45 @@
                                                       "children": []
                                                     },
                                                     {
+                                                      "role": "button",
+                                                      "id": "overlay-test-start-clock",
+                                                      "label": "Start Clock",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 103.33333587646484,
+                                                        "y": 219.33333587646484,
+                                                        "width": 120.99999237060547,
+                                                        "height": 44.00001525878906
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Button",
+                                                        "role": "AXButton",
+                                                        "subrole": null,
+                                                        "roleDescription": "button",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{103.33333587646484, 219.33333587646484}, {120.99999237060547, 44.000015258789062}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
                                                       "role": "text",
-                                                      "id": "overlay-test-hidden-taps",
-                                                      "label": "Hidden Taps: 0",
+                                                      "id": "overlay-test-clock",
+                                                      "label": "Clock: 0",
                                                       "value": "0",
                                                       "frame": {
-                                                        "x": 144,
-                                                        "y": 219.33333587646484,
-                                                        "width": 114.33334350585938,
+                                                        "x": 236.33333587646484,
+                                                        "y": 231.33333587646484,
+                                                        "width": 62.66667175292969,
                                                         "height": 20.333343505859375
                                                       },
                                                       "enabled": true,
@@ -619,7 +655,38 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{144, 219.33333587646484}, {114.33334350585938, 20.333343505859375}}"
+                                                        "axFrame": "{{236.33333587646484, 231.33333587646484}, {62.666671752929688, 20.333343505859375}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "text",
+                                                      "id": "overlay-test-hidden-taps",
+                                                      "label": "Hidden Taps: 0",
+                                                      "value": "0",
+                                                      "frame": {
+                                                        "x": 144,
+                                                        "y": 275.33333587646484,
+                                                        "width": 114.33334350585938,
+                                                        "height": 20.33331298828125
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "StaticText",
+                                                        "role": "AXStaticText",
+                                                        "subrole": null,
+                                                        "roleDescription": "text",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{144, 275.33333587646484}, {114.33334350585938, 20.33331298828125}}"
                                                       },
                                                       "children": []
                                                     },
@@ -630,9 +697,9 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 132.6666717529297,
-                                                        "y": 251.66666412353516,
+                                                        "y": 307.66666412353516,
                                                         "width": 136.6666717529297,
-                                                        "height": 43.99998474121094
+                                                        "height": 44
                                                       },
                                                       "enabled": true,
                                                       "state": {
@@ -650,7 +717,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{132.66667175292969, 251.66666412353516}, {136.66667175292969, 43.999984741210938}}"
+                                                        "axFrame": "{{132.66667175292969, 307.66666412353516}, {136.66667175292969, 44}}"
                                                       },
                                                       "children": []
                                                     },
@@ -661,7 +728,7 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 113.33333587646484,
-                                                        "y": 307.66666412353516,
+                                                        "y": 363.6666793823242,
                                                         "width": 175.33331298828125,
                                                         "height": 44
                                                       },
@@ -681,7 +748,69 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{113.33333587646484, 307.66666412353516}, {175.33331298828125, 44}}"
+                                                        "axFrame": "{{113.33333587646484, 363.66667938232422}, {175.33331298828125, 44}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "button",
+                                                      "id": "overlay-test-flicker",
+                                                      "label": "Flicker",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 158.6666717529297,
+                                                        "y": 419.6666793823242,
+                                                        "width": 84.66665649414062,
+                                                        "height": 44
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Button",
+                                                        "role": "AXButton",
+                                                        "subrole": null,
+                                                        "roleDescription": "button",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{158.66667175292969, 419.66667938232422}, {84.666656494140625, 44}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "text",
+                                                      "id": "overlay-test-flicker-node",
+                                                      "label": "Flickering Node",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 141.6666717529297,
+                                                        "y": 475.6666793823242,
+                                                        "width": 118.66667175292969,
+                                                        "height": 20.333343505859375
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "StaticText",
+                                                        "role": "AXStaticText",
+                                                        "subrole": null,
+                                                        "roleDescription": "text",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{141.66667175292969, 475.66667938232422}, {118.66667175292969, 20.333343505859375}}"
                                                       },
                                                       "children": []
                                                     },
@@ -692,9 +821,9 @@
                                                       "value": null,
                                                       "frame": {
                                                         "x": 81,
-                                                        "y": 363.6666793823242,
+                                                        "y": 511.6666793823242,
                                                         "width": 240,
-                                                        "height": 56
+                                                        "height": 56.000030517578125
                                                       },
                                                       "enabled": true,
                                                       "state": {
@@ -712,7 +841,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{81, 363.66667938232422}, {240, 56}}"
+                                                        "axFrame": "{{81, 511.66667938232422}, {240, 56.000030517578125}}"
                                                       },
                                                       "children": []
                                                     },
@@ -722,9 +851,9 @@
                                                       "label": "Log Warning",
                                                       "value": null,
                                                       "frame": {
-                                                        "x": 135.3333282470703,
-                                                        "y": 431.6666793823242,
-                                                        "width": 131.6666717529297,
+                                                        "x": 76.66666412353516,
+                                                        "y": 579.6666793823242,
+                                                        "width": 131.66665649414062,
                                                         "height": 44
                                                       },
                                                       "enabled": true,
@@ -743,38 +872,7 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{135.33332824707031, 431.66667938232422}, {131.66667175292969, 44}}"
-                                                      },
-                                                      "children": []
-                                                    },
-                                                    {
-                                                      "role": "button",
-                                                      "id": "overlay-test-clear-logs",
-                                                      "label": "Clear Logs",
-                                                      "value": null,
-                                                      "frame": {
-                                                        "x": 143,
-                                                        "y": 487.6666793823242,
-                                                        "width": 116.33334350585938,
-                                                        "height": 44.000030517578125
-                                                      },
-                                                      "enabled": true,
-                                                      "state": {
-                                                        "checked": null,
-                                                        "selected": null,
-                                                        "focused": null
-                                                      },
-                                                      "native": {
-                                                        "type": "Button",
-                                                        "role": "AXButton",
-                                                        "subrole": null,
-                                                        "roleDescription": "button",
-                                                        "title": null,
-                                                        "help": null,
-                                                        "customActions": [],
-                                                        "contentRequired": false,
-                                                        "pid": 1000,
-                                                        "axFrame": "{{143, 487.66667938232422}, {116.33334350585938, 44.000030517578125}}"
+                                                        "axFrame": "{{76.666664123535156, 579.66667938232422}, {131.66665649414062, 44}}"
                                                       },
                                                       "children": []
                                                     },
@@ -784,9 +882,9 @@
                                                       "label": "Log Error",
                                                       "value": null,
                                                       "frame": {
-                                                        "x": 148.3333282470703,
-                                                        "y": 543.6666793823242,
-                                                        "width": 105.33334350585938,
+                                                        "x": 220.33333587646484,
+                                                        "y": 579.6666793823242,
+                                                        "width": 105.33332824707031,
                                                         "height": 44
                                                       },
                                                       "enabled": true,
@@ -805,7 +903,69 @@
                                                         "customActions": [],
                                                         "contentRequired": false,
                                                         "pid": 1000,
-                                                        "axFrame": "{{148.33332824707031, 543.66667938232422}, {105.33334350585938, 44}}"
+                                                        "axFrame": "{{220.33333587646484, 579.66667938232422}, {105.33332824707031, 44}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "button",
+                                                      "id": "overlay-test-log-two-errors",
+                                                      "label": "Log Two Errors",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 61.33333206176758,
+                                                        "y": 635.6666488647461,
+                                                        "width": 151,
+                                                        "height": 44
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Button",
+                                                        "role": "AXButton",
+                                                        "subrole": null,
+                                                        "roleDescription": "button",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{61.333332061767578, 635.66664886474609}, {151, 44}}"
+                                                      },
+                                                      "children": []
+                                                    },
+                                                    {
+                                                      "role": "button",
+                                                      "id": "overlay-test-clear-logs",
+                                                      "label": "Clear Logs",
+                                                      "value": null,
+                                                      "frame": {
+                                                        "x": 224.33333206176758,
+                                                        "y": 635.6666488647461,
+                                                        "width": 116.33332824707031,
+                                                        "height": 44
+                                                      },
+                                                      "enabled": true,
+                                                      "state": {
+                                                        "checked": null,
+                                                        "selected": null,
+                                                        "focused": null
+                                                      },
+                                                      "native": {
+                                                        "type": "Button",
+                                                        "role": "AXButton",
+                                                        "subrole": null,
+                                                        "roleDescription": "button",
+                                                        "title": null,
+                                                        "help": null,
+                                                        "customActions": [],
+                                                        "contentRequired": false,
+                                                        "pid": 1000,
+                                                        "axFrame": "{{224.33333206176758, 635.66664886474609}, {116.33332824707031, 44}}"
                                                       },
                                                       "children": []
                                                     }
@@ -822,7 +982,7 @@
                                                 "x": 369,
                                                 "y": 106.33333587646484,
                                                 "width": 30,
-                                                "height": 684.3333333333333
+                                                "height": 620.3333333333333
                                               },
                                               "enabled": true,
                                               "state": {
@@ -840,7 +1000,7 @@
                                                 "customActions": [],
                                                 "contentRequired": false,
                                                 "pid": 1000,
-                                                "axFrame": "{{369, 106.33333587646484}, {30, 684.33333333333326}}"
+                                                "axFrame": "{{369, 106.33333587646484}, {30, 620.33333333333326}}"
                                               },
                                               "children": [
                                                 {
@@ -850,9 +1010,9 @@
                                                   "value": null,
                                                   "frame": {
                                                     "x": 396,
-                                                    "y": 296.3333358764646,
+                                                    "y": 140.33333587646462,
                                                     "width": 3,
-                                                    "height": 491.3333333333335
+                                                    "height": 583.3333333333335
                                                   },
                                                   "enabled": true,
                                                   "state": {
@@ -870,7 +1030,7 @@
                                                     "customActions": [],
                                                     "contentRequired": false,
                                                     "pid": 1000,
-                                                    "axFrame": "{{396, 296.33333587646462}, {3, 491.33333333333348}}"
+                                                    "axFrame": "{{396, 140.33333587646462}, {3, 583.33333333333348}}"
                                                   },
                                                   "children": []
                                                 }
@@ -883,7 +1043,7 @@
                                               "value": "0%",
                                               "frame": {
                                                 "x": 0,
-                                                "y": 757.6666692097981,
+                                                "y": 693.6666692097981,
                                                 "width": 402,
                                                 "height": 30
                                               },
@@ -903,7 +1063,7 @@
                                                 "customActions": [],
                                                 "contentRequired": false,
                                                 "pid": 1000,
-                                                "axFrame": "{{0, 757.6666692097981}, {402, 30}}"
+                                                "axFrame": "{{0, 693.6666692097981}, {402, 30}}"
                                               },
                                               "children": [
                                                 {
@@ -913,7 +1073,7 @@
                                                   "value": null,
                                                   "frame": {
                                                     "x": 3,
-                                                    "y": 784.6666692097981,
+                                                    "y": 720.6666692097981,
                                                     "width": 396,
                                                     "height": 3
                                                   },
@@ -933,7 +1093,7 @@
                                                     "customActions": [],
                                                     "contentRequired": false,
                                                     "pid": 1000,
-                                                    "axFrame": "{{3, 784.6666692097981}, {396, 3}}"
+                                                    "axFrame": "{{3, 720.6666692097981}, {396, 3}}"
                                                   },
                                                   "children": []
                                                 }
@@ -948,7 +1108,7 @@
                                                 "x": 369,
                                                 "y": 106.33333587646484,
                                                 "width": 30,
-                                                "height": 684.3333333333333
+                                                "height": 620.3333333333333
                                               },
                                               "enabled": true,
                                               "state": {
@@ -966,7 +1126,7 @@
                                                 "customActions": [],
                                                 "contentRequired": false,
                                                 "pid": 1000,
-                                                "axFrame": "{{369, 106.33333587646484}, {30, 684.33333333333326}}"
+                                                "axFrame": "{{369, 106.33333587646484}, {30, 620.33333333333326}}"
                                               },
                                               "children": [
                                                 {
@@ -976,9 +1136,9 @@
                                                   "value": null,
                                                   "frame": {
                                                     "x": 396,
-                                                    "y": 296.3333358764646,
+                                                    "y": 140.33333587646462,
                                                     "width": 3,
-                                                    "height": 491.3333333333335
+                                                    "height": 583.3333333333335
                                                   },
                                                   "enabled": true,
                                                   "state": {
@@ -996,7 +1156,7 @@
                                                     "customActions": [],
                                                     "contentRequired": false,
                                                     "pid": 1000,
-                                                    "axFrame": "{{396, 296.33333587646462}, {3, 491.33333333333348}}"
+                                                    "axFrame": "{{396, 140.33333587646462}, {3, 583.33333333333348}}"
                                                   },
                                                   "children": []
                                                 }
@@ -1009,7 +1169,7 @@
                                               "value": "0%",
                                               "frame": {
                                                 "x": 0,
-                                                "y": 757.6666692097981,
+                                                "y": 693.6666692097981,
                                                 "width": 402,
                                                 "height": 30
                                               },
@@ -1029,7 +1189,7 @@
                                                 "customActions": [],
                                                 "contentRequired": false,
                                                 "pid": 1000,
-                                                "axFrame": "{{0, 757.6666692097981}, {402, 30}}"
+                                                "axFrame": "{{0, 693.6666692097981}, {402, 30}}"
                                               },
                                               "children": [
                                                 {
@@ -1039,7 +1199,7 @@
                                                   "value": null,
                                                   "frame": {
                                                     "x": 3,
-                                                    "y": 784.6666692097981,
+                                                    "y": 720.6666692097981,
                                                     "width": 396,
                                                     "height": 3
                                                   },
@@ -1059,7 +1219,7 @@
                                                     "customActions": [],
                                                     "contentRequired": false,
                                                     "pid": 1000,
-                                                    "axFrame": "{{3, 784.6666692097981}, {396, 3}}"
+                                                    "axFrame": "{{3, 720.6666692097981}, {396, 3}}"
                                                   },
                                                   "children": []
                                                 }
@@ -1068,6 +1228,37 @@
                                           ]
                                         }
                                       ]
+                                    },
+                                    {
+                                      "role": "button",
+                                      "id": "overlay-test-amount",
+                                      "label": "10, AUD",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 16,
+                                        "y": 730.6666488647461,
+                                        "width": 370,
+                                        "height": 56
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Button",
+                                        "role": "AXButton",
+                                        "subrole": null,
+                                        "roleDescription": "button",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{16, 730.66664886474609}, {370, 56}}"
+                                      },
+                                      "children": []
                                     },
                                     {
                                       "role": "group",

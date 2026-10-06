@@ -261,6 +261,7 @@ struct Batch: AsyncParsableCommand {
         let record = BatchStepRecord(
             step: number, kind: stepName, line: BatchStepRedaction.redactedLine(line, tokens: parsedTokens), elapsed: seconds(clock.now - start), failure: failure, detail: detail
         )
+        EvidenceRecorder.current.finishPending(step: number, line: record.line, exit: failure?.exitCode ?? 0, reason: failure?.error.reason.rawValue)
         return (record, sendsInput ? DispatchTracker.current.state : .no)
     }
 

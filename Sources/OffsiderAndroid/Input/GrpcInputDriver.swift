@@ -15,6 +15,13 @@ struct GrpcInputDriver: Sendable {
             switch step {
             case .touch(let phase, let point):
                 try await touch(point, down: phase != .up)
+            case .touches(let phase, let points):
+                do {
+                    try await touches(points, down: phase != .up)
+                } catch {
+                    try? await touches(points, down: false)
+                    throw error
+                }
             case .tap(let point):
                 try await touch(point, down: true)
                 try await liftingOnFailure(at: point) {
@@ -46,6 +53,15 @@ struct GrpcInputDriver: Sendable {
     func touch(_ point: AndroidPoint, down: Bool) async throws {
         let panel = PanelRotation.panelPoint(point, rotation: geometry.rotation, naturalWidth: geometry.naturalWidth, naturalHeight: geometry.naturalHeight)
         try await emulator.sendTouch(PanelTouch(x: panel.x, y: panel.y, pressure: down ? Self.pressure : 0))
+    }
+
+    /// One event carrying every finger, with identifiers 0, 1, … in order.
+    func touches(_ points: [AndroidPoint], down: Bool) async throws {
+        let fingers = points.enumerated().map { index, point in
+            let panel = PanelRotation.panelPoint(point, rotation: geometry.rotation, naturalWidth: geometry.naturalWidth, naturalHeight: geometry.naturalHeight)
+            return PanelTouch(x: panel.x, y: panel.y, pressure: down ? Self.pressure : 0, identifier: Int32(index))
+        }
+        try await emulator.sendTouches(fingers)
     }
 
     /// A gesture that fails part-way still lifts its finger, best effort, before the error goes on.

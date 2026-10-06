@@ -65,7 +65,7 @@ struct SessionCommandTests {
 
     @Test("nested session commands keep their parent in the command path")
     func paths() throws {
-        #expect(OffsiderCommand.path(of: try SessionStatus.parse([]), name: "status") == "session status")
-        #expect(OffsiderCommand.path(of: try DeviceSessionServe.parse(["--device", "U"]), name: "serve") == "device-session serve")
+        #expect(CommandPath.of(try SessionStatus.parse([])) == "session status")
+        #expect(CommandPath.of(try DeviceSessionServe.parse(["--device", "U"])) == "device-session serve")
     }
 }

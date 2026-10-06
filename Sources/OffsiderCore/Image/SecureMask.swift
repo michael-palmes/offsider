@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// Withheld rather than guessed: a secure field Offsider cannot place must not reach an image.
+/// Withheld rather than guessed: an element Offsider was asked to mask but cannot place must not reach an image.
 public struct MaskUnproven: LocalizedError, CustomStringConvertible, Equatable, Sendable {
     public let detail: String
 
@@ -11,21 +11,22 @@ public struct MaskUnproven: LocalizedError, CustomStringConvertible, Equatable, 
 
     public var errorDescription: String? { description }
     public var description: String {
-        "\(detail), so it cannot be masked; the screenshot was withheld and no file was written. Retry when the screen is still, or capture without --mask-secure."
+        "\(detail), so it cannot be masked; the screenshot was withheld and no file was written. Retry when the screen is still, or capture without that mask."
     }
 }
 
-/// Secure field frames in points to whole-pixel rectangles to paint over.
+/// Frames in points to whole-pixel rectangles to paint over.
 public enum SecureMask {
     /// Rounded outward (floor the origin, ceil the far edge) and clamped to the image; zero-area frames are skipped.
-    public static func pixelRects(secureFrames: [UIFrame?], pixelsPerPoint: Double?, imageWidth: Int, imageHeight: Int) throws -> [CGRect] {
-        guard !secureFrames.isEmpty else { return [] }
+    /// `subject` names what a frame belongs to, such as "A secure field", for the error when one cannot be placed.
+    public static func pixelRects(frames: [UIFrame?], subject: String = "A secure field", pixelsPerPoint: Double?, imageWidth: Int, imageHeight: Int) throws -> [CGRect] {
+        guard !frames.isEmpty else { return [] }
         guard let pixelsPerPoint, pixelsPerPoint > 0 else {
-            throw MaskUnproven(detail: "A secure field is on screen but the capture could not be mapped to points")
+            throw MaskUnproven(detail: "\(subject) is on screen but the capture could not be mapped to points")
         }
-        return try secureFrames.compactMap { frame -> CGRect? in
+        return try frames.compactMap { frame -> CGRect? in
             guard let frame else {
-                throw MaskUnproven(detail: "A secure field on screen has no frame")
+                throw MaskUnproven(detail: "\(subject) on screen has no frame")
             }
             guard frame.width > 0, frame.height > 0 else { return nil }
             let left = max(0, Int((frame.x * pixelsPerPoint).rounded(.down)))

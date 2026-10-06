@@ -127,6 +127,17 @@ public enum HelperProbeFact: Equatable, Sendable {
     case forcedOff
 }
 
+/// Whether a lock screen code is saved for the device, read from the Keychain's attributes only.
+public struct UnlockCodeFact: Equatable, Sendable {
+    public var saved: Bool
+    public var lastAttemptFailed: Bool
+
+    public init(saved: Bool, lastAttemptFailed: Bool) {
+        self.saved = saved
+        self.lastAttemptFailed = lastAttemptFailed
+    }
+}
+
 public struct AndroidDeviceFacts: Equatable, Sendable {
     public var id: String
     public var serial: String?
@@ -149,6 +160,13 @@ public struct AndroidDeviceFacts: Equatable, Sendable {
     public var adbAuthorisationTimeout: String?
     /// `ota_disable_automatic_update` as read, where `1` turns automatic system updates off; phones only.
     public var automaticUpdatesDisabled: String?
+    /// Filled by the executable, which owns the Keychain, only when the device has a credential.
+    public var unlockCode: UnlockCodeFact?
+
+    /// What `doctor --json` reports as `device.lock`.
+    public var lockReport: LockReport {
+        LockReport(awake, savedCode: unlockCode?.saved ?? false, lastAttemptFailed: unlockCode?.lastAttemptFailed ?? false)
+    }
 
     public init(id: String, serial: String? = nil, avdName: String? = nil, state: AndroidDeviceStateFact) {
         self.id = id

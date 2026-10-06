@@ -22,6 +22,8 @@ final class HelperSession {
     private(set) var launchMilliseconds: Int
     private(set) var pushed: Bool
     private(set) var helloMilliseconds: Int
+    /// The ops the running helper listed in `hello`.
+    private(set) var ops: [String]
 
     private let launcher: HelperLauncher
     private let log: AndroidLog
@@ -36,6 +38,7 @@ final class HelperSession {
         launchMilliseconds = connection.launchMilliseconds
         pushed = connection.pushed
         helloMilliseconds = connection.helloMilliseconds
+        ops = connection.ops
         self.launcher = launcher
         self.connection = connection
         self.nextID = nextID
@@ -146,6 +149,12 @@ final class HelperSession {
         try await request(.setText(text), as: HelperTextResult.self, timeout: Self.requestTimeout)
     }
 
+    /// Selects the focused field's text and pastes the clipboard over it; nil when this helper has no `paste` op.
+    func paste() async throws -> HelperTextResult? {
+        guard ops.contains("paste") else { return nil }
+        return try await request(.paste, as: HelperTextResult.self, timeout: Self.requestTimeout)
+    }
+
     /// Injects the steps; `extraWait` covers their pauses and swipes. Leaves the event cursor alone, so a verifier still wakes on the input's events.
     func inject(_ steps: [HelperValue], sync: Bool = true, extraWait: Duration) async throws -> HelperInjectReply {
         try await launcher.timing.measure(.helperInject) {
@@ -245,6 +254,7 @@ final class HelperSession {
             launchMilliseconds = fresh.launchMilliseconds
             pushed = fresh.pushed
             helloMilliseconds = fresh.helloMilliseconds
+            ops = fresh.ops
         } catch HelperStartFailure.unavailable(let reason) {
             throw AndroidError.helperCrashed(serial, detail: "it could not start again: \(reason)")
         }
@@ -323,6 +333,7 @@ final class HelperConnection {
     var launchMilliseconds = 0
     var pushed = false
     var helloMilliseconds = 0
+    var ops: [String] = []
     private let socket: any AdbByteStream
     private var unread: Data
     private var decoder = HelperWire.FrameDecoder()
@@ -353,6 +364,7 @@ final class HelperConnection {
                     "the helper on the device speaks protocol \(hello.protocol), Offsider speaks \(HelperDex.protocolVersion)"
                 ))
             }
+            ops = hello.ops ?? []
             return
         case .replyWithPayload: detail = "it answered hello with a frame it never announced"
         case .bye(let reason, _): detail = "it ended with \(reason) before answering hello"

@@ -89,6 +89,23 @@ struct CommandEffectTests {
         }
     }
 
+    @Test("nested commands are named by their full path from the root")
+    func nestedPaths() throws {
+        #expect(CommandPath.of(try RNPrepare.parse(["--device", "U", "--bundle-id", "com.example"])) == "rn prepare")
+        #expect(CommandPath.of(RunnerStatus.self) == "runner status")
+        #expect(CommandPath.of(RunnerStop.self) == "runner stop")
+        #expect(CommandPath.of(try Tap.parse(["--device", "U", "-x", "1", "-y", "2"])) == "tap")
+    }
+
+    @Test("every registered command's path has a cache effect")
+    func everyPathClassified() {
+        let paths = CommandPath.all()
+        #expect(paths.count == Self.paths(OffsiderCommand.configuration.subcommands).count)
+        for path in paths {
+            #expect(CommandEffect.table[path] != nil, "unclassified: \(path)")
+        }
+    }
+
     @Test("every subcommand and batch step kind is classified as input, read or neither")
     func everyCommandClassified() {
         let commands = Self.paths(OffsiderCommand.configuration.subcommands)

@@ -82,9 +82,10 @@ struct ListDevicesTests {
     
     @Test("Every row names its platform")
     func listDevicesRowsNamePlatform() async throws {
-        let result = try await TestHelpers.runOffsiderCommand("list-devices --platform ios")
+        // Hints about paired phones go to stderr, so only stdout holds rows.
+        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform ios")
 
-        let rows = result.output.components(separatedBy: .newlines).dropFirst().filter { !$0.isEmpty }
+        let rows = result.stdout.components(separatedBy: .newlines).dropFirst().filter { !$0.isEmpty }
         #expect(!rows.isEmpty)
         #expect(rows.allSatisfy { $0.hasPrefix("ios ") })
     }
@@ -100,7 +101,7 @@ struct ListDevicesTests {
         let device = try #require(devices.first { $0["id"] as? String == udid })
 
         #expect(object["version"] as? Int == 1)
-        #expect(Set(device.keys) == ["id", "platform", "state", "name", "osVersion", "deviceType", "kind", "connection"])
+        #expect(Set(device.keys) == ["id", "platform", "state", "name", "osVersion", "deviceType", "kind", "connection", "avd", "bootedBy", "heldBy", "lease"])
         #expect(device["platform"] as? String == "ios")
         #expect(device["state"] as? String == "Booted")
         #expect((device["osVersion"] as? String)?.hasPrefix("iOS ") == true)

@@ -71,6 +71,7 @@ export function StackTestScreen() {
               ]}
             >
               <HeaderMarker id="stack-test-page-title" title={`Page ${page}`} style={styles.pageTitle} />
+              <Readout id={`stack-test-page-${page}`} label={`On Page ${page}`} />
               <Target id="stack-test-next" label="Next Page" onPress={next} />
               <Target id="stack-test-mark" label="Mark Page" onPress={() => mark(page)} />
               <Target id="stack-test-back" label="Previous Page" onPress={back} />

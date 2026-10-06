@@ -2,6 +2,9 @@
 # Compares a base build with the branch on one Offsider device in paired, seeded runs.
 set -euo pipefail
 
+# Benchmark captures never land in an evidence run.
+export OFFSIDER_RUN=off
+
 DEVICE=""
 SCENARIOS=""
 BASE_REF=""
