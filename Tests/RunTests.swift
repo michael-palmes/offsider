@@ -197,6 +197,16 @@ struct RunTests {
         #expect(open.writableByOthers)
     }
 
+    @Test("with OFFSIDER_RUN=<dir> naming an active run, starting it again changes nothing")
+    func startTwiceWithOverride() throws {
+        let fixture = try RunFixture()
+        let variables = ["OFFSIDER_RUN": fixture.folder()]
+        #expect(!(try fixture.start(variables: variables).unchanged))
+        let again = try fixture.start(variables: variables)
+        #expect(again.unchanged)
+        #expect(!again.continued)
+    }
+
     @Test("stopping with no run active says so")
     func stopWithNone() throws {
         let fixture = try RunFixture()

@@ -139,27 +139,27 @@ enum RunRegistry {
         }
         let folder = prepared.folder
         let now = environment.now()
-        let (state, continued) = try folder.locked { () throws -> (RunState, Bool) in
+        let (state, continued, unchanged) = try folder.locked { () throws -> (RunState, Bool, Bool) in
             if var state = try folder.readState() {
                 if state.stoppedAt == nil, owner == nil {
-                    return (state, false)
+                    return (state, false, true)
                 }
                 state.stoppedAt = nil
                 state.endedBy = nil
                 state.label = label ?? state.label
                 state.masks = masks
                 try folder.writeState(state)
-                return (state, true)
+                return (state, true, false)
             }
             let state = RunState(label: label, startedAt: now, masks: masks)
             try folder.writeState(state)
-            return (state, false)
+            return (state, false, false)
         }
         if let owner {
             let record = RunRecord(dir: dir, label: state.label, startedAt: now, masks: masks, owner: owner)
             try OffsiderPrivateDirectory.writeAtomically(try record.encoded(), named: RunRecord.fileName(for: owner), in: try environment.runsDirectory())
         }
-        return Started(folder: folder, state: state, continued: continued, unchanged: false, writableByOthers: prepared.writableByOthers)
+        return Started(folder: folder, state: state, continued: continued, unchanged: unchanged, writableByOthers: prepared.writableByOthers)
     }
 
     /// Ends the caller's run and returns its timeline; nil when none is active.
