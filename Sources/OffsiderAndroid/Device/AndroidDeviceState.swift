@@ -47,12 +47,12 @@ enum AndroidDeviceState {
         return committed.map { Reading(committed: $0, base: base, override: override) }
     }
 
-    /// Rear display, concurrent and other vendor states are a posture Offsider cannot name.
+    /// AOSP's names and One UI's (`CLOSE`, `HALF_FOLDED`, `OPEN`); tent, rear display and concurrent states have no posture name.
     static func posture(named name: String) -> Posture {
         switch name.uppercased() {
-        case "CLOSED": return .closed
-        case "HALF_OPENED": return .halfOpened
-        case "OPENED": return .open
+        case "CLOSED", "CLOSE": return .closed
+        case "HALF_OPENED", "HALF_FOLDED": return .halfOpened
+        case "OPENED", "OPEN": return .open
         default: return .unknown
         }
     }
