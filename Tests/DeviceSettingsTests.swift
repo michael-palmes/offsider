@@ -294,45 +294,60 @@ struct RotationPlanTests {
 
     @Test("the first turn away from portrait records auto-rotate and user_rotation for this boot")
     func recordsFirstTurn() {
-        let plan = RotationPlan.make(before: Self.autoOn, target: .landscapeLeft, record: nil, bootMarker: Self.boot)
+        let plan = RotationPlan.make(before: Self.autoOn, target: .landscapeLeft, record: nil, bootMarker: Self.boot, turning: true)
         #expect(plan == RotationPlan(recordToWrite: RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot), deleteRecord: false, restoreAccelerometer: nil))
     }
 
     @Test("a later turn keeps the first record, since auto-rotate is already off by then")
     func keepsFirstRecord() {
         let record = RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot)
-        let plan = RotationPlan.make(before: AutoRotateState(accelerometerRotation: 0, userRotation: 1), target: .landscapeRight, record: record, bootMarker: Self.boot)
-        #expect(plan.recordToWrite == nil)
-        #expect(!plan.deleteRecord)
+        let plan = RotationPlan.make(before: AutoRotateState(accelerometerRotation: 0, userRotation: 1), target: .landscapeRight, record: record, bootMarker: Self.boot, turning: true)
+        #expect(plan?.recordToWrite == nil)
+        #expect(plan?.deleteRecord == false)
     }
 
-    @Test("portrait restores auto-rotate from this boot's record and forgets it")
-    func portraitRestores() {
+    @Test("portrait restores auto-rotate from this boot's record and forgets it, even when auto-rotate is unreadable", arguments: [true, false])
+    func portraitRestores(turning: Bool) {
         let record = RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot)
-        #expect(RotationPlan.make(before: nil, target: .portrait, record: record, bootMarker: Self.boot)
+        #expect(RotationPlan.make(before: nil, target: .portrait, record: record, bootMarker: Self.boot, turning: turning)
             == RotationPlan(recordToWrite: nil, deleteRecord: true, restoreAccelerometer: 1))
     }
 
-    @Test("portrait without a record leaves auto-rotate off")
-    func portraitWithoutRecord() {
-        #expect(RotationPlan.make(before: Self.autoOn, target: .portrait, record: nil, bootMarker: Self.boot)
+    @Test("a turn to portrait with no record first records auto-rotate, then writes it back")
+    func portraitTurnWithoutRecord() {
+        #expect(RotationPlan.make(before: Self.autoOn, target: .portrait, record: nil, bootMarker: Self.boot, turning: true)
+            == RotationPlan(recordToWrite: RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot), deleteRecord: true, restoreAccelerometer: 1))
+    }
+
+    @Test("with no turn and no record, nothing is recorded or written", arguments: [DeviceOrientation.portrait, .landscapeLeft])
+    func noTurnNoRecord(target: DeviceOrientation) {
+        #expect(RotationPlan.make(before: Self.autoOn, target: target, record: nil, bootMarker: Self.boot, turning: false)
             == RotationPlan(recordToWrite: nil, deleteRecord: false, restoreAccelerometer: nil))
     }
 
-    @Test("a record from an earlier boot is never restored: portrait drops it, a turn replaces it")
-    func staleBootMarker() {
+    @Test("a turn with no record for this boot and unreadable auto-rotate has no plan", arguments: [DeviceOrientation.portrait, .landscapeLeft])
+    func unreadableRefused(target: DeviceOrientation) {
         let stale = RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: "emulator 1.000000")
-        #expect(RotationPlan.make(before: Self.autoOn, target: .portrait, record: stale, bootMarker: Self.boot)
-            == RotationPlan(recordToWrite: nil, deleteRecord: true, restoreAccelerometer: nil))
-        let turn = RotationPlan.make(before: AutoRotateState(accelerometerRotation: 0, userRotation: 0), target: .landscapeLeft, record: stale, bootMarker: Self.boot)
-        #expect(turn.recordToWrite == RotationRecord(accelerometerRotation: 0, userRotation: 0, bootMarker: Self.boot))
+        #expect(RotationPlan.make(before: nil, target: target, record: stale, bootMarker: Self.boot, turning: true) == nil)
+        #expect(RotationPlan.make(before: AutoRotateState(accelerometerRotation: 1, userRotation: nil), target: target, record: nil, bootMarker: Self.boot, turning: true) == nil)
     }
 
-    @Test("the read script's two lines parse, with null as 0; the record round-trips")
+    @Test("a record from an earlier boot is never restored: a turn replaces it with the current settings")
+    func staleBootMarker() {
+        let stale = RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: "emulator 1.000000")
+        let off = AutoRotateState(accelerometerRotation: 0, userRotation: 0)
+        #expect(RotationPlan.make(before: off, target: .portrait, record: stale, bootMarker: Self.boot, turning: true)?.restoreAccelerometer == 0)
+        let turn = RotationPlan.make(before: off, target: .landscapeLeft, record: stale, bootMarker: Self.boot, turning: true)
+        #expect(turn?.recordToWrite == RotationRecord(accelerometerRotation: 0, userRotation: 0, bootMarker: Self.boot))
+    }
+
+    @Test("the read script's two lines parse, with null as 0, then the boot id when readable; the record round-trips")
     func parsing() {
         #expect(AutoRotateState.parse("1\n0\n") == AutoRotateState(accelerometerRotation: 1, userRotation: 0))
         #expect(AutoRotateState.parse("null\n3\n") == AutoRotateState(accelerometerRotation: 0, userRotation: 3))
         #expect(AutoRotateState.parse("1\n") == nil)
+        #expect(AutoRotateState.parse("1\n0\n4C2B6F1E-9D3A-4F0B-8E2D-1A2B3C4D5E6F\n")?.bootID == "4c2b6f1e-9d3a-4f0b-8e2d-1a2b3c4d5e6f")
+        #expect(AutoRotateState.parse("1\n0\ncat: boot_id: Permission denied\n")?.bootID == nil)
         let record = RotationRecord(accelerometerRotation: 1, userRotation: 2, bootMarker: nil)
         #expect(RotationRecord.parse(record.fileContents) == record)
     }
