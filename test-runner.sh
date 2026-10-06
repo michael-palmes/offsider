@@ -1013,6 +1013,7 @@ run_tests() {
             "ParkedSheetTests"
             "PresentationFixtureTests"
             "RecordVideoTests"
+            "RunE2ETests"
             "StreamVideoDebugTests"
             "StreamVideoTests"
             "SwipeTests"
