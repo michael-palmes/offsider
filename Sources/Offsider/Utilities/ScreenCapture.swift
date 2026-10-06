@@ -58,7 +58,7 @@ struct RenderedScreenshot {
         return try ScreenImage.encode(image, as: format)
     }
 
-    func report(path: String?, format: ImageFormat?, capture: CapturedScreen, comparison: ScreenCompare.Result? = nil, masked: Int? = nil) -> ScreenshotReport {
+    func report(path: String?, format: ImageFormat?, capture: CapturedScreen, comparison: ScreenCompare.Result? = nil, masks: ScreenCapture.MaskResult? = nil) -> ScreenshotReport {
         ScreenshotReport(
             path: path,
             width: image.width,
@@ -72,7 +72,8 @@ struct RenderedScreenshot {
             upright: capture.upright,
             format: format,
             comparison: comparison,
-            masked: masked
+            maskedBy: masks?.painted,
+            maskUnmatched: masks?.unmatched ?? []
         )
     }
 }
@@ -117,21 +118,66 @@ enum ScreenCapture {
         )
     }
 
-    /// Paints the tree's secure fields black; a capture that is not upright cannot be mapped, so it is withheld.
-    nonisolated static func maskingSecureFields(_ capture: CapturedScreen, tree: UITree) throws -> (capture: CapturedScreen, painted: Int) {
-        let rects = try SecureMask.pixelRects(
-            secureFrames: tree.secureFrames,
-            pixelsPerPoint: capture.upright ? capture.pixelsPerPoint : nil,
-            imageWidth: capture.image.width,
-            imageHeight: capture.image.height
-        )
-        guard !rects.isEmpty else { return (capture, 0) }
-        let image = try ScreenImage.masked(capture.image, pixelRects: rects)
+    /// What masking painted: rectangles per kind asked for, and the selectors that matched nothing.
+    struct MaskResult {
+        let capture: CapturedScreen
+        let painted: [MaskKind: Int]
+        let unmatched: [String]
+    }
+
+    /// Paints every mask in `plan` black; a capture that is not upright cannot be mapped, so it is withheld.
+    nonisolated static func masking(_ capture: CapturedScreen, plan: MaskPlan, tree: UITree?) throws -> MaskResult {
+        var targets = MaskTargets()
+        if let tree {
+            targets = try plan.textTargets(in: tree)
+            if plan.secure {
+                targets.frames[.secure] = tree.secureFrames
+            }
+            for (kind, values) in [(MaskKind.id, plan.ids), (.label, plan.labels)] {
+                for value in values {
+                    let query: AccessibilityQuery = kind == .id ? .id(value) : .label(value)
+                    let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches
+                    targets.frames[kind, default: []] += matches.map(\.frame)
+                    if matches.isEmpty {
+                        targets.unmatched.append("--mask-\(kind.rawValue) \(value)")
+                    }
+                }
+            }
+        }
+        targets.frames[.region] = plan.regions.map { UIFrame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
+
+        var image = capture.image
+        var painted: [MaskKind: Int] = [:]
+        for kind in plan.kinds {
+            let rects = try SecureMask.pixelRects(
+                frames: targets.frames[kind] ?? [],
+                subject: subject(of: kind),
+                pixelsPerPoint: capture.upright ? capture.pixelsPerPoint : nil,
+                imageWidth: capture.image.width,
+                imageHeight: capture.image.height
+            )
+            painted[kind] = rects.count
+            if !rects.isEmpty {
+                image = try ScreenImage.masked(image, pixelRects: rects)
+            }
+        }
+        guard image !== capture.image else { return MaskResult(capture: capture, painted: painted, unmatched: targets.unmatched) }
         let masked = CapturedScreen(
             image: image, platform: capture.platform, screen: capture.screen, pixelsPerPoint: capture.pixelsPerPoint,
             upright: capture.upright, untouchedPNG: nil
         )
-        return (masked, rects.count)
+        return MaskResult(capture: masked, painted: painted, unmatched: targets.unmatched)
+    }
+
+    nonisolated private static func subject(of kind: MaskKind) -> String {
+        switch kind {
+        case .secure: "A secure field"
+        case .id: "An element --mask-id matched"
+        case .label: "An element --mask-label matched"
+        case .text: "An element --mask-text matched"
+        case .emails: "An email address"
+        case .region: "A --mask-region"
+        }
     }
 
     /// Crops to the region first, then scales.
@@ -177,7 +223,7 @@ enum ScreenCapture {
         return (Int((bands.top * pixelsPerPoint).rounded()), Int((bands.bottom * pixelsPerPoint).rounded()))
     }
 
-    /// Fingerprints the rendered capture against a baseline image file with the same crop and scale.
+    /// Fingerprints the rendered capture against a baseline image file with the same crop and scale, and counts its changed pixels.
     nonisolated static func compare(
         _ rendered: RenderedScreenshot,
         capture: CapturedScreen,
@@ -186,6 +232,18 @@ enum ScreenCapture {
         bands: ScreenBands,
         threshold: Double
     ) throws -> ScreenCompare.Result {
+        try comparison(rendered, capture: capture, baseline: baseline, baselinePath: baselinePath, bands: bands, threshold: threshold).result
+    }
+
+    /// The tile verdict with pixel counts, and the diff image `--diff-output` writes.
+    nonisolated static func comparison(
+        _ rendered: RenderedScreenshot,
+        capture: CapturedScreen,
+        baseline: Data,
+        baselinePath: String,
+        bands: ScreenBands,
+        threshold: Double
+    ) throws -> (result: ScreenCompare.Result, diffImage: CGImage) {
         let baselineImage: CGImage
         do {
             baselineImage = try ScreenImage.decode(baseline)
@@ -199,10 +257,12 @@ enum ScreenCapture {
         let tolerance = bands.noiseTolerance
         guard let current = ImageFingerprint(image: rendered.image, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom, tolerance: tolerance),
               let before = ImageFingerprint(image: baselineImage, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom, tolerance: tolerance),
-              let result = ScreenCompare.compare(before, current, threshold: threshold) else {
+              var result = ScreenCompare.compare(before, current, threshold: threshold) else {
             throw ImageFailure(detail: "could not compare the capture with \(baselinePath)")
         }
-        return result
+        let diff = try ScreenDiff.compare(baseline: baselineImage, current: rendered.image, excludingTop: exclusion.top, excludingBottom: exclusion.bottom)
+        result.pixels = ScreenCompare.PixelCounts(changedPixels: diff.changedPixels, comparedPixels: diff.comparedPixels, bounds: diff.bounds)
+        return (result, diff.image)
     }
 
     /// Reads a baseline image, naming the path when it cannot.

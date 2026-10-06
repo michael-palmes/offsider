@@ -29,6 +29,7 @@ struct BatchTests {
         let batch = Process()
         batch.executableURL = URL(fileURLWithPath: try TestHelpers.getOffsiderPath())
         batch.arguments = ["batch", "--device", udid, "--step", "sleep 4"]
+        batch.environment = TestHelpers.childEnvironment()
         batch.standardOutput = FileHandle.nullDevice
         batch.standardError = FileHandle.nullDevice
         try batch.run()

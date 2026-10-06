@@ -48,6 +48,42 @@ struct DeviceLockTests {
         #expect(error?.failureMessage.contains("--wait-lock <seconds>") == true)
     }
 
+    @Test("a reader sees the live holder without taking the lock, and nothing once it is released")
+    func currentHolder() async throws {
+        let root = try makePrivateLockRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        #expect(DeviceLock.currentHolder(key, root: root, isOffsider: { _ in true }) == nil)
+        let held = try await DeviceLock.acquire(key, command: "wait", wait: nil, root: root)
+
+        let holder = DeviceLock.currentHolder(key, root: root, isOffsider: { _ in true })
+        #expect(holder?.pid == getpid())
+        #expect(holder?.command == "wait")
+        #expect(DeviceLock.currentHolder(key, root: root, isOffsider: { _ in false }) == nil)
+        let second = try await DeviceLock.acquire(DeviceLockKey(platform: .android, id: "emulator-5554"), command: "tap", wait: nil, root: root)
+        second.release()
+        let busy = await #expect(throws: DeviceBusy.self) { _ = try await DeviceLock.acquire(key, command: "tap", wait: nil, root: root) }
+        #expect(busy?.holder?.command == "wait")
+
+        held.release()
+        #expect(DeviceLock.currentHolder(key, root: root, isOffsider: { _ in true }) == nil)
+        let next = try await DeviceLock.acquire(key, command: "tap", wait: nil, root: root)
+        next.release()
+    }
+
+    @Test("a holder record whose pid has gone, or whose pid started after the lock was taken, is no holder")
+    func staleHolder() throws {
+        let root = try makePrivateLockRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let directory = try OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.locksDirectoryName, root: root)
+        let path = (directory as NSString).appendingPathComponent(key.fileName)
+        try "pid=999999\ncommand=tap\nstarted=\(Int(Date().timeIntervalSince1970))\n".write(toFile: path, atomically: true, encoding: .utf8)
+        #expect(DeviceLock.currentHolder(key, root: root, isOffsider: { _ in true }) == nil)
+
+        try "pid=\(getpid())\ncommand=tap\nstarted=1000\n".write(toFile: path, atomically: true, encoding: .utf8)
+        #expect(DeviceLock.currentHolder(key, root: root, isOffsider: { _ in true }) == nil)
+        #expect(DeviceLock.currentHolder(key, root: root, isOffsider: { _ in true }, startTime: { _ in Date(timeIntervalSince1970: 999) })?.command == "tap")
+    }
+
     @Test("a claim on another device succeeds while one is held")
     func otherDeviceIsFree() async throws {
         let root = try makePrivateLockRoot()

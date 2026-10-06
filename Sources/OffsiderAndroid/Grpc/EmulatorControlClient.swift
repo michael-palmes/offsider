@@ -52,7 +52,11 @@ actor EmulatorControlClient: EmulatorControlling {
     }
 
     func sendTouch(_ touch: PanelTouch) async throws {
-        let event = Self.touchEvent(touch)
+        try await sendTouches([touch])
+    }
+
+    func sendTouches(_ touches: [PanelTouch]) async throws {
+        let event = Self.touchEvent(touches)
         _ = try await call(.sendTouch, timeout: .seconds(2)) { stub, metadata, options in
             try await stub.sendTouch(event, metadata: metadata, options: options)
         }

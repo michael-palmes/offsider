@@ -115,20 +115,92 @@ struct LogsCommandTests {
     @Test("the JSON report has version, platform, device, entries with null for missing fields, and truncated")
     func reportShape() throws {
         let entries = [
-            LogEntry(timestamp: Date(timeIntervalSince1970: 1_790_945_238.25), level: "Info", process: "Playground", pid: 4100, tag: "javascript", message: "saved \"draft\""),
+            LogEntry(timestamp: Date(timeIntervalSince1970: 1_790_945_238.25), level: "Info", process: "Playground", pid: 4100, tag: "javascript", message: "saved \"draft\"", raw: "\u{1B}[32msaved\u{1B}[39m \"draft\""),
             LogEntry(message: "bare"),
         ]
         let line = LogReport(platform: .ios, device: "UDID", entries: entries, truncated: 2).jsonLine()
 
-        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\""},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare"}],"truncated":2}"#)
+        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\""},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null}],"truncated":2,"redacted":0}"#)
         let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         #expect((object["entries"] as? [Any])?.count == 2)
+    }
+
+    @Test("--raw off strips colour codes from the message but keeps them in raw")
+    func rawKeepsCodesUnderStripping() throws {
+        let collector = try LogCollector(maxLines: 10, grep: nil, keepsANSI: false)
+        let shown = collector.filter(LogEntry(message: "\u{1B}[32mLOG\u{1B}[39m saved", raw: "\u{1B}[32mLOG\u{1B}[39m saved"))
+        #expect(shown?.message == "LOG saved")
+        #expect(shown?.raw == "\u{1B}[32mLOG\u{1B}[39m saved")
+    }
+
+    @Test("--follow --json prints one entry object per line, each with raw")
+    @MainActor
+    func followJSONLines() async throws {
+        let backend = FakeLogBackend(entries: [
+            LogEntry(level: "Info", tag: "ReactNativeJS", message: "one", raw: "1790945238.399  4100  4120 I ReactNativeJS: one"),
+            LogEntry(message: "two"),
+        ])
+        var lines: [String] = []
+        try await Self.command(["--follow", "--json"])
+            .read(from: DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))) { lines.append($0) }
+
+        #expect(lines.count == 2)
+        for line in lines {
+            #expect(!line.contains("\n"))
+            let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+            #expect(object.keys.contains("raw"))
+        }
+        #expect(lines[0].hasSuffix(#""message":"one","raw":"1790945238.399  4100  4120 I ReactNativeJS: one"}"#))
+        #expect(lines[1].hasSuffix(#""raw":null}"#))
+    }
+
+    // MARK: Redaction
+
+    private static let secretLine = #"batch-login {"email":"e2e@example.com","password":"hunter22"}"#
+
+    @Test("redaction is on by default, off with --no-redact or --raw alone, and on with --raw --redact", arguments: [
+        ([String](), true), (["--no-redact"], false), (["--raw"], false), (["--raw", "--redact"], true), (["--redact"], true),
+    ])
+    func redactionFlags(arguments: [String], redacts: Bool) throws {
+        #expect(try Self.command(arguments).collector().redacts == redacts)
+    }
+
+    @Test("--grep matches the unredacted text, then the message and raw line are redacted and counted")
+    func grepBeforeRedaction() throws {
+        var collector = try LogCollector(maxLines: 10, grep: "hunter22", keepsANSI: false, redacts: true)
+        collector.add(LogEntry(message: Self.secretLine, raw: "1790945238.399  4100  4120 I ReactNativeJS: " + Self.secretLine))
+
+        let entry = try #require(collector.entries.first)
+        #expect(entry.message == #"batch-login {"email":"[redacted]","password":"[redacted]"}"#)
+        #expect(entry.raw?.hasSuffix(#"{"email":"[redacted]","password":"[redacted]"}"#) == true)
+        #expect(collector.redacted == 2)
+    }
+
+    @Test("the report counts redacted values, and the stderr footer names --no-redact")
+    @MainActor
+    func reportCountsRedactions() async throws {
+        let backend = FakeLogBackend(entries: [LogEntry(message: Self.secretLine), LogEntry(message: "plain")])
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        var lines: [String] = []
+        try await Self.command(["--json"]).read(from: DeviceRouter.Route(backend: backend, device: device)) { lines.append($0) }
+        let first = try #require(lines.first)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(first.utf8)) as? [String: Any])
+        #expect(object["redacted"] as? Int == 2)
+        #expect(!lines[0].contains("hunter22"))
+
+        lines = []
+        try await Self.command(["--json", "--no-redact"]).read(from: DeviceRouter.Route(backend: backend, device: device)) { lines.append($0) }
+        #expect(lines[0].contains("hunter22"))
+        #expect(lines[0].hasSuffix(#""redacted":0}"#))
+
+        #expect(Logs.redactionFooter(3) == "Redacted 3 values (passwords, tokens, emails); --no-redact shows them.")
+        #expect(Logs.redactionFooter(0) == nil)
     }
 
     @Test("an empty result is an empty entries array")
     func emptyReport() {
         #expect(LogReport(platform: .android, device: "emulator-5554", entries: [], truncated: 0).jsonLine()
-            == #"{"version":1,"platform":"android","device":"emulator-5554","entries":[],"truncated":0}"#)
+            == #"{"version":1,"platform":"android","device":"emulator-5554","entries":[],"truncated":0,"redacted":0}"#)
     }
 
     // MARK: Flags

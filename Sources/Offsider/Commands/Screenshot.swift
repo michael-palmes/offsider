@@ -10,12 +10,17 @@ struct Screenshot: AsyncParsableCommand {
         --scale points makes one image pixel one point, so image coordinates are tap coordinates. \
         --region takes points as describe-ui prints them; the crop happens before scaling. \
         --compare captures, applies the same --region and --scale, and exits 0 when more than \
-        --threshold of the screen's tiles changed, or 5 when not. \
+        --threshold of the screen's tiles changed, or 5 when not; it also counts the changed pixels, and \
+        --diff-output writes an image of where they are. \
         --display captures one display of a foldable (see `offsider displays`); a display that is not active \
         is captured as it is, often dark. \
         --mask-secure (or OFFSIDER_MASK_SECURE=1) reads the accessibility tree first and paints every password field \
         opaque black before the image is written or compared; when a password field cannot be located, the image is \
-        withheld and no file is written. Masking follows the platform's secure flag only, and video is never masked.
+        withheld and no file is written. --mask-id, --mask-label, --mask-text and --mask-emails paint the elements \
+        they match the same way; --mask-region paints a rectangle in points before any --region crop and reads no \
+        tree. A selector that matches nothing is named in maskUnmatched and on stderr, and the image is still written. \
+        Masks cover what the tree describes: web views, canvases, images and text drawn after the tree read can \
+        still show. Video is never masked.
         """
     )
 
@@ -43,11 +48,29 @@ struct Screenshot: AsyncParsableCommand {
     @Option(help: ArgumentHelp("Compare the capture with this baseline image, captured with the same --scale and --region.", valueName: "baseline"))
     var compare: String?
 
+    @Option(name: .customLong("diff-output"), help: ArgumentHelp("With --compare, write a PNG of the capture faded to white with changed pixels in magenta to this file, or a directory for a generated name.", valueName: "png"))
+    var diffOutput: String?
+
     @Option(help: ArgumentHelp("With --compare, the fraction of tiles that may change and still count as unchanged (0 to 1, default 0).", valueName: "0-1"))
     var threshold: Double?
 
     @Flag(name: .customLong("mask-secure"), help: "Paint password fields black before writing the image; withhold it when one cannot be located. OFFSIDER_MASK_SECURE=1 turns this on by default.")
     var maskSecure = false
+
+    @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this id black. Repeatable.", valueName: "id"))
+    var maskIDs: [String] = []
+
+    @Option(name: .customLong("mask-label"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this label black, matched as --label matches. Repeatable.", valueName: "text"))
+    var maskLabels: [String] = []
+
+    @Option(name: .customLong("mask-text"), parsing: .upToNextOption, help: ArgumentHelp("Paint the innermost elements whose label, value, title, text, content description or hint matches this case-insensitive regular expression black. Repeatable.", valueName: "regex"))
+    var maskTexts: [String] = []
+
+    @Flag(name: .customLong("mask-emails"), help: "Paint the innermost elements showing an email address black.")
+    var maskEmails = false
+
+    @Option(name: .customLong("mask-region"), parsing: .upToNextOption, help: ArgumentHelp("Paint this rectangle, in points, black before any --region crop; reads no tree. Repeatable.", valueName: "x,y,w,h"))
+    var maskRegions: [String] = []
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
@@ -63,6 +86,20 @@ struct Screenshot: AsyncParsableCommand {
         } catch let error as UserFacingError {
             throw ValidationError(error.userFacingDescription)
         }
+        do {
+            _ = try maskPlan()
+        } catch let error as MaskPatternError {
+            throw ValidationError(error.description)
+        } catch let error as ScreenRegionError {
+            throw ValidationError(error.message)
+        }
+        if let diffOutput {
+            guard compare != nil else { throw ValidationError("--diff-output applies to --compare only.") }
+            let pathExtension = (diffOutput as NSString).pathExtension.lowercased()
+            guard pathExtension != "jpg", pathExtension != "jpeg" else {
+                throw ValidationError("--diff-output writes a PNG; use a .png path or a directory.")
+            }
+        }
         if let threshold {
             guard compare != nil else { throw ValidationError("--threshold applies to --compare only.") }
             guard (0...1).contains(threshold) else { throw ValidationError("--threshold must be from 0 to 1; got \(threshold).") }
@@ -72,8 +109,23 @@ struct Screenshot: AsyncParsableCommand {
     func request() throws -> ScreenshotRequest {
         ScreenshotRequest(
             scale: try scale.map(ScreenshotScale.parse) ?? .native,
-            region: try region.map(PointRegion.parse),
+            region: try region.map { try PointRegion.parse($0) },
             format: try ScreenCapture.resolveFormat(named: format, quality: quality, outputPath: output)
+        )
+    }
+
+    /// The masks the flags ask for; `secureByDefault` adds `--mask-secure`, as `batch --mask-secure` does.
+    func maskPlan(secureByDefault: Bool = false, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> MaskPlan {
+        for pattern in maskTexts {
+            _ = try MaskPlan.compile(pattern)
+        }
+        return MaskPlan(
+            secure: Self.masksSecure(flag: maskSecure || secureByDefault, environment: environment),
+            ids: maskIDs,
+            labels: maskLabels,
+            texts: maskTexts,
+            emails: maskEmails,
+            regions: try maskRegions.map { try PointRegion.parse($0, option: "--mask-region") }
         )
     }
 
@@ -81,7 +133,7 @@ struct Screenshot: AsyncParsableCommand {
         let request = try request()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        let report = try await take(request, on: route, masking: Self.masksSecure(flag: maskSecure))
+        let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan(), ownFlags: hasMaskFlags))
 
         guard let comparison = report.comparison else {
             if json {
@@ -102,33 +154,35 @@ struct Screenshot: AsyncParsableCommand {
         }
     }
 
-    /// Standalone: masking reads one fresh tree; without it, no tree is read.
+    /// Standalone: a tree mask reads one fresh tree; without one, no tree is read.
     @MainActor
-    func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masking: Bool) async throws -> ScreenshotReport {
-        guard masking else { return try await take(request, on: route, secureTree: nil) }
-        return try await take(request, on: route) { try await route.backend.accessibilityTree(for: route.device) }
+    func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan) async throws -> ScreenshotReport {
+        try await take(request, on: route, masks: masks) { try await route.backend.accessibilityTree(for: route.device) }
     }
 
-    /// Captures, masks secure fields when `secureTree` is given, writes the image when asked and compares; prints only the stderr notes.
+    /// Captures, paints `masks` (reading the tree from `tree` only when a mask needs it), writes the image when asked and compares; prints only the stderr notes.
     @MainActor
     func take(
         _ request: ScreenshotRequest,
         on route: DeviceRouter.Route,
-        secureTree: (@MainActor () async throws -> UITree)? = nil
+        masks: MaskPlan,
+        tree treeSource: @MainActor () async throws -> UITree
     ) async throws -> ScreenshotReport {
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
+        let recorder = EvidenceRecorder.current
+        let token = try recorder.begin(device: booted.id, kind: "screenshot")
 
         let baseline = try compare.map(ScreenCapture.readBaseline)
         let selected = try await displayOption.resolve(on: backend, device: booted.id, deviceName: deviceOption.id)
         var tree: UITree?
-        if let secureTree {
+        if masks.needsTree {
             if let selected, !selected.display.active {
                 throw MaskUnproven(detail: "The \(selected.display.descriptor.screenDisplay.id) display is not active and the accessibility tree describes the active display only")
             }
             // Read before the capture, so the frames describe the screen the pixels show.
-            tree = try await Timings.measure("accessibility") { try await secureTree() }
+            tree = try await Timings.measure("accessibility") { try await treeSource() }
         }
         var capture: CapturedScreen
         if let selected {
@@ -139,35 +193,101 @@ struct Screenshot: AsyncParsableCommand {
         } else {
             capture = try await ScreenCapture.capture(backend, device: booted.id)
         }
-        var masked: Int?
-        if let tree {
-            let result = try Timings.measure("mask") { try ScreenCapture.maskingSecureFields(capture, tree: tree) }
+        var masked: ScreenCapture.MaskResult?
+        if !masks.isEmpty {
+            let result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree) }
             capture = result.capture
-            masked = result.painted
+            masked = result
+            if !result.unmatched.isEmpty {
+                Self.writeError("Warning: nothing matched \(result.unmatched.joined(separator: ", ")), so nothing was painted for it.")
+            }
         }
         let rendered = try ScreenCapture.render(capture, request: request)
 
         var path: String?
-        if compare == nil || output != nil {
+        if output != nil || (compare == nil && token == nil) {
             let prefix = route.device.platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
             let url = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: request.format)
             try rendered.encoded(as: request.format).write(to: url)
             path = url.path
             Self.writeError("Screenshot saved to \(url.path) (\(rendered.image.width) x \(rendered.image.height) px)")
         }
+        var runFile: String?
+        if let token {
+            runFile = try Self.writeRunCopy(rendered, format: request.format, token: token, recorder: recorder, otherCopy: path)
+            recorder.update(token) { entry in
+                entry.output = path
+                entry.masked = masked.map { $0.painted.values.reduce(0, +) }
+            }
+            if path == nil, let runFile {
+                path = runFile
+                Self.writeError("Screenshot saved to \(runFile) (\(rendered.image.width) x \(rendered.image.height) px)")
+            }
+        }
 
         guard let compare, let baseline else {
-            return rendered.report(path: path, format: request.format, capture: capture, masked: masked)
+            var report = rendered.report(path: path, format: request.format, capture: capture, masks: masked)
+            report.runFile = runFile
+            return report
         }
 
         if ScreenImage.isJPEG(baseline) {
             Self.writeError("Warning: JPEG baselines can read as changed because of compression artefacts; prefer PNG.")
         }
         let bands = await backend.volatileScreenBands(for: booted.id)
-        let result = try ScreenCapture.compare(
+        let (result, diffImage) = try ScreenCapture.comparison(
             rendered, capture: capture, baseline: baseline, baselinePath: compare, bands: bands, threshold: threshold ?? 0
         )
-        return rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masked: masked)
+        var report = rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masks: masked)
+        report.runFile = runFile
+        recorder.update(token) { $0.changed = result.outcome == .changed }
+        if diffOutput != nil {
+            let url = try ScreenCapture.outputURL(path: diffOutput, prefix: "Screenshot Diff", deviceName: booted.name, format: .png)
+            try ScreenImage.encode(diffImage, as: .png).write(to: url)
+            report.diffPath = url.path
+            Self.writeError("Diff saved to \(url.path)")
+        }
+        if let token, runFile != nil, let diffPath = try recorder.diffPath(token) {
+            do {
+                try RunFolder.writeNew(ScreenImage.encode(diffImage, as: .png), toPath: diffPath)
+            } catch {
+                recorder.update(token) { $0.diff = nil }
+                Self.writeError("Warning: could not write the run's diff to \(diffPath): \(error.localizedDescription)")
+            }
+        }
+        return report
+    }
+
+    /// The run's copy; when it is the only copy and cannot be written, the command fails with `run_unavailable`.
+    @MainActor
+    private static func writeRunCopy(_ rendered: RenderedScreenshot, format: ImageFormat, token: EvidenceRecorder.Token, recorder: EvidenceRecorder, otherCopy: String?) throws -> String? {
+        do {
+            let runPath = try recorder.reserveFile(token, extension: format.fileExtension)
+            try RunFolder.writeNew(rendered.encoded(as: format), toPath: runPath)
+            return runPath
+        } catch {
+            recorder.update(token) { $0.file = nil }
+            let message = "Could not write the screenshot into the run: \(OffsiderCommand.message(for: error))"
+            guard otherCopy != nil else {
+                throw CLIError(errorDescription: message + ". Fix the run folder, or stop the run with `offsider run stop`.", reason: .runUnavailable, hint: "offsider run status")
+            }
+            writeError("Warning: \(message); the --output copy was written.")
+            return nil
+        }
+    }
+
+    /// The run's default masks when the capture asks for none of its own; `OFFSIDER_MASK_SECURE` still adds password fields.
+    @MainActor
+    func masksWithRunDefaults(_ own: MaskPlan, ownFlags: Bool) -> MaskPlan {
+        guard !ownFlags, let defaults = EvidenceRecorder.current.defaultMasks else { return own }
+        var plan = defaults
+        plan.secure = plan.secure || own.secure
+        return plan
+    }
+
+    /// True when any mask flag was passed to this capture.
+    var hasMaskFlags: Bool {
+        maskSecure || maskEmails || !maskIDs.isEmpty || !maskLabels.isEmpty || !maskTexts.isEmpty || !maskRegions.isEmpty
     }
 
     private static func writeError(_ line: String) {

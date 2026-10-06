@@ -62,6 +62,12 @@ struct MatchSummary: Equatable {
     let frame: UIFrame?
     /// Nil when the tree has no screen to compare with.
     let isOnScreen: Bool?
+    /// Its place among the on-screen matches, the number `tap --nth` takes.
+    var index: Int? = nil
+    /// The title of the window (Android) or app it is in.
+    var window: String? = nil
+    /// The id of the nearest ancestor that fills the screen, such as a page kept mounted under another.
+    var screen: String? = nil
 
     init(role: UIRole, id: String?, label: String? = nil, frame: UIFrame?, isOnScreen: Bool?) {
         self.role = role
@@ -71,7 +77,7 @@ struct MatchSummary: Equatable {
         self.isOnScreen = isOnScreen
     }
 
-    init(_ node: UINode, viewport: UIFrame?) {
+    init(_ node: UINode, viewport: UIFrame?, index: Int? = nil, roots: [UINode] = []) {
         self.init(
             role: node.role,
             id: node.normalizedID,
@@ -79,6 +85,14 @@ struct MatchSummary: Equatable {
             frame: node.frame,
             isOnScreen: viewport.map { node.frame?.isVisible(in: $0) == true }
         )
+        self.index = index
+        let ancestors = AccessibilityTargetResolver.ancestorsOf(node, in: roots)
+        window = ancestors.first?.normalizedLabel.map { SelectorText.truncated($0) }
+        if let viewport {
+            screen = ancestors.reversed().first { ancestor in
+                ancestor.normalizedID != nil && ancestor.frame.map { AccessibilityTargetResolver.isBackdrop($0, in: viewport) } == true
+            }?.normalizedID
+        }
     }
 
     var text: String {
@@ -87,11 +101,13 @@ struct MatchSummary: Equatable {
         if let label { parts.append("label=\"\(label)\"") }
         parts.append(frame?.summary ?? "with no frame")
         if isOnScreen == false { parts.append("off screen") }
+        if let screen { parts.append("in screen=\(screen)") }
+        if let index { parts.append("(--nth \(index))") }
         return parts.joined(separator: " ")
     }
 
     var failureCandidate: FailureCandidate {
-        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen)
+        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen, index: index, window: window, screen: screen)
     }
 }
 
@@ -103,6 +119,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     case multipleMatches(count: Int, kind: String, value: String, hasUniqueIDs: Bool, candidates: [MatchSummary] = [], onScreenOnly: Bool = false, offScreenIgnored: Int = 0)
     case invalidFrame(reason: String)
     case multipleSwitchDescendants(count: Int, selectorDescription: String)
+    case nthOutOfRange(selector: String, nth: Int, count: Int)
 
     static let maxListed = 5
 
@@ -146,6 +163,8 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
             return "\(head), and none of the matches expose an id on this screen. Use coordinates for this step (tap -x/-y) or target a more specific screen/state. \(tip)"
         case .invalidFrame(let reason):
             return "\(reason) \(tip)"
+        case .nthOutOfRange(let selector, let nth, let count):
+            return "--nth \(nth) asked for match \(nth) of \(selector), but there \(count == 1 ? "is 1 match" : "are \(count) matches") on screen. \(tip)"
         case .multipleSwitchDescendants(let count, let selectorDescription):
             return "Matched element for \(selectorDescription) contains multiple (\(count)) switch/toggle controls. Target the switch more specifically with --id when available, or use coordinates. Use --element-type only when describe-ui reports a specific role or type, such as switch or Toggle. \(tip)"
         }
@@ -154,7 +173,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     /// Missing, filtered out or off screen: a later tree may show the element, so `--wait-timeout` polls again.
     var isRetryable: Bool {
         switch self {
-        case .notFound, .filteredByElementType, .offScreen:
+        case .notFound, .filteredByElementType, .offScreen, .nthOutOfRange:
             return true
         case .multipleMatches, .invalidFrame, .multipleSwitchDescendants:
             return false
@@ -172,7 +191,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
 
     var reason: FailureReason {
         switch self {
-        case .notFound: return .selectorNotFound
+        case .notFound, .nthOutOfRange: return .selectorNotFound
         case .filteredByElementType: return .selectorFilteredByType
         case .offScreen: return .targetOffScreen
         case .multipleMatches: return .selectorAmbiguous
@@ -190,7 +209,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
         case .notFound(_, _, _, let candidates), .filteredByElementType(_, _, _, _, let candidates),
              .multipleMatches(_, _, _, _, let candidates, _, _):
             return candidates.prefix(Self.maxListed).map(\.failureCandidate)
-        case .offScreen, .invalidFrame, .multipleSwitchDescendants:
+        case .offScreen, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange:
             return []
         }
     }
@@ -272,6 +291,7 @@ struct AccessibilityTargetResolver {
         elementType: String? = nil,
         allowOffscreen: Bool = false,
         explainFailures: Bool = true,
+        pick: MatchPick? = nil,
         logger: OffsiderLogger? = nil
     ) throws -> AccessibilityMatch {
         let found = candidates(roots: roots, query: query, elementType: elementType)
@@ -304,13 +324,22 @@ struct AccessibilityTargetResolver {
             query: query,
             viewport: found.viewport,
             onScreenOnly: !allowOffscreen && found.viewport != nil,
-            offScreenIgnored: found.matches.count - pool.count
+            offScreenIgnored: found.matches.count - pool.count,
+            pool: pool,
+            roots: roots
         )
         let element: UINode
-        switch query {
-        case .id:
+        switch (pick, query) {
+        case (.nth(let nth)?, _):
+            guard nth >= 1, nth <= pool.count else {
+                throw ElementResolutionError.nthOutOfRange(selector: query.selectorDescription, nth: nth, count: pool.count)
+            }
+            element = pool[nth - 1]
+        case (.last?, _):
+            element = pool[pool.count - 1]
+        case (nil, .id):
             element = try selectUniqueMatch(pool, ambiguity)
-        case .label, .value:
+        case (nil, .label), (nil, .value):
             element = try selectBestLabelMatch(pool, ambiguity)
         }
 
@@ -331,10 +360,11 @@ struct AccessibilityTargetResolver {
         elementType: String? = nil,
         allowOffscreen: Bool = false,
         explainFailures: Bool = true,
+        pick: MatchPick? = nil,
         logger: OffsiderLogger? = nil
     ) throws -> TapResolution {
         let match = try resolveElement(
-            roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explainFailures, logger: logger
+            roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explainFailures, pick: pick, logger: logger
         )
 
         let activationElement = try selectActivationElement(
@@ -371,31 +401,36 @@ struct AccessibilityTargetResolver {
         )
     }
 
-    /// Plausible occluders whose frame holds `point`; tree order is not z-order on iOS, so a real hit-test must confirm one.
+    /// Plausible occluders whose frame holds `point`; tree order is not z-order on either platform, so a real hit-test must confirm one.
+    /// On Android a node in a lower window (the app beneath a keyboard) or not visible to the user cannot cover the target;
+    /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top.
     static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, roots: [UINode]) -> [UINode] {
         let related = family(of: target, in: roots) + family(of: matched, in: roots)
+        let android = target.isAndroid
+        let targetRoot = roots.firstIndex { root in root.flattened().contains { $0.isSameElement(as: target) || $0.isSameElement(as: matched) } } ?? 0
         var found: [UINode] = []
-        func visit(_ node: UINode, underKeyboard: Bool) {
+        func visit(_ node: UINode, root: Int, underKeyboard: Bool) {
             let underKeyboard = underKeyboard || node.role == .keyboard
-            if let frame = coverArea(of: node, in: viewport), frame.contains(point), frame.isVisible(in: viewport),
+            let beneath = android && (root < targetRoot || node.androidVisibleToUser == false)
+            if !beneath, let frame = coverArea(of: node, in: viewport), frame.contains(point), frame.isVisible(in: viewport),
                isPlausibleOccluder(node, underKeyboard: underKeyboard),
                !related.contains(where: { $0.isSameElement(as: node) }) {
                 found.append(node)
             }
             for child in node.children {
-                visit(child, underKeyboard: underKeyboard)
+                visit(child, root: root, underKeyboard: underKeyboard)
             }
         }
-        for root in roots {
-            visit(root, underKeyboard: false)
+        for (index, root) in roots.enumerated() {
+            visit(root, root: index, underKeyboard: false)
         }
         return found
     }
 
-    /// The node's frame, or for a LogBox banner the strip beneath it that its unlisted touch container swallows.
+    /// The node's frame, or for a LogBox toast the strip beneath it that its unlisted touch container swallows.
     private static func coverArea(of node: UINode, in viewport: UIFrame) -> UIFrame? {
         guard let frame = node.frame else { return nil }
-        return KnownOverlays.isLogBoxBanner(node.label) ? KnownOverlays.logBoxTouchArea(of: frame, in: viewport) : frame
+        return KnownOverlays.logBoxToast(node, viewport: viewport) != nil ? KnownOverlays.logBoxTouchArea(of: frame, in: viewport) : frame
     }
 
     /// The cover once a hit-test at the tap point found `hit`: nil when the hit is the target or its kin.
@@ -435,6 +470,11 @@ struct AccessibilityTargetResolver {
         return visible.width * visible.height >= 0.8 * viewport.width * viewport.height
     }
 
+    /// True when `hit` is `element`, one of its ancestors or one of its descendants.
+    static func isFamily(_ hit: UINode, of element: UINode, in roots: [UINode]) -> Bool {
+        family(of: element, in: roots).contains { $0.isSameElement(as: hit) || $0.isSameTarget(as: hit) }
+    }
+
     /// True when `node` is a keyboard or sits inside one.
     static func isUnderKeyboard(_ node: UINode, in roots: [UINode]) -> Bool {
         node.role == .keyboard || ancestors(of: node, in: roots).contains { $0.role == .keyboard }
@@ -453,6 +493,10 @@ struct AccessibilityTargetResolver {
             return true
         }
         return node.normalizedLabel != nil && !containerRoles.contains(node.role)
+    }
+
+    static func ancestorsOf(_ element: UINode, in roots: [UINode]) -> [UINode] {
+        ancestors(of: element, in: roots)
     }
 
     private static func ancestors(of element: UINode, in roots: [UINode]) -> [UINode] {
@@ -539,6 +583,14 @@ struct AccessibilityTargetResolver {
         let viewport: UIFrame?
         let onScreenOnly: Bool
         let offScreenIgnored: Int
+        /// Every match `--nth` counts, in tree order, and the tree it came from.
+        var pool: [UINode] = []
+        var roots: [UINode] = []
+
+        func summary(_ node: UINode) -> MatchSummary {
+            let index = pool.firstIndex { $0.isSameElement(as: node) }.map { $0 + 1 }
+            return MatchSummary(node, viewport: viewport, index: index, roots: roots)
+        }
     }
 
     private static func selectUniqueMatch(
@@ -552,7 +604,7 @@ struct AccessibilityTargetResolver {
             let hasUniqueIDs = matches.contains {
                 $0.normalizedID != nil
             }
-            let summaries = matches.prefix(ElementResolutionError.maxListed).map { MatchSummary($0, viewport: ambiguity.viewport) }
+            let summaries = matches.prefix(ElementResolutionError.maxListed).map(ambiguity.summary)
             throw ElementResolutionError.multipleMatches(
                 count: matches.count,
                 kind: ambiguity.query.kind,
@@ -693,5 +745,17 @@ extension UINode {
 extension UIFrame {
     func encloses(_ other: UIFrame) -> Bool {
         other.x >= x && other.y >= y && other.x + other.width <= x + width && other.y + other.height <= y + height
+    }
+}
+
+extension UINode {
+    var isAndroid: Bool {
+        if case .android = native { return true }
+        return false
+    }
+
+    var androidVisibleToUser: Bool? {
+        if case .android(let attributes) = native { return attributes.visibleToUser }
+        return nil
     }
 }

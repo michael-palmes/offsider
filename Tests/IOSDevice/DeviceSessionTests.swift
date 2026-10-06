@@ -555,6 +555,15 @@ struct DeviceSessionReportsTests {
         #expect(error?.reason == .notSupported)
     }
 
+    @Test("two fingers are refused on a physical iPhone before anything is sent")
+    func twoFingersRefused() {
+        var lowering = DeviceSessionLowering(brokerTouches: true)
+        let error = #expect(throws: IOSDeviceError.self) {
+            try lowering.actions(for: .composite([.twoFingerTouch(direction: .down, x1: 1, y1: 1, x2: 2, y2: 1), .delay(1), .twoFingerTouch(direction: .up, x1: 1, y1: 1, x2: 2, y2: 1)]))
+        }
+        #expect(error?.reason == .notSupported)
+    }
+
     @Test("lowering merges a gesture into one touch request and US text into key steps")
     func lowering() throws {
         var lowering = DeviceSessionLowering(brokerTouches: true)

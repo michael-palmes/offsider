@@ -36,6 +36,8 @@ public struct VerifyChange: Equatable, Sendable {
 public enum VerifyNote: String, Sendable {
     /// Only the keyboard left; the input may have been spent closing it.
     case keyboardClosed = "keyboard_closed"
+    /// Android ignored the home key, so the HOME intent brought the launcher to the front.
+    case homeIntent = "home_intent"
 }
 
 extension TreeDiff {

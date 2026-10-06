@@ -10,10 +10,13 @@ public struct ChangeDetector: Sendable {
     public struct Options: Sendable {
         public var framePrecision: Double
         public var ignoredIdentifiers: Set<String>
+        /// Leaves label, value, title and frame out, so a ticking clock or a moving list is no change.
+        public var ignoreText: Bool
 
-        public init(framePrecision: Double = 1, ignoredIdentifiers: Set<String> = []) {
+        public init(framePrecision: Double = 1, ignoredIdentifiers: Set<String> = [], ignoreText: Bool = false) {
             self.framePrecision = framePrecision
             self.ignoredIdentifiers = ignoredIdentifiers
+            self.ignoreText = ignoreText
         }
     }
 
@@ -111,15 +114,16 @@ public struct ChangeDetector: Sendable {
         let frame = node.frame.map { frame in
             [frame.x, frame.y, frame.width, frame.height].map { ($0 / precision).rounded() }
         }
+        let text = !options.ignoreText
         return Signature(
             role: node.role,
             subrole: node.subrole,
-            label: node.label,
-            value: node.value,
-            title: node.title,
+            label: text ? node.label : nil,
+            value: text ? node.value : nil,
+            title: text ? node.title : nil,
             enabled: node.enabled,
             state: node.state,
-            frame: frame
+            frame: text ? frame : nil
         )
     }
 

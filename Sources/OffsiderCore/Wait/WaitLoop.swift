@@ -39,10 +39,29 @@ public enum RegionMode: Sendable {
 }
 
 public enum WaitCondition {
-    case element(probe: (UITree) -> ElementProbe, gone: Bool)
+    /// `stableFor` is how long the element must stay present (or gone) across reads before the wait is met.
+    case element(probe: (UITree) -> ElementProbe, gone: Bool, stableFor: TimeInterval = 0)
+    /// Met when the first of several selectors, in order, is present; each entry names its selector for the report.
+    case anyElement([(selector: WaitMatch, probe: (UITree) -> ElementProbe)], stableFor: TimeInterval = 0)
     case settled(by: SettleSource, quiet: TimeInterval)
     case region(mode: RegionMode, quiet: TimeInterval, threshold: Double)
     case duration(TimeInterval)
+}
+
+/// One selector of a `wait --any`, as the report names it: `by` is `id`, `label` or `value`.
+public struct WaitMatch: Equatable, Sendable {
+    public let by: String
+    public let text: String
+    /// Its place among the selectors, from 1.
+    public let position: Int
+    public let of: Int
+
+    public init(by: String, text: String, position: Int, of: Int) {
+        self.by = by
+        self.text = text
+        self.position = position
+        self.of = of
+    }
 }
 
 public struct WaitOutcome: Equatable, Sendable {
@@ -51,12 +70,15 @@ public struct WaitOutcome: Equatable, Sendable {
     /// Why it was met, or the last reason it was not.
     public let reason: String
     public let match: UINode?
+    /// Which selector of a `wait --any` was met.
+    public let matched: WaitMatch?
 
-    public init(met: Bool, elapsed: TimeInterval, reason: String, match: UINode? = nil) {
+    public init(met: Bool, elapsed: TimeInterval, reason: String, match: UINode? = nil, matched: WaitMatch? = nil) {
         self.met = met
         self.elapsed = elapsed
         self.reason = reason
         self.match = match
+        self.matched = matched
     }
 }
 
@@ -98,10 +120,12 @@ public enum WaitLoop {
                 let step = try await evaluate(condition, state: &state, sources: sources)
                 succeededOnce = true
                 if step.met {
-                    return WaitOutcome(met: true, elapsed: sources.now() - start, reason: step.reason, match: step.match)
+                    return WaitOutcome(met: true, elapsed: sources.now() - start, reason: step.reason, match: step.match, matched: step.matched)
                 }
                 lastReason = step.reason
             } catch where error.isTransientFailure {
+                state.metSince = nil
+                state.metReads = 0
                 lastTransient = error
                 lastReason = error.localizedDescription
             }
@@ -133,6 +157,7 @@ public enum WaitLoop {
         let met: Bool
         let reason: String
         var match: UINode? = nil
+        var matched: WaitMatch? = nil
     }
 
     /// The previous read and when the current quiet window began.
@@ -143,17 +168,46 @@ public enum WaitLoop {
         var reads = 0
         var treeReads = 0
         var readableTree = false
+        /// When an element condition began to hold, and the reads since; a miss resets both.
+        var metSince: TimeInterval?
+        var metReads = 0
+        var metSelector: WaitMatch?
     }
 
     private static func evaluate(_ condition: WaitCondition, state: inout State, sources: WaitSources) async throws -> Step {
         switch condition {
-        case .element(let probe, let gone):
+        case .element(let probe, let gone, let stableFor):
+            let step: Step
             switch probe(try await sources.tree()) {
             case .present(let node):
-                return gone ? Step(met: false, reason: "still on screen") : Step(met: true, reason: "on screen", match: node)
+                step = gone ? Step(met: false, reason: "still on screen") : Step(met: true, reason: "on screen", match: node)
             case .absent(let reason):
-                return Step(met: gone, reason: reason)
+                step = Step(met: gone, reason: reason)
             }
+            return dwell(step, stableFor: stableFor, gone: gone, state: &state, sources: sources)
+
+        case .anyElement(let selectors, let stableFor):
+            let tree = try await sources.tree()
+            var reasons: [String] = []
+            var step = Step(met: false, reason: "")
+            for selector in selectors {
+                switch selector.probe(tree) {
+                case .present(let node):
+                    step = Step(met: true, reason: "on screen", match: node, matched: selector.selector)
+                case .absent(let reason):
+                    reasons.append("--\(selector.selector.by) '\(selector.selector.text)' \(reason)")
+                    continue
+                }
+                break
+            }
+            if !step.met {
+                step = Step(met: false, reason: reasons.joined(separator: "; "))
+            } else if state.metSelector != step.matched {
+                state.metSince = nil
+                state.metReads = 0
+            }
+            state.metSelector = step.matched
+            return dwell(step, stableFor: stableFor, gone: false, state: &state, sources: sources)
 
         case .settled(let source, let quiet):
             var change: String?
@@ -206,6 +260,26 @@ public enum WaitLoop {
         case .duration:
             return Step(met: true, reason: "waited")
         }
+    }
+
+    /// Holds a met step back until it has held on every read for `stableFor`, over two reads or more.
+    private static func dwell(_ step: Step, stableFor: TimeInterval, gone: Bool, state: inout State, sources: WaitSources) -> Step {
+        guard step.met else {
+            state.metSince = nil
+            state.metReads = 0
+            return step
+        }
+        guard stableFor > 0 else { return step }
+        let now = sources.now()
+        let since = state.metSince ?? now
+        state.metSince = since
+        state.metReads += 1
+        let heldFor = now - since
+        let place = gone ? "gone" : "on screen"
+        if state.metReads >= 2, heldFor + 1e-9 >= stableFor {
+            return Step(met: true, reason: "\(place) for \(seconds(heldFor))", match: step.match, matched: step.matched)
+        }
+        return Step(met: false, reason: "\(place) for \(seconds(heldFor)) of \(seconds(stableFor))")
     }
 
     /// Met once two reads exist and nothing has changed for `quiet`; a change restarts the window.

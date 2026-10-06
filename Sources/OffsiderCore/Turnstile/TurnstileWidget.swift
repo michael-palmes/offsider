@@ -291,6 +291,67 @@ private extension UIFrame {
 }
 
 /// What `turnstile` prints. `point` is nil when the widget had already passed and nothing was tapped.
+/// What `turnstile --status` prints: the widget's state from one read, without a tap.
+public struct TurnstileStatus: Equatable, Sendable {
+    public enum State: String, Sendable {
+        case checkbox
+        case verifying
+        case passed
+        case challenge
+        case absent
+    }
+
+    public enum Source: String, Sendable {
+        case tree
+        /// iOS: points read inside the web view, which leaves the checkbox out of the tree.
+        case webViewPoints = "web-view-points"
+    }
+
+    public var state: State
+    public var source: Source
+    public var frame: UIFrame?
+
+    public init(state: State, source: Source, frame: UIFrame? = nil) {
+        self.state = state
+        self.source = source
+        self.frame = frame
+    }
+
+    /// Nil for `ambiguous`, which the caller reports as several checkboxes.
+    public init?(phase: TurnstilePhase, source: Source) {
+        switch phase {
+        case .absent: self.init(state: .absent, source: source)
+        case .checking: self.init(state: .verifying, source: source)
+        case .ready(let target): self.init(state: .checkbox, source: source, frame: target.frame)
+        case .passed: self.init(state: .passed, source: source)
+        case .visualChallenge: self.init(state: .challenge, source: source)
+        case .ambiguous: return nil
+        }
+    }
+
+    /// `Turnstile: checkbox at (32, 388.95) 163.81x25.14`, or the state alone.
+    public func textLine() -> String {
+        guard let frame else { return "Turnstile: \(state.rawValue)" }
+        return "Turnstile: \(state.rawValue) at (\(TurnstileReport.format(frame.x)), \(TurnstileReport.format(frame.y))) \(TurnstileReport.format(frame.width))x\(TurnstileReport.format(frame.height))"
+    }
+
+    public func jsonLine() -> String {
+        OrderedJSON.object([
+            ("version", .integer(1)),
+            ("state", .string(state.rawValue)),
+            ("source", .string(source.rawValue)),
+            ("frame", frame.map { frame in
+                .object([
+                    ("x", .number(TurnstileReport.rounded(frame.x))),
+                    ("y", .number(TurnstileReport.rounded(frame.y))),
+                    ("width", .number(TurnstileReport.rounded(frame.width))),
+                    ("height", .number(TurnstileReport.rounded(frame.height))),
+                ])
+            } ?? .null),
+        ]).rendered(compact: true)
+    }
+}
+
 public struct TurnstileReport: Equatable, Sendable {
     public enum Outcome: String, Sendable {
         case tapped
@@ -328,11 +389,11 @@ public struct TurnstileReport: Equatable, Sendable {
         ]).rendered(compact: true)
     }
 
-    private static func rounded(_ value: Double) -> Double {
+    static func rounded(_ value: Double) -> Double {
         (value * 100).rounded() / 100
     }
 
-    private static func format(_ value: Double) -> String {
+    static func format(_ value: Double) -> String {
         let rounded = Self.rounded(value)
         return rounded.rounded() == rounded ? String(Int(rounded)) : String(rounded)
     }

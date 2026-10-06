@@ -33,7 +33,7 @@ final class FakeHelperDevice: @unchecked Sendable {
         /// An ok reply with these fields, then this binary frame, as `screenshot` answers.
         case okWithPayload(String, Data)
         /// The focused element's class and id ride along, as `setText` errors carry them.
-        case error(code: String, message: String, className: String? = nil, resourceId: String? = nil)
+        case error(code: String, message: String, className: String? = nil, resourceId: String? = nil, inputType: Int? = nil)
         /// A `bye` frame instead of a reply, then the helper exits.
         case bye(String)
         /// The socket closes with no reply: the helper died.
@@ -79,6 +79,8 @@ final class FakeHelperDevice: @unchecked Sendable {
     var refuseSocket = false
     var syncAnswer: FakeSyncSession.Answer = .okay
     var dump = FakeHelperDevice.tapTestDump
+    /// What `hello` lists; nil leaves `ops` out, as a protocol 1 helper did.
+    var helloOps: [String]? = ["hello", "ping", "dump", "display", "setProgress", "setText", "paste", "events", "inject", "screenshot", "quit"]
     var answer: @Sendable (_ process: Int, _ op: String, _ json: String) -> Answer? = { _, _, _ in nil }
     var pidof: @Sendable (_ call: Int) -> String = { _ in "" }
     /// Every other device service, such as the display probe.
@@ -244,7 +246,9 @@ final class FakeHelperDevice: @unchecked Sendable {
             return scripted
         }
         switch op {
-        case "hello": return .ok(#"{"helper":"1.1.0","protocol":2}"#)
+        case "hello":
+            let ops = lock.withLock { helloOps }.map { #","ops":[\#($0.map { "\"\($0)\"" }.joined(separator: ","))]"# } ?? ""
+            return .ok(#"{"helper":"1.2.0","protocol":2\#(ops)}"#)
         case "ping", "quit": return .ok("{}")
         case "dump": return .ok(lock.withLock { dump })
         case "display": return .ok(Self.displayReply)
@@ -288,7 +292,9 @@ final class FakeHelperDevice: @unchecked Sendable {
             switch step["kind"] as? String {
             case "tap": return "tap \(number("x")) \(number("y"))"
             case "swipe": return "swipe \(number("fromX")) \(number("fromY")) \(number("toX")) \(number("toY")) \(number("durationMs")) ms \(number("moves")) moves"
-            case "touch": return "touch \(step["phase"] as? String ?? "?") \(number("x")) \(number("y"))"
+            case "touch":
+                let pointer = (step["pointer"] as? NSNumber)?.intValue ?? 0
+                return "touch \(step["phase"] as? String ?? "?")\(pointer == 0 ? "" : " p\(pointer)") \(number("x")) \(number("y"))"
             case "key": return "key \(step["phase"] as? String ?? "?") \(number("code")) meta \(number("meta"))"
             case "text": return "text \(step["text"] as? String ?? "?")"
             case "pause": return "pause \(number("ms"))"
@@ -380,8 +386,10 @@ final class FakeHelperSocket: FakeServiceSession, @unchecked Sendable {
                 out += Self.frame(Self.ok(id: id, fields: fields))
                 let count = UInt32(payload.count)
                 out += Data([UInt8(count >> 24), UInt8(count >> 16 & 0xFF), UInt8(count >> 8 & 0xFF), UInt8(count & 0xFF)]) + payload
-            case .error(let code, let message, let className, let resourceId):
-                let node = [className.map { #","className":"\#($0)""# }, resourceId.map { #","resourceId":"\#($0)""# }].compactMap { $0 }.joined()
+            case .error(let code, let message, let className, let resourceId, let inputType):
+                let node = [
+                    className.map { #","className":"\#($0)""# }, resourceId.map { #","resourceId":"\#($0)""# }, inputType.map { #","inputType":\#($0)"# },
+                ].compactMap { $0 }.joined()
                 out += Self.frame(#"{"id":\#(id),"ok":false,"error":{"code":"\#(code)","message":"\#(message)","detail":null\#(node)},"eventSeq":7}"#)
             case .bye(let reason):
                 out += Self.frame(Self.bye(reason, detail: "no request within 10000 ms"))

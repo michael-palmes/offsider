@@ -15,7 +15,10 @@ struct AndroidDoctorRulesTests {
         facts.uiAutomation = UiAutomationFact(accessibilityEnabled: false, enabledServices: [], offsiderHelperPids: [])
         facts.helper = .ready(launchMilliseconds: 412, pushed: false, helloMilliseconds: 7, pingMilliseconds: 3, protocolVersion: 1, sdkInt: 36)
         facts.reverses = []
-        facts.awake = AwakeReading(screen: .on, lockScreen: .hidden, stayAwake: [.ac, .usb, .wireless, .dock], charging: [.ac], screenTimeoutMilliseconds: 1_800_000)
+        facts.awake = AwakeReading(
+            screen: .on, lockScreen: .hidden, credential: "none", stayAwake: [.ac, .usb, .wireless, .dock], charging: [.ac],
+            screenTimeoutMilliseconds: 1_800_000, userUnlocked: true, memTotalKB: 6_149_664
+        )
         configure(&facts)
         return facts
     }
@@ -169,8 +172,8 @@ struct AndroidDoctorRulesTests {
     func healthyDevice() {
         let checks = AndroidDoctorRules.deviceChecks(Self.booted(), hostBlocker: nil)
         #expect(checks.map(\.id) == [
-            .androidDeviceState, .androidDeviceImage, .androidDeviceScreen, .androidDeviceStayAwake, .androidDeviceGrpc, .androidDeviceUiAutomation,
-            .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
+            .androidDeviceState, .androidDeviceImage, .androidDeviceMemory, .androidDeviceScreen, .androidDeviceLock, .androidDeviceStayAwake,
+            .androidDeviceGrpc, .androidDeviceUiAutomation, .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
         ])
         #expect(checks.dropLast(2).allSatisfy { $0.status == .pass })
         #expect(checks.suffix(2).allSatisfy { $0.status == .skip && $0.detail == "applies to phones only" })
@@ -201,11 +204,40 @@ struct AndroidDoctorRulesTests {
         #expect(Self.check(.androidDeviceSystemUpdates, in: checks)?.status == .warn)
     }
 
-    @Test("an unreadable power state skips the screen and stay-awake checks")
+    @Test("an unreadable power state skips the memory, screen, lock and stay-awake checks")
     func unreadablePowerState() {
         let checks = AndroidDoctorRules.deviceChecks(Self.booted { $0.awake = nil }, hostBlocker: nil)
-        #expect(Self.check(.androidDeviceScreen, in: checks)?.status == .skip)
-        #expect(Self.check(.androidDeviceStayAwake, in: checks)?.status == .skip)
+        for id in [DoctorCheckID.androidDeviceMemory, .androidDeviceScreen, .androidDeviceLock, .androidDeviceStayAwake] {
+            #expect(Self.check(id, in: checks)?.status == .skip)
+        }
+    }
+
+    @Test("an emulator under about 2.75 GB of RAM warns with the --memory hint; a phone always passes", arguments: [
+        (2_883_583, false, CheckStatus.warn), (2_883_584, false, .pass), (2_000_000, true, .pass), (6_149_664, false, .pass),
+    ] as [(Int, Bool, CheckStatus)])
+    func memoryBoundaries(kilobytes: Int, isPhysical: Bool, status: CheckStatus) {
+        let verdict = AndroidDoctorRules.memory(memTotalKB: kilobytes, avdName: "Pixel_API34", isPhysical: isPhysical)
+        #expect(verdict.status == status)
+        #expect(verdict.hint == (status == .warn ? "Close it, then run `offsider boot Pixel_API34 --memory 4096`." : nil))
+    }
+
+    @Test("a device waiting for its first unlock fails with the unlock hints; unlocked or without a credential passes")
+    func lockVerdicts() {
+        let waiting = AwakeReading(screen: .on, lockScreen: .secure, credential: "pin", userUnlocked: false)
+        let failing = AndroidDoctorRules.lock(waiting, unlockCode: nil, deviceID: "emulator-5560")
+        #expect(failing.status == .fail)
+        #expect(failing.detail == "PIN set; waiting for its first unlock since boot, so apps cannot start; code saved: no")
+        #expect(failing.hint?.contains("offsider unlock-code set --device emulator-5560") == true)
+        let saved = AndroidDoctorRules.lock(waiting, unlockCode: UnlockCodeFact(saved: true, lastAttemptFailed: false), deviceID: "emulator-5560")
+        #expect(saved.hint?.hasPrefix("Run `offsider wake --unlock --device emulator-5560`") == true)
+        let failed = AndroidDoctorRules.lock(waiting, unlockCode: UnlockCodeFact(saved: true, lastAttemptFailed: true), deviceID: "emulator-5560")
+        #expect(failed.detail.hasSuffix("code saved: yes, but it failed last time"))
+        var unlocked = waiting
+        unlocked.userUnlocked = true
+        #expect(AndroidDoctorRules.lock(unlocked, unlockCode: nil, deviceID: "emulator-5560") == (.pass, "PIN set; unlocked since boot; code saved: no", nil))
+        #expect(AndroidDoctorRules.lock(AwakeReading(screen: .on, lockScreen: .hidden, credential: "none"), unlockCode: nil, deviceID: "x").status == .pass)
+        let unknown = AndroidDoctorRules.deviceChecks(Self.booted { $0.awake?.credential = nil }, hostBlocker: nil)
+        #expect(Self.check(.androidDeviceLock, in: unknown)?.status == .skip)
     }
 
     @Test("a screen that is off or locked warns and names the command that helps")
@@ -236,6 +268,18 @@ struct AndroidDoctorRulesTests {
         #expect(verdict([.usb], charging: [.ac]).detail == "On while charging over USB, but the device charges over AC")
         #expect(verdict([.ac, .usb], charging: [.ac], capped: true).status == .warn)
         #expect(verdict([.ac, .usb], charging: [.ac]) == (.pass, "On; charging over AC", nil))
+    }
+
+    @Test("stay awake off with a screen timeout of never passes and says the screen never turns off")
+    func stayAwakeOffNeverTimesOut() {
+        let reading = AwakeReading(screen: .on, lockScreen: .hidden, credential: "none", screenTimeoutMilliseconds: Int(Int32.max))
+        #expect(AndroidDoctorRules.stayAwake(reading, deviceID: "emulator-5554") == (.pass, "Off: the screen never turns off on its own", nil))
+    }
+
+    @Test("stay awake on with no charger passes when the screen timeout is never, instead of saying it turns off after never")
+    func stayAwakeOnNeverTimesOut() {
+        let reading = AwakeReading(screen: .on, lockScreen: .hidden, credential: "none", stayAwake: [.ac, .usb, .wireless, .dock], charging: [], screenTimeoutMilliseconds: Int(Int32.max))
+        #expect(AndroidDoctorRules.stayAwake(reading, deviceID: "emulator-5554") == (.pass, "On; not charging, but the screen never turns off on its own", nil))
     }
 
     @Test("adb authorisation passes only when it never lapses; null is the 7-day default")

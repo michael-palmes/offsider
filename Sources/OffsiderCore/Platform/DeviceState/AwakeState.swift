@@ -57,7 +57,7 @@ public enum LockScreen: Equatable, Sendable {
 public struct AwakeReading: Equatable, Sendable {
     public var screen: ScreenPower
     public var lockScreen: LockScreen
-    /// `pin`, `pattern` or `password` when a credential is set and lock settings name it.
+    /// `pin`, `pattern` or `password` when a credential is set and lock settings name it, `none` when they say there is none.
     public var credential: String?
     /// The stay-awake setting: the sources that keep the screen on while charging.
     public var stayAwake: PowerSources
@@ -68,6 +68,10 @@ public struct AwakeReading: Equatable, Sendable {
     public var timeoutCappedByPolicy: Bool
     /// `ro.product.manufacturer`, read in the same round trip, for naming a phone.
     public var maker: String?
+    /// False until the first unlock since boot (credential-encrypted storage locked); nil when not read.
+    public var userUnlocked: Bool?
+    /// `MemTotal` from `/proc/meminfo`; nil when not read.
+    public var memTotalKB: Int?
 
     public init(
         screen: ScreenPower,
@@ -77,7 +81,9 @@ public struct AwakeReading: Equatable, Sendable {
         charging: PowerSources = [],
         screenTimeoutMilliseconds: Int? = nil,
         timeoutCappedByPolicy: Bool = false,
-        maker: String? = nil
+        maker: String? = nil,
+        userUnlocked: Bool? = nil,
+        memTotalKB: Int? = nil
     ) {
         self.screen = screen
         self.lockScreen = lockScreen
@@ -87,7 +93,15 @@ public struct AwakeReading: Equatable, Sendable {
         self.screenTimeoutMilliseconds = screenTimeoutMilliseconds
         self.timeoutCappedByPolicy = timeoutCappedByPolicy
         self.maker = maker
+        self.userUnlocked = userUnlocked
+        self.memTotalKB = memTotalKB
     }
+
+    /// A PIN, pattern or password is set.
+    public var hasCredential: Bool { credential != nil && credential != "none" }
+
+    /// Set up with a credential and not unlocked since boot: apps cannot start until someone unlocks it.
+    public var awaitsFirstUnlock: Bool { hasCredential && userUnlocked == false }
 
     /// Input reaches the app in front.
     public var isUsable: Bool { screen == .on && lockScreen == .hidden }
@@ -157,7 +171,71 @@ public struct WakeOutcome: Equatable, Sendable {
     }
 }
 
+/// What `boot` and `doctor` know about a device's lock: the credential, a saved code, and whether it was unlocked since boot.
+public struct LockReport: Codable, Equatable, Sendable {
+    /// `none`, `pin`, `pattern` or `password`; nil when unreadable.
+    public let type: String?
+    public let savedCode: Bool
+    public let lastAttemptFailed: Bool
+    public let userUnlocked: Bool?
+    public let screen: String?
+    public let lockScreen: String?
+
+    public init(type: String?, savedCode: Bool, lastAttemptFailed: Bool, userUnlocked: Bool?, screen: String?, lockScreen: String?) {
+        self.type = type
+        self.savedCode = savedCode
+        self.lastAttemptFailed = lastAttemptFailed
+        self.userUnlocked = userUnlocked
+        self.screen = screen
+        self.lockScreen = lockScreen
+    }
+
+    /// Null lock fields when the state could not be read.
+    public init(_ reading: AwakeReading?, savedCode: Bool, lastAttemptFailed: Bool) {
+        self.init(
+            type: reading?.credential,
+            savedCode: savedCode,
+            lastAttemptFailed: lastAttemptFailed,
+            userUnlocked: reading?.userUnlocked,
+            screen: reading?.screen.rawValue,
+            lockScreen: reading?.lockScreen.name
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encode(savedCode, forKey: .savedCode)
+        try container.encode(lastAttemptFailed, forKey: .lastAttemptFailed)
+        try container.encode(userUnlocked, forKey: .userUnlocked)
+        try container.encode(screen, forKey: .screen)
+        try container.encode(lockScreen, forKey: .lockScreen)
+    }
+
+    /// The next step for a device waiting for its first unlock.
+    public func unlockHint(deviceID: String) -> String {
+        if !savedCode {
+            return "Unlock it on the device, or save its code in your own terminal with `offsider unlock-code set --device \(deviceID)`, then run `offsider wake --unlock --device \(deviceID)`."
+        }
+        if lastAttemptFailed {
+            return "The saved code failed last time: unlock it on the device, or save the right code with `offsider unlock-code set --device \(deviceID)`."
+        }
+        return "Run `offsider wake --unlock --device \(deviceID)` to type the saved code, or unlock it on the device."
+    }
+}
+
 extension DeviceStateReport {
+    static func lock(_ report: LockReport) -> OrderedJSON {
+        .object([
+            ("type", .optional(report.type) { .string($0) }),
+            ("savedCode", .bool(report.savedCode)),
+            ("lastAttemptFailed", .bool(report.lastAttemptFailed)),
+            ("userUnlocked", .optional(report.userUnlocked) { .bool($0) }),
+            ("screen", .optional(report.screen) { .string($0) }),
+            ("lockScreen", .optional(report.lockScreen) { .string($0) }),
+        ])
+    }
+
     static func screen(_ reading: AwakeReading) -> OrderedJSON {
         .object([
             ("screen", .string(reading.screen.rawValue)),

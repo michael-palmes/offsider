@@ -31,6 +31,7 @@ struct AccessibilityPoller {
         elementType: String? = nil,
         allowOffscreen: Bool = false,
         settle: SettlePolicy = .off,
+        pick: MatchPick? = nil,
         logger: OffsiderLogger
     ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
@@ -41,6 +42,7 @@ struct AccessibilityPoller {
             elementType: elementType,
             allowOffscreen: allowOffscreen,
             settle: settle,
+            pick: pick,
             logger: logger
         ) {
             try await backend.accessibilityTree(for: device)
@@ -87,13 +89,14 @@ struct AccessibilityPoller {
         elementType: String?,
         allowOffscreen: Bool = false,
         settle: SettlePolicy = .off,
+        pick: MatchPick? = nil,
         logger: OffsiderLogger,
         clock: PollClock = .live,
         treeFetcher: () async throws -> UITree
     ) async throws -> Polled<TapResolution> {
         let resolver: ([UINode], Bool) throws -> TapResolution = { roots, explain in
             try AccessibilityTargetResolver.resolveTap(
-                roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, logger: logger
+                roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, pick: pick, logger: logger
             )
         }
         let polled = try await poll(

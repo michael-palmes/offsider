@@ -59,6 +59,7 @@ enum TreeGoldens {
     static func tree(from capture: RawTreeCapture) throws -> UITree {
         let roots: [UINode]
         var truncated = false
+        var windows: [UIWindowInfo]?
         switch capture.platform {
         case .ios:
             roots = try IOSAccessibilityMapping.roots(fromJSON: capture.source)
@@ -67,9 +68,11 @@ enum TreeGoldens {
             let scale = AndroidDisplayGeometry(display: dump.display)?.scale ?? (capture.screen?.scale ?? 1)
             roots = HelperTreeMapping.roots(from: dump, scale: scale, pid: 0).roots
             truncated = dump.truncated
+            windows = HelperTreeMapping.windows(from: dump, scale: scale)
         }
         var tree = UITree(platform: capture.platform, device: placeholder(for: capture.platform), screen: capture.screen, roots: roots)
         tree.sourceTruncated = truncated
+        tree.windows = windows
         return tree
     }
 

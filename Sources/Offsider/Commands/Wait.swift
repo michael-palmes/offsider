@@ -23,11 +23,17 @@ struct Wait: AsyncParsableCommand {
     @Flag(name: .customLong("gone"), help: "Wait until no matching element is on screen.")
     var gone = false
 
+    @Flag(name: .customLong("any"), help: "With two or more selectors (--id, --label, --value, each repeatable), wait until the first of them is on screen.")
+    var any = false
+
     @Flag(name: .customLong("settled"), help: "Wait until nothing has changed for --quiet-ms.")
     var settled = false
 
     @Option(name: .customLong("settle-by"), help: "What --settled watches (default tree).")
     var settleBy: SettleSource?
+
+    @Option(name: .customLong("stable-for"), help: ArgumentHelp("With a selector, how long the element must stay on screen (or, with --gone, stay gone) before the wait is met, from 0 to 60000 ms. Default 500 for --gone when --timeout is at least 0.5 s, else 0.", valueName: "ms"))
+    var stableForMs: Int?
 
     @Option(help: ArgumentHelp("Watch this rectangle's pixels, in points as describe-ui prints them. Needs --changed or --stable.", valueName: "x,y,w,h"))
     var region: String?
@@ -44,10 +50,10 @@ struct Wait: AsyncParsableCommand {
     @Option(help: ArgumentHelp("With --region, the fraction of tiles that may change and still count as unchanged (0 to 1, default 0).", valueName: "0-1"))
     var threshold: Double?
 
-    @Option(help: ArgumentHelp("Wait this long, from 0 to 300 seconds, then exit 0. Ignores --timeout.", valueName: "seconds"))
+    @Option(help: ArgumentHelp("Wait this long, from 0 to \(Wait.maximumSeconds) seconds, then exit 0. Ignores --timeout.", valueName: "seconds"))
     var seconds: Double?
 
-    @Option(help: ArgumentHelp("Give up after this many seconds, from 0 to 300, and exit 5.", valueName: "seconds"))
+    @Option(help: ArgumentHelp("Give up after this many seconds, from 0 to \(Wait.maximumSeconds), and exit 5.", valueName: "seconds"))
     var timeout: Double = 10
 
     @Option(name: .customLong("poll-interval"), help: ArgumentHelp("Seconds between reads, from 0.05 to 5.", valueName: "seconds"))
@@ -63,8 +69,18 @@ struct Wait: AsyncParsableCommand {
     var appOption: AppOption
 
     static let defaultQuietMs = 500
+    static let maximumSeconds = 900
 
     func validate() throws {
+        if any {
+            guard selector.queries.count >= 2 else {
+                throw ValidationError("--any needs two or more selectors, such as --label 'Success!' --label 'Try again'.")
+            }
+            if gone { throw ValidationError("--any waits for the first selector on screen; it does not take --gone.") }
+            if selector.hasValue != nil { throw ValidationError("--any does not take --has-value; use --value as one of the selectors.") }
+        } else if selector.queries.count > 1 {
+            throw ValidationError("Use only one of --id, --label, or --value, or pass --any to wait for the first of several.")
+        }
         if (changed || stable) && region == nil {
             throw ValidationError("--changed and --stable need --region.")
         }
@@ -77,6 +93,20 @@ struct Wait: AsyncParsableCommand {
         }
         if gone && selector.query == nil {
             throw ValidationError("--gone needs --id, --label or --value.")
+        }
+        if let stableForMs {
+            if settled || stable {
+                throw ValidationError("--stable-for applies to selector waits; for --settled and --region --stable use --quiet-ms.")
+            }
+            guard selector.query != nil else {
+                throw ValidationError("--stable-for needs --id, --label or --value.")
+            }
+            guard (0...60_000).contains(stableForMs) else {
+                throw ValidationError("--stable-for must be from 0 to 60000 ms; got \(stableForMs).")
+            }
+            if Double(stableForMs) / 1000 > timeout {
+                throw ValidationError("--stable-for is longer than --timeout, so the wait could never succeed. Raise --timeout or lower --stable-for.")
+            }
         }
         if settleBy != nil && !settled {
             throw ValidationError("--settle-by applies to --settled only.")
@@ -99,11 +129,12 @@ struct Wait: AsyncParsableCommand {
             guard settled || stable else { throw ValidationError("--quiet-ms applies to --settled and --region --stable only.") }
             guard (100...10_000).contains(quietMs) else { throw ValidationError("--quiet-ms must be from 100 to 10000; got \(quietMs).") }
         }
-        if let seconds, !(0...300).contains(seconds) {
-            throw ValidationError("--seconds must be from 0 to 300; got \(seconds).")
+        let cap = Double(Self.maximumSeconds)
+        if let seconds, !(0...cap).contains(seconds) {
+            throw ValidationError("--seconds must be from 0 to \(Self.maximumSeconds) seconds; got \(seconds).")
         }
-        guard (0...300).contains(timeout) else {
-            throw ValidationError("--timeout must be from 0 to 300 seconds; got \(timeout).")
+        guard (0...cap).contains(timeout) else {
+            throw ValidationError("--timeout must be from 0 to \(Self.maximumSeconds) seconds; got \(timeout).")
         }
         guard (0.05...5).contains(pollInterval) else {
             throw ValidationError("--poll-interval must be from 0.05 to 5 seconds; got \(pollInterval).")
@@ -150,8 +181,15 @@ struct Wait: AsyncParsableCommand {
     }
 
     var condition: WaitCondition {
+        if any {
+            let queries = selector.queries
+            let selectors = queries.enumerated().map { index, query in
+                (selector: WaitMatch(by: String(query.kind.dropFirst(2)), text: query.rawValue, position: index + 1, of: queries.count), probe: selector.probe(for: query))
+            }
+            return .anyElement(selectors, stableFor: stableFor)
+        }
         if let query = selector.query {
-            return .element(probe: selector.probe(for: query), gone: gone)
+            return .element(probe: selector.probe(for: query), gone: gone, stableFor: stableFor)
         }
         if settled {
             return .settled(by: settleBy ?? .tree, quiet: quiet)
@@ -165,6 +203,9 @@ struct Wait: AsyncParsableCommand {
     /// `✓ --id 'save' is on screen after 1.2 s`, `✓ Screen settled after 0.9 s` or `✓ Waited 2 s`.
     func successLine(_ outcome: WaitOutcome) -> String {
         let after = "after \(WaitLoop.seconds(outcome.elapsed))"
+        if any, let matched = outcome.matched {
+            return "✓ --\(matched.by) '\(matched.text)' is \(selector.presentState) \(after) (\(matched.position) of \(matched.of) selectors)"
+        }
         if let query = selector.query {
             return "✓ \(query.selectorDescription) is \(gone ? "gone" : selector.presentState) \(after)"
         }
@@ -179,6 +220,9 @@ struct Wait: AsyncParsableCommand {
     }
 
     private var target: String {
+        if any {
+            return "any of " + selector.queries.map(\.selectorDescription).joined(separator: ", ")
+        }
         if let query = selector.query {
             if gone { return "\(query.selectorDescription) to be gone" }
             return selector.hasValue.map { "\(query.selectorDescription) with value '\($0)'" } ?? query.selectorDescription
@@ -187,6 +231,14 @@ struct Wait: AsyncParsableCommand {
         if region != nil { return stable ? "the region to stay still" : "the region to change" }
         return WaitLoop.seconds(seconds ?? 0)
     }
+
+    /// A `--gone` wait holds for half a second by default, so a node that flickers out for one read does not count as gone.
+    var stableFor: TimeInterval {
+        if let stableForMs { return Double(stableForMs) / 1000 }
+        return gone && timeout >= Self.defaultGoneDwell ? Self.defaultGoneDwell : 0
+    }
+
+    static let defaultGoneDwell: TimeInterval = 0.5
 
     private var quiet: TimeInterval {
         Double(quietMs ?? Self.defaultQuietMs) / 1000

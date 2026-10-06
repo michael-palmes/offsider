@@ -86,13 +86,20 @@ public struct UITree: Equatable, Sendable {
     public var roots: [UINode]
     /// True when the source stopped before the whole tree, so a missing node may still be on screen; JSON does not carry it.
     public var sourceTruncated = false
+    /// Every window Android's accessibility service lists; nil on iOS and with the uiautomator fallback.
+    public var windows: [UIWindowInfo]?
+    /// The context a decoded describe-ui JSON carried, which its windows no longer can.
+    var decodedContext: UITreeContext?
 
-    public init(platform: DevicePlatform, device: String, screen: UIScreenInfo? = nil, roots: [UINode], sourceTruncated: Bool = false) {
+    public var context: UITreeContext { decodedContext ?? UITreeContext(tree: self) }
+
+    public init(platform: DevicePlatform, device: String, screen: UIScreenInfo? = nil, roots: [UINode], sourceTruncated: Bool = false, windows: [UIWindowInfo]? = nil) {
         self.platform = platform
         self.device = device
         self.screen = screen
         self.roots = roots
         self.sourceTruncated = sourceTruncated
+        self.windows = windows
     }
 
     public var applicationFrame: UIFrame? {
@@ -115,6 +122,7 @@ public struct UITree: Equatable, Sendable {
             ("platform", .string(platform.rawValue)),
             ("device", .string(device)),
             ("screen", screen.map { $0.jsonValue(on: platform) } ?? .null),
+            ("context", context.jsonValue),
             ("roots", .array(roots.map(\.jsonValue))),
         ])
     }

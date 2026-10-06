@@ -57,6 +57,16 @@ final class FakeDeviceBackend: DeviceBackend {
     private(set) var enteredCodes: [UnlockCode] = []
     /// What `listedName(of:)` serves, as a phone's model or an AVD name.
     var listedDeviceName: String?
+    /// Foreground reads in order, holding the last.
+    var foregrounds: [ForegroundActivities] = []
+    /// What the HOME intent brings to the front; nil changes nothing.
+    var foregroundAfterIntent: ForegroundActivities?
+    private(set) var homeIntents = 0
+    /// `rn open`: the schemes the app registers, the Metro host, and every link sent.
+    var expoSchemes = ["exp+playground"]
+    var metroHostAnswer = "127.0.0.1"
+    private(set) var openedURLs: [String] = []
+    private(set) var devMenuOpens = 0
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -299,4 +309,60 @@ extension FakeDeviceBackend: AwakeControlling {
         awake = afterCode
         return UnlockAttempt(typed: codeTyped, reading: awake)
     }
+}
+
+extension FakeDeviceBackend: ExpoDevClientOpening {
+    func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String] { expoSchemes }
+    func metroHost(port: Int, on id: DeviceID) async throws -> String { metroHostAnswer }
+    func openURL(_ url: String, appID: String, on id: DeviceID) async throws { openedURLs.append(url) }
+}
+
+extension FakeDeviceBackend: ReactNativeDevMenuOpening {
+    /// Counts as input, so a backend that advances on input shows the next tree.
+    func openDevMenu(_ id: DeviceID) async throws {
+        devMenuOpens += 1
+        if advanceTreeOnInput { session.onPerform?(.shortKeyPress(0)) }
+    }
+}
+
+extension FakeDeviceBackend: ForegroundReading {
+    func foreground(on id: DeviceID) async throws -> ForegroundActivities {
+        if homeIntents > 0, let foregroundAfterIntent { return foregroundAfterIntent }
+        let reading = foregrounds.first ?? ForegroundActivities(top: nil, home: nil)
+        if foregrounds.count > 1 { foregrounds.removeFirst() }
+        return reading
+    }
+
+    func startHomeIntent(on id: DeviceID) async throws {
+        homeIntents += 1
+    }
+}
+
+/// A booted device whose log serves `entries` in order, for `logs`.
+@MainActor
+final class FakeLogBackend: LogReading {
+    let platform: DevicePlatform
+    let entries: [LogEntry]
+    private(set) var queries: [LogQuery] = []
+
+    init(platform: DevicePlatform = .android, entries: [LogEntry]) {
+        self.platform = platform
+        self.entries = entries
+    }
+
+    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
+        queries.append(query)
+        entries.forEach(onEntry)
+    }
+
+    func prepare() async throws {}
+    func listDevices() async throws -> [DeviceSummary] { [] }
+    func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice { BootedDevice(id: id, name: "Fake") }
+    func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree { UITree(platform: platform, device: id.rawValue, roots: []) }
+    func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? { nil }
+    func deviceCoordinates(for points: [(x: Double, y: Double)], tree: UITree?, on id: DeviceID) async throws -> [(x: Double, y: Double)] { points }
+    func openInputSession(for id: DeviceID) async throws -> any InputSession { RecordingInputSession() }
+    func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {}
+    func screenshotPNG(for id: DeviceID) async throws -> Data { Data() }
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands { ScreenBands(top: 0, bottom: 0) }
 }

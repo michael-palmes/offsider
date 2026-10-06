@@ -53,13 +53,17 @@ struct WaitCommandTests {
     @Test("wait --gone passes when only an off-screen copy is left")
     func goneIgnoresOffScreenCopy() async throws {
         let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 10700)])
-        let wait = try Self.command(["--id", "apply", "--gone"])
+        let wait = try Self.command(["--id", "apply", "--gone", "--stable-for", "0"])
 
         let outcome = try await Self.evaluate(wait, on: backend)
 
         #expect(outcome.met)
         #expect(outcome.reason == "off screen at (20, 10700) 350x44")
         #expect(backend.treeReads == 1)
+
+        let dwelling = try await Self.evaluate(try Self.command(["--id", "apply", "--gone"]), on: FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 10700)]))
+        #expect(dwelling.met)
+        #expect(dwelling.reason == "gone for 0.5 s")
     }
 
     @Test("a zero-size or frameless match has no usable frame rather than being off screen")
@@ -174,12 +178,99 @@ struct WaitCommandTests {
         (["--settled", "--quiet-ms", "50"], "--quiet-ms must be from 100 to 10000; got 50."),
         (["--settled", "--quiet-ms", "2000", "--timeout", "1"], "--quiet-ms is longer than --timeout, so the wait could never succeed. Raise --timeout or lower --quiet-ms."),
         (["--id", "a", "--threshold", "0.1"], "--threshold applies to --region only."),
-        (["--id", "a", "--timeout", "301"], "--timeout must be from 0 to 300 seconds; got 301.0."),
+        (["--id", "a", "--timeout", "901"], "--timeout must be from 0 to 900 seconds; got 901.0."),
+        (["--seconds", "901"], "--seconds must be from 0 to 900 seconds; got 901.0."),
         (["--id", "a", "--poll-interval", "0.01"], "--poll-interval must be from 0.05 to 5 seconds; got 0.01."),
-        (["--id", "a", "--label", "b"], "Use only one of --id, --label, or --value."),
+        (["--id", "a", "--label", "b"], "Use only one of --id, --label, or --value, or pass --any to wait for the first of several."),
         (["--settled", "--has-value", "3"], "--has-value needs --id, --label or --value."),
     ])
     func rejectsInvalidConditions(arguments: [String], message: String) {
         #expect(Self.validationMessage(arguments) == message)
+    }
+
+    @Test("--timeout and --seconds accept up to 900 seconds, for cold bundles that take minutes", arguments: [
+        ["--id", "a", "--timeout", "900"],
+        ["--seconds", "900"],
+    ])
+    func acceptsLongWaits(arguments: [String]) {
+        #expect(Self.validationMessage(arguments) == nil)
+    }
+
+    @Test("--stable-for is checked against the condition and --timeout", arguments: [
+        (["--settled", "--stable-for", "500"], "use --quiet-ms"),
+        (["--region", "0,0,10,10", "--stable", "--stable-for", "500"], "use --quiet-ms"),
+        (["--seconds", "1", "--stable-for", "500"], "--stable-for needs --id, --label or --value"),
+        (["--id", "x", "--stable-for", "60001"], "--stable-for must be from 0 to 60000"),
+        (["--id", "x", "--gone", "--timeout", "1", "--stable-for", "1500"], "--stable-for is longer than --timeout"),
+    ])
+    func stableForValidation(arguments: [String], message: String) {
+        #expect(Self.validationMessage(arguments)?.contains(message) == true, "\(Self.validationMessage(arguments) ?? "no error")")
+    }
+
+    @Test("--gone holds 500 ms by default, none at --timeout 0, and --stable-for overrides it")
+    func goneDefaultDwell() throws {
+        #expect(try Self.command(["--id", "x", "--gone"]).stableFor == 0.5)
+        #expect(try Self.command(["--id", "x", "--gone", "--timeout", "0"]).stableFor == 0)
+        #expect(try Self.command(["--id", "x", "--gone", "--stable-for", "0"]).stableFor == 0)
+        #expect(try Self.command(["--id", "x"]).stableFor == 0)
+        #expect(try Self.command(["--id", "x", "--stable-for", "300"]).stableFor == 0.3)
+    }
+}
+
+@Suite("wait --any")
+@MainActor
+struct WaitAnyTests {
+    static let device = DeviceID(rawValue: "fake-device", platform: .ios)
+
+    static func screen(_ ids: [String]) -> UITree {
+        FakeUI.tree(width: 393, height: 852, ids.enumerated().map { index, id in
+            FakeUI.node(.button, id: id, label: id.capitalized, frame: FakeUI.frame(20, 100 + Double(index) * 60, 350, 44))
+        })
+    }
+
+    static func evaluate(_ arguments: [String], trees: [UITree]) async throws -> (Wait, WaitOutcome) {
+        let wait = try Wait.parse(arguments + ["--device", device.rawValue, "--poll-interval", "0.05"])
+        let outcome = try await wait.evaluate(on: DeviceRouter.Route(backend: FakeDeviceBackend(trees: trees), device: device), logger: OffsiderLogger(), clock: ScriptedClock().poll)
+        return (wait, outcome)
+    }
+
+    @Test("the first selector on screen wins, in order ids, labels, values, and the report names it")
+    func firstPresentWins() async throws {
+        let (wait, outcome) = try await Self.evaluate(["--any", "--id", "never-there", "--id", "done", "--label", "Retry"], trees: [Self.screen([]), Self.screen(["retry", "done"])])
+
+        #expect(outcome.met)
+        #expect(outcome.matched == WaitMatch(by: "id", text: "done", position: 2, of: 3))
+        #expect(wait.successLine(outcome).hasPrefix("✓ --id 'done' is on screen after "))
+        #expect(wait.successLine(outcome).hasSuffix("(2 of 3 selectors)"))
+        let json = WaitReport(outcome).jsonLine()
+        #expect(json.contains(#""matched":{"by":"id","text":"done"}"#))
+        #expect(json.range(of: #""match":"#)!.lowerBound < json.range(of: #""matched":"#)!.lowerBound)
+    }
+
+    @Test("a timeout names each selector's last reason")
+    func timeoutReasons() async throws {
+        let (wait, outcome) = try await Self.evaluate(["--any", "--id", "a", "--label", "B", "--timeout", "0.2"], trees: [Self.screen([])])
+
+        #expect(!outcome.met)
+        #expect(outcome.reason == "--id 'a' not found; --label 'B' not found")
+        #expect(wait.failureLine(outcome).contains("any of --id 'a', --label 'B'"))
+        #expect(WaitReport(outcome).jsonLine().contains(#""matched":null"#))
+    }
+
+    @Test("--any needs two selectors and refuses --gone and --has-value; several selectors need --any", arguments: [
+        (["--any", "--id", "a"], "--any needs two or more selectors"),
+        (["--any", "--id", "a", "--id", "b", "--gone"], "does not take --gone"),
+        (["--any", "--id", "a", "--id", "b", "--has-value", "1"], "does not take --has-value"),
+        (["--id", "a", "--label", "b"], "pass --any"),
+    ])
+    func validation(arguments: [String], message: String) {
+        let error = #expect(throws: (any Error).self) { try Wait.parse(arguments + ["--device", Self.device.rawValue]) }
+        #expect(error.map { Wait.message(for: $0).contains(message) } == true, "\(error.map { Wait.message(for: $0) } ?? "")")
+    }
+
+    @Test("assert still takes one selector")
+    func assertTakesOne() {
+        let error = #expect(throws: (any Error).self) { try Assert.parse(["--id", "a", "--id", "b", "--device", Self.device.rawValue]) }
+        #expect(error.map { Assert.message(for: $0).contains("Use only one of --id, --label, or --value.") } == true)
     }
 }

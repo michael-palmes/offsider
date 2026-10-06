@@ -46,22 +46,55 @@ extension AndroidBackend {
             return .useKeys(warning: "type --replace could not use the UiAutomation helper on \(serial) (\(reason)), so Offsider clears the field with Ctrl+A and Delete, then types.")
         }
         let refusal: String
+        var field: AndroidFieldInfo?
         do {
             let result = try await session.setText(text)
             log(.debug, "The helper set the text of \(result.className ?? "the focused field") on \(serial)")
+            if let length = result.length, length < text.utf16.count {
+                return .replacedWrongLength(field: AndroidFieldInfo(className: result.className, resourceId: result.resourceId, inputType: result.inputType))
+            }
             return .replaced
         } catch let error as HelperErrorBody {
             switch error.code {
             case "no-focus": throw AndroidError.noFocusedField(serial)
             case "not-editable": throw AndroidError.fieldNotEditable(serial, className: error.className, resourceId: error.resourceId)
-            default: refusal = error.message
+            default:
+                refusal = error.message
+                if error.className != nil || error.resourceId != nil {
+                    field = AndroidFieldInfo(className: error.className, resourceId: error.resourceId, inputType: error.inputType)
+                }
             }
         } catch let error as HelperProtocolError {
             refusal = error.detail
         } catch HelperStartFailure.busy {
             throw await busyError(serial)
         }
-        return .useKeys(warning: "The focused field on \(serial) does not accept replacement text (\(refusal)), so Offsider clears it with Ctrl+A and Delete, then types.")
+        let named = field.map { " (\($0.description))" } ?? ""
+        return .useKeys(warning: "The focused field on \(serial)\(named) does not accept replacement text (\(refusal)), so Offsider clears it with Ctrl+A and Delete, then types.", field: field)
+    }
+
+    /// The focused field's length and whether it is a password field, from the running helper's tree; nil without a helper.
+    func focusedFieldReading(_ serial: String) async -> FocusedFieldReading? {
+        guard let session = runningHelper(for: serial) else { return nil }
+        do {
+            let roots = try await helperRoots(serial, session: session).roots
+            let focused = roots.flatMap { $0.flattened() }.first { $0.state.focused == true && $0.role.isTextInput }
+            return focused.map { FocusedFieldReading(length: $0.isSecure ? nil : ($0.value ?? "").utf16.count, secure: $0.isSecure) }
+        } catch {
+            log(.debug, "Could not read the focused field on \(serial): \((error as? AndroidError)?.message ?? error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// The running helper's `paste`; nil when there is no helper or it has no such op.
+    func pasteIntoFocusedField(_ serial: String) async throws -> HelperTextResult? {
+        guard let session = runningHelper(for: serial) else { return nil }
+        do {
+            return try await session.paste()
+        } catch let error as HelperErrorBody {
+            log(.debug, "The helper could not paste on \(serial): \(error.code): \(error.message)")
+            return nil
+        }
     }
 
     /// The helper for input, started if needed under the tree's rules; when not `required`, a busy or unavailable helper is nil.
@@ -102,7 +135,7 @@ extension AndroidBackend {
     }
 
     /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, then `noWindow`.
-    func helperRoots(_ serial: String, session: HelperSession) async throws -> (roots: [UINode], truncated: Bool) {
+    func helperRoots(_ serial: String, session: HelperSession) async throws -> (roots: [UINode], truncated: Bool, windows: [UIWindowInfo]) {
         var dump = try await helperDump(serial, session: session)
         if HelperTreeMapping.appWindow(in: dump) == nil {
             log(.debug, "The helper found no window on \(serial); reading the screen again")
@@ -126,7 +159,7 @@ extension AndroidBackend {
             HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)
         }
         session.remember(mapped.index)
-        return (mapped.roots, dump.truncated)
+        return (mapped.roots, dump.truncated, HelperTreeMapping.windows(from: dump, scale: geometry.scale))
     }
 
     /// The helper's dump reply as it arrived, without its `id` and `ok`; uiautomator has no such reply.

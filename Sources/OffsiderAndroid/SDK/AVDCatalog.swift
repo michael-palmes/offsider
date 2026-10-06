@@ -8,6 +8,8 @@ struct AVDInfo: Equatable, Sendable {
     let apiLevel: Int?
     let abi: String?
     let deviceProfile: String?
+    /// `hw.ramSize` in MB; nil when absent or unreadable.
+    var ramMB: Int? = nil
 }
 
 /// The AVDs defined on this Mac, read from their `.ini` files; unreadable ones are skipped.
@@ -67,7 +69,8 @@ struct AVDCatalog {
                 displayName: config["avd.ini.displayname"],
                 apiLevel: Self.apiLevel(systemImage: config["image.sysdir.1"]) ?? Self.apiLevel(target: pointer["target"]),
                 abi: config["abi.type"],
-                deviceProfile: config["hw.device.name"]
+                deviceProfile: config["hw.device.name"],
+                ramMB: Self.megabytes(config["hw.ramSize"])
             )
         }
         return nil
@@ -80,6 +83,18 @@ struct AVDCatalog {
             return leadingInteger(component.dropFirst("android-".count))
         }
         return nil
+    }
+
+    /// `2048`, `2048M`, `2048MB` and `2G` give 2048; a bare number is MB, as the emulator reads it.
+    static func megabytes(_ value: String?) -> Int? {
+        guard let value = value?.trimmingCharacters(in: .whitespaces).uppercased(), !value.isEmpty else { return nil }
+        let digits = value.prefix { $0.isASCII && $0.isNumber }
+        guard let number = Int(digits), number > 0 else { return nil }
+        switch value.dropFirst(digits.count) {
+        case "", "M", "MB": return number
+        case "G", "GB": return number * 1024
+        default: return nil
+        }
     }
 
     /// `target=android-36` gives 36.

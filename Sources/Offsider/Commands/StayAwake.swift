@@ -92,6 +92,9 @@ struct StayAwakeCommand: AsyncParsableCommand {
         if reading.timeoutCappedByPolicy {
             return "\(head), but a device policy limits the screen timeout, so Android ignores it"
         }
+        if !reading.staysAwake, reading.screenTimeoutSummary == "never" {
+            return "\(head); the screen timeout is never, so the screen stays on anyway"
+        }
         if reading.charging.isEmpty {
             return "\(head), but it is not charging, so the screen still turns off \(timeout)"
         }

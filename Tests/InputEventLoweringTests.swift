@@ -114,4 +114,17 @@ struct InputEventLoweringTests {
             .delay(1)
         ]))
     }
+
+    @Test("two fingers lower to idb's two-finger touch at both points")
+    func twoFingers() throws {
+        let event = try InputEvent.twoFingerTouch(direction: .down, x1: 10, y1: 20, x2: 70, y2: 20).hidEvent()
+        guard case let .twoFingerTouch(direction, finger1, finger2) = event else {
+            Issue.record("expected a two-finger touch, got \(event)")
+            return
+        }
+        #expect(direction == .down)
+        #expect(finger1 == CGPoint(x: 10, y: 20) && finger2 == CGPoint(x: 70, y: 20))
+        #expect(InputEvent.composite([.delay(1), .twoFingerTouch(direction: .up, x1: 1, y1: 1, x2: 2, y2: 1)]).hasTwoFingers)
+        #expect(!InputEvent.composite([.touch(direction: .down, x: 1, y: 1)]).hasTwoFingers)
+    }
 }

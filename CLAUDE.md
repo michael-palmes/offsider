@@ -91,6 +91,9 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_IOS_SESSION_IDLE` | Seconds an iPhone or iPad session broker stays up after its last command (default 300) |
 | `OFFSIDER_GOLDENS_UPDATE=1` | Re-renders the tree goldens offline (`--filter TreeGoldenRefresh`), or recaptures them with the RN device variables (`--filter TreeGoldenCaptureTests`) |
 | `OFFSIDER_TREE_CACHE` | `off` stops reading and writing the per-device tree cache under the private directory's `trees/` (`describe-ui --diff` and the tap guard then see no earlier tree) |
+| `OFFSIDER_DEVICE` | The default `--device` for device commands (an explicit `--device` wins; blank is unset); `test-runner.sh` and test child processes unset it |
+| `OFFSIDER_LEASE` | The label of this session's `lease set`; `doctor`'s `device.lease` passes when it matches |
+| `OFFSIDER_RUN` | `off` keeps captures out of any evidence run (`test-runner.sh`, `bench-ab.sh` and test helpers set it); `<dir>` records into that folder whatever the session |
 | `OFFSIDER_WAIT_LOCK` | Default seconds to wait for a device another Offsider command holds (`--wait-lock` wins; `test-runner.sh` sets 30) |
 | `OFFSIDER_TIMINGS=1` | Prints iOS and Android phase timings to stderr (`offsider timing: <phase> <n> ms`) |
 | `OFFSIDER_MASK_SECURE=1` | Makes `screenshot` and `batch` mask password fields as `--mask-secure` does |
@@ -142,6 +145,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 ## Android emulator caveats
 
 - Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
+- `boot --emulator-arg` refuses listener, metrics and Offsider-owned flags by name (`EmulatorArguments.refusedFlags`); add any new emulator listener flag there.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
 - A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names its serial. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
 - E2E and manual checks drive only `Offsider_E2E_Pixel_9` and the foldable `Offsider_E2E_Pixel_9_Pro_Fold`, and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.

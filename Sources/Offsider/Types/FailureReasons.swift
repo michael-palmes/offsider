@@ -42,3 +42,6 @@ extension Batch: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Displays: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension AppearanceCommand: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension DescribeUI: JSONReportingCommand { var wantsJSON: Bool { !diff && output.writesJSON } }
+extension RunStart: JSONReportingCommand { var wantsJSON: Bool { json } }
+extension RunStop: JSONReportingCommand { var wantsJSON: Bool { json } }
+extension RunStatus: JSONReportingCommand { var wantsJSON: Bool { json } }

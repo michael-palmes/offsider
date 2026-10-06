@@ -42,6 +42,9 @@ public enum IOSAccessibilityMapping {
         "Group": .group,
     ]
 
+    /// iOS 27 simulators list no Keyboard element; the software keyboard's keys sit in a group with this id prefix (`UIKeyboardLayoutStar Preview`).
+    static let keyboardLayoutPrefix = "UIKeyboardLayout"
+
     public static func roots(fromJSON data: Data) throws -> [UINode] {
         try tree(fromJSON: data).roots
     }
@@ -65,7 +68,11 @@ public enum IOSAccessibilityMapping {
         let nativeRole = text(dictionary["role"])
         let subrole = text(dictionary["subrole"])
         let roleDescription = text(dictionary["role_description"])
+        let id = text(dictionary["AXUniqueId"]) ?? text(dictionary["AXIdentifier"])
         var role = role(type: type, role: nativeRole, subrole: subrole, roleDescription: roleDescription)
+        if role == .group, id?.hasPrefix(keyboardLayoutPrefix) == true {
+            role = .keyboard
+        }
         let raw = text(dictionary["AXValue"])
         var value = role == .secureTextField ? SecureText.masked(raw) : raw
         let traits = (dictionary["traits"] as? [Any] ?? []).compactMap(text)
@@ -81,7 +88,7 @@ public enum IOSAccessibilityMapping {
 
         return UINode(
             role: role,
-            id: text(dictionary["AXUniqueId"]) ?? text(dictionary["AXIdentifier"]),
+            id: id,
             label: text(dictionary["AXLabel"]),
             value: value,
             frame: frame(dictionary["frame"]),

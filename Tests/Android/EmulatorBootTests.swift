@@ -153,9 +153,63 @@ struct EmulatorBootTests {
 
         let run = await Self.boot(host, headless: true)
 
-        #expect(try run.result.get() == EmulatorBootResult(serial: "emulator-5556", alreadyRunning: true, hasGRPC: true, logPath: nil))
+        #expect(try run.result.get() == EmulatorBootResult(serial: "emulator-5556", alreadyRunning: true, hasGRPC: true, logPath: nil, ignored: ["--headless"]))
         #expect(launcher.launches.isEmpty)
         #expect(run.lines == ["--headless ignored: \(Self.avd) is already running.", "\(Self.avd) is already running as emulator-5556."])
+    }
+
+    @Test("a running AVD is never launched again for memory, snapshot or extra arguments, and each is named as ignored")
+    func alreadyRunningIgnoresLaunchOptions() async throws {
+        let home = try Self.home()
+        Self.writeDiscovery(pid: 900, in: home)
+        let launcher = FakeLauncher()
+        let host = AndroidTestHost.make(home: home, adb: Self.server(AdbState()), liveProcesses: [900], launcher: launcher)
+        let request = EmulatorBootRequest(
+            avdName: Self.avd, headless: false, timeout: .seconds(240), memoryMB: 4096, noSnapshotLoad: true, extraArguments: ["-gpu", "host"]
+        )
+        var lines: [String] = []
+
+        let result = try await EmulatorBooter(host: host) { _, _ in }.boot(request) { lines.append($0) }
+
+        #expect(launcher.launches.isEmpty)
+        #expect(result.ignored == ["--memory", "--no-snapshot-load", "--emulator-arg"])
+        #expect(lines.first == "--memory, --no-snapshot-load and --emulator-arg ignored: \(Self.avd) is already running.")
+    }
+
+    @Test("launch arguments keep the AVD and -no-metrics first, then headless, memory, snapshot and the extra tokens in order")
+    func launchArgumentOrder() {
+        let request = EmulatorBootRequest(
+            avdName: "X", headless: true, timeout: .seconds(1), memoryMB: 3072, noSnapshotLoad: true, extraArguments: ["-gpu", "host"]
+        )
+        #expect(EmulatorBooter.launchArguments(request) == ["-avd", "X", "-no-metrics", "-no-window", "-memory", "3072", "-no-snapshot-load", "-gpu", "host"])
+        #expect(EmulatorBooter.launchArguments(EmulatorBootRequest(avdName: "X", headless: false, timeout: .seconds(1), memoryMB: 2048))
+            == ["-avd", "X", "-no-metrics", "-memory", "2048"])
+    }
+
+    @Test("--emulator-arg refuses listener, metrics and Offsider-owned flags in bare, double-dash and =value forms", arguments: [
+        "-port", "-ports", "-grpc", "-grpc-use-token", "-grpc-tls-key", "-metrics-to-console", "-metrics-collection", "-qemu",
+        "-shell-serial", "-modem-simulator-port", "-wifi-server-port", "-wifi-client-port", "-net-socket", "-net-tap",
+        "-net-tap-script-up", "-packet-streamer-endpoint", "-turncfg", "-gnss-grpc-port", "-vmnet-bridged", "-report-console",
+        "-avd", "-no-window", "-memory", "-no-snapshot-load",
+    ])
+    func refusedFlags(flag: String) {
+        for form in [flag, "-" + flag, flag + "=1", flag.uppercased()] {
+            let message = EmulatorArguments.refusal(in: ["-gpu", "host", form])
+            #expect(message?.hasPrefix("--emulator-arg \(form) is refused: ") == true, "\(form)")
+        }
+    }
+
+    @Test("--emulator-arg passes ordinary flags and values", arguments: [
+        ["-gpu", "host"], ["-no-boot-anim"], ["-camera-back", "none"], ["-feature", "-Vulkan"], ["-no-snapshot-save"], ["-wipe-data"],
+    ])
+    func allowedFlags(tokens: [String]) {
+        #expect(EmulatorArguments.refusal(in: tokens) == nil)
+    }
+
+    @Test("Offsider-owned flags point to Offsider's own options")
+    func ownedFlagsPointToOptions() {
+        #expect(EmulatorArguments.refusal(in: ["-memory", "4096"]) == "--emulator-arg -memory is refused: use --memory.")
+        #expect(EmulatorArguments.refusal(in: ["-no-window"]) == "--emulator-arg -no-window is refused: use --headless.")
     }
 
     @Test("a booted AVD without a discovery file says commands will use adb")
@@ -203,6 +257,101 @@ struct EmulatorBootTests {
         #expect(try run.result.get().serial == "emulator-5556")
         #expect(launcher.launches.isEmpty)
         #expect(run.lines.first == "\(Self.avd) is already starting (pid 777); waiting for it.")
+    }
+
+    @Test("lock files whose pid is gone are removed before the launch, and an early exit names them")
+    func staleLocksRemoved() async throws {
+        let home = try Self.home()
+        let directory = home.appendingPathComponent(".android/avd/\(Self.avd).avd")
+        try AndroidTestHost.write("31337", to: ".android/avd/\(Self.avd).avd/hardware-qemu.ini.lock/pid", in: home)
+        try AndroidTestHost.write("31337", to: ".android/avd/\(Self.avd).avd/multiinstance.lock", in: home)
+        let launcher = FakeLauncher(pid: 4242, exitStatus: 1)
+        let host = AndroidTestHost.make(home: home, environment: ["TMPDIR": home.path], adb: Self.server(AdbState(hiddenFor: .max)), launcher: launcher)
+
+        let run = await Self.boot(host)
+
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("hardware-qemu.ini.lock").path))
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("multiinstance.lock").path))
+        #expect(run.lines.first == "Removed hardware-qemu.ini.lock and multiinstance.lock left by an emulator that is no longer running.")
+        guard case .failure(let error) = run.result else {
+            Issue.record("expected the boot to fail")
+            return
+        }
+        #expect(error.reason == .emulatorLaunchFailed)
+        #expect(error.message.hasSuffix("Before this launch Offsider removed hardware-qemu.ini.lock and multiinstance.lock from \(directory.path), left by an emulator that was no longer running."))
+    }
+
+    @Test("lock files are kept when they name no pid", arguments: ["", "not a pid"])
+    func locksWithoutPidKept(contents: String) async throws {
+        let home = try Self.home()
+        let lock = home.appendingPathComponent(".android/avd/\(Self.avd).avd/multiinstance.lock")
+        try AndroidTestHost.write(contents, to: ".android/avd/\(Self.avd).avd/multiinstance.lock", in: home)
+        let launcher = FakeLauncher(pid: 4242, exitStatus: 1)
+        let host = AndroidTestHost.make(home: home, environment: ["TMPDIR": home.path], adb: Self.server(AdbState(hiddenFor: .max)), launcher: launcher)
+
+        let run = await Self.boot(host)
+
+        #expect(FileManager.default.fileExists(atPath: lock.path))
+        #expect(!run.lines.contains { $0.hasPrefix("Removed ") })
+    }
+
+    static func stateServer(_ outputs: ScriptedOutputs) -> FakeAdbServer {
+        let script = AndroidAwakeState.readScript + AndroidAwakeState.userStateScript
+        return FakeAdbServer(handler: FakeAdbServer.devices(
+            ["emulator-5556"],
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            device: { _, service in
+                service == AndroidAwakeStateTests.shellPrefix + script ? FakeAdbServer.shell(stdout: outputs.next()) : FakeAdbServer.shell()
+            }
+        ))
+    }
+
+    static func state(credential: String, userState: String) -> String {
+        AndroidAwakeStateTests.motoAwake.replacingOccurrences(of: "CredentialType: PIN", with: "CredentialType: \(credential)")
+            + "user_state=\(userState)\nce_available=\nmemtotal_kb=MemTotal:  3072000 kB\n"
+    }
+
+    @Test("a device with no credential that reads as unlocking is read again until it is unlocked")
+    func unlockingThenUnlocked() async throws {
+        let outputs = ScriptedOutputs([Self.state(credential: "NONE", userState: "RUNNING_UNLOCKING"), Self.state(credential: "NONE", userState: "RUNNING_UNLOCKED")])
+        let sleeps = SleepRecorder()
+        let host = AndroidTestHost.make(home: try Self.home(), adb: Self.stateServer(outputs), sleeps: sleeps)
+
+        let reading = await EmulatorBooter(host: host) { _, _ in }.settledState(serial: "emulator-5556")
+
+        #expect(reading?.userUnlocked == true)
+        #expect(reading?.memTotalKB == 3_072_000)
+        #expect(sleeps.sleeps == [.milliseconds(500)])
+    }
+
+    @Test("a PIN device waiting for its first unlock is reported at once, without polling")
+    func pinLockedNotPolled() async throws {
+        let outputs = ScriptedOutputs([Self.state(credential: "PIN", userState: "RUNNING_LOCKED")])
+        let sleeps = SleepRecorder()
+        let host = AndroidTestHost.make(home: try Self.home(), adb: Self.stateServer(outputs), sleeps: sleeps)
+
+        let reading = await EmulatorBooter(host: host) { _, _ in }.settledState(serial: "emulator-5556")
+
+        #expect(reading?.awaitsFirstUnlock == true)
+        #expect(sleeps.sleeps.isEmpty)
+    }
+
+    @Test("an unlocking device that never settles is given up on after 10 s")
+    func unlockingGivesUp() async throws {
+        let outputs = ScriptedOutputs([Self.state(credential: "NONE", userState: "RUNNING_UNLOCKING")])
+        let sleeps = SleepRecorder()
+        let host = AndroidTestHost.make(home: try Self.home(), adb: Self.stateServer(outputs), sleeps: sleeps)
+
+        let reading = await EmulatorBooter(host: host) { _, _ in }.settledState(serial: "emulator-5556")
+
+        #expect(reading?.userUnlocked == false)
+        #expect(sleeps.sleeps.count == 20)
+    }
+
+    @Test("an unreadable state gives no reading")
+    func unreadableState() async throws {
+        let host = AndroidTestHost.make(home: try Self.home(), adb: Self.stateServer(ScriptedOutputs(["garbage\n"])))
+        #expect(await EmulatorBooter(host: host) { _, _ in }.readState(serial: "emulator-5556") == nil)
     }
 
     @Test("an emulator that exits during start-up reports its status and the last 20 lines of its log")
@@ -286,6 +435,9 @@ struct BootCommandTests {
         ("boot \(UUID().uuidString)", "boot starts Android emulators. Boot an iOS simulator with `xcrun simctl boot <udid>`."),
         ("boot emulator-5556", "boot takes an AVD name, not a serial."),
         ("boot Pixel_9 --timeout 5", "--timeout must be between 10 and 1800 seconds."),
+        ("boot Pixel_9 --emulator-arg -grpc", "--emulator-arg -grpc is refused: "),
+        ("boot Pixel_9 --emulator-arg --port=5560", "--emulator-arg --port=5560 is refused: "),
+        ("boot Pixel_9 --memory 512", "--memory must be from 1024 to 16384 MB; got 512."),
     ])
     func validation(command: String, message: String) async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid(command)

@@ -1,4 +1,5 @@
 # android <android-device> 411.4x923.4 @2.625x portrait 0°
+# keyboard shown
 application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
   button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
   group "Batch Login" id=batch-login-screen (60.2,64.4 291.4x23.2)

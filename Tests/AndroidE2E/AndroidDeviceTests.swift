@@ -22,9 +22,23 @@ struct AndroidListDevicesTests {
         let rows = try #require(object["devices"] as? [[String: Any]])
         #expect(!rows.isEmpty)
         for row in rows {
-            #expect(Set(row.keys) == ["id", "platform", "state", "name", "osVersion", "deviceType", "kind", "connection"])
+            #expect(Set(row.keys) == ["id", "platform", "state", "name", "osVersion", "deviceType", "kind", "connection", "avd", "bootedBy", "heldBy", "lease"])
             #expect(row["platform"] as? String == "android")
         }
+    }
+
+    @Test("--json names the guarded emulator's AVD and when its process started")
+    func jsonAVDAndBootedBy() async throws {
+        let serial = try await AndroidE2E.serial()
+        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform android --json")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        let rows = try #require(object["devices"] as? [[String: Any]])
+        let row = try #require(rows.first { $0["id"] as? String == serial })
+        #expect(row["avd"] as? String == AndroidE2E.expectedAVD)
+        let bootedBy = try #require(row["bootedBy"] as? [String: Any])
+        #expect((bootedBy["pid"] as? Int ?? 0) > 0)
+        let startedAt = try #require(bootedBy["startedAt"] as? String)
+        #expect(ISO8601DateFormatter().date(from: startedAt).map { $0 < Date() } == true, "startedAt \(startedAt)")
     }
 
     @Test("an AVD name routes to the running serial")

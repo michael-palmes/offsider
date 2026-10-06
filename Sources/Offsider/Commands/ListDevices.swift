@@ -16,10 +16,46 @@ struct ListDevices: AsyncParsableCommand {
     var platform: DevicePlatform?
 
     func run() async throws {
-        let devices = try await Self.listDevices(platform: platform, logger: OffsiderLogger())
+        let devices = Self.withLeases(Self.withHolders(try await Self.listDevices(platform: platform, logger: OffsiderLogger())))
         print(json ? DeviceListRenderer.json(devices) : DeviceListRenderer.table(devices), terminator: "")
-        for hint in Self.phoneHints(devices) {
+        for hint in Self.phoneHints(devices) + Self.holderNotes(devices) + Self.leaseNotes(devices) {
             FileHandle.standardError.write(Data("\(hint)\n".utf8))
+        }
+    }
+
+    /// Fills `heldBy` for every row that can be locked; a shut-down AVD cannot.
+    static func withHolders(_ devices: [DeviceSummary], holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }) -> [DeviceSummary] {
+        devices.map { device in
+            guard device.kind != .avd else { return device }
+            var device = device
+            device.heldBy = holder(DeviceLockKey(platform: device.platform, id: device.id))
+            return device
+        }
+    }
+
+    /// Fills `lease` from each row's stable key, so an emulator's lease follows its AVD across serials.
+    static func withLeases(_ devices: [DeviceSummary], store: DeviceLeaseStore = DeviceLeaseStore(), now: Date = Date()) -> [DeviceSummary] {
+        devices.map { device in
+            guard let key = StableDeviceKey.of(device) else { return device }
+            var device = device
+            device.lease = store.lease(platform: device.platform, key: key, now: now)
+            return device
+        }
+    }
+
+    static func leaseNotes(_ devices: [DeviceSummary]) -> [String] {
+        devices.compactMap { device in
+            device.lease.map { "\(device.id) is leased to '\($0.label)' until \(DeviceLeaseRules.clock($0.expires)) (offsider lease show)." }
+        }
+    }
+
+    /// One line per device another Offsider command is driving.
+    static func holderNotes(_ devices: [DeviceSummary], now: Date = Date()) -> [String] {
+        devices.compactMap { device in
+            guard let holder = device.heldBy else { return nil }
+            let command = holder.command.isEmpty ? "offsider" : "offsider \(holder.command)"
+            let age = holder.startedAt.map { ", started \(max(0, Int(now.timeIntervalSince($0)))) s ago" } ?? ""
+            return "\(device.id) is in use by pid \(holder.pid) (\(command)\(age))."
         }
     }
 

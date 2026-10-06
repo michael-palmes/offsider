@@ -192,4 +192,31 @@ struct ReactNativeOffscreenTests {
         #expect(summary.steps == 2)
         #expect(summary.failed == 1)
     }
+
+    @Test("tap --verify-id verifies a push by the next page's marker, and refuses a marker already on screen", arguments: RNPlatform.enabled)
+    func verifyIDOnPush(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("stack-test")
+
+        let pushed = try await app.run("tap --id stack-test-next --verify-id stack-test-page-2 --json")
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(pushed.stdout.utf8)) as? [String: Any], "\(pushed.stdout)")
+        #expect(report["verified"] as? Bool == true, "\(pushed.stdout)")
+        #expect(report["change"] as? String == "element", "\(pushed.stdout)")
+
+        // Page 1 stays 30% on screen beneath page 2, so its Previous Page button also matches.
+        let present = try await app.offsider("tap --id stack-test-back --topmost --verify-id stack-test-page-2")
+        #expect(present.exitCode == 1, "\(present.stderr)")
+        #expect(present.stderr.contains("already on screen"), "\(present.stderr)")
+    }
+
+    @Test("on a stack two deep, --topmost taps the page on top without a cover warning", arguments: RNPlatform.enabled)
+    func topmostOnStack(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("stack-test")
+        try await app.run("tap --id stack-test-next")
+        _ = try await app.waitForLabel(of: "stack-test-depth") { $0 == "Stack Depth: 2" }
+
+        try await app.run("tap --id stack-test-mark --topmost --fail-if-covered")
+        _ = try await app.waitForLabel(of: "stack-test-state") { $0 == "Stack State: Page 2 marked" }
+    }
 }

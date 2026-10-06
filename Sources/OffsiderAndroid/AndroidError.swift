@@ -37,6 +37,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case noFocusedField
         case fieldNotEditable
         case securePasteRefused
+        case textNotAccepted
         case unsupportedKey
         case unsupportedButton
         case unsupportedControlCharacter
@@ -433,6 +434,15 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func textNotAccepted(_ serial: String, field: AndroidFieldInfo?, pasted: Bool) -> AndroidError {
+        let element = field.map { " (\($0.description))" } ?? ""
+        let tried = pasted ? "Ctrl+A, Delete, typed keys and a paste" : "Ctrl+A, Delete and typed keys"
+        return AndroidError(
+            .textNotAccepted,
+            "The focused field on \(serial)\(element) holds less than the text after \(tried): the app filters what it accepts. Check it with describe-ui, and type what the field allows."
+        )
+    }
+
     static func fieldNotEditable(_ serial: String, className: String?, resourceId: String?) -> AndroidError {
         let parts = [className.map { "`\($0)`" }, resourceId.map { "id `\($0)`" }].compactMap { $0 }
         let element = parts.isEmpty ? "" : " (\(parts.joined(separator: ", ")))"
@@ -530,6 +540,12 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(.emulatorLaunchFailed, "Could not start \(path): \(detail).")
     }
 
+    /// Names the stale lock files boot removed before this launch, which the failure may be about.
+    func namingStaleLocks(_ names: [String], in directory: String) -> AndroidError {
+        guard !names.isEmpty else { return self }
+        return AndroidError(kind, message + " Before this launch Offsider removed \(names.joined(separator: " and ")) from \(directory), left by an emulator that was no longer running.")
+    }
+
     static func emulatorExited(status: Int32, logPath: String, tail: String) -> AndroidError {
         let lines = tail.isEmpty ? " The log is empty." : " Last lines of \(logPath):\n\(tail)"
         return AndroidError(.emulatorExited, "The emulator exited during start-up (status \(status)).\(lines)")
@@ -547,6 +563,12 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     static func notSupported(_ feature: String) -> AndroidError {
         AndroidError(.notSupported, "\(feature) is not supported on Android emulators in this build.")
     }
+
+    /// `input` has no multi-finger form, so two fingers need gRPC or the helper.
+    static let twoFingersOverInput = AndroidError(
+        .notSupported,
+        "Two-finger touches cannot go through `input`, which moves one finger. Use an emulator's gRPC input (leave OFFSIDER_ANDROID_TRANSPORT unset), or set OFFSIDER_ANDROID_INPUT=helper to send them through the UiAutomation helper."
+    )
 
     static func unsupportedButton(_ button: HardwareButton) -> AndroidError {
         AndroidError(.unsupportedButton, "The \(Self.buttonName(button)) button is iOS only. Android buttons: back, app-switch, home, lock, volume-up, volume-down.")
@@ -601,6 +623,7 @@ extension AndroidError: OffsiderFailure {
         case .noFocusedField: return .noFocusedField
         case .fieldNotEditable: return .fieldNotEditable
         case .securePasteRefused: return .securePasteRefused
+        case .textNotAccepted: return .textNotAccepted
         case .unsupportedKey: return .unsupportedKey
         case .unsupportedButton: return .unsupportedButton
         case .unsupportedControlCharacter: return .unsupportedText

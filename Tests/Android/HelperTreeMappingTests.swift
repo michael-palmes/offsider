@@ -154,4 +154,41 @@ struct HelperTreeMappingTests {
         #expect(plain.state.checked == false)
         #expect(nodes.first { $0.id == "text" }?.label == "Colours, mixed")
     }
+
+    @Test("every window survives in dp with its kind, layer, title and root package")
+    func windowsSurvive() throws {
+        let windows = HelperTreeMapping.windows(from: try Self.dump(Self.textInputWindows), scale: Self.scale)
+        #expect(windows.map(\.kind) == ["system", "inputMethod", "application"])
+        #expect(windows.map(\.title) == [nil, "Gboard", "OffsiderPlaygroundRN"])
+        #expect(windows[2].package == "com.mpalmes.offsider.playground.rn" && windows[2].active)
+        #expect(windows[1].bounds == UIFrame(x: 0, y: 1187 / Self.scale, width: 1080 / Self.scale, height: (2424 - 1187) / Self.scale))
+        #expect(windows[0].package == nil)
+    }
+
+    @Test("an active application window over another is a modal; a lone one is the app")
+    func modalFromTwoApplicationWindows() throws {
+        let modal = Self.appWindow("", title: "Feature Flags", active: true, layer: 2)
+        let beneath = Self.appWindow("", title: "OffsiderPlaygroundRN", active: false, layer: 1).replacingOccurrences(of: #""id":2314"#, with: #""id":2300"#)
+        let both = HelperTreeMapping.windows(from: try Self.dump([Self.statusBar, modal, beneath].joined(separator: ",")), scale: Self.scale)
+        let context = UITreeContext(tree: UITree(platform: .android, device: "emulator-5554", roots: [], windows: both))
+        #expect(context.window == UITreeContext.Window(title: "Feature Flags", kind: .modal, package: "com.mpalmes.offsider.playground.rn"))
+        #expect(context.headerLines == ["# window: Feature Flags (modal)"])
+
+        let alone = HelperTreeMapping.windows(from: try Self.dump(Self.appWindow("")), scale: Self.scale)
+        let app = UITreeContext(tree: UITree(platform: .android, device: "emulator-5554", roots: [], windows: alone))
+        #expect(app.window?.kind == .app)
+        #expect(app.headerLines.isEmpty)
+    }
+
+    @Test("an untitled application window is a dialog whose activity beneath Android left out; a lone stand-in window is not")
+    func untitledWindowIsModal() throws {
+        let dialog = #"{"id":2320,"type":"application","layer":0,"displayId":0,"bounds":[0,0,1080,2424],"active":true,"focused":true,"root":{"i":0,"class":"android.widget.FrameLayout",\#(Self.package),"bounds":[0,0,1080,2424],"children":[]}}"#
+        let listed = HelperTreeMapping.windows(from: try Self.dump([Self.statusBar, dialog].joined(separator: ",")), scale: Self.scale)
+        let context = UITreeContext(tree: UITree(platform: .android, device: "emulator-5554", roots: [], windows: listed))
+        #expect(context.window?.kind == .modal)
+        #expect(context.headerLines == ["# window: com.mpalmes.offsider.playground.rn (modal)"])
+
+        let standIn = HelperTreeMapping.windows(from: try Self.dump(dialog), scale: Self.scale)
+        #expect(UITreeContext(tree: UITree(platform: .android, device: "emulator-5554", roots: [], windows: standIn)).window?.kind == .app)
+    }
 }

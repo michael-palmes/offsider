@@ -496,7 +496,7 @@ struct AccessibilityTargetResolverTests {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"))
         }?.userFacingDescription ?? ""
 
-        #expect(message.hasPrefix("Multiple (2) accessibility elements matched --label 'Save' on screen: button id=save-a label=\"Save\" (20, 700) 350x44; button label=\"Save\" (20, 760) 350x44 (1 more off screen ignored). Use --id when labels are not unique."))
+        #expect(message.hasPrefix("Multiple (2) accessibility elements matched --label 'Save' on screen: button id=save-a label=\"Save\" (20, 700) 350x44 (--nth 1); button label=\"Save\" (20, 760) 350x44 (--nth 2) (1 more off screen ignored). Use --id when labels are not unique."))
     }
 
     // MARK: Folding and suggestions
@@ -574,7 +574,7 @@ struct AccessibilityTargetResolverTests {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("save"))
         }?.userFacingDescription ?? ""
 
-        #expect(message.contains("on screen: button id=save label=\"Save\" (20, 700) 350x44; button id=save label=\"Save\" (20, 760) 350x44. The id is not unique on this screen: narrow with --element-type, or tap one by coordinates (tap -x/-y) using the frames above."))
+        #expect(message.contains("on screen: button id=save label=\"Save\" (20, 700) 350x44 (--nth 1); button id=save label=\"Save\" (20, 760) 350x44 (--nth 2). The id is not unique on this screen: narrow with --element-type, or tap one by coordinates (tap -x/-y) using the frames above."))
         #expect(!message.contains("Use --id"))
     }
 
@@ -822,7 +822,7 @@ struct AccessibilityTargetResolverTests {
         #expect(error.exitCode == .ambiguousSelector)
         #expect(error.reason == .selectorAmbiguous)
         #expect(error.candidates.count == 5)
-        #expect(error.candidates[0] == FailureCandidate(id: "save", label: "Save", role: "button", frame: FakeUI.frame(20, 100, 350, 44), onScreen: true))
+        #expect(error.candidates[0] == FailureCandidate(id: "save", label: "Save", role: "button", frame: FakeUI.frame(20, 100, 350, 44), onScreen: true, index: 1, window: "Playground"))
     }
 
     @Test("not-found candidates are the elements behind the suggestions, and the miss exits 2")
@@ -876,5 +876,89 @@ struct AccessibilityTargetResolverTests {
         #expect(filtered.reason == .selectorFilteredByType && filtered.exitCode == .selectorNotFound)
         #expect(offScreen.reason == .targetOffScreen && offScreen.exitCode == .selectorNotFound)
         #expect(ElementResolutionError.invalidFrame(reason: "x").exitCode == .failure)
+    }
+}
+
+@Suite("Stacked screens, --nth and --topmost")
+struct StackedScreenTests {
+    /// Two pages of a JavaScript stack, page 1 kept mounted under page 2 and offset to the left.
+    static func stack(platform: DevicePlatform, hidePageOne: Bool = false) -> [UINode] {
+        func page(_ number: Int, x: Double, visible: Bool = true) -> UINode {
+            var back = FakeUI.node(.button, id: "stack-back", label: "Back", frame: FakeUI.frame(x + 16, 200, 120, 44), platform: platform)
+            if !visible, case .android(var attributes) = back.native {
+                attributes.visibleToUser = false
+                back.native = .android(attributes)
+            }
+            return FakeUI.node(.other, id: "page-\(number)", label: "Page \(number)", frame: FakeUI.frame(x, 100, 402, 774), platform: platform, children: [back])
+        }
+        return FakeUI.tree(platform: platform, [page(1, x: -30, visible: !hidePageOne), page(2, x: 0)]).roots
+    }
+
+    @Test("on Android a sibling listed earlier may still be drawn on top, since Android sorts siblings by position")
+    func earlierSiblingStaysCandidate() throws {
+        let roots = Self.stack(platform: .android)
+        let top = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"), pick: .last)
+        #expect(top.coverCandidates.map(\.id) == ["page-1", "stack-back"])
+
+        let beneath = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"), pick: .nth(1))
+        #expect(beneath.coverCandidates.map(\.id) == ["page-2", "stack-back"])
+    }
+
+    @Test("on Android an app node beneath a keyboard window never covers a key, while the keyboard still covers the app")
+    func lowerWindowIsNotCover() throws {
+        let key = FakeUI.node(.button, label: "q", frame: FakeUI.frame(0, 650, 41, 50), platform: .android)
+        let field = FakeUI.node(.button, label: "Pay", frame: FakeUI.frame(0, 640, 412, 70), platform: .android)
+        let app = FakeUI.node(.application, frame: FakeUI.frame(0, 0, 412, 915), platform: .android, children: [field])
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 600, 412, 315), platform: .android, children: [key])
+
+        let onKey = try AccessibilityTargetResolver.resolveTap(roots: [app, keyboard], query: .label("q"))
+        #expect(onKey.coverCandidates.isEmpty)
+
+        let onApp = try AccessibilityTargetResolver.resolveTap(roots: [app, keyboard], query: .label("Pay"))
+        #expect(onApp.coverCandidates.map(\.role) == [.keyboard])
+    }
+
+    @Test("on Android a node not visible to the user is never a cover")
+    func invisibleIsNotCover() throws {
+        let roots = FakeUI.tree(platform: .android, [
+            FakeUI.node(.button, id: "target", label: "Target", frame: FakeUI.frame(16, 200, 120, 44), platform: .android),
+        ]).roots
+        var hidden = FakeUI.node(.button, id: "hidden", label: "Hidden", frame: FakeUI.frame(0, 180, 402, 100), platform: .android)
+        if case .android(var attributes) = hidden.native {
+            attributes.visibleToUser = false
+            hidden.native = .android(attributes)
+        }
+        var app = roots[0]
+        app.children.append(hidden)
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: [app], query: .id("target"))
+        #expect(resolution.coverCandidates.isEmpty)
+    }
+
+    @Test("--nth picks among on-screen matches in tree order, and past the end is not found")
+    func nth() throws {
+        let roots = Self.stack(platform: .ios)
+        #expect(try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"), pick: .nth(2)).point.x == 76)
+        #expect(try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"), pick: .nth(1)).matched?.frame?.x == -14)
+        #expect(throws: ElementResolutionError.self) {
+            try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"), pick: .nth(3))
+        }
+    }
+
+    @Test("--nth past the end counts the matches in the singular and the plural", arguments: [(1, "is 1 match"), (3, "are 3 matches")])
+    func nthOutOfRangeCount(count: Int, phrase: String) {
+        let message = ElementResolutionError.nthOutOfRange(selector: "--label 'Back'", nth: 4, count: count).userFacingDescription
+        #expect(message.hasPrefix("--nth 4 asked for match 4 of --label 'Back', but there \(phrase) on screen."))
+    }
+
+    @Test("an ambiguous match names each candidate's --nth, window and screen")
+    func candidateContext() throws {
+        let roots = Self.stack(platform: .android)
+        let error = #expect(throws: ElementResolutionError.self) {
+            try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"))
+        }
+        #expect(error?.candidates.map(\.index) == [1, 2])
+        #expect(error?.candidates.map(\.screen) == ["page-1", "page-2"])
+        #expect(error?.candidates.first?.window == "Playground")
     }
 }

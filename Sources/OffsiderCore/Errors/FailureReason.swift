@@ -54,6 +54,15 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case expoDevClientFailed = "expo_dev_client_failed"
     case runnerBuildFailed = "runner_build_failed"
     case runnerUnavailable = "runner_unavailable"
+    case runActive = "run_active"
+    case runUnavailable = "run_unavailable"
+    case verifyTargetPresent = "verify_target_present"
+    case turnstileChallenge = "turnstile_challenge"
+    case focusNotConfirmed = "focus_not_confirmed"
+    case focusMismatch = "focus_mismatch"
+    case textNotAccepted = "text_not_accepted"
+    case metroNotRunning = "metro_not_running"
+    case rnLoadFailed = "rn_load_failed"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"
@@ -79,6 +88,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case uiAutomationOff = "ui_automation_off"
 
     case deviceBusy = "device_busy"
+    case deviceLeased = "device_leased"
     case uiautomationBusy = "uiautomation_busy"
 
     case xcodeMissing = "xcode_missing"
@@ -103,19 +113,19 @@ public enum FailureReason: String, CaseIterable, Sendable {
 
     public var exitCode: OffsiderExitCode {
         switch self {
-        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen:
+        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch:
             return .selectorNotFound
-        case .notVerified, .conditionNotMet:
+        case .notVerified, .conditionNotMet, .focusNotConfirmed, .textNotAccepted:
             return .unverified
         case .selectorAmbiguous, .selectorAmbiguousSwitch:
             return .ambiguousSelector
         case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
              .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff:
             return .deviceUnavailable
-        case .deviceBusy, .uiautomationBusy:
+        case .deviceBusy, .uiautomationBusy, .deviceLeased:
             return .deviceBusy
         case .xcodeMissing, .xcodeUnusable, .androidSdkMissing, .adbServerUnavailable, .adbServerMisconfigured,
-             .emulatorMissing, .emulatorGrpcRequired, .helperUnavailable, .xcodeTooOld, .teamMissing, .usbmuxUnavailable:
+             .emulatorMissing, .emulatorGrpcRequired, .helperUnavailable, .xcodeTooOld, .teamMissing, .usbmuxUnavailable, .metroNotRunning:
             return .toolMissing
         case .usage, .invalidDeviceID, .invalidSetting, .unsupportedButton, .unsupportedKey, .unknownDisplay, .legacyArgument:
             return .usage

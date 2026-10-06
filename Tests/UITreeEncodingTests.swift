@@ -19,7 +19,7 @@ struct UITreeEncodingTests {
 
     private let bareNode = UINode(role: .other, native: .ios(IOSNativeAttributes()))
 
-    @Test("the envelope starts with version, platform, device, screen and roots in that order")
+    @Test("the envelope starts with version, platform, device, screen, context and roots in that order")
     func envelopeKeyOrder() {
         let tree = UITree(platform: .ios, device: "DEVICE-1", roots: [])
 
@@ -29,6 +29,11 @@ struct UITreeEncodingTests {
           "platform": "ios",
           "device": "DEVICE-1",
           "screen": null,
+          "context": {
+            "window": null,
+            "keyboard": false,
+            "logbox": null
+          },
           "roots": []
         }
 
@@ -90,7 +95,7 @@ struct UITreeEncodingTests {
             UITreeRenderOptions(compact: true)
         ), as: UTF8.self)
         let start = text.range(of: #""screen":"#)!.upperBound
-        let end = text.range(of: #","roots""#)!.lowerBound
+        let end = text.range(of: #","context""#)!.lowerBound
         return String(text[start..<end])
     }
 

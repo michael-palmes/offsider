@@ -117,14 +117,17 @@ public struct LogEntry: Equatable, Sendable {
     /// The Android tag, or the iOS subsystem and category.
     public var tag: String?
     public var message: String
+    /// The source line as the device wrote it: a logcat line, or the iOS event message with its colour codes.
+    public var raw: String?
 
-    public init(timestamp: Date? = nil, level: String? = nil, process: String? = nil, pid: Int? = nil, tag: String? = nil, message: String) {
+    public init(timestamp: Date? = nil, level: String? = nil, process: String? = nil, pid: Int? = nil, tag: String? = nil, message: String, raw: String? = nil) {
         self.timestamp = timestamp
         self.level = level
         self.process = process
         self.pid = pid
         self.tag = tag
         self.message = message
+        self.raw = raw
     }
 }
 

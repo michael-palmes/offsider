@@ -209,4 +209,12 @@ struct FoldableTests {
 
         try await Self.expectTapsLand(on: screen, at: (x: 300, y: 500))
     }
+
+    @Test("unfolded: two fingers on the inner display are refused before anything is sent")
+    func unfoldedRefusesTwoFingers() async throws {
+        try await Self.requirePosture("open")
+        let result = try await TestHelpers.runOffsiderCommandSeparated("touch -x 300 -y 300 --fingers 2 --hold 500", simulatorUDID: try Self.udid())
+        #expect(result.exitCode == 1, "\(result.stderr)")
+        #expect(result.stderr.contains("Two-finger touches on the iPhone Duo's inner display are not supported"), "\(result.stderr)")
+    }
 }

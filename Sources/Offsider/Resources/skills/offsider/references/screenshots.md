@@ -16,11 +16,11 @@ offsider screenshot --device <DEVICE_ID> --region <X,Y,W,H> --compare before.png
 
 ## Comparing regions
 
-Content the tree cannot see (charts, maps, canvases, web views) changes pixels only. Save a baseline with `screenshot --region <x,y,w,h> --output before.png`, act, then run `screenshot --region <x,y,w,h> --compare before.png`. It exits 0 when the region changed and 5 when it did not, and prints the changed share; `--threshold <0-1>` ignores small changes. Use the same `--region` and `--scale` for both captures. `wait --region <x,y,w,h> --changed|--stable` waits on the same kind of change.
+Content the tree cannot see (charts, maps, canvases, web views) changes pixels only. Save a baseline with `screenshot --region <x,y,w,h> --output before.png`, act, then run `screenshot --region <x,y,w,h> --compare before.png`. It exits 0 when the region changed and 5 when it did not, and prints the changed share; `--threshold <0-1>` ignores small changes. It also counts the changed pixels, and `--diff-output <png>` writes an image of where they are (`guide evidence`). Use the same `--region` and `--scale` for both captures. `wait --region <x,y,w,h> --changed|--stable` waits on the same kind of change.
 
-## Secure fields
+## Secure fields and personal data
 
-Add `--mask-secure` to `screenshot` (or `batch`) before sharing an image of a screen with a password field: it paints password fields black first. A withheld screenshot means a secure field could not be located; retry when the screen is still.
+Before sharing an image of a screen with a password field or personal data, mask it: `--mask-secure`, `--mask-id`, `--mask-text`, `--mask-emails` and `--mask-region` are in `offsider guide evidence`.
 
 ## Video
 

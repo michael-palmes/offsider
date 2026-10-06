@@ -23,7 +23,9 @@ struct AndroidDoctorE2ETests {
         #expect(device["id"] as? String == serial)
         #expect(device["platform"] as? String == "android")
         let perDevice = checks.filter { ($0["id"] as? String)?.hasPrefix("android-device.") == true }
-        #expect(perDevice.count == 10)
+        #expect(perDevice.count == 12)
+        #expect(perDevice.contains { $0["id"] as? String == "android-device.memory" })
+        #expect(perDevice.contains { $0["id"] as? String == "android-device.lock" })
         let phoneOnly: Set = ["android-device.adb-expiry", "android-device.system-updates"]
         for check in perDevice {
             let expected = phoneOnly.contains(check["id"] as? String ?? "") ? "skip" : "pass"

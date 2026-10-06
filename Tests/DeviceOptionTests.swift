@@ -5,7 +5,7 @@ import Testing
 
 @Suite("Device Option Tests")
 struct DeviceOptionTests {
-    private static let commandsWithoutDevice: Set<String> = ["boot", "guide", "init", "list-devices"]
+    private static let commandsWithoutDevice: Set<String> = ["boot", "guide", "init", "list-devices", "run"]
 
     @Test("every device command takes --device and none takes --udid")
     func deviceCommandsTakeDevice() async throws {
@@ -16,11 +16,14 @@ struct DeviceOptionTests {
         #expect(names.contains("doctor"))
         #expect(!rootHelp.contains("list-simulators"))
         var commands: [String] = []
-        for name in names {
+        var pending = names
+        while let name = pending.first {
+            pending.removeFirst()
             let nested = TestHelpers.listedSubcommands(in: try await TestHelpers.runOffsiderCommand("\(name) --help").output)
-            commands += nested.isEmpty ? [name] : nested.map { "\(name) \($0)" }
+            if nested.isEmpty { commands.append(name) } else { pending += nested.map { "\(name) \($0)" } }
         }
         #expect(commands.contains("rn prepare"))
+        #expect(commands.contains("rn logbox dismiss"))
         for name in commands {
             let help = try await TestHelpers.runOffsiderCommand("\(name) --help").output
             #expect(help.contains("--device <id>"), "\(name) --help does not show --device <id>")
@@ -62,6 +65,53 @@ struct DeviceOptionTests {
         let udid = UUID().uuidString
         #expect(try Doctor.parse(["--device", udid]).deviceOption.id == udid)
         #expect(try Doctor.parse(["--device", "emulator-5556"]).deviceOption.id == "emulator-5556")
+    }
+
+    private static func withDefault<T>(_ value: String?, _ body: () throws -> T) rethrows -> T {
+        try DeviceDefault.$environment.withValue({ value }, operation: body)
+    }
+
+    @Test("without --device, OFFSIDER_DEVICE names the device; without either the command is refused")
+    func environmentDefault() throws {
+        let tap = try Self.withDefault("emulator-5554") { try Tap.parse(["-x", "1", "-y", "1"]) }
+        #expect(Self.withDefault("emulator-5554") { tap.deviceOption.id } == "emulator-5554")
+        #expect(Self.withDefault("emulator-5554") { tap.deviceOption.source } == .environment)
+        let read = try Self.withDefault("emulator-5554") { try DescribeUI.parse([]) }
+        #expect(Self.withDefault("emulator-5554") { read.deviceOption.id } == "emulator-5554")
+        do {
+            _ = try Self.withDefault(nil) { try Tap.parse(["-x", "1", "-y", "1"]) }
+            Issue.record("expected a usage error")
+        } catch {
+            #expect(Tap.exitCode(for: error) == .validationFailure)
+            #expect(Tap.message(for: error) == DeviceDefault.missingMessage)
+        }
+    }
+
+    @Test("an explicit --device wins over OFFSIDER_DEVICE")
+    func explicitWins() throws {
+        let tap = try Self.withDefault("emulator-5554") { try Tap.parse(["-x", "1", "-y", "1", "--device", "emulator-5556"]) }
+        #expect(Self.withDefault("emulator-5554") { tap.deviceOption.id } == "emulator-5556")
+        #expect(Self.withDefault("emulator-5554") { tap.deviceOption.source } == .option)
+    }
+
+    @Test("a blank OFFSIDER_DEVICE counts as unset", arguments: ["", "  ", "\n"])
+    func blankIsUnset(value: String) {
+        #expect(DeviceDefault.resolve(explicit: nil, environment: value) == nil)
+        #expect(throws: (any Error).self) { try Self.withDefault(value) { try Tap.parse(["-x", "1", "-y", "1"]) } }
+    }
+
+    @Test("doctor and permission pick up OFFSIDER_DEVICE; permission services and runner and session filters ignore it")
+    func environmentScope() throws {
+        try Self.withDefault("emulator-5554") {
+            let doctor = try Doctor.parse([])
+            #expect(doctor.deviceOption.id == "emulator-5554")
+            #expect(doctor.deviceOption.source == .environment)
+            #expect(try PermissionCommand.parse(["grant", "camera", "--app", "com.example.app"]).device == "emulator-5554")
+            #expect(try PermissionCommand.parse(["services"]).device == nil)
+            #expect(try RunnerStop.parse([]).device == nil)
+            #expect(try RunnerStatus.parse([]).device == nil)
+        }
+        #expect(try Self.withDefault(nil) { try Doctor.parse([]) }.deviceOption.explicitID == nil)
     }
 
     @Test("batch steps cannot choose their own device", arguments: [

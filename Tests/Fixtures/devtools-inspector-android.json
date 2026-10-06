@@ -1,0 +1,1045 @@
+{
+  "version": 2,
+  "platform": "android",
+  "device": "<android-device>",
+  "screen": {
+    "width": 411.43,
+    "height": 923.43,
+    "scale": 2.625,
+    "orientation": "portrait",
+    "rotation": 0,
+    "display": {
+      "id": "main",
+      "platformId": "4619827259835644672"
+    },
+    "posture": null
+  },
+  "context": {
+    "window": {
+      "title": "OffsiderPlaygroundRN",
+      "kind": "app",
+      "package": "com.mpalmes.offsider.playground.rn"
+    },
+    "keyboard": false,
+    "logbox": null
+  },
+  "roots": [
+    {
+      "role": "application",
+      "id": null,
+      "label": "OffsiderPlaygroundRN",
+      "value": null,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 411.43,
+        "height": 923.43
+      },
+      "enabled": true,
+      "state": {
+        "checked": null,
+        "selected": false,
+        "focused": false
+      },
+      "native": {
+        "className": "android.widget.FrameLayout",
+        "resourceId": null,
+        "package": "com.mpalmes.offsider.playground.rn",
+        "pixelFrame": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 2424
+        },
+        "text": null,
+        "contentDescription": null,
+        "hint": null,
+        "stateDescription": null,
+        "roleDescription": null,
+        "testTag": null
+      },
+      "children": [
+        {
+          "role": "group",
+          "id": null,
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 411.43,
+            "height": 923.43
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "androidx.compose.ui.platform.ComposeView",
+            "resourceId": null,
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2424
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "group",
+              "id": null,
+              "label": null,
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 0,
+                "width": 411.43,
+                "height": 923.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.view.View",
+                "resourceId": null,
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1080,
+                  "height": 2424
+                },
+                "text": null,
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": [
+                {
+                  "role": "group",
+                  "id": null,
+                  "label": null,
+                  "value": null,
+                  "frame": {
+                    "x": 0,
+                    "y": 54.1,
+                    "width": 84.19,
+                    "height": 84.19
+                  },
+                  "enabled": true,
+                  "state": {
+                    "checked": null,
+                    "selected": false,
+                    "focused": false
+                  },
+                  "native": {
+                    "className": "android.view.View",
+                    "resourceId": null,
+                    "package": "com.mpalmes.offsider.playground.rn",
+                    "pixelFrame": {
+                      "x": 0,
+                      "y": 142,
+                      "width": 221,
+                      "height": 221
+                    },
+                    "text": null,
+                    "contentDescription": null,
+                    "hint": null,
+                    "stateDescription": null,
+                    "roleDescription": null,
+                    "testTag": null
+                  },
+                  "children": [
+                    {
+                      "role": "group",
+                      "id": null,
+                      "label": null,
+                      "value": null,
+                      "frame": {
+                        "x": 343.62,
+                        "y": 70.1,
+                        "width": 52.19,
+                        "height": 52.19
+                      },
+                      "enabled": true,
+                      "state": {
+                        "checked": null,
+                        "selected": false,
+                        "focused": false
+                      },
+                      "native": {
+                        "className": "android.view.View",
+                        "resourceId": null,
+                        "package": "com.mpalmes.offsider.playground.rn",
+                        "pixelFrame": {
+                          "x": 902,
+                          "y": 184,
+                          "width": 137,
+                          "height": 137
+                        },
+                        "text": null,
+                        "contentDescription": null,
+                        "hint": null,
+                        "stateDescription": null,
+                        "roleDescription": null,
+                        "testTag": null
+                      },
+                      "children": [
+                        {
+                          "role": "group",
+                          "id": null,
+                          "label": null,
+                          "value": null,
+                          "frame": {
+                            "x": 345.9,
+                            "y": 72.38,
+                            "width": 48,
+                            "height": 48
+                          },
+                          "enabled": true,
+                          "state": {
+                            "checked": null,
+                            "selected": false,
+                            "focused": false
+                          },
+                          "native": {
+                            "className": "android.view.View",
+                            "resourceId": null,
+                            "package": "com.mpalmes.offsider.playground.rn",
+                            "pixelFrame": {
+                              "x": 908,
+                              "y": 190,
+                              "width": 126,
+                              "height": 126
+                            },
+                            "text": null,
+                            "contentDescription": null,
+                            "hint": null,
+                            "stateDescription": null,
+                            "roleDescription": null,
+                            "testTag": null
+                          },
+                          "children": [
+                            {
+                              "role": "image",
+                              "id": null,
+                              "label": "Tools",
+                              "value": null,
+                              "frame": {
+                                "x": 356.95,
+                                "y": 83.43,
+                                "width": 25.9,
+                                "height": 25.9
+                              },
+                              "enabled": true,
+                              "state": {
+                                "checked": null,
+                                "selected": false,
+                                "focused": false
+                              },
+                              "native": {
+                                "className": "android.widget.ImageView",
+                                "resourceId": null,
+                                "package": "com.mpalmes.offsider.playground.rn",
+                                "pixelFrame": {
+                                  "x": 937,
+                                  "y": 219,
+                                  "width": 68,
+                                  "height": 68
+                                },
+                                "text": null,
+                                "contentDescription": "Tools",
+                                "hint": null,
+                                "stateDescription": null,
+                                "roleDescription": null,
+                                "testTag": null
+                              },
+                              "children": []
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "role": "scrollView",
+          "id": null,
+          "label": null,
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 411.43,
+            "height": 923.43
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.ScrollView",
+            "resourceId": null,
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 2424
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "group",
+              "id": "menu-title",
+              "label": "Offsider Playground",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 62.1,
+                "width": 411.43,
+                "height": 54.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.view.View",
+                "resourceId": "menu-title",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 163,
+                  "width": 1080,
+                  "height": 142
+                },
+                "text": null,
+                "contentDescription": "Offsider Playground",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "group",
+              "id": "menu-section-touch-gestures",
+              "label": "Touch & Gestures",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 132.19,
+                "width": 411.43,
+                "height": 24
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.view.View",
+                "resourceId": "menu-section-touch-gestures",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 347,
+                  "width": 1080,
+                  "height": 63
+                },
+                "text": null,
+                "contentDescription": "Touch & Gestures",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-tap-test",
+              "label": "Tap Test",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 156.19,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-tap-test",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 410,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Tap Test",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-touch-control",
+              "label": "Touch Control",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 218.29,
+                "width": 379.43,
+                "height": 61.71
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-touch-control",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 573,
+                  "width": 996,
+                  "height": 162
+                },
+                "text": null,
+                "contentDescription": "Touch Control",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-swipe-test",
+              "label": "Swipe Test",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 280.38,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-swipe-test",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 736,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Swipe Test",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-multi-touch",
+              "label": "Multi Touch",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 342.1,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-multi-touch",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 898,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Multi Touch",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-hold-drag",
+              "label": "Hold Drag",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 404.19,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-hold-drag",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 1061,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Hold Drag",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-gesture-presets",
+              "label": "Gesture Presets",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 466.29,
+                "width": 379.43,
+                "height": 61.71
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-gesture-presets",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 1224,
+                  "width": 996,
+                  "height": 162
+                },
+                "text": null,
+                "contentDescription": "Gesture Presets",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-switch-test",
+              "label": "Switch Test",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 528.38,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-switch-test",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 1387,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Switch Test",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-tab-view-test",
+              "label": "TabView Test",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 590.1,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-tab-view-test",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 1549,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "TabView Test",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-choice-test",
+              "label": "Choice Test",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 652.19,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-choice-test",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 1712,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Choice Test",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "group",
+              "id": "menu-section-input-text",
+              "label": "Input & Text",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 730.29,
+                "width": 411.43,
+                "height": 23.62
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.view.View",
+                "resourceId": "menu-section-input-text",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 1917,
+                  "width": 1080,
+                  "height": 62
+                },
+                "text": null,
+                "contentDescription": "Input & Text",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-text-input",
+              "label": "Text Input",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 754.29,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-text-input",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 1980,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Text Input",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-key-press",
+              "label": "Key Press",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 816.38,
+                "width": 379.43,
+                "height": 62.1
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-key-press",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 2143,
+                  "width": 996,
+                  "height": 163
+                },
+                "text": null,
+                "contentDescription": "Key Press",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "menu-key-sequence",
+              "label": "Key Sequence",
+              "value": null,
+              "frame": {
+                "x": 16,
+                "y": 878.48,
+                "width": 379.43,
+                "height": 44.95
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "menu-key-sequence",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 42,
+                  "y": 2306,
+                  "width": 996,
+                  "height": 118
+                },
+                "text": null,
+                "contentDescription": "Key Sequence",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "role": "text",
+          "id": null,
+          "label": "Tap something to inspect it",
+          "value": null,
+          "frame": {
+            "x": 0,
+            "y": 785.14,
+            "width": 411.43,
+            "height": 27.05
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": null,
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 0,
+              "y": 2061,
+              "width": 1080,
+              "height": 71
+            },
+            "text": "Tap something to inspect it",
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "button",
+          "id": null,
+          "label": "Inspect",
+          "value": null,
+          "frame": {
+            "x": 1.9,
+            "y": 867.43,
+            "width": 56.38,
+            "height": 30.1
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.ViewGroup",
+            "resourceId": null,
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 5,
+              "y": 2277,
+              "width": 148,
+              "height": 79
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "text",
+              "id": null,
+              "label": "Inspect",
+              "value": null,
+              "frame": {
+                "x": 6.86,
+                "y": 872.38,
+                "width": 46.1,
+                "height": 19.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": null,
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 18,
+                  "y": 2290,
+                  "width": 121,
+                  "height": 51
+                },
+                "text": "Inspect",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "role": "button",
+          "id": null,
+          "label": "Touchables",
+          "value": null,
+          "frame": {
+            "x": 62.1,
+            "y": 867.43,
+            "width": 82.29,
+            "height": 30.1
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.view.ViewGroup",
+            "resourceId": null,
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 163,
+              "y": 2277,
+              "width": 216,
+              "height": 79
+            },
+            "text": null,
+            "contentDescription": null,
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": [
+            {
+              "role": "text",
+              "id": null,
+              "label": "Touchables",
+              "value": null,
+              "frame": {
+                "x": 67.05,
+                "y": 872.38,
+                "width": 72.38,
+                "height": 19.43
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.TextView",
+                "resourceId": null,
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 176,
+                  "y": 2290,
+                  "width": 190,
+                  "height": 51
+                },
+                "text": "Touchables",
+                "contentDescription": null,
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

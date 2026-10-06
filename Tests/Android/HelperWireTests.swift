@@ -87,4 +87,18 @@ struct HelperWireTests {
         #expect(range.current.isNaN)
         #expect(range.max == 1)
     }
+
+    @Test("a paste reply and a refusal carry the field's inputType; an older reply without it still decodes")
+    func pasteReplyDecodes() throws {
+        let reply = try JSONDecoder().decode(HelperTextResult.self, from: Data(#"{"id":4,"ok":true,"className":"android.widget.EditText","resourceId":"amount","inputType":8194,"length":3,"eventSeq":9}"#.utf8))
+        #expect(reply == HelperTextResult(className: "android.widget.EditText", resourceId: "amount", inputType: 8194, length: 3))
+        let older = try JSONDecoder().decode(HelperTextResult.self, from: Data(#"{"className":"android.widget.EditText","resourceId":null,"length":0}"#.utf8))
+        #expect(older.inputType == nil)
+        let refusal = try JSONDecoder().decode(HelperErrorBody.self, from: Data(#"{"code":"secure-refused","message":"m","detail":null,"className":"android.widget.EditText","resourceId":"pin","inputType":18}"#.utf8))
+        #expect(refusal.inputType == 18)
+        #expect(String(decoding: try HelperRequest.paste.payload(id: 4), as: UTF8.self) == #"{"id":4,"op":"paste"}"#)
+        #expect(AndroidFieldInfo.describe(0x2002) == "number|decimal")
+        #expect(AndroidFieldInfo.describe(0x21) == "text|email")
+        #expect(AndroidFieldInfo.describe(3) == "phone")
+    }
 }

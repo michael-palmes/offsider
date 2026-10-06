@@ -53,12 +53,15 @@ final class CommandScope {
         do {
             try await body()
         } catch {
+            let status = ErrorReporter.status(for: error)
+            EvidenceRecorder.current.finishAll(exit: status.exit, reason: status.reason)
             let error = await screenHint(for: error)
             await commitTreeCache(failed: true)
             await closeAll()
             claims.releaseAll()
             throw error
         }
+        EvidenceRecorder.current.finishAll(exit: 0, reason: nil)
         await commitTreeCache()
         await closeAll()
         claims.releaseAll()

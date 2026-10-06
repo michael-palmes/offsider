@@ -57,6 +57,8 @@ struct HelperRequest: Equatable, Sendable {
         HelperRequest(op: "setText", fields: ["text": .string(text)])
     }
 
+    static let paste = HelperRequest(op: "paste", fields: [:])
+
     /// Touch, key, text and pause steps, all checked by the helper before the first is injected.
     static func inject(_ steps: [HelperValue], sync: Bool) -> HelperRequest {
         HelperRequest(op: "inject", fields: ["steps": .array(steps), "sync": .bool(sync)])
@@ -119,6 +121,8 @@ struct HelperErrorBody: Decodable, Error, Equatable, Sendable {
     let detail: String?
     let className: String?
     let resourceId: String?
+    /// The field's `InputType` bits, from helper 1.2.0.
+    var inputType: Int? = nil
 }
 
 struct HelperHello: Decodable, Equatable, Sendable {
@@ -384,6 +388,8 @@ struct HelperEvents: Decodable, Equatable, Sendable {
 struct HelperTextResult: Decodable, Equatable, Sendable {
     let className: String?
     let resourceId: String?
+    /// The field's `InputType` bits, from helper 1.2.0.
+    var inputType: Int? = nil
     let length: Int?
 }
 

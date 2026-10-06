@@ -21,9 +21,10 @@ struct LogcatParser {
         }
         guard let match = Self.header.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
             guard var continuation = previous else {
-                return LogEntry(message: line)
+                return LogEntry(message: line, raw: line)
             }
             continuation.message = line
+            continuation.raw = line
             return continuation
         }
         func group(_ index: Int) -> String? {
@@ -35,7 +36,8 @@ struct LogcatParser {
             level: group(4).flatMap { Self.levels[$0] },
             pid: group(3).flatMap { Int($0) },
             tag: group(5).flatMap { $0.isEmpty ? nil : $0 },
-            message: group(6) ?? ""
+            message: group(6) ?? "",
+            raw: line
         )
         previous = entry
         return entry

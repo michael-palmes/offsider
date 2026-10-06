@@ -31,7 +31,7 @@ struct GesturePresetGeometryTests {
         }
     }
 
-    @Test("every preset starts and ends on screen, portrait or landscape", arguments: GesturePreset.allCases, screens)
+    @Test("every preset starts and ends on screen, portrait or landscape", arguments: GesturePreset.swipes, screens)
     func presetStaysOnScreen(preset: GesturePreset, screen: UIFrame) {
         let (start, end) = preset.endpoints(in: screen)
 
@@ -155,6 +155,24 @@ struct GestureRotatedInputTests {
         #expect(event == .swipe(201, yStart: 854, xEnd: 201, yEnd: 94, delta: 50, duration: 0.3))
     }
 
+    @Test("long-press-drag holds 800 ms at the press, then moves to the end in 60 steps over 0.6 s, without reading the tree")
+    func longPressDrag() async throws {
+        let device = DeviceID(rawValue: "LANDSCAPE", platform: .ios)
+        let context = BatchContext(backend: LandscapeBackend(applicationFrame: nil), device: device, axCachePolicy: .perBatch, typeSubmissionMode: .composite, typeChunkSize: 1)
+        let gesture = try Gesture.parse(["long-press-drag", "--x", "100", "--y", "200", "--to-x", "300", "--to-y", "200", "--device", device.rawValue])
+        let primitives = try await gesture.toBatchPrimitives(context: context, logger: OffsiderLogger())
+        guard primitives.count == 1, case .hidMergeable(.composite(let events)) = primitives[0] else {
+            Issue.record("expected one composite, got \(primitives)")
+            return
+        }
+        let start = OrientationCoordinateMath.translateToPhysical(x: 100, y: 200, orientation: .landscape, portraitWidth: 402, portraitHeight: 874)
+        #expect(events.first == .touch(direction: .down, x: start.x, y: start.y))
+        #expect(events.dropFirst().first == .delay(0.8))
+        #expect(events.filter { if case .touch(.down, _, _) = $0 { return true } else { return false } }.count == 61)
+        let moves = events.compactMap { if case .delay(let seconds) = $0 { return seconds } else { return nil } }.dropFirst().dropLast()
+        #expect(abs(moves.reduce(0, +) - 0.6) < 1e-9)
+    }
+
     @Test("a tree without an application frame fails with an actionable error")
     func missingApplicationFrameFails() async throws {
         let error = await #expect(throws: CLIError.self) {
@@ -163,5 +181,21 @@ struct GestureRotatedInputTests {
 
         #expect(error?.errorDescription?.contains("no application frame") == true)
         #expect(error?.errorDescription?.contains("offsider doctor --device LANDSCAPE") == true)
+    }
+}
+
+@Suite("Gesture options")
+struct GestureOptionTests {
+    @Test("long-press-drag needs its points, swipes refuse them, and --hold-ms stays in range", arguments: [
+        (["long-press-drag", "--x", "1", "--y", "2", "--to-x", "3"], "long-press-drag needs --to-y."),
+        (["scroll-up", "--x", "1"], "--x applies to long-press-drag only."),
+        (["scroll-up", "--hold-ms", "500"], "--hold-ms applies to long-press-drag only."),
+        (["long-press-drag", "--x", "1", "--y", "2", "--to-x", "3", "--to-y", "4", "--hold-ms", "10001"], "--hold-ms must be from 0 to 10000"),
+        (["long-press-drag", "--x", "1", "--y", "2", "--to-x", "3", "--to-y", "4", "--delta", "5"], "--delta applies to swipe presets only"),
+        (["long-press-drag", "--x", "1", "--y", "2", "--to-x", "1", "--to-y", "2"], "must be different"),
+    ])
+    func validation(arguments: [String], message: String) {
+        let error = #expect(throws: (any Error).self) { try Gesture.parse(arguments + ["--device", "emulator-5554"]) }
+        #expect(error.map { Gesture.message(for: $0).contains(message) } == true, "\(error.map { Gesture.message(for: $0) } ?? "")")
     }
 }

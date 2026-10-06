@@ -1,10 +1,14 @@
 # android <android-device> 411.4x923.4 @2.625x portrait 0°
+# keyboard shown
 application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
   button "Offsider Playground" id=BackButton (8,54.1 44.2x44.2)
   group "Text Input" id=text-input-screen (60.2,64.4 291.4x23.2)
   text "Text Input Playground" id=text-input-title (16,114.7 379.4x27.1)
   textField id=text-input-field (16,194.3 379.4x44.2) focused
-  text "✏️ Typing active" id=typing-active-indicator (16,254.5 379.4x23.2)
+  textField "Second field" id=text-input-second-field (16,254.1 379.4x44.2)
+  text "Second: " id=text-input-second-value (16,314.3 379.4x23.2)
+  textField "Two characters" id=text-input-short-field (16,353.5 379.4x44.2)
+  text "✏️ Typing active" id=typing-active-indicator (16,413.7 379.4x23.2)
 keyboard "Password keyboard" (0,54.1 411.4x869.3)
   group id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated (0,54.1 411.4x869.3)
     button "1" id=com.google.android.inputmethod.latin:id/key_pos_password_header_number_1 (1.9,587.1 40.8x44.2)
@@ -17,7 +21,7 @@ keyboard "Password keyboard" (0,54.1 411.4x869.3)
     button "8" id=com.google.android.inputmethod.latin:id/key_pos_password_header_number_8 (287.2,587.1 40.8x44.2)
     button "9" id=com.google.android.inputmethod.latin:id/key_pos_password_header_number_9 (328,587.1 40.8x44.2)
     button "0" id=com.google.android.inputmethod.latin:id/key_pos_password_header_number_0 (368.8,587.1 40.8x44.2)
-    button "q" id=com.google.android.inputmethod.latin:id/key_pos_0_0 (1.9,639.2 40.8x58.7) focused
+    button "q" id=com.google.android.inputmethod.latin:id/key_pos_0_0 (1.9,639.2 40.8x58.7)
     button "w" id=com.google.android.inputmethod.latin:id/key_pos_0_1 (42.7,639.2 40.8x58.7)
     button "e" id=com.google.android.inputmethod.latin:id/key_pos_0_2 (83.4,639.2 40.8x58.7)
     button "r" id=com.google.android.inputmethod.latin:id/key_pos_0_3 (124.2,639.2 40.8x58.7)

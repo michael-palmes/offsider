@@ -41,4 +41,9 @@ public enum UIRole: String, CaseIterable, Sendable {
             return false
         }
     }
+
+    /// Fields that take typed text.
+    public var isTextInput: Bool {
+        [.textField, .secureTextField, .searchField, .textArea].contains(self)
+    }
 }

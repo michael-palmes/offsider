@@ -66,4 +66,13 @@ struct AdbInputScriptTests {
         #expect(scripts.allSatisfy { $0.count <= AdbInputScript.maxScriptLength })
         #expect(scripts.joined(separator: " && ").components(separatedBy: "input tap").count - 1 == 2000)
     }
+
+    @Test("two fingers are refused over `input`, which moves one finger, naming the routes that can")
+    func twoFingersRefused() {
+        let error = #expect(throws: AndroidError.self) {
+            try AdbInputScript.scripts(for: [.touches(.down, [AndroidPoint(x: 1, y: 1), AndroidPoint(x: 2, y: 1)])])
+        }
+        #expect(error?.kind == .notSupported)
+        #expect(error?.message.contains("OFFSIDER_ANDROID_INPUT=helper") == true)
+    }
 }

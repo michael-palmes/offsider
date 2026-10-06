@@ -16,6 +16,7 @@ private func resolveBatchTapPoint(
     elementType: String?,
     allowOffscreen: Bool,
     settle: SettlePolicy,
+    pick: MatchPick?,
     logger: OffsiderLogger
 ) async throws -> Polled<TapResolution> {
     let fetchTree = context.pollingTreeSource()
@@ -26,6 +27,7 @@ private func resolveBatchTapPoint(
         elementType: elementType,
         allowOffscreen: allowOffscreen,
         settle: settle,
+        pick: pick,
         logger: logger
     ) {
         try await fetchTree()
@@ -94,6 +96,7 @@ extension Tap: BatchConvertible {
                 elementType: elementType,
                 allowOffscreen: allowOffscreen,
                 settle: context.settlePolicy(stepOptedOut: noSettle),
+                pick: try await matchPick(query: query, backend: context.backend, device: context.device),
                 logger: logger
             )
             resolution = resolved.value
@@ -147,8 +150,8 @@ extension Swipe: BatchConvertible {
 
 extension Gesture: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let gestureEvent = try await presetSwipe(
-            tree: try await context.accessibilityTree(),
+        let gestureEvent = try await presetEvent(
+            tree: { try await context.accessibilityTree() },
             backend: context.backend,
             device: context.device,
             logger: logger
@@ -159,6 +162,9 @@ extension Gesture: BatchConvertible {
 
 extension Touch: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        if fingers == 2 {
+            return [.hidBarrier(try await twoFingerEvent(backend: context.backend, device: context.device))]
+        }
         let physicalPoint = try await context.backend.deviceCoordinates(
             for: [(x: pointX, y: pointY)],
             tree: nil,
@@ -256,6 +262,18 @@ extension KeyCombo: BatchConvertible {
 
 extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        let typed = try await typingPrimitives(context: context)
+        guard intoQuery != nil || requireFocusID != nil else { return typed }
+        let focus = BatchPrimitive.run { session in
+            try await ensureFocus(backend: context.backend, device: context.device, logger: logger) { event in
+                try await session.perform(event)
+            }
+            context.invalidateTree(sentInput: true)
+        }
+        return [focus] + typed
+    }
+
+    private func typingPrimitives(context: BatchContext) async throws -> [BatchPrimitive] {
         let inputText = try resolvedText()
 
         if context.device.platform == .android || context.device.isPhysicalIOSDevice {

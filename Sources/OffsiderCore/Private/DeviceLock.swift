@@ -137,11 +137,42 @@ public final class DeviceLock: @unchecked Sendable {
         }
     }
 
-    /// Idempotent; the file stays, since unlinking a `flock` file races with the next opener.
+    /// Idempotent; the file stays, since unlinking a `flock` file races with the next opener, but is emptied first so no reader sees a stale holder.
     public func release() {
         guard descriptor >= 0 else { return }
+        _ = ftruncate(descriptor, 0)
         Darwin.close(descriptor)
         descriptor = -1
+    }
+
+    /// The live Offsider command holding `key`, read without taking the lock: a shared `flock` probe would make a concurrent acquirer fail.
+    /// The pid must be alive, an `offsider` executable, and have started before the lock was taken, so a reused pid never counts.
+    public static func currentHolder(
+        _ key: DeviceLockKey,
+        root: String = OffsiderPrivateDirectory.root,
+        isOffsider: (Int32) -> Bool = DeviceLock.isOffsiderProcess,
+        startTime: (Int32) -> Date? = { ProcessStartTime.date(of: $0) }
+    ) -> DeviceLockHolder? {
+        let path = ((root as NSString).appendingPathComponent(OffsiderPrivateDirectory.locksDirectoryName) as NSString).appendingPathComponent(key.fileName)
+        let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { return nil }
+        defer { Darwin.close(descriptor) }
+        guard let holder = readHolder(descriptor),
+              kill(holder.pid, 0) == 0 || errno == EPERM,
+              isOffsider(holder.pid) else { return nil }
+        if let started = holder.startedAt, let processStart = startTime(holder.pid), processStart > started.addingTimeInterval(1) {
+            return nil
+        }
+        return holder
+    }
+
+    /// The executable's file name is `offsider`.
+    public static func isOffsiderProcess(_ pid: Int32) -> Bool {
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return false }
+        let path = String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        return (path as NSString).lastPathComponent == "offsider"
     }
 
     private static func tryLock(_ descriptor: Int32, path: String) throws -> Bool {

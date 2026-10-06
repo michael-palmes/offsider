@@ -9,6 +9,25 @@ public enum GesturePreset: String, CaseIterable, Sendable {
     case swipeFromRightEdge = "swipe-from-right-edge"
     case swipeFromTopEdge = "swipe-from-top-edge"
     case swipeFromBottomEdge = "swipe-from-bottom-edge"
+    case longPressDrag = "long-press-drag"
+
+    public enum Kind: Sendable {
+        /// A swipe sized to the screen.
+        case swipe
+        /// A held press then a drag between points the caller gives.
+        case longPressDrag
+    }
+
+    public var kind: Kind {
+        self == .longPressDrag ? .longPressDrag : .swipe
+    }
+
+    public static var swipes: [GesturePreset] { allCases.filter { $0.kind == .swipe } }
+
+    /// How long `long-press-drag` holds before it moves, in milliseconds.
+    public static let defaultHoldMilliseconds = 800
+    /// Moves in a `long-press-drag`.
+    public static let dragSteps = 60
 
     /// How far edge swipes start inside the screen edge, in points.
     public static let edgeMargin = 20.0
@@ -33,6 +52,8 @@ public enum GesturePreset: String, CaseIterable, Sendable {
             return "Swipe from top edge downward"
         case .swipeFromBottomEdge:
             return "Swipe from bottom edge upward"
+        case .longPressDrag:
+            return "Press and hold, then drag to another point"
         }
     }
 
@@ -42,6 +63,8 @@ public enum GesturePreset: String, CaseIterable, Sendable {
             return 0.5
         case .swipeFromLeftEdge, .swipeFromRightEdge, .swipeFromTopEdge, .swipeFromBottomEdge:
             return 0.3
+        case .longPressDrag:
+            return 0.6
         }
     }
 
@@ -49,7 +72,7 @@ public enum GesturePreset: String, CaseIterable, Sendable {
         switch self {
         case .scrollUp, .scrollDown, .scrollLeft, .scrollRight:
             return 25.0
-        case .swipeFromLeftEdge, .swipeFromRightEdge, .swipeFromTopEdge, .swipeFromBottomEdge:
+        case .swipeFromLeftEdge, .swipeFromRightEdge, .swipeFromTopEdge, .swipeFromBottomEdge, .longPressDrag:
             return 50.0
         }
     }
@@ -64,7 +87,7 @@ public enum GesturePreset: String, CaseIterable, Sendable {
         )
     }
 
-    /// Start and end points in `screen`, in the logical points of its current orientation.
+    /// Start and end points in `screen`, in the logical points of its current orientation; `long-press-drag` takes its points from the caller.
     public func endpoints(in screen: UIFrame) -> (start: UIPoint, end: UIPoint) {
         let minX = screen.x + Self.edgeMargin
         let maxX = screen.x + screen.width - Self.edgeMargin
@@ -91,6 +114,8 @@ public enum GesturePreset: String, CaseIterable, Sendable {
             return (UIPoint(x: centerX, y: minY), UIPoint(x: centerX, y: maxY))
         case .swipeFromBottomEdge:
             return (UIPoint(x: centerX, y: maxY), UIPoint(x: centerX, y: minY))
+        case .longPressDrag:
+            return (UIPoint(x: centerX, y: centerY), UIPoint(x: centerX, y: centerY))
         }
     }
 }

@@ -28,9 +28,9 @@ enum ErrorReporter {
     nonisolated(unsafe) static var context = Context(command: nil, wantsJSON: false, device: nil)
 
     static func prepare(command: (any ParsableCommand)?, arguments: [String]) {
-        let name = command.map { type(of: $0)._commandName } ?? arguments.first { !$0.hasPrefix("-") }
+        let name = command.map { CommandPath.of($0) } ?? arguments.first { !$0.hasPrefix("-") }
         let wantsJSON = (command as? any JSONReportingCommand)?.wantsJSON ?? arguments.contains("--json")
-        context = Context(command: name, wantsJSON: wantsJSON, device: deviceArgument(in: arguments))
+        context = Context(command: name, wantsJSON: wantsJSON, device: deviceArgument(in: arguments) ?? DeviceDefault.resolve(explicit: nil)?.id)
     }
 
     /// The JSON `error` object for `error`; `<DEVICE_ID>` in a hint becomes the `--device` value.
@@ -52,6 +52,21 @@ enum ErrorReporter {
             dispatched: payload.dispatched,
             candidates: payload.candidates
         )
+    }
+
+    /// The exit code and reason a failure ends with, for an evidence run's manifest.
+    static func status(for error: any Error) -> (exit: Int32, reason: String?) {
+        if let reported = error as? ReportedFailure {
+            return (reported.exitCode.rawValue, payload(for: reported.underlying).reason.rawValue)
+        }
+        if let code = error as? ExitCode {
+            return (code.rawValue, code.rawValue == OffsiderExitCode.unverified.rawValue ? FailureReason.conditionNotMet.rawValue : nil)
+        }
+        if let failure = error as? any OffsiderFailure {
+            return (failure.exitCode.rawValue, failure.reason.rawValue)
+        }
+        let code = OffsiderCommand.exitCode(for: error).rawValue
+        return (code, payload(for: error).reason.rawValue)
     }
 
     static func exit(_ error: any Error) -> Never {

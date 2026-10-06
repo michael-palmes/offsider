@@ -231,12 +231,25 @@ public enum DeviceSettingsReport {
         ]).rendered(compact: true)
     }
 
-    public static func orientation(_ current: DeviceOrientation, previous: DeviceOrientation?, screen: UIScreenInfo?) -> String {
+    public static func orientation(_ current: DeviceOrientation, previous: DeviceOrientation?, screen: UIScreenInfo?, rotation: RotationReport? = nil) -> String {
         OrderedJSON.object([
             ("orientation", .string(current.rawValue)),
             ("rotation", .integer(current.rotationDegrees)),
             ("previous", .optional(previous) { .string($0.rawValue) }),
             ("screen", .optional(screen) { .object([("width", .number($0.width)), ("height", .number($0.height))]) }),
+            ("autoRotate", .optional(rotation) { report in
+                .object([
+                    ("before", .optional(report.before?.autoRotate) { .bool($0) }),
+                    ("now", .optional(report.now?.autoRotate) { .bool($0) }),
+                    ("restored", .bool(report.restored)),
+                ])
+            }),
+            ("userRotation", .optional(rotation) { report in
+                .object([
+                    ("before", .optional(report.before?.userRotation) { .integer($0) }),
+                    ("now", .optional(report.now?.userRotation) { .integer($0) }),
+                ])
+            }),
         ]).rendered(compact: true)
     }
 }

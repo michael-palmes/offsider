@@ -21,6 +21,8 @@ enum KeyPhase: Equatable, Sendable {
 /// Intent steps in logical pixels; built by `AndroidInputLowering`, run by one executor.
 enum AndroidInputStep: Equatable, Sendable {
     case touch(TouchPhase, AndroidPoint)
+    /// Several fingers down or up together; finger n is pointer n.
+    case touches(TouchPhase, [AndroidPoint])
     case tap(AndroidPoint)
     case swipe(from: AndroidPoint, to: AndroidPoint, duration: TimeInterval, steps: Int)
     case key(KeyPhase, usage: UInt32)
@@ -41,6 +43,8 @@ enum AndroidInputLowering {
         case .touch(.up, let x, let y):
             touchIsDown = false
             return [.touch(.up, AndroidPoint(x: x, y: y))]
+        case let .twoFingerTouch(direction, x1, y1, x2, y2):
+            return [.touches(direction == .down ? .down : .up, [AndroidPoint(x: x1, y: y1), AndroidPoint(x: x2, y: y2)])]
         case let .swipe(xStart, yStart, xEnd, yEnd, delta, duration):
             let distance = hypot(xEnd - xStart, yEnd - yStart)
             let spacing = delta * scale

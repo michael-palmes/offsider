@@ -128,14 +128,17 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let startedAt = Date()
         let roots: [UINode]
         var truncated = false
+        var windows: [UIWindowInfo]?
         switch try await treeSource(for: serial) {
         case .helper(let session):
-            (roots, truncated) = try await helperRoots(serial, session: session)
+            let read = try await helperRoots(serial, session: session)
+            (roots, truncated, windows) = (read.roots, read.truncated, read.windows)
         case .uiautomator:
             roots = try await uiautomatorRoots(serial)
         }
         var tree = UITree(platform: .android, device: serial, roots: roots)
         tree.sourceTruncated = truncated
+        tree.windows = windows
         guard let point else {
             DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
             return tree
@@ -233,10 +236,19 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             avdName: { await self.avdName(for: serial) },
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             focusedSecureField: { await self.hasFocusedSecureField(id) },
+            multiTouchHelper: { try await self.multiTouchHelper(serial) },
+            readFocusedField: { await self.focusedFieldReading(serial) },
+            pasteFocused: { try await self.pasteIntoFocusedField(serial) },
             sleep: host.sleep,
             log: log,
             timing: host.timing
         )
+    }
+
+    /// The helper for a multi-finger touch on an `input` route, unless OFFSIDER_ANDROID_INPUT=input forbids it.
+    private func multiTouchHelper(_ serial: String) async throws -> HelperInputDriver? {
+        guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
+        return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
     }
 
     /// Best effort: an unreadable screen does not block typing, since the guard only keeps a password off the clipboard.
