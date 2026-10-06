@@ -64,6 +64,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - After a device session loses a reply, the command's next input reconnects instead of failing unsent; the input whose reply was lost is never resent.
 - When a device's session broker fails to start, the rest of the command no longer waits for it again: screenshots go straight to `devicectl` and `button home` to the runner.
 - Long `type` text on a device goes to the session in requests of at most 256 characters, so it no longer fails as possibly sent; a request too large for the session is refused unsent.
+- On a physical device, `--verify`, `wait` screen checks and `screenshot --compare` no longer count the screen stream's compression noise as a change, so a press that changed nothing exits 5: they compare the mean colour of 8 by 8 pixel blocks within a small tolerance. Simulators and Android still compare pixels exactly.
+- A physical device's first screenshot after its session broker starts waits until the stream has run about 1.5 s past its first frame, whose coarser encoding read as a change against every later capture of the same screen.
+- `--verify` keeps taking screenshots while the screen is still moving (one more, then more until the attempt's time is up, at most six), so a change whose transition its first screenshots catch midway, or a device stream shows a moment late, verifies on the first attempt instead of sending the input again.
 
 ## [0.6.0] - 2026-10-05
 

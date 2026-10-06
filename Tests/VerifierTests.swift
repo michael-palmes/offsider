@@ -385,6 +385,32 @@ struct VerifierTests {
         #expect(fake.treeReads == 2)
     }
 
+    @Test("With no tree, after-shots continue while a transition is still moving, so a change that settles verifies without a second action")
+    func transitionSettlesBeforeComparing() async throws {
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 60), screen(shade: 120), screen(shade: 200)])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
+
+        #expect(outcome.verified)
+        #expect(outcome.change == .screenshot)
+        #expect(actions.count == 1)
+        #expect(fake.screenReads == 6)
+    }
+
+    @Test("A screen that never settles stops the after-shots at their cap, or after one extra once the attempt's time is up", arguments: [
+        (2000, 1 + Verifier.maxScreenshots), (500, 1 + Verifier.screenshotCount + 1),
+    ])
+    func endlessMotionIsCapped(timeoutMilliseconds: Int, reads: Int) async throws {
+        let shades: [UInt8] = [10, 40, 80, 120, 160, 200, 240, 20, 60, 100, 140]
+        let fake = FakeSimulator(trees: [emptyTree], screens: shades.map { screen(shade: $0) })
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        _ = try await run(fake, styles: [nil], timeout: .milliseconds(timeoutMilliseconds), actions: &actions, retries: &retries)
+
+        #expect(fake.screenReads == reads)
+    }
+
     @Test("The bands are scaled to pixels and excluded only in portrait")
     func bandsOnlyInPortrait() {
         let png = screen(shade: 10)
@@ -426,6 +452,18 @@ struct VerifierTests {
             var retries: [Int] = []
             let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
             #expect(outcome.verified == verified, "bands \(bands)")
+        }
+    }
+
+    @Test("With a noise tolerance, a screen whose colours drift a few units does not verify and a real change does")
+    func noiseToleranceVerifies() async throws {
+        for (after, tolerance, verified) in [(screen(shade: 13), 6, false), (screen(shade: 13), 0, true), (screen(shade: 200), 6, true)] {
+            let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), after])
+            fake.bands = ScreenBands(top: 60, bottom: 0, noiseTolerance: tolerance)
+            var actions: [Verifier.Attempt] = []
+            var retries: [Int] = []
+            let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+            #expect(outcome.verified == verified, "tolerance \(tolerance)")
         }
     }
 

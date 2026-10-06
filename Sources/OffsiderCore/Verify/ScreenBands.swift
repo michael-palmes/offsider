@@ -6,12 +6,15 @@ public struct ScreenBands: Equatable, Sendable {
     public let everyOrientation: Bool
     /// Counterclockwise quarter turns that make the backend's raw screenshot upright, so the bands can be placed on it.
     public let screenshotQuarterTurns: Int
+    /// How far a still screen's colours drift between lossy captures (video frames); 0 when captures are exact.
+    public let noiseTolerance: Int
 
-    public init(top: Double, bottom: Double, everyOrientation: Bool = false, screenshotQuarterTurns: Int = 0) {
+    public init(top: Double, bottom: Double, everyOrientation: Bool = false, screenshotQuarterTurns: Int = 0, noiseTolerance: Int = 0) {
         self.top = top
         self.bottom = bottom
         self.everyOrientation = everyOrientation
         self.screenshotQuarterTurns = screenshotQuarterTurns
+        self.noiseTolerance = noiseTolerance
     }
 
     /// The bands on a raw screenshot's edges, in that screenshot's pixels; the UI's top is the edge the upright turn brings to the top.
