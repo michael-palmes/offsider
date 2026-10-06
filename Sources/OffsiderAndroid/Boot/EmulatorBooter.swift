@@ -191,20 +191,25 @@ public struct EmulatorBooter {
         return reading
     }
 
-    static let instanceLockNames = ["hardware-qemu.ini.lock", "multiinstance.lock"]
+    static let instanceLockName = "hardware-qemu.ini.lock"
 
-    /// Deletes the AVD's lock files when every pid they record is gone (or is no longer an emulator); returns the names removed.
+    /// Deletes `hardware-qemu.ini.lock` when its pid is gone (or is no longer an emulator); returns the names removed.
+    /// `multiinstance.lock` is left alone: it is an flock that dies with its holder, so it never blocks a launch.
     func removeStaleLocks(_ avd: AVDInfo) -> [String] {
-        let present = Self.instanceLockNames.filter { host.files.fileExists(atPath: avd.directory.appendingPathComponent($0).path) }
-        let pids = present.compactMap { lockPID(avd.directory.appendingPathComponent($0)) }
-        guard !pids.isEmpty, !pids.contains(where: isLiveEmulator) else { return [] }
-        return present.filter { (try? host.files.removeItem(atPath: avd.directory.appendingPathComponent($0).path)) != nil }
+        let lock = avd.directory.appendingPathComponent(Self.instanceLockName)
+        guard let pid = lockPID(lock), !isLiveEmulator(pid), (try? host.files.removeItem(atPath: lock.path)) != nil else { return [] }
+        return [Self.instanceLockName]
     }
 
-    /// The pid in a lock file, or in `pid` inside a lock directory.
     private func lockPID(_ lock: URL) -> Int32? {
-        let data = host.files.contents(atPath: lock.path) ?? host.files.contents(atPath: lock.appendingPathComponent("pid").path)
-        return data.flatMap { Int32(String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) }
+        host.files.contents(atPath: lock.path).flatMap(Self.lockPID)
+    }
+
+    /// The emulator writes its pid followed by a NUL, so only the leading digits count.
+    static func lockPID(_ data: Data) -> Int32? {
+        let digits = data.prefix { (0x30...0x39).contains($0) }
+        guard let pid = Int32(String(decoding: digits, as: UTF8.self)), pid > 0 else { return nil }
+        return pid
     }
 
     private func isLiveEmulator(_ pid: Int32) -> Bool {
@@ -213,7 +218,7 @@ public struct EmulatorBooter {
 
     /// The emulator's own instance lock (`hardware-qemu.ini.lock` holds its pid), when a live emulator holds it.
     func instanceLockHolder(_ avd: AVDInfo) -> Int32? {
-        guard let pid = lockPID(avd.directory.appendingPathComponent("hardware-qemu.ini.lock")), isLiveEmulator(pid) else { return nil }
+        guard let pid = lockPID(avd.directory.appendingPathComponent(Self.instanceLockName)), isLiveEmulator(pid) else { return nil }
         return pid
     }
 }

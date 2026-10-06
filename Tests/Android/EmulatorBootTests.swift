@@ -286,7 +286,8 @@ struct EmulatorBootTests {
     @Test("a live emulator holding the AVD's instance lock is waited for instead of starting a second one")
     func instanceLockHeld() async throws {
         let home = try Self.home()
-        try AndroidTestHost.write("777 ", to: ".android/avd/\(Self.avd).avd/hardware-qemu.ini.lock", in: home)
+        try AndroidTestHost.write("777\0", to: ".android/avd/\(Self.avd).avd/hardware-qemu.ini.lock", in: home)
+        try AndroidTestHost.write("", to: ".android/avd/\(Self.avd).avd/multiinstance.lock", in: home)
         Self.writeDiscovery(pid: 777, in: home)
         let launcher = FakeLauncher()
         let host = AndroidTestHost.make(
@@ -301,33 +302,42 @@ struct EmulatorBootTests {
         #expect(run.lines.first == "\(Self.avd) is already starting (pid 777); waiting for it.")
     }
 
-    @Test("lock files whose pid is gone are removed before the launch, and an early exit names them")
+    @Test("a pid lock whose pid is gone is removed before the launch, the flock file is kept, and an early exit names the removal")
     func staleLocksRemoved() async throws {
         let home = try Self.home()
         let directory = home.appendingPathComponent(".android/avd/\(Self.avd).avd")
-        try AndroidTestHost.write("31337", to: ".android/avd/\(Self.avd).avd/hardware-qemu.ini.lock/pid", in: home)
-        try AndroidTestHost.write("31337", to: ".android/avd/\(Self.avd).avd/multiinstance.lock", in: home)
+        try AndroidTestHost.write("31525\0", to: ".android/avd/\(Self.avd).avd/hardware-qemu.ini.lock", in: home)
+        try AndroidTestHost.write("", to: ".android/avd/\(Self.avd).avd/multiinstance.lock", in: home)
         let launcher = FakeLauncher(pid: 4242, exitStatus: 1)
         let host = AndroidTestHost.make(home: home, environment: ["TMPDIR": home.path], adb: Self.server(AdbState(hiddenFor: .max)), launcher: launcher)
 
         let run = await Self.boot(host)
 
         #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("hardware-qemu.ini.lock").path))
-        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("multiinstance.lock").path))
-        #expect(run.lines.first == "Removed hardware-qemu.ini.lock and multiinstance.lock left by an emulator that is no longer running.")
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("multiinstance.lock").path))
+        #expect(run.lines.first == "Removed hardware-qemu.ini.lock left by an emulator that is no longer running.")
         guard case .failure(let error) = run.result else {
             Issue.record("expected the boot to fail")
             return
         }
         #expect(error.reason == .emulatorLaunchFailed)
-        #expect(error.message.hasSuffix("Before this launch Offsider removed hardware-qemu.ini.lock and multiinstance.lock from \(directory.path), left by an emulator that was no longer running."))
+        #expect(error.message.hasSuffix("Before this launch Offsider removed hardware-qemu.ini.lock from \(directory.path), left by an emulator that was no longer running."))
     }
 
-    @Test("lock files are kept when they name no pid", arguments: ["", "not a pid"])
+    @Test("the pid lock reads as the emulator writes it: digits, then a NUL")
+    func lockPIDParsing() {
+        #expect(EmulatorBooter.lockPID(Data("365\0".utf8)) == 365)
+        #expect(EmulatorBooter.lockPID(Data("31525\0".utf8)) == 31525)
+        #expect(EmulatorBooter.lockPID(Data("\0".utf8)) == nil)
+        #expect(EmulatorBooter.lockPID(Data("0\0".utf8)) == nil)
+        #expect(EmulatorBooter.lockPID(Data("99999999999\0".utf8)) == nil)
+    }
+
+    @Test("a pid lock is kept when it names no pid", arguments: ["", "\0", "not a pid"])
     func locksWithoutPidKept(contents: String) async throws {
         let home = try Self.home()
-        let lock = home.appendingPathComponent(".android/avd/\(Self.avd).avd/multiinstance.lock")
-        try AndroidTestHost.write(contents, to: ".android/avd/\(Self.avd).avd/multiinstance.lock", in: home)
+        let lock = home.appendingPathComponent(".android/avd/\(Self.avd).avd/hardware-qemu.ini.lock")
+        try AndroidTestHost.write(contents, to: ".android/avd/\(Self.avd).avd/hardware-qemu.ini.lock", in: home)
         let launcher = FakeLauncher(pid: 4242, exitStatus: 1)
         let host = AndroidTestHost.make(home: home, environment: ["TMPDIR": home.path], adb: Self.server(AdbState(hiddenFor: .max)), launcher: launcher)
 
