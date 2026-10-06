@@ -149,10 +149,10 @@ final class HelperSession {
         try await request(.setText(text), as: HelperTextResult.self, timeout: Self.requestTimeout)
     }
 
-    /// Selects the focused field's text and pastes the clipboard over it; nil when this helper has no `paste` op.
-    func paste() async throws -> HelperTextResult? {
+    /// Pastes the clipboard over all of the focused field's text, only into `field` when given; nil when this helper has no `paste` op.
+    func paste(expecting field: AndroidFieldInfo?) async throws -> HelperTextResult? {
         guard ops.contains("paste") else { return nil }
-        return try await request(.paste, as: HelperTextResult.self, timeout: Self.requestTimeout)
+        return try await request(.paste(expecting: field), as: HelperTextResult.self, timeout: Self.requestTimeout)
     }
 
     /// Injects the steps; `extraWait` covers their pauses and swipes. Leaves the event cursor alone, so a verifier still wakes on the input's events.

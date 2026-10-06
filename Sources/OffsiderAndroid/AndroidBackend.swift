@@ -238,7 +238,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             focusedSecureField: { await self.hasFocusedSecureField(id) },
             multiTouchHelper: { try await self.multiTouchHelper(serial) },
             readFocusedField: { await self.focusedFieldReading(serial) },
-            pasteFocused: { try await self.pasteIntoFocusedField(serial) },
+            pasteFocused: { field in try await self.pasteIntoFocusedField(serial, expecting: field) },
             sleep: host.sleep,
             log: log,
             timing: host.timing

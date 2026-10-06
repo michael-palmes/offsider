@@ -190,6 +190,7 @@ final class TreeDumper {
         json.flag("selected", n.isSelected());
         json.flag("editable", n.isEditable());
         json.flag("password", n.isPassword());
+        json.flag("showingHint", n.isShowingHintText());
         if (!n.isVisibleToUser()) {
             json.field("visibleToUser", false);
         }

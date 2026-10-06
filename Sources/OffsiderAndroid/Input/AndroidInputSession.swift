@@ -34,10 +34,13 @@ enum TextReplacement: Equatable, Sendable {
     case useKeys(warning: String?, field: AndroidFieldInfo? = nil)
 }
 
-/// The focused field's text length as the screen shows it, after keys replaced its text.
+/// The focused field as the screen shows it, after keys replaced its text.
 struct FocusedFieldReading: Equatable, Sendable {
-    var length: Int?
+    /// Empty while the field shows its hint; nil for a password field.
+    var text: String?
     var secure: Bool
+    /// Its class and id, without `inputType`.
+    var field: AndroidFieldInfo
 }
 
 /// How input reaches one emulator in this command: its executor, the display scale and the clipboard endpoint.
@@ -67,8 +70,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private let focusedSecureField: @MainActor () async -> Bool
     /// The focused field after a key replacement; nil when it cannot be read.
     private let readFocusedField: @MainActor () async -> FocusedFieldReading?
-    /// The helper's `paste` op on the focused field; nil when the helper has none.
-    private let pasteFocused: @MainActor () async throws -> HelperTextResult?
+    /// The helper's `paste` op on the focused field, refused unless it is the given one; nil when the helper has none.
+    private let pasteFocused: @MainActor (AndroidFieldInfo) async throws -> HelperTextResult?
     private let log: AndroidLog
     private let timing: AndroidTiming
     private var touchIsDown = false
@@ -87,7 +90,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         focusedSecureField: @escaping @MainActor () async -> Bool = { false },
         multiTouchHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
         readFocusedField: @escaping @MainActor () async -> FocusedFieldReading? = { nil },
-        pasteFocused: @escaping @MainActor () async throws -> HelperTextResult? = { nil },
+        pasteFocused: @escaping @MainActor (AndroidFieldInfo) async throws -> HelperTextResult? = { _ in nil },
         sleep: @escaping @Sendable (Duration) async throws -> Void,
         log: @escaping AndroidLog,
         timing: AndroidTiming = .disabled
@@ -247,25 +250,26 @@ final class AndroidInputSession: InputSession, TextInputSession {
     }
 
     /// After keys (or a set-text the field cut short) replaced a field: when it reads shorter than the text (a longer reading is formatting),
-    /// paste the text through the emulator's clipboard and the helper's `paste`, never into a password field; still short is `text_not_accepted`.
+    /// paste the text over that field alone, never a password field; anything but the exact text afterwards is `text_not_accepted`.
     private func confirmReplacement(_ text: String, field: AndroidFieldInfo?) async throws {
         let expected = text.utf16.count
-        guard let reading = await readFocusedField(), !reading.secure, let length = reading.length, length < expected else { return }
-        log(.debug, "The focused field on \(device.rawValue) holds \(length) characters after typing \(expected)")
+        guard let reading = await readFocusedField(), !reading.secure, let shown = reading.text, shown.utf16.count < expected else { return }
+        log(.debug, "The focused field on \(device.rawValue) holds \(shown.utf16.count) characters after typing \(expected)")
+        let target = field.map { AndroidFieldInfo(className: $0.className, resourceId: $0.resourceId) } ?? reading.field
         var pasted = false
         if let clipboard = try await route().clipboard {
             let saved = try await clipboard.clipboard()
             try await clipboard.setClipboard(text)
             do {
                 try await sleep(Self.clipboardSyncWait)
-                pasted = try await pasteFocused() != nil
+                pasted = try await pasteFocused(target) != nil
                 if pasted { try await sleep(Self.pasteReadWait) }
             } catch {
                 await restoreClipboard(saved, on: clipboard)
                 throw error
             }
             await restoreClipboard(saved, on: clipboard)
-            if pasted, let again = await readFocusedField(), let length = again.length, length >= expected {
+            if pasted, let again = await readFocusedField(), again.field == target, again.text == text {
                 return
             }
         }
