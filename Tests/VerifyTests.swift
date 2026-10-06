@@ -112,19 +112,18 @@ struct VerifyTests {
         #expect(count?.label == "Key Count: 1")
     }
 
-    @Test("A tap that starts motion the tree cannot see verifies on its first attempt and taps once")
-    func motionStartVerifiesOnce() async throws {
+    @Test("With a tree, a tap that starts motion the tree cannot see reads as no change, so with no retries it exits 5 and taps once")
+    func motionStartUnderTreeUnverified() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "motion-test")
 
         let result = try await TestHelpers.runOffsiderCommandSeparated(
-            "tap --id motion-toggle --verify --verify-timeout 1 --json",
+            "tap --id motion-toggle --verify --verify-timeout 1 --retries 0 --json",
             simulatorUDID: defaultSimulatorUDID
         )
         let json = try report(result.stdout)
 
-        #expect(result.exitCode == 0)
-        #expect(json["change"] as? String == "screenshot")
-        #expect(json["attempts"] as? Int == 1)
+        #expect(result.exitCode == 5)
+        #expect(json["change"] as? String == "none")
         try await TestHelpers.runOffsiderCommand("tap --id motion-show-toggles", simulatorUDID: defaultSimulatorUDID)
         let uiState = try await TestHelpers.getUIState()
         #expect(UIStateParser.findElementContainingLabel(in: uiState, containing: "Toggles:")?.label == "Toggles: 1")

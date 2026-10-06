@@ -92,7 +92,8 @@ struct Verifier {
             firstRead = await read(dependencies)
         }
         let first = firstRead.snapshot
-        let firstShot = ignoringText ? nil : try? await dependencies.screenshot()
+        // Without a tree to catch the change, a second before-shot lets motion the input starts count.
+        let firstShot = ignoringText || first.isKnown ? nil : try? await dependencies.screenshot()
         let firstShotTime = dependencies.now()
         try await dependencies.sleep(pollInterval)
         var baselineRead = await read(dependencies)
