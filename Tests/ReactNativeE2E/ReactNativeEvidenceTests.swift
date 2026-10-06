@@ -99,12 +99,10 @@ struct ReactNativeEvidenceTests {
     func logsRedactLogin(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("batch-login-flow", waitingFor: "batch-login-email-field")
-        try await app.run("tap --id batch-login-email-field")
-        try await app.run("type --replace \(Self.email)")
+        try await app.run("type --into-id batch-login-email-field --replace \(Self.email)")
         try await app.run("tap --id batch-login-continue")
         _ = try await app.waitForNode { $0["id"] as? String == "batch-login-password-field" }
-        try await app.run("tap --id batch-login-password-field")
-        try await app.run("type --replace Hunter22")
+        try await app.run("type --into-id batch-login-password-field --replace Hunter22")
         try await app.run("tap --id batch-login-sign-in")
 
         var report: LogReport?
