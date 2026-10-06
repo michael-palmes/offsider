@@ -526,6 +526,28 @@ struct RunTests {
         #expect(line.entries == 2 && line.redacted == 1)
     }
 
+    @Test("a logs run file is created new: a link already at its name is neither followed nor replaced, and stdout still gets every line")
+    func logsRunFileIsCreatedNew() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let outside = fixture.folder("outside.txt")
+        try Data("keep".utf8).write(to: URL(fileURLWithPath: outside))
+        let planted = fixture.folder() + "/001-logs-15.11.07.log"
+        try FileManager.default.createSymbolicLink(atPath: planted, withDestinationPath: outside)
+        let backend = FakeLogBackend(entries: [LogEntry(message: "one"), LogEntry(message: "two")])
+        var stdout: [String] = []
+
+        try await fixture.command(fixture.recorder("logs")) {
+            try await Logs.parse(["--device", "emulator-5554"])
+                .read(from: DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))) { stdout.append($0) }
+        }
+
+        #expect(stdout.joined(separator: "\n").contains("one") && stdout.joined(separator: "\n").contains("two"))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: planted) == outside)
+        #expect(try String(contentsOfFile: outside, encoding: .utf8) == "keep")
+        #expect(fixture.manifest().first?.file == nil)
+    }
+
     @Test("a run copy whose writes fail stops being written after one report, and stdout gets every line")
     func logsTeeWriteFails() throws {
         let fixture = try RunFixture()

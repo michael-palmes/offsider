@@ -187,11 +187,7 @@ struct Logs: AsyncParsableCommand {
     private static func openRunFile(_ token: EvidenceRecorder.Token, recorder: EvidenceRecorder, extension pathExtension: String) -> FileHandle? {
         do {
             let path = try recorder.reserveFile(token, extension: pathExtension)
-            guard FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600]),
-                  let handle = FileHandle(forWritingAtPath: path) else {
-                throw CLIError(errorDescription: "could not create \(path)")
-            }
-            return handle
+            return FileHandle(fileDescriptor: try RunFolder.createNew(path), closeOnDealloc: true)
         } catch {
             recorder.update(token) { $0.file = nil }
             warnRunWriteFailed(error)
