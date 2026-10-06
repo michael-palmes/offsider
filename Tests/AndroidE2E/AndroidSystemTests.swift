@@ -63,7 +63,7 @@ struct AndroidBootTests {
         try await Task.sleep(for: .seconds(3))
 
         let ramMB = try Self.configuredRAM()
-        let result = try await TestHelpers.runOffsiderCommandSeparated("boot \(AndroidE2E.expectedAVD) --memory \(ramMB) --no-snapshot-load --json", timeout: 600)
+        let result = try await TestHelpers.runOffsiderCommandSeparated("boot \(AndroidE2E.expectedAVD) --memory \(ramMB) --no-snapshot-load --timeout 540 --json", timeout: 600)
         let report = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any], "stdout: \(result.stdout)")
 
         #expect(result.exitCode == 0, "stderr: \(result.stderr)")
