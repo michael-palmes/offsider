@@ -43,7 +43,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Flag(name: .customLong("allow-offscreen"), help: "Resolve elements whose frame is outside the screen (off by default: selectors prefer on-screen matches).")
     var allowOffscreen: Bool = false
 
-    @Flag(name: .customLong("fail-if-covered"), help: "Fail instead of warning when another element may cover the tap point.")
+    @Flag(name: .customLong("fail-if-covered"), help: "Fail instead of warning when another element may cover the tap point; a target under the keyboard always fails.")
     var failIfCovered: Bool = false
 
     @Option(name: .customLong("nth"), help: ArgumentHelp("With several on-screen matches, tap the nth in tree order (1-based) instead of failing as ambiguous.", valueName: "n"))
@@ -311,7 +311,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         print("Warning: \(subject) at \(pointText) is outside the \(viewport.sizeSummary) screen; the tap may do nothing.", to: &standardError)
     }
 
-    /// Confirms a cover candidate with one hit-test at the tap point, then warns on stderr or, with `--fail-if-covered`, throws.
+    /// Refuses a target under the keyboard; any other cover (hit-tested on iOS) is a warning, or with `--fail-if-covered` a refusal.
     func checkCover(
         _ resolution: TapResolution,
         selector: String,
@@ -322,20 +322,41 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         guard !resolution.coverCandidates.isEmpty else {
             return
         }
-        let hit = tree.platform == .ios ? await Self.hitTest(at: resolution.point, backend: backend, device: device) : nil
-        guard let cover = AccessibilityTargetResolver.confirmedCover(hit: hit, resolution: resolution, roots: tree.roots) else {
+        let roots = tree.roots
+        let cover: UINode?
+        if tree.platform == .ios {
+            let hit = await Self.hitTest(at: resolution.point, backend: backend, device: device)
+            cover = AccessibilityTargetResolver.confirmedCover(hit: hit, resolution: resolution, roots: roots)
+        } else if let keyboard = AccessibilityTargetResolver.keyboardCover(resolution, in: tree) {
+            cover = keyboard
+        } else {
+            var others = resolution
+            others.coverCandidates.removeAll { AccessibilityTargetResolver.isUnderKeyboard($0, in: roots) }
+            cover = AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: others, roots: roots)
+        }
+        guard let cover else {
             return
         }
-        let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover, roots: tree.roots)
+        if AccessibilityTargetResolver.isUnderKeyboard(cover, in: roots) {
+            throw Self.keyboardCoverError(selector: selector, at: resolution.point, device: device)
+        }
+        let message = Self.coverMessage(selector: selector, at: resolution.point, cover: cover)
         if failIfCovered {
-            let underKeyboard = AccessibilityTargetResolver.isUnderKeyboard(cover, in: tree.roots)
-            throw CLIError(
-                errorDescription: message,
-                reason: underKeyboard ? .targetUnderKeyboard : .targetCovered,
-                hint: "offsider describe-ui --device \(device.rawValue) --summary"
-            )
+            throw CLIError(errorDescription: message, reason: .targetCovered, hint: "offsider describe-ui --device \(device.rawValue) --summary")
         }
         print("Warning: \(message) Pass --fail-if-covered to stop instead.", to: &standardError)
+    }
+
+    /// A tap there would press a key instead, so `tap` and `type --into-id` refuse before sending anything.
+    static func keyboardCoverError(selector: String, at point: (x: Double, y: Double), device: DeviceID) -> CLIError {
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        let android = device.platform == .android
+        let hide = android ? "Hide the keyboard with `offsider button back`" : "Dismiss the keyboard in the app"
+        return CLIError(
+            errorDescription: "The keyboard covers \(selector) at \(pointText), so the tap would press a key. \(hide) (or scroll the target above it), then retry. Nothing was sent.",
+            reason: .targetUnderKeyboard,
+            hint: android ? "offsider button back --device \(device.rawValue)" : "offsider describe-ui --summary --device \(device.rawValue)"
+        )
     }
 
     /// iOS asks the accessibility service what is at the point; Android's point read only walks tree order, which is not z-order.
@@ -344,13 +365,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// `--id 'save' at (196, 700) may be covered by button 'Dismiss' (20, 650) 350x120; the tap may land on it.`
-    /// A key of the on-screen keyboard reads `the keyboard (key 'v')`, since the key itself means little.
-    static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode, roots: [UINode] = []) -> String {
+    static func coverMessage(selector: String, at point: (x: Double, y: Double), cover: UINode) -> String {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
-        if AccessibilityTargetResolver.isUnderKeyboard(cover, in: roots) {
-            let key = (cover.normalizedLabel ?? cover.normalizedID).map { " (key '\(SelectorText.truncated($0))')" } ?? ""
-            return "\(selector) at \(pointText) may be covered by the keyboard\(key); the tap may land on it."
-        }
         var parts = [cover.role.rawValue]
         if let name = cover.normalizedLabel ?? cover.normalizedID {
             parts.append("'\(SelectorText.truncated(name))'")

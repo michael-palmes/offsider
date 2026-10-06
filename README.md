@@ -295,7 +295,7 @@ offsider batch --device "$DEVICE" --json \
 
 With `--json`, stdout is one JSON line per step (`step`, `kind`, `line`, `ok`, `ms`, plus `exitCode` and `error` on failure and each read step's own result), then a summary line with `steps`, `failed` and `dispatched` (`yes`, `no` or `unknown`: whether any step sent input); human text goes to stderr and ends a failure with `Dispatched: <state>`. A failed step's `error` is the [JSON error object](#json-errors). The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0. Earlier steps may have run whatever the code, so resend a failed batch whole only when `dispatched` is `no`.
 
-`tap` warns when another element may cover its target, for example a banner over a tab bar, and `--fail-if-covered` stops instead of tapping. An overlay that is hidden from accessibility cannot be detected this way.
+`tap` warns when another element may cover its target, for example a banner over a tab bar, and `--fail-if-covered` stops instead of tapping. An overlay that is hidden from accessibility cannot be detected this way. When the on-screen keyboard covers the target, `tap` and `type --into-id` always refuse with `target_under_keyboard` and send nothing, since the tap would press a key: hide the keyboard (on Android, `offsider button back`) or scroll the target above it, then retry. On Android the keyboard window's bounds decide, as its root view in `describe-ui` spans the screen.
 
 ### Evidence runs
 
@@ -551,7 +551,7 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `input_failed` | 1 | Sending input failed | Read `dispatched` before resending |
 | `input_outcome_unknown` | 1 | The input request was lost on the way and not replayed | Check the screen before resending |
 | `target_covered` | 1 | `--fail-if-covered` found something over the target | Dismiss the cover, then retry |
-| `target_under_keyboard` | 1 | `--fail-if-covered` found the keyboard over the target | Dismiss the keyboard, then retry |
+| `target_under_keyboard` | 1 | `tap` or `type --into-id` found the keyboard over the target; nothing was sent | Hide the keyboard (on Android, `button back`) or scroll the target above it, then retry |
 | `target_has_no_frame` | 1 | The match has no usable frame | Target another element |
 | `target_moved` | 1 | The slider changed while it was being set | Retry when the screen is still |
 | `not_a_slider` | 1 | `slider` matched something that is not a slider | Use `--element-type slider` or a narrower selector |

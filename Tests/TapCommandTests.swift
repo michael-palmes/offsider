@@ -174,14 +174,12 @@ struct TapCommandTests {
         #expect(stopped.session.calls == [.perform(.tapAt(x: 67, y: 814.5))])
     }
 
-    @Test("a cover inside the keyboard is named as the keyboard and its key")
-    func keyboardCover() {
-        let key = FakeUI.node(.button, label: "v", frame: FakeUI.frame(150, 700, 30, 40))
-        let keyboard = UINode(role: .keyboard, frame: FakeUI.frame(0, 600, 402, 274), native: .ios(IOSNativeAttributes()), children: [key])
+    @Test("a keyboard cover on iOS says to dismiss it in the app, since iOS has no back button, and hints describe-ui")
+    func keyboardCoverOnIOS() {
+        let error = Tap.keyboardCoverError(selector: "--id 'x'", at: (x: 160, y: 710), device: Self.device)
 
-        let message = Tap.coverMessage(selector: "--id 'x'", at: (x: 160, y: 710), cover: key, roots: [keyboard])
-
-        #expect(message == "--id 'x' at (160, 710) may be covered by the keyboard (key 'v'); the tap may land on it.")
+        #expect(error.userFacingDescription == "The keyboard covers --id 'x' at (160, 710), so the tap would press a key. Dismiss the keyboard in the app (or scroll the target above it), then retry. Nothing was sent.")
+        #expect(error.hint == "offsider describe-ui --summary --device \(Self.device.rawValue)")
     }
 
     @Test("--topmost on Android taps the last on-screen match, and --nth taps the one asked for")
@@ -303,7 +301,7 @@ struct TapCommandTests {
         #expect(backend.session.calls.isEmpty)
     }
 
-    @Test("--fail-if-covered under the keyboard is target_under_keyboard; another cover is target_covered")
+    @Test("the keyboard over the target is target_under_keyboard even without --fail-if-covered; another cover is target_covered with it")
     func coverReasons() async throws {
         let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 560, 393, 292), children: [
             FakeUI.node(.button, label: "q", frame: FakeUI.frame(0, 600, 393, 50)),
@@ -311,7 +309,7 @@ struct TapCommandTests {
         let field = FakeUI.node(.textField, id: "field", label: "Field", frame: FakeUI.frame(20, 600, 350, 44))
         let underKeyboard = FakeDeviceBackend(trees: [FakeUI.tree(width: 393, height: 852, [field, keyboard])])
         let keyboardError = await #expect(throws: CLIError.self) {
-            try await Self.tap(["--id", "field", "--fail-if-covered"], on: underKeyboard)
+            try await Self.tap(["--id", "field"], on: underKeyboard)
         }
         #expect(keyboardError?.reason == .targetUnderKeyboard)
 

@@ -36,7 +36,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         Typing into a named field:
         • offsider type --into-id email-field --replace "a@b.c" --device DEVICE_ID taps the field, waits up to 2 s
           until it has focus (on an iOS simulator, until the keyboard shows), then types; no text is sent when it
-          never does (exit 5, focus_not_confirmed). --into-label works the same by label. When the keyboard is
+          never does (exit 5, focus_not_confirmed), and nothing at all when the keyboard covers the field (exit 1,
+          target_under_keyboard). --into-label works the same by label. When the keyboard is
           already up for another field, a simulator cannot prove focus: Offsider taps, types and prints a warning.
         • --require-focus-id email-field types only when that field already has focus (exit 2, focus_mismatch,
           otherwise); the iOS simulator's tree does not report focus, so use --into-id there.
@@ -144,6 +145,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             settle: .guarded(record: await TreeCache.load(for: device, backend: backend)), logger: logger
         )
         let field = polled.value.matched ?? polled.value.target
+        if AccessibilityTargetResolver.keyboardCover(polled.value, in: polled.tree) != nil {
+            throw Tap.keyboardCoverError(selector: query.selectorDescription, at: polled.value.point, device: device)
+        }
         let point = try await backend.deviceCoordinates(for: [polled.value.point], tree: polled.tree, on: device)[0]
         let keyboardAlreadyUp = simulator && polled.tree.roots.flatMap { $0.flattened() }.contains { $0.role == .keyboard }
         try beforeTap(polled.tree)

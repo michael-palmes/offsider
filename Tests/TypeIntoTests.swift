@@ -255,6 +255,97 @@ struct TypeIntoTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 322))])
     }
 
+    /// An Android form under Gboard as the helper reads it: the keyboard's root view spans the screen, its window's bounds start at `keysTop`.
+    static func gboardForm(keysTop: Double, focused: String = "first-field") -> UITree {
+        let (width, height) = (411.4, 923.4)
+        func field(_ id: String, y: Double) -> UINode {
+            FakeUI.node(.textField, id: id, label: id, frame: FakeUI.frame(16, y, 379.4, 44.2), state: UIState(focused: focused == id ? true : nil), platform: .android)
+        }
+        let app = FakeUI.node(.application, label: "Playground", frame: FakeUI.frame(0, 0, width, height), platform: .android, children: [
+            field("first-field", y: 194.3), field("second-field", y: 254.1),
+        ])
+        let key = FakeUI.node(.button, label: "q", frame: FakeUI.frame(1.9, 639.2, 40.8, 58.7), platform: .android)
+        let keyboard = FakeUI.node(.keyboard, label: "Gboard", frame: FakeUI.frame(0, 54.1, width, height - 54.1), platform: .android, children: [key])
+        var tree = UITree(platform: .android, device: android.rawValue, roots: [app, keyboard])
+        tree.windows = [
+            UIWindowInfo(id: 1, kind: "application", layer: 0, title: "Playground", active: true, focused: true, package: "com.example", bounds: FakeUI.frame(0, 0, width, height)),
+            UIWindowInfo(id: 2, kind: "inputMethod", layer: 1, title: "Gboard", active: false, focused: false, package: nil, bounds: FakeUI.frame(0, keysTop, width, height - keysTop)),
+        ]
+        return tree
+    }
+
+    static let coveredMessage = "The keyboard covers --id 'second-field' at (205.7, 276.2), so the tap would press a key. Hide the keyboard with `offsider button back` (or scroll the target above it), then retry. Nothing was sent."
+
+    @Test("on Android a field inside the keyboard window's bounds is refused from the one tree read, before the focus tap")
+    func androidFieldUnderKeyboard() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.gboardForm(keysTop: 55.8)])
+
+        let error = await #expect(throws: CLIError.self) {
+            try await Self.quiet { try await Type.parse(["--into-id", "second-field", "--replace", "second", "--device", Self.android.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.android), progress: nil, logger: OffsiderLogger()) }
+        }
+
+        #expect(error?.reason == .targetUnderKeyboard)
+        #expect(error?.userFacingDescription == Self.coveredMessage)
+        #expect(error?.hint == "offsider button back --device \(Self.android.rawValue)")
+        #expect(backend.session.calls.isEmpty)
+        #expect(backend.treeReads == 1)
+    }
+
+    @Test("on Android the keyboard's root view spanning the screen does not cover a field above its window's bounds")
+    func androidFieldAboveKeys() async throws {
+        let sent = try await Self.focus(["--into-id", "second-field"], trees: [
+            Self.gboardForm(keysTop: 587), Self.gboardForm(keysTop: 587, focused: "second-field"),
+        ])
+
+        #expect(sent == [.tapAt(x: 205.7, y: 276.2)])
+    }
+
+    @Test("on Android a key of the keyboard is never covered by its own keyboard")
+    func androidKeyIsNotCovered() async throws {
+        let tree = Self.gboardForm(keysTop: 587)
+        let backend = FakeDeviceBackend(platform: .android, trees: [tree])
+
+        try await Tap.parse(["--label", "q", "--no-settle", "--device", Self.android.rawValue])
+            .execute(on: DeviceRouter.Route(backend: backend, device: Self.android), progress: nil, logger: OffsiderLogger())
+
+        #expect(backend.session.calls.count == 1)
+    }
+
+    @Test("on an iOS simulator a field under the keyboard is refused without a hit-test read, and the text is never typed")
+    func simulatorFieldUnderKeyboard() async throws {
+        let field = FakeUI.node(.textField, id: "low-field", label: "low-field", frame: FakeUI.frame(20, 700, 360, 44))
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 590, 402, 226), children: [
+            FakeUI.node(.button, label: "v", frame: FakeUI.frame(182.3, 705, 39.3, 54)),
+        ])
+        let backend = FakeDeviceBackend(platform: .ios, trees: [FakeUI.tree([field, keyboard])])
+
+        let error = await #expect(throws: CLIError.self) {
+            try await Self.quiet { try await Type.parse(["--into-id", "low-field", "hi", "--device", Self.simulator.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger()) }
+        }
+
+        #expect(error?.reason == .targetUnderKeyboard)
+        #expect(error?.userFacingDescription.hasPrefix("The keyboard covers --id 'low-field' at (200, 722)") == true)
+        #expect(backend.session.calls.isEmpty)
+        #expect(backend.treeReads == 1)
+    }
+
+    @Test("tap refuses the field under the Android keyboard with type's message, without --fail-if-covered")
+    func tapSharesTheRefusal() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.gboardForm(keysTop: 55.8)])
+
+        let error = await #expect(throws: CLIError.self) {
+            try await Tap.parse(["--id", "second-field", "--no-settle", "--device", Self.android.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.android), progress: nil, logger: OffsiderLogger())
+        }
+
+        #expect(error?.reason == .targetUnderKeyboard)
+        #expect(error?.exitCode == .failure)
+        #expect(error?.userFacingDescription == Self.coveredMessage)
+        #expect(backend.session.calls.isEmpty)
+    }
+
     @Test("the focus options exclude each other")
     func exclusive() {
         #expect(throws: (any Error).self) { try Type.parse(["--into-id", "a", "--require-focus-id", "a", "x", "--device", "emulator-5554"]) }

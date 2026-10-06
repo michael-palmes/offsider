@@ -464,6 +464,35 @@ struct AccessibilityTargetResolver {
         return isPlausibleOccluder(hit, underKeyboard: hit.role == .keyboard) ? hit : nil
     }
 
+    /// The keyboard over the tap point, from the tree already read; on Android its window's bounds decide, as its root view spans the screen.
+    static func keyboardCover(_ resolution: TapResolution, in tree: UITree) -> UINode? {
+        let roots = tree.roots
+        let targets = [resolution.target, resolution.matched].compactMap { $0 }
+        guard !targets.isEmpty, !targets.contains(where: { isUnderKeyboard($0, in: roots) }) else {
+            return nil
+        }
+        let keyboardCandidates = resolution.coverCandidates.filter { isUnderKeyboard($0, in: roots) }
+        if let touchAreas = keyboardTouchAreas(in: tree) {
+            let point = UIPoint(x: resolution.point.x, y: resolution.point.y)
+            guard touchAreas.contains(where: { $0.contains(point) }) else { return nil }
+            return keyboardCandidates.last ?? roots.first { $0.role == .keyboard }
+        }
+        let viewport = UITree.viewport(in: roots)
+        let targetFrame = resolution.target?.frame
+        return keyboardCandidates.first { candidate in
+            guard let frame = candidate.frame else { return false }
+            if let viewport, isBackdrop(frame, in: viewport) { return false }
+            return targetFrame.map { !$0.encloses(frame) } ?? true
+        }
+    }
+
+    /// Where Android's input method windows take touches; nil on iOS and when no window bounds were read.
+    private static func keyboardTouchAreas(in tree: UITree) -> [UIFrame]? {
+        guard tree.platform == .android, let windows = tree.windows else { return nil }
+        let areas = windows.filter { $0.kind == "inputMethod" }.compactMap(\.bounds).filter { $0.width > 0 && $0.height > 0 }
+        return areas.isEmpty ? nil : areas
+    }
+
     /// Covers at least 80 percent of the viewport, as a modal backdrop or scrim does; a banner covers far less.
     static func isBackdrop(_ frame: UIFrame, in viewport: UIFrame) -> Bool {
         guard let visible = frame.intersection(viewport), viewport.width > 0, viewport.height > 0 else { return false }
