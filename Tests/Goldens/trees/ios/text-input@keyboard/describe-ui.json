@@ -510,13 +510,76 @@
                                       ]
                                     },
                                     {
-                                      "role": "text",
-                                      "id": "typing-active-indicator",
-                                      "label": "✏️ Typing active",
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
                                       "value": null,
                                       "frame": {
                                         "x": 16,
                                         "y": 256.33333587646484,
+                                        "width": 370,
+                                        "height": 44
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Group",
+                                        "role": "AXGroup",
+                                        "subrole": null,
+                                        "roleDescription": "group",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{16, 256.33333587646484}, {370, 44}}"
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "textField",
+                                          "id": "text-input-second-field",
+                                          "label": "Second field",
+                                          "value": "",
+                                          "frame": {
+                                            "x": 17,
+                                            "y": 257.33333587646484,
+                                            "width": 368,
+                                            "height": 42
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": null,
+                                            "focused": null
+                                          },
+                                          "native": {
+                                            "type": "TextField",
+                                            "role": "AXTextField",
+                                            "subrole": null,
+                                            "roleDescription": "text field",
+                                            "title": null,
+                                            "help": null,
+                                            "customActions": [],
+                                            "contentRequired": false,
+                                            "pid": 1000,
+                                            "axFrame": "{{17, 257.33333587646484}, {368, 42}}"
+                                          },
+                                          "children": []
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "text",
+                                      "id": "text-input-second-value",
+                                      "label": "Second: ",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 16,
+                                        "y": 316.33333587646484,
                                         "width": 370,
                                         "height": 20.33331298828125
                                       },
@@ -536,7 +599,101 @@
                                         "customActions": [],
                                         "contentRequired": false,
                                         "pid": 1000,
-                                        "axFrame": "{{16, 256.33333587646484}, {370, 20.33331298828125}}"
+                                        "axFrame": "{{16, 316.33333587646484}, {370, 20.33331298828125}}"
+                                      },
+                                      "children": []
+                                    },
+                                    {
+                                      "role": "group",
+                                      "id": null,
+                                      "label": null,
+                                      "value": null,
+                                      "frame": {
+                                        "x": 16,
+                                        "y": 352.66666412353516,
+                                        "width": 370,
+                                        "height": 44
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "Group",
+                                        "role": "AXGroup",
+                                        "subrole": null,
+                                        "roleDescription": "group",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{16, 352.66666412353516}, {370, 44}}"
+                                      },
+                                      "children": [
+                                        {
+                                          "role": "textField",
+                                          "id": "text-input-short-field",
+                                          "label": "Two characters",
+                                          "value": "",
+                                          "frame": {
+                                            "x": 17,
+                                            "y": 353.66666412353516,
+                                            "width": 368,
+                                            "height": 42
+                                          },
+                                          "enabled": true,
+                                          "state": {
+                                            "checked": null,
+                                            "selected": null,
+                                            "focused": null
+                                          },
+                                          "native": {
+                                            "type": "TextField",
+                                            "role": "AXTextField",
+                                            "subrole": null,
+                                            "roleDescription": "text field",
+                                            "title": null,
+                                            "help": null,
+                                            "customActions": [],
+                                            "contentRequired": false,
+                                            "pid": 1000,
+                                            "axFrame": "{{17, 353.66666412353516}, {368, 42}}"
+                                          },
+                                          "children": []
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "text",
+                                      "id": "typing-active-indicator",
+                                      "label": "✏️ Typing active",
+                                      "value": null,
+                                      "frame": {
+                                        "x": 16,
+                                        "y": 412.6666793823242,
+                                        "width": 370,
+                                        "height": 20.333343505859375
+                                      },
+                                      "enabled": true,
+                                      "state": {
+                                        "checked": null,
+                                        "selected": null,
+                                        "focused": null
+                                      },
+                                      "native": {
+                                        "type": "StaticText",
+                                        "role": "AXStaticText",
+                                        "subrole": null,
+                                        "roleDescription": "text",
+                                        "title": null,
+                                        "help": null,
+                                        "customActions": [],
+                                        "contentRequired": false,
+                                        "pid": 1000,
+                                        "axFrame": "{{16, 412.66667938232422}, {370, 20.333343505859375}}"
                                       },
                                       "children": []
                                     }
@@ -777,9 +934,9 @@
                   "label": null,
                   "value": null,
                   "frame": {
-                    "x": 15.999999999999998,
+                    "x": 16,
                     "y": 244.33333333333334,
-                    "width": 153.33333333333331,
+                    "width": 83,
                     "height": 44.00000000000003
                   },
                   "enabled": true,
@@ -798,7 +955,7 @@
                     "customActions": [],
                     "contentRequired": false,
                     "pid": 1000,
-                    "axFrame": "{{15.999999999999998, 244.33333333333334}, {153.33333333333331, 44.000000000000028}}"
+                    "axFrame": "{{16, 244.33333333333334}, {83, 44.000000000000028}}"
                   },
                   "children": [
                     {
@@ -807,9 +964,9 @@
                       "label": null,
                       "value": null,
                       "frame": {
-                        "x": 15.999999999999998,
+                        "x": 16,
                         "y": 244.33333333333334,
-                        "width": 161.33333333333334,
+                        "width": 91,
                         "height": 44.00000000000003
                       },
                       "enabled": true,
@@ -828,7 +985,7 @@
                         "customActions": [],
                         "contentRequired": false,
                         "pid": 1000,
-                        "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333334, 44.000000000000028}}"
+                        "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                       },
                       "children": [
                         {
@@ -837,9 +994,9 @@
                           "label": null,
                           "value": null,
                           "frame": {
-                            "x": 15.999999999999998,
+                            "x": 16,
                             "y": 244.33333333333334,
-                            "width": 153.33333333333331,
+                            "width": 83,
                             "height": 44.00000000000003
                           },
                           "enabled": true,
@@ -858,7 +1015,7 @@
                             "customActions": [],
                             "contentRequired": false,
                             "pid": 1000,
-                            "axFrame": "{{15.999999999999998, 244.33333333333334}, {153.33333333333331, 44.000000000000028}}"
+                            "axFrame": "{{16, 244.33333333333334}, {83, 44.000000000000028}}"
                           },
                           "children": [
                             {
@@ -869,7 +1026,7 @@
                               "frame": {
                                 "x": 20,
                                 "y": 244.33333333333334,
-                                "width": 153.33333333333334,
+                                "width": 83,
                                 "height": 44.00000000000003
                               },
                               "enabled": true,
@@ -888,7 +1045,7 @@
                                 "customActions": [],
                                 "contentRequired": false,
                                 "pid": 1000,
-                                "axFrame": "{{20, 244.33333333333334}, {153.33333333333334, 44.000000000000028}}"
+                                "axFrame": "{{20, 244.33333333333334}, {83, 44.000000000000028}}"
                               },
                               "children": [
                                 {
@@ -897,9 +1054,9 @@
                                   "label": null,
                                   "value": null,
                                   "frame": {
-                                    "x": 15.999999999999998,
+                                    "x": 16,
                                     "y": 244.33333333333334,
-                                    "width": 161.33333333333331,
+                                    "width": 91,
                                     "height": 44.00000000000003
                                   },
                                   "enabled": true,
@@ -918,18 +1075,18 @@
                                     "customActions": [],
                                     "contentRequired": false,
                                     "pid": 1000,
-                                    "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333331, 44.000000000000028}}"
+                                    "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                                   },
                                   "children": [
                                     {
                                       "role": "other",
                                       "id": null,
-                                      "label": "Paste",
+                                      "label": "AutoFill",
                                       "value": null,
                                       "frame": {
                                         "x": 20,
                                         "y": 244.33333333333334,
-                                        "width": 70.33333333333333,
+                                        "width": 83,
                                         "height": 44.00000000000003
                                       },
                                       "enabled": true,
@@ -948,7 +1105,7 @@
                                         "customActions": [],
                                         "contentRequired": false,
                                         "pid": 1000,
-                                        "axFrame": "{{20, 244.33333333333334}, {70.333333333333329, 44.000000000000028}}"
+                                        "axFrame": "{{20, 244.33333333333334}, {83, 44.000000000000028}}"
                                       },
                                       "children": [
                                         {
@@ -959,7 +1116,7 @@
                                           "frame": {
                                             "x": 36,
                                             "y": 257.33333333333337,
-                                            "width": 38.33333333333334,
+                                            "width": 51,
                                             "height": 18
                                           },
                                           "enabled": true,
@@ -978,196 +1135,7 @@
                                             "customActions": [],
                                             "contentRequired": false,
                                             "pid": 1000,
-                                            "axFrame": "{{36, 257.33333333333337}, {38.333333333333343, 18}}"
-                                          },
-                                          "children": [
-                                            {
-                                              "role": "image",
-                                              "id": "document.on.clipboard",
-                                              "label": "Document on a clipboard",
-                                              "value": null,
-                                              "frame": {
-                                                "x": 36,
-                                                "y": 255.66666666666669,
-                                                "width": 0,
-                                                "height": 21.333333333333314
-                                              },
-                                              "enabled": true,
-                                              "state": {
-                                                "checked": null,
-                                                "selected": null,
-                                                "focused": null
-                                              },
-                                              "native": {
-                                                "type": "Image",
-                                                "role": "AXImage",
-                                                "subrole": null,
-                                                "roleDescription": "image",
-                                                "title": null,
-                                                "help": null,
-                                                "customActions": [],
-                                                "contentRequired": false,
-                                                "pid": 1000,
-                                                "axFrame": "{{36, 255.66666666666669}, {0, 21.333333333333314}}"
-                                              },
-                                              "children": []
-                                            },
-                                            {
-                                              "role": "text",
-                                              "id": null,
-                                              "label": "Paste",
-                                              "value": null,
-                                              "frame": {
-                                                "x": 36,
-                                                "y": 257.33333333333337,
-                                                "width": 38.33333333333334,
-                                                "height": 18
-                                              },
-                                              "enabled": true,
-                                              "state": {
-                                                "checked": null,
-                                                "selected": null,
-                                                "focused": null
-                                              },
-                                              "native": {
-                                                "type": "StaticText",
-                                                "role": "AXStaticText",
-                                                "subrole": null,
-                                                "roleDescription": "text",
-                                                "title": null,
-                                                "help": null,
-                                                "customActions": [],
-                                                "contentRequired": false,
-                                                "pid": 1000,
-                                                "axFrame": "{{36, 257.33333333333337}, {38.333333333333343, 18}}"
-                                              },
-                                              "children": []
-                                            }
-                                          ]
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "role": "group",
-                                      "id": null,
-                                      "label": null,
-                                      "value": null,
-                                      "frame": {
-                                        "x": 90.33333333333333,
-                                        "y": 244.33333333333334,
-                                        "width": 1,
-                                        "height": 44.00000000000003
-                                      },
-                                      "enabled": true,
-                                      "state": {
-                                        "checked": null,
-                                        "selected": null,
-                                        "focused": null
-                                      },
-                                      "native": {
-                                        "type": "Group",
-                                        "role": "AXGroup",
-                                        "subrole": null,
-                                        "roleDescription": "group",
-                                        "title": null,
-                                        "help": null,
-                                        "customActions": [],
-                                        "contentRequired": false,
-                                        "pid": 1000,
-                                        "axFrame": "{{90.333333333333329, 244.33333333333334}, {1, 44.000000000000028}}"
-                                      },
-                                      "children": [
-                                        {
-                                          "role": "group",
-                                          "id": null,
-                                          "label": null,
-                                          "value": null,
-                                          "frame": {
-                                            "x": 90.33333333333333,
-                                            "y": 257.33333333333337,
-                                            "width": 1,
-                                            "height": 18
-                                          },
-                                          "enabled": true,
-                                          "state": {
-                                            "checked": null,
-                                            "selected": null,
-                                            "focused": null
-                                          },
-                                          "native": {
-                                            "type": "Group",
-                                            "role": "AXGroup",
-                                            "subrole": null,
-                                            "roleDescription": "group",
-                                            "title": null,
-                                            "help": null,
-                                            "customActions": [],
-                                            "contentRequired": false,
-                                            "pid": 1000,
-                                            "axFrame": "{{90.333333333333329, 257.33333333333337}, {1, 18}}"
-                                          },
-                                          "children": []
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "role": "other",
-                                      "id": null,
-                                      "label": "AutoFill",
-                                      "value": null,
-                                      "frame": {
-                                        "x": 90.33333333333333,
-                                        "y": 244.33333333333334,
-                                        "width": 82.99999999999999,
-                                        "height": 44.00000000000003
-                                      },
-                                      "enabled": true,
-                                      "state": {
-                                        "checked": null,
-                                        "selected": null,
-                                        "focused": null
-                                      },
-                                      "native": {
-                                        "type": "GenericElement",
-                                        "role": "AXGenericElement",
-                                        "subrole": null,
-                                        "roleDescription": "",
-                                        "title": null,
-                                        "help": null,
-                                        "customActions": [],
-                                        "contentRequired": false,
-                                        "pid": 1000,
-                                        "axFrame": "{{90.333333333333329, 244.33333333333334}, {82.999999999999986, 44.000000000000028}}"
-                                      },
-                                      "children": [
-                                        {
-                                          "role": "group",
-                                          "id": null,
-                                          "label": null,
-                                          "value": null,
-                                          "frame": {
-                                            "x": 106.33333333333333,
-                                            "y": 257.33333333333337,
-                                            "width": 50.999999999999986,
-                                            "height": 18
-                                          },
-                                          "enabled": true,
-                                          "state": {
-                                            "checked": null,
-                                            "selected": null,
-                                            "focused": null
-                                          },
-                                          "native": {
-                                            "type": "Group",
-                                            "role": "AXGroup",
-                                            "subrole": null,
-                                            "roleDescription": "group",
-                                            "title": null,
-                                            "help": null,
-                                            "customActions": [],
-                                            "contentRequired": false,
-                                            "pid": 1000,
-                                            "axFrame": "{{106.33333333333333, 257.33333333333337}, {50.999999999999986, 18}}"
+                                            "axFrame": "{{36, 257.33333333333337}, {51, 18}}"
                                           },
                                           "children": [
                                             {
@@ -1176,9 +1144,9 @@
                                               "label": "AutoFill",
                                               "value": null,
                                               "frame": {
-                                                "x": 106.33333333333333,
+                                                "x": 36,
                                                 "y": 257.33333333333337,
-                                                "width": 50.999999999999986,
+                                                "width": 51,
                                                 "height": 18
                                               },
                                               "enabled": true,
@@ -1197,7 +1165,7 @@
                                                 "customActions": [],
                                                 "contentRequired": false,
                                                 "pid": 1000,
-                                                "axFrame": "{{106.33333333333333, 257.33333333333337}, {50.999999999999986, 18}}"
+                                                "axFrame": "{{36, 257.33333333333337}, {51, 18}}"
                                               },
                                               "children": []
                                             }
@@ -1215,7 +1183,7 @@
                               "label": "Previous Page",
                               "value": null,
                               "frame": {
-                                "x": -15.000000000000002,
+                                "x": -15,
                                 "y": 248.33333333333334,
                                 "width": 36,
                                 "height": 36.00000000000003
@@ -1236,7 +1204,7 @@
                                 "customActions": [],
                                 "contentRequired": false,
                                 "pid": 1000,
-                                "axFrame": "{{-15.000000000000002, 248.33333333333334}, {36, 36.000000000000028}}"
+                                "axFrame": "{{-15, 248.33333333333334}, {36, 36.000000000000028}}"
                               },
                               "children": []
                             },
@@ -1246,7 +1214,7 @@
                               "label": "Next Page",
                               "value": null,
                               "frame": {
-                                "x": 173.33333333333334,
+                                "x": 103,
                                 "y": 248.33333333333334,
                                 "width": 36,
                                 "height": 36.00000000000003
@@ -1267,7 +1235,7 @@
                                 "customActions": [],
                                 "contentRequired": false,
                                 "pid": 1000,
-                                "axFrame": "{{173.33333333333334, 248.33333333333334}, {36, 36.000000000000028}}"
+                                "axFrame": "{{103, 248.33333333333334}, {36, 36.000000000000028}}"
                               },
                               "children": []
                             },
@@ -1277,7 +1245,7 @@
                               "label": null,
                               "value": null,
                               "frame": {
-                                "x": 15.999999999999998,
+                                "x": 16,
                                 "y": 244.33333333333334,
                                 "width": 0,
                                 "height": 0
@@ -1298,7 +1266,7 @@
                                 "customActions": [],
                                 "contentRequired": false,
                                 "pid": 1000,
-                                "axFrame": "{{15.999999999999998, 244.33333333333334}, {0, 0}}"
+                                "axFrame": "{{16, 244.33333333333334}, {0, 0}}"
                               },
                               "children": [
                                 {
@@ -1307,7 +1275,7 @@
                                   "label": null,
                                   "value": null,
                                   "frame": {
-                                    "x": 15.999999999999998,
+                                    "x": 16,
                                     "y": 244.33333333333334,
                                     "width": 0,
                                     "height": 0
@@ -1328,7 +1296,7 @@
                                     "customActions": [],
                                     "contentRequired": false,
                                     "pid": 1000,
-                                    "axFrame": "{{15.999999999999998, 244.33333333333334}, {0, 0}}"
+                                    "axFrame": "{{16, 244.33333333333334}, {0, 0}}"
                                   },
                                   "children": []
                                 }
@@ -1342,9 +1310,9 @@
                           "label": null,
                           "value": null,
                           "frame": {
-                            "x": 15.999999999999998,
+                            "x": 16,
                             "y": 244.33333333333334,
-                            "width": 161.33333333333334,
+                            "width": 91,
                             "height": 44.00000000000003
                           },
                           "enabled": true,
@@ -1363,7 +1331,7 @@
                             "customActions": [],
                             "contentRequired": false,
                             "pid": 1000,
-                            "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333334, 44.000000000000028}}"
+                            "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                           },
                           "children": [
                             {
@@ -1372,9 +1340,9 @@
                               "label": null,
                               "value": null,
                               "frame": {
-                                "x": 15.999999999999998,
+                                "x": 16,
                                 "y": 244.33333333333334,
-                                "width": 161.33333333333334,
+                                "width": 91,
                                 "height": 44.00000000000003
                               },
                               "enabled": true,
@@ -1393,7 +1361,7 @@
                                 "customActions": [],
                                 "contentRequired": false,
                                 "pid": 1000,
-                                "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333334, 44.000000000000028}}"
+                                "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                               },
                               "children": [
                                 {
@@ -1402,9 +1370,9 @@
                                   "label": null,
                                   "value": null,
                                   "frame": {
-                                    "x": 15.999999999999998,
+                                    "x": 16,
                                     "y": 244.33333333333334,
-                                    "width": 161.33333333333334,
+                                    "width": 91,
                                     "height": 44.00000000000003
                                   },
                                   "enabled": true,
@@ -1423,7 +1391,7 @@
                                     "customActions": [],
                                     "contentRequired": false,
                                     "pid": 1000,
-                                    "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333334, 44.000000000000028}}"
+                                    "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                                   },
                                   "children": [
                                     {
@@ -1432,9 +1400,9 @@
                                       "label": null,
                                       "value": null,
                                       "frame": {
-                                        "x": 15.999999999999998,
+                                        "x": 16,
                                         "y": 244.33333333333334,
-                                        "width": 161.33333333333331,
+                                        "width": 91,
                                         "height": 44.00000000000003
                                       },
                                       "enabled": true,
@@ -1453,7 +1421,7 @@
                                         "customActions": [],
                                         "contentRequired": false,
                                         "pid": 1000,
-                                        "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333331, 44.000000000000028}}"
+                                        "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                                       },
                                       "children": [
                                         {
@@ -1462,9 +1430,9 @@
                                           "label": null,
                                           "value": null,
                                           "frame": {
-                                            "x": 15.999999999999998,
+                                            "x": 16,
                                             "y": 244.33333333333334,
-                                            "width": 161.33333333333331,
+                                            "width": 91,
                                             "height": 44.00000000000003
                                           },
                                           "enabled": true,
@@ -1483,7 +1451,7 @@
                                             "customActions": [],
                                             "contentRequired": false,
                                             "pid": 1000,
-                                            "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333331, 44.000000000000028}}"
+                                            "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                                           },
                                           "children": [
                                             {
@@ -1492,9 +1460,9 @@
                                               "label": null,
                                               "value": null,
                                               "frame": {
-                                                "x": 15.999999999999998,
+                                                "x": 16,
                                                 "y": 244.33333333333334,
-                                                "width": 161.33333333333331,
+                                                "width": 91,
                                                 "height": 44.00000000000003
                                               },
                                               "enabled": true,
@@ -1513,7 +1481,7 @@
                                                 "customActions": [],
                                                 "contentRequired": false,
                                                 "pid": 1000,
-                                                "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333331, 44.000000000000028}}"
+                                                "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                                               },
                                               "children": []
                                             }
@@ -1527,9 +1495,9 @@
                                       "label": null,
                                       "value": null,
                                       "frame": {
-                                        "x": 15.999999999999998,
+                                        "x": 16,
                                         "y": 244.33333333333334,
-                                        "width": 161.33333333333331,
+                                        "width": 91,
                                         "height": 44.00000000000003
                                       },
                                       "enabled": true,
@@ -1548,7 +1516,7 @@
                                         "customActions": [],
                                         "contentRequired": false,
                                         "pid": 1000,
-                                        "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333331, 44.000000000000028}}"
+                                        "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                                       },
                                       "children": [
                                         {
@@ -1557,9 +1525,9 @@
                                           "label": null,
                                           "value": null,
                                           "frame": {
-                                            "x": 15.999999999999998,
+                                            "x": 16,
                                             "y": 244.33333333333334,
-                                            "width": 161.33333333333331,
+                                            "width": 91,
                                             "height": 44.00000000000003
                                           },
                                           "enabled": true,
@@ -1578,7 +1546,7 @@
                                             "customActions": [],
                                             "contentRequired": false,
                                             "pid": 1000,
-                                            "axFrame": "{{15.999999999999998, 244.33333333333334}, {161.33333333333331, 44.000000000000028}}"
+                                            "axFrame": "{{16, 244.33333333333334}, {91, 44.000000000000028}}"
                                           },
                                           "children": []
                                         }
