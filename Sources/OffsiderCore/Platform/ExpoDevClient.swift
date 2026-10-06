@@ -275,6 +275,19 @@ public enum ExpoDevLauncher {
         }
     }
 
+    /// The Open button of the `Open in “App”?` alert an iOS 27 simulator shows before it follows a custom-scheme link.
+    public static func openLinkPrompt(in tree: UITree) -> UINode? {
+        let nodes = tree.roots.flatMap { $0.flattened() }
+        guard let alert = nodes.first(where: { node in
+            let text = node.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return text.hasPrefix("Open in “") && text.hasSuffix("”?")
+        }), let box = alert.frame else { return nil }
+        return nodes.first { node in
+            guard node.role == .button, node.label == "Open", let frame = node.frame else { return false }
+            return box.contains(frame.center)
+        }
+    }
+
     /// The `Bundling` or `Downloading` banner while Metro sends the bundle.
     public static func isLoading(_ tree: UITree) -> Bool {
         texts(in: tree).contains { $0.hasPrefix("Bundling") || $0.hasPrefix("Downloading") }

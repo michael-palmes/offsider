@@ -156,6 +156,11 @@ struct RNOpen: AsyncParsableCommand {
                     hint: "offsider logs --rn --device \(device.rawValue)"
                 )
             }
+            if let open = ExpoDevLauncher.openLinkPrompt(in: tree), let frame = open.frame {
+                let point = try await route.backend.deviceCoordinates(for: [(x: frame.center.x, y: frame.center.y)], tree: tree, on: device)[0]
+                try await route.backend.performTracked(.tapAt(x: point.x, y: point.y), on: device)
+                continue
+            }
             if ExpoDevLauncher.isLauncher(tree) {
                 launcherSeen = true
                 if clock.now() - lastSend >= Self.resendEvery, sends <= Self.maxResends {

@@ -32,6 +32,20 @@ struct RNOpenCommandTests {
         #expect(report.jsonLine().hasPrefix(#"{"version":1,"bundleId":"com.example.app","url":"exp+playground://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742","host":"127.0.0.1","port":8742,"metro":"running","sends":2,"launcherSeen":true,"waitId":"menu-title","elapsedMs":"#))
     }
 
+    @Test("the simulator's Open in prompt for the link is answered with Open, then the app loads")
+    func acceptsOpenPrompt() async throws {
+        let prompt = FakeUI.tree([
+            FakeUI.node(.other, label: "Open in “OffsiderPlaygroundRN”?", frame: FakeUI.frame(41, 388, 320, 126)),
+            FakeUI.node(.button, label: "Cancel", frame: FakeUI.frame(57, 450, 140, 48)),
+            FakeUI.node(.button, label: "Open", frame: FakeUI.frame(205, 450, 140, 48)),
+        ])
+        let (report, backend) = try await Self.open(["--wait-id", "menu-title"], trees: [prompt, Self.bundling, Self.app])
+
+        #expect(report.sends == 1)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 275, y: 474))])
+        #expect(ExpoDevLauncher.openLinkPrompt(in: Self.app) == nil)
+    }
+
     @Test("without --wait-id the app is up once the screen is still for a second")
     func quietScreen() async throws {
         let (report, _) = try await Self.open([], trees: [Self.bundling, Self.app])
