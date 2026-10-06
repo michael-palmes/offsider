@@ -48,13 +48,10 @@ struct Verifier {
     static let screenshotCount = 3
     /// After-shots one attempt may take while a transition is still moving; a lagging stream may show it only from the second.
     static let maxScreenshots = 6
-    /// The share of tiles that still differ across the latest after-shots while a transition is running; a caret or spinner moves far fewer.
-    static let movingFraction = 0.1
-
-    /// True while the oldest and newest of `prints` differ on more than `movingFraction` of their tiles.
+    /// True while the oldest and newest of `prints` differ on more than `ScreenChange.movingFraction` of their tiles.
     static func isMoving(_ prints: [ImageFingerprint]) -> Bool {
         guard prints.count >= 2, let first = prints.first, let last = prints.last else { return false }
-        return ScreenCompare.outcome(changedFraction: first.changedFraction(comparedTo: last) ?? 1, threshold: movingFraction) == .changed
+        return ScreenCompare.outcome(changedFraction: first.changedFraction(comparedTo: last) ?? 1, threshold: ScreenChange.movingFraction) == .changed
     }
 
     /// While the screen moves: one after-shot past `screenshotCount` always, more only before the attempt's deadline, never past `maxScreenshots`.

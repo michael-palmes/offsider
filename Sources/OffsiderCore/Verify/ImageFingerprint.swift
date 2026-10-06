@@ -246,16 +246,18 @@ public struct ImageFingerprint: Equatable, Sendable {
 }
 
 public enum ScreenChange {
-    /// The most tiles a blinking caret covers (two rows by two columns), which both before-shots can catch in one phase.
-    static let caretTiles = 4
+    /// The share of compared tiles that counts as motion: a transition, a video or a carousel moves more, a ticking label, a caret or a small spinner less.
+    public static let movingFraction = 0.1
 
-    /// Changed tiles still moving after the input (a caret, a spinner) count only when they were still across the before-shots and outnumber a caret's.
+    /// Changed tiles still moving after the input count only when they were still across the before-shots and cover more than `movingFraction` of the screen.
     public static func detect(before: [ImageFingerprint], after: [ImageFingerprint]) -> Bool {
         guard let reference = before.last, let last = after.last else { return false }
         guard let changed = reference.changedTiles(comparedTo: last) else { return true }
         if !changed.isSubset(of: movingTiles(after) ?? []) { return true }
         guard before.count > 1, let movingBefore = movingTiles(before) else { return false }
-        return changed.subtracting(movingBefore).count > caretTiles
+        let compared = max(min(reference.comparedTileCount, last.comparedTileCount), 1)
+        let started = Double(changed.subtracting(movingBefore).count) / Double(compared)
+        return ScreenCompare.outcome(changedFraction: started, threshold: movingFraction) == .changed
     }
 
     /// Tiles that differ between any two of `shots`; nil when two cannot be compared tile for tile.

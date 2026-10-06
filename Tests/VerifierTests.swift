@@ -57,12 +57,16 @@ private func tree(count: String, extra: [UINode] = []) -> UITree {
 
 private let emptyTree = UITree(platform: .ios, device: "fake-device", roots: [FakeUI.node(.application)])
 
-/// With `caret`, a 2 by 6 pixel bar that covers two tiles.
-private func screen(shade: UInt8, caret: Bool = false) -> Data {
+/// With `caret`, a 2 by 6 pixel bar that covers two tiles; with `label`, a 12 by 8 pixel block of that shade that covers six, as a countdown's text does.
+private func screen(shade: UInt8, caret: Bool = false, label: UInt8? = nil) -> Data {
     let width = 64, height = 128
     var bytes = [UInt8](repeating: 255, count: width * height * 4)
     for y in 64..<height {
-        for x in 0..<width { bytes[(y * width + x) * 4] = caret && (10..<12).contains(x) && (70..<76).contains(y) ? 0 : shade }
+        for x in 0..<width {
+            var red = caret && (10..<12).contains(x) && (70..<76).contains(y) ? 0 : shade
+            if let label, (8..<20).contains(x), (80..<88).contains(y) { red = label }
+            bytes[(y * width + x) * 4] = red
+        }
     }
     let provider = CGDataProvider(data: Data(bytes) as CFData)!
     let image = CGImage(
@@ -462,6 +466,18 @@ struct VerifierTests {
         let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
 
         #expect(!outcome.verified)
+    }
+
+    @Test("Without a tree, an input that changes nothing does not verify when a countdown label ticks between the after-shots")
+    func countdownTickDoesNotVerify() async throws {
+        let before = screen(shade: 10, label: 60)
+        let fake = FakeSimulator(trees: [emptyTree], screens: [before, before, before, screen(shade: 10, label: 90)])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified)
+        #expect(outcome.change == ChangeKind.none)
     }
 
     @Test("The bands are scaled to pixels and excluded only in portrait")
