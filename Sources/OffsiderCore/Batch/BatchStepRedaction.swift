@@ -7,7 +7,7 @@ public enum BatchStepRedaction {
     /// `type`'s flags; a test checks these and `valueOptions` against its help.
     public static let flags: Set<String> = ["--stdin", "--replace", "--verify", "--verify-ignore-text", "--json", "--help", "-h"]
     /// `type`'s options that take a value, kept with their value.
-    public static let valueOptions: Set<String> = ["--file", "--verify-timeout", "--verify-id", "--retries", "--into-id", "--into-label", "--require-focus-id", "--device", "--wait-lock"]
+    public static let valueOptions: Set<String> = ["--file", "--verify-timeout", "--verify-id", "--retries", "--into-id", "--into-label", "--require-focus-id", "--app", "--device", "--wait-lock"]
 
     /// A `type` line with its text as `<N characters>` and every option kept; other lines with their mask and grep selectors as `<N characters>`.
     public static func redactedLine(_ line: String, tokens: [String]?) -> String {

@@ -220,10 +220,10 @@ struct IOSDeviceInputE2ETests {
         _ = try IOSDeviceE2E.team()
         try await IOSDeviceE2E.requireAwake()
         try await IOSDeviceE2E.open("text-input", waitingForLabel: "Text Input Playground")
-        try await IOSDeviceE2E.run("type --into-id text-input-field hello")
+        try await IOSDeviceE2E.run("type --into-id text-input-field hello \(Self.app)")
         let field = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == "hello" }
         #expect((field["state"] as? [String: Any])?["focused"] as? Bool == true, "describe-ui did not show the field focused")
-        try await IOSDeviceE2E.run("type --require-focus-id text-input-field world")
+        try await IOSDeviceE2E.run("type --require-focus-id text-input-field world \(Self.app)")
         _ = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == "helloworld" }
     }
 

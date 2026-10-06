@@ -12,10 +12,23 @@ struct AppOption: ParsableArguments {
     )
     var bundleID: String?
 
-    /// Hands the app to a phone's backend; other backends never see it.
+    /// Hands the app to a phone's backend; other backends never see it. True when the phone's app changed.
     @MainActor
-    func apply(to route: DeviceRouter.Route) {
-        guard let bundleID, let phone = route.backend as? IOSDeviceBackend else { return }
+    @discardableResult
+    func apply(to route: DeviceRouter.Route) -> Bool {
+        guard let bundleID, let phone = route.backend as? IOSDeviceBackend, phone.targetApp != bundleID else { return false }
         phone.targetApp = bundleID
+        return true
     }
 }
+
+/// A command that takes `--app`, so a batch step can apply it too.
+protocol AppTargeting {
+    var appOption: AppOption { get }
+}
+
+extension Tap: AppTargeting {}
+extension Type: AppTargeting {}
+extension Wait: AppTargeting {}
+extension Assert: AppTargeting {}
+extension DescribeUI: AppTargeting {}

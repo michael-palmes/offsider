@@ -1,5 +1,6 @@
 import Foundation
 import OffsiderCore
+import OffsiderIOSDevice
 import Testing
 @testable import Offsider
 
@@ -134,6 +135,68 @@ struct TypeIntoTests {
 
         #expect(try await Self.focus(["--require-focus-id", "password"], trees: [tree], device: Self.iPhone).isEmpty)
         #expect(try await Self.focus(["--into-id", "password"], trees: [tree], device: Self.iPhone) == [.tapAt(x: 215, y: 382)])
+    }
+
+    static let playground = "com.mpalmes.offsider.playground"
+
+    /// An iPhone on an Xcode 26 host, so the tree, the focus tap and the text all reach the scripted runner.
+    static func runnerBackend() throws -> (IOSDeviceBackend, FakeRunnerTransport) {
+        let transport = FakeRunnerTransport(snapshot: try IOSDeviceFixtures.data("runner-snapshot.json"))
+        return (try RunnerClientTests.backend(transport).0, transport)
+    }
+
+    /// The runner calls after its connection ping, as `path app` lines.
+    static func appCalls(_ transport: FakeRunnerTransport) -> [String] {
+        transport.calls.filter { $0.path != "/ping" }.map { "\($0.path) \($0.body["app"].map { "\($0)" } ?? "-")" }
+    }
+
+    static func quietOutput() -> BatchOutput {
+        BatchOutput(json: true, write: { _ in }, writeError: { _ in })
+    }
+
+    @Test("type --app on a physical iPhone reads that app's tree for the field and sends the tap and the text to it", arguments: [
+        ["--into-id", "password"], ["--require-focus-id", "password"],
+    ])
+    func physicalDeviceApp(focus: [String]) async throws {
+        let (backend, transport) = try Self.runnerBackend()
+
+        try await Self.quiet { try await Type.parse(focus + ["--replace", "new", "--app", Self.playground, "--device", Self.iPhone.rawValue])
+            .execute(on: DeviceRouter.Route(backend: backend, device: Self.iPhone), progress: nil, logger: OffsiderLogger()) }
+
+        let calls = Self.appCalls(transport)
+        #expect(calls.first == "/snapshot \(Self.playground)" && calls.last == "/type \(Self.playground)", "\(calls)")
+        #expect(calls.allSatisfy { $0.hasSuffix(" \(Self.playground)") }, "\(calls)")
+        #expect(calls.contains("/tap-point \(Self.playground)") == (focus[0] == "--into-id"))
+    }
+
+    @Test("a batch type step's --app reaches its focus read, its tap and its text, through a session opened before the step")
+    func batchStepApp() async throws {
+        let (backend, transport) = try Self.runnerBackend()
+        let context = BatchContext(backend: backend, device: Self.iPhone, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+        let session = try await backend.openInputSession(for: Self.iPhone)
+
+        try await Self.quiet { try await Batch.runSteps(
+            ["type --into-id password --replace new --app \(Self.playground)"],
+            context: context, session: session, continueOnError: false, output: Self.quietOutput(), logger: OffsiderLogger()
+        ) }
+
+        let calls = Self.appCalls(transport)
+        #expect(calls.contains("/tap-point \(Self.playground)") && calls.last == "/type \(Self.playground)", "\(calls)")
+        #expect(calls.allSatisfy { $0.hasSuffix(" \(Self.playground)") }, "\(calls)")
+    }
+
+    @Test("a batch step's --app reads that app afresh instead of the front app's cached tree, and later steps keep it")
+    func batchStepAppDropsCache() async throws {
+        let (backend, transport) = try Self.runnerBackend()
+        let context = BatchContext(backend: backend, device: Self.iPhone, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+        let session = try await backend.openInputSession(for: Self.iPhone)
+
+        try await Self.quiet { try await Batch.runSteps(
+            ["describe-ui", "describe-ui --app \(Self.playground)", "assert --id password"],
+            context: context, session: session, continueOnError: false, output: Self.quietOutput(), logger: OffsiderLogger()
+        ) }
+
+        #expect(Self.appCalls(transport) == ["/snapshot -", "/snapshot \(Self.playground)"])
     }
 
     @Test("text the simulator keyboard cannot type fails before the focus tap, so nothing is sent")

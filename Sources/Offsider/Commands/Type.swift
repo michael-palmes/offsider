@@ -40,6 +40,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
           already up for another field, a simulator cannot prove focus: Offsider taps, types and prints a warning.
         • --require-focus-id email-field types only when that field already has focus (exit 2, focus_mismatch,
           otherwise); the iOS simulator's tree does not report focus, so use --into-id there.
+        • On a physical iPhone or iPad, --app <bundle-id> names the app whose field these find and the text goes to.
 
         Android emulators: printable ASCII, newlines and tabs are typed as key events. Text with any other
         character needs the emulator's gRPC endpoint. --replace sets the text in one accessibility action
@@ -73,6 +74,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
     @OptionGroup
     var deviceOption: DeviceOption
+
+    @OptionGroup
+    var appOption: AppOption
 
     func validate() throws {
         let sourceCount = [text != nil, useStdin, inputFile != nil].filter { $0 }.count
@@ -205,6 +209,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
     /// Logs the character count only, never the text: the unified log keeps what it is given.
     func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger) async throws {
+        await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

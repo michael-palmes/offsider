@@ -41,12 +41,13 @@
 - It is signed with the team in `OFFSIDER_IOS_TEAM_ID`, or with the one team signed in to Xcode. With none, or several, the command exits 9 with `team_missing`: ask the user for the team ID. A build that fails exits 1 with `runner_build_failed`, and its hint names the build log.
 - The runner keeps running in the background, reached over USB through usbmuxd with a per-session token, and stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300).
 - usbmuxd can stop listing a wired device that `devicectl` still sees. A command that needs the runner then exits 9 with `usbmux_unavailable` at once (about 10 s after the drop while the runner starts), and `doctor` fails `ios-device.usbmuxd`: ask the user to unplug and replug the cable, then retry.
-- XCTest reads one named app at a time. `describe-ui`, `tap`, `wait` and `assert` take `--app <bundle-id>` on a device; later commands remember it. Without it the runner reads the app in front when it can tell which that is, else the Home Screen. An `--app` that is not in front fails: open the app, or leave out `--app`.
+- XCTest reads one named app at a time. `describe-ui`, `tap`, `type`, `wait` and `assert` take `--app <bundle-id>` on a device, as do those `batch` steps; later commands and steps remember it. Without it the runner reads the app in front when it can tell which that is, else the Home Screen. An `--app` that is not in front fails: open the app, or leave out `--app`.
 - An iPad app in a Stage Manager window reports frames relative to its window, so element taps (`tap --id`, `tap --label`) exit 1 with `not_supported`: ask the user to make the app full screen. Coordinate taps, screenshots and the tree still work.
 
 ```bash
 offsider describe-ui --summary --app <BUNDLE_ID> --device <UDID>
 offsider tap --id <identifier> --app <BUNDLE_ID> --verify --device <UDID>
+offsider type --into-id <identifier> "text" --app <BUNDLE_ID> --device <UDID>
 offsider session status --device <UDID> --json
 offsider session stop --device <UDID>
 ```
