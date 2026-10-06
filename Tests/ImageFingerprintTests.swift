@@ -26,11 +26,13 @@ struct ImageFingerprintTests {
         bytes[(y * width + x) * 4] &+= 17
     }
 
-    private func fingerprint(_ bytes: [UInt8], excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0) -> ImageFingerprint {
+    private func fingerprint(
+        _ bytes: [UInt8], columns: Int = 16, rows: Int = 32, excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0, tolerance: Int = 0
+    ) -> ImageFingerprint {
         bytes.withUnsafeBytes {
             ImageFingerprint(
-                rgba: $0, width: width, height: height, bytesPerRow: width * 4,
-                excludingTopPixels: excludingTopPixels, excludingBottomPixels: excludingBottomPixels
+                rgba: $0, width: width, height: height, bytesPerRow: width * 4, columns: columns, rows: rows,
+                excludingTopPixels: excludingTopPixels, excludingBottomPixels: excludingBottomPixels, tolerance: tolerance
             )
         }
     }
@@ -49,6 +51,52 @@ struct ImageFingerprintTests {
         CGImageDestinationAddImage(destination, image, properties)
         #expect(CGImageDestinationFinalize(destination))
         return data as Data
+    }
+
+    @Test("With a tolerance, video-like noise of a few units in scattered pixels changes no tile, while exact hashing sees it")
+    func toleranceIgnoresNoise() {
+        let noisy = pixels { bytes in
+            for (x, y) in [(3, 3), (20, 9), (41, 70), (60, 127), (7, 100)] {
+                bytes[(y * width + x) * 4 + 1] &+= 8
+                bytes[(y * width + x) * 4 + 2] &-= 5
+            }
+        }
+        #expect(fingerprint(pixels(), tolerance: 6).changedTiles(comparedTo: fingerprint(noisy, tolerance: 6)) == [])
+        #expect(fingerprint(pixels()).changedTiles(comparedTo: fingerprint(noisy))?.count == 5)
+    }
+
+    @Test("With a tolerance, a two-pixel-wide caret still changes the 32-pixel tile it is drawn in")
+    func toleranceKeepsThinLines() {
+        let caret = pixels { bytes in
+            for y in 20..<28 {
+                for x in 9..<11 {
+                    bytes[(y * width + x) * 4 + 1] = 0
+                    bytes[(y * width + x) * 4 + 2] = 0
+                }
+            }
+        }
+        let before = fingerprint(pixels(), columns: 2, rows: 4, tolerance: 6)
+        #expect(before.changedTiles(comparedTo: fingerprint(caret, columns: 2, rows: 4, tolerance: 6)) == [0])
+    }
+
+    @Test("Exact and tolerant fingerprints put a pixel row in the same tile when the height does not divide evenly")
+    func rowsMapAlikeInBothModes() {
+        let width = 4, height = 10
+        func print(_ shade: UInt8, tolerance: Int) -> ImageFingerprint {
+            var bytes = [UInt8](repeating: 200, count: width * height * 4)
+            for x in 0..<width { bytes[(3 * width + x) * 4] = shade }
+            return bytes.withUnsafeBytes {
+                ImageFingerprint(rgba: $0, width: width, height: height, bytesPerRow: width * 4, columns: 1, rows: 3, tolerance: tolerance)
+            }
+        }
+        for tolerance in [0, 6] {
+            #expect(print(200, tolerance: tolerance).changedTiles(comparedTo: print(0, tolerance: tolerance)) == [0], "tolerance \(tolerance)")
+        }
+    }
+
+    @Test("Fingerprints taken with different tolerances cannot be compared and count as changed")
+    func differentTolerances() {
+        #expect(fingerprint(pixels(), tolerance: 6).changedTiles(comparedTo: fingerprint(pixels())) == nil)
     }
 
     @Test("Identical pixels have no changed tiles")
@@ -79,7 +127,7 @@ struct ImageFingerprintTests {
         }
         let full = fingerprint(pixels())
         #expect(full.changedTiles(comparedTo: small) == nil)
-        #expect(ScreenChange.detect(before: full, after: [small]))
+        #expect(ScreenChange.detect(before: [full], after: [small]))
     }
 
     @Test("A change inside the excluded top band is ignored")
@@ -109,15 +157,15 @@ struct ImageFingerprintTests {
     func alternatingTileIsVolatile() {
         let before = fingerprint(pixels())
         let caretOn = fingerprint(pixels { setPixel(&$0, x: 10, y: 60) })
-        #expect(!ScreenChange.detect(before: before, after: [caretOn, before, caretOn]))
+        #expect(!ScreenChange.detect(before: [before], after: [caretOn, before, caretOn]))
 
         let realChange = fingerprint(pixels {
             setPixel(&$0, x: 10, y: 60)
             setPixel(&$0, x: 50, y: 120)
         })
         let caretAndChange = fingerprint(pixels { setPixel(&$0, x: 50, y: 120) })
-        #expect(ScreenChange.detect(before: before, after: [realChange, caretAndChange, realChange]))
-        #expect(!ScreenChange.detect(before: before, after: [before, before, before]))
+        #expect(ScreenChange.detect(before: [before], after: [realChange, caretAndChange, realChange]))
+        #expect(!ScreenChange.detect(before: [before], after: [before, before, before]))
     }
 
     @Test("A change inside a region is detected and one outside it is not")

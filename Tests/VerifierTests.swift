@@ -57,11 +57,12 @@ private func tree(count: String, extra: [UINode] = []) -> UITree {
 
 private let emptyTree = UITree(platform: .ios, device: "fake-device", roots: [FakeUI.node(.application)])
 
-private func screen(shade: UInt8) -> Data {
+/// With `caret`, a 2 by 6 pixel bar that covers two tiles.
+private func screen(shade: UInt8, caret: Bool = false) -> Data {
     let width = 64, height = 128
     var bytes = [UInt8](repeating: 255, count: width * height * 4)
     for y in 64..<height {
-        for x in 0..<width { bytes[(y * width + x) * 4] = shade }
+        for x in 0..<width { bytes[(y * width + x) * 4] = caret && (10..<12).contains(x) && (70..<76).contains(y) ? 0 : shade }
     }
     let provider = CGDataProvider(data: Data(bytes) as CFData)!
     let image = CGImage(
@@ -187,7 +188,7 @@ struct VerifierTests {
 
     @Test("changes are empty when only the screenshot changed")
     func screenshotOnlyHasNoChanges() async throws {
-        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 200)])
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 10), screen(shade: 200)])
         var actions: [Verifier.Attempt] = []
         var retries: [Int] = []
         let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
@@ -287,7 +288,7 @@ struct VerifierTests {
 
     @Test("An unchanged tree with a changed screen verifies by screenshot")
     func screenshotFallback() async throws {
-        let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), screen(shade: 200)])
+        let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), screen(shade: 10), screen(shade: 200)])
         var actions: [Verifier.Attempt] = []
         var retries: [Int] = []
         let outcome = try await run(fake, actions: &actions, retries: &retries)
@@ -375,7 +376,7 @@ struct VerifierTests {
 
     @Test("An unknown baseline goes straight to the screenshot check")
     func unknownBaselineUsesScreenshot() async throws {
-        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 200)])
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 10), screen(shade: 200)])
         var actions: [Verifier.Attempt] = []
         var retries: [Int] = []
         let outcome = try await run(fake, styles: [nil], actions: &actions, retries: &retries)
@@ -383,6 +384,84 @@ struct VerifierTests {
         #expect(outcome.verified)
         #expect(outcome.change == .screenshot)
         #expect(fake.treeReads == 2)
+    }
+
+    @Test("With no tree, after-shots continue while a transition is still moving, so a change that settles verifies without a second action")
+    func transitionSettlesBeforeComparing() async throws {
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 10), screen(shade: 60), screen(shade: 120), screen(shade: 200)])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
+
+        #expect(outcome.verified)
+        #expect(outcome.change == .screenshot)
+        #expect(actions.count == 1)
+        #expect(fake.screenReads == 7)
+    }
+
+    @Test("A screen that never settles stops the after-shots at their cap, or after one extra once the attempt's time is up", arguments: [
+        (2000, 2 + Verifier.maxScreenshots), (500, 2 + Verifier.screenshotCount + 1),
+    ])
+    func endlessMotionIsCapped(timeoutMilliseconds: Int, reads: Int) async throws {
+        let shades: [UInt8] = [10, 40, 80, 120, 160, 200, 240, 20, 60, 100, 140]
+        let fake = FakeSimulator(trees: [emptyTree], screens: shades.map { screen(shade: $0) })
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        _ = try await run(fake, styles: [nil], timeout: .milliseconds(timeoutMilliseconds), actions: &actions, retries: &retries)
+
+        #expect(fake.screenReads == reads)
+    }
+
+    /// A screen whose bottom half changes on every capture, as a playing video does.
+    private static let endlessMotion = (0..<20).map { screen(shade: UInt8(10 + $0 * 12)) }
+
+    @Test("An input that starts endless motion verifies on its first attempt and is sent once, with or without a tree", arguments: [false, true])
+    func motionStartedByInputVerifies(knownTree: Bool) async throws {
+        let fake = FakeSimulator(trees: [knownTree ? tree(count: "0") : emptyTree], screens: [screen(shade: 10)] + Self.endlessMotion)
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
+
+        #expect(outcome.verified)
+        #expect(outcome.change == .screenshot)
+        #expect(outcome.attempts == 1)
+        #expect(actions.count == 1)
+        #expect(retries.isEmpty)
+    }
+
+    @Test("An input that changes nothing on a screen already moving does not verify")
+    func motionAlreadyRunningDoesNotVerify() async throws {
+        let fake = FakeSimulator(trees: [emptyTree], screens: Self.endlessMotion)
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified)
+        #expect(outcome.change == ChangeKind.none)
+        #expect(actions.count == 2)
+    }
+
+    @Test("An input that stops motion verifies on its first attempt")
+    func motionStoppedByInputVerifies() async throws {
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 40), screen(shade: 200)])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
+
+        #expect(outcome.verified)
+        #expect(outcome.attempts == 1)
+    }
+
+    @Test("A caret that both before-shots catch in one phase and that blinks after the input does not verify")
+    func caretBlinkingAfterStillBeforeDoesNotVerify() async throws {
+        let on = screen(shade: 10, caret: true)
+        let off = screen(shade: 10)
+        let fake = FakeSimulator(trees: [tree(count: "0")], screens: [on, on, off, on, off])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified)
     }
 
     @Test("The bands are scaled to pixels and excluded only in portrait")
@@ -411,21 +490,33 @@ struct VerifierTests {
     func sideColumnsExcluded() throws {
         let before = try #require(ImageFingerprint(pngData: screen(shade: 10), excludingRightPixels: 8))
         let changedRight = try #require(ImageFingerprint(pngData: rightEdge(shade: 200), excludingRightPixels: 8))
-        #expect(!ScreenChange.detect(before: before, after: [changedRight]))
+        #expect(!ScreenChange.detect(before: [before], after: [changedRight]))
         #expect(before.comparedTileCount == 14 * 32)
         let unmasked = try #require(ImageFingerprint(pngData: rightEdge(shade: 200)))
-        #expect(ScreenChange.detect(before: try #require(ImageFingerprint(pngData: screen(shade: 10))), after: [unmasked]))
+        #expect(ScreenChange.detect(before: [try #require(ImageFingerprint(pngData: screen(shade: 10)))], after: [unmasked]))
     }
 
     @Test("A screen change only in the bottom band verifies with no bottom band and not with one")
     func bottomBandChange() async throws {
         for (bands, verified) in [(ScreenBands(top: 60, bottom: 0), true), (ScreenBands(top: 60, bottom: 48), false)] {
-            let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), bottomBar(shade: 200)])
+            let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), screen(shade: 10), bottomBar(shade: 200)])
             fake.bands = bands
             var actions: [Verifier.Attempt] = []
             var retries: [Int] = []
             let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
             #expect(outcome.verified == verified, "bands \(bands)")
+        }
+    }
+
+    @Test("With a noise tolerance, a screen whose colours drift a few units does not verify and a real change does")
+    func noiseToleranceVerifies() async throws {
+        for (after, tolerance, verified) in [(screen(shade: 13), 6, false), (screen(shade: 13), 0, true), (screen(shade: 200), 6, true)] {
+            let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), screen(shade: 10), after])
+            fake.bands = ScreenBands(top: 60, bottom: 0, noiseTolerance: tolerance)
+            var actions: [Verifier.Attempt] = []
+            var retries: [Int] = []
+            let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+            #expect(outcome.verified == verified, "tolerance \(tolerance)")
         }
     }
 

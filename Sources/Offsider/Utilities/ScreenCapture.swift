@@ -254,8 +254,9 @@ enum ScreenCapture {
             throw CLIError(errorDescription: "The baseline is \(baselineImage.width) x \(baselineImage.height) px but this capture is \(rendered.image.width) x \(rendered.image.height) px. Capture the baseline with the same --scale and --region.", reason: .baselineMismatch)
         }
         let exclusion = bandPixels(rendered, capture: capture, bands: bands)
-        guard let current = ImageFingerprint(image: rendered.image, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom),
-              let before = ImageFingerprint(image: baselineImage, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom),
+        let tolerance = bands.noiseTolerance
+        guard let current = ImageFingerprint(image: rendered.image, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom, tolerance: tolerance),
+              let before = ImageFingerprint(image: baselineImage, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom, tolerance: tolerance),
               var result = ScreenCompare.compare(before, current, threshold: threshold) else {
             throw ImageFailure(detail: "could not compare the capture with \(baselinePath)")
         }

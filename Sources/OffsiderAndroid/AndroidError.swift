@@ -500,9 +500,11 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         AndroidError(.deviceLocked, "The lock screen of \(serial) showed no PIN or password field, so Offsider typed nothing. Unlock it on the device.")
     }
 
-    static func displayOff(_ serial: String, display: DisplayDescriptor, posture: Posture?) -> AndroidError {
+    static func displayOff(_ serial: String, display: DisplayDescriptor, posture: Posture?, phone: Bool = false) -> AndroidError {
         let state = "The \(display.role.rawValue) display (\(display.platformId)) of \(serial) is off (posture \(posture?.rawValue ?? "unknown")), so it has nothing to capture."
         switch display.role {
+        case .cover where phone: return AndroidError(.displayOff, "\(state) Fold the phone, then retry.")
+        case .inner where phone: return AndroidError(.displayOff, "\(state) Unfold the phone, then retry.")
         case .cover: return AndroidError(.displayOff, "\(state) Fold the emulator with `offsider posture closed --device \(serial)`, then retry.")
         case .inner: return AndroidError(.displayOff, "\(state) Unfold the emulator with `offsider posture open --device \(serial)`, then retry.")
         case .main, .external: return AndroidError(.displayOff, "\(state) Turn it on, then retry.")

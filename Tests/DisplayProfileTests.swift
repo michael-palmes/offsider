@@ -197,10 +197,13 @@ struct DisplayReportTests {
         #expect(try Self.folded.resolve("1", device: "D").descriptor.role == .cover)
     }
 
-    @Test("an unknown display lists the valid ones")
+    @Test("an unknown display lists the valid ones, and main on a foldable says why it is not one")
     func unknown() {
-        #expect(throws: DeviceSettingsError("Unknown display 'main' on D. Use one of: cover (1), inner (3).")) {
+        #expect(throws: DeviceSettingsError("Unknown display 'main' on D: main is the display of a device with one, and a foldable has cover and inner. Use one of: cover (1), inner (3).")) {
             try Self.folded.resolve("main", device: "D")
+        }
+        #expect(throws: DeviceSettingsError("Unknown display 'external' on D. Use one of: cover (1), inner (3).")) {
+            try Self.folded.resolve("external", device: "D")
         }
     }
 
@@ -236,5 +239,18 @@ struct DisplayReportTests {
     ])
     func inactive(platform: DevicePlatform, message: String) {
         #expect(DisplayReport.inactiveDisplay(Self.folded.displays[1], posture: .closed, platform: platform, device: "D") == message)
+    }
+
+    @Test("on a phone, an inactive display is unfolded by hand, since posture cannot be set")
+    func inactiveOnPhone() {
+        #expect(DisplayReport.inactiveDisplay(Self.folded.displays[1], posture: .closed, platform: .android, physical: true, device: "R58M123ABC")
+            == "describe-ui reads the active display only, and inner is not active (posture closed). Unfold the phone, then retry.")
+    }
+
+    @Test("an Android serial other than emulator-<port> is a physical phone")
+    func physicalAndroid() {
+        #expect(DeviceID(rawValue: "R58M123ABC", platform: .android).isPhysicalAndroidDevice)
+        #expect(!DeviceID(rawValue: "emulator-5554", platform: .android).isPhysicalAndroidDevice)
+        #expect(!DeviceID(rawValue: "00008130-001C31C41091401C", platform: .ios).isPhysicalAndroidDevice)
     }
 }

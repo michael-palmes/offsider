@@ -109,6 +109,28 @@ struct IOSDeviceScreenStreamTests {
         #expect(slot.received == 2)
     }
 
+    @Test("the frame slot settles only once its frames span the settle time, counting from the first accepted frame")
+    func latestFrameSlotSettles() {
+        var slot = LatestFrameSlot<String>()
+        #expect(!slot.settled)
+        slot.offer("first", timestamp: 10)
+        #expect(!slot.settled)
+        slot.offer("stale", timestamp: 9)
+        slot.offer("early", timestamp: 10 + LatestFrameSlot<String>.settleSeconds / 2)
+        #expect(!slot.settled)
+        slot.offer("late", timestamp: 10 + LatestFrameSlot<String>.settleSeconds)
+        #expect(slot.settled)
+        #expect(slot.frame == "late")
+    }
+
+    @Test("a frame request waits for the stream to settle, takes an unsettled frame once its time is up, and fails with none", arguments: [
+        (true, true, false, FrameWait.serve), (true, false, false, .wait), (true, false, true, .serve),
+        (false, false, false, .wait), (false, true, false, .wait), (false, false, true, .fail),
+    ])
+    func frameWait(hasFrame: Bool, settled: Bool, pastDeadline: Bool, next: FrameWait) {
+        #expect(FrameWait.next(hasFrame: hasFrame, settled: settled, pastDeadline: pastDeadline) == next)
+    }
+
     @Test("only datagrams from the device's tunnel address are taken as the stream's sender")
     func streamSender() throws {
         let device = try #require(IOSDeviceScreenStream.ipv6Address("fd2b:1d9c:22c3::1%utun4"))

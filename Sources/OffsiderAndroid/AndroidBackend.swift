@@ -13,6 +13,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var activeUniqueIds: [String: String] = [:]
     var knownDeviceStates: [String: [AndroidDeviceState.State]] = [:]
     var displayLists: [String: AndroidDisplayList] = [:]
+    /// How each device with several displays answers `screencap` without `-d`, learnt from this command's first capture.
+    var screencapPicks: [String: ScreencapPick] = [:]
     var screenStatuses: [String: (display: ScreenDisplay?, posture: Posture?)] = [:]
     private var avdNames: [String: String] = [:]
     /// Phones this command named, from their device-list row.
@@ -403,9 +405,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         case .auto, .screencap:
             return try await adbScreenshot(serial)
         case .raw:
-            let output = try await requireClient().exec("screencap", on: serial, timeout: .seconds(15))
+            let capture = try await activeScreencap(serial, format: nil) { output in
+                (try? AndroidScreenCapture.rawHeader(output)).map { ($0.width, $0.height) }
+            }
             do {
-                pixels = try AndroidScreenCapture.pixels(fromScreencapRaw: output)
+                pixels = try AndroidScreenCapture.pixels(fromScreencapRaw: capture.output)
             } catch let failure as AndroidScreenCapture.ImageFailure {
                 log(.debug, "Raw screencap on \(serial) was unreadable (\(failure.detail)); using `screencap -p`")
                 return try await adbScreenshot(serial)
@@ -446,16 +450,70 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return nil
     }
 
-    /// `exec:screencap -p`: the guest's upright PNG from the display `-d` picks, skipping a warning printed before it.
+    /// `exec:screencap -p`: the guest's upright PNG from the display `-d` picks, else the active one, skipping a warning printed before it.
     func adbScreenshot(_ serial: String, physicalDisplay: String? = nil) async throws -> Data {
-        let command = physicalDisplay.map { "screencap -d \($0) -p" } ?? "screencap -p"
-        let output = try await requireClient().exec(command, on: serial, timeout: .seconds(15))
-        guard let png = AndroidScreenCapture.png(fromScreencap: output) else {
-            let text = String(decoding: output.prefix(200), as: UTF8.self)
-            let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
-            throw AndroidError.adbCommandFailed(serial: serial, command: command, detail: firstLine)
+        let capture = if let physicalDisplay {
+            try await screencap(serial, format: "-p", display: physicalDisplay)
+        } else {
+            try await activeScreencap(serial, format: "-p") { AndroidScreenCapture.png(fromScreencap: $0).flatMap(AndroidScreenCapture.pngSize) }
+        }
+        guard let png = AndroidScreenCapture.png(fromScreencap: capture.output) else {
+            throw AndroidError.adbCommandFailed(serial: serial, command: capture.command, detail: AndroidScreenCapture.failureDetail(capture.output))
         }
         return png
+    }
+
+    /// `screencap` of the active display: plain while its own pick has the active display's size, else with `-d` for the rest of the command.
+    private func activeScreencap(
+        _ serial: String,
+        format: String?,
+        size: (Data) -> (width: Int, height: Int)?
+    ) async throws -> (output: Data, command: String) {
+        if screencapPicks[serial] == .namedDisplay, let display = knownActiveDisplayId(serial) {
+            return try await screencap(serial, format: format, display: display)
+        }
+        let capture = try await screencap(serial, format: format, display: nil)
+        guard AndroidScreenCapture.warnsOfSeveralDisplays(capture.output) else { return capture }
+        let picked = size(capture.output)
+        if await hasActiveDisplaySize(picked, serial) {
+            screencapPicks[serial] = .activeDisplay
+            return capture
+        }
+        if screencapPicks[serial] == .activeDisplay {
+            log(.debug, "screencap on \(serial) no longer has the active display's size; reading the displays again after a fold")
+            forgetDisplay(of: serial)
+            if await hasActiveDisplaySize(picked, serial) {
+                return capture
+            }
+        }
+        if knownActiveDisplayId(serial) == nil {
+            _ = await screenStatus(serial)
+        }
+        guard let display = knownActiveDisplayId(serial) else {
+            log(.debug, "screencap on \(serial) picked a display Offsider cannot check against the active one; keeping it")
+            return capture
+        }
+        log(.debug, "screencap on \(serial) did not pick the active display; capturing \(display) with -d")
+        screencapPicks[serial] = .namedDisplay
+        return try await screencap(serial, format: format, display: display)
+    }
+
+    private func screencap(_ serial: String, format: String?, display: String?) async throws -> (output: Data, command: String) {
+        let command = (["screencap"] + (display.map { ["-d", $0] } ?? []) + (format.map { [$0] } ?? [])).joined(separator: " ")
+        return (try await requireClient().exec(command, on: serial, timeout: .seconds(15)), command)
+    }
+
+    /// The active capture has logical display 0's settled size, either way round; the screen status read first is the one `screenInfo` reuses.
+    private func hasActiveDisplaySize(_ size: (width: Int, height: Int)?, _ serial: String) async -> Bool {
+        guard let size else { return false }
+        _ = await screenStatus(serial)
+        guard let geometry = try? await settledGeometry(serial) else { return false }
+        return [size.width, size.height].sorted() == [geometry.logicalWidth, geometry.logicalHeight].sorted()
+    }
+
+    /// The active display's platform id from this command's display list or display probe; nil when neither has read it.
+    func knownActiveDisplayId(_ serial: String) -> String? {
+        displayLists[serial].flatMap { activeDisplay(in: $0, serial: serial) }?.descriptor.platformId ?? viewportPlatformId(serial)
     }
 
     func requireClient() throws -> AdbClient {

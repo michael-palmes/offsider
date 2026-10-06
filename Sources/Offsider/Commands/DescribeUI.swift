@@ -101,7 +101,8 @@ struct DescribeUI: AsyncParsableCommand {
             return
         }
         throw CLIError(errorDescription: DisplayReport.inactiveDisplay(
-            selected.display, posture: selected.list.posture, platform: route.device.platform, device: deviceName
+            selected.display, posture: selected.list.posture, platform: route.device.platform,
+            physical: route.device.isPhysicalAndroidDevice, device: deviceName
         ), reason: .displayOff)
     }
 

@@ -46,6 +46,21 @@ struct Verifier {
     static let pollInterval: Duration = .milliseconds(200)
     static let screenshotSpacing: Duration = .milliseconds(350)
     static let screenshotCount = 3
+    /// After-shots one attempt may take while a transition is still moving; a lagging stream may show it only from the second.
+    static let maxScreenshots = 6
+    /// The share of tiles that still differ across the latest after-shots while a transition is running; a caret or spinner moves far fewer.
+    static let movingFraction = 0.1
+
+    /// True while the oldest and newest of `prints` differ on more than `movingFraction` of their tiles.
+    static func isMoving(_ prints: [ImageFingerprint]) -> Bool {
+        guard prints.count >= 2, let first = prints.first, let last = prints.last else { return false }
+        return ScreenCompare.outcome(changedFraction: first.changedFraction(comparedTo: last) ?? 1, threshold: movingFraction) == .changed
+    }
+
+    /// While the screen moves: one after-shot past `screenshotCount` always, more only before the attempt's deadline, never past `maxScreenshots`.
+    static func takesAnotherShot(taken: Int, moving: Bool, withinDeadline: Bool) -> Bool {
+        moving && taken < maxScreenshots && (taken == screenshotCount || withinDeadline)
+    }
 
     /// `initialTree`, the tree the selector was resolved on, stands in for the first read; `beforeAction` sees the second.
     static func run(
@@ -80,6 +95,8 @@ struct Verifier {
             firstRead = await read(dependencies)
         }
         let first = firstRead.snapshot
+        let firstShot = ignoringText ? nil : try? await dependencies.screenshot()
+        let firstShotTime = dependencies.now()
         try await dependencies.sleep(pollInterval)
         var baselineRead = await read(dependencies)
         var baseline = baselineRead.snapshot
@@ -90,8 +107,12 @@ struct Verifier {
             try await beforeAction(tree)
         }
         let bands = await dependencies.bands()
-        var baselineShot: Data? = ignoringText ? nil : try? await dependencies.screenshot()
-        var baselinePrint: ImageFingerprint?
+        let gap = screenshotSpacing / .seconds(1) - (dependencies.now() - firstShotTime)
+        if firstShot != nil, gap > 0 {
+            try await dependencies.sleep(.seconds(gap))
+        }
+        var baselineShots = ignoringText ? [] : [firstShot, try? await dependencies.screenshot()].compactMap { $0 }
+        var baselinePrints: [ImageFingerprint] = []
 
         for (index, style) in attempts.enumerated() {
             let attempt = Attempt(number: index + 1, style: style)
@@ -133,32 +154,35 @@ struct Verifier {
                     .listing(from: baselineRead.tree, to: seenRead?.tree, skipping: volatileIdentities)
             }
 
-            if !ignoringText, let shot = baselineShot {
+            if !ignoringText, let shot = baselineShots.last {
                 let exclusion = bandPixels(pngData: shot, screenFrame: screenFrame, bands: bands)
-                if baselinePrint == nil {
-                    baselinePrint = ImageFingerprint(
-                        pngData: shot, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
-                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right
-                    )
-                }
-                var afterShots: [Data] = []
-                for shotIndex in 0..<screenshotCount {
-                    if shotIndex > 0 { try await dependencies.sleep(screenshotSpacing) }
-                    if let data = try? await dependencies.screenshot() { afterShots.append(data) }
-                }
-                let afterPrints = afterShots.compactMap {
+                func fingerprint(_ data: Data) -> ImageFingerprint? {
                     ImageFingerprint(
-                        pngData: $0, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
-                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right
+                        pngData: data, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
+                        excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right, tolerance: bands.noiseTolerance
                     )
                 }
-                if let before = baselinePrint, !afterPrints.isEmpty,
-                   ScreenChange.detect(before: before, after: afterPrints) {
+                if baselinePrints.isEmpty {
+                    baselinePrints = baselineShots.compactMap(fingerprint)
+                }
+                var afterShots: [(data: Data, print: ImageFingerprint)] = []
+                var shotIndex = 0
+                while shotIndex < screenshotCount || Self.takesAnotherShot(
+                    taken: shotIndex, moving: Self.isMoving(afterShots.suffix(screenshotCount).map(\.print)), withinDeadline: dependencies.now() < deadline
+                ) {
+                    if shotIndex > 0 { try await dependencies.sleep(screenshotSpacing) }
+                    shotIndex += 1
+                    if let data = try? await dependencies.screenshot(), let print = fingerprint(data) {
+                        afterShots.append((data, print))
+                    }
+                }
+                let afterPrints = afterShots.suffix(screenshotCount).map(\.print)
+                if ScreenChange.detect(before: baselinePrints, after: afterPrints) {
                     return Outcome(verified: true, attempts: attempt.number, change: .screenshot, style: style, summary: nil)
                 }
-                if let last = afterShots.last, let lastPrint = afterPrints.last {
-                    baselineShot = last
-                    baselinePrint = lastPrint
+                if let last = afterShots.last {
+                    baselineShots = [last.data]
+                    baselinePrints = afterPrints
                 }
             }
 

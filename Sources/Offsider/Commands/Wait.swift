@@ -252,9 +252,10 @@ struct Wait: AsyncParsableCommand {
         let device = route.device
         if let region {
             let request = ScreenshotRequest(region: try PointRegion.parse(region))
+            let tolerance = await backend.volatileScreenBands(for: device).noiseTolerance
             return Self.sources(on: route, tree: tree, clock: clock) {
                 let capture = try await ScreenCapture.capture(backend, device: device)
-                return try Self.fingerprint(try ScreenCapture.render(capture, request: request))
+                return try Self.fingerprint(try ScreenCapture.render(capture, request: request), tolerance: tolerance)
             }
         }
         guard settled, settleBy ?? .tree != .tree else {
@@ -265,7 +266,7 @@ struct Wait: AsyncParsableCommand {
             let capture = try await ScreenCapture.capture(backend, device: device)
             let rendered = try ScreenCapture.render(capture, request: ScreenshotRequest())
             let exclusion = ScreenCapture.bandPixels(rendered, capture: capture, bands: bands)
-            return try Self.fingerprint(rendered, excludingTop: exclusion.top, bottom: exclusion.bottom)
+            return try Self.fingerprint(rendered, excludingTop: exclusion.top, bottom: exclusion.bottom, tolerance: bands.noiseTolerance)
         }
     }
 
@@ -285,8 +286,8 @@ struct Wait: AsyncParsableCommand {
         )
     }
 
-    private static func fingerprint(_ rendered: RenderedScreenshot, excludingTop top: Int = 0, bottom: Int = 0) throws -> ImageFingerprint {
-        guard let fingerprint = ImageFingerprint(image: rendered.image, excludingTopPixels: top, excludingBottomPixels: bottom) else {
+    private static func fingerprint(_ rendered: RenderedScreenshot, excludingTop top: Int = 0, bottom: Int = 0, tolerance: Int = 0) throws -> ImageFingerprint {
+        guard let fingerprint = ImageFingerprint(image: rendered.image, excludingTopPixels: top, excludingBottomPixels: bottom, tolerance: tolerance) else {
             throw ImageFailure(detail: "could not read the screenshot's pixels")
         }
         return fingerprint

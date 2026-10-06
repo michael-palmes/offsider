@@ -12,7 +12,7 @@ struct AndroidDisplayList: Equatable, Sendable {
     }
 
     var displays: [Physical]
-    /// The `uniqueId` logical display 0 shows, which input, the tree and the default capture follow.
+    /// The `uniqueId` logical display 0 shows, which input, the tree and the default capture follow; One UI prints no id.
     var activeUniqueId: String?
 
     /// Plain `grep`, as in the geometry probe; the physical displays, logical display headers and their primary devices.
@@ -20,6 +20,12 @@ struct AndroidDisplayList: Equatable, Sendable {
 
     var active: Physical? {
         displays.first { $0.uniqueId == activeUniqueId } ?? (displays.count == 1 ? displays.first : nil)
+    }
+
+    /// The only built-in panel that is on, which on a foldable is the active one unless both are lit.
+    var soleLitPanel: Physical? {
+        let lit = displays.filter { $0.on && !$0.external }
+        return lit.count == 1 ? lit.first : nil
     }
 
     /// Built-in panels get `main`, or `cover` and `inner` by area; an external display is `external`; virtual ones are skipped.

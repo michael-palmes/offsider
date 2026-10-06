@@ -59,6 +59,8 @@ struct ContentView: View {
             SwitchTestView()
         case "tab-view-test":
             TabViewTestView()
+        case "motion-test":
+            MotionTestView()
         case "slider-value-test":
             SliderValueTestView()
         case "searchable-test":
@@ -115,7 +117,8 @@ struct MainMenuView: View {
             ("gesture-presets", "Gesture Presets", "Multi-touch gesture display"),
             ("landscape-coordinate-test", "Landscape Coordinates", "Verifies orientation-aware taps"),
             ("switch-test", "Switch Test", "SwiftUI and UIKit switch controls"),
-            ("tab-view-test", "TabView Test", "Standard SwiftUI tab switching")
+            ("tab-view-test", "TabView Test", "Standard SwiftUI tab switching"),
+            ("motion-test", "Motion Test", "Motion only screenshots can see")
         ]),
         ("Input & Text", [
             ("text-input", "Text Input", "Text typed by CLI commands"),
