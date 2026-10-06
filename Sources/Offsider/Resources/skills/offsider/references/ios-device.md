@@ -40,6 +40,7 @@
 - The accessibility tree comes from a small XCUITest runner app. On first use Offsider builds it with `xcodebuild` (about a minute, with a line on stderr) and caches it under `~/Library/Caches/offsider/runner/`.
 - It is signed with the team in `OFFSIDER_IOS_TEAM_ID`, or with the one team signed in to Xcode. With none, or several, the command exits 9 with `team_missing`: ask the user for the team ID. A build that fails exits 1 with `runner_build_failed`, and its hint names the build log.
 - The runner keeps running in the background, reached over USB through usbmuxd with a per-session token, and stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300).
+- usbmuxd can stop listing a wired device that `devicectl` still sees. A command that needs the runner then exits 9 with `usbmux_unavailable` at once (about 10 s after the drop while the runner starts), and `doctor` fails `ios-device.usbmuxd`: ask the user to unplug and replug the cable, then retry.
 - XCTest reads one named app at a time. `describe-ui`, `tap`, `wait` and `assert` take `--app <bundle-id>` on a device; later commands remember it. Without it the runner reads the app in front when it can tell which that is, else the Home Screen. An `--app` that is not in front fails: open the app, or leave out `--app`.
 - An iPad app in a Stage Manager window reports frames relative to its window, so element taps (`tap --id`, `tap --label`) exit 1 with `not_supported`: ask the user to make the app full screen. Coordinate taps, screenshots and the tree still work.
 
@@ -72,7 +73,7 @@ offsider session stop --device <UDID>
 | `ui_automation_off` | 7 | Ask the user to turn on Settings > Developer > UI Automation |
 | `xcode_too_old` | 9 | The command needs Xcode 27; use a runner command or ask the user |
 | `team_missing` | 9 | Ask for the team ID for `OFFSIDER_IOS_TEAM_ID` |
-| `usbmux_unavailable` | 9 | Ask the user to reconnect the cable |
+| `usbmux_unavailable` | 9 | Ask the user to unplug and replug the cable |
 | `runner_build_failed` | 1 | Read the build log the hint names |
 | `runner_unavailable` | 1 | Nothing was sent; retry once, then run `doctor` |
 | `hid_broker_failed` | 1 | Nothing was sent; retry once, then `session stop` and retry |

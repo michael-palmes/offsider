@@ -21,12 +21,24 @@ struct RunnerSessionTests {
 
     static func manager(
         root: String, processes: FakeRunnerProcesses, transport: FakeRunnerTransport, builder: FakeRunnerBuilder = FakeRunnerBuilder(),
-        environment: [String: String] = [:], lockTimeout: TimeInterval = 180
+        environment: [String: String] = [:], now: @escaping @Sendable () -> Date = { Date() }, startTimeout: TimeInterval = 150, lockTimeout: TimeInterval = 180,
+        usbmux: any UsbmuxListing = FakeUsbmuxListing.onUSB(udid), usbmuxCheckInterval: TimeInterval = 2, usbmuxGrace: TimeInterval = 10
     ) -> RunnerSessionManager {
         RunnerSessionManager(
             store: RunnerSessionStore(root: root), builder: builder, processes: processes, environment: environment,
-            developerDirectory: "/Xcode.app/Contents/Developer", transport: { _, _ in transport }, log: { _, _ in }, lockTimeout: lockTimeout
+            developerDirectory: "/Xcode.app/Contents/Developer", transport: { _, _ in transport }, log: { _, _ in }, now: now,
+            startTimeout: startTimeout, lockTimeout: lockTimeout, usbmux: usbmux, usbmuxCheckInterval: usbmuxCheckInterval, usbmuxGrace: usbmuxGrace
         )
+    }
+
+    /// A usbmuxd whose every read takes one second of `clock`, so a busy machine cannot stretch a drop past the grace period.
+    static func ticking(_ script: [[UsbmuxDevice]], clock: FixtureClock, then last: (@Sendable () -> Void)? = nil) -> FakeUsbmuxListing {
+        let usbmux = FakeUsbmuxListing(script: script)
+        usbmux.onRead = { read in
+            clock.now += 1
+            if read == script.count { last?() }
+        }
+        return usbmux
     }
 
     @Test("the session file round-trips, is private, and lists only devices with a session")
@@ -52,12 +64,14 @@ struct RunnerSessionTests {
         try RunnerSessionStore(root: root).write(Self.record())
         let processes = FakeRunnerProcesses(alive: [4242])
         let transport = FakeRunnerTransport(buildKey: "key")
+        let usbmux = FakeUsbmuxListing.onUSB(Self.udid)
 
-        let client = try await Self.manager(root: root, processes: processes, transport: transport).connect(.device(udid: Self.udid), deviceName: "iPhone")
+        let client = try await Self.manager(root: root, processes: processes, transport: transport, usbmux: usbmux).connect(.device(udid: Self.udid), deviceName: "iPhone")
 
         #expect(client.token == "old-token")
         #expect(processes.launches.isEmpty)
         #expect(transport.calls.map(\.path) == ["/ping"])
+        #expect(usbmux.reads == 0)
     }
 
     @Test("a session from another build or a dead process is stopped and replaced", arguments: [(true, "older-key"), (false, "key")])
@@ -174,7 +188,7 @@ struct RunnerSessionTests {
         let fresh = FakeRunnerTransport()
         let manager = RunnerSessionManager(
             store: RunnerSessionStore(root: root), builder: FakeRunnerBuilder(), processes: processes, environment: [:],
-            developerDirectory: nil, transport: { _, port in port == 1 ? refusing : fresh }, log: { _, _ in }
+            developerDirectory: nil, transport: { _, port in port == 1 ? refusing : fresh }, log: { _, _ in }, usbmux: FakeUsbmuxListing.onUSB(Self.udid)
         )
 
         let client = try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone")
@@ -182,6 +196,99 @@ struct RunnerSessionTests {
         #expect(processes.terminations == [4242])
         #expect(processes.launches.count == 1)
         #expect(client.token != "old-token")
+    }
+
+    @Test("a device usbmuxd lists without a USB row, or a usbmuxd that is not answering, fails at once before xcodebuild starts", arguments: ["empty", "network", "no socket"])
+    func notOnUsbmuxBeforeStart(listing: String) async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let rows: [(id: Int, udid: String, type: String)] = listing == "network" ? [(9, Self.udid, "Network")] : []
+        let usbmuxd = try FakeUsbmuxd(reply: UsbmuxTests.standard(rows: rows))
+        defer { usbmuxd.stop() }
+        let socket = listing == "no socket" ? usbmuxd.path + ".missing" : usbmuxd.path
+        let processes = FakeRunnerProcesses()
+        let manager = Self.manager(root: root, processes: processes, transport: FakeRunnerTransport(), usbmux: UsbmuxClient(socketPath: socket, timeout: 1))
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad (\(Self.udid))") }
+
+        #expect(error?.reason == .usbmuxUnavailable && error?.reason.exitCode == .toolMissing)
+        if listing != "no socket" {
+            #expect(error?.message == "usbmuxd does not list iPad (\(Self.udid)) on USB, so Offsider cannot reach its runner. Unplug and replug the cable, then retry.")
+        }
+        #expect(processes.launches.isEmpty)
+    }
+
+    @Test("a recorded runner usbmuxd no longer lists fails at once with usbmux_unavailable and is kept, never restarted")
+    func recordedRunnerOffUsbmux() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try RunnerSessionStore(root: root).write(Self.record())
+        let processes = FakeRunnerProcesses(alive: [4242])
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let manager = Self.manager(root: root, processes: processes, transport: transport, startTimeout: 5, usbmux: FakeUsbmuxListing([]))
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad") }
+
+        #expect(error?.reason == .usbmuxUnavailable)
+        #expect(processes.launches.isEmpty && processes.terminations.isEmpty)
+        #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == Self.record())
+    }
+
+    @Test("a starting runner whose device usbmuxd stops listing fails once it has been missing for the grace period, not at the start timeout")
+    func droppedWhileStarting() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses()
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let clock = FixtureClock()
+        let listed = [UsbmuxDevice(deviceID: 3, udid: Self.udid, connectionType: "USB")]
+        let usbmux = Self.ticking([listed] + Array(repeating: [], count: 10), clock: clock)
+        let manager = Self.manager(
+            root: root, processes: processes, transport: transport, now: { clock.now }, startTimeout: 120, usbmux: usbmux, usbmuxCheckInterval: 0, usbmuxGrace: 3
+        )
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad") }
+
+        #expect(error?.reason == .usbmuxUnavailable)
+        // One read before the launch; missing for 0, 1 and 2 s goes on, and for 3 s fails.
+        #expect(usbmux.reads == 5)
+        #expect(processes.terminations == [5151])
+        #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
+    }
+
+    @Test("drops from usbmuxd each shorter than the grace period do not fail a starting runner")
+    func briefDropsTolerated() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses()
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let clock = FixtureClock()
+        let listed = [UsbmuxDevice(deviceID: 3, udid: Self.udid, connectionType: "USB")]
+        let usbmux = Self.ticking([listed, [], [], [], listed, [], [], [], listed], clock: clock) { transport.refuseConnections = false }
+        let manager = Self.manager(
+            root: root, processes: processes, transport: transport, now: { clock.now }, startTimeout: 120, usbmux: usbmux, usbmuxCheckInterval: 0, usbmuxGrace: 3
+        )
+
+        _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad")
+
+        #expect(processes.terminations.isEmpty)
+        #expect(usbmux.reads == 9)
+    }
+
+    @Test("a simulator's runner starts without asking usbmuxd")
+    func simulatorSkipsUsbmux() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses()
+        let usbmux = FakeUsbmuxListing([])
+
+        _ = try await Self.manager(root: root, processes: processes, transport: FakeRunnerTransport(), usbmux: usbmux).connect(.simulator(udid: Self.udid), deviceName: "iPhone 17")
+
+        #expect(processes.launches.count == 1)
+        #expect(usbmux.reads == 0)
     }
 
     @Test("the session is recorded as starting as soon as xcodebuild is spawned, before the runner answers")

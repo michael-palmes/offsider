@@ -203,6 +203,11 @@ public final class RunnerSessionManager {
     let now: @Sendable () -> Date
     let startTimeout: TimeInterval
     let lockTimeout: TimeInterval
+    /// The only way to a device's runner, so a device it stops listing fails the start instead of the timeout.
+    let usbmux: any UsbmuxListing
+    let usbmuxCheckInterval: TimeInterval
+    /// How long a starting runner's device may be missing from usbmuxd, which can drop it briefly while xcodebuild installs and launches.
+    let usbmuxGrace: TimeInterval
 
     public init(
         store: RunnerSessionStore,
@@ -214,7 +219,10 @@ public final class RunnerSessionManager {
         log: @escaping IOSDeviceLog,
         now: @escaping @Sendable () -> Date = { Date() },
         startTimeout: TimeInterval = 150,
-        lockTimeout: TimeInterval = 180
+        lockTimeout: TimeInterval = 180,
+        usbmux: any UsbmuxListing = UsbmuxClient(),
+        usbmuxCheckInterval: TimeInterval = 2,
+        usbmuxGrace: TimeInterval = 10
     ) {
         self.store = store
         self.builder = builder
@@ -226,6 +234,9 @@ public final class RunnerSessionManager {
         self.now = now
         self.startTimeout = startTimeout
         self.lockTimeout = lockTimeout
+        self.usbmux = usbmux
+        self.usbmuxCheckInterval = usbmuxCheckInterval
+        self.usbmuxGrace = usbmuxGrace
     }
 
     public nonisolated static func defaultTransport(_ destination: RunnerDestination, _ port: UInt16) -> any RunnerTransport {
@@ -241,15 +252,15 @@ public final class RunnerSessionManager {
 
     public func connect(_ destination: RunnerDestination, deviceName: String) async throws -> RunnerClient {
         let build = try await builder.build(for: destination, deviceName: deviceName)
-        if let client = try await reuse(destination, build: build, holdingLock: false) { return client }
+        if let client = try await reuse(destination, deviceName: deviceName, build: build, holdingLock: false) { return client }
         let lock = try await acquireStartLock(udid: destination.udid)
         defer { lock.release() }
-        if let client = try await reuse(destination, build: build, holdingLock: true) { return client }
-        return try await start(destination, build: build)
+        if let client = try await reuse(destination, deviceName: deviceName, build: build, holdingLock: true) { return client }
+        return try await start(destination, deviceName: deviceName, build: build)
     }
 
     /// The recorded session while it is still the recorded process and its socket accepts; one whose process is gone is forgotten, never signalled.
-    func reuse(_ destination: RunnerDestination, build: RunnerBuild, holdingLock: Bool) async throws -> RunnerClient? {
+    func reuse(_ destination: RunnerDestination, deviceName: String, build: RunnerBuild, holdingLock: Bool) async throws -> RunnerClient? {
         guard var record = try store.read(udid: destination.udid) else { return nil }
         guard processes.isRunning(record) else {
             log(.debug, "Forgetting the Offsider runner session on \(destination.udid): its process has exited")
@@ -265,7 +276,10 @@ public final class RunnerSessionManager {
             case .busy:
                 log(.debug, "The Offsider runner on \(destination.udid) is busy; queueing behind it")
                 return keep(&record)
-            case .answered, .unreachable:
+            case .unreachable:
+                // A restart could not reach the runner either; the session is kept for when usbmuxd lists the device again.
+                if let failure = await usbmuxFailure(destination, deviceName: deviceName) { throw failure }
+            case .answered:
                 break
             }
         }
@@ -282,8 +296,9 @@ public final class RunnerSessionManager {
         return client(for: record)
     }
 
-    func start(_ destination: RunnerDestination, build: RunnerBuild) async throws -> RunnerClient {
+    func start(_ destination: RunnerDestination, deviceName: String, build: RunnerBuild) async throws -> RunnerClient {
         let udid = destination.udid
+        if let failure = await usbmuxFailure(destination, deviceName: deviceName) { throw failure }
         let directory = try IOSDevicePaths.device(udid, root: store.root)
         Self.removeResultBundles(in: directory)
         let logPath = try store.logPath(udid: udid)
@@ -317,21 +332,56 @@ public final class RunnerSessionManager {
         if record.process != nil { try store.write(record) }
         let client = RunnerClient(udid: udid, token: token, transport: transport(destination, port))
         let deadline = Date().addingTimeInterval(startTimeout)
+        var nextUsbmuxCheck = now().addingTimeInterval(usbmuxCheckInterval)
+        var missingSince: Date?
         while Date() < deadline {
             guard processes.isRunning(record) else { break }
             if let ping = try? await client.ping(timeout: 1), ping.buildKey == build.key {
                 _ = keep(&record)
                 return client
             }
+            if now() >= nextUsbmuxCheck {
+                nextUsbmuxCheck = now().addingTimeInterval(usbmuxCheckInterval)
+                if let failure = await usbmuxFailure(destination, deviceName: deviceName) {
+                    if missingSince == nil {
+                        missingSince = now()
+                        log(.debug, "usbmuxd does not list \(udid) on USB; waiting up to \(Int(usbmuxGrace)) s for it to return")
+                    }
+                    if let since = missingSince, now().timeIntervalSince(since) >= usbmuxGrace {
+                        abandon(record)
+                        throw failure
+                    }
+                } else {
+                    missingSince = nil
+                }
+            }
             try await Task.sleep(for: .seconds(Self.pollInterval))
         }
-        if let identity = record.process { processes.terminate(pid, identity: identity) }
-        store.remove(udid: udid)
+        abandon(record)
         throw IOSDeviceError(
             .runnerUnavailable,
             "The Offsider runner on \(udid) did not start within \(Int(startTimeout)) seconds. Unlock the device, check Settings > Developer > Enable UI Automation, then retry.\(Self.logTail(logPath))",
             hint: "See \(logPath)"
         )
+    }
+
+    /// Ends a start that never answered, signalling xcodebuild only while it is still the recorded process.
+    private func abandon(_ record: RunnerSessionRecord) {
+        if let identity = record.process { processes.terminate(record.pid, identity: identity) }
+        store.remove(udid: record.udid)
+    }
+
+    /// Nil while usbmuxd lists a device on USB, or for a simulator; otherwise the error to report.
+    func usbmuxFailure(_ destination: RunnerDestination, deviceName: String) async -> IOSDeviceError? {
+        guard case .device(let udid) = destination else { return nil }
+        let usbmux = usbmux
+        do {
+            return try await Task.detached { try usbmux.listsOnUSB(udid) }.value ? nil : .notOnUsbmux(deviceName)
+        } catch let error as UsbmuxError {
+            return .usbmux(error, udid: udid)
+        } catch {
+            return .usbmux(.malformed(error.localizedDescription), udid: udid)
+        }
     }
 
     /// Asks the runner to stop, waits up to 2 seconds, signals it only while it is still the recorded process, then removes the session file.

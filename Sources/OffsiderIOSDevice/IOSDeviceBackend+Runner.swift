@@ -49,7 +49,8 @@ extension IOSDeviceBackend {
             builder: builder,
             environment: host.environment,
             developerDirectory: xcode.developerDirectory,
-            log: log
+            log: log,
+            usbmux: host.usbmux
         )
         state.connector = manager
         return manager

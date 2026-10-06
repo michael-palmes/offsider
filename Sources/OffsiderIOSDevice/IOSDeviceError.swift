@@ -119,6 +119,11 @@ extension IOSDeviceError {
         }
     }
 
+    /// usbmuxd answers without a USB row for a wired device; its list can go stale until the cable is replugged.
+    public static func notOnUsbmux(_ name: String) -> IOSDeviceError {
+        IOSDeviceError(.usbmuxUnavailable, "usbmuxd does not list \(name) on USB, so Offsider cannot reach its runner. Unplug and replug the cable, then retry.")
+    }
+
     /// A failure on the stream to the device runner, after usbmuxd connected it; nothing was sent to the app.
     public static func runner(_ error: UsbmuxError, udid: String) -> IOSDeviceError {
         switch error {
