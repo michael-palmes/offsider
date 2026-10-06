@@ -76,6 +76,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --gone` now needs the element to stay off screen on every read for 500 ms (when `--timeout` is at least 0.5 s), so a node that drops out of one tree read no longer counts as gone; `--stable-for <ms>` (0 to 60000) sets that hold on any selector wait, and `--stable-for 0` restores the old behaviour.
 - A `tap` cover warning for a key of the on-screen keyboard now says `may be covered by the keyboard (key 'v')`.
 - On Android, when `type --replace` falls back to keys, the warning names the field's class, id and decoded `inputType`; when the field then reads empty (showing only its hint counts as empty) or shorter than the text, after set-text or keys, an emulator with gRPC pastes the text over that same field with the helper's `paste` (restoring the clipboard; never into a password field, a field focus moved to, or one whose text cannot all be selected), and anything but exactly the text afterwards exits 5 with the new reason `text_not_accepted`; a longer reading after set-text or keys, such as `1,000` for `1000`, counts as accepted.
+- Documentation only: `doctor` acts on the device `OFFSIDER_DEVICE` names when `--device` is absent, so `doctor --fix` with it set to an iPhone or iPad's UDID mounts the developer disk image on that device; the README, the `ios-device` guide topic and the agent guide now say so.
 
 ### Fixed
 
