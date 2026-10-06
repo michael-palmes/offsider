@@ -449,6 +449,41 @@ struct RunTests {
         #expect(!String(decoding: try Data(contentsOf: URL(fileURLWithPath: fixture.folder() + "/manifest.ndjson")), as: UTF8.self).contains("secret"))
     }
 
+    @Test("recorded args and batch step lines show --mask-text, --mask-label and --grep values only as their length")
+    func selectorValuesStayOutOfManifest() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let backend = try Self.screenshotBackend([FakeUI.node(.text, id: "name", label: "Ada Lovelace", frame: FakeUI.frame(16, 300, 200, 40))])
+        let arguments = ["--mask-text", "Lovelace", "Byron", "--mask-label=Ada Lovelace", "--mask-id", "name", "--mask-region", "0,0,10,10"]
+        try await fixture.command(fixture.recorder("screenshot", arguments: arguments)) { _ = try await Self.screenshot(arguments, on: backend) }
+
+        let logs = FakeLogBackend(entries: [LogEntry(message: "Lovelace signed in")])
+        try await fixture.command(fixture.recorder("logs", arguments: ["--grep", "Lovelace"])) {
+            try await Logs.parse(["--grep", "Lovelace", "--device", "emulator-5554"])
+                .read(from: DeviceRouter.Route(backend: logs, device: DeviceID(rawValue: "emulator-5554", platform: .android))) { _ in }
+        }
+
+        let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+        var records: [BatchStepRecord] = []
+        try await fixture.command(fixture.recorder("batch")) {
+            records = try await Batch.runSteps(
+                ["screenshot --mask-label 'Ada Lovelace' --mask-id name"], context: context, session: backend.session,
+                continueOnError: true, output: BatchOutput(json: true, write: { _ in }, writeError: { _ in }), logger: OffsiderLogger()
+            )
+        }
+
+        let lines = fixture.manifest()
+        #expect(lines.map(\.args) == [
+            ["--mask-text", "<8 characters>", "<5 characters>", "--mask-label=<12 characters>", "--mask-id", "name", "--mask-region", "0,0,10,10"],
+            ["--grep", "<8 characters>"],
+            nil,
+        ])
+        #expect(lines.last?.line == "screenshot --mask-label <12 characters> --mask-id name")
+        #expect(records.map(\.line) == ["screenshot --mask-label <12 characters> --mask-id name"])
+        let manifest = String(decoding: try Data(contentsOf: URL(fileURLWithPath: fixture.folder() + "/manifest.ndjson")), as: UTF8.self)
+        #expect(!manifest.contains("Lovelace") && !manifest.contains("Byron"))
+    }
+
     @Test("a screenshot's run copy and its diff are readable only by their owner, as every other run file is")
     func runFilesArePrivate() async throws {
         let fixture = try RunFixture()

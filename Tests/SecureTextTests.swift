@@ -226,6 +226,15 @@ struct SecureTextTests {
         #expect(BatchStepRedaction.redactedLine("tap --id a", tokens: ["tap", "--id", "a"]) == "tap --id a")
     }
 
+    @Test("a step line's mask and grep selectors become their length, and an unparsed one keeps only its kind")
+    func redactedSelectorLines() {
+        #expect(BatchStepRedaction.redactedLine("", tokens: ["screenshot", "--mask-text", "ada@", "Byron", "--output", "a.png"]) == "screenshot --mask-text <4 characters> <5 characters> --output a.png")
+        #expect(BatchStepRedaction.redactedLine("", tokens: ["screenshot", "--mask-text=Ada", "--mask-region", "0,0,1,1"]) == "screenshot --mask-text=<3 characters> --mask-region 0,0,1,1")
+        #expect(BatchStepRedaction.redactedLine("screenshot --mask-id name", tokens: ["screenshot", "--mask-id", "name"]) == "screenshot --mask-id name")
+        #expect(BatchStepRedaction.redactedLine("screenshot --mask-label 'Ada", tokens: nil) == "screenshot <unparsed>")
+        #expect(BatchStepRedaction.redactedLine("tap --id 'a", tokens: nil) == "tap --id 'a")
+    }
+
     @Test("a dash-leading type text is text, and an option's value stays with its option")
     func redactionUsesTypeOptions() {
         #expect(BatchStepRedaction.redactedLine("", tokens: ["type", "-Pa55word"]) == "type <9 characters>")
