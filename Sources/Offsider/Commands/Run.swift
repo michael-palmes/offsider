@@ -29,7 +29,7 @@ private func runEnvironment() throws -> EvidenceRunEnvironment {
 struct RunStart: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "start",
-        abstract: "Start recording this session's screenshots and logs into a folder, created 0700"
+        abstract: "Start recording this session's screenshots and logs into a folder (a new one is created 0700)"
     )
 
     @Argument(help: ArgumentHelp("The run's folder; created when missing. A stopped run's folder continues its numbering.", valueName: "dir"))
@@ -56,6 +56,9 @@ struct RunStart: AsyncParsableCommand {
         let masks = RunMasks(secure: maskSecure, emails: maskEmails, ids: maskIDs)
         let started = try RunRegistry.start(dir, label: label, masks: masks, in: environment)
         let path = started.folder.path
+        if started.writableByOthers {
+            print("Warning: other users can write to \(path), so they could add or change files in the run.", to: &standardError)
+        }
         if started.unchanged {
             print("A run is already active in \(path) for this session.", to: &standardError)
         } else if started.continued {

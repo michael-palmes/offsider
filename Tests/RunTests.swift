@@ -172,6 +172,31 @@ struct RunTests {
         #expect(lstat(fixture.folder(), &info) == 0 && info.st_mode & 0o777 == 0o700)
     }
 
+    @Test("a folder run start creates is 0700, and an existing one keeps its mode, flagged when others can write to it")
+    func existingFolderMode() throws {
+        func mode(_ path: String) -> mode_t {
+            var info = stat()
+            return lstat(path, &info) == 0 ? info.st_mode & 0o777 : 0
+        }
+        let fixture = try RunFixture()
+        let created = try fixture.start(fixture.folder("created"))
+        #expect(mode(fixture.folder("created")) == 0o700)
+        #expect(!created.writableByOthers)
+
+        let existing = fixture.folder("existing")
+        try FileManager.default.createDirectory(atPath: existing, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+        let kept = try RunFolder.prepare(existing)
+        #expect(mode(existing) == 0o755)
+        #expect(!kept.writableByOthers)
+
+        let shared = fixture.folder("shared")
+        try FileManager.default.createDirectory(atPath: shared, withIntermediateDirectories: true)
+        chmod(shared, 0o777)
+        let open = try RunFolder.prepare(shared)
+        #expect(mode(shared) == 0o777)
+        #expect(open.writableByOthers)
+    }
+
     @Test("stopping with no run active says so")
     func stopWithNone() throws {
         let fixture = try RunFixture()
@@ -270,7 +295,7 @@ struct RunTests {
     @Test("concurrent reservations under the folder lock never share a number")
     func concurrentReservations() throws {
         let fixture = try RunFixture()
-        let folder = try RunFolder.prepare(fixture.folder())
+        let folder = try RunFolder.prepare(fixture.folder()).folder
         let numbers = NumberBox()
         DispatchQueue.concurrentPerform(iterations: 24) { _ in
             if let number = try? folder.reserveNumber(now: Date()) { numbers.append(number) }
@@ -356,7 +381,7 @@ struct RunTests {
     @Test("a numbered file no manifest line names is unrecorded")
     func orphans() throws {
         let fixture = try RunFixture()
-        let folder = try RunFolder.prepare(fixture.folder())
+        let folder = try RunFolder.prepare(fixture.folder()).folder
         for name in ["001-screenshot-15.11.07.png", "002-screenshot-15.11.09.png", "notes.txt"] {
             FileManager.default.createFile(atPath: folder.file(name), contents: Data())
         }

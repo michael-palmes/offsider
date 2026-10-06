@@ -68,7 +68,7 @@ enum RunRegistry {
         case .folder(let path):
             let folder: RunFolder
             do {
-                folder = try RunFolder.prepare(path)
+                folder = try RunFolder.prepare(path).folder
             } catch {
                 throw unavailable("OFFSIDER_RUN names \(path), which cannot be used as a run folder: \(OffsiderCommand.message(for: error)).")
             }
@@ -99,6 +99,8 @@ enum RunRegistry {
         let continued: Bool
         /// True when this caller's run already writes to the folder, so nothing changed.
         let unchanged: Bool
+        /// True when the existing folder's group or others can write to it.
+        var writableByOthers = false
     }
 
     static func start(_ path: String, label: String?, masks: RunMasks, in environment: EvidenceRunEnvironment) throws -> Started {
@@ -129,12 +131,13 @@ enum RunRegistry {
             owner = found
         }
 
-        let folder: RunFolder
+        let prepared: RunFolder.Prepared
         do {
-            folder = try RunFolder.prepare(dir)
+            prepared = try RunFolder.prepare(dir)
         } catch {
             throw unavailable("Could not use \(dir) as a run folder: \(OffsiderCommand.message(for: error)).")
         }
+        let folder = prepared.folder
         let now = environment.now()
         let (state, continued) = try folder.locked { () throws -> (RunState, Bool) in
             if var state = try folder.readState() {
@@ -156,7 +159,7 @@ enum RunRegistry {
             let record = RunRecord(dir: dir, label: state.label, startedAt: now, masks: masks, owner: owner)
             try OffsiderPrivateDirectory.writeAtomically(try record.encoded(), named: RunRecord.fileName(for: owner), in: try environment.runsDirectory())
         }
-        return Started(folder: folder, state: state, continued: continued, unchanged: false)
+        return Started(folder: folder, state: state, continued: continued, unchanged: false, writableByOthers: prepared.writableByOthers)
     }
 
     /// Ends the caller's run and returns its timeline; nil when none is active.

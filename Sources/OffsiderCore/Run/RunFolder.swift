@@ -13,22 +13,35 @@ public struct RunFolder: Equatable, Sendable {
         self.path = path
     }
 
-    /// Creates the folder 0700 (parents as usual), or takes an existing one this user owns and makes it 0700.
-    public static func prepare(_ path: String, uid: uid_t = getuid()) throws -> RunFolder {
+    /// A folder `prepare` made ready, and whether others can write to it (an existing folder keeps its mode).
+    public struct Prepared: Equatable, Sendable {
+        public let folder: RunFolder
+        public let writableByOthers: Bool
+    }
+
+    /// Creates the folder 0700 (parents as usual), or takes an existing one this user owns as it is.
+    public static func prepare(_ path: String, uid: uid_t = getuid()) throws -> Prepared {
         let parent = (path as NSString).deletingLastPathComponent
         if !FileManager.default.fileExists(atPath: parent) {
             try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
         }
         var info = stat()
+        var created = false
         if lstat(path, &info) != 0 {
-            guard errno == ENOENT, mkdir(path, S_IRWXU) == 0 || errno == EEXIST else {
+            guard errno == ENOENT else { throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path) }
+            if mkdir(path, S_IRWXU) == 0 {
+                created = true
+            } else if errno != EEXIST {
                 throw PrivateDirectoryError(.system(operation: "mkdir", code: errno), path: path)
             }
             guard lstat(path, &info) == 0 else { throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path) }
         }
         guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else { throw PrivateDirectoryError(.unsafeDirectory, path: path) }
-        guard chmod(path, S_IRWXU) == 0 else { throw PrivateDirectoryError(.system(operation: "chmod", code: errno), path: path) }
-        return RunFolder(path: path)
+        if created {
+            guard chmod(path, S_IRWXU) == 0 else { throw PrivateDirectoryError(.system(operation: "chmod", code: errno), path: path) }
+            return Prepared(folder: RunFolder(path: path), writableByOthers: false)
+        }
+        return Prepared(folder: RunFolder(path: path), writableByOthers: info.st_mode & (S_IWGRP | S_IWOTH) != 0)
     }
 
     public func file(_ name: String) -> String {

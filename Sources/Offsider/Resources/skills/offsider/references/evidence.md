@@ -2,7 +2,7 @@
 
 ## Runs
 
-`offsider run start <dir> --label 'PR 123'` makes every later `screenshot`, `logs` and `batch` screenshot step from this session also write its file into `<dir>` (created 0700) as `NNN-<command>-<HH.MM.SS>.<ext>`, and adds one line per capture, failures included, to `manifest.ndjson`. End with `offsider run stop --summary` (or `--json`), which prints the timeline: one line per capture, then counts of files, failures and unrecorded files.
+`offsider run start <dir> --label 'PR 123'` makes every later `screenshot`, `logs` and `batch` screenshot step from this session also write its file into `<dir>` (created 0700; an existing folder keeps its mode, with a warning when other users can write to it) as `NNN-<command>-<HH.MM.SS>.<ext>`, and adds one line per capture, failures included, to `manifest.ndjson`. End with `offsider run stop --summary` (or `--json`), which prints the timeline: one line per capture, then counts of files, failures and unrecorded files.
 
 - A screenshot without `--output` is written only into the run, and `path` is that file; with `--output` both are written and `--json` adds `runFile`. A `logs` file holds exactly what went to stdout.
 - `run start --mask-secure --mask-emails --mask-id <id>` sets masks for every capture that passes none of its own.
