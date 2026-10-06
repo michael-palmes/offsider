@@ -341,6 +341,31 @@ struct RunTests {
         #expect(!String(decoding: try Data(contentsOf: URL(fileURLWithPath: fixture.folder() + "/manifest.ndjson")), as: UTF8.self).contains("secret"))
     }
 
+    @Test("a screenshot's run copy and its diff are readable only by their owner, as every other run file is")
+    func runFilesArePrivate() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let backend = try Self.screenshotBackend()
+        let baseline = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: baseline) }
+        try ScreenshotMaskTests.whitePNG().write(to: URL(fileURLWithPath: baseline))
+        let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+        let output = BatchOutput(json: true, write: { _ in }, writeError: { _ in })
+
+        _ = try? await fixture.command(fixture.recorder("batch")) {
+            try await Batch.runSteps(
+                ["screenshot --compare \(baseline)"], context: context, session: backend.session,
+                continueOnError: true, output: output, logger: OffsiderLogger()
+            )
+        }
+        let line = try #require(fixture.manifest().first)
+        let names = [try #require(line.file), try #require(line.diff)]
+        for name in names {
+            let mode = try FileManager.default.attributesOfItem(atPath: fixture.folder() + "/" + name)[.posixPermissions] as? Int
+            #expect(mode == 0o600, "\(name)")
+        }
+    }
+
     @Test("a logs run file holds exactly what went to stdout, and the line counts entries and redactions")
     func logsTee() async throws {
         let fixture = try RunFixture()

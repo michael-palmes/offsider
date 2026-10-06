@@ -249,7 +249,7 @@ struct Screenshot: AsyncParsableCommand {
         }
         if let token, runFile != nil, let diffPath = try recorder.diffPath(token) {
             do {
-                try ScreenImage.encode(diffImage, as: .png).write(to: URL(fileURLWithPath: diffPath))
+                try RunFolder.writeNew(ScreenImage.encode(diffImage, as: .png), toPath: diffPath)
             } catch {
                 recorder.update(token) { $0.diff = nil }
                 Self.writeError("Warning: could not write the run's diff to \(diffPath): \(error.localizedDescription)")
@@ -263,7 +263,7 @@ struct Screenshot: AsyncParsableCommand {
     private static func writeRunCopy(_ rendered: RenderedScreenshot, format: ImageFormat, token: EvidenceRecorder.Token, recorder: EvidenceRecorder, otherCopy: String?) throws -> String? {
         do {
             let runPath = try recorder.reserveFile(token, extension: format.fileExtension)
-            try rendered.encoded(as: format).write(to: URL(fileURLWithPath: runPath))
+            try RunFolder.writeNew(rendered.encoded(as: format), toPath: runPath)
             return runPath
         } catch {
             recorder.update(token) { $0.file = nil }
