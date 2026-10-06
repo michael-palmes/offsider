@@ -17,6 +17,8 @@ struct LogRedactorTests {
         ("sending Bearer abcdefgh12345 now", "sending Bearer [redacted] now"),
         ("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sig_nature", "jwt [redacted jwt]"),
         ("signed in as e2e@example.com today", "signed in as [redacted email] today"),
+        ("cc a.b@sub.example.co.uk, first+tag@example.com", "cc [redacted email], [redacted email]"),
+        ("host user@localhost.local", "host [redacted email]"),
         (#"{"email":"e2e@example.com","pin": 1234}"#, #"{"email":"[redacted]","pin": "[redacted]"}"#),
         ("otp=123456 secret: s3cr3t", "otp=[redacted] secret: [redacted]"),
     ])
@@ -31,6 +33,9 @@ struct LogRedactorTests {
         "emailVerified: true",
         "ticketId: 5",
         "react-native@0.81.0 loaded",
+        "expo-dev-client@6.0.0-canary.rc",
+        "installed expo-dev-client@6.0.0-canary.rc and @expo/cli@0.24.1-beta.rc2",
+        "react-native-reanimated@4.1.0-nightly-20261001.abc",
         "open https://x.com/a@b",
         "token: {expires: 3}",
         "password: null",

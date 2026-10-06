@@ -138,6 +138,7 @@ struct ScreenshotMaskTests {
     @Test("email addresses are found, and version strings and bare @ are not", arguments: [
         ("e2e@example.com", true), ("first.last+tag@mail.co.uk", true),
         ("react-native@0.81.0", false), ("https://x.com/a@b", false), ("@handle", false),
+        ("expo-dev-client@6.0.0-canary.rc", false), ("user@localhost.local", true),
     ])
     func emailPattern(text: String, found: Bool) throws {
         let regex = try MaskPlan.compile(PersonalData.emailPattern)
