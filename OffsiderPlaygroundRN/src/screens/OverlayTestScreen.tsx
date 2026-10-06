@@ -11,7 +11,7 @@ const tabBarHeight = 49;
 const scrimMs = 4000;
 const flickerHiddenMs = 300;
 const clockMs = 500;
-const flickerCycleMs = 1000;
+const flickerCycleMs = 1500;
 const flickerCycles = 6;
 const bannerLabel = 'Connection lost. Can’t reach the server.';
 // clearAllLogs exists at runtime but is missing from React Native's LogBox typings.

@@ -91,7 +91,8 @@ struct ReactNativeOverlayTests {
         try await app.open("overlay-test")
         try await app.run("tap --id overlay-test-flicker")
 
-        let result = try await app.offsider("wait --label 'Flickering Node' --gone --timeout 2")
+        // The node is back for 1.2 s between flickers, longer than a slow read takes, so no two reads both land in a gap.
+        let result = try await app.offsider("wait --label 'Flickering Node' --gone --timeout 3")
 
         #expect(result.exitCode == 5, "\(result.stderr)")
     }
