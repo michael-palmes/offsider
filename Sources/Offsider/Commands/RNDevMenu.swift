@@ -43,9 +43,10 @@ struct DevMenuDriver {
         )
     }
 
-    /// Taps the item, closes the menu if a switch left it open, and returns once it is gone.
-    func choose(_ item: DevMenu.Item?, label: String?, state: DevMenu.State, tree: UITree) async throws {
-        guard let node = DevMenu.node(for: item, label: label, in: tree), let frame = node.frame else {
+    /// Taps the item, closes the menu if a switch left it open, and returns the label tapped once the menu is gone.
+    @discardableResult
+    func choose(_ item: DevMenu.Item?, label: String?, state: DevMenu.State, tree: UITree) async throws -> String {
+        guard let (node, tapped) = DevMenu.match(for: item, label: label, in: tree), let frame = node.frame else {
             let name = label.map { "--label '\($0)'" } ?? item?.rawValue ?? "item"
             throw CLIError(
                 errorDescription: "The \(state.menu) dev menu has no \(name). Its items: \(state.items.map(\.label).joined(separator: ", ")).",
@@ -55,10 +56,10 @@ struct DevMenuDriver {
             )
         }
         try await tap(frame.center, tree: tree, hold: node.role == .switch)
-        if try await closed(leaving: state.menu) { return }
+        if try await closed(leaving: state.menu) { return tapped }
         if item?.isToggle == true || label != nil, let close = DevMenu.node(for: .close, label: nil, in: try await read()), let closeFrame = close.frame {
             try await tap(closeFrame.center, tree: nil)
-            if try await closed(leaving: state.menu) { return }
+            if try await closed(leaving: state.menu) { return tapped }
         }
         throw CLIError(
             errorDescription: "Tapped \(node.label ?? item?.rawValue ?? "the item"), but the dev menu is still open.",
@@ -112,11 +113,31 @@ struct RNDevMenu: AsyncParsableCommand {
     @Option(help: ArgumentHelp("Choose the item with this exact label instead.", valueName: "text"))
     var label: String?
 
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout.")
+    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; after choosing an item, human text goes to stderr.")
     var json = false
 
     @OptionGroup
     var deviceOption: DeviceOption
+
+    /// The open menu when no item is asked for, else the item chosen from it.
+    enum Outcome: Equatable {
+        case listed(DevMenu.State)
+        case chose(menu: String, item: DevMenu.Item?, label: String)
+
+        func jsonLine() -> String {
+            switch self {
+            case .listed(let state): return DevMenu.jsonLine(state)
+            case .chose(let menu, let item, let label): return DevMenu.choiceJSONLine(menu: menu, item: item, label: label)
+            }
+        }
+
+        func textLine() -> String {
+            switch self {
+            case .listed(let state): return "\(state.menu) dev menu: " + state.items.map(\.label).joined(separator: ", ")
+            case .chose(_, _, let label): return "✓ Chose \(label) and the dev menu closed"
+            }
+        }
+    }
 
     func validate() throws {
         if item != nil && label != nil {
@@ -130,23 +151,20 @@ struct RNDevMenu: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        let state = try await perform(on: route, clock: .live)
-        if let state {
-            print(json ? DevMenu.jsonLine(state) : "\(state.menu) dev menu: " + state.items.map(\.label).joined(separator: ", "))
-        } else {
-            print("✓ Chose \(label ?? item?.rawValue ?? "") and the dev menu closed")
-        }
+        let outcome = try await perform(on: route, clock: .live)
+        guard json else { return print(outcome.textLine()) }
+        print(outcome.jsonLine())
+        if case .chose = outcome { print(outcome.textLine(), to: &standardError) }
     }
 
-    /// The open menu's state when no item is asked for; nil after choosing one.
     @MainActor
-    func perform(on route: DeviceRouter.Route, clock: PollClock) async throws -> DevMenu.State? {
+    func perform(on route: DeviceRouter.Route, clock: PollClock) async throws -> Outcome {
         try await route.backend.prepare()
         let driver = DevMenuDriver(route: route, clock: clock)
         let (state, tree) = try await driver.open()
-        guard item != nil || label != nil else { return state }
-        try await driver.choose(item, label: label, state: state, tree: tree)
-        return nil
+        guard item != nil || label != nil else { return .listed(state) }
+        let tapped = try await driver.choose(item, label: label, state: state, tree: tree)
+        return .chose(menu: state.menu, item: item, label: tapped)
     }
 }
 

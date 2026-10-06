@@ -169,7 +169,7 @@ In 0.3.0, `--udid` was renamed to `--device` and `list-simulators` to `list-devi
 | `shake` | Send the shake gesture (iOS only) |
 | `rn logbox` | `status` reads React Native LogBox toasts and the inspector without a tap (`--json`: `{version, logs, toasts, inspector}`); `dismiss` clears every log (`--timeout`, `--json`: `{version, cleared, remaining, method}`), exiting 5 when some remain |
 | `rn open` | Load an Expo dev client's bundle from Metro on this Mac and wait until the app is up (`--port`, `--bundle-id`, `--scheme`, `--wait-id`, `--timeout` 10 to 900, `--json`); exits 9 when Metro does not answer and 1 on a load error |
-| `rn devmenu` | Open a React Native debug build's dev menu and list its items (`--json`), or choose `reload`, `home`, `inspector`, `perf-monitor`, `fast-refresh`, `debugger`, `close` or `--label <text>` and wait for the menu to close |
+| `rn devmenu` | Open a React Native debug build's dev menu and list its items (`--json`), or choose `reload`, `home`, `inspector`, `perf-monitor`, `fast-refresh`, `debugger`, `close` or `--label <text>` and wait for the menu to close (`--json` prints `menu`, `item`, the `label` tapped and `closed`) |
 | `rn tools off` | Turn off the element inspector and the performance monitor when they show, through the dev menu (`--json`) |
 | `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`); stops the app first if it is running |
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) |

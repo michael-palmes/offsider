@@ -133,11 +133,20 @@ struct RNDevMenuTests {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, Self.expoMenu(), Self.app], advanceTreeOnInput: true)
         let command = try RNDevMenu.parse(["reload", "--device", Self.device.rawValue])
 
-        let state = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        let outcome = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
 
-        #expect(state == nil)
+        #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
         #expect(backend.devMenuOpens == 1)
         #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 324))])
+    }
+
+    @Test("choosing an item with --json prints one JSON object naming the menu, the item, the label tapped and that it closed")
+    func choiceJSON() {
+        let reload = RNDevMenu.Outcome.chose(menu: "expo", item: .reload, label: "Reload")
+        #expect(reload.jsonLine() == #"{"version":1,"menu":"expo","item":"reload","label":"Reload","closed":true}"#)
+        let byLabel = RNDevMenu.Outcome.chose(menu: "expo", item: nil, label: "Open React Native dev menu")
+        #expect(byLabel.jsonLine() == #"{"version":1,"menu":"expo","item":null,"label":"Open React Native dev menu","closed":true}"#)
+        #expect(byLabel.textLine() == "✓ Chose Open React Native dev menu and the dev menu closed")
     }
 
     @Test("a label that opens React Native's own menu from Expo's counts as chosen, with no close tap")
@@ -145,9 +154,9 @@ struct RNDevMenuTests {
         let backend = FakeDeviceBackend(platform: .android, trees: [try Self.capture("devmenu-expo-android"), try Self.capture("devmenu-rn-android")], advanceTreeOnInput: true)
         let command = try RNDevMenu.parse(["--label", "Open React Native dev menu", "--device", Self.device.rawValue])
 
-        let state = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        let outcome = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
 
-        #expect(state == nil)
+        #expect(outcome == .chose(menu: "expo", item: nil, label: "Open React Native dev menu"))
         #expect(backend.session.calls.count == 1)
     }
 

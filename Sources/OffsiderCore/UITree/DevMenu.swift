@@ -69,14 +69,19 @@ public enum DevMenu {
 
     /// The node for `item`, or for an exact `label`; the close control also by its `xmark` id.
     public static func node(for item: Item?, label: String?, in tree: UITree) -> UINode? {
+        match(for: item, label: label, in: tree)?.node
+    }
+
+    /// The node to tap for `item` or `label`, with the menu label it was found by.
+    public static func match(for item: Item?, label: String?, in tree: UITree) -> (node: UINode, label: String)? {
         let nodes = tree.roots.flatMap { $0.flattened() }.filter { $0.frame != nil }
         if item == .close, let xmark = nodes.first(where: { $0.id == "xmark" }) {
-            return xmark
+            return (xmark, trimmedLabel(xmark) ?? "Close")
         }
         let wanted = label.map { [$0] } ?? item?.labels ?? []
-        guard let match = best(wanted, in: nodes)?.node else { return nil }
-        if match.role.isActionable || match.role == .switch { return match }
-        return rowSwitch(beside: match, in: nodes) ?? match
+        guard let (_, match, text) = best(wanted, in: nodes) else { return nil }
+        if match.role.isActionable || match.role == .switch { return (match, text) }
+        return (rowSwitch(beside: match, in: nodes) ?? match, text)
     }
 
     /// The first actionable node carrying one of `labels`, else the first node at all, with its pre-order index and the label it matched.
@@ -123,6 +128,17 @@ public enum DevMenu {
             ("version", .integer(1)),
             ("menu", .string(state.menu)),
             ("items", .array(state.items.map { .object([("label", .string($0.label)), ("role", .string($0.role.rawValue))]) })),
+        ]).rendered(compact: true)
+    }
+
+    /// `rn devmenu <item> --json`: the menu that was open, the item asked for (null for `--label`) and the label tapped.
+    public static func choiceJSONLine(menu: String, item: Item?, label: String) -> String {
+        OrderedJSON.object([
+            ("version", .integer(1)),
+            ("menu", .string(menu)),
+            ("item", item.map { .string($0.rawValue) } ?? .null),
+            ("label", .string(label)),
+            ("closed", .bool(true)),
         ]).rendered(compact: true)
     }
 
