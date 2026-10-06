@@ -13,8 +13,8 @@ public enum MaskKind: String, CaseIterable, Sendable {
 /// Patterns for personal data, shared by screenshot masks and log redaction.
 public enum PersonalData {
     /// An email address between word boundaries: a local part, `@`, and a domain ending in a dot and at least two letters,
-    /// whose first label is not all digits, so `expo-dev-client@6.0.0-canary.rc` reads as a version.
-    public static let emailPattern = #"\b[A-Za-z0-9._%+-]+@(?![0-9]+[.-])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b"#
+    /// whose first two labels are not both all digits, so `expo-dev-client@6.0.0-canary.rc` reads as a version and `a@163.com` as an address.
+    public static let emailPattern = #"\b[A-Za-z0-9._%+-]+@(?![0-9]+\.[0-9]+(?![A-Za-z0-9-]))[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b"#
 }
 
 /// The masks one screenshot asked for.
