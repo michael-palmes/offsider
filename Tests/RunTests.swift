@@ -247,6 +247,41 @@ struct RunTests {
         #expect(line.exit == 0 && line.output == nil && line.platform == "ios")
     }
 
+    @Test("a reserved entry's manifest time is the instant its file name carries, while ms still counts from its start")
+    func reservedTimeMatchesName() throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let base = fixture.now
+        let recorder = fixture.recorder("screenshot")
+        fixture.now = base + 0.6
+        let token = try #require(try recorder.begin(device: Self.device, kind: "screenshot"))
+        fixture.now = base + 1.25
+        _ = try recorder.reserveFile(token, extension: "png")
+        fixture.now = base + 2
+        recorder.finish(token, exit: 0, reason: nil)
+
+        let line = try #require(fixture.manifest().first)
+        #expect(line.file == "001-screenshot-15.11.08.png")
+        #expect(abs(line.time.timeIntervalSince(base + 1.25)) < 0.001)
+        #expect(line.ms == 1400)
+    }
+
+    @Test("an entry with no file keeps its start as its manifest time")
+    func unreservedTimeIsStart() throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let base = fixture.now
+        let recorder = fixture.recorder("screenshot")
+        fixture.now = base + 0.6
+        let token = try #require(try recorder.begin(device: Self.device, kind: "screenshot"))
+        fixture.now = base + 2
+        recorder.finish(token, exit: 1, reason: "mask_unproven")
+
+        let line = try #require(fixture.manifest().first)
+        #expect(line.file == nil)
+        #expect(abs(line.time.timeIntervalSince(base + 0.6)) < 0.001)
+    }
+
     @Test("an unwritable run folder fails a capture that has no other copy, and only warns beside --output")
     func unwritableRun() async throws {
         let fixture = try RunFixture()

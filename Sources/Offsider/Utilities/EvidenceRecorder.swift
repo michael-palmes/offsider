@@ -14,6 +14,8 @@ final class EvidenceRecorder {
     /// What a capture has done so far, for its manifest line.
     struct Entry {
         let start: Date
+        /// When the file was reserved, which its name carries; the manifest's `time` then uses it too.
+        var reservedAt: Date?
         let device: String?
         let platform: String?
         let kind: String
@@ -88,6 +90,7 @@ final class EvidenceRecorder {
         let name = RunFolder.fileName(number: number, kind: entry.kind, at: now, extension: pathExtension, timeZone: environment.timeZone)
         entry.number = number
         entry.file = name
+        entry.reservedAt = now
         pending[token.id] = entry
         return run.folder.file(name)
     }
@@ -113,7 +116,7 @@ final class EvidenceRecorder {
         let now = environment.now()
         let manifestLine = RunManifestLine(
             n: entry.number, file: entry.file, command: command, step: step, line: line, device: entry.device, platform: entry.platform,
-            time: entry.start, ms: Int((now.timeIntervalSince(entry.start) * 1000).rounded()), exit: Int(exit), reason: reason,
+            time: entry.reservedAt ?? entry.start, ms: Int((now.timeIntervalSince(entry.start) * 1000).rounded()), exit: Int(exit), reason: reason,
             args: step == nil ? arguments.map { LogRedactor.redact($0).text } : nil,
             output: entry.output, diff: entry.diff, masked: entry.masked, changed: entry.changed, entries: entry.entries, redacted: entry.redacted
         )
