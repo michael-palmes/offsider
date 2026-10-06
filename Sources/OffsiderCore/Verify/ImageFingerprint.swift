@@ -52,6 +52,7 @@ public struct ImageFingerprint: Equatable, Sendable {
         guard self.tolerance == 0 else {
             tiles = []
             var blocks: [UInt8] = []
+            blocks.reserveCapacity(3 * (width / Self.blockSize + columns) * (height / Self.blockSize + rows))
             var blockStarts = [0]
             blockStarts.reserveCapacity(columns * rows + 1)
             for tileRow in 0..<rows {
@@ -209,11 +210,31 @@ public struct ImageFingerprint: Equatable, Sendable {
             return nil
         }
         guard tolerance > 0 else { return Set(tiles.indices.filter { tiles[$0] != other.tiles[$0] }) }
-        return Set((0..<(columns * rows)).filter { tile in
-            let mine = blocks[blockStarts[tile]..<blockStarts[tile + 1]]
-            let theirs = other.blocks[other.blockStarts[tile]..<other.blockStarts[tile + 1]]
-            return mine.count != theirs.count || zip(mine, theirs).contains { abs(Int($0) - Int($1)) > tolerance }
-        })
+        let tolerance = tolerance
+        return blocks.withUnsafeBufferPointer { mine in
+            other.blocks.withUnsafeBufferPointer { theirs in
+                var changed = Set<Int>()
+                for tile in 0..<(columns * rows) {
+                    let start = blockStarts[tile]
+                    let end = blockStarts[tile + 1]
+                    let offset = other.blockStarts[tile] - start
+                    guard other.blockStarts[tile + 1] - offset == end else {
+                        changed.insert(tile)
+                        continue
+                    }
+                    var index = start
+                    while index < end {
+                        let difference = Int(mine[index]) - Int(theirs[index + offset])
+                        if difference > tolerance || difference < -tolerance {
+                            changed.insert(tile)
+                            break
+                        }
+                        index += 1
+                    }
+                }
+                return changed
+            }
+        }
     }
 
     /// Changed tiles over compared tiles; nil when the grids differ.
