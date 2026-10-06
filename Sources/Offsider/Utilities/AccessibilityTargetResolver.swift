@@ -164,7 +164,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
         case .invalidFrame(let reason):
             return "\(reason) \(tip)"
         case .nthOutOfRange(let selector, let nth, let count):
-            return "--nth \(nth) asked for match \(nth) of \(selector), but \(count == 1 ? "1 matches" : "\(count) match") on screen. \(tip)"
+            return "--nth \(nth) asked for match \(nth) of \(selector), but there \(count == 1 ? "is 1 match" : "are \(count) matches") on screen. \(tip)"
         case .multipleSwitchDescendants(let count, let selectorDescription):
             return "Matched element for \(selectorDescription) contains multiple (\(count)) switch/toggle controls. Target the switch more specifically with --id when available, or use coordinates. Use --element-type only when describe-ui reports a specific role or type, such as switch or Toggle. \(tip)"
         }

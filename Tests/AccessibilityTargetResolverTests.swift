@@ -931,6 +931,12 @@ struct StackedScreenTests {
         }
     }
 
+    @Test("--nth past the end counts the matches in the singular and the plural", arguments: [(1, "is 1 match"), (3, "are 3 matches")])
+    func nthOutOfRangeCount(count: Int, phrase: String) {
+        let message = ElementResolutionError.nthOutOfRange(selector: "--label 'Back'", nth: 4, count: count).userFacingDescription
+        #expect(message.hasPrefix("--nth 4 asked for match 4 of --label 'Back', but there \(phrase) on screen."))
+    }
+
     @Test("an ambiguous match names each candidate's --nth, window and screen")
     func candidateContext() throws {
         let roots = Self.stack(platform: .android)
