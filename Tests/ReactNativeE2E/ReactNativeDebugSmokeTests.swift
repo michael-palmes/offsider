@@ -161,7 +161,7 @@ struct ReactNativeDebugSmokeTests {
         }
     }
 
-    @Test("rn open loads the bundle from Metro after a plain launch, and a port with no Metro is exit 9", arguments: RNPlatform.enabled)
+    @Test("rn open loads the bundle from Metro after a plain launch, whether or not the launcher showed, and a port with no Metro is exit 9", arguments: RNPlatform.enabled)
     func rnOpen(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await Self.plainLaunch(platform)
@@ -169,7 +169,8 @@ struct ReactNativeDebugSmokeTests {
 
         let opened = try await app.run("rn open --port \(RNMetro.port) --bundle-id \(IOSRNPlayground.bundleID) --wait-id menu-title --json", timeout: 240)
         #expect(opened.stdout.contains(#""metro":"running""#), "\(opened.stdout)")
-        #expect(opened.stdout.contains(#""launcherSeen":true"#), "\(opened.stdout)")
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(opened.stdout.utf8)) as? [String: Any])
+        #expect((report["sends"] as? Int ?? 0) >= 1, "\(opened.stdout)")
         _ = try await app.waitForNode { $0["id"] as? String == "menu-title" }
 
         let noMetro = try await app.offsider("rn open --port \(RNMetro.port + 1) --bundle-id \(IOSRNPlayground.bundleID) --timeout 10")
