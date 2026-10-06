@@ -1,4 +1,5 @@
 # android <android-device> 411.4x923.4 @2.625x portrait 0°
+# window: com.mpalmes.offsider.playground.rn (modal)
 application (0,0 411.4x923.4)
   group "Sheet Fixture" id=sheet-test-sheet (16,70.1 379.4x47.2)
   button "Run Sheet Action" id=sheet-test-action (123.4,141.3 165x43.8)

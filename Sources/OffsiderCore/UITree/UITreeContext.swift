@@ -74,13 +74,18 @@ public struct UITreeContext: Equatable, Sendable {
         )
     }
 
-    /// The active window (else the focused one); a modal when an application window from the same display sits lower.
+    /// The active window (else the focused one); a modal when an application window sits lower, or when it has no title.
+    /// Android drops the windows beneath a touch-modal dialog, such as a React Native `Modal`, from the list, and an
+    /// activity's window always carries its label, so an untitled application window is a dialog. A lone window is
+    /// the helper's stand-in for an empty list, never a dialog.
     static func window(in windows: [UIWindowInfo]) -> Window? {
         guard let top = windows.first(where: \.active) ?? windows.first(where: \.focused) else { return nil }
         let kind: Window.Kind
+        let untitled = top.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
         if top.kind == "system" {
             kind = .system
-        } else if top.kind == "application", windows.contains(where: { $0.id != top.id && $0.kind == "application" && $0.layer < top.layer }) {
+        } else if top.kind == "application",
+                  windows.contains(where: { $0.id != top.id && $0.kind == "application" && $0.layer < top.layer }) || (untitled && windows.count > 1) {
             kind = .modal
         } else {
             kind = .app

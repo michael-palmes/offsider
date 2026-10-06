@@ -17,7 +17,7 @@
   "context": {
     "window": {
       "title": null,
-      "kind": "app",
+      "kind": "modal",
       "package": "com.mpalmes.offsider.playground.rn"
     },
     "keyboard": false,

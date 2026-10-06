@@ -10,7 +10,7 @@
     "android/parked-sheet-test@open": { "summary": 960, "text": 960 },
     "android/rows-test": { "summary": 1280, "text": 1280 },
     "android/sheet-test": { "summary": 448, "text": 448 },
-    "android/sheet-test@open": { "summary": 320, "text": 320 },
+    "android/sheet-test@open": { "summary": 320, "text": 384 },
     "android/slider-value-test": { "summary": 768, "text": 768 },
     "android/switch-test": { "summary": 704, "text": 704 },
     "android/tab-view-test": { "summary": 704, "text": 704 },
