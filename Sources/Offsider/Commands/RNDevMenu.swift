@@ -25,8 +25,9 @@ struct DevMenuDriver {
         if let state = DevMenu.read(tree) { return (state, tree) }
         guard let opener = route.backend as? any ReactNativeDevMenuOpening else {
             throw CLIError(
-                errorDescription: "Offsider cannot open the dev menu on \(route.device.rawValue). On a physical iPhone, open it with the app's own gesture, such as `touch --fingers 2 --hold 1000`.",
-                reason: .notSupported
+                errorDescription: "Offsider cannot open the dev menu on \(route.device.rawValue): a physical iPhone or iPad refuses shake and two-finger touches. Shake the device by hand, or open the menu from the app, then run this again: it uses a menu that is already open.",
+                reason: .notSupported,
+                hint: "offsider rn devmenu --device \(route.device.rawValue)"
             )
         }
         try await opener.openDevMenu(route.device)

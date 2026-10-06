@@ -119,6 +119,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `tap --verify-id` right after another input waits out a transition again, as a selector `tap` without `--verify` does, so a target still sliding in is tapped where it settles instead of where it was first found.
 - `tap --topmost` on iOS hit-tests the matches of the tree it taps from, on every read while it waits, instead of an earlier read that could have none. Under `--verify`, `--nth` and `--topmost` keep their pick when the verifier finds the target moved before the tap.
 - `type --into-id` checks that the simulator keyboard can type the text, and that a `--verify-id` element is not already on screen, before its focus tap, so either refusal sends nothing. When the focus tap itself brings the `--verify-id` element on screen, the refusal says only that tap was sent, as `dispatched` `yes` does.
+- `rn devmenu` no longer takes an app screen with its own Reload and Close buttons for the dev menu: it needs Reload beside two other menu items, or under React Native's menu title. On a physical iPhone or iPad, where Offsider cannot open the menu, the error says to shake the device by hand or open the menu from the app and run it again, instead of suggesting a two-finger touch the device refuses.
 
 ## [0.6.0] - 2026-10-05
 
