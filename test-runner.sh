@@ -176,6 +176,7 @@ RN_SUITES=(
     "ReactNativeEnvironmentTests"
     "ReactNativeChoiceTests"
     "ReactNativeGestureTests"
+    "ReactNativeEvidenceTests"
 )
 RN_DEBUG_SUITES=(
     "ReactNativeDebugSmokeTests"
@@ -744,6 +745,8 @@ run_android_tests() {
         "AndroidJWTTests"
         "AndroidBootTests"
         "AndroidLandscapeTests"
+        "AndroidRunTests"
+        "AndroidDoctorE2ETests"
     )
     local suite
     for suite in "${suites[@]}"; do
