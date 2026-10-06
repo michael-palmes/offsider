@@ -199,9 +199,10 @@ struct ReactNativeOffscreenTests {
         try await app.open("stack-test")
 
         let pushed = try await app.run("tap --id stack-test-next --verify-id stack-test-page-2 --json")
-        #expect(pushed.stdout.contains(#""change":"element""#), "\(pushed.stdout)")
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(pushed.stdout.utf8)) as? [String: Any])
+        #expect(report["change"] as? String == "element", "\(pushed.stdout)")
 
-        let present = try await app.offsider("tap --id stack-test-back --verify-id stack-test-page-2")
+        let present = try await app.offsider("tap --id stack-test-back --topmost --verify-id stack-test-page-2")
         #expect(present.exitCode == 1, "\(present.stderr)")
         #expect(present.stderr.contains("already on screen"), "\(present.stderr)")
     }
