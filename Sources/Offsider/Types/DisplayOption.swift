@@ -4,7 +4,7 @@ import OffsiderCore
 struct DisplayOption: ParsableArguments {
     @Option(
         name: .customLong("display"),
-        help: ArgumentHelp("A display from `offsider displays`: main, cover, inner or external, or its platform ID. Defaults to the active display.", valueName: "id")
+        help: ArgumentHelp("A display from `offsider displays`: main on a device with one display, cover or inner on a foldable, external, or its platform ID. Defaults to the active display.", valueName: "id")
     )
     var id: String?
 
