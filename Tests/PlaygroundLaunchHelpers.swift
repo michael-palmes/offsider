@@ -133,6 +133,7 @@ extension TestHelpers {
         case "landscape-coordinate-test": return .identifier("landscape-coordinate-screen")
         case "switch-test": return .identifier("switch-test-screen")
         case "tab-view-test": return .identifier("tab-view-test-screen")
+        case "motion-test": return .identifier("motion-toggle")
         case "slider-value-test": return .identifier("slider-value-slider")
         case "searchable-test": return .identifier("searchable-test-query")
         case "toolbar-picker-test":

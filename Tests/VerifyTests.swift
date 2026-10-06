@@ -112,6 +112,39 @@ struct VerifyTests {
         #expect(count?.label == "Key Count: 1")
     }
 
+    @Test("A tap that starts motion the tree cannot see verifies on its first attempt and taps once")
+    func motionStartVerifiesOnce() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "motion-test")
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated(
+            "tap --id motion-toggle --verify --verify-timeout 1 --json",
+            simulatorUDID: defaultSimulatorUDID
+        )
+        let json = try report(result.stdout)
+
+        #expect(result.exitCode == 0)
+        #expect(json["change"] as? String == "screenshot")
+        #expect(json["attempts"] as? Int == 1)
+        try await TestHelpers.runOffsiderCommand("tap --id motion-show-toggles", simulatorUDID: defaultSimulatorUDID)
+        let uiState = try await TestHelpers.getUIState()
+        #expect(UIStateParser.findElementContainingLabel(in: uiState, containing: "Toggles:")?.label == "Toggles: 1")
+    }
+
+    @Test("A tap that changes nothing on a screen already moving exits 5")
+    func noOpOnMovingScreenUnverified() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "motion-test")
+        try await TestHelpers.runOffsiderCommand("tap --id motion-toggle", simulatorUDID: defaultSimulatorUDID)
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated(
+            "tap --id motion-test-title --verify --verify-timeout 1 --retries 0 --json",
+            simulatorUDID: defaultSimulatorUDID
+        )
+        let json = try report(result.stdout)
+
+        #expect(result.exitCode == 5)
+        #expect(json["change"] as? String == "none")
+    }
+
     @Test("Home is verified by leaving the app")
     func homeVerifies() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "button-test")

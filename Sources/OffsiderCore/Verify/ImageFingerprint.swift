@@ -246,16 +246,27 @@ public struct ImageFingerprint: Equatable, Sendable {
 }
 
 public enum ScreenChange {
-    /// Tiles that differ among the after-shots (a blinking caret, a spinner) do not count.
-    public static func detect(before: ImageFingerprint, after: [ImageFingerprint]) -> Bool {
-        guard let last = after.last else { return false }
-        guard let changed = before.changedTiles(comparedTo: last) else { return true }
-        var volatile = Set<Int>()
-        for (index, shot) in after.enumerated() {
-            for other in after[(index + 1)...] {
-                volatile.formUnion(shot.changedTiles(comparedTo: other) ?? [])
+    /// The most tiles a blinking caret covers (two rows by two columns), which both before-shots can catch in one phase.
+    static let caretTiles = 4
+
+    /// Changed tiles still moving after the input (a caret, a spinner) count only when they were still across the before-shots and outnumber a caret's.
+    public static func detect(before: [ImageFingerprint], after: [ImageFingerprint]) -> Bool {
+        guard let reference = before.last, let last = after.last else { return false }
+        guard let changed = reference.changedTiles(comparedTo: last) else { return true }
+        if !changed.isSubset(of: movingTiles(after) ?? []) { return true }
+        guard before.count > 1, let movingBefore = movingTiles(before) else { return false }
+        return changed.subtracting(movingBefore).count > caretTiles
+    }
+
+    /// Tiles that differ between any two of `shots`; nil when two cannot be compared tile for tile.
+    private static func movingTiles(_ shots: [ImageFingerprint]) -> Set<Int>? {
+        var moving = Set<Int>()
+        for (index, shot) in shots.enumerated() {
+            for other in shots[(index + 1)...] {
+                guard let changed = shot.changedTiles(comparedTo: other) else { return nil }
+                moving.formUnion(changed)
             }
         }
-        return !changed.subtracting(volatile).isEmpty
+        return moving
     }
 }
