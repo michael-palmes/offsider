@@ -1,8 +1,20 @@
 import Darwin
 import Foundation
 
+/// usbmuxd's device list; `UsbmuxClient` in production, a fake in tests.
+public protocol UsbmuxListing: Sendable {
+    func listDevices() throws -> [UsbmuxDevice]
+}
+
+extension UsbmuxListing {
+    /// Whether usbmuxd lists `udid` on USB, the only way Offsider reaches a device's runner.
+    public func listsOnUSB(_ udid: String) throws -> Bool {
+        try listDevices().contains { $0.matches(udid) && $0.connectionType == "USB" }
+    }
+}
+
 /// usbmuxd over its Unix socket: lists devices and opens raw TCP streams to a port on a USB-connected device.
-public struct UsbmuxClient: Sendable {
+public struct UsbmuxClient: UsbmuxListing {
     public static let defaultSocketPath = "/var/run/usbmuxd"
 
     public let socketPath: String

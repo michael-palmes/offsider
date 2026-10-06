@@ -36,6 +36,14 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         case ready
     }
 
+    /// What usbmuxd's device list said about this UDID.
+    public enum UsbmuxFact: Equatable, Sendable {
+        case onUSB
+        /// Listed over the network only, or not at all.
+        case notOnUSB
+        case failed(String)
+    }
+
     /// The device's session broker, read without starting it or its stream.
     public enum SessionFact: Equatable, Sendable {
         case notRunning(guiSession: Bool)
@@ -56,6 +64,8 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
     /// Nil when the device was not ready for developer services, so no socket was opened.
     public var hid: HIDFact?
     public var usbmuxdSocket: Bool
+    /// Nil when usbmuxd was not asked, as when its socket is missing.
+    public var usbmux: UsbmuxFact?
     public var team: TeamFact
     /// Nil when it was not checked.
     public var session: SessionFact?
@@ -68,6 +78,7 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         lock: LockFact? = nil,
         hid: HIDFact? = nil,
         usbmuxdSocket: Bool,
+        usbmux: UsbmuxFact? = nil,
         team: TeamFact
     ) {
         self.udid = udid
@@ -77,6 +88,7 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         self.lock = lock
         self.hid = hid
         self.usbmuxdSocket = usbmuxdSocket
+        self.usbmux = usbmux
         self.team = team
     }
 

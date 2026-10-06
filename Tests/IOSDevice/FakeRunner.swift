@@ -203,3 +203,37 @@ enum RunnerTestPaths {
         FileManager.default.temporaryDirectory.appendingPathComponent("offsider-runner-\(UUID().uuidString)").path
     }
 }
+
+/// usbmuxd's device list as a test scripts it: each read takes the next list, then the last repeats.
+final class FakeUsbmuxListing: UsbmuxListing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var script: [[UsbmuxDevice]]
+    private var count = 0
+    /// Runs after each read with the read's number, from 1.
+    var onRead: (@Sendable (Int) -> Void)?
+
+    init(_ rows: [UsbmuxDevice]) {
+        script = [rows]
+    }
+
+    init(script: [[UsbmuxDevice]]) {
+        self.script = script
+    }
+
+    /// The device on USB, as usbmuxd lists a wired one.
+    static func onUSB(_ udid: String) -> FakeUsbmuxListing {
+        FakeUsbmuxListing([UsbmuxDevice(deviceID: 3, udid: udid, connectionType: "USB")])
+    }
+
+    var reads: Int { lock.withLock { count } }
+
+    func listDevices() throws -> [UsbmuxDevice] {
+        let (rows, number, hook) = lock.withLock {
+            count += 1
+            let rows = script.count > 1 ? script.removeFirst() : script[0]
+            return (rows, count, onRead)
+        }
+        hook?(number)
+        return rows
+    }
+}

@@ -71,6 +71,7 @@ extension IOSDeviceHost {
         _ devicectl: FakeDevicectl,
         environment: [String: String] = [:],
         existing: Set<String> = [],
+        usbmux: any UsbmuxListing = FakeUsbmuxListing([]),
         privateRoot: String = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-ios-tests-\(UUID().uuidString)").path,
         timing: IOSDeviceTiming = .disabled
     ) -> IOSDeviceHost {
@@ -79,6 +80,7 @@ extension IOSDeviceHost {
             homeDirectory: URL(fileURLWithPath: "/Users/tester", isDirectory: true),
             devicectl: devicectl,
             fileExists: { existing.contains($0) },
+            usbmux: usbmux,
             privateRoot: privateRoot,
             timing: timing
         )
