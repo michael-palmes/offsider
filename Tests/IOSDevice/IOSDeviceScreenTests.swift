@@ -125,12 +125,15 @@ struct IOSDeviceScreenTests {
         #expect(try await later.screenInfo(for: Self.phone)?.height == 932)
     }
 
-    @Test("the status bar band is left out of --verify comparisons in every orientation, placed by the display's turn")
+    @Test("the status bar band is left out of --verify comparisons in every orientation, placed by the display's turn, with video noise tolerated")
     func volatileBands() async throws {
         let backend = IOSDeviceBackend(host: .fake(try Self.devicectl(capture: nil))) { _, _ in }
-        #expect(await backend.volatileScreenBands(for: Self.phone) == ScreenBands(top: 62, bottom: 0, everyOrientation: true, screenshotQuarterTurns: 0))
-        let unread = IOSDeviceBackend(host: .fake(FakeDevicectl(replies: [:]))) { _, _ in }
-        #expect(await unread.volatileScreenBands(for: Self.phone) == ScreenBands(top: 62, bottom: 0))
+        let bands = await backend.volatileScreenBands(for: Self.phone)
+        #expect((bands.top, bands.bottom, bands.everyOrientation, bands.screenshotQuarterTurns) == (62, 0, true, 0))
+        #expect(bands.noiseTolerance > 0)
+        let unread = await IOSDeviceBackend(host: .fake(FakeDevicectl(replies: [:]))) { _, _ in }.volatileScreenBands(for: Self.phone)
+        #expect((unread.top, unread.bottom, unread.everyOrientation) == (62, 0, false))
+        #expect(unread.noiseTolerance > 0)
     }
 }
 

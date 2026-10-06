@@ -135,22 +135,24 @@ public final class IOSDeviceScreenStream {
         }
     }
 
-    /// The newest decoded frame, waiting up to `timeout` for the first one.
+    /// The newest decoded frame once the stream has settled, or by `timeout` the newest there is.
     public func latestFrame(_ format: IOSDeviceScreenFrame.Format = .jpeg, timeout: Duration = .seconds(5)) async throws -> IOSDeviceScreenFrame {
         try await timing.measure("stream-frame") {
             let deadline = ContinuousClock.now + timeout
             while true {
                 try checkLive()
-                if let buffer = frames.latest, let pixels = CMSampleBufferGetImageBuffer(buffer) {
-                    guard let frame = Self.encode(pixels, as: format) else {
+                let pixels = frames.latest.flatMap(CMSampleBufferGetImageBuffer)
+                switch FrameWait.next(hasFrame: pixels != nil, settled: frames.settled, pastDeadline: ContinuousClock.now >= deadline) {
+                case .serve:
+                    guard let pixels, let frame = Self.encode(pixels, as: format) else {
                         throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: "a frame could not be encoded")
                     }
                     return frame
-                }
-                guard ContinuousClock.now < deadline else {
+                case .fail:
                     throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: "no frame arrived within \(timeout)")
+                case .wait:
+                    try await Task.sleep(for: .milliseconds(10))
                 }
-                try await Task.sleep(for: .milliseconds(10))
             }
         }
     }
@@ -361,6 +363,7 @@ private final class FrameStore: @unchecked Sendable {
     }
 
     var latest: CMSampleBuffer? { lock.withLock { slot.frame } }
+    var settled: Bool { lock.withLock { slot.settled } }
     var received: Int { lock.withLock { slot.received } }
     var failure: String? { lock.withLock { failed } }
 }

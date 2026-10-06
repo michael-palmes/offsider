@@ -9,6 +9,7 @@
 - Run `offsider doctor --device <UDID> --json` first. Its `ios-device.*` checks cover Xcode, CoreDevice, the listing, the connection, trust, Developer Mode, the developer disk image, the tunnel, the lock state, HID input (`hid` round-trips a barrier on the button socket), UI Automation, the session broker, usbmuxd and runner signing. `--fix` only mounts the developer disk image.
 - iOS does not report UI Automation, so `ios-device.ui-automation` is a skip naming the Settings path: ask the user to check it. `ios-device.session` is a skip when no broker is running; doctor never starts one.
 - The device must stay unlocked. A locked device refuses input with exit 7 `device_locked`: ask the user to unlock it. Offsider never types an iPhone passcode, and `wake`, `stay-awake` and `unlock-code` are Android only.
+- Ask the user to set Settings > Display & Brightness > Auto-Lock to Never while you drive the device: once the screen dims, the next press may only brighten it.
 
 ## The session broker (Xcode 27)
 
@@ -51,7 +52,8 @@ offsider session stop --device <UDID>
 
 ## Screenshots and settings
 
-- `screenshot` takes the broker's latest stream frame, about 230 ms; without the broker it uses `devicectl device capture screenshot`, about 2.3 s. `--verify` may take several screenshots, so prefer `wait` or `assert` when the tree shows the effect.
+- `screenshot` takes the broker's latest stream frame, about 230 ms; without the broker it uses `devicectl device capture screenshot`, about 2.3 s. The first one after the broker starts waits for the stream to settle, about 1.5 s more. `--verify` may take several screenshots, so prefer `wait` or `assert` when the tree shows the effect.
+- Screen comparisons (`--verify`, `wait` screen checks, `screenshot --compare`) average 8 by 8 pixel blocks and ignore drifts of a few colour units, the stream's compression noise; a caret, a toggle or new text still counts as a change.
 - `appearance` and `content-size` go through `devicectl`; set them back when done. `orientation` waits for the screen to turn, which needs the device awake and unlocked and an app that supports the orientation.
 
 ## Refused on a device

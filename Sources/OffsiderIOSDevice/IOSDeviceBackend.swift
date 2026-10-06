@@ -96,9 +96,17 @@ public final class IOSDeviceBackend: DeviceBackend {
         try await runnerTree(for: id, point: point)
     }
 
+    /// Block colour drift between video frames of a still screen, well below what a caret or a glyph moves a block by.
+    static let streamNoiseTolerance = 6
+
     /// The status bar, Dynamic Island and, while streaming, the screen-sharing indicator, along the UI's top edge in every orientation.
     public func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
-        guard let rotation = try? await geometry(for: id).screenInfo.rotation else { return ScreenBands(top: 62, bottom: 0) }
-        return ScreenBands(top: 62, bottom: 0, everyOrientation: true, screenshotQuarterTurns: rotation.uprightQuarterTurnsCounterclockwise)
+        guard let rotation = try? await geometry(for: id).screenInfo.rotation else {
+            return ScreenBands(top: 62, bottom: 0, noiseTolerance: Self.streamNoiseTolerance)
+        }
+        return ScreenBands(
+            top: 62, bottom: 0, everyOrientation: true, screenshotQuarterTurns: rotation.uprightQuarterTurnsCounterclockwise,
+            noiseTolerance: Self.streamNoiseTolerance
+        )
     }
 }
