@@ -62,14 +62,19 @@ struct ReactNativeEnvironmentTests {
         try await app.open("environment-test")
         let swatch = try await app.frame(of: "environment-test-swatch")
 
-        let capture = try await Self.withTemporaryDirectory { directory in
-            let output = directory.appendingPathComponent("swatch.png").path
-            let json = try await app.run("screenshot --scale points --json --region \(Self.region(of: swatch)) --output \(AndroidE2E.quote(output))").stdout
-            return try JSONDecoder().decode(Capture.self, from: Data(json.utf8))
+        let (native, points) = try await Self.withTemporaryDirectory { directory in
+            func capture(_ scale: String) async throws -> Capture {
+                let output = directory.appendingPathComponent("swatch-\(scale).png").path
+                let json = try await app.run("screenshot --scale \(scale) --json --region \(Self.region(of: swatch)) --output \(AndroidE2E.quote(output))").stdout
+                return try JSONDecoder().decode(Capture.self, from: Data(json.utf8))
+            }
+            return (try await capture("1"), try await capture("points"))
         }
 
-        #expect(abs(Double(capture.width) - swatch.width) <= 1, "image \(capture.width) wide for a \(swatch.width) frame")
-        #expect(abs(Double(capture.height) - swatch.height) <= 1, "image \(capture.height) high for a \(swatch.height) frame")
+        // The region rounds outwards to whole device pixels (under 2 per axis), then scaling to points rounds to the nearest pixel.
+        let tolerance = 2 / native.pixelsPerPoint + 0.5
+        #expect(abs(Double(points.width) - swatch.width) <= tolerance, "image \(points.width) wide for a \(swatch.width) frame at \(native.pixelsPerPoint) px/pt")
+        #expect(abs(Double(points.height) - swatch.height) <= tolerance, "image \(points.height) high for a \(swatch.height) frame at \(native.pixelsPerPoint) px/pt")
     }
 
     @Test("--compare sees a canvas flash that leaves the tree unchanged", arguments: RNPlatform.enabled)
