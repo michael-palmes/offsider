@@ -127,7 +127,7 @@ struct ImageFingerprintTests {
         }
         let full = fingerprint(pixels())
         #expect(full.changedTiles(comparedTo: small) == nil)
-        #expect(ScreenChange.detect(before: full, after: [small]))
+        #expect(ScreenChange.detect(before: [full], after: [small]))
     }
 
     @Test("A change inside the excluded top band is ignored")
@@ -157,15 +157,15 @@ struct ImageFingerprintTests {
     func alternatingTileIsVolatile() {
         let before = fingerprint(pixels())
         let caretOn = fingerprint(pixels { setPixel(&$0, x: 10, y: 60) })
-        #expect(!ScreenChange.detect(before: before, after: [caretOn, before, caretOn]))
+        #expect(!ScreenChange.detect(before: [before], after: [caretOn, before, caretOn]))
 
         let realChange = fingerprint(pixels {
             setPixel(&$0, x: 10, y: 60)
             setPixel(&$0, x: 50, y: 120)
         })
         let caretAndChange = fingerprint(pixels { setPixel(&$0, x: 50, y: 120) })
-        #expect(ScreenChange.detect(before: before, after: [realChange, caretAndChange, realChange]))
-        #expect(!ScreenChange.detect(before: before, after: [before, before, before]))
+        #expect(ScreenChange.detect(before: [before], after: [realChange, caretAndChange, realChange]))
+        #expect(!ScreenChange.detect(before: [before], after: [before, before, before]))
     }
 
     @Test("A change inside a region is detected and one outside it is not")

@@ -67,6 +67,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On a physical device, `--verify`, `wait` screen checks and `screenshot --compare` no longer count the screen stream's compression noise as a change, so a press that changed nothing exits 5: they compare the mean colour of 8 by 8 pixel blocks within a small tolerance. Simulators and Android still compare pixels exactly.
 - A physical device's first screenshot after its session broker starts waits until the stream has run about 1.5 s past its first frame, whose coarser encoding read as a change against every later capture of the same screen.
 - `--verify` keeps taking screenshots while the screen is still moving (one more, then more until the attempt's time is up, at most six), so a change whose transition its first screenshots catch midway, or a device stream shows a moment late, verifies on the first attempt instead of sending the input again.
+- `--verify` no longer sends an input a second time when it starts continuous motion the tree does not show, such as a video, an autoplaying carousel or a looping animation, where a second tap could pause the video or advance the carousel. It now takes two screenshots before the input, about 350 ms apart, and an area still moving afterwards counts as a change when it was still in both and is larger than a caret. Motion already on screen, a blinking caret and a small spinner still read as no change, and an input that stops motion still verifies. Each `--verify` takes one more screenshot.
 
 ## [0.6.0] - 2026-10-05
 
