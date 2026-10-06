@@ -63,9 +63,9 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
           offsider button back --device emulator-5554
 
         Android home: Offsider checks that the launcher came to the front, sending the HOME intent once when the
-        key was ignored. --verify reports that check, and --verify-timeout sets how long it waits for the launcher
-        (default 2 s). It verifies by the foreground activity, so --verify-id and --verify-ignore-text are refused
-        and --retries does not apply.
+        key was ignored, and still sends the key when it cannot read the foreground. --verify reports that check,
+        and --verify-timeout sets how long it waits for the launcher (default 2 s). It verifies by the foreground
+        activity, so --verify-id and --verify-ignore-text are refused and --retries does not apply.
         """
     )
 
@@ -170,13 +170,16 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
             sleep: sleep,
             window: verification.verifyTimeout.map { .milliseconds(Int(($0 * 1000).rounded())) } ?? HomePress.window
         )
-        let launcher = outcome.after.home ?? "the launcher"
+        let launcher = outcome.after?.home ?? "the launcher"
         let viaIntent = outcome.via == .intent ? " (the home key was ignored, so Offsider sent the HOME intent)" : ""
+        let unchecked = outcome.unreadable.map { "the home key was sent, but Offsider could not check that the launcher came to the front (\($0))." }
         guard verification.verify else {
-            if outcome.reached {
+            if let unchecked {
+                writeError("Warning: \(unchecked)")
+            } else if outcome.reached {
                 if !viaIntent.isEmpty { writeError("Note: Home button reached \(launcher)\(viaIntent).") }
             } else {
-                writeError("Warning: the home key and the HOME intent were sent, but \(outcome.after.top ?? "the app") is still in front.")
+                writeError("Warning: the home key and the HOME intent were sent, but \(outcome.after?.top ?? "the app") is still in front.")
             }
             return
         }
@@ -191,7 +194,8 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         )
         let line = outcome.reached
             ? "✓ Home button verified: \(launcher) came to the front\(viaIntent), attempt 1 of 1"
-            : "✗ Home button not verified: \(outcome.after.top ?? "the app") is still in front after the home key and the HOME intent."
+            : unchecked.map { "✗ Home button not verified: \($0)" }
+                ?? "✗ Home button not verified: \(outcome.after?.top ?? "the app") is still in front after the home key and the HOME intent."
         if verification.json {
             writeError(line)
             writeOutput(String(decoding: try report.jsonData(), as: UTF8.self))

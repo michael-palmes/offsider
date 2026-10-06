@@ -95,7 +95,51 @@ struct HomePressTests {
         #expect(script.intents == 0 && script.sleeps == 0)
     }
 
+    @Test("a launcher whose HOME entry is an activity-alias counts as home by its package, so no intent is sent")
+    func aliasLauncher() async throws {
+        let alias = ForegroundActivities(top: Self.app, home: "com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity")
+        let resumed = ForegroundActivities(top: "com.sec.android.app.launcher/com.android.launcher3.uioverrides.QuickstepLauncher", home: alias.home)
+        let script = Script([alias, resumed])
+        let outcome = try await script.run()
+        #expect(outcome.reached && outcome.via == .key)
+        #expect(script.intents == 0)
+    }
+
+    @Test("a foreground that cannot be read before the press still sends the key, unchecked")
+    func unreadableBeforePress() async throws {
+        var keys = 0
+        let outcome = try await HomePress.run(
+            read: { throw CLIError(errorDescription: "dumpsys timed out") },
+            sendKey: { keys += 1 },
+            sendIntent: { Issue.record("no intent without a reading") },
+            sleep: { _ in }
+        )
+        #expect(keys == 1)
+        #expect(!outcome.reached)
+        #expect(outcome.unreadable == "dumpsys timed out")
+    }
+
     static let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+
+    @Test("button home with an unreadable foreground presses the key: a warning without --verify, exit 5 with it")
+    func unreadableForeground() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [])
+        backend.foregroundError = CLIError(errorDescription: "dumpsys timed out")
+        var err = ""
+        try await Button.pressHome(on: backend, device: Self.device, verification: try VerificationOptions.parse([]), sleep: { _ in }, writeOutput: { _ in }, writeError: { err += $0 })
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.home))])
+        #expect(err == "Warning: the home key was sent, but Offsider could not check that the launcher came to the front (dumpsys timed out).")
+
+        var out = ""
+        let verify = try VerificationOptions.parse(["--verify", "--json"])
+        await #expect(throws: ExitCode(5)) {
+            try await Button.pressHome(on: backend, device: Self.device, verification: verify, sleep: { _ in }, writeOutput: { out += $0 }, writeError: { _ in })
+        }
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(out.utf8)) as? [String: Any])
+        #expect(object["dispatched"] as? String == "yes")
+        #expect(object["verified"] as? Bool == false)
+        #expect(backend.session.calls.count == 2)
+    }
 
     @Test("button home --verify --json reports change activity and the home_intent note")
     func verifyReport() async throws {
