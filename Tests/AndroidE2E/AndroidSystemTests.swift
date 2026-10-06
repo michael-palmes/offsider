@@ -17,6 +17,39 @@ struct AndroidBootTests {
         #expect(before.stdout == after.stdout)
     }
 
+    @Test("boot --json on the running E2E AVD reports it already running, unlocked, with its RAM and process stamp")
+    func alreadyRunningJSON() async throws {
+        let serial = try await AndroidE2E.serial()
+        let result = try await TestHelpers.runOffsiderCommandSeparated("boot \(AndroidE2E.expectedAVD) --memory 4096 --json")
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any], "stdout: \(result.stdout)")
+
+        #expect(result.exitCode == 0, "stderr: \(result.stderr)")
+        #expect(report["ok"] as? Bool == true)
+        #expect(report["avd"] as? String == AndroidE2E.expectedAVD)
+        #expect(report["serial"] as? String == serial)
+        #expect(report["alreadyRunning"] as? Bool == true)
+        #expect((report["ignored"] as? [String])?.contains { $0.contains("--memory") } == true, "\(report["ignored"] ?? "")")
+        #expect((report["memoryMB"] as? Int ?? 0) > 1024)
+        let bootedBy = try #require(report["bootedBy"] as? [String: Any])
+        #expect((bootedBy["pid"] as? Int ?? 0) > 0)
+        #expect((bootedBy["startedAt"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) } != nil)
+        let lock = try #require(report["lock"] as? [String: Any])
+        #expect(lock["type"] as? String == "none")
+        #expect(lock["userUnlocked"] as? Bool == true)
+    }
+
+    @Test("a listener flag passed through --emulator-arg is refused before anything launches")
+    func refusesListenerFlag() async throws {
+        let count = "pgrep -f '[q]emu-system.*-avd \(AndroidE2E.expectedAVD)' | wc -l"
+        let before = try await CommandRunner.runSeparated(count)
+        let result = try await TestHelpers.runOffsiderCommandSeparated("boot \(AndroidE2E.expectedAVD) --emulator-arg -grpc")
+        let after = try await CommandRunner.runSeparated(count)
+
+        #expect(result.exitCode == 64, "stderr: \(result.stderr)")
+        #expect(result.stderr.contains("-grpc"))
+        #expect(before.stdout == after.stdout)
+    }
+
     @Test("a cold boot of the E2E AVD prints its serial once Android and gRPC are up", .enabled(if: isAndroidBootE2EEnabled))
     func coldBoot() async throws {
         let serial = try await AndroidE2E.serial()
@@ -29,11 +62,24 @@ struct AndroidBootTests {
         }
         try await Task.sleep(for: .seconds(3))
 
-        let result = try await TestHelpers.runOffsiderCommandSeparated("boot \(AndroidE2E.expectedAVD)", timeout: 600)
+        let ramMB = try Self.configuredRAM()
+        let result = try await TestHelpers.runOffsiderCommandSeparated("boot \(AndroidE2E.expectedAVD) --memory \(ramMB) --no-snapshot-load --json", timeout: 600)
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any], "stdout: \(result.stdout)")
 
         #expect(result.exitCode == 0, "stderr: \(result.stderr)")
-        #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == serial)
+        #expect(report["serial"] as? String == serial)
+        #expect(report["alreadyRunning"] as? Bool == false)
         #expect(result.stderr.contains("Starting \(AndroidE2E.expectedAVD)..."))
+        let memoryMB = try #require(report["memoryMB"] as? Int)
+        #expect(abs(Double(memoryMB - ramMB)) <= 0.1 * Double(ramMB), "memoryMB \(memoryMB) for --memory \(ramMB)")
+        #expect((report["lock"] as? [String: Any])?["userUnlocked"] as? Bool == true)
+    }
+
+    /// The AVD's own `hw.ramSize`, so the cold boot leaves it with the RAM it is configured for.
+    static func configuredRAM() throws -> Int {
+        let config = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".android/avd/\(AndroidE2E.expectedAVD).avd/config.ini")
+        let line = try #require(try String(contentsOf: config, encoding: .utf8).split(separator: "\n").first { $0.hasPrefix("hw.ramSize=") })
+        return try #require(Int(line.dropFirst("hw.ramSize=".count).trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "Mm"))))
     }
 }
 
