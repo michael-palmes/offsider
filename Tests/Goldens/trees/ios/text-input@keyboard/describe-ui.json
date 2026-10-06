@@ -16,7 +16,7 @@
   },
   "context": {
     "window": null,
-    "keyboard": false,
+    "keyboard": true,
     "logbox": null
   },
   "roots": [
@@ -1874,7 +1874,7 @@
                               },
                               "children": [
                                 {
-                                  "role": "group",
+                                  "role": "keyboard",
                                   "id": "UIKeyboardLayoutStar Preview",
                                   "label": null,
                                   "value": null,

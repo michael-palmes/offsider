@@ -18,7 +18,7 @@
     "android/text-input@keyboard": { "summary": 5184, "text": 5184 },
     "android/toolbar-picker-test": { "summary": 768, "text": 768 },
     "android/toolbar-picker-test@unread": { "summary": 768, "text": 768 },
-    "ios/batch-login-flow": { "summary": 1984, "text": 3584 },
+    "ios/batch-login-flow": { "summary": 1984, "text": 3648 },
     "ios/choice-test": { "summary": 1216, "text": 1664 },
     "ios/long-scroll-test": { "summary": 1664, "text": 8768 },
     "ios/menu": { "summary": 1408, "text": 4352 },
@@ -32,7 +32,7 @@
     "ios/switch-test": { "summary": 704, "text": 1088 },
     "ios/tab-view-test": { "summary": 640, "text": 1024 },
     "ios/tap-test": { "summary": 384, "text": 704 },
-    "ios/text-input@keyboard": { "summary": 1984, "text": 4544 },
+    "ios/text-input@keyboard": { "summary": 1984, "text": 4608 },
     "ios/toolbar-picker-test": { "summary": 768, "text": 1152 },
     "ios/toolbar-picker-test@unread": { "summary": 768, "text": 1152 }
   }
