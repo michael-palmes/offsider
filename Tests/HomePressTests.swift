@@ -130,4 +130,20 @@ struct HomePressTests {
         try await Button.pressHome(on: backend, device: Self.device, verification: try VerificationOptions.parse([]), sleep: { _ in }, writeOutput: { _ in }, writeError: { err += $0 })
         #expect(err.hasPrefix("Warning: the home key and the HOME intent were sent"))
     }
+
+    @Test("--verify-timeout sets how long each check waits for the launcher; without it the window is 2 s", arguments: [
+        (["--verify", "--verify-timeout", "5"], 10.0), (["--verify"], 4.0),
+    ] as [([String], Double)])
+    func windowFollowsVerifyTimeout(arguments: [String], waited: Double) async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [])
+        backend.foregrounds = [Self.at(Self.app)]
+        var slept = Duration.zero
+        await #expect(throws: ExitCode(5)) {
+            try await Button.pressHome(
+                on: backend, device: Self.device, verification: try VerificationOptions.parse(arguments),
+                sleep: { slept += $0 }, writeOutput: { _ in }, writeError: { _ in }
+            )
+        }
+        #expect(slept == .seconds(waited))
+    }
 }

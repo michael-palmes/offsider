@@ -40,11 +40,12 @@ public enum HomePress {
         read: () async throws -> ForegroundActivities,
         sendKey: () async throws -> Void,
         sendIntent: () async throws -> Void,
-        sleep: (Duration) async throws -> Void
+        sleep: (Duration) async throws -> Void,
+        window: Duration = window
     ) async throws -> HomePressOutcome {
         let before = try await read()
         try await sendKey()
-        var after = try await settle(read: read, sleep: sleep, isHome: { isHome($0, before: before) })
+        var after = try await settle(read: read, sleep: sleep, window: window, isHome: { isHome($0, before: before) })
         if isHome(after, before: before) {
             return HomePressOutcome(reached: true, via: .key, before: before, after: after)
         }
@@ -52,7 +53,7 @@ public enum HomePress {
             return HomePressOutcome(reached: false, via: nil, before: before, after: after)
         }
         try await sendIntent()
-        after = try await settle(read: read, sleep: sleep, isHome: { isHome($0, before: before) })
+        after = try await settle(read: read, sleep: sleep, window: window, isHome: { isHome($0, before: before) })
         let reached = isHome(after, before: before)
         return HomePressOutcome(reached: reached, via: reached ? .intent : nil, before: before, after: after)
     }
@@ -67,6 +68,7 @@ public enum HomePress {
     private static func settle(
         read: () async throws -> ForegroundActivities,
         sleep: (Duration) async throws -> Void,
+        window: Duration,
         isHome: (ForegroundActivities) -> Bool
     ) async throws -> ForegroundActivities {
         var reading = try await read()
