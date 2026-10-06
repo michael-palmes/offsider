@@ -1,0 +1,4 @@
+Command line invocation:
+    xcodebuild test-without-building -xctestrun Runner.xctestrun -destination id=<UDID> -resultBundlePath result.xcresult
+
+Error Domain=com.apple.dt.deviceprep Code=-3 "Unlock Sam’s iPad (2) to Continue" UserInfo={NSRecoveryAttempter=...

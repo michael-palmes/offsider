@@ -124,6 +124,11 @@ extension IOSDeviceError {
         IOSDeviceError(.usbmuxUnavailable, "usbmuxd does not list \(name) on USB, so Offsider cannot reach its runner. Unplug and replug the cable, then retry.")
     }
 
+    /// xcodebuild's device preparation waits for an unlock, so the runner cannot start until the user unlocks the device.
+    static func runnerLocked(_ name: String) -> IOSDeviceError {
+        IOSDeviceError(.locked, "\(name) is locked, so Xcode cannot start the Offsider runner. Unlock it, then retry; Offsider never types a passcode.")
+    }
+
     /// A failure on the stream to the device runner, after usbmuxd connected it; nothing was sent to the app.
     public static func runner(_ error: UsbmuxError, udid: String) -> IOSDeviceError {
         switch error {

@@ -190,6 +190,8 @@ public struct XcodebuildProcesses: RunnerProcessControlling {
 public final class RunnerSessionManager {
     public static let idleVariable = "OFFSIDER_IOS_RUNNER_IDLE"
     static let pollInterval: TimeInterval = 0.25
+    /// How much of the log an exited xcodebuild left unread is still searched for the unlock prompt.
+    static let exitedLogLimit = 1024 * 1024
     /// A snapshot can hold the runner's main thread for seconds, so a slow ping means busy, not gone.
     static let reuseTimeout: TimeInterval = 5
 
@@ -334,11 +336,16 @@ public final class RunnerSessionManager {
         let deadline = Date().addingTimeInterval(startTimeout)
         var nextUsbmuxCheck = now().addingTimeInterval(usbmuxCheckInterval)
         var missingSince: Date?
+        var watch = RunnerLogWatch(path: logPath)
         while Date() < deadline {
             guard processes.isRunning(record) else { break }
             if let ping = try? await client.ping(timeout: 1), ping.buildKey == build.key {
                 _ = keep(&record)
                 return client
+            }
+            if watch.check() == .deviceLocked {
+                abandon(record)
+                throw IOSDeviceError.runnerLocked(deviceName)
             }
             if now() >= nextUsbmuxCheck {
                 nextUsbmuxCheck = now().addingTimeInterval(usbmuxCheckInterval)
@@ -357,10 +364,15 @@ public final class RunnerSessionManager {
             }
             try await Task.sleep(for: .seconds(Self.pollInterval))
         }
+        let exited = !processes.isRunning(record)
         abandon(record)
+        if exited, watch.check(maxBytes: Self.exitedLogLimit) == .deviceLocked { throw IOSDeviceError.runnerLocked(deviceName) }
+        let outcome = exited
+            ? "xcodebuild exited before the Offsider runner on \(udid) answered."
+            : "The Offsider runner on \(udid) did not start within \(Int(startTimeout)) seconds."
         throw IOSDeviceError(
             .runnerUnavailable,
-            "The Offsider runner on \(udid) did not start within \(Int(startTimeout)) seconds. Unlock the device, check Settings > Developer > Enable UI Automation, then retry.\(Self.logTail(logPath))",
+            "\(outcome) Unlock the device, check Settings > Developer > Enable UI Automation, then retry.\(Self.logTail(logPath))",
             hint: "See \(logPath)"
         )
     }

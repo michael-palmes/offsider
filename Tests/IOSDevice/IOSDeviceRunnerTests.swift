@@ -41,6 +41,14 @@ struct RunnerSessionTests {
         return usbmux
     }
 
+    /// The log path xcodebuild was launched with, once it has been, so a test acts on the starting runner instead of racing its launch.
+    static func launchedLogPath(_ processes: FakeRunnerProcesses) async throws -> String {
+        for _ in 0..<200 where processes.launches.isEmpty {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        return try #require(processes.launches.first?.logPath)
+    }
+
     @Test("the session file round-trips, is private, and lists only devices with a session")
     func roundTrip() throws {
         let root = RunnerTestPaths.temporaryRoot()
@@ -100,21 +108,82 @@ struct RunnerSessionTests {
         #expect(transport.calls.last?.token == token)
     }
 
-    @Test("a runner that exits before answering fails with runner_unavailable and leaves no session")
+    @Test("a runner whose xcodebuild exits before answering fails at once with runner_unavailable, saying so with the log's tail, and leaves no session")
     func startFails() async throws {
         let root = RunnerTestPaths.temporaryRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
-        let processes = FakeRunnerProcesses()
+        let processes = FakeRunnerProcesses(launchLog: Data("xcodebuild: error: The test runner failed to launch.\n".utf8))
         let transport = FakeRunnerTransport()
         transport.refuseConnections = true
-        let manager = Self.manager(root: root, processes: processes, transport: transport)
+        let manager = Self.manager(root: root, processes: processes, transport: transport, startTimeout: 20)
 
         let launching = Task { try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone") }
-        try await Task.sleep(for: .milliseconds(400))
+        _ = try await Self.launchedLogPath(processes)
+        try await Task.sleep(for: .milliseconds(300))
         processes.exit(5151)
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await launching.value }
         #expect(error?.reason == .runnerUnavailable)
+        #expect(error?.message.hasPrefix("xcodebuild exited before the Offsider runner on \(Self.udid) answered.") == true)
+        #expect(error?.message.hasSuffix("\nxcodebuild: error: The test runner failed to launch.") == true)
         #expect(error?.hint?.hasSuffix("runner.log") == true)
+        #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
+    }
+
+    @Test("a live xcodebuild whose runner never answers, with no unlock prompt in its log, fails at the start timeout with runner_unavailable")
+    func startTimesOut() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses(launchLog: Data("Testing started\n".utf8))
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let manager = Self.manager(root: root, processes: processes, transport: transport, startTimeout: 1)
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad") }
+
+        #expect(error?.reason == .runnerUnavailable)
+        #expect(error?.message.hasPrefix("The Offsider runner on \(Self.udid) did not start within 1 seconds. Unlock the device") == true)
+        #expect(processes.terminations == [5151])
+    }
+
+    @Test("a start whose xcodebuild waits for the device to be unlocked fails at once with device_locked, ends xcodebuild and leaves no session")
+    func lockedDeviceFailsFast() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let fixture = try IOSDeviceFixtures.text("xcodebuild-runner-locked.log")
+        let prompt = try #require(fixture.range(of: "Error Domain="))
+        let processes = FakeRunnerProcesses(launchLog: Data(fixture[..<prompt.lowerBound].utf8))
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let manager = Self.manager(root: root, processes: processes, transport: transport, startTimeout: 20)
+        let name = "iPad (\(Self.udid))"
+
+        let launching = Task { try await manager.connect(.device(udid: Self.udid), deviceName: name) }
+        let path = try await Self.launchedLogPath(processes)
+        try await Task.sleep(for: .milliseconds(300))
+        let log = try #require(FileHandle(forWritingAtPath: path))
+        try log.seekToEnd()
+        try log.write(contentsOf: Data(fixture[prompt.lowerBound...].utf8))
+        try log.close()
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await launching.value }
+
+        #expect(error?.reason == .deviceLocked && error?.reason.exitCode == .deviceUnavailable)
+        #expect(error?.message == "\(name) is locked, so Xcode cannot start the Offsider runner. Unlock it, then retry; Offsider never types a passcode.")
+        #expect(processes.terminations == [5151])
+        #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
+    }
+
+    @Test("an xcodebuild that exits right after asking for the device to be unlocked is device_locked, not runner_unavailable")
+    func lockedThenExited() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses(launchLog: try IOSDeviceFixtures.data("xcodebuild-runner-locked.log"), exitsOnLaunch: true)
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let manager = Self.manager(root: root, processes: processes, transport: transport, startTimeout: 20)
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad") }
+
+        #expect(error?.reason == .deviceLocked)
         #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
     }
 
