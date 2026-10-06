@@ -77,6 +77,36 @@ struct RNDevMenuTests {
         return UITree(platform: .ios, device: "IOS-UDID", screen: capture.screen, roots: try IOSAccessibilityMapping.roots(fromJSON: capture.source))
     }
 
+    @Test("the captured iOS Expo menu reads as expo with its real items, and Fast refresh maps to its switch")
+    func capturedExpoMenu() throws {
+        let menu = try Self.captured("devmenu-expo-ios")
+        let state = try #require(DevMenu.read(menu))
+
+        #expect(state.menu == "expo")
+        #expect(state.items.map(\.label) == ["Close", "Reload", "Go home", "Toggle performance monitor", "Toggle element inspector", "Open DevTools", "Fast refresh"])
+        #expect(DevMenu.node(for: .close, label: nil, in: menu)?.id == "xmark")
+        #expect(DevMenu.node(for: .inspector, label: nil, in: menu)?.role == .button)
+        let fastRefresh = try #require(DevMenu.node(for: .fastRefresh, label: nil, in: menu))
+        #expect(fastRefresh.role == .switch && fastRefresh.children.isEmpty)
+        #expect(DevMenu.node(for: .debugger, label: nil, in: menu)?.label == "Open DevTools")
+        #expect(DevMenu.tools(in: menu) == (inspector: false, perfMonitor: false))
+    }
+
+    @Test("fast-refresh holds its switch rather than tapping it, since the Expo switch ignores a quick tap")
+    func fastRefreshHoldsSwitch() async throws {
+        let menu = try Self.captured("devmenu-expo-ios")
+        let device = DeviceID(rawValue: "IOS-UDID", platform: .ios)
+        let backend = FakeDeviceBackend(platform: .ios, trees: [menu, Self.app])
+        let command = try RNDevMenu.parse(["fast-refresh", "--device", device.rawValue])
+
+        _ = try await command.perform(on: DeviceRouter.Route(backend: backend, device: device), clock: ScriptedClock().poll)
+
+        #expect(backend.session.calls.isEmpty)
+        let steps = try #require(backend.detachedTouches.first)
+        #expect(steps.count == 3)
+        #expect(steps.contains(.hold(DevMenuDriver.switchHold)))
+    }
+
     @Test("the captured iOS inspector panel and performance monitor are each read as showing, and neither is a menu")
     func capturedTools() throws {
         let inspector = try Self.captured("devmenu-inspector-ios")

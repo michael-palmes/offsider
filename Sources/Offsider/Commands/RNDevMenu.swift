@@ -13,6 +13,7 @@ struct DevMenuDriver {
     static let openWait: TimeInterval = 5
     static let closeWait: TimeInterval = 3
     static let poll: Duration = .milliseconds(300)
+    static let switchHold: TimeInterval = 0.2
 
     func read() async throws -> UITree {
         try await route.backend.accessibilityTree(for: route.device)
@@ -53,7 +54,7 @@ struct DevMenuDriver {
                 candidates: state.items.map { FailureCandidate(id: nil, label: $0.label, role: $0.role.rawValue, frame: $0.frame, onScreen: true) }
             )
         }
-        try await tap(frame.center, tree: tree)
+        try await tap(frame.center, tree: tree, hold: node.role == .switch)
         if try await closed(leaving: state.menu) { return }
         if item?.isToggle == true || label != nil, let close = DevMenu.node(for: .close, label: nil, in: try await read()), let closeFrame = close.frame {
             try await tap(closeFrame.center, tree: nil)
@@ -76,9 +77,15 @@ struct DevMenuDriver {
         return false
     }
 
-    private func tap(_ point: UIPoint, tree: UITree?) async throws {
+    /// A switch in the iOS Expo menu ignores a quick tap, so it gets a held touch.
+    private func tap(_ point: UIPoint, tree: UITree?, hold: Bool = false) async throws {
         let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: tree, on: route.device)[0]
-        try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: route.device)
+        guard hold else {
+            try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: route.device)
+            return
+        }
+        defer { DeviceActivityLedger.current.recordInput(on: route.device) }
+        try await route.backend.sendDetachedTouch([.down(x: physical.x, y: physical.y), .hold(Self.switchHold), .up(x: physical.x, y: physical.y)], to: route.device)
     }
 }
 

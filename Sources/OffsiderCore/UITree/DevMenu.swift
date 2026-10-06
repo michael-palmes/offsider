@@ -74,7 +74,9 @@ public enum DevMenu {
             return xmark
         }
         let wanted = label.map { [$0] } ?? item?.labels ?? []
-        return best(wanted, in: nodes)?.node
+        guard let match = best(wanted, in: nodes)?.node else { return nil }
+        if match.role.isActionable || match.role == .switch { return match }
+        return rowSwitch(beside: match, in: nodes) ?? match
     }
 
     /// The first actionable node carrying one of `labels`, else the first node at all, with its pre-order index and the label it matched.
@@ -93,6 +95,18 @@ public enum DevMenu {
 
     private static func trimmedLabel(_ node: UINode) -> String? {
         node.label?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The innermost unlabelled switch on a text label's row, as the Expo menu draws Fast refresh.
+    private static func rowSwitch(beside label: UINode, in nodes: [UINode]) -> UINode? {
+        guard let text = label.frame else { return nil }
+        let midY = text.y + text.height / 2
+        return nodes
+            .filter { node in
+                guard node.role == .switch, let frame = node.frame else { return false }
+                return frame.y <= midY && midY <= frame.y + frame.height && frame.x >= text.x + text.width
+            }
+            .min { ($0.frame?.width ?? 0) * ($0.frame?.height ?? 0) < ($1.frame?.width ?? 0) * ($1.frame?.height ?? 0) }
     }
 
     /// Which developer tools show: the element inspector's panel (its Inspect and Touchables tabs) and the performance monitor (`UI` and `JS` frame rates, which iOS draws as a `RAM` cell beside `UI` and `JS` columns).
