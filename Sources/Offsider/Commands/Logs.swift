@@ -146,11 +146,12 @@ struct Logs: AsyncParsableCommand {
         let recorder = EvidenceRecorder.current
         let token = try recorder.begin(device: booted.id, kind: "logs")
         let runFile = token.flatMap { Self.openRunFile($0, recorder: recorder, extension: json ? (follow ? "ndjson" : "json") : "log") }
-        defer { try? runFile?.close() }
-        let tee: @MainActor (String) -> Void = { line in
-            write(line)
-            runFile?.write(Data((line + "\n").utf8))
+        let teeing = RunLogTee(stdout: write, runFile: runFile) { error in
+            recorder.update(token) { $0.file = nil }
+            Self.warnRunWriteFailed(error)
         }
+        defer { teeing.close() }
+        let tee: @MainActor (String) -> Void = { teeing.write($0) }
 
         let follow = self.follow
         let json = self.json
@@ -193,9 +194,13 @@ struct Logs: AsyncParsableCommand {
             return handle
         } catch {
             recorder.update(token) { $0.file = nil }
-            print("Warning: could not write the logs into the run: \(OffsiderCommand.message(for: error)).", to: &standardError)
+            warnRunWriteFailed(error)
             return nil
         }
+    }
+
+    static func warnRunWriteFailed(_ error: any Error) {
+        print("Warning: could not write the logs into the run: \(OffsiderCommand.message(for: error)).", to: &standardError)
     }
 
     /// The stderr line after a read that redacted something; nil when nothing was.
@@ -244,5 +249,36 @@ private final class LogSink {
 
     init(_ collector: LogCollector) {
         self.collector = collector
+    }
+}
+
+/// Every line to stdout and to the run's copy; the first failed run write closes the copy and reports once, and stdout carries on.
+@MainActor
+final class RunLogTee {
+    private let stdout: @MainActor (String) -> Void
+    private var runFile: FileHandle?
+    private let failed: @MainActor (any Error) -> Void
+
+    init(stdout: @escaping @MainActor (String) -> Void, runFile: FileHandle?, failed: @escaping @MainActor (any Error) -> Void) {
+        self.stdout = stdout
+        self.runFile = runFile
+        self.failed = failed
+    }
+
+    func write(_ line: String) {
+        stdout(line)
+        guard let handle = runFile else { return }
+        do {
+            try handle.write(contentsOf: Data((line + "\n").utf8))
+        } catch {
+            runFile = nil
+            try? handle.close()
+            failed(error)
+        }
+    }
+
+    func close() {
+        try? runFile?.close()
+        runFile = nil
     }
 }

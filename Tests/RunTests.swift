@@ -348,6 +348,23 @@ struct RunTests {
         #expect(line.entries == 2 && line.redacted == 1)
     }
 
+    @Test("a run copy whose writes fail stops being written after one report, and stdout gets every line")
+    func logsTeeWriteFails() throws {
+        let fixture = try RunFixture()
+        let path = fixture.folder("readonly.log")
+        try FileManager.default.createDirectory(atPath: fixture.root, withIntermediateDirectories: true)
+        #expect(FileManager.default.createFile(atPath: path, contents: Data()))
+        let readOnly = try #require(FileHandle(forReadingAtPath: path))
+        var stdout: [String] = []
+        var failures = 0
+        let tee = RunLogTee(stdout: { stdout.append($0) }, runFile: readOnly) { _ in failures += 1 }
+        for line in ["one", "two", "three"] { tee.write(line) }
+        tee.close()
+
+        #expect(stdout == ["one", "two", "three"])
+        #expect(failures == 1)
+    }
+
     // MARK: - Summaries
 
     @Test("the summary lists each entry, failures and unrecorded files")
