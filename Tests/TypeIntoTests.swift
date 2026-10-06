@@ -109,6 +109,22 @@ struct TypeIntoTests {
         #expect(error?.userFacingDescription.contains("--into-id first-field") == true)
     }
 
+    static let iPhone = DeviceID(rawValue: IOSDeviceFixtures.phone, platform: .ios)
+
+    /// The device runner's snapshot, whose password field holds keyboard focus.
+    static func runnerTree() throws -> UITree {
+        let snapshot = try IOSAccessibilityMapping.tree(fromJSON: try IOSDeviceFixtures.data("runner-snapshot.json"))
+        return UITree(platform: .ios, device: iPhone.rawValue, roots: snapshot.roots)
+    }
+
+    @Test("on a physical iPhone the runner's keyboard focus satisfies --require-focus-id and confirms --into-id")
+    func physicalDeviceFocus() async throws {
+        let tree = try Self.runnerTree()
+
+        #expect(try await Self.focus(["--require-focus-id", "password"], trees: [tree], device: Self.iPhone).isEmpty)
+        #expect(try await Self.focus(["--into-id", "password"], trees: [tree], device: Self.iPhone) == [.tapAt(x: 215, y: 382)])
+    }
+
     @Test("the focus options exclude each other")
     func exclusive() {
         #expect(throws: (any Error).self) { try Type.parse(["--into-id", "a", "--require-focus-id", "a", "x", "--device", "emulator-5554"]) }

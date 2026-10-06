@@ -34,7 +34,7 @@ struct SnapshotEncoder {
         if !snapshot.title.isEmpty { node["title"] = snapshot.title }
         if let value = Self.text(snapshot.value), !value.isEmpty { node["AXValue"] = value }
         if let placeholder = snapshot.placeholderValue, !placeholder.isEmpty { node["placeholder"] = placeholder }
-        if snapshot.hasFocus { node["focused"] = true }
+        if Self.hasKeyboardFocus(snapshot) { node["focused"] = true }
         var children: [[String: Any]] = []
         if depth < Self.maximumDepth {
             for child in snapshot.children {
@@ -49,6 +49,15 @@ struct SnapshotEncoder {
         }
         node["children"] = children
         return node
+    }
+
+    private static let keyboardFocusKey = "hasKeyboardFocus"
+
+    /// XCElementSnapshot's `hasKeyboardFocus`, as `typeText` uses; the public `hasFocus` is the focus engine's, which a tap on a field leaves unset.
+    static func hasKeyboardFocus(_ snapshot: XCUIElementSnapshot) -> Bool {
+        // KVC on a key the object lacks raises an exception Swift cannot catch.
+        guard let object = snapshot as? NSObject, object.responds(to: NSSelectorFromString(keyboardFocusKey)) else { return false }
+        return (object.value(forKey: keyboardFocusKey) as? Bool) == true
     }
 
     static func text(_ value: Any?) -> String? {

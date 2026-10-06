@@ -453,6 +453,8 @@ struct RunnerClientTests {
         #expect(window.children[1].label == "Tap Test, Displays coordinates of CLI taps")
         #expect(window.children[2].id == "wifi-switch" && window.children[2].state.checked == true)
         #expect(window.children[3].value != "hunter2")
+        #expect(window.children.map(\.state.focused) == [nil, nil, nil, true])
+        #expect(tree.secureFocus == .secureFocused)
         #expect(transport.calls.last?.body["app"] == AnyHashable("com.mpalmes.offsider.playground"))
     }
 

@@ -115,6 +115,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A run's `logs` copy is created new at mode 0600 and never through a link, so a file or symlink already at its name is neither replaced nor followed; the capture warns and stdout carries on.
 - `screenshot --mask-region` with a huge value such as `0,0,1e19,40` no longer crashes: mask rectangles are clamped to the image before they become pixels, and a tree frame with a NaN coordinate withholds the image.
 - `lease set` reads, checks and writes a device's lease under a per-device lock in `leases/`, so two agents setting a free device at once can no longer both get it, and removing an expired lease or `lease release` can no longer delete a fresh lease written in between.
+- `type --into-id`, `--into-label` and `--require-focus-id` work on a physical iPhone or iPad: the device runner reports the field with keyboard focus (XCTest's `hasKeyboardFocus`, not the focus engine's `hasFocus`, which a tap leaves unset), and `describe-ui` shows it as `state.focused`. Each device rebuilds its runner on next use. Simulators are unchanged.
 
 ## [0.6.0] - 2026-10-05
 

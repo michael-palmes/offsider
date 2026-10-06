@@ -215,6 +215,18 @@ struct IOSDeviceInputE2ETests {
         try await IOSDeviceE2E.requireBrokerInput()
     }
 
+    @Test("type --into-id sees the runner's keyboard focus, which describe-ui shows and --require-focus-id accepts")
+    func typeIntoField() async throws {
+        _ = try IOSDeviceE2E.team()
+        try await IOSDeviceE2E.requireAwake()
+        try await IOSDeviceE2E.open("text-input", waitingForLabel: "Text Input Playground")
+        try await IOSDeviceE2E.run("type --into-id text-input-field hello")
+        let field = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == "hello" }
+        #expect((field["state"] as? [String: Any])?["focused"] as? Bool == true, "describe-ui did not show the field focused")
+        try await IOSDeviceE2E.run("type --require-focus-id text-input-field world")
+        _ = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == "helloworld" }
+    }
+
     @Test("button home leaves the app through the broker, and a relaunch brings it back")
     func home() async throws {
         _ = try IOSDeviceE2E.team()
