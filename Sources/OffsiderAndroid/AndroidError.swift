@@ -439,7 +439,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         let tried = pasted ? "Ctrl+A, Delete, typed keys and a paste" : "Ctrl+A, Delete and typed keys"
         return AndroidError(
             .textNotAccepted,
-            "The focused field on \(serial)\(element) does not hold the text after \(tried): the app filters or formats what it accepts. Check it with describe-ui, and type what the field allows."
+            "The focused field on \(serial)\(element) holds less than the text after \(tried): the app filters what it accepts. Check it with describe-ui, and type what the field allows."
         )
     }
 

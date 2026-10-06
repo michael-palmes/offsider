@@ -29,7 +29,7 @@ enum AndroidInputExecutor: Sendable {
 /// How `type --replace` went: the helper set the text, or the session must clear the field with keys and type.
 enum TextReplacement: Equatable, Sendable {
     case replaced
-    /// The helper set the text, but the field reports another length, as a field with a length or character filter does.
+    /// The helper set the text, but the field reports fewer characters, as a field with a length or character filter does.
     case replacedWrongLength(field: AndroidFieldInfo?)
     case useKeys(warning: String?, field: AndroidFieldInfo? = nil)
 }
@@ -246,11 +246,11 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
-    /// After keys (or a set-text the field filtered) replaced a field: when its length is wrong, paste the text through the emulator's clipboard
-    /// and the helper's `paste`, never into a password field; still wrong is `text_not_accepted`.
+    /// After keys (or a set-text the field cut short) replaced a field: when it reads shorter than the text (a longer reading is formatting),
+    /// paste the text through the emulator's clipboard and the helper's `paste`, never into a password field; still short is `text_not_accepted`.
     private func confirmReplacement(_ text: String, field: AndroidFieldInfo?) async throws {
         let expected = text.utf16.count
-        guard let reading = await readFocusedField(), !reading.secure, let length = reading.length, length != expected else { return }
+        guard let reading = await readFocusedField(), !reading.secure, let length = reading.length, length < expected else { return }
         log(.debug, "The focused field on \(device.rawValue) holds \(length) characters after typing \(expected)")
         var pasted = false
         if let clipboard = try await route().clipboard {
@@ -265,7 +265,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 throw error
             }
             await restoreClipboard(saved, on: clipboard)
-            if pasted, let again = await readFocusedField(), again.length == expected {
+            if pasted, let again = await readFocusedField(), let length = again.length, length >= expected {
                 return
             }
         }

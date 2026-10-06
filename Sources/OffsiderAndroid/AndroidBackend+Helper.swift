@@ -50,7 +50,7 @@ extension AndroidBackend {
         do {
             let result = try await session.setText(text)
             log(.debug, "The helper set the text of \(result.className ?? "the focused field") on \(serial)")
-            if let length = result.length, length != text.utf16.count {
+            if let length = result.length, length < text.utf16.count {
                 return .replacedWrongLength(field: AndroidFieldInfo(className: result.className, resourceId: result.resourceId, inputType: result.inputType))
             }
             return .replaced

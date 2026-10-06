@@ -271,4 +271,64 @@ struct AndroidReplaceTextTests {
         #expect(error?.message.contains("inputType text") == true)
         await rig.backend.close()
     }
+
+    /// emulator-5556 with gRPC whose set-text succeeds reporting `length` while the field reads `reads`, until a paste sets `afterPaste`.
+    static func setTextRig(length: Int, reads: String, afterPaste: String) throws -> HelperRig {
+        let device = FakeHelperDevice()
+        device.dump = fieldDump(text: reads)
+        device.answer = { _, op, _ in
+            switch op {
+            case "setText": return .ok(#"{"className":"android.widget.EditText","resourceId":"amount","inputType":2,"length":\#(length)}"#)
+            case "paste":
+                device.dump = fieldDump(text: afterPaste)
+                return .ok(#"{"className":"android.widget.EditText","resourceId":"amount","inputType":2,"length":\#(afterPaste.utf16.count)}"#)
+            default: return nil
+            }
+        }
+        let home = try AndroidTestHost.homeWithSDK()
+        try AndroidTestHost.write(
+            "avd.id=Offsider_E2E_Pixel_9\nport.serial=5556\ngrpc.port=8556\ngrpc.token=t\n",
+            to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini",
+            in: home
+        )
+        return try HelperRig(device, emulator: FakeEmulatorConnector(.success(FakeEmulator(clipboard: "saved"))), home: home)
+    }
+
+    @Test("a set-text the field formats longer (1,000 for 1000) is accepted with no paste")
+    func setTextFormattedLonger() async throws {
+        let rig = try Self.setTextRig(length: 5, reads: "1,000", afterPaste: "1,000")
+        try await Self.replace("1000", on: rig)
+
+        #expect(!rig.device.ops.contains("paste"))
+        #expect(rig.log.warnings.isEmpty)
+        await rig.backend.close()
+    }
+
+    @Test("after the key fallback, a field that formats the text longer is accepted with no paste")
+    func keysFormattedLonger() async throws {
+        let rig = try Self.grpcRig(before: "1,000", after: "1,000")
+        try await Self.replace("1000", on: rig)
+
+        #expect(!rig.device.ops.contains("paste"))
+        await rig.backend.close()
+    }
+
+    @Test("a set-text that leaves the field empty goes through paste, then text_not_accepted")
+    func setTextLeftEmpty() async throws {
+        let rig = try Self.setTextRig(length: 0, reads: "", afterPaste: "")
+        let error = await #expect(throws: AndroidError.self) { try await Self.replace("1000", on: rig) }
+
+        #expect(error?.kind == .textNotAccepted)
+        #expect(rig.device.ops.contains("paste"))
+        await rig.backend.close()
+    }
+
+    @Test("a set-text that reads shorter goes through paste, and a paste that fills the field is accepted")
+    func setTextShortThenPasted() async throws {
+        let rig = try Self.setTextRig(length: 2, reads: "10", afterPaste: "1,000")
+        try await Self.replace("1000", on: rig)
+
+        #expect(rig.device.ops.contains("paste"))
+        await rig.backend.close()
+    }
 }
