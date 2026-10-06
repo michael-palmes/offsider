@@ -141,16 +141,18 @@ public final class IOSDeviceScreenStream {
             let deadline = ContinuousClock.now + timeout
             while true {
                 try checkLive()
-                if frames.settled || ContinuousClock.now >= deadline, let buffer = frames.latest, let pixels = CMSampleBufferGetImageBuffer(buffer) {
-                    guard let frame = Self.encode(pixels, as: format) else {
+                let pixels = frames.latest.flatMap(CMSampleBufferGetImageBuffer)
+                switch FrameWait.next(hasFrame: pixels != nil, settled: frames.settled, pastDeadline: ContinuousClock.now >= deadline) {
+                case .serve:
+                    guard let pixels, let frame = Self.encode(pixels, as: format) else {
                         throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: "a frame could not be encoded")
                     }
                     return frame
-                }
-                guard ContinuousClock.now < deadline else {
+                case .fail:
                     throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: "no frame arrived within \(timeout)")
+                case .wait:
+                    try await Task.sleep(for: .milliseconds(10))
                 }
-                try await Task.sleep(for: .milliseconds(10))
             }
         }
     }

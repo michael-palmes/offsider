@@ -177,6 +177,18 @@ enum TunnelEndpoint {
     }
 }
 
+/// What a frame request does next: serve the newest frame once the stream has settled or time is up, wait, or fail with none.
+enum FrameWait: Equatable {
+    case serve
+    case wait
+    case fail
+
+    static func next(hasFrame: Bool, settled: Bool, pastDeadline: Bool) -> FrameWait {
+        if hasFrame, settled || pastDeadline { return .serve }
+        return pastDeadline ? .fail : .wait
+    }
+}
+
 /// Holds only the newest decoded frame; a frame whose timestamp does not advance is dropped.
 struct LatestFrameSlot<Frame> {
     /// Stream seconds after the first frame before frames match a still screen's later ones; the encoder starts coarser.
