@@ -343,9 +343,9 @@ public final class RunnerSessionManager {
                 _ = keep(&record)
                 return client
             }
-            if watch.check() == .deviceLocked {
+            if let finding = watch.check() {
                 abandon(record)
-                throw IOSDeviceError.runnerLocked(deviceName)
+                throw Self.error(for: finding, deviceName: deviceName)
             }
             if now() >= nextUsbmuxCheck {
                 nextUsbmuxCheck = now().addingTimeInterval(usbmuxCheckInterval)
@@ -366,7 +366,7 @@ public final class RunnerSessionManager {
         }
         let exited = !processes.isRunning(record)
         abandon(record)
-        if exited, watch.check(maxBytes: Self.exitedLogLimit) == .deviceLocked { throw IOSDeviceError.runnerLocked(deviceName) }
+        if exited, let finding = watch.check(maxBytes: Self.exitedLogLimit) { throw Self.error(for: finding, deviceName: deviceName) }
         let outcome = exited
             ? "xcodebuild exited before the Offsider runner on \(udid) answered."
             : "The Offsider runner on \(udid) did not start within \(Int(startTimeout)) seconds."
@@ -430,6 +430,13 @@ public final class RunnerSessionManager {
     nonisolated static func removeResultBundles(in directory: String) {
         for name in (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? [] where name.hasPrefix("result-") && name.hasSuffix(".xcresult") {
             try? FileManager.default.removeItem(atPath: (directory as NSString).appendingPathComponent(name))
+        }
+    }
+
+    static func error(for finding: RunnerLogWatch.Finding, deviceName: String) -> IOSDeviceError {
+        switch finding {
+        case .deviceLocked: return .runnerLocked(deviceName)
+        case .automationNotEnabled: return .runnerAutomationBlocked(deviceName)
         }
     }
 

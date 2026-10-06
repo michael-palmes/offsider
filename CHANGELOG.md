@@ -129,6 +129,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `describe-ui` through the Android helper no longer reports an empty field's hint as its value or `text`: Android reports a field showing its hint with the hint as its text, and the helper now says when it does. The hint stays in `hint`.
 - On a physical iPhone or iPad that usbmuxd stops listing while `devicectl` still sees it on its cable, a command that needs the runner exits 9 with `usbmux_unavailable` at once and says to unplug and replug the cable, instead of waiting 150 s and then blaming the lock or UI Automation. A recorded runner is kept rather than restarted, a starting runner fails 10 s after usbmuxd drops the device, and `doctor` fails `ios-device.usbmuxd` when usbmuxd does not list the device on USB.
 - Starting the runner on a locked iPhone or iPad now exits 7 with `device_locked` as soon as `xcodebuild` says it is waiting for the device to be unlocked, and stops it, instead of waiting 150 s and failing with `runner_unavailable`. An `xcodebuild` that exits before the runner answers now says so, instead of claiming the runner did not start within 150 s.
+- When iOS asks for the device passcode on behalf of XCTest (`Enter iPad Passcode for "XCTest"`) and nobody enters it, starting the runner now exits 7 with `ui_automation_off`, naming the prompt and asking for the passcode to be entered on the device, as soon as XCTest gives up enabling automation (about a minute), instead of a generic runner failure.
 
 ## [0.6.0] - 2026-10-05
 

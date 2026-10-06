@@ -42,6 +42,7 @@
 - The runner keeps running in the background, reached over USB through usbmuxd with a per-session token, and stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300).
 - usbmuxd can stop listing a wired device that `devicectl` still sees. A command that needs the runner then exits 9 with `usbmux_unavailable` at once (about 10 s after the drop while the runner starts), and `doctor` fails `ios-device.usbmuxd`: ask the user to unplug and replug the cable, then retry.
 - Xcode starts the runner only on an unlocked device. When `xcodebuild` says it is waiting for the unlock, the command exits 7 with `device_locked` at once: ask the user to unlock the device, then retry. An `xcodebuild` that exits early fails at once with `runner_unavailable` and the end of its log; a runner that never answers fails after 150 s. Either way the hint names `runner.log`.
+- iOS can ask for the device passcode on behalf of XCTest (`Enter iPad Passcode for "XCTest"`) when the runner starts, for example the first time after the device was locked for a while. Until someone enters it on the device, XCTest cannot enable UI automation and gives up after about a minute; the command then exits 7 with `ui_automation_off` naming the prompt. Ask the user to look at the device and enter the passcode there (Offsider never types one), then retry.
 - XCTest reads one named app at a time. `describe-ui`, `tap`, `type`, `wait` and `assert` take `--app <bundle-id>` on a device, as do those `batch` steps; later commands and steps remember it. Without it the runner reads the app in front when it can tell which that is. When XCTest sees only SpringBoard in front, as on an iPad with Stage Manager, the runner reads the app last named with `--app` while that app is still in front, else the Home Screen. An `--app` that is not in front fails: open the app, or leave out `--app`.
 - An iPad app in a Stage Manager window reports frames relative to its window, so element taps (`tap --id`, `tap --label`) exit 1 with `not_supported`: ask the user to make the app full screen. Coordinate taps, screenshots and the tree still work.
 
@@ -72,7 +73,7 @@ offsider session stop --device <UDID>
 | `developer_mode_off` | 7 | Ask the user to turn on Developer Mode and restart |
 | `device_preparing` | 7 | Wait for Xcode, then retry |
 | `device_locked` | 7 | Ask the user to unlock the device |
-| `ui_automation_off` | 7 | Ask the user to turn on Settings > Developer > UI Automation |
+| `ui_automation_off` | 7 | Ask the user to enter the passcode if the device shows `Enter Passcode for "XCTest"`, else to turn on Settings > Developer > UI Automation |
 | `xcode_too_old` | 9 | The command needs Xcode 27; use a runner command or ask the user |
 | `team_missing` | 9 | Ask for the team ID for `OFFSIDER_IOS_TEAM_ID` |
 | `usbmux_unavailable` | 9 | Ask the user to unplug and replug the cable |

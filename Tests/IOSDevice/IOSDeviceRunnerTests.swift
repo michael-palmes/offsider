@@ -187,6 +187,22 @@ struct RunnerSessionTests {
         #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
     }
 
+    @Test("an xcodebuild that exits after XCTest timed out enabling automation is ui_automation_off naming the passcode prompt, not runner_unavailable")
+    func automationTimeoutThenExited() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses(launchLog: try IOSDeviceFixtures.data("xcodebuild-runner-automation-timeout.log"), exitsOnLaunch: true)
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let manager = Self.manager(root: root, processes: processes, transport: transport, startTimeout: 20)
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad") }
+
+        #expect(error?.reason == .uiAutomationOff)
+        #expect(error?.message.contains(#"Enter Passcode for "XCTest""#) == true)
+        #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
+    }
+
     @Test("stop asks the runner to stop, then signals a process that lingers and removes the session")
     func stop() async throws {
         let root = RunnerTestPaths.temporaryRoot()

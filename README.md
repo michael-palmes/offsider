@@ -522,7 +522,7 @@ A verified `--verify --json` report also lists what changed: `changes` holds up 
 | `device_untrusted` | 7 | The iPhone or iPad has not trusted this Mac | Unlock it and tap Trust |
 | `developer_mode_off` | 7 | Developer Mode is off on the iPhone or iPad | Turn it on in Settings > Privacy & Security, then restart the device |
 | `device_preparing` | 7 | Xcode is still preparing the iPhone or iPad for development | Wait for Xcode to finish, then retry; `offsider doctor --device <UDID>` shows progress |
-| `ui_automation_off` | 7 | UI Automation is off on the iPhone or iPad | Turn it on in Settings > Developer |
+| `ui_automation_off` | 7 | UI Automation is off on the iPhone or iPad, or XCTest could not enable it because the device's `Enter Passcode for "XCTest"` prompt went unanswered | Enter the passcode on the device if it asks, else turn on UI Automation in Settings > Developer |
 | `device_busy` | 8 | Another Offsider command holds the device; the message names its pid | Wait and retry, or pass `--wait-lock <seconds>` |
 | `device_leased` | 8 | `lease set` found another session's live lease on the device | Choose another device; `offsider lease show`, or `--force` when that lease is stale |
 | `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |

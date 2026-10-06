@@ -41,6 +41,14 @@ struct RunnerLogWatchTests {
         #expect(RunnerLogWatch.finding(in: text) == (locked ? .deviceLocked : nil))
     }
 
+    @Test("XCTest's timeout enabling automation mode is found in the runner's line and in xcodebuild's summary", arguments: [
+        #"2026-10-07 08:14:03.205820+1030 OffsiderRunnerUITests-Runner[100:200] [Default] Failed to initialize for UI testing: Error Domain=com.apple.dt.XCTest.XCTFuture Code=1000 "Timed out while enabling automation mode.""#,
+        "\tOffsiderRunnerUITests-Runner (100) encountered an error (The test runner failed to initialize for UI testing. (Underlying Error: Timed out while enabling automation mode.))",
+    ])
+    func automationTimeout(line: String) {
+        #expect(RunnerLogWatch.finding(in: line) == .automationNotEnabled)
+    }
+
     @Test("each check reads only what was appended since the last, so a prompt split across two writes is found once")
     func appendedOnly() throws {
         let path = try Self.temporaryLog()

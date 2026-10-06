@@ -129,6 +129,14 @@ extension IOSDeviceError {
         IOSDeviceError(.locked, "\(name) is locked, so Xcode cannot start the Offsider runner. Unlock it, then retry; Offsider never types a passcode.")
     }
 
+    /// XCTest could not enable UI automation, most often because the device's passcode prompt for XCTest went unanswered.
+    static func runnerAutomationBlocked(_ name: String) -> IOSDeviceError {
+        IOSDeviceError(
+            .uiAutomationOff,
+            "XCTest could not enable UI automation on \(name), so the Offsider runner cannot start. If the device shows \"Enter Passcode for \"XCTest\"\", ask the user to enter it on the device; otherwise check Settings > Developer > UI Automation. Then retry; Offsider never types a passcode."
+        )
+    }
+
     /// A failure on the stream to the device runner, after usbmuxd connected it; nothing was sent to the app.
     public static func runner(_ error: UsbmuxError, udid: String) -> IOSDeviceError {
         switch error {

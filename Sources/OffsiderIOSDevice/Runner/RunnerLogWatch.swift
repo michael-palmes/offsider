@@ -6,6 +6,8 @@ struct RunnerLogWatch {
     enum Finding: Equatable {
         /// Device preparation is waiting for the device to be unlocked.
         case deviceLocked
+        /// XCTest gave up enabling UI automation, as when the device's "Enter Passcode for XCTest" prompt goes unanswered.
+        case automationNotEnabled
     }
 
     static let chunkLimit = 64 * 1024
@@ -33,8 +35,9 @@ struct RunnerLogWatch {
         return nil
     }
 
-    /// The device-preparation error xcodebuild prints while it waits for an unlock, whatever the device is called.
+    /// The device-preparation unlock error, or XCTest's automation timeout, whatever the device is called.
     static func finding(in line: String) -> Finding? {
+        if line.range(of: "enabling automation mode", options: .caseInsensitive) != nil { return .automationNotEnabled }
         guard line.contains("com.apple.dt.deviceprep") else { return nil }
         let asksToUnlock = line.range(of: "unlock", options: .caseInsensitive) != nil || line.range(of: "locked", options: .caseInsensitive) != nil
         return asksToUnlock ? .deviceLocked : nil
