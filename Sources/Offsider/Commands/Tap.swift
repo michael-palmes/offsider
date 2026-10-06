@@ -156,6 +156,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         let resolution: TapResolution
         let resolvedDescription: String
         let resolvedTree: UITree?
+        let picker = query.flatMap { matchPicker(query: $0, backend: backend, device: device) }
 
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
@@ -167,8 +168,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.", reason: .internalError)
             }
 
-            // Under --verify the verifier's second read re-resolves the target, so the guard would only add a read.
-            let settle: SettlePolicy = noSettle || progress != nil
+            // Under --verify the verifier's second read re-resolves the target, so the guard would only add a read; --verify-id has no such read.
+            let settle: SettlePolicy = noSettle || (progress != nil && Self.verifierRereads(verification.mode))
                 ? .off
                 : .guarded(record: await TreeCache.load(for: device, backend: backend))
             let polled = try await AccessibilityPoller.resolveWithPolling(
@@ -181,7 +182,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 elementType: elementType,
                 allowOffscreen: allowOffscreen,
                 settle: settle,
-                pick: try await matchPick(query: query, backend: backend, device: device),
+                pick: picker,
                 logger: logger
             )
             resolution = polled.value
@@ -210,8 +211,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries),
                 initialTree: resolvedTree,
                 beforeAction: { tree in
+                    let pick: MatchPick? = await picker?(tree.roots) ?? nil
                     guard let query, let moved = try? AccessibilityTargetResolver.resolveTap(
-                        roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false
+                        roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: pick
                     ), abs(moved.point.x - resolution.point.x) > TransitionGuard.frameTolerance
                         || abs(moved.point.y - resolution.point.y) > TransitionGuard.frameTolerance else { return }
                     logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: moved.point.x, y: moved.point.y)) while settling; tapping there")
@@ -257,21 +259,43 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         return "Warning: \(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing."
     }
 
-    /// `--nth` as given; `--topmost` the last match on Android, and on iOS the first whose own point hit-tests back to it.
-    func matchPick(query: AccessibilityQuery, backend: any DeviceBackend, device: DeviceID) async throws -> MatchPick? {
-        if let nth { return .nth(nth) }
+    /// Only the change check reads the tree again before the input; `--verify-id` acts on the tree the selector resolved on.
+    static func verifierRereads(_ mode: Verifier.Mode) -> Bool {
+        if case .change = mode { return true }
+        return false
+    }
+
+    /// `--nth` as given; `--topmost` the last match on Android, and on iOS the one `topmostPick` finds on each tree read.
+    func matchPicker(query: AccessibilityQuery, backend: any DeviceBackend, device: DeviceID) -> MatchPicker? {
+        if let nth { return { _ in .nth(nth) } }
         guard topmost else { return nil }
-        guard device.platform == .ios else { return .last }
-        let tree = try await backend.accessibilityTree(for: device)
-        let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType)
+        guard device.platform == .ios else { return { _ in .last } }
+        let elementType = elementType
+        let allowOffscreen = allowOffscreen
+        return { roots in
+            await Self.topmostPick(roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen) { point in
+                (try? await backend.accessibilityTree(for: device, point: point))?.roots.first
+            }
+        }
+    }
+
+    /// The first match whose own point hit-tests back to it, else the last; a single match needs no hit-test.
+    static func topmostPick(
+        roots: [UINode],
+        query: AccessibilityQuery,
+        elementType: String?,
+        allowOffscreen: Bool,
+        hitTest: (UIPoint) async -> UINode?
+    ) async -> MatchPick {
+        let found = AccessibilityTargetResolver.candidates(roots: roots, query: query, elementType: elementType)
+        guard found.matches.count > 1 else { return .last }
         let pool = allowOffscreen ? found.matches : found.onScreen
         for index in pool.indices {
             guard let resolution = try? AccessibilityTargetResolver.resolveTap(
-                roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: .nth(index + 1)
+                roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: .nth(index + 1)
             ), let matched = resolution.matched else { continue }
-            let point = UIPoint(x: resolution.point.x, y: resolution.point.y)
-            if let hit = (try? await backend.accessibilityTree(for: device, point: point))?.roots.first,
-               AccessibilityTargetResolver.isFamily(hit, of: matched, in: tree.roots) {
+            if let hit = await hitTest(UIPoint(x: resolution.point.x, y: resolution.point.y)),
+               AccessibilityTargetResolver.isFamily(hit, of: matched, in: roots) {
                 return .nth(index + 1)
             }
         }

@@ -86,6 +86,24 @@ struct TransitionGuardTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
     }
 
+    @Test("tap --verify-id right after an input keeps the guard, so it taps the target where it settled")
+    func verifyIDKeepsGuard() async throws {
+        let fixture = try TreeCacheFixture()
+        try fixture.write(Self.record(applyY: 10700, inputAge: 0.1, now: fixture.now))
+        let done = FakeUI.tree([FakeUI.node(.text, id: "done", label: "Done", frame: FakeUI.frame(20, 100, 350, 44))])
+        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), Self.screen(applyY: 600), done])
+
+        try await DispatchTracker.$current.withValue(DispatchTracker()) {
+            try await fixture.run {
+                try await Tap.parse(["--id", "apply", "--verify-id", "done", "--device", Self.device.rawValue])
+                    .execute(on: DeviceRouter.Route(backend: backend, device: Self.device), progress: VerifyProgress(), logger: OffsiderLogger())
+            }
+        }
+
+        #expect(fixture.sleeps == [.milliseconds(400)])
+        #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
+    }
+
     @Test("a selector tap with no record waits 150 ms and reads once more")
     func noRecordRechecks() async throws {
         let fixture = try TreeCacheFixture()

@@ -198,6 +198,46 @@ struct TapCommandTests {
         #expect(first.session.calls == [.perform(.tapAt(x: 46, y: 222))])
     }
 
+    @Test("iOS --topmost hit-tests the tree it taps from, not an earlier read that had no match yet")
+    func topmostPicksOnPolledTree() async throws {
+        var root = StackedScreenTests.stack(platform: .ios)[0]
+        let stacked = UITree(platform: .ios, device: Self.device.rawValue, roots: [root])
+        root.children.reverse()
+        // The fake's point read serves the next tree, where page 1 is listed last and so drawn on top.
+        let pageOneOnTop = UITree(platform: .ios, device: Self.device.rawValue, roots: [root])
+        let backend = FakeDeviceBackend(trees: [FakeUI.tree([]), stacked, pageOneOnTop])
+
+        try await Self.tap(["--label", "Back", "--topmost", "--wait-timeout", "2", "--poll-interval", "0.01"], on: backend)
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 46, y: 222))])
+    }
+
+    /// Two Back buttons on stacked Android pages, page 2 at `pageTwoX`.
+    private static func androidStack(pageTwoX: Double, extra: [UINode] = []) -> UITree {
+        func page(_ number: Int, x: Double) -> UINode {
+            FakeUI.node(.other, id: "page-\(number)", label: "Page \(number)", frame: FakeUI.frame(x, 100, 402, 774), platform: .android, children: [
+                FakeUI.node(.button, id: "stack-back", label: "Back", frame: FakeUI.frame(x + 16, 200, 120, 44), platform: .android),
+            ])
+        }
+        return FakeUI.tree(platform: .android, device: "emulator-5554", [page(1, x: -30), page(2, x: pageTwoX)] + extra)
+    }
+
+    @Test("--verify re-resolves --nth on its second read, so the match that moved is tapped where it is now")
+    func verifyKeepsPick() async throws {
+        let saved = FakeUI.node(.text, id: "saved", label: "Saved", frame: FakeUI.frame(20, 600, 300, 20), platform: .android)
+        let backend = FakeDeviceBackend(platform: .android, trees: [
+            Self.androidStack(pageTwoX: 0), Self.androidStack(pageTwoX: 10), Self.androidStack(pageTwoX: 10, extra: [saved]),
+        ])
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+
+        try await DispatchTracker.$current.withValue(DispatchTracker()) {
+            try await Tap.parse(["--label", "Back", "--nth", "2", "--verify", "--device", device.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: VerifyProgress(), logger: OffsiderLogger())
+        }
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 86, y: 222))])
+    }
+
     @Test("--nth and --topmost need a selector, exclude each other and count from 1", arguments: [
         (["-x", "1", "-y", "1", "--nth", "1"], "use them with --id, --label or --value"),
         (["--id", "a", "--nth", "1", "--topmost"], "Use only one of --nth or --topmost."),

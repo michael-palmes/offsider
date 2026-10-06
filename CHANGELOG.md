@@ -116,6 +116,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `screenshot --mask-region` with a huge value such as `0,0,1e19,40` no longer crashes: mask rectangles are clamped to the image before they become pixels, and a tree frame with a NaN coordinate withholds the image.
 - `lease set` reads, checks and writes a device's lease under a per-device lock in `leases/`, so two agents setting a free device at once can no longer both get it, and removing an expired lease or `lease release` can no longer delete a fresh lease written in between.
 - `type --into-id`, `--into-label` and `--require-focus-id` work on a physical iPhone or iPad: the device runner reports the field with keyboard focus (XCTest's `hasKeyboardFocus`, not the focus engine's `hasFocus`, which a tap leaves unset), and `describe-ui` shows it as `state.focused`. Each device rebuilds its runner on next use. Simulators are unchanged.
+- `tap --verify-id` right after another input waits out a transition again, as a selector `tap` without `--verify` does, so a target still sliding in is tapped where it settles instead of where it was first found.
+- `tap --topmost` on iOS hit-tests the matches of the tree it taps from, on every read while it waits, instead of an earlier read that could have none. Under `--verify`, `--nth` and `--topmost` keep their pick when the verifier finds the target moved before the tap.
 
 ## [0.6.0] - 2026-10-05
 
