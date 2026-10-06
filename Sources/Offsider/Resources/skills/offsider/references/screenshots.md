@@ -16,7 +16,7 @@ offsider screenshot --device <DEVICE_ID> --region <X,Y,W,H> --compare before.png
 
 ## Comparing regions
 
-Content the tree cannot see (charts, maps, canvases, web views) changes pixels only. Save a baseline with `screenshot --region <x,y,w,h> --output before.png`, act, then run `screenshot --region <x,y,w,h> --compare before.png`. It exits 0 when the region changed and 5 when it did not, and prints the changed share; `--threshold <0-1>` ignores small changes. It also counts the changed pixels, and `--diff-output <png>` writes an image of where they are (`guide evidence`). Use the same `--region` and `--scale` for both captures. `wait --region <x,y,w,h> --changed|--stable` waits on the same kind of change.
+Content the tree cannot see (charts, maps, canvases, web views) changes pixels only. Save a baseline with `screenshot --region <x,y,w,h> --output before.png`, act, then run `screenshot --region <x,y,w,h> --compare before.png`. It exits 0 when the region changed and 5 when it did not, and prints the changed share; `--threshold <0-1>` ignores small changes. It also counts the changed pixels, and `--diff-output <png>` writes an image of where they are (`guide evidence`). On a physical iPhone or iPad the pixel counts are block-based: a pixel counts as changed only when the mean colour of its 8 by 8 block moved by more than the stream's noise, so whole blocks are counted and marked. Use the same `--region` and `--scale` for both captures. `wait --region <x,y,w,h> --changed|--stable` waits on the same kind of change.
 
 ## Secure fields and personal data
 

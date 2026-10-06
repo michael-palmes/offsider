@@ -50,7 +50,7 @@ Redaction is on by default for every source: `message` and `raw` read `[redacted
 
 ## Pixel diffs
 
-`screenshot --compare before.png` counts exactly which pixels changed as well as its tile verdict: `--json` adds `changedPixels`, `comparedPixels` and `changedBounds` (`{x,y,width,height}` in the image's pixels, or null). `--diff-output <png>` (a file, or a directory for a generated name) writes the capture faded to white with every changed pixel magenta and the status bar band grey, so a report can show what moved. The exit code still follows the tiles and `--threshold`: 0 changed, 5 not. A baseline of another size writes no diff.
+`screenshot --compare before.png` counts which pixels changed as well as its tile verdict (by 8 by 8 block on a physical iPhone or iPad, `guide screenshots`): `--json` adds `changedPixels`, `comparedPixels` and `changedBounds` (`{x,y,width,height}` in the image's pixels, or null). `--diff-output <png>` (a file, or a directory for a generated name) writes the capture faded to white with every changed pixel magenta and the status bar band grey, so a report can show what moved. The exit code still follows the tiles and `--threshold`: 0 changed, 5 not. A baseline of another size writes no diff.
 
 ```bash
 offsider screenshot --compare before.png --diff-output diff.png --json --device <DEVICE_ID>
