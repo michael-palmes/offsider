@@ -18,6 +18,14 @@ public enum KnownOverlays {
         return UIFrame(x: viewport.x, y: frame.y, width: viewport.width, height: bottom - frame.y)
     }
 
+    /// The text a LogBox banner shows after its `!, ` or `n, ` prefix, with line breaks and runs of spaces as one space.
+    public static func logBoxMessage(_ label: String?) -> String? {
+        guard isLogBoxBanner(label), let label else { return nil }
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let separator = trimmed.range(of: ", ") else { return nil }
+        return trimmed[separator.upperBound...].split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
     /// The logs a LogBox banner counts: 1 for `!, …`, n for `n, …`.
     public static func logBoxCount(_ label: String?) -> Int? {
         guard isLogBoxBanner(label), let label else { return nil }
@@ -43,15 +51,28 @@ public enum KnownOverlays {
               frame.y + frame.height >= viewport.y + viewport.height - bottomBand else {
             return nil
         }
-        return LogBoxToast(count: count, frame: frame)
+        return LogBoxToast(count: count, frame: frame, message: logBoxMessage(node.label) ?? "")
     }
 
-    /// Every LogBox toast on screen, bottom first, as `rn logbox dismiss` clears them.
+    /// Every LogBox toast on screen, bottom first and numbered from 1, as `rn logbox dismiss` clears them.
     public static func logBoxToasts(in roots: [UINode], viewport: UIFrame?) -> [LogBoxToast] {
         guard let viewport else { return [] }
         return roots.flatMap { $0.flattened() }
             .compactMap { logBoxToast($0, viewport: viewport) }
             .sorted { $0.frame.y > $1.frame.y }
+            .enumerated()
+            .map { offset, toast in
+                var numbered = toast
+                numbered.index = offset + 1
+                return numbered
+            }
+    }
+
+    /// The toast whose message holds `text` (spacing and case aside), for a selector that missed because it was there.
+    public static func logBoxToast(containing text: String, in roots: [UINode], viewport: UIFrame?) -> LogBoxToast? {
+        let wanted = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard wanted.count >= 3 else { return nil }
+        return logBoxToasts(in: roots, viewport: viewport).first { $0.message.localizedCaseInsensitiveContains(wanted) }
     }
 
     /// The full-screen LogBox inspector: a `Log n of m` header, or `Dismiss` and `Minimize` buttons near the bottom.
@@ -84,14 +105,19 @@ public enum KnownOverlays {
     }
 }
 
-/// One LogBox toast: its log count, frame, and the point of the clear button at its right-hand end.
+/// One LogBox toast: its log count, frame, message, place from the bottom (1 is the lowest), and the points to tap.
 public struct LogBoxToast: Equatable, Sendable {
     public var count: Int
     public var frame: UIFrame
+    /// The banner's text after its count, unredacted.
+    public var message: String
+    public var index: Int
 
-    public init(count: Int, frame: UIFrame) {
+    public init(count: Int, frame: UIFrame, message: String = "", index: Int = 1) {
         self.count = count
         self.frame = frame
+        self.message = message
+        self.index = index
     }
 
     /// LogBox's clear button sits 22 points in from the toast's right-hand edge.

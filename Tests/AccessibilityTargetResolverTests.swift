@@ -552,6 +552,23 @@ struct AccessibilityTargetResolverTests {
         #expect(message.hasSuffix(AccessibilityTargetResolver.describeUITip))
     }
 
+    @Test("a label that is only inside a LogBox toast names the toast and the logbox commands, not near misses")
+    func missInLogBoxToast() {
+        let roots = Self.screen([
+            FakeUI.node(.button, label: "Buy", frame: FakeUI.frame(20, 400, 200, 44)),
+            FakeUI.node(.other, label: "!, Request failed\nwith status 500", frame: FakeUI.frame(10, 794, 373, 48)),
+        ])
+
+        let error = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Request failed with status 500"))
+        }
+
+        #expect(error?.userFacingDescription == "No accessibility element matched --label 'Request failed with status 500', but LogBox toast 1 shows that text. Read the log with `offsider rn logbox open --index 1`, or clear it with `offsider rn logbox dismiss --index 1`.")
+        #expect(error?.reason == .selectorNotFound)
+        #expect(error?.hint == "offsider rn logbox status --device <DEVICE_ID>")
+        #expect(error?.isRetryable == true)
+    }
+
     @Test("a label removed by --element-type says which roles have it")
     func elementTypeHint() {
         let roots = Self.screen([
