@@ -61,10 +61,19 @@ struct LoginFlowTests {
     @Test("a profile for another app types nothing")
     func profileMismatch() async {
         let script = script(buttonEnabled: true)
-        let profile = LoginProfile(appID: "com.other.app")
+        let profile = LoginProfile(bundleID: "com.other.app")
         await #expect(throws: CLIError.self) { try await self.run(script, mode: .auto, profile: profile) }
         #expect(script.typed.isEmpty)
         #expect(script.taps.isEmpty)
+    }
+
+    @Test("a profile that names the app in front as its package types, even when its bundle id is another app")
+    func profileForEitherID() async throws {
+        let script = script(buttonEnabled: true)
+        let profile = LoginProfile(bundleID: "com.example.ios", package: "com.example.app")
+        _ = try await run(script, mode: .off, profile: profile)
+        #expect(script.typed == [username, password])
+        #expect(script.taps.count == 1)
     }
 
     @Test("a disabled submit button is not tapped")

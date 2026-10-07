@@ -28,22 +28,29 @@ public struct LoginField: Equatable, Sendable {
 }
 
 /// An app's sign-in screen, found the same way as `OFFSIDER.md`. Missing fields are detected from the tree.
+/// It names the iOS bundle id, the Android package or both, so one file serves an app whose ids differ.
 public struct LoginProfile: Equatable, Sendable {
     public static let fileName = "offsider.login.json"
 
-    public var appID: String
+    public var bundleID: String?
+    public var package: String?
     public var identity: LoginField?
     public var password: LoginField?
     public var turnstile: LoginTurnstileMode?
     public var submit: LoginField?
 
-    public init(appID: String, identity: LoginField? = nil, password: LoginField? = nil, turnstile: LoginTurnstileMode? = nil, submit: LoginField? = nil) {
-        self.appID = appID
+    public init(bundleID: String? = nil, package: String? = nil, identity: LoginField? = nil, password: LoginField? = nil, turnstile: LoginTurnstileMode? = nil, submit: LoginField? = nil) {
+        self.bundleID = bundleID
+        self.package = package
         self.identity = identity
         self.password = password
         self.turnstile = turnstile
         self.submit = submit
     }
+
+    public var appIDs: [String] { [bundleID, package].compactMap { $0 } }
+
+    public func isFor(_ app: String) -> Bool { appIDs.contains(app) }
 
     public static func parse(_ data: Data) throws -> LoginProfile {
         guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -53,18 +60,10 @@ public struct LoginProfile: Equatable, Sendable {
         if let unknown = raw.keys.first(where: { !allowed.contains($0) }) {
             throw LoginProfileError("offsider.login.json has an unknown key \(unknown).")
         }
-        let bundle = string(raw["bundleId"])
-        let package = string(raw["package"])
-        let appID: String
-        switch (bundle, package) {
-        case (let bundle?, nil):
-            appID = try identifier(bundle, name: "bundleId")
-        case (nil, let package?):
-            appID = try identifier(package, name: "package")
-        case (_?, _?):
-            throw LoginProfileError("offsider.login.json must name bundleId or package, not both.")
-        case (nil, nil):
-            throw LoginProfileError("offsider.login.json must name bundleId or package.")
+        let bundle = try string(raw["bundleId"]).map { try identifier($0, name: "bundleId") }
+        let package = try string(raw["package"]).map { try identifier($0, name: "package") }
+        guard bundle != nil || package != nil else {
+            throw LoginProfileError("offsider.login.json must name bundleId, package or both.")
         }
         let turnstile: LoginTurnstileMode?
         if let value = string(raw["turnstile"]) {
@@ -78,7 +77,8 @@ public struct LoginProfile: Equatable, Sendable {
             turnstile = nil
         }
         return LoginProfile(
-            appID: appID,
+            bundleID: bundle,
+            package: package,
             identity: try field(raw["identity"], name: "identity"),
             password: try field(raw["password"], name: "password"),
             turnstile: turnstile,

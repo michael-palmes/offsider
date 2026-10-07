@@ -51,7 +51,7 @@ struct LoginFormTests {
 
     @Test("a pinned id that is covered is a refusal, not a tap on what is in front")
     func pinnedCoverRefuses() {
-        let profile = LoginProfile(appID: "com.example.app", password: LoginField(id: "password-field"))
+        let profile = LoginProfile(bundleID: "com.example.app", password: LoginField(id: "password-field"))
         let error = #expect(throws: LoginFormError.self) { try LoginForm.detect(in: SignInFixture.tree(coverPassword: true), profile: profile) }
         #expect(error?.message.contains("covered") == true)
         #expect(error?.message.contains("Nothing was typed.") == true)
@@ -119,16 +119,25 @@ struct KeyboardDismissTests {
 
 @Suite("Login profile and foreground app")
 struct LoginProfileTests {
-    @Test("a profile names one app and rejects an unknown key")
+    @Test("a profile names an app and rejects an unknown key or no app at all")
     func parses() throws {
         let parsed = try LoginProfile.parse(Data("""
         {"bundleId":"com.example.app","identity":{"id":"email-field"},"password":{"id":"password-field"},"turnstile":"required","submit":{"id":"login-button"}}
         """.utf8))
-        #expect(parsed.appID == "com.example.app")
+        #expect(parsed.isFor("com.example.app"))
+        #expect(!parsed.isFor("com.example.android"))
         #expect(parsed.turnstile == .required)
         #expect(parsed.identity == LoginField(id: "email-field"))
         #expect(throws: LoginProfileError.self) { try LoginProfile.parse(Data("{\"bundleId\":\"com.example.app\",\"extra\":true}".utf8)) }
-        #expect(throws: LoginProfileError.self) { try LoginProfile.parse(Data("{\"bundleId\":\"com.example.app\",\"package\":\"com.example.app\"}".utf8)) }
+        #expect(throws: LoginProfileError.self) { try LoginProfile.parse(Data("{\"identity\":{\"id\":\"email-field\"}}".utf8)) }
+    }
+
+    @Test("one profile can name an iOS bundle id and an Android package, and serves either app")
+    func parsesBothIDs() throws {
+        let parsed = try LoginProfile.parse(Data("{\"bundleId\":\"com.example.ios\",\"package\":\"com.example.android\"}".utf8))
+        #expect(parsed.isFor("com.example.ios"))
+        #expect(parsed.isFor("com.example.android"))
+        #expect(!parsed.isFor("com.example.other"))
     }
 
     @Test("an iOS bundle id comes from the simulator executable, and an Android package from the tree")

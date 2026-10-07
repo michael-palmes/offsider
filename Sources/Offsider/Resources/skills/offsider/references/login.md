@@ -26,11 +26,12 @@ The software keyboard is dismissed before the submit button. When it still cover
 
 ## An app can pin its fields
 
-`offsider.login.json`, found the same way as `OFFSIDER.md`, overrides detection for one app. `--project <path>` names the directory to search. Without it, a missing file is not an error. The file's `bundleId` or `package` must be the app in front, or nothing is typed. A pinned id is still hit-tested: a covered control is a refusal, not a tap on whatever is in front of it.
+`offsider.login.json`, found the same way as `OFFSIDER.md`, overrides detection for one app. `--project <path>` names the directory to search. Without it, a missing file is not an error. The file names the app with `bundleId`, `package` or both, so one file serves an iOS bundle id and an Android package that differ. One of them must be the app in front, or nothing is typed. A pinned id is still hit-tested: a covered control is a refusal, not a tap on whatever is in front of it.
 
 ```json
 {
   "bundleId": "com.example.app",
+  "package": "com.example.android",
   "identity": { "id": "email-field" },
   "password": { "id": "password-field" },
   "submit": { "id": "login-button" }

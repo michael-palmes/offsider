@@ -24,9 +24,9 @@ enum LoginFlow {
         timeout: TimeInterval,
         services: Services
     ) async throws -> LoginReport {
-        if let profile, profile.appID != app {
+        if let profile, !profile.isFor(app) {
             throw CLIError(
-                errorDescription: "offsider.login.json is for \(profile.appID), and the app in front is \(app). Nothing was typed.",
+                errorDescription: "offsider.login.json is for \(profile.appIDs.joined(separator: " and ")), and the app in front is \(app). Nothing was typed.",
                 reason: .commandFailed
             )
         }
