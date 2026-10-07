@@ -30,7 +30,7 @@ public enum UITreeEconomy {
         "# folded \(count) repeated label\(count == 1 ? "" : "s")"
     }
 
-    /// `# beneath: "Assets" (42 elements) under "Bitcoin"`: a screen a page covers, left out of on-screen text.
+    /// `# beneath: "Products" (42 elements) under "Kettle"`: a screen a page covers, left out of on-screen text.
     public static func beneathLine(_ screen: ScreenStack.Beneath) -> String {
         let count = "\(screen.elements) element\(screen.elements == 1 ? "" : "s")"
         return "# beneath: \(UITreeRenderer.quoted(SelectorText.truncated(screen.name, limit: 40))) (\(count)) under \(UITreeRenderer.quoted(SelectorText.truncated(screen.under, limit: 40)))"
