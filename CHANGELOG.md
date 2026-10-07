@@ -46,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On Android, `describe-ui`, selectors and waits list the app elements the on-screen keyboard wholly covers, as `uiautomator` and iOS do, so `tap` and `type --into-id` on one refuse with `target_under_keyboard` instead of reporting no match, even when its centre lies over the navigation bar beneath the keyboard. Android marks such a node as not visible to the user once the keyboard (with the navigation bar, when it sits beneath) covers it, and the helper (1.4.0) now keeps it, still marked so.
 - `describe-ui --point` on Android names the element drawn on top at the point, by Android's drawing order and window layers, instead of the last one listed: React Native lists overlapping elements by position, so a page's button drawn over a tab came out as the tab. Nodes Android hides from the user no longer answer a point.
 - `rn devmenu <item>` and its batch step wait for a menu that is still sliding in to come to rest before tapping, so the tap no longer lands where an item was mid-animation and leaves the menu open (seen on a foldable's wide inner display).
 - A `--verify` change that lands after the poll and the screenshot check, such as a push delayed past `--verify-timeout`, now verifies on the same attempt from one more read instead of sending the input again, and a change that never settled counts only while the latest read still shows it.

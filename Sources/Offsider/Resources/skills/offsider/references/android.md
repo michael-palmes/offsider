@@ -32,7 +32,7 @@
 
 ## The tree
 
-- The app window is the `application` root, labelled with its window title (such as `Settings`); while the keyboard is up, a second root with role `keyboard` follows it. Status and navigation bars are not in the tree, and nodes the user cannot see are left out.
+- The app window is the `application` root, labelled with its window title (such as `Settings`); while the keyboard is up, a second root with role `keyboard` follows it. Status and navigation bars are not in the tree, and nodes the user cannot see are left out, except those the on-screen keyboard covers: they stay listed, as on iOS, and `tap` and `type --into-id` refuse them with `target_under_keyboard`.
 - Sliders and progress bars report `value` as a percentage of their range (`"25%"`, `"39.95%"`), and a partly checked checkbox reports `"2"`. A Jetpack Compose `testTag` is the `id` when the node has no resource id.
 - Alerts show upper-case button text (`DELETE`, `CANCEL`) with ids `android:id/button1` and `android:id/button2`; `--id button1` matches through the `:id/` suffix.
 - `# the device stopped listing nodes at its limit` at the end of `describe-ui --summary` means the tree itself is incomplete.
