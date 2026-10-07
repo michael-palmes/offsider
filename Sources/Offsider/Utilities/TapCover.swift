@@ -17,7 +17,8 @@ struct TapCover {
             return
         }
         let android = tree.platform == .android
-        if android, AccessibilityTargetResolver.keyboardCover(resolution, in: tree) != nil {
+        // Before the hit-test, which on a simulator can answer with the field beneath the keyboard.
+        if AccessibilityTargetResolver.keyboardCover(resolution, in: tree) != nil {
             throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device)
         }
         // On Android the keyboard's window bounds have decided; its root view spans the screen, so it leaves the judging.
