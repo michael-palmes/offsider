@@ -138,6 +138,35 @@ struct ReactNativeDebugSmokeTests {
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
     }
 
+    @Test("rn logbox status names the toast's message, and open then dismiss clears its two logs in under 5 s", arguments: RNPlatform.enabled)
+    func logBoxOpenAndDismiss(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-clear-logs")
+        try await app.run("tap --id overlay-test-log-two-errors")
+        _ = try await app.waitForNode { Self.label($0).hasPrefix("2, ") }
+
+        let status = try await app.run("rn logbox status --json").stdout
+        #expect(status.contains(#""index":1,"count":2,"message":"OffsiderFixture error"#), "\(status)")
+        let started = ContinuousClock.now
+        let opened = try await app.run("rn logbox open --json").stdout
+        #expect(opened.contains(#""index":1,"message":"OffsiderFixture error"#), "\(opened)")
+        let dismissed = try await app.run("rn logbox dismiss --json").stdout
+        let elapsed = ContinuousClock.now - started
+        #expect(dismissed.contains(#""cleared":2,"remaining":0"#), "\(dismissed)")
+        #expect(elapsed < .seconds(5), "open and dismiss took \(elapsed)")
+    }
+
+    @Test("rn devmenu close runs as a batch step, which opens the menu and leaves the app in front", arguments: RNPlatform.enabled)
+    func devMenuBatchStep(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+
+        let result = try await app.run("batch --json --step 'rn devmenu close' --step 'wait --id overlay-test-screen --timeout 10'")
+        #expect(result.stdout.contains(#""step":1,"kind":"rn","line":"rn devmenu close","ok":true"#), "\(result.stdout)")
+        #expect(result.stdout.contains(#""dispatched":"yes""#), "\(result.stdout)")
+    }
+
     @Test("a full-width 10, AUD button near the bottom is never read as LogBox", arguments: RNPlatform.enabled)
     func amountIsNotLogBox(platform: RNPlatform) async throws {
         let app = RNApp(platform)

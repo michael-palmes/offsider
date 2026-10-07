@@ -147,6 +147,8 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     case nthOutOfRange(selector: String, nth: Int, count: Int)
     /// The `--id` matched, but no match had the `--label` or `--value` asked for too.
     case refinedOut(selector: String, candidates: [MatchSummary])
+    /// The text is in LogBox toast `toast`, whose banner is not a separate element per line.
+    case inLogBoxToast(kind: String, value: String, toast: Int)
 
     static let maxListed = 5
 
@@ -195,6 +197,8 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
         case .refinedOut(let selector, let candidates):
             let listed = Self.listed(candidates.map(\.text), separator: "; ")
             return "No accessibility element matched \(selector): the id matches \(listed), with another label or value. \(tip)"
+        case .inLogBoxToast(let kind, let value, let toast):
+            return "No accessibility element matched \(kind) '\(value)', but LogBox toast \(toast) shows that text. Read the log with `offsider rn logbox open --index \(toast)`, or clear it with `offsider rn logbox dismiss --index \(toast)`."
         case .multipleSwitchDescendants(let count, let selectorDescription):
             return "Matched element for \(selectorDescription) contains multiple (\(count)) switch/toggle controls. Target the switch more specifically with --id when available, or use coordinates. Use --element-type only when describe-ui reports a specific role or type, such as switch or Toggle. \(tip)"
         }
@@ -203,7 +207,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     /// Missing, filtered out or off screen: a later tree may show the element, so `--wait-timeout` polls again.
     var isRetryable: Bool {
         switch self {
-        case .notFound, .filteredByElementType, .offScreen, .nthOutOfRange, .refinedOut:
+        case .notFound, .filteredByElementType, .offScreen, .nthOutOfRange, .refinedOut, .inLogBoxToast:
             return true
         case .multipleMatches, .invalidFrame, .multipleSwitchDescendants:
             return false
@@ -221,7 +225,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
 
     var reason: FailureReason {
         switch self {
-        case .notFound, .nthOutOfRange, .refinedOut: return .selectorNotFound
+        case .notFound, .nthOutOfRange, .refinedOut, .inLogBoxToast: return .selectorNotFound
         case .filteredByElementType: return .selectorFilteredByType
         case .offScreen: return .targetOffScreen
         case .multipleMatches: return .selectorAmbiguous
@@ -232,14 +236,17 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
 
     var failureMessage: String { userFacingDescription }
 
-    var hint: String? { "offsider describe-ui --device <DEVICE_ID> --summary" }
+    var hint: String? {
+        if case .inLogBoxToast = self { return "offsider rn logbox status --device <DEVICE_ID>" }
+        return "offsider describe-ui --device <DEVICE_ID> --summary"
+    }
 
     var candidates: [FailureCandidate] {
         switch self {
         case .notFound(_, _, _, let candidates), .filteredByElementType(_, _, _, _, let candidates),
              .multipleMatches(_, _, _, _, let candidates, _, _), .refinedOut(_, let candidates):
             return candidates.prefix(Self.maxListed).map(\.failureCandidate)
-        case .offScreen, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange:
+        case .offScreen, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange, .inLogBoxToast:
             return []
         }
     }
@@ -624,6 +631,9 @@ struct AccessibilityTargetResolver {
             }
         }
 
+        if query.kind != "--id", let toast = KnownOverlays.logBoxToast(containing: query.rawValue, in: roots, viewport: viewport) {
+            return .inLogBoxToast(kind: query.kind, value: query.rawValue, toast: toast.index)
+        }
         let elements = roots.flatMap { $0.flattened() }
         let onScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) == true } ?? true }
         let offScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) != true } ?? false }
