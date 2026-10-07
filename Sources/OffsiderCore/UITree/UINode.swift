@@ -194,4 +194,16 @@ public struct UINode: Equatable, Sendable {
     public func flattened() -> [UINode] {
         [self] + children.flatMap { $0.flattened() }
     }
+
+    /// The id trimmed of white space; nil when nothing is left.
+    public var normalizedID: String? { Self.trimmed(id) }
+    /// The label trimmed of white space; nil when nothing is left.
+    public var normalizedLabel: String? { Self.trimmed(label) }
+    /// The value trimmed of white space; nil when nothing is left.
+    public var normalizedValue: String? { Self.trimmed(value) }
+
+    private static func trimmed(_ text: String?) -> String? {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
 }

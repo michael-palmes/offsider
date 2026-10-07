@@ -555,14 +555,9 @@ struct AccessibilityTargetResolver {
         ancestors(of: element, in: roots) + element.flattened()
     }
 
-    private static let containerRoles: Set<UIRole> = [.window, .application, .scrollView, .list]
-
-    /// Unlabelled groups never count: they wrap content rather than draw over it. A labelled one can be a banner on Android.
+    /// Anything in a keyboard, else what `CoverJudge` takes for a plausible occluder; a labelled group can be a banner on Android.
     private static func isPlausibleOccluder(_ node: UINode, underKeyboard: Bool) -> Bool {
-        if node.role.isActionable || underKeyboard {
-            return true
-        }
-        return node.normalizedLabel != nil && !containerRoles.contains(node.role)
+        underKeyboard || CoverJudge.isPlausibleOccluder(node)
     }
 
     static func ancestorsOf(_ element: UINode, in roots: [UINode]) -> [UINode] {
@@ -816,9 +811,6 @@ struct AccessibilityTargetResolver {
 }
 
 extension UINode {
-    var normalizedID: String? { Self.trimmed(id) }
-    var normalizedLabel: String? { Self.trimmed(label) }
-    var normalizedValue: String? { Self.trimmed(value) }
     var isSwitch: Bool { role == .switch }
     var isSlider: Bool { role == .slider }
 
@@ -836,13 +828,6 @@ extension UINode {
     /// `--element-type` matches the neutral role in any case, or the native type name exactly.
     func matches(elementType: String) -> Bool {
         role.rawValue.caseInsensitiveCompare(elementType) == .orderedSame || native.typeName == elementType
-    }
-
-    private static func trimmed(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
-            return nil
-        }
-        return trimmed
     }
 }
 

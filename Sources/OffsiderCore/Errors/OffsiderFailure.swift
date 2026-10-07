@@ -72,8 +72,8 @@ public struct CoverReport: Equatable, Sendable {
     public init(_ verdict: CoverVerdict) {
         self.init(
             role: verdict.cover.role.rawValue,
-            id: verdict.cover.trimmedID,
-            label: verdict.cover.trimmedLabel.map { SelectorText.truncated($0) },
+            id: verdict.cover.normalizedID,
+            label: verdict.cover.normalizedLabel.map { SelectorText.truncated($0) },
             frame: verdict.cover.frame,
             screen: verdict.screen.map { SelectorText.truncated($0) },
             evidence: verdict.evidence
