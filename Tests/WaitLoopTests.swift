@@ -208,6 +208,87 @@ struct WaitLoopTests {
         #expect(outcome.elapsed == 0.75)
     }
 
+    private static func price(_ text: String, saveAt y: Double = 600) -> UITree {
+        var save = Self.save
+        save.frame = FakeUI.frame(20, y, 350, 44)
+        return Self.screen([FakeUI.node(.text, id: "price", label: text, frame: FakeUI.frame(0, 100, 200, 30)), save])
+    }
+
+    @Test("with --ignore-values a ticking label lets the screen settle, resizing with its text or not, while a move still restarts the quiet window")
+    func ignoreValuesSettlesOnTicker() async throws {
+        let ticking = Script()
+        ticking.trees = (0..<20).map { .success(Self.price("$\($0)")) }
+        let settled = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true), timeout: 5, interval: 0.25, sources: ticking.sources)
+        #expect(settled.met && settled.elapsed == 0.5)
+
+        let resizing = Script()
+        resizing.trees = (0..<20).map { tick in
+            var tree = Self.price("$\(tick)")
+            tree.roots[0].children[1].frame = FakeUI.frame(Double(300 - tick), 100, Double(80 + tick), 30)
+            return .success(tree)
+        }
+        let resized = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true), timeout: 5, interval: 0.25, sources: resizing.sources)
+        #expect(resized.met && resized.elapsed == 0.5, "a right-aligned ticker's frame follows its text")
+
+        let moving = Script()
+        moving.trees = [.success(Self.price("$1")), .success(Self.price("$2", saveAt: 300))]
+        let moved = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true), timeout: 5, interval: 0.25, sources: moving.sources)
+        #expect(moved.met && moved.elapsed == 0.75)
+    }
+
+    @Test("a ticking label without --ignore-values never settles, and the outcome says only text moved")
+    func tickerTimesOutAsTextOnly() async throws {
+        let ticking = Script()
+        ticking.trees = (0..<20).map { .success(Self.price("$\($0)")) }
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 1, interval: 0.25, sources: ticking.sources)
+        #expect(!outcome.met && outcome.onlyTextMoved)
+
+        let moving = Script()
+        moving.trees = (0..<20).map { .success(Self.price("$\($0)", saveAt: 300 + Double($0))) }
+        #expect(try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 1, interval: 0.25, sources: moving.sources).onlyTextMoved == false)
+    }
+
+    @Test("after an input, settled holds until a read differs from the screen before it, then waits a full quiet window")
+    func gateWaitsForTheInputsEffect() async throws {
+        let before = Self.screen([Self.save])
+        let pushed = Self.screen([FakeUI.node(.header, id: "detail", label: "Detail", frame: FakeUI.frame(0, 60, 402, 44))])
+        let script = Script()
+        script.trees = [.success(before), .success(before), .success(before), .success(before), .success(pushed)]
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: before))
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 1.5)
+    }
+
+    @Test("with no visible effect the gate opens 2 s after the input, or 1 s when no read from before it was kept", arguments: [(true, 2.0), (false, 1.0)])
+    func gateOpensByTime(keptBefore: Bool, elapsed: TimeInterval) async throws {
+        let script = Script()
+        script.trees = [.success(Self.screen([Self.save]))]
+        let gate = try #require(SettleGate(sinceInput: 0.2, before: keptBefore ? Self.screen([Self.save]) : nil))
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == elapsed)
+    }
+
+    @Test("the gate follows the last input's record: none after a verified input or an old one, the tree before an unverified one")
+    func gateFromRecord() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func record(_ role: TreeCacheRecord.TreeRole?, inputAgo: TimeInterval?) -> TreeCacheRecord {
+            TreeCacheRecord(
+                platform: .ios, device: "fake", command: "tap", writtenAt: now, treeReadAt: now.addingTimeInterval(-1),
+                lastInputAt: inputAgo.map { now.addingTimeInterval(-$0) }, treeRole: role, roots: role == nil ? nil : Self.screen([Self.save]).roots
+            )
+        }
+        #expect(SettleGate.after(record(.postAction, inputAgo: 0.3), now: now) == nil)
+        #expect(SettleGate.after(record(.preAction, inputAgo: 2.5), now: now) == nil)
+        #expect(SettleGate.after(record(.read, inputAgo: nil), now: now) == nil)
+        #expect(SettleGate.after(nil, now: now) == nil)
+        #expect(SettleGate.after(record(.preAction, inputAgo: 0.3), now: now)?.before != nil)
+        #expect(SettleGate.after(record(.preAction, inputAgo: 0.3), now: now)?.limit == SettleGate.hold)
+        #expect(SettleGate.after(record(nil, inputAgo: 0.3), now: now)?.limit == SettleGate.floor)
+        #expect(SettleGate.after(record(nil, inputAgo: 1.2), now: now) == nil)
+    }
+
     @Test("a screen that keeps changing never settles and says so")
     func screenStillChanging() async throws {
         let script = Script()
