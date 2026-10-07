@@ -1,9 +1,9 @@
 {
   "helper": "offsider-helper",
-  "helperVersion": "1.4.0",
+  "helperVersion": "1.5.0",
   "protocol": 2,
-  "dex": {"file": "offsider-helper.dex", "bytes": 61916, "sha256": "b42010240d1e065c3528c63578b9f9c0e32dccd3e9645c91dc57045130cad34a"},
-  "sources": {"files": 17, "sha256": "411ddcb2b30ab504cae76eeceaaf264248901c3ea223efc0332bed633f77863f"},
+  "dex": {"file": "offsider-helper.dex", "bytes": 62392, "sha256": "63bd41cd97691e81603d55f93107efac2cd0ce7cac6aa58f6e0735988b4a59a3"},
+  "sources": {"files": 17, "sha256": "8db0c26fdeb56558b5c45e1d5df5e37a834e75188677944e3a169b880a059bf9"},
   "jdkMajor": 17,
   "d8": {"buildTools": "37.0.0", "version": "9.2.4-dev", "sha256": "a26ee56252adcff6752c379ae255a0ad538ebec60189e078ec6855487107637d"},
   "androidJar": {"platform": "android-37.0", "sha256": "bf1b4387cc7ca94fc6ef684f040d9d16fbf16248e181819f020736ea2053f177"},
