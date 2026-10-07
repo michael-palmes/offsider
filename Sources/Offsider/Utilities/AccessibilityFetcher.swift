@@ -1,6 +1,7 @@
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
 
 struct AccessibilityRecoveryDependencies {
     typealias ProcessRunner = @MainActor (
@@ -31,6 +32,9 @@ struct AccessibilityPoint: Equatable {
 // MARK: - Accessibility Fetcher
 @MainActor
 struct AccessibilityFetcher {
+    /// Set by `describe-ui`: an empty tree after the retries checks `launchctl` and warns when an app is running.
+    @TaskLocal static var warnsWhenEmpty = false
+
     static func fetchAccessibilityInfoJSONData(
         for simulatorUDID: String,
         point: AccessibilityPoint? = nil,
@@ -132,6 +136,9 @@ struct AccessibilityFetcher {
         }
         guard let latestData else {
             throw CLIError(errorDescription: "Accessibility hierarchy could not be serialized.", reason: .treeReadFailed)
+        }
+        if warnsWhenEmpty, let listing = await DoctorProbes.runningAppListing(udid: target.udid), let app = SimLaunchctl.likelyForeground(listing) {
+            FileHandle.standardError.write(Data("Warning: \(DoctorRules.emptyTreeDetail(app)). \(DoctorRules.emptyTreeHint(app, udid: target.udid))\n".utf8))
         }
         return latestData
     }
