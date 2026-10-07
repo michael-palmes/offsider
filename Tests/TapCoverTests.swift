@@ -57,13 +57,22 @@ struct TapCoverTests {
         #expect(verdict.evidence == .treeOrder && !verdict.isConfident)
     }
 
-    @Test("a hit on the application root or a group spanning the screen, as when the hit-test's retries run out, tells nothing and warns of nothing")
-    func screenRootHitTellsNothing() throws {
+    @Test("a hit on the application root or a group spanning the screen, as when the hit-test's retries run out, tells nothing, so Buy over the tab is only a guess")
+    func screenRootHitIsNoEvidence() throws {
         let tree = try Self.iosFullPage()
         let screenGroup = tree.roots[0].children[0]
 
-        #expect(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: tree.roots[0]) == nil)
-        #expect(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: screenGroup) == nil)
+        for hit in [tree.roots[0], screenGroup] {
+            let verdict = try #require(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: hit))
+            #expect(verdict.cover.id == "stack-test-full-buy")
+            #expect(verdict.evidence == .treeOrder && !verdict.isConfident)
+        }
+    }
+
+    @Test("a root hit over a target with only labelled content, no control, over its point warns of nothing")
+    func screenRootHitOverContentIsClear() throws {
+        let tree = Self.priceRow(id: "btc-row")
+        #expect(try Self.judge(tree, target: "btc-row", hit: tree.roots[0]) == nil)
     }
 
     @Test("a shared ancestor hit over a target beneath a page is the page's control at the point, refused")

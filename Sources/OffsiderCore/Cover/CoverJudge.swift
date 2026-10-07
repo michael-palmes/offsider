@@ -45,6 +45,7 @@ public enum CoverJudge {
             switch context.judge(hit: hit) {
             case .clear: return nil
             case .cover(let node, let confident): return context.verdict(node, .hitTest, confident: confident)
+            case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
             case .undecided: break
             }
         } else if target.isAndroidNode, let top = drawnTop(at: point, in: roots, holding: [target, matched], viewport: viewport, stack: stack) {
@@ -52,6 +53,7 @@ public enum CoverJudge {
             case .clear:
                 return context.logBoxBelowFrame(viewport: viewport).map { context.verdict($0, .drawingOrder, confident: true) }
             case .cover(let node, let confident): return context.verdict(node, .drawingOrder, confident: confident)
+            case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
             case .undecided: break
             }
         }
@@ -102,6 +104,8 @@ public enum CoverJudge {
     enum HitJudgement {
         case clear
         case cover(UINode, confident: Bool)
+        /// Only tree order points at it.
+        case guess(UINode)
         case undecided
     }
 
@@ -202,7 +206,10 @@ public enum CoverJudge {
                 return .clear
             }
             if isScreenRoot(hit, placed: placed) {
-                return pageOverTarget.map { .cover(cover(on: $0), confident: true) } ?? .clear
+                if let page = pageOverTarget {
+                    return .cover(cover(on: page), confident: true)
+                }
+                return controlOverPoint().map { .guess($0) } ?? .clear
             }
             if let label = hit.normalizedLabel, let frame = hit.frame {
                 let carriers = flat.filter { node in
@@ -239,6 +246,14 @@ public enum CoverJudge {
                 return .cover(placed, confident: false)
             }
             return .undecided
+        }
+
+        /// The first control over the point that is neither the target's own, inside its frame, nor a backdrop: a root hit says nothing, so it is only a guess.
+        private func controlOverPoint() -> UINode? {
+            candidates.first { candidate in
+                guard candidate.role.isActionable, !isOwn(candidate), let frame = candidate.frame, !CoverJudge.spans(frame, viewport) else { return false }
+                return target.frame.map { !$0.encloses(frame, tolerance: 0) } ?? true
+            }
         }
 
         /// A LogBox toast drawn over the target whose touch area, reaching below its frame, takes the point.
