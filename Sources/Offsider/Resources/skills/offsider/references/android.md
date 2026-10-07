@@ -16,6 +16,7 @@
 - On a phone, input goes through `input` unless the command already started the helper to read the screen (a selector tap, `type --replace`); screenshots use `screencap -p`. Starting the helper costs 0.3 to 0.4 s, more than it saves on plain input, so these defaults are the fast path; do not set the variables below to speed a phone up.
 - `OFFSIDER_ANDROID_INPUT=helper` forces input through the helper (an error, with a hint, when it cannot start) and `input` never uses it. `OFFSIDER_ANDROID_CAPTURE=raw` or `helper` encodes raw pixels on the Mac, falling back to `screencap -p`; `screencap` is the default. Both apply to an emulator without gRPC too.
 - While the helper carries input, the phone reports an accessibility service as enabled for that command, as it does for screen reads. Separate `touch --down` and `touch --up` commands always use `input motionevent`.
+- `key`, `key-sequence` and `key-combo` refuse Meta (227, 231) on a phone with exit 64 and send nothing: phones take Meta combinations as system shortcuts that open other apps. Use Control (224) for select all, as in `key-combo --modifiers 224 --key 4`; pass `--allow-system-keys` only when the user asks for Meta.
 - Offsider never sets `adb reverse` on a phone; ask the user before running it.
 - A phone's screen sleeps and locks when it times out. For long runs ask the user before running `offsider stay-awake on --device <serial>`; after a reboot or unplug it needs unlocking again (`guide device-state`).
 

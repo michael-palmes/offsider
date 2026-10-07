@@ -215,6 +215,7 @@ extension Button: BatchConvertible {
 
 extension Key: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        try systemKeys.check([keycode], on: context.device)
         if let duration {
             let composite = InputEvent.composite([
                 .keyboard(direction: .down, keyCode: UInt32(keycode)),
@@ -231,6 +232,7 @@ extension Key: BatchConvertible {
 extension KeySequence: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
+        try systemKeys.check(parsedKeycodes, on: context.device)
         let keyDelay = delay ?? 0.1
         var events: [InputEvent] = []
 
@@ -248,6 +250,7 @@ extension KeySequence: BatchConvertible {
 extension KeyCombo: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let parsedModifiers = try parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")
+        try systemKeys.check(parsedModifiers + [key], on: context.device)
 
         var events: [InputEvent] = []
         for modifier in parsedModifiers {
