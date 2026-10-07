@@ -55,20 +55,24 @@ extension AndroidE2E {
         Set(nodes(in: tree).compactMap { $0["id"] as? String })
     }
 
-    /// Ids of app elements lying wholly within the band of the keyboard's keys, topmost first.
+    /// Ids of app elements within the height of the box around the keyboard's keys (its leaves), centred inside it, topmost first.
     static func idsUnderKeys(in tree: [String: Any]) -> [String] {
-        func frame(_ node: [String: Any]) -> (top: Double, bottom: Double)? {
-            guard let frame = node["frame"] as? [String: Double], let y = frame["y"], let height = frame["height"], height > 0 else { return nil }
-            return (y, y + height)
+        func frame(_ node: [String: Any]) -> CGRect? {
+            guard let frame = node["frame"] as? [String: Double], let x = frame["x"], let y = frame["y"],
+                  let width = frame["width"], let height = frame["height"], width > 0, height > 0 else { return nil }
+            return CGRect(x: x, y: y, width: width, height: height)
         }
         let roots = (tree["roots"] as? [[String: Any]]) ?? []
         let keys = roots.filter { $0["role"] as? String == "keyboard" }
-            .flatMap { nodes(in: ["roots": ($0["children"] as? [[String: Any]]) ?? []]) }.compactMap(frame)
-        guard let top = keys.map(\.top).min(), let bottom = keys.map(\.bottom).max() else { return [] }
+            .flatMap { nodes(in: ["roots": ($0["children"] as? [[String: Any]]) ?? []]) }
+            .filter { ($0["children"] as? [[String: Any]])?.isEmpty ?? true }
+            .compactMap(frame)
+        guard let first = keys.first else { return [] }
+        let box = keys.dropFirst().reduce(first) { $0.union($1) }
         return nodes(in: ["roots": roots.filter { $0["role"] as? String == "application" }])
             .compactMap { node in (node["id"] as? String).flatMap { id in frame(node).map { (id, $0) } } }
-            .filter { $0.1.top >= top && $0.1.bottom <= bottom }
-            .sorted { $0.1.top < $1.1.top }
+            .filter { box.minY <= $0.1.minY && $0.1.maxY <= box.maxY && box.contains(CGPoint(x: $0.1.midX, y: $0.1.midY)) }
+            .sorted { $0.1.minY < $1.1.minY }
             .map(\.0)
     }
 
