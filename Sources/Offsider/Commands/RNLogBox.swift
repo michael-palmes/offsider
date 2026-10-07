@@ -184,36 +184,49 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
     @MainActor
     func dismiss(on route: DeviceRouter.Route, clock: PollClock = .live) async throws -> Outcome {
         try await route.backend.prepare()
+        let taps = SessionTaps(route: route)
+        do {
+            let outcome = try await dismiss(on: route, taps: taps, clock: clock)
+            await taps.close()
+            return outcome
+        } catch {
+            await taps.close()
+            throw error
+        }
+    }
+
+    @MainActor
+    private func dismiss(on route: DeviceRouter.Route, taps: SessionTaps, clock: PollClock) async throws -> Outcome {
         let deadline = clock.now() + timeout
         var state = try await read(route)
         if let index {
-            return try await dismissOnly(index, from: state, route: route, clock: clock, deadline: deadline)
+            return try await dismissOnly(index, from: state, route: route, taps: taps, clock: clock, deadline: deadline)
         }
         let initial = max(state.logs, state.inspector?.of ?? 0)
         guard !state.isEmpty else { return Outcome(cleared: 0, remaining: 0, method: .none) }
         var method = Method.none
 
         if state.inspector != nil {
-            state = try await dismissInspector(state, presses: (state.inspector?.of ?? 1) + 2, route: route, clock: clock, deadline: deadline)
+            state = try await dismissInspector(state, presses: (state.inspector?.of ?? 1) + 2, route: route, taps: taps, clock: clock, deadline: deadline)
             method = .inspector
         }
         while let toast = state.toasts.first, clock.now() < deadline {
             let before = state.logs
-            try await tap(toast.dismissPoint, route: route)
+            try await taps.tap(toast.dismissPoint)
             try await clock.sleep(Self.settle)
             state = try await read(route)
             if state.logs <= before - toast.count {
                 if method == .none { method = .dismissButton }
                 continue
             }
-            try await tap(toast.bodyPoint, route: route)
+            try await taps.tap(toast.bodyPoint)
             let opened = clock.now() + Self.inspectorWait
             repeat {
                 try await clock.sleep(Self.settle)
                 state = try await read(route)
             } while state.inspector == nil && clock.now() < opened
             guard state.inspector != nil else { break }
-            state = try await dismissInspector(state, presses: toast.count + 2, route: route, clock: clock, deadline: deadline)
+            state = try await dismissInspector(state, presses: toast.count + 2, route: route, taps: taps, clock: clock, deadline: deadline)
             method = .inspector
             if state.inspector != nil { break }
         }
@@ -223,7 +236,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
 
     /// Clears toast `index` alone: its clear button, else its inspector with one Dismiss per log it counts.
     @MainActor
-    private func dismissOnly(_ index: Int, from start: LogBoxState, route: DeviceRouter.Route, clock: PollClock, deadline: TimeInterval) async throws -> Outcome {
+    private func dismissOnly(_ index: Int, from start: LogBoxState, route: DeviceRouter.Route, taps: SessionTaps, clock: PollClock, deadline: TimeInterval) async throws -> Outcome {
         guard start.inspector == nil else {
             throw CLIError(
                 errorDescription: "The LogBox inspector is open, so its toasts are hidden. Close it with `tap --label Minimize`, then dismiss toast \(index); or clear every log with `rn logbox dismiss`.",
@@ -232,26 +245,26 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
             )
         }
         guard let toast = start.toast(index) else { throw RNLogBox.noToast(index, in: start, device: route.device.rawValue) }
-        try await tap(toast.dismissPoint, route: route)
+        try await taps.tap(toast.dismissPoint)
         try await clock.sleep(Self.settle)
         var state = try await read(route)
         if state.logs <= start.logs - toast.count {
             return Outcome(cleared: start.logs - state.logs, remaining: 0, method: .dismissButton)
         }
-        try await tap(toast.bodyPoint, route: route)
+        try await taps.tap(toast.bodyPoint)
         let opened = clock.now() + Self.inspectorWait
         repeat {
             try await clock.sleep(Self.settle)
             state = try await read(route)
         } while state.inspector == nil && clock.now() < opened
         guard state.inspector != nil else { return Outcome(cleared: 0, remaining: toast.count, method: .none) }
-        state = try await dismissInspector(state, presses: toast.count, route: route, clock: clock, deadline: deadline)
+        state = try await dismissInspector(state, presses: toast.count, route: route, taps: taps, clock: clock, deadline: deadline)
         let left = state.inspector != nil ? max(state.inspector?.of ?? 1, 1) : max(0, state.logs - (start.logs - toast.count))
         return Outcome(cleared: max(toast.count - left, 0), remaining: min(left, toast.count), method: .inspector)
     }
 
     @MainActor
-    private func dismissInspector(_ start: LogBoxState, presses: Int, route: DeviceRouter.Route, clock: PollClock, deadline: TimeInterval) async throws -> LogBoxState {
+    private func dismissInspector(_ start: LogBoxState, presses: Int, route: DeviceRouter.Route, taps: SessionTaps, clock: PollClock, deadline: TimeInterval) async throws -> LogBoxState {
         var state = start
         var left = presses
         while left > 0, let inspector = state.inspector, clock.now() < deadline {
@@ -262,7 +275,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
                     hint: "offsider tap --label Dismiss --device \(route.device.rawValue)"
                 )
             }
-            try await tap(button.center, route: route)
+            try await taps.tap(button.center)
             try await clock.sleep(Self.settle)
             state = try await read(route)
             left -= 1
@@ -275,9 +288,28 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
     }
 
-    @MainActor
-    private func tap(_ point: UIPoint, route: DeviceRouter.Route) async throws {
+}
+
+/// Taps through one input session, opened at the first tap, so a run of taps pays for the session once.
+@MainActor
+private final class SessionTaps {
+    let route: DeviceRouter.Route
+    private var session: (any InputSession)?
+
+    init(route: DeviceRouter.Route) {
+        self.route = route
+    }
+
+    func tap(_ point: UIPoint) async throws {
         let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: nil, on: route.device)[0]
-        try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: route.device)
+        if session == nil {
+            session = try await route.backend.openTrackedSession(for: route.device)
+        }
+        try await session?.perform(.tapAt(x: physical.x, y: physical.y))
+    }
+
+    func close() async {
+        await session?.close()
+        session = nil
     }
 }

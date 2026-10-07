@@ -13,7 +13,7 @@ struct DevMenuDriver {
     var send: (@MainActor (InputEvent) async throws -> Void)?
 
     static let openWait: TimeInterval = 5
-    static let closeWait: TimeInterval = 3
+    static let closeWait: TimeInterval = 5
     static let poll: Duration = .milliseconds(300)
     static let switchHold: TimeInterval = 0.2
 
@@ -69,7 +69,8 @@ struct DevMenuDriver {
         }
         try await tap(frame.center, tree: tree, hold: node.role == .switch)
         if try await closed(leaving: state.menu) { return tapped }
-        if item?.isToggle == true || label != nil, let close = DevMenu.node(for: .close, label: nil, in: try await read()), let closeFrame = close.frame {
+        // A switch or label can leave the menu open, and a Close tapped while the menu still presents can be ignored.
+        if item?.isToggle == true || label != nil || item == .close, let close = DevMenu.node(for: .close, label: nil, in: try await read()), let closeFrame = close.frame {
             try await tap(closeFrame.center, tree: nil)
             if try await closed(leaving: state.menu) { return tapped }
         }

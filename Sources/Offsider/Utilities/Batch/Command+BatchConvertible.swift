@@ -318,7 +318,11 @@ extension RNDevMenu: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         guard item != nil || label != nil else { throw ValidationError(BatchStepParser.rnStepMessage) }
         return [.run { session in
-            _ = try await perform(on: context.route, clock: .live) { try await session.perform($0) }
+            if context.device.platform == .android {
+                _ = try await perform(on: context.route, clock: .live) { event in try await session.perform(event) }
+            } else {
+                _ = try await perform(on: context.route, clock: .live)
+            }
         }]
     }
 }
