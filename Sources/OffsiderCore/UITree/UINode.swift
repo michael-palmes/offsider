@@ -98,6 +98,10 @@ public struct AndroidNativeAttributes: Equatable, Sendable {
     public var testTag: String?
     /// Android's own visible-to-user flag; describe-ui JSON does not carry it, and equality ignores it.
     public var visibleToUser: Bool?
+    /// The z-order among its siblings, higher drawn later; nil when the dump gave none. Not in JSON or equality.
+    public var drawingOrder: Int?
+    /// The window's layer, on a window's root only; higher is in front. Not in JSON or equality.
+    public var windowLayer: Int?
 
     public init(
         className: String? = nil,
@@ -110,7 +114,9 @@ public struct AndroidNativeAttributes: Equatable, Sendable {
         stateDescription: String? = nil,
         roleDescription: String? = nil,
         testTag: String? = nil,
-        visibleToUser: Bool? = nil
+        visibleToUser: Bool? = nil,
+        drawingOrder: Int? = nil,
+        windowLayer: Int? = nil
     ) {
         self.className = className
         self.resourceId = resourceId
@@ -123,6 +129,8 @@ public struct AndroidNativeAttributes: Equatable, Sendable {
         self.roleDescription = roleDescription
         self.testTag = testTag
         self.visibleToUser = visibleToUser
+        self.drawingOrder = drawingOrder
+        self.windowLayer = windowLayer
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {

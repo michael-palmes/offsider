@@ -127,7 +127,7 @@ final class TreeDumper {
                 json.nullValue();
             } else {
                 keepHidden = hiddenByKeyboard(window, root);
-                node(root, 0);
+                node(root, 0, false);
                 keepHidden = false;
             }
         }
@@ -153,13 +153,16 @@ final class TreeDumper {
         json.field("active", true);
         json.field("focused", true);
         json.name("root");
-        node(root, 0);
+        node(root, 0, false);
         json.endObject();
     }
 
-    /** Booleans are written only when they differ from the default: false, or true for enabled and visibleToUser. */
+    /**
+     * Booleans are written only when they differ from the default: false, or true for enabled and visibleToUser.
+     * {@code drawingOrder} orders siblings by z, so only a node with siblings carries it.
+     */
     @SuppressWarnings("deprecation")
-    private void node(AccessibilityNodeInfo n, int depth) {
+    private void node(AccessibilityNodeInfo n, int depth, boolean hasSiblings) {
         int index = table.add(n);
         nodes++;
         if (depth > maxDepth) {
@@ -185,6 +188,9 @@ final class TreeDumper {
         }
         n.getBoundsInScreen(rect);
         json.bounds("bounds", rect.left, rect.top, rect.right, rect.bottom);
+        if (hasSiblings) {
+            json.field("drawingOrder", n.getDrawingOrder());
+        }
         json.flag("checkable", n.isCheckable());
         json.flag("checked", n.isChecked());
         if (Build.VERSION.SDK_INT >= 36) {
@@ -245,7 +251,7 @@ final class TreeDumper {
                 json.name("children").beginArray();
                 open = true;
             }
-            node(child, depth + 1);
+            node(child, depth + 1, count > 1);
         }
         if (open) {
             json.endArray();
