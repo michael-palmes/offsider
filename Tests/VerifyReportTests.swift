@@ -13,8 +13,10 @@ struct VerifyReportTests {
         let report = VerifyReport(command: "key", target: "keycode 40", dispatched: .yes, verified: true, attempts: 1, change: .accessibilityTree)
         let json = try object(report)
         #expect(Set(json.keys) == [
-            "version", "command", "target", "dispatched", "verified", "attempts", "change", "changes", "changesTruncated", "note", "style", "exitCode", "error",
+            "version", "command", "target", "dispatched", "verified", "attempts", "change", "changes", "changesTruncated", "ignored", "note", "style",
+            "elapsedMs", "phasesMs", "exitCode", "error",
         ])
+        #expect((json["ignored"] as? [Any])?.isEmpty == true)
         #expect((json["changes"] as? [Any])?.isEmpty == true)
         #expect(json["changesTruncated"] as? Int == 0)
         #expect(json["note"] is NSNull)
@@ -24,6 +26,32 @@ struct VerifyReportTests {
         #expect(json["style"] is NSNull)
         #expect(json["error"] is NSNull)
         #expect(json["change"] as? String == "accessibility-tree")
+    }
+
+    @Test("Ignored elements, elapsed time and phases are reported in whole milliseconds, phases in their documented order")
+    func timingAndIgnored() throws {
+        let report = VerifyReport(
+            command: "tap", target: "id=noop", dispatched: .yes, verified: false, attempts: 1, change: .none,
+            ignored: [VerifyIgnored(node: "live-ticker-price", reason: .live), VerifyIgnored(node: "LogBox toast", reason: .toast)],
+            elapsed: 2.3456,
+            phases: VerifyPhases(settle: 0.4, resolve: 0.61, baseline: 0.05, dispatch: 0.1004, verify: 1.2)
+        )
+        let text = String(decoding: try report.jsonData(), as: UTF8.self)
+        let json = try object(report)
+        #expect(json["ignored"] as? [[String: String]] == [["node": "live-ticker-price", "reason": "live"], ["node": "LogBox toast", "reason": "toast"]])
+        #expect(json["elapsedMs"] as? Int == 2346)
+        let phases = try #require(json["phasesMs"] as? [String: Int])
+        #expect(phases == ["settle": 400, "resolve": 610, "baseline": 50, "dispatch": 100, "verify": 1200])
+        let order = ["settle", "resolve", "baseline", "dispatch", "verify"].compactMap { text.range(of: "\"\($0)\"")?.lowerBound }
+        #expect(order == order.sorted() && order.count == 5)
+        #expect(report.exitCode == .unverified)
+    }
+
+    @Test("The human timing suffix folds everything before the input into settle and names the input after the command")
+    func timingSuffix() {
+        let phases = VerifyPhases(settle: 0.2, resolve: 0.15, baseline: 0.04, dispatch: 0.12, verify: 1.23)
+        #expect(phases.suffix(input: "tap") == "(settle 0.4 s, tap 0.1 s, verify 1.2 s)")
+        #expect(VerifyPhases().suffix(input: "key") == "(settle 0.0 s, key 0.0 s, verify 0.0 s)")
     }
 
     @Test("A --verify-id report says change element; a refusal before input is dispatched no with verify_target_present, exit 1")

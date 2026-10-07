@@ -18,6 +18,8 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
     public struct Node: Equatable, Sendable {
         public var type: String
         public var identifier: String?
+        /// The describe-ui role, which a cached tree keeps when it drops the native type.
+        public var uiRole: String?
         public var role: String?
         public var subrole: String?
         public var label: String?
@@ -32,6 +34,7 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
         public init(
             type: String,
             identifier: String? = nil,
+            uiRole: String? = nil,
             role: String? = nil,
             subrole: String? = nil,
             label: String? = nil,
@@ -45,6 +48,7 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
         ) {
             self.type = type
             self.identifier = identifier
+            self.uiRole = uiRole
             self.role = role
             self.subrole = subrole
             self.label = label
@@ -108,6 +112,7 @@ extension AccessibilitySnapshot.Node {
         self.init(
             type: node.native.typeName ?? node.role.rawValue,
             identifier: node.id,
+            uiRole: node.role.rawValue,
             role: ios?.role ?? node.role.rawValue,
             subrole: ios?.subrole,
             label: node.label,
@@ -129,14 +134,16 @@ extension AccessibilitySnapshot.Node {
             }
             return AccessibilitySnapshot.Frame(x: x, y: y, width: width, height: height)
         }
-        let secure = IOSAccessibilityMapping.role(
+        let uiRole = IOSAccessibilityMapping.role(
             type: Self.text(dictionary["type"]), role: Self.text(dictionary["role"]),
             subrole: Self.text(dictionary["subrole"]), roleDescription: Self.text(dictionary["role_description"])
-        ) == .secureTextField
+        )
+        let secure = uiRole == .secureTextField
         let value = Self.text(dictionary["AXValue"])
         self.init(
             type: Self.text(dictionary["type"]) ?? "",
             identifier: Self.text(dictionary["AXUniqueId"]) ?? Self.text(dictionary["AXIdentifier"]),
+            uiRole: uiRole.rawValue,
             role: Self.text(dictionary["role"]),
             subrole: Self.text(dictionary["subrole"]),
             label: Self.text(dictionary["AXLabel"]),

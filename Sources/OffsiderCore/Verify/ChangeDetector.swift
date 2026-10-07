@@ -5,18 +5,21 @@ import Foundation
 /// siblings sharing that type and identifier. A shared key changes when its role, subrole, label,
 /// value, title, enabled, checked, selected or focused state, or frame (rounded to `framePrecision`)
 /// differs. The result is `changed` when the key sets or any shared signature differ outside the
-/// volatile keys, and `unknown` when either snapshot has no children to compare.
+/// volatile keys, and `unknown` when either snapshot has no children to compare. Live keys (`role#identifier[n]`) line a cached tree up with a fresh read.
 public struct ChangeDetector: Sendable {
     public struct Options: Sendable {
         public var framePrecision: Double
         public var ignoredIdentifiers: Set<String>
-        /// Leaves label, value, title and frame out, so a ticking clock or a moving list is no change.
+        /// Leaves label, value and title out, and the frame of a node whose text changed, so a ticking clock is no change.
         public var ignoreText: Bool
+        /// Leaves frames out, so a moving list is no change.
+        public var ignoreFrames: Bool
 
-        public init(framePrecision: Double = 1, ignoredIdentifiers: Set<String> = [], ignoreText: Bool = false) {
+        public init(framePrecision: Double = 1, ignoredIdentifiers: Set<String> = [], ignoreText: Bool = false, ignoreFrames: Bool = false) {
             self.framePrecision = framePrecision
             self.ignoredIdentifiers = ignoredIdentifiers
             self.ignoreText = ignoreText
+            self.ignoreFrames = ignoreFrames
         }
     }
 
@@ -35,10 +38,16 @@ public struct ChangeDetector: Sendable {
         let enabled: Bool?
         let state: UIState
         let frame: [Double]?
+
+        /// Without text and frame, for a live key.
+        var structural: Signature {
+            Signature(role: role, subrole: subrole, label: nil, value: nil, title: nil, enabled: enabled, state: state, frame: nil)
+        }
     }
 
     private struct Entry {
         let key: String
+        let liveKey: String
         let name: String
         let element: String
         let node: AccessibilitySnapshot.Node
@@ -58,10 +67,88 @@ public struct ChangeDetector: Sendable {
             .union(a.keys.filter { key in b[key].map { $0 != a[key] } ?? false })
     }
 
+    /// The live keys of every node, as `liveTextKeys` and `compare(live:)` name them.
+    public func liveKeys(_ snapshot: AccessibilitySnapshot) -> Set<String> {
+        Set(entries(snapshot).map(\.liveKey))
+    }
+
+    /// The share of live keys two reads have in common, from 0 to 1; 1 when both are empty.
+    public func sharedKeyFraction(_ first: AccessibilitySnapshot, _ second: AccessibilitySnapshot) -> Double {
+        let a = liveKeys(first)
+        let b = liveKeys(second)
+        guard let larger = [a.count, b.count].max(), larger > 0 else { return 1 }
+        return Double(a.intersection(b).count) / Double(larger)
+    }
+
+    /// Live keys in both reads whose label, value or title differ, whatever the text options say.
+    public func liveTextKeys(_ first: AccessibilitySnapshot, _ second: AccessibilitySnapshot) -> Set<String> {
+        let before = Dictionary(entries(first).map { ($0.liveKey, $0.node) }, uniquingKeysWith: { first, _ in first })
+        var keys = Set<String>()
+        for entry in entries(second) {
+            guard let old = before[entry.liveKey] else { continue }
+            if old.label != entry.node.label || old.value != entry.node.value || old.title != entry.node.title {
+                keys.insert(entry.liveKey)
+            }
+        }
+        return keys
+    }
+
+    /// The elements on `live` keys whose text differs between the reads, named as change summaries name them.
+    public func liveChanges(_ before: AccessibilitySnapshot, _ after: AccessibilitySnapshot, live: Set<String>) -> [String] {
+        guard !live.isEmpty else { return [] }
+        let changed = liveTextKeys(before, after).intersection(live)
+        return entries(after).filter { changed.contains($0.liveKey) }.map(\.name)
+    }
+
+    /// The elements on type `keys` that are added, removed or changed between the reads, named as change summaries name them.
+    public func keyChanges(_ before: AccessibilitySnapshot, _ after: AccessibilitySnapshot, keys: Set<String>) -> [String] {
+        guard !keys.isEmpty else { return [] }
+        let old = Dictionary(entries(before).filter { keys.contains($0.key) }.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let new = entries(after).filter { keys.contains($0.key) }
+        let changed = new.filter { entry in old[entry.key].map { $0.signature != entry.signature } ?? true }.map(\.name)
+        let newKeys = Set(new.map(\.key))
+        return changed + old.values.filter { !newKeys.contains($0.key) }.map(\.name).sorted()
+    }
+
+    /// The frames of the nodes on type `keys` or `live` keys in `snapshot`, for leaving their pixels out.
+    public func frames(of keys: Set<String>, live: Set<String> = [], in snapshot: AccessibilitySnapshot) -> [AccessibilitySnapshot.Frame] {
+        guard !keys.isEmpty || !live.isEmpty else { return [] }
+        return entries(snapshot).filter { keys.contains($0.key) || live.contains($0.liveKey) }.compactMap(\.node.frame)
+    }
+
+    /// `tree` with the label and value of every node on a `live` key replaced by one placeholder, so a tree diff passes over its text.
+    public func maskingLive(_ tree: UITree, live: Set<String>) -> UITree {
+        guard !live.isEmpty else { return tree }
+        func mask(_ nodes: [UINode], parentKey: String) -> [UINode] {
+            var ordinals: [String: Int] = [:]
+            return nodes.map { node in
+                let identifier = Self.normalisedIdentifier(node.id)
+                if let identifier, options.ignoredIdentifiers.contains(identifier) { return node }
+                let component = "\(node.role.rawValue)#\(identifier ?? "")"
+                let ordinal = ordinals[component, default: 0]
+                ordinals[component] = ordinal + 1
+                let key = "\(parentKey)/\(component)[\(ordinal)]"
+                var masked = node
+                if live.contains(key) {
+                    masked.label = node.label.map { _ in Self.livePlaceholder }
+                    masked.value = node.value.map { _ in Self.livePlaceholder }
+                }
+                masked.children = mask(node.children, parentKey: key)
+                return masked
+            }
+        }
+        var masked = tree
+        masked.roots = mask(tree.roots, parentKey: "")
+        return masked
+    }
+
+    static let livePlaceholder = "(live)"
+
     public func compare(
         _ before: AccessibilitySnapshot,
         _ after: AccessibilitySnapshot,
-        ignoring volatile: Set<String> = []
+        ignoring volatile: Set<String> = [],
+        live: Set<String> = []
     ) -> Result {
         guard before.isKnown, after.isKnown else { return .unknown }
         let beforeEntries = entries(before).filter { !volatile.contains($0.key) }
@@ -73,7 +160,7 @@ public struct ChangeDetector: Sendable {
             guard let previous = beforeByKey[entry.key] else {
                 return .changed(summary: "element added: \(entry.element)")
             }
-            if let difference = describeDifference(from: previous, to: entry) {
+            if let difference = describeDifference(from: previous, to: entry, live: live.contains(entry.liveKey)) {
                 return .changed(summary: difference)
             }
         }
@@ -85,12 +172,13 @@ public struct ChangeDetector: Sendable {
 
     private func entries(_ snapshot: AccessibilitySnapshot) -> [Entry] {
         var result: [Entry] = []
-        flatten(snapshot.roots, parentKey: "", into: &result)
+        flatten(snapshot.roots, parentKey: "", parentLiveKey: "", into: &result)
         return result
     }
 
-    private func flatten(_ nodes: [AccessibilitySnapshot.Node], parentKey: String, into result: inout [Entry]) {
+    private func flatten(_ nodes: [AccessibilitySnapshot.Node], parentKey: String, parentLiveKey: String, into result: inout [Entry]) {
         var ordinals: [String: Int] = [:]
+        var liveOrdinals: [String: Int] = [:]
         for node in nodes {
             let identifier = Self.normalisedIdentifier(node.identifier)
             if let identifier, options.ignoredIdentifiers.contains(identifier) { continue }
@@ -98,14 +186,19 @@ public struct ChangeDetector: Sendable {
             let ordinal = ordinals[component, default: 0]
             ordinals[component] = ordinal + 1
             let key = "\(parentKey)/\(component)[\(ordinal)]"
+            let liveComponent = "\(node.uiRole ?? node.type)#\(identifier ?? "")"
+            let liveOrdinal = liveOrdinals[liveComponent, default: 0]
+            liveOrdinals[liveComponent] = liveOrdinal + 1
+            let liveKey = "\(parentLiveKey)/\(liveComponent)[\(liveOrdinal)]"
             result.append(Entry(
                 key: key,
+                liveKey: liveKey,
                 name: Self.displayName(node, identifier: identifier),
                 element: identifier.map { "\(node.type)#\($0)" } ?? Self.displayName(node, identifier: nil),
                 node: node,
                 signature: signature(node)
             ))
-            flatten(node.children, parentKey: key, into: &result)
+            flatten(node.children, parentKey: key, parentLiveKey: liveKey, into: &result)
         }
     }
 
@@ -123,13 +216,16 @@ public struct ChangeDetector: Sendable {
             title: text ? node.title : nil,
             enabled: node.enabled,
             state: node.state,
-            frame: text ? frame : nil
+            frame: options.ignoreFrames ? nil : frame
         )
     }
 
-    private func describeDifference(from before: Entry, to after: Entry) -> String? {
-        let a = before.signature
-        let b = after.signature
+    private func describeDifference(from before: Entry, to after: Entry, live: Bool) -> String? {
+        // Ignoring text also ignores a resize that came with it, as a right-aligned number's frame follows its digits.
+        let textMoved = options.ignoreText
+            && (before.node.label != after.node.label || before.node.value != after.node.value || before.node.title != after.node.title)
+        let a = live || textMoved ? before.signature.structural : before.signature
+        let b = live || textMoved ? after.signature.structural : after.signature
         let name = after.name
         if a.value != b.value, before.node.isSecure || after.node.isSecure { return "value of \(name) changed (secure field)" }
         if a.value != b.value { return "value of \(name) changed from \(Self.quoted(a.value)) to \(Self.quoted(b.value))" }

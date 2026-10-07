@@ -134,14 +134,86 @@ struct ChangeDetectorTests {
         #expect(throws: (any Error).self) { try AccessibilitySnapshot(jsonData: Data("42".utf8)) }
     }
 
-    @Test("ignoring text, a ticking label, a new value and a move are unchanged, and an added element still counts")
+    @Test("ignoring text and frames, a ticking label, a new value and a move are unchanged, and an added element still counts")
     func ignoreText() throws {
-        let detector = ChangeDetector(options: .init(ignoreText: true))
+        let detector = ChangeDetector(options: .init(ignoreText: true, ignoreFrames: true))
         let before = try app(children: [element(id: "clock", label: "12:00:01", value: "1")])
         let ticked = try app(children: [element(id: "clock", label: "12:00:02", value: "2", frame: [20, 140, 200, 30])])
         #expect(detector.compare(before, ticked) == .unchanged)
 
         let added = try app(children: [element(id: "clock", label: "12:00:02"), element(id: "toast", label: "Saved")])
         #expect(detector.compare(before, added) == .changed(summary: "element added: StaticText#toast"))
+    }
+
+    @Test("ignoring text alone, a ticking label is unchanged even as it resizes with its text, but a move of steady text still counts")
+    func ignoreTextKeepsFrames() throws {
+        let detector = ChangeDetector(options: .init(ignoreText: true))
+        let before = try app(children: [element(id: "clock", label: "12:00:01"), element(id: "title", label: "Title", frame: [20, 40, 200, 30])])
+        let ticked = try app(children: [element(id: "clock", label: "12:00:02", frame: [10, 100, 210, 30]), element(id: "title", label: "Title", frame: [20, 40, 200, 30])])
+        let moved = try app(children: [element(id: "clock", label: "12:00:02"), element(id: "title", label: "Title", frame: [20, 80, 200, 30])])
+        #expect(detector.compare(before, ticked) == .unchanged)
+        #expect(detector.compare(before, moved) == .changed(summary: "title moved or resized"))
+    }
+}
+
+@Suite("Change Detector live keys")
+struct ChangeDetectorLiveTests {
+    private let detector = ChangeDetector()
+
+    /// With `native`, each node carries the native type a fresh read has; without, it has only its role, as the cache keeps it.
+    private static func screen(price: String, priceWidth: Double = 370, alerts: Bool = false, extra: [UINode] = [], native: Bool = true) -> AccessibilitySnapshot {
+        func typed(_ node: UINode, _ type: String) -> UINode {
+            var node = node
+            if native { node.native = .ios(IOSNativeAttributes(type: type)) }
+            return node
+        }
+        let nodes = [
+            typed(FakeUI.node(.text, id: "price", label: price, frame: FakeUI.frame(16, 100, priceWidth, 40)), "StaticText"),
+            typed(FakeUI.node(.switch, id: "alerts", label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)), "Switch"),
+        ] + extra
+        let root = typed(FakeUI.node(.application, label: "Playground", frame: FakeUI.frame(0, 0, 402, 874), children: nodes), "Application")
+        return AccessibilitySnapshot(tree: UITree(platform: .ios, device: "fake", roots: [root]))
+    }
+
+    @Test("a tree without native types, as the cache keeps it, lines up with a fresh read, so the ticking price is learnt live")
+    func cachedTreeLinesUp() {
+        let cached = Self.screen(price: "$1.00", native: false)
+        let fresh = Self.screen(price: "$1.02")
+        #expect(detector.sharedKeyFraction(cached, fresh) == 1)
+        let live = detector.liveTextKeys(cached, fresh)
+        #expect(live.count == 1)
+        #expect(detector.liveChanges(cached, fresh, live: live) == ["price"])
+    }
+
+    @Test("a live key's text and own frame never count, while its siblings' state and added elements still do")
+    func liveKeysIgnoreTextOnly() {
+        let live = detector.liveTextKeys(Self.screen(price: "$1.00"), Self.screen(price: "$1.02"))
+        let baseline = Self.screen(price: "$1.02")
+        let wider = Self.screen(price: "$10.02", priceWidth: 390)
+        #expect(detector.compare(baseline, wider, live: live) == .unchanged)
+        #expect(detector.compare(baseline, wider) != .unchanged)
+        let switched = Self.screen(price: "$1.03", alerts: true)
+        #expect(detector.compare(baseline, switched, live: live) == .changed(summary: "checked state of alerts changed"))
+        let toast = Self.screen(price: "$1.04", extra: [FakeUI.node(.text, id: "saved", label: "Saved", frame: FakeUI.frame(16, 300, 100, 20))])
+        #expect(detector.compare(baseline, toast, live: live) == .changed(summary: "element added: text#saved"))
+    }
+
+    @Test("reads of different screens share few keys")
+    func differentScreensShareFewKeys() {
+        let other = AccessibilitySnapshot(tree: FakeUI.tree([FakeUI.node(.button, id: "back", label: "Back"), FakeUI.node(.text, id: "title", label: "Detail")]))
+        #expect(detector.sharedKeyFraction(Self.screen(price: "$1.00"), other) < LiveText.minimumSharedKeys)
+    }
+
+    @Test("masking live text gives every read of the ticker the same text, so the change list passes over it")
+    func maskingLive() {
+        func tree(_ price: String, alerts: Bool) -> UITree {
+            FakeUI.tree([
+                FakeUI.node(.text, id: "price", label: price, frame: FakeUI.frame(16, 100, 370, 40)),
+                FakeUI.node(.switch, id: "alerts", label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
+            ])
+        }
+        let live = detector.liveTextKeys(AccessibilitySnapshot(tree: tree("$1.00", alerts: false)), AccessibilitySnapshot(tree: tree("$1.01", alerts: false)))
+        let diff = TreeDiff.diff(old: detector.maskingLive(tree("$1.01", alerts: false), live: live), new: detector.maskingLive(tree("$1.07", alerts: true), live: live))
+        #expect(diff.entries.map(\.key) == ["#alerts"])
     }
 }
