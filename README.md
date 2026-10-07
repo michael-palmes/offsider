@@ -490,7 +490,7 @@ Installing and launching apps stays with `xcrun simctl` and `adb`, and Offsider 
 | 7 | The device was not found or is not booted, or its lock screen stayed up |
 | 8 | The device is busy: another Offsider command holds it (see [Device lock](#device-lock)), or another UiAutomation client holds an Android emulator |
 | 9 | Xcode, adb or the Android SDK is missing or unusable |
-| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, a malformed device ID, an unknown display, a key or `button` the device's platform lacks and `boot` with a simulator UDID |
+| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, an option the command lacks but a sibling has (`wait --wait-timeout`, `assert --timeout`, `tap --timeout`; the message names the right one and nothing is run), a malformed device ID, an unknown display, a key or `button` the device's platform lacks and `boot` with a simulator UDID |
 
 `batch` exits with the code of its first step that failed to run, else 5 when only conditions were not met.
 
