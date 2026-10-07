@@ -31,6 +31,8 @@ final class HelperSession {
     private var nextID: Int
     private var restartedAfterLoss = false
     private var isClosed = false
+    /// One request on the socket at a time, in the order they came, so a capture and a tree read running together never interleave frames.
+    private let queue = HelperRequestQueue()
 
     private init(launcher: HelperLauncher, connection: HelperConnection, nextID: Int, log: @escaping AndroidLog) {
         serial = launcher.serial
@@ -200,6 +202,8 @@ final class HelperSession {
     }
 
     private func send(_ request: HelperRequest, timeout: Duration, expectingPayload: Bool) async throws -> (reply: Data, payload: Data?) {
+        await queue.acquire()
+        defer { queue.release() }
         while true {
             guard !isClosed else {
                 throw AndroidError.helperCrashed(serial, detail: "Offsider had already stopped it")
@@ -311,6 +315,30 @@ final class HelperSession {
         let pid = connection.ready.pid
         log(.debug, "The UiAutomation helper on \(serial) (pid \(pid)) did not confirm its exit; killing it")
         _ = try? await launcher.client.shell("kill \(pid)", on: serial, timeout: Self.killTimeout)
+    }
+}
+
+/// A first-come, first-served lock for requests on one helper socket.
+@MainActor
+final class HelperRequestQueue {
+    private var busy = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard busy else {
+            busy = true
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    /// Hands the lock straight to the longest waiter, so a newcomer cannot jump the queue.
+    func release() {
+        if waiting.isEmpty {
+            busy = false
+        } else {
+            waiting.removeFirst().resume()
+        }
     }
 }
 

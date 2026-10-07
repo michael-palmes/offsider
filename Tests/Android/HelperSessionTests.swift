@@ -34,6 +34,40 @@ struct HelperSessionTests {
         await session.close()
     }
 
+    @Test("requests sent together go out one at a time, and each gets its own reply")
+    func concurrentRequestsQueue() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "events" ? .ok(#"{"events":[]}"#) : nil }
+        let session = try await Self.start(device)
+        async let first = session.dump()
+        async let second = session.events(waitingUpTo: .zero)
+        async let third = session.dump()
+        let (a, b, c) = try await (first, second, third)
+
+        #expect(a.windows.count == 2 && b.isEmpty && c.windows.count == 2)
+        #expect(device.ops.sorted() == ["dump", "dump", "events", "hello"])
+        #expect(Self.ids(device) == [1, 2, 3, 4])
+        await session.close()
+    }
+
+    @Test("the request lock goes to waiters in the order they asked")
+    func queueIsFirstComeFirstServed() async {
+        let queue = HelperRequestQueue()
+        var order: [Int] = []
+        await queue.acquire()
+        let waiters = (1...3).map { number in
+            Task { @MainActor in
+                await queue.acquire()
+                order.append(number)
+                queue.release()
+            }
+        }
+        for _ in 0..<5 { await Task.yield() }
+        queue.release()
+        for waiter in waiters { await waiter.value }
+        #expect(order == [1, 2, 3])
+    }
+
     @Test("paste goes only to a helper whose hello lists it")
     func pasteGatedOnOps() async throws {
         let listing = FakeHelperDevice()
