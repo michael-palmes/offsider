@@ -194,7 +194,8 @@ enum VerifyOutput {
             guard !nodes.isEmpty else { return nil }
             return reason == .toast ? "a \(name) change" : "\(name): \(nodes.prefix(listedChanges).joined(separator: ", "))\(nodes.count > listedChanges ? " and \(nodes.count - listedChanges) more" : "")"
         }
-        return parts.isEmpty ? "" : " Ignored \(parts.joined(separator: "; ")), which changed without the input; not retried."
+        guard !parts.isEmpty else { return "" }
+        return " Ignored \(parts.joined(separator: "; ")), which changed without the input\(ignored.contains { $0.reason == .live } ? "; not retried" : "")."
     }
 
     static func unverifiedLine(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> String {
