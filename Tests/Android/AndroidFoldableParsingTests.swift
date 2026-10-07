@@ -64,12 +64,33 @@ struct AndroidFoldableParsingTests {
         #expect(closed.active?.descriptor.pointWidth.rounded() == 443)
     }
 
-    @Test("One UI's CLOSE, HALF_FOLDED and OPEN are postures; its tent and dual-screen states are unknown")
+    @Test("One UI's CLOSE, HALF_FOLDED and OPEN are postures, its dual-screen states are open, and its tent state is unknown")
     func galaxyFoldStates() {
         let states = AndroidDeviceState.parseStates(GalaxyFoldFixtures.printStates)
-        #expect(states.map(\.posture) == [.closed, .unknown, .halfOpened, .open, .unknown, .unknown])
+        #expect(states.map(\.posture) == [.closed, .unknown, .halfOpened, .open, .open, .open])
         #expect(AndroidDeviceState.parseReading(GalaxyFoldFixtures.state(closed: true))?.committed.posture == .closed)
         #expect(AndroidDeviceState.parseReading(GalaxyFoldFixtures.state(closed: false))?.committed.posture == .open)
+    }
+
+    @Test("setting a posture prefers its own state name over another state mapped to it, whatever the order")
+    func preferredState() {
+        let states = [
+            AndroidDeviceState.State(identifier: 4, name: "DUAL"), AndroidDeviceState.State(identifier: 3, name: "OPEN"),
+            AndroidDeviceState.State(identifier: 0, name: "CLOSE"),
+        ]
+        #expect(AndroidDeviceState.preferred(.open, in: states)?.name == "OPEN")
+        #expect(AndroidDeviceState.preferred(.closed, in: states)?.identifier == 0)
+        #expect(AndroidDeviceState.preferred(.halfOpened, in: states) == nil)
+        #expect(AndroidDeviceState.preferred(.open, in: [AndroidDeviceState.State(identifier: 5, name: "REAR_DUAL")])?.identifier == 5)
+    }
+
+    @Test("posture output names a state that is not the posture's own, as One UI's or the platform's, in text and JSON")
+    func postureStateNamed() {
+        #expect(DisplayReport.postureLine(.unknown, screen: nil, platform: .android, state: "TENT") == "Posture: unknown (One UI TENT)")
+        #expect(DisplayReport.postureLine(.open, screen: nil, platform: .android, state: "DUAL") == "Posture: open (One UI DUAL)")
+        #expect(DisplayReport.postureLine(.open, screen: nil, platform: .android, state: "OPEN") == "Posture: open")
+        #expect(DisplayReport.postureLine(.unknown, screen: nil, platform: .android, state: "REAR_DISPLAY_STATE") == "Posture: unknown (state REAR_DISPLAY_STATE)")
+        #expect(DisplayReport.postureJSON(.open, previous: nil, screen: nil, platform: .android, state: "DUAL").contains(#""posture":"open","state":"DUAL""#))
     }
 
     @Test("One UI names no panel for logical display 0, so the only lit panel is the active one")

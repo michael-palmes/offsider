@@ -81,6 +81,7 @@ struct RenderedScreenshot {
 @MainActor
 enum ScreenCapture {
     static func capture(_ backend: any DeviceBackend, device: DeviceID) async throws -> CapturedScreen {
+        (backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: device)
         let png = try await backend.screenshotPNG(for: device)
         let screen = try? await backend.screenInfo(for: device)
         return try make(png: png, platform: device.platform, screen: screen)

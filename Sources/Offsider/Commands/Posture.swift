@@ -122,10 +122,11 @@ struct PostureCommand: AsyncParsableCommand {
             }
         }
         let screen = try? await backend.screenInfo(for: device)
+        let state = await (folder as? any PostureStateNaming)?.postureStateName(of: device)
         if json {
-            return DisplayReport.postureJSON(current, previous: target == nil && angle == nil ? nil : previous, screen: screen, platform: device.platform)
+            return DisplayReport.postureJSON(current, previous: target == nil && angle == nil ? nil : previous, screen: screen, platform: device.platform, state: state)
         }
-        return DisplayReport.postureLine(current, screen: screen, platform: device.platform)
+        return DisplayReport.postureLine(current, screen: screen, platform: device.platform, state: state)
     }
 
     /// Waits for the hinge to read `angle`, then for the posture to settle: which panel shows depends on the way the hinge moved, not only where it stops. A hinge already there with its panel showing is not moved.

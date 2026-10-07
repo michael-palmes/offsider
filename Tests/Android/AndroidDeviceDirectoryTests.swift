@@ -217,4 +217,30 @@ struct AndroidDeviceDirectoryTests {
         #expect(rows.first?.kind == .emulator)
         #expect(!Self.touchedPhone(server))
     }
+
+    @Test("a phone named at routing is checked from the row routing read, so the device list is read once; an unauthorised row is still refused")
+    @MainActor
+    func routingRowIsReused() async throws {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"], host: { service in
+            switch service {
+            case "host:version": return FakeAdbServer.okay(payload: "0029")
+            case "host:devices-l": return FakeAdbServer.okay(payload: Self.phoneListing)
+            default: return .hang
+            }
+        }, device: { _, _ in FakeAdbServer.shell(stdout: "") }))
+        let backend = AndroidBackend(host: AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), environment: [:], adb: server)) { _, _ in }
+
+        let serial = try await backend.resolveAndroidName("R58M123ABC")
+        let booted = try await backend.requireBootedDevice(DeviceID(rawValue: serial, platform: .android))
+        #expect(booted.name == "Pixel 9")
+        #expect(server.services.filter { $0 == "host:devices-l" }.count == 1)
+        #expect(!Self.touchedPhone(server))
+
+        let unauthorised = try await backend.resolveAndroidName("1A2B3C4D5E6F")
+        let error = await #expect(throws: AndroidError.self) {
+            try await backend.requireBootedDevice(DeviceID(rawValue: unauthorised, platform: .android))
+        }
+        #expect(error?.message == AndroidError.phoneUnauthorised("1A2B3C4D5E6F").message)
+        #expect(server.services.filter { $0 == "host:devices-l" }.count == 2)
+    }
 }
