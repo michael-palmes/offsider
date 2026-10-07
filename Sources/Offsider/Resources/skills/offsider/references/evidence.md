@@ -37,7 +37,7 @@ offsider screenshot --mask-secure --mask-emails --mask-id profile-name --json --
 
 ## Logs
 
-`offsider logs` reads the last 30 s by default. Choose one source (`--rn`, `--app <bundle id or package>`, `--process <name>`) and one window (`--last 2m`, `--since <time>`, `--duration <seconds>` or `--follow`); `--grep <regex>` filters.
+`offsider logs` reads the last 30 s by default. Choose a source (`--rn`, `--app <bundle id or package>`, both, or `--process <name>`) and one window (`--last 2m`, `--since <time>`, `--duration <seconds>` or `--follow`); `--grep <regex>` filters. `--rn --app <id>` reads React Native's log and everything the app logs, which catches an app logger writing outside React Native's; on Android it keeps the app's lines from before a restart, while `--app` alone needs the app running and reads only its current process.
 
 `--json` prints `{"version":1,"platform","device","entries":[...],"truncated"}`; each entry has `timestamp` (ISO 8601, the device's clock), `level`, `process`, `pid`, `tag`, `message` (colour codes removed unless `--raw`) and `raw`, the line as the device wrote it (a whole logcat line, or the iOS message with its colour codes), or null. With `--follow --json`, each entry is one line of its own.
 

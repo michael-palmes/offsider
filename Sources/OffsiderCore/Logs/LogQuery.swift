@@ -87,9 +87,12 @@ public enum LogWindow: Equatable, Sendable {
 
 /// Whose logs to read.
 public enum LogSource: Equatable, Sendable {
+    /// React Native's own log alone.
+    public static let reactNative = LogSource.reactNative(app: nil)
+
     case all
-    /// React Native's JavaScript console and native messages.
-    case reactNative
+    /// React Native's JavaScript console and native messages, and with an app, everything that app logs too.
+    case reactNative(app: String?)
     /// An app by bundle identifier (iOS) or package (Android).
     case app(String)
     /// A process by name.

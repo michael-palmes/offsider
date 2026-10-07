@@ -95,6 +95,26 @@ struct ReactNativeEvidenceTests {
         try await app.run("type --replace ''")
     }
 
+    @Test("logs --rn --app finds the interval line, on Android also after the app was stopped and started again", arguments: RNPlatform.enabled)
+    func logsReactNativeAndApp(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("live-ticker")
+        try await app.run("tap --id live-ticker-interval-1w")
+        if platform == .android {
+            try await AndroidE2E.shell("am force-stop \(AndroidE2E.package)")
+            try await app.open("live-ticker")
+        }
+
+        var found = ""
+        let deadline = Date().addingTimeInterval(15)
+        repeat {
+            found = try await app.run("logs --rn --app \(IOSRNPlayground.bundleID) --last 2m --grep 'Range Selected'").stdout
+            if found.contains("OffsiderFixture Range Selected 1W") { break }
+            try await Task.sleep(for: .seconds(1))
+        } while Date() < deadline
+        #expect(found.contains("OffsiderFixture Range Selected 1W"), "\(found)")
+    }
+
     @Test("logs --rn redacts the login's email and password by default, and --no-redact shows them", arguments: RNPlatform.enabled)
     func logsRedactLogin(platform: RNPlatform) async throws {
         let app = RNApp(platform)

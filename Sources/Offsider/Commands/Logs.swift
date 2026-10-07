@@ -7,15 +7,20 @@ struct Logs: AsyncParsableCommand {
         commandName: "logs",
         abstract: "Print the device's recent log entries, or collect live ones for a while",
         discussion: """
-        Reads the last 30 seconds by default. Choose one source (--rn, --app or --process) and one window \
+        Reads the last 30 seconds by default. Choose a source (--rn, --app, both, or --process) and one window \
         (--last, --since, --duration or --follow). ANSI colour codes, including escaped forms such as \\u001b[32m, \
         are removed unless --raw. Passwords, tokens, keys, cookies, JWTs and email addresses are replaced with \
         [redacted] unless --no-redact (or --raw alone); --grep matches the text before redaction. Exits 0 even when \
         nothing matches. On iOS this reads the simulator's unified log; on Android, logcat.
+
+        --rn reads React Native's own log (the com.facebook.react.log subsystem on iOS, the ReactNativeJS and \
+        ReactNative tags on Android). An app's console output can also log outside it, so --rn --app reads both: \
+        React Native's log and everything the app's process logs (on Android, every process of the app's user ID, \
+        so lines from before a restart are kept and the app need not be running).
         """
     )
 
-    @Flag(name: .customLong("rn"), help: "React Native JavaScript and native logs.")
+    @Flag(name: .customLong("rn"), help: "React Native JavaScript and native logs; with --app, also everything that app logs.")
     var reactNative = false
 
     @Option(help: ArgumentHelp("Only this app's process: a bundle ID on iOS (it must be installed), a package on Android (it must be running).", valueName: "bundle-id|package"))
@@ -67,8 +72,8 @@ struct Logs: AsyncParsableCommand {
     /// The source and window the flags ask for; throws a `LogOptionError` for conflicts and bad values.
     func query() throws -> LogQuery {
         let sources = [(reactNative, "--rn"), (app != nil, "--app"), (process != nil, "--process")].filter(\.0).map(\.1)
-        if sources.count > 1 {
-            throw LogOptionError("Use only one of --rn, --app or --process; got \(Self.list(sources)).")
+        if process != nil, sources.count > 1 {
+            throw LogOptionError("--process reads one process alone: drop \(Self.list(sources.filter { $0 != "--process" })), or drop --process. --rn and --app combine.")
         }
         let windows = [(last != nil, "--last"), (since != nil, "--since"), (duration != nil, "--duration"), (follow, "--follow")].filter(\.0).map(\.1)
         if windows.count > 1 {
@@ -86,7 +91,7 @@ struct Logs: AsyncParsableCommand {
 
         let source: LogSource
         if reactNative {
-            source = .reactNative
+            source = .reactNative(app: app)
         } else if let app {
             source = .app(app)
         } else if let process {
@@ -175,6 +180,9 @@ struct Logs: AsyncParsableCommand {
         if let footer = Self.redactionFooter(sink.collector.redacted) {
             print(footer, to: &standardError)
         }
+        if !follow, let hint = Self.appHint(for: query.source, matched: sink.collector.matched, platform: booted.id.platform) {
+            print(hint, to: &standardError)
+        }
         let collector = sink.collector
         recorder.update(token) { entry in
             entry.entries = follow ? collector.matched : collector.entries.count
@@ -218,8 +226,20 @@ struct Logs: AsyncParsableCommand {
         }
     }
 
+    /// Fewer `--rn` entries than this suggest the app's own console output is logging elsewhere.
+    static let fewReactNativeEntries = 5
+
+    /// The stderr hint after a `--rn` read without `--app` that found few entries; nil otherwise.
+    static func appHint(for source: LogSource, matched: Int, platform: DevicePlatform) -> String? {
+        guard source == .reactNative(app: nil), matched < fewReactNativeEntries else { return nil }
+        let place = platform == .ios ? "its own process" : "its own tags"
+        let id = platform == .ios ? "bundle-id" : "package"
+        return "Only \(matched) React Native \(matched == 1 ? "entry" : "entries"). An app's console output can log under \(place) instead; add --app <\(id)> to read both."
+    }
+
     private static func list(_ flags: [String]) -> String {
-        flags.count == 2 ? "\(flags[0]) and \(flags[1])" : flags.dropLast().joined(separator: ", ") + " and " + flags[flags.count - 1]
+        if flags.count == 1 { return flags[0] }
+        return flags.count == 2 ? "\(flags[0]) and \(flags[1])" : flags.dropLast().joined(separator: ", ") + " and " + flags[flags.count - 1]
     }
 
     private static func check(_ body: () throws -> Void) throws {
