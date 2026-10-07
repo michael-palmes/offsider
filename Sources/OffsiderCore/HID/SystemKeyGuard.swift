@@ -1,6 +1,6 @@
 import Foundation
 
-/// Meta keys a physical Android phone takes as system shortcuts (Meta+M opened Maps on a Galaxy Z Fold).
+/// Meta keys a physical Android phone takes as system shortcuts (Meta+M opened Maps on a Samsung foldable).
 public enum SystemKeyGuard {
     /// Left and right GUI: Command on iOS, Meta on Android.
     public static let metaUsages: Set<Int> = [227, 231]

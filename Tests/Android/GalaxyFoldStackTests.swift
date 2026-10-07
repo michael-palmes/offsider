@@ -3,8 +3,8 @@ import OffsiderCore
 import Testing
 @testable import OffsiderAndroid
 
-/// A Galaxy Z Fold's dump of a full page drawn over the mounted stack, as One UI's accessibility service lists it.
-@Suite("Galaxy Z Fold stacked page")
+/// A Samsung foldable's dump of a full page drawn over the mounted stack, as One UI's accessibility service lists it.
+@Suite("Samsung foldable stacked page")
 struct GalaxyFoldStackTests {
     static func tree() throws -> UITree {
         let dump = try JSONDecoder().decode(HelperDump.self, from: Data(GalaxyFoldStackFixtures.fullPageDump.utf8))

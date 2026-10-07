@@ -3,7 +3,7 @@ import OffsiderCore
 import Testing
 @testable import OffsiderAndroid
 
-/// Two commands on a Galaxy Z Fold sharing one display cache, as two `offsider screenshot` runs do.
+/// Two commands on a Samsung foldable sharing one display cache, as two `offsider screenshot` runs do.
 @Suite("Android display cache")
 @MainActor
 struct AndroidDisplayCacheTests {

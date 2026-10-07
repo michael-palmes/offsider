@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-/// Captures on a foldable phone such as the Galaxy Z Fold, run once unfolded and once folded by hand.
+/// Captures on a foldable phone such as a Samsung foldable, run once unfolded and once folded by hand.
 /// On a phone with one display each test only confirms that `posture` refuses it.
 @Suite("Android phone foldable", .serialized, .enabled(if: isAndroidPhoneE2EEnabled))
 struct AndroidPhoneFoldableTests {
