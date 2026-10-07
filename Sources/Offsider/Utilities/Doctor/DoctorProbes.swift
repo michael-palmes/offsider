@@ -238,12 +238,24 @@ enum DoctorProbes {
                     recoveryDependencies: reportOnlyAccessibilityRecovery
                 )
             }
-            return hasAccessibilityDescendant(data) ? .known : .emptyRoot
+            guard !hasAccessibilityDescendant(data) else { return .known }
+            guard let listing = await runningAppListing(udid: udid), let app = SimLaunchctl.likelyForeground(listing) else { return .emptyRoot }
+            return .emptyWithApp(app)
         } catch let error as UserFacingError {
             return .failed(error.userFacingDescription)
         } catch {
             return .failed(error.localizedDescription)
         }
+    }
+
+    /// The simulator's `launchctl list`, read only when a tree came back empty; nil when it cannot be read in 5 s.
+    static func runningAppListing(udid: String) async -> String? {
+        guard let result = try? await ProcessCapture.run(
+            executable: "/usr/bin/xcrun",
+            arguments: ["simctl", "spawn", udid, "launchctl", "list"],
+            timeout: 5
+        ), result.status == 0 else { return nil }
+        return result.stdout
     }
 
     /// Doctor reports a broken testmanagerd instead of restarting it.

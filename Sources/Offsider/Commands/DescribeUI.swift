@@ -71,7 +71,8 @@ struct DescribeUI: AsyncParsableCommand {
             print(String(decoding: try await Self.rawCapture(on: route), as: UTF8.self))
             return
         }
-        print(try await describe(on: route), terminator: "")
+        let described = try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+        print(described, terminator: "")
     }
 
     /// The output for one read; with `--diff`, compared against the device's cached tree.

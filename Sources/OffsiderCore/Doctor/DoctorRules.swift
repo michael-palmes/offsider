@@ -30,6 +30,8 @@ public enum DeviceWindowState:Equatable, Sendable {
 public enum AccessibilityProbeState: Equatable, Sendable {
     case known
     case emptyRoot
+    /// The tree is empty although `launchctl` shows this app running, as after an app crash and relaunch.
+    case emptyWithApp(SimLaunchctl.App)
     case failed(String)
 }
 
@@ -322,16 +324,27 @@ public enum DoctorRules {
         return nil
     }
 
-    public static func accessibility(_ state: AccessibilityProbeState) -> Verdict {
+    public static func accessibility(_ state: AccessibilityProbeState, udid: String = "<DEVICE_ID>") -> Verdict {
         let hint = "Launch an app, or run describe-ui to see the error."
         switch state {
         case .known:
             return (.pass, "Accessibility tree is readable", nil)
         case .emptyRoot:
             return (.warn, "Empty tree: no frontmost app, or accessibility is not ready yet", hint)
+        case .emptyWithApp(let app):
+            return (.fail, emptyTreeDetail(app), emptyTreeHint(app, udid: udid))
         case .failed(let message):
             return (.fail, message, hint)
         }
+    }
+
+    public static func emptyTreeDetail(_ app: SimLaunchctl.App) -> String {
+        "\(app.bundleID) is running (pid \(app.pid)) but its accessibility tree is empty"
+    }
+
+    /// No simulator service restart reliably brings the tree back, so the fix is a relaunch, then a reboot.
+    public static func emptyTreeHint(_ app: SimLaunchctl.App, udid: String) -> String {
+        "Relaunch the app: xcrun simctl terminate \(udid) \(app.bundleID) && xcrun simctl launch \(udid) \(app.bundleID). If the tree stays empty, reboot the simulator: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
     }
 
     static func plural(_ count: Int, _ noun: String) -> String {

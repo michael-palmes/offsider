@@ -210,6 +210,33 @@ struct DoctorRulesTests {
         #expect(DoctorRules.accessibility(.known).status == .pass)
         #expect(DoctorRules.accessibility(.emptyRoot).status == .warn)
         #expect(DoctorRules.accessibility(.failed("boom")).status == .fail)
+    }
+
+    /// `launchctl list` lines from an iOS 27 simulator, with the playground relaunched after a crash.
+    static let launchctl = [
+        "PID\tStatus\tLabel",
+        "-\t0\tcom.apple.progressd",
+        "51982\t0\tcom.apple.AccessibilityUIServer",
+        "88535\t0\tUIKitApplication:com.mpalmes.offsider.playground.rn[8dc2][rb-legacy]",
+        "70786\t0\tUIKitApplication:com.apple.mobilecal[d126][rb-legacy]",
+        "92001\t0\tUIKitApplication:com.apple.Spotlight[6aa5][rb-legacy]",
+        "-\t-9\tUIKitApplication:com.example.crashed[0001][rb-legacy]",
+    ].joined(separator: "\n")
+
+    @Test("launchctl's running app jobs are read newest first, and the newest outside Apple's own is taken as the app in front")
+    func runningApps() {
+        #expect(SimLaunchctl.runningApps(Self.launchctl).map(\.bundleID) == ["com.apple.Spotlight", "com.mpalmes.offsider.playground.rn", "com.apple.mobilecal"])
+        #expect(SimLaunchctl.likelyForeground(Self.launchctl) == SimLaunchctl.App(bundleID: "com.mpalmes.offsider.playground.rn", pid: 88535))
+        #expect(SimLaunchctl.likelyForeground("PID\tStatus\tLabel\n70786\t0\tUIKitApplication:com.apple.mobilecal[d126][rb-legacy]") == nil)
+        #expect(SimLaunchctl.likelyForeground("") == nil)
+    }
+
+    @Test("an empty tree while an app runs fails, naming the app and pid, with a relaunch and then a reboot as the fix")
+    func emptyTreeWithApp() {
+        let verdict = DoctorRules.accessibility(.emptyWithApp(SimLaunchctl.App(bundleID: "com.example.app", pid: 4242)), udid: "SIM-UDID")
+        #expect(verdict.status == .fail)
+        #expect(verdict.detail == "com.example.app is running (pid 4242) but its accessibility tree is empty")
+        #expect(verdict.hint == "Relaunch the app: xcrun simctl terminate SIM-UDID com.example.app && xcrun simctl launch SIM-UDID com.example.app. If the tree stays empty, reboot the simulator: xcrun simctl shutdown SIM-UDID && xcrun simctl boot SIM-UDID.")
         #expect(DoctorRules.bootedSimulators(count: 0).status == .warn)
         #expect(DoctorRules.bootedSimulators(count: 2).status == .pass)
     }
