@@ -308,7 +308,8 @@ struct AccessibilityFetcherTests {
 
     @Test("Cancelling recovery process polling terminates the child before its timeout")
     func cancellationStopsRecoveryProcess() async throws {
-        let timeout: TimeInterval = 10
+        // Far beyond a busy run's spawn and main actor delays, so only a cancellation that is ignored reaches it.
+        let timeout: TimeInterval = 60
         let pidURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("offsider-recovery-child-\(UUID().uuidString).pid")
         defer { try? FileManager.default.removeItem(at: pidURL) }
@@ -317,7 +318,7 @@ struct AccessibilityFetcherTests {
         let task = Task {
             try await AccessibilityFetcher.runProcess(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
-                arguments: ["-c", "echo $$ > \"$1\"; exec /bin/sleep 60", "sh", pidURL.path],
+                arguments: ["-c", "echo $$ > \"$1\"; exec /bin/sleep 300", "sh", pidURL.path],
                 timeout: timeout
             )
         }
