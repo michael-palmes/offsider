@@ -44,6 +44,8 @@ Exit 0 means the submit button was tapped. It does not mean the server accepted 
 
 Hand back on exit 1 or 5. Do not loop on it.
 
+On an iOS simulator, a system Save Password? sheet can appear over the app a few seconds after a successful login. It comes from iOS, not the app, so `describe-ui` does not list it and `tap --label` cannot find it. Take a screenshot, then tap Not Now by its coordinates (`tap -x <X> -y <Y>`). Never tap Save.
+
 ## Where it refuses
 
 A physical iPhone or iPad is refused. Use a simulator, or an Android emulator or a USB phone the user names. `login` does not take `--app`. `credential` is refused on a physical iPhone or iPad when it would read the device. Pass `--app` to save a credential without reading one.
