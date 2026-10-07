@@ -51,6 +51,29 @@ struct LiveTextTests {
         #expect(LiveText.learn(cached: nil, first: Self.ticker("$64,013.61"), readAt: Self.now).isEmpty)
     }
 
+    @Test("a row added to a list between the cached tree and the first read teaches nothing beneath the list, while the ticker beside it is still learnt")
+    func shiftedRowsTeachNothing() throws {
+        func screen(_ price: String, trades: [String]) -> UITree {
+            let rows = trades.enumerated().map { index, trade in
+                FakeUI.node(.text, label: trade, frame: FakeUI.frame(16, 300 + Double(index) * 40, 370, 40))
+            }
+            return FakeUI.tree([
+                FakeUI.node(.text, id: "live-ticker-price", label: price, frame: FakeUI.frame(16, 100, 370, 40)),
+                FakeUI.node(.group, id: "recent-trades", frame: FakeUI.frame(0, 300, 402, 400), children: rows),
+            ])
+        }
+        let trades = ["Bought 0.1 BTC", "Sold 2 ETH", "Bought 5 SOL", "Sold 0.3 BTC", "Bought 1 ETH"]
+
+        let live = LiveText.learn(
+            cached: try Self.record(screen("$64,012.34", trades: trades)), first: screen("$64,013.61", trades: ["Sold 1 BTC"] + trades), readAt: Self.now
+        )
+
+        #expect(live.count == 1)
+        #expect(ChangeDetector().liveChanges(
+            AccessibilitySnapshot(tree: screen("$64,013.61", trades: trades)), AccessibilitySnapshot(tree: screen("$64,015.02", trades: trades)), live: live
+        ) == ["live-ticker-price"])
+    }
+
     @Test("a cached tree of another screen teaches nothing, even when its text differs")
     func otherScreenTeachesNothing() throws {
         let other = FakeUI.tree([

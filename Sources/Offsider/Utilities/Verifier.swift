@@ -301,8 +301,8 @@ struct Verifier {
                 }
             }
 
-            // A real effect taken for live text could be undone by a second input, so nothing is retried once anything was left out.
-            let retrying = index + 1 < attempts.count && ignored.isEmpty
+            // A real effect taken for live text could be undone by a second input, so live text holds the retry back.
+            let retrying = index + 1 < attempts.count && !ignored.contains { $0.reason == .live }
             phases.verify += dependencies.now() - attemptStart
             guard retrying else {
                 var outcome = Outcome(verified: false, attempts: attempt.number, change: .none, style: style, summary: nil)

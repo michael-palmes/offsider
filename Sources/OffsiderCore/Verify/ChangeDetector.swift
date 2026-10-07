@@ -80,16 +80,22 @@ public struct ChangeDetector: Sendable {
         return Double(a.intersection(b).count) / Double(larger)
     }
 
-    /// Live keys in both reads whose label, value or title differ, whatever the text options say.
+    /// Live keys whose label, value or title differ, whatever the text options say; only under parents whose children line up by role and id in both reads.
     public func liveTextKeys(_ first: AccessibilitySnapshot, _ second: AccessibilitySnapshot) -> Set<String> {
-        let before = Dictionary(entries(first).map { ($0.liveKey, $0.node) }, uniquingKeysWith: { first, _ in first })
         var keys = Set<String>()
-        for entry in entries(second) {
-            guard let old = before[entry.liveKey] else { continue }
-            if old.label != entry.node.label || old.value != entry.node.value || old.title != entry.node.title {
-                keys.insert(entry.liveKey)
+        func visit(_ old: [AccessibilitySnapshot.Node], _ new: [AccessibilitySnapshot.Node], parentKey: String) {
+            let before = liveSiblings(old, parentKey: parentKey)
+            let after = liveSiblings(new, parentKey: parentKey)
+            // A row added or removed shifts the ordinals of the siblings after it, so their keys name other elements.
+            guard before.map(\.component) == after.map(\.component) else { return }
+            for (previous, current) in zip(before, after) {
+                if previous.node.label != current.node.label || previous.node.value != current.node.value || previous.node.title != current.node.title {
+                    keys.insert(current.key)
+                }
+                visit(previous.node.children, current.node.children, parentKey: current.key)
             }
         }
+        visit(first.roots, second.roots, parentKey: "")
         return keys
     }
 
@@ -176,20 +182,28 @@ public struct ChangeDetector: Sendable {
         return result
     }
 
+    /// Each node not ignored, with its live component (`role#identifier`) and live key among its siblings.
+    private func liveSiblings(
+        _ nodes: [AccessibilitySnapshot.Node], parentKey: String
+    ) -> [(node: AccessibilitySnapshot.Node, identifier: String?, component: String, key: String)] {
+        var ordinals: [String: Int] = [:]
+        return nodes.compactMap { node in
+            let identifier = Self.normalisedIdentifier(node.identifier)
+            if let identifier, options.ignoredIdentifiers.contains(identifier) { return nil }
+            let component = "\(node.uiRole ?? node.type)#\(identifier ?? "")"
+            let ordinal = ordinals[component, default: 0]
+            ordinals[component] = ordinal + 1
+            return (node, identifier, component, "\(parentKey)/\(component)[\(ordinal)]")
+        }
+    }
+
     private func flatten(_ nodes: [AccessibilitySnapshot.Node], parentKey: String, parentLiveKey: String, into result: inout [Entry]) {
         var ordinals: [String: Int] = [:]
-        var liveOrdinals: [String: Int] = [:]
-        for node in nodes {
-            let identifier = Self.normalisedIdentifier(node.identifier)
-            if let identifier, options.ignoredIdentifiers.contains(identifier) { continue }
+        for (node, identifier, _, liveKey) in liveSiblings(nodes, parentKey: parentLiveKey) {
             let component = "\(node.type)#\(identifier ?? "")"
             let ordinal = ordinals[component, default: 0]
             ordinals[component] = ordinal + 1
             let key = "\(parentKey)/\(component)[\(ordinal)]"
-            let liveComponent = "\(node.uiRole ?? node.type)#\(identifier ?? "")"
-            let liveOrdinal = liveOrdinals[liveComponent, default: 0]
-            liveOrdinals[liveComponent] = liveOrdinal + 1
-            let liveKey = "\(parentLiveKey)/\(liveComponent)[\(liveOrdinal)]"
             result.append(Entry(
                 key: key,
                 liveKey: liveKey,

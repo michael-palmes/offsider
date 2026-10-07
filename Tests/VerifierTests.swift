@@ -705,7 +705,7 @@ struct VerifierLiveTests {
         #expect(outcome.changes == [VerifyChange(kind: .changed, node: #"switch "Price Alerts" id=live-ticker-toggle"#, field: "checked", old: "false", new: "true")])
     }
 
-    @Test("a LogBox toast's count going up is no change, and the input is not retried")
+    @Test("a LogBox toast's count going up is no change, and the input is still retried")
     func toastCountIgnored() async throws {
         func toast(_ count: String) -> UINode {
             FakeUI.node(.other, label: "\(count), OffsiderFixture warning toast", frame: FakeUI.frame(10, 806, 382, 48))
@@ -713,8 +713,28 @@ struct VerifierLiveTests {
         let fake = FakeSimulator(trees: [Self.ticking(tick: 1, extra: [toast("!")]), Self.ticking(tick: 1, extra: [toast("!")]), Self.ticking(tick: 1, extra: [toast("2")])])
         let (outcome, sent) = try await Self.run(fake)
         #expect(!outcome.verified)
-        #expect(sent == 1)
+        #expect(sent == 2)
         #expect(outcome.ignored == [VerifyIgnored(node: "LogBox toast", reason: .toast)])
+    }
+
+    private static func spinning(_ step: Int, alerts: Bool = false) -> UITree {
+        FakeUI.tree([
+            FakeUI.node(.other, id: "spinner", label: "Loading", frame: FakeUI.frame(Double(16 + step), 400, 40, 40)),
+            FakeUI.node(.switch, id: toggle, label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
+        ])
+    }
+
+    @Test("a dropped first input on a screen with a spinner already moving is sent again, and the second takes effect")
+    func volatileScreenRetries() async throws {
+        let fake = FakeSimulator(trees: (0..<40).map { Self.spinning($0) })
+        var sent = 0
+        let outcome = try await Verifier.run(styles: [.simulator, .physical], timeout: .seconds(1), dependencies: fake.dependencies) { attempt in
+            sent += 1
+            if attempt.number == 2 { fake.trees = (100..<140).map { Self.spinning($0, alerts: true) } }
+        }
+
+        #expect(outcome.verified && outcome.attempts == 2 && sent == 2)
+        #expect(outcome.ignored.contains(VerifyIgnored(node: "spinner", reason: .volatile)))
     }
 
     @Test("the LogBox inspector opening fails at once with logbox_opened, unless the input aimed at a toast")
@@ -793,7 +813,7 @@ struct VerifierLiveTests {
         #expect(abs(outcome.phases.verify - 1.0) < 0.001)
     }
 
-    @Test("the verified line lists up to three changes and ends with the timing suffix; a failure names what it ignored as live")
+    @Test("the verified line lists up to three changes and ends with the timing suffix; a failure names what it ignored, and says not retried only for live text")
     func humanLines() throws {
         let request = VerifyRequest(
             command: "tap", subject: "Tap on id=x", target: "id=x", backend: StubBackend(session: RecordingInputSession()),
@@ -815,5 +835,7 @@ struct VerifierLiveTests {
         failed.ignored = [VerifyIgnored(node: "live-ticker-price", reason: .live), VerifyIgnored(node: "live-ticker-volume", reason: .live)]
         let line = VerifyOutput.unverifiedLine(failed, for: request)
         #expect(line.contains("Ignored live: live-ticker-price, live-ticker-volume, which changed without the input; not retried."))
+        failed.ignored = [VerifyIgnored(node: "spinner", reason: .volatile)]
+        #expect(VerifyOutput.unverifiedLine(failed, for: request).contains("Ignored already changing before the input: spinner, which changed without the input. "))
     }
 }
