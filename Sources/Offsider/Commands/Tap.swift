@@ -319,7 +319,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         backend: any DeviceBackend,
         device: DeviceID
     ) async throws {
-        guard !resolution.coverCandidates.isEmpty else {
+        guard !resolution.coverCandidates.isEmpty || AccessibilityTargetResolver.isHiddenByKeyboard(resolution, in: tree.roots) else {
             return
         }
         let roots = tree.roots

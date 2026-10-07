@@ -182,6 +182,42 @@ struct TapCommandTests {
         #expect(error.hint == "offsider describe-ui --summary --device \(Self.device.rawValue)")
     }
 
+    @Test("on Android a target the helper marks hidden behind the keyboard is refused, though its centre is below the keys, over the navigation bar")
+    func androidHiddenBehindKeyboard() async throws {
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        func screen(hidden: Bool) -> UITree {
+            var low = FakeUI.node(.text, id: "low", label: "Lines: 1", frame: FakeUI.frame(16, 590, 288, 30), platform: .android)
+            if hidden, case .android(var attributes) = low.native {
+                attributes.visibleToUser = false
+                low.native = .android(attributes)
+            }
+            let app = FakeUI.node(.application, label: "Playground", frame: FakeUI.frame(0, 0, 320, 640), platform: .android, children: [low])
+            let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 28, 320, 612), platform: .android, children: [
+                FakeUI.node(.button, label: "q", frame: FakeUI.frame(2, 415, 32, 43), platform: .android),
+                FakeUI.node(.button, label: "Done", frame: FakeUI.frame(270, 544, 48, 48), platform: .android),
+            ])
+            var tree = UITree(platform: .android, device: device.rawValue, roots: [app, keyboard])
+            tree.windows = [
+                UIWindowInfo(id: 1, kind: "application", layer: 0, title: "Playground", active: true, focused: true, package: "com.example", bounds: FakeUI.frame(0, 0, 320, 640)),
+                UIWindowInfo(id: 2, kind: "inputMethod", layer: 1, title: nil, active: false, focused: false, package: nil, bounds: FakeUI.frame(0, 329, 320, 263)),
+            ]
+            return tree
+        }
+        func tap(_ backend: FakeDeviceBackend) async throws {
+            try await Tap.parse(["--id", "low", "--no-settle", "--device", device.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: nil, logger: OffsiderLogger())
+        }
+
+        let hidden = FakeDeviceBackend(platform: .android, trees: [screen(hidden: true)])
+        let error = await #expect(throws: CLIError.self) { try await tap(hidden) }
+        #expect(error?.reason == .targetUnderKeyboard)
+        #expect(hidden.session.calls.isEmpty)
+
+        let shown = FakeDeviceBackend(platform: .android, trees: [screen(hidden: false)])
+        try await tap(shown)
+        #expect(shown.session.calls == [.perform(.tapAt(x: 160, y: 605))])
+    }
+
     @Test("--topmost on Android taps the last on-screen match, and --nth taps the one asked for")
     func topmostAndNth() async throws {
         let roots = StackedScreenTests.stack(platform: .android)
