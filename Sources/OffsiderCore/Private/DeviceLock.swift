@@ -170,10 +170,7 @@ public final class DeviceLock: @unchecked Sendable {
 
     /// The executable's file name is `offsider`.
     public static func isOffsiderProcess(_ pid: Int32) -> Bool {
-        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
-        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
-        guard length > 0 else { return false }
-        let path = String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        guard let path = ProcessPath.of(pid: pid) else { return false }
         return (path as NSString).lastPathComponent == "offsider"
     }
 
