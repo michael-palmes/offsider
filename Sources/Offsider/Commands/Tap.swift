@@ -273,8 +273,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         return false
     }
 
-    /// `--nth` as given; `--topmost` the match Android draws over the others, else the one `topmostPick` finds on each tree read,
-    /// hit-testing on a simulator and walking the tree elsewhere.
+    /// `--nth` as given; `--topmost` the match Android draws over the others, else `topmostPick`'s on each read (hit-test on a simulator).
     func matchPicker(query: AccessibilityQuery, backend: any DeviceBackend, device: DeviceID) -> MatchPicker? {
         if let nth { return { _ in .nth(nth) } }
         guard topmost else { return nil }

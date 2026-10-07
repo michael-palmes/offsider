@@ -1,7 +1,6 @@
 import Foundation
 
-/// Full-screen pages drawn over other screens: which elements lie beneath a page, and what each screen is called.
-/// A later sibling (by Android drawing order, or tree order on iOS) seals an earlier one when it is a page that encloses its visible frame.
+/// Full-screen pages over other screens: a later sibling page (Android drawing order, iOS tree order) seals an earlier one it encloses.
 public struct ScreenStack: Equatable, Sendable {
     /// One page and the elements drawn on it.
     public struct Page: Equatable, Sendable {
@@ -163,8 +162,7 @@ struct FlatTree {
 
     private static let overlayTypes = ["alert", "dialog", "sheet"]
 
-    /// The candidate as a page: big, not a control, keyboard, alert, dialog, sheet or LogBox, with no screen-sized control (a scrim) on it,
-    /// and labelled content running from its top quarter past its middle. `drawnAbove` are flat siblings drawn over it on Android.
+    /// The candidate as a page: big, no control, overlay, LogBox or scrim, labelled from its top quarter past its middle; `above` adds Android siblings on it.
     func page(at index: Int, drawnBeneath above: [Int], viewport: UIFrame) -> ScreenStack.Page? {
         let node = entries[index].node
         guard let frame = node.frame, let visible = frame.intersection(viewport),
