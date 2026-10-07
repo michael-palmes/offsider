@@ -172,7 +172,7 @@ export function OverlayTestScreen() {
         </View>
       </ScrollView>
       <View style={styles.amountRow}>
-        <Target id="overlay-test-amount" label="10, AUD" style={styles.amount} />
+        <Target id="overlay-test-amount" label="10, pcs" style={styles.amount} />
       </View>
       <View
         testID="overlay-test-tab-bar"

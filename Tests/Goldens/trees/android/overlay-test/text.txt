@@ -18,7 +18,7 @@ application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
     button "Log Error" id=overlay-test-log-error (224.8,583.6 102.9x43.8)
     button "Log Two Errors" id=overlay-test-log-two-errors (68.6,639.6 148.2x43.8)
     button "Clear Logs" id=overlay-test-clear-logs (229,639.6 114.3x43.8)
-  button "10, AUD" id=overlay-test-amount (16,790.5 379.4x56)
+  button "10, pcs" id=overlay-test-amount (16,790.5 379.4x56)
   group id=overlay-test-tab-bar (0,850.3 411.4x73.1)
   button "Home" id=overlay-test-tab-home (0,850.7 137.1x49.1) selected
   button "Search" id=overlay-test-tab-search (137.1,850.7 137.1x49.1)

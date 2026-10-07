@@ -133,12 +133,12 @@ struct ReactNativeDebugSmokeTests {
         let dismissed = try await app.run("rn logbox dismiss --json").stdout
         #expect(dismissed.contains(#""cleared":2,"remaining":0"#), "\(dismissed)")
         let after = try await app.run("rn logbox status --json").stdout
-        #expect(after.contains(#""logs":0"#) && !after.contains("10, AUD"), "\(after)")
+        #expect(after.contains(#""logs":0"#) && !after.contains("10, pcs"), "\(after)")
         try await app.run("tap --id overlay-test-tab-search --fail-if-covered")
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
     }
 
-    @Test("a full-width 10, AUD button near the bottom is never read as LogBox", arguments: RNPlatform.enabled)
+    @Test("a full-width 10, pcs button near the bottom is never read as LogBox", arguments: RNPlatform.enabled)
     func amountIsNotLogBox(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("overlay-test")
