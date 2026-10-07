@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-07
+
 ### Added
 
 - The Android helper (1.1.0, protocol 2) gains `inject`, which sends taps, swipes, touches, keys and text through UiAutomation, and `screenshot`, which returns the screen's raw pixels; `hello` lists the ops it serves.
@@ -60,6 +62,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu [item]` opens a React Native debug build's dev menu (shake on an iOS simulator, the menu key on Android) and lists its items, or chooses `reload`, `home`, `inspector`, `perf-monitor`, `fast-refresh`, `debugger`, `close` or `--label <text>` and waits for the menu to close (`--json` prints one object either way); `rn tools off` turns off the element inspector and the performance monitor when they show.
 
 ### Changed
+
+- The earlier releases and their tags were withdrawn; 0.7.0 is the first release of the current history, and `brew upgrade offsider` moves to it.
 
 - `test-runner.sh` loads a git-ignored `.env` from the repository root before anything else, and names its devices through env vars with neutral defaults: `OFFSIDER_SIMULATOR_NAME` (a stock iPhone), `OFFSIDER_FOLDABLE_SIMULATOR_NAME` (`Offsider Duo`), `OFFSIDER_ANDROID_E2E_AVD` (`Offsider_E2E`) and the new `OFFSIDER_ANDROID_FOLD_AVD` (`Offsider_E2E_Fold`). `scripts/bench-ab.sh` allows the same two AVDs. `scripts/release.sh` reads the signing team from `TEAM_ID` (set in `.env`) and has no built-in default; `--adhoc` runs need none.
 
@@ -357,10 +361,5 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.6.0...HEAD
-[0.6.0]: https://github.com/michael-palmes/offsider/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/michael-palmes/offsider/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/michael-palmes/offsider/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/michael-palmes/offsider/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/michael-palmes/offsider/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/michael-palmes/offsider/releases/tag/v0.1.0
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/michael-palmes/offsider/releases/tag/v0.7.0
