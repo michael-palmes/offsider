@@ -39,6 +39,20 @@ struct AndroidFoldableBackendTests {
 
         private var committed: Int { override ?? base }
 
+        private func status(closed: Bool) -> String {
+            FoldableFixtures.status(
+                FoldableFixtures.foldPrintStates,
+                FoldableFixtures.foldState(committed: committed, base: base, override: override),
+                FoldableFixtures.foldDumpsys(closed: closed)
+            )
+        }
+
+        private func probe(closed: Bool) -> String {
+            guard lagging > 0 else { return FoldableFixtures.foldGeometry(closed: closed) }
+            lagging -= 1
+            return closed ? FoldableFixtures.foldGeometryOpen : FoldableFixtures.foldGeometryUnfolding
+        }
+
         func reply(to service: String) -> FakeAdbServer.Reply {
             lock.withLock {
                 let command = service.hasPrefix("shell,v2,raw:") ? String(service.dropFirst("shell,v2,raw:".count)) : service
@@ -54,16 +68,11 @@ struct AndroidFoldableBackendTests {
                 case AndroidDisplayList.command:
                     return FakeAdbServer.shell(stdout: FoldableFixtures.foldDumpsys(closed: closed))
                 case AndroidDisplayStatus.script:
-                    return FakeAdbServer.shell(stdout: FoldableFixtures.status(
-                        FoldableFixtures.foldPrintStates,
-                        FoldableFixtures.foldState(committed: committed, base: base, override: override),
-                        FoldableFixtures.foldDumpsys(closed: closed)
-                    ))
-                case AndroidDisplayGeometry.probeScript where lagging > 0:
-                    lagging -= 1
-                    return FakeAdbServer.shell(stdout: closed ? FoldableFixtures.foldGeometryOpen : FoldableFixtures.foldGeometryUnfolding)
+                    return FakeAdbServer.shell(stdout: status(closed: closed))
+                case AndroidDisplayStatus.scriptWithProbe:
+                    return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(status(closed: closed), probe(closed: closed)))
                 case AndroidDisplayGeometry.probeScript:
-                    return FakeAdbServer.shell(stdout: FoldableFixtures.foldGeometry(closed: closed))
+                    return FakeAdbServer.shell(stdout: probe(closed: closed))
                 case AndroidDeviceDirectory.propertiesScript:
                     return FakeAdbServer.shell(stdout: "Offsider_E2E_Fold\n\n1\n16\n36\n")
                 default:
@@ -132,7 +141,7 @@ struct AndroidFoldableBackendTests {
         #expect(closed.display == ScreenDisplay(id: "cover", platformId: FoldableFixtures.coverId))
         #expect(closed.posture == .closed)
         #expect((closed.width, closed.height) == (443.08, 994.46))
-        #expect(rig.shellCommands.filter { $0 == AndroidDisplayGeometry.probeScript }.count == 2)
+        #expect(rig.shellCommands.filter { $0.hasSuffix(AndroidDisplayGeometry.probeScript) }.count == 2)
     }
 
     @Test("after a fold, the screen size follows the new panel even while the display probe still describes the old one")
@@ -304,6 +313,10 @@ struct AndroidFoldableBackendTests {
                 case AndroidDisplayList.command: return FakeAdbServer.shell(stdout: FoldableFixtures.pixel9Dumpsys)
                 case AndroidDisplayStatus.script:
                     return FakeAdbServer.shell(stdout: FoldableFixtures.status(FoldableFixtures.pixel9PrintStates, FoldableFixtures.pixel9State, FoldableFixtures.pixel9Dumpsys))
+                case AndroidDisplayStatus.scriptWithProbe:
+                    return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(
+                        FoldableFixtures.status(FoldableFixtures.pixel9PrintStates, FoldableFixtures.pixel9State, FoldableFixtures.pixel9Dumpsys), FoldableFixtures.pixel9Geometry
+                    ))
                 case AndroidDisplayGeometry.probeScript: return FakeAdbServer.shell(stdout: FoldableFixtures.pixel9Geometry)
                 default: return FakeAdbServer.shell(stderr: "unexpected", status: 1)
                 }
@@ -318,7 +331,7 @@ struct AndroidFoldableBackendTests {
         #expect(screen.rotationDegrees == 0)
         #expect(server.services.filter { $0.hasPrefix("shell,v2,raw:") } == [
             "shell,v2,raw:\(AndroidDeviceState.printStates)",
-            "shell,v2,raw:\(AndroidDisplayGeometry.probeScript)",
+            "shell,v2,raw:\(AndroidDisplayStatus.scriptWithProbe)",
         ])
 
         let list = try await backend.displays(of: Self.device)
@@ -329,13 +342,13 @@ struct AndroidFoldableBackendTests {
         #expect(error?.kind == .postureUnavailable)
     }
 
-    @Test("a command's first screen read adds one shell call for the display and posture, and later reads none")
+    @Test("a command's first screen read is one shell call for the display, posture and probe, and later reads none")
     func screenStatusOnce() async throws {
         let rig = try Self.rig(grpc: false, closed: true)
         _ = try await rig.backend.screenInfo(for: Self.device)
         _ = try await rig.backend.screenInfo(for: Self.device)
 
-        #expect(rig.shellCommands.filter { $0 == AndroidDisplayStatus.script }.count == 1)
+        #expect(rig.shellCommands == [AndroidDisplayStatus.scriptWithProbe])
     }
 
     @Test("a folded foldable's screen JSON names the cover display and the closed posture")

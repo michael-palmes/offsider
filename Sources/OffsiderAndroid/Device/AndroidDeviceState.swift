@@ -47,14 +47,23 @@ enum AndroidDeviceState {
         return committed.map { Reading(committed: $0, base: base, override: override) }
     }
 
-    /// AOSP's names and One UI's (`CLOSE`, `HALF_FOLDED`, `OPEN`); tent, rear display and concurrent states have no posture name.
+    /// AOSP's and One UI's names (`DUAL` and `REAR_DUAL` light both panels open); `TENT` and the rest have no posture.
     static func posture(named name: String) -> Posture {
         switch name.uppercased() {
         case "CLOSED", "CLOSE": return .closed
         case "HALF_OPENED", "HALF_FOLDED": return .halfOpened
-        case "OPENED", "OPEN": return .open
+        case "OPENED", "OPEN", "DUAL", "REAR_DUAL": return .open
         default: return .unknown
         }
+    }
+
+    /// The names that are a posture's own, which setting a posture prefers over others mapped to it.
+    static let canonicalNames: Set<String> = ["CLOSED", "CLOSE", "HALF_OPENED", "HALF_FOLDED", "OPENED", "OPEN"]
+
+    /// The state to request for `posture`: one of its own names when the device lists one, else any state mapped to it.
+    static func preferred(_ posture: Posture, in states: [State]) -> State? {
+        let matching = states.filter { $0.posture == posture }
+        return matching.first { canonicalNames.contains($0.name.uppercased()) } ?? matching.first
     }
 
     private static func state(in line: String) -> State? {

@@ -72,6 +72,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `button menu` presses Android's menu key (KEYCODE_MENU), which opens a React Native debug build's dev menu, on emulators and phones, and `key 118` (the HID Menu key) now maps to it on Android instead of exiting 64. On an emulator both go over gRPC as Linux evdev KEY_MENU, since the emulator drops USB usage 118 and turns the W3C `ContextMenu` key into Search; iOS refuses `button menu` with exit 64. HID 101 (Application) stays unmapped: the emulator sends it as Search.
 - `wait --settled --ignore-values` lets label and value changes pass, so a screen with a ticking price or clock can settle; moves and elements added or removed still restart the quiet window, and a timeout where only text moved suggests the flag.
 - `--verify --json` gains `ignored` (`{node, reason}`, `reason` `live`, `volatile` or `toast`), `elapsedMs` and `phasesMs` (`settle`, `resolve`, `baseline`, `dispatch`, `verify`) within version 2, and the note `logbox_opened`. `OFFSIDER_TIMINGS=1` adds the phases `resolve`, `dispatch`, `baseline-capture` and `verify-poll`.
+- `OFFSIDER_DISPLAY_CACHE=off` turns off a per-phone display cache under the private directory's `displays/` (0600 files named by a hash of the serial): a foldable phone's active panel, its size, its device states and its adb `transport_id`, so the next `screenshot` captures that panel with `screencap -d` alongside `cmd device_state state`. It is used only while the connection, the committed state and the captured size all match (before API 31, the size alone), and a panel id that is not digits is never used.
+- `posture` names a device state that is not the posture's own, as `Posture: open (One UI DUAL)`, and `--json` gains `state` (null on iOS). `OFFSIDER_TIMINGS=1` adds the Android phase `display-status`.
 
 ### Changed
 
@@ -105,6 +107,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A verified line names up to three changes and always ends with its timing, such as `(settle 0.4 s, tap 0.1 s, verify 1.2 s)`; a failure names what it ignored as live.
 - `wait --settled` within 2 s of an input waits for that input's effect: a read that differs from the screen before it, else 2 s after it, or 1 s when no read from before it was kept. An input checked with `--verify` needs no such wait.
 - `--verify` takes its baseline screenshot alongside its two reads before the input, and none for a switch, checkbox or radio button, whose effect the tree always shows.
+- A plain Android `screenshot` (PNG at native scale, with no `--region`, masks, `--compare`, `--display` or `--json`) writes the device's PNG as it came, sized from its header, without reading the screen's size, rotation or posture; routing a phone by serial reuses its device-list row, so the phone is listed once per command; the display status and the display probe are one shell call, and `describe-ui` and captures start it alongside the tree read or the capture.
+- One UI's `DUAL` and `REAR_DUAL` device states read as posture `open`; setting a posture prefers the state with the posture's own name.
 
 ### Fixed
 
@@ -161,6 +165,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Starting the runner on a locked iPhone or iPad now exits 7 with `device_locked` as soon as `xcodebuild` says it is waiting for the device to be unlocked, and stops it, instead of waiting 150 s and failing with `runner_unavailable`. An `xcodebuild` that exits before the runner answers now says so, instead of claiming the runner did not start within 150 s.
 - When iOS asks for the device passcode on behalf of XCTest (`Enter iPad Passcode for "XCTest"`) and nobody enters it, starting the runner now exits 7 with `ui_automation_off`, naming the prompt and asking for the passcode to be entered on the device, as soon as XCTest gives up enabling automation (about a minute), instead of a generic runner failure.
 - A `--verify` change that lands after the poll and the screenshot check, such as a push delayed past `--verify-timeout`, now verifies on the same attempt from one more read instead of sending the input again, and a change that never settled counts only while the latest read still shows it.
+- On a foldable whose device states could not be read, the screen is no longer named `main` from the display probe alone while `dumpsys display` lists two panels, and with both panels lit and none named for display 0, the panel the probed geometry fits names the screen.
 
 ## [0.6.0] - 2026-10-05
 

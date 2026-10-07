@@ -66,44 +66,87 @@ extension AndroidBackend: DisplayControlling {
 
     static let settleTimeout = Duration.seconds(10)
 
-    /// For `screenInfo`: the active display's role and physical id, and a foldable's posture, in one shell call at most.
+    /// For `screenInfo`: the active display's role and physical id, and a foldable's posture; a read under way is shared.
     func screenStatus(_ serial: String) async -> (display: ScreenDisplay?, posture: Posture?) {
         if let cached = screenStatuses[serial] {
             return cached
         }
-        let status = await readScreenStatus(serial)
-        screenStatuses[serial] = status
-        return status
+        return await startScreenStatus(serial).value
     }
 
+    /// Starts the screen status read, or returns the one under way, without waiting for it.
+    @discardableResult
+    func startScreenStatus(_ serial: String) -> Task<(display: ScreenDisplay?, posture: Posture?), Never> {
+        if let pending = statusTasks[serial] {
+            return pending
+        }
+        statusTicket += 1
+        let ticket = statusTicket
+        let task = Task { [weak self] () -> (display: ScreenDisplay?, posture: Posture?) in
+            guard let self else { return (nil, nil) }
+            let status = await self.readScreenStatus(serial)
+            if self.statusTickets[serial] == ticket {
+                self.screenStatuses[serial] = status
+                self.statusTasks[serial] = nil
+                self.statusTickets[serial] = nil
+            }
+            return status
+        }
+        statusTasks[serial] = task
+        statusTickets[serial] = ticket
+        return task
+    }
+
+    /// Status and, while the geometry is unknown, the display probe, in one shell call (`display-status`).
     private func readScreenStatus(_ serial: String) async -> (display: ScreenDisplay?, posture: Posture?) {
         var reading: AndroidDeviceState.Reading?
         let known = knownDeviceStates[serial]
         if known == nil || known!.count >= 2 || (activeUniqueIds[serial] == nil && displayLists[serial] == nil) {
+            let probing = geometries[serial] == nil
             do {
                 try await prepare()
-                let result = try await requireClient().shell(AndroidDisplayStatus.script, on: serial, label: "cmd device_state; dumpsys display")
+                let client = try requireClient()
+                let result = try await host.timing.measure(.displayStatus) {
+                    try await client.shell(
+                        probing ? AndroidDisplayStatus.scriptWithProbe : AndroidDisplayStatus.script, on: serial,
+                        label: probing ? "cmd device_state; dumpsys display; wm size; wm density; dumpsys input" : "cmd device_state; dumpsys display"
+                    )
+                }
                 let status = AndroidDisplayStatus.parse(result.stdoutText)
                 knownDeviceStates[serial] = status.states
                 reading = status.reading
+                if let committed = status.reading {
+                    stateReadings[serial] = committed
+                }
                 if !status.displays.displays.isEmpty {
                     displayLists[serial] = status.displays
+                }
+                if probing, geometries[serial] == nil, let probe = status.probe, let geometry = try? AndroidDisplayGeometry.parse(probe) {
+                    geometries[serial] = geometry
+                    activeUniqueIds[serial] = AndroidDisplayGeometry.viewportUniqueId(in: probe)
                 }
             } catch {
                 log(.debug, "Could not read the displays and posture of \(serial): \(error)")
             }
         }
-        let foldable = (knownDeviceStates[serial]?.count ?? 0) >= 2
-        if !foldable, let platformId = viewportPlatformId(serial) {
+        // One display only when the device states were read and name one panel at most, and dumpsys lists no second built-in panel.
+        let panels = displayLists[serial]?.displays.filter { !$0.external }.count ?? 0
+        if let states = knownDeviceStates[serial], states.count < 2, panels < 2, let platformId = viewportPlatformId(serial) {
             return (ScreenDisplay(id: DisplayRole.main.rawValue, platformId: platformId), nil)
         }
+        let foldable = (knownDeviceStates[serial]?.count ?? 0) >= 2
         let display = displayLists[serial].flatMap { activeDisplay(in: $0, serial: serial) }?.descriptor.screenDisplay
-        return (display, foldable ? reading?.committed.posture : nil)
+        return (display, foldable ? (reading ?? stateReadings[serial])?.committed.posture : nil)
     }
 
-    /// Logical display 0's panel, else the probe's viewport, else the only lit panel (One UI names no panel for display 0).
+    /// Logical display 0's panel, else the probe's viewport, else the only lit panel, else the one panel the probed geometry fits.
     func activeDisplay(in list: AndroidDisplayList, serial: String) -> AndroidDisplayList.Physical? {
-        list.active ?? list.displays.first { $0.uniqueId == activeUniqueIds[serial] } ?? list.soleLitPanel
+        if let found = list.active ?? list.displays.first(where: { $0.uniqueId == activeUniqueIds[serial] }) ?? list.soleLitPanel {
+            return found
+        }
+        guard let geometry = geometries[serial] else { return nil }
+        let fitting = list.displays.filter { !$0.external && geometry.fits($0.descriptor) }
+        return fitting.count == 1 ? fitting.first : nil
     }
 
     /// The platform id of the panel that display 0's viewport named in the latest shell probe.
@@ -113,24 +156,42 @@ extension AndroidBackend: DisplayControlling {
     }
 }
 
-/// `print-states`, `state` and the display lines of `dumpsys display` in one shell call.
+/// `print-states`, `state` and the display lines of `dumpsys display` in one shell call, with the display probe after them when asked.
 enum AndroidDisplayStatus {
     static let separator = "--- offsider ---"
     static let script = "\(AndroidDeviceState.printStates); echo '\(separator)'; \(AndroidDeviceState.readState); echo '\(separator)'; \(AndroidDisplayList.command)"
+    static let scriptWithProbe = "\(script); echo '\(separator)'; \(AndroidDisplayGeometry.probeScript)"
 
-    static func parse(_ output: String) -> (states: [AndroidDeviceState.State], reading: AndroidDeviceState.Reading?, displays: AndroidDisplayList) {
+    /// `probe` is nil when the output has no fourth part.
+    static func parse(_ output: String) -> (states: [AndroidDeviceState.State], reading: AndroidDeviceState.Reading?, displays: AndroidDisplayList, probe: String?) {
         let parts = output.components(separatedBy: separator + "\n")
         let part = { (index: Int) in index < parts.count ? parts[index] : "" }
-        return (AndroidDeviceState.parseStates(part(0)), AndroidDeviceState.parseReading(part(1)), AndroidDisplayList.parse(dumpsys: part(2)))
+        return (
+            AndroidDeviceState.parseStates(part(0)), AndroidDeviceState.parseReading(part(1)), AndroidDisplayList.parse(dumpsys: part(2)),
+            parts.count > 3 ? parts[3] : nil
+        )
     }
 }
 
-extension AndroidBackend: PostureControlling {
+extension AndroidBackend: ScreenStatusPrefetching {
+    public func prefetchScreenStatus(for id: DeviceID) {
+        guard screenStatuses[id.rawValue] == nil else { return }
+        startScreenStatus(id.rawValue)
+    }
+}
+
+extension AndroidBackend: PostureControlling, PostureStateNaming {
     /// `cmd device_state state`; nil when `print-states` lists fewer than two states.
     public func posture(of id: DeviceID) async throws -> Posture? {
         let serial = id.rawValue
         guard try await deviceStates(serial).count >= 2 else { return nil }
-        return try await deviceStateReading(serial).committed.posture
+        let reading = try await deviceStateReading(serial)
+        stateReadings[serial] = reading
+        return reading.committed.posture
+    }
+
+    public func postureStateName(of id: DeviceID) async -> String? {
+        stateReadings[id.rawValue]?.committed.name
     }
 
     /// gRPC `setPosture` moves the hinge as the extended controls do; without gRPC, a `cmd device_state` override.
@@ -148,7 +209,7 @@ extension AndroidBackend: PostureControlling {
         guard states.count >= 2 else { throw AndroidError.notFoldable(serial) }
         let reading = try await deviceStateReading(serial)
         defer { forgetDisplay(of: serial) }
-        let match = states.first { $0.posture == posture }
+        let match = AndroidDeviceState.preferred(posture, in: states)
         switch try await transport(for: serial) {
         case .grpc(let emulator):
             if reading.override != nil {
@@ -244,6 +305,9 @@ extension AndroidBackend: PostureControlling {
         activeUniqueIds[serial] = nil
         displayLists[serial] = nil
         screenStatuses[serial] = nil
+        statusTasks[serial] = nil
+        statusTickets[serial] = nil
+        cachedDisplayIds[serial] = nil
     }
 }
 

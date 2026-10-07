@@ -133,7 +133,7 @@ struct Screenshot: AsyncParsableCommand {
         let request = try request()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan()))
+        let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan()), plain: !json)
 
         guard let comparison = report.comparison else {
             if json {
@@ -154,10 +154,16 @@ struct Screenshot: AsyncParsableCommand {
         }
     }
 
-    /// Standalone: a tree mask reads one fresh tree; without one, no tree is read.
+    /// Standalone: a tree mask reads one fresh tree; without one, no tree is read. `plain` allows writing the device's PNG as it came.
     @MainActor
-    func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan) async throws -> ScreenshotReport {
-        try await take(request, on: route, masks: masks) { try await route.backend.accessibilityTree(for: route.device) }
+    func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan, plain: Bool = false) async throws -> ScreenshotReport {
+        try await take(request, on: route, masks: masks, plain: plain) { try await route.backend.accessibilityTree(for: route.device) }
+    }
+
+    /// An Android PNG at native scale with nothing to crop, paint or compare is written as the device sent it, sized from its header, with no screen read.
+    func isPlain(_ request: ScreenshotRequest, masks: MaskPlan, platform: DevicePlatform) -> Bool {
+        platform == .android && request.format == .png && request.scale == .native && request.region == nil
+            && masks.isEmpty && compare == nil && displayOption.id == nil
     }
 
     /// Captures, paints `masks` (reading the tree from `tree` only when a mask needs it), writes the image when asked and compares; prints only the stderr notes.
@@ -166,6 +172,7 @@ struct Screenshot: AsyncParsableCommand {
         _ request: ScreenshotRequest,
         on route: DeviceRouter.Route,
         masks: MaskPlan,
+        plain: Bool = false,
         tree treeSource: @MainActor () async throws -> UITree
     ) async throws -> ScreenshotReport {
         let backend = route.backend
@@ -173,6 +180,15 @@ struct Screenshot: AsyncParsableCommand {
         let booted = try await backend.requireBootedDevice(route.device)
         let recorder = EvidenceRecorder.current
         let token = try recorder.begin(device: booted.id, kind: "screenshot")
+
+        var devicePNG: Data?
+        if plain, isPlain(request, masks: masks, platform: route.device.platform) {
+            let png = try await backend.screenshotPNG(for: booted.id)
+            if let size = PNGHeader.size(of: png) {
+                return try writePlain(png, size: size, booted: booted, platform: route.device.platform, token: token, recorder: recorder)
+            }
+            devicePNG = png
+        }
 
         let baseline = try compare.map(ScreenCapture.readBaseline)
         let selected = try await displayOption.resolve(on: backend, device: booted.id, deviceName: deviceOption.id)
@@ -185,7 +201,9 @@ struct Screenshot: AsyncParsableCommand {
             tree = try await Timings.measure("accessibility") { try await treeSource() }
         }
         var capture: CapturedScreen
-        if let selected {
+        if let devicePNG {
+            capture = try ScreenCapture.make(png: devicePNG, platform: route.device.platform, screen: try? await backend.screenInfo(for: booted.id))
+        } else if let selected {
             guard let capturer = backend as? any DisplayCapturing else {
                 throw CLIError(errorDescription: "--display is not available for \(deviceOption.id) yet. Omit it to capture the active display.", reason: .notSupported)
             }
@@ -214,7 +232,7 @@ struct Screenshot: AsyncParsableCommand {
         }
         var runFile: String?
         if let token {
-            runFile = try Self.writeRunCopy(rendered, format: request.format, token: token, recorder: recorder, otherCopy: path)
+            runFile = try Self.writeRunCopy(try rendered.encoded(as: request.format), format: request.format, token: token, recorder: recorder, otherCopy: path)
             recorder.update(token) { entry in
                 entry.output = path
                 entry.masked = masked.map { $0.painted.values.reduce(0, +) }
@@ -258,12 +276,40 @@ struct Screenshot: AsyncParsableCommand {
         return report
     }
 
+    /// Writes the device's PNG unchanged to `--output` or the default name, and into any run; the report carries only its path and size.
+    @MainActor
+    private func writePlain(
+        _ png: Data, size: (width: Int, height: Int), booted: BootedDevice, platform: DevicePlatform,
+        token: EvidenceRecorder.Token?, recorder: EvidenceRecorder
+    ) throws -> ScreenshotReport {
+        var path: String?
+        if output != nil || token == nil {
+            let prefix = platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
+            let url = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: .png)
+            try png.write(to: url)
+            path = url.path
+            Self.writeError("Screenshot saved to \(url.path) (\(size.width) x \(size.height) px)")
+        }
+        var runFile: String?
+        if let token {
+            runFile = try Self.writeRunCopy(png, format: .png, token: token, recorder: recorder, otherCopy: path)
+            recorder.update(token) { $0.output = path }
+            if path == nil, let runFile {
+                path = runFile
+                Self.writeError("Screenshot saved to \(runFile) (\(size.width) x \(size.height) px)")
+            }
+        }
+        var report = ScreenshotReport(path: path, width: size.width, height: size.height, pixelsPerPoint: nil, region: nil, orientation: nil, upright: true, format: .png)
+        report.runFile = runFile
+        return report
+    }
+
     /// The run's copy; when it is the only copy and cannot be written, the command fails with `run_unavailable`.
     @MainActor
-    private static func writeRunCopy(_ rendered: RenderedScreenshot, format: ImageFormat, token: EvidenceRecorder.Token, recorder: EvidenceRecorder, otherCopy: String?) throws -> String? {
+    private static func writeRunCopy(_ encoded: Data, format: ImageFormat, token: EvidenceRecorder.Token, recorder: EvidenceRecorder, otherCopy: String?) throws -> String? {
         do {
             let runPath = try recorder.reserveFile(token, extension: format.fileExtension)
-            try RunFolder.writeNew(rendered.encoded(as: format), toPath: runPath)
+            try RunFolder.writeNew(encoded, toPath: runPath)
             return runPath
         } catch {
             recorder.update(token) { $0.file = nil }

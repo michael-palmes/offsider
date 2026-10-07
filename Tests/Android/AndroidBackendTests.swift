@@ -30,6 +30,9 @@ struct AndroidBackendTests {
                 }
             },
             device: { serial, service in
+                if service.hasSuffix(AndroidDisplayStatus.scriptWithProbe) {
+                    return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(FoldableFixtures.status("", "", ""), geometry))
+                }
                 if service.hasSuffix(AndroidDisplayGeometry.probeScript) {
                     return FakeAdbServer.shell(stdout: geometry)
                 }

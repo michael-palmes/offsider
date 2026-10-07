@@ -21,12 +21,15 @@ struct ConnectedPhone: Equatable, Sendable {
     let kind: AndroidDeviceKind
     let state: AdbDeviceState
     let model: String?
+    /// adb's number for this connection, which changes when the phone is unplugged or the server restarts.
+    let transportId: String?
 
     init(_ entry: AdbDeviceEntry) {
         serial = entry.serial
         kind = entry.kind
         state = entry.state
         model = entry.properties["model"].map { $0.replacingOccurrences(of: "_", with: " ") }
+        transportId = entry.properties["transport_id"]
     }
 }
 
@@ -113,6 +116,11 @@ struct AndroidDeviceDirectory {
 
     /// A USB phone by exact serial, else that AVD's single running emulator; refuses network rows and ambiguous names.
     func resolve(name: String) async throws -> String {
+        try await resolveListing(name: name).serial
+    }
+
+    /// As `resolve(name:)`, with a phone's row, so checking the phone needs no second device list.
+    func resolveListing(name: String) async throws -> (serial: String, phone: ConnectedPhone?) {
         let rows = try await client.devices()
         let phone = rows.first { $0.serial == name && $0.consolePort == nil }
         if let phone, phone.kind == .network {
@@ -123,9 +131,9 @@ struct AndroidDeviceDirectory {
             if let emulator = matches.first {
                 throw AndroidError.ambiguousDeviceName(name, emulatorSerial: emulator.serial)
             }
-            return phone.serial
+            return (phone.serial, ConnectedPhone(phone))
         }
-        return try serial(forAVDNamed: name, matches: matches)
+        return (try serial(forAVDNamed: name, matches: matches), nil)
     }
 
     /// Emulators only: one running instance of the AVD gives its serial; none or several are errors that say what to do.
