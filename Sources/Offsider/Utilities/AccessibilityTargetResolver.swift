@@ -486,11 +486,24 @@ struct AccessibilityTargetResolver {
         }
     }
 
-    /// Where Android's input method windows take touches; nil on iOS and when no window bounds were read.
+    /// Where Android's input method windows take touches: their bounds around the keyboard's own nodes; nil on iOS and when no window bounds were read.
     private static func keyboardTouchAreas(in tree: UITree) -> [UIFrame]? {
         guard tree.platform == .android, let windows = tree.windows else { return nil }
         let areas = windows.filter { $0.kind == "inputMethod" }.compactMap(\.bounds).filter { $0.width > 0 && $0.height > 0 }
-        return areas.isEmpty ? nil : areas
+        guard !areas.isEmpty else { return nil }
+        guard let viewport = UITree.viewport(in: tree.roots), let keys = keyArea(in: tree.roots, viewport: viewport) else { return areas }
+        return areas.compactMap { $0.intersection(keys) }
+    }
+
+    /// The box around a keyboard's nodes smaller than a backdrop, since a floating keyboard's window and root view span the screen around its strip of keys.
+    private static func keyArea(in roots: [UINode], viewport: UIFrame) -> UIFrame? {
+        let frames = roots.filter { $0.role == .keyboard }.flatMap { $0.flattened() }.compactMap(\.frame)
+            .filter { $0.width > 0 && $0.height > 0 && !isBackdrop($0, in: viewport) }
+        guard let first = frames.first else { return nil }
+        return frames.dropFirst().reduce(first) { box, frame in
+            let left = min(box.x, frame.x), top = min(box.y, frame.y)
+            return UIFrame(x: left, y: top, width: max(box.x + box.width, frame.x + frame.width) - left, height: max(box.y + box.height, frame.y + frame.height) - top)
+        }
     }
 
     /// Covers at least 80 percent of the viewport, as a modal backdrop or scrim does; a banner covers far less.
