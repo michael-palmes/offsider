@@ -52,14 +52,17 @@ public enum DevMenu {
     /// The title React Native's own dev menu shows on Android, which has no close control.
     static let reactNativeTitle = "React Native Dev Menu"
 
-    /// The open menu: a Reload item beside a Go home or close control, or under React Native's title; nil when no menu shows.
+    /// Items only a dev menu lists, unlike Reload and Close, which an app screen may have too.
+    static let menuOnlyItems: [Item] = [.home, .inspector, .perfMonitor, .fastRefresh, .debugger]
+
+    /// The open menu: a Reload item beside two menu-only items, or under React Native's title; nil when no menu shows.
     public static func read(_ tree: UITree) -> State? {
         let nodes = tree.roots.flatMap { $0.flattened() }
         let titled = nodes.contains { trimmedLabel($0) == reactNativeTitle }
         let hasReload = nodes.contains { matchedLabel($0, Item.reload.labels) != nil }
-        let hasHome = nodes.contains { matchedLabel($0, Item.home.labels) != nil }
-        let hasClose = nodes.contains { $0.id == "xmark" || matchedLabel($0, Item.close.labels) != nil }
-        guard hasReload, hasHome || hasClose || titled else { return nil }
+        let menuItems = menuOnlyItems.filter { item in nodes.contains { matchedLabel($0, item.labels) != nil } }
+        guard hasReload, titled || menuItems.count >= 2 else { return nil }
+        let hasHome = menuItems.contains(.home)
         let items = Item.allCases.compactMap { item -> (Int, Entry)? in
             guard let (index, node, text) = best(item.labels, in: nodes) else { return nil }
             return (index, Entry(label: text, role: node.role, frame: node.frame))

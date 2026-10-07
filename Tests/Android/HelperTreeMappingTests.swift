@@ -122,6 +122,24 @@ struct HelperTreeMappingTests {
         #expect(mapped.index.entries.last?.range == HelperRange(type: "int", min: 0, max: 10000, current: 2500))
     }
 
+    @Test("an empty field showing its hint has no value or text, and keeps the hint")
+    func hintIsNotValue() throws {
+        let fields = [
+            #"{"i":1,"class":"android.widget.EditText",\#(Self.package),"resourceId":"empty","text":"Amount","hint":"Amount","bounds":[42,510,1038,626],"focusable":true,"editable":true,"showingHint":true}"#,
+            #"{"i":2,"class":"android.widget.EditText",\#(Self.package),"resourceId":"typed","text":"Amount","hint":"Amount","bounds":[42,700,1038,816],"focusable":true,"editable":true}"#,
+        ].joined(separator: ",")
+        let nodes = Self.flat(HelperTreeMapping.roots(from: try Self.dump(Self.appWindow(fields)), scale: Self.scale, pid: 1).roots)
+        let empty = try #require(nodes.first { $0.id == "empty" })
+        #expect(empty.value == nil)
+        guard case .android(let native) = empty.native else {
+            Issue.record("expected Android attributes")
+            return
+        }
+        #expect(native.text == nil)
+        #expect(native.hint == "Amount")
+        #expect(nodes.first { $0.id == "typed" }?.value == "Amount")
+    }
+
     @Test("booleans become uiautomator's true and false, with enabled and visible-to-user true when absent")
     func rawBooleans() throws {
         let node = try JSONDecoder().decode(HelperNode.self, from: Data(#"{"i":0,"class":"android.widget.Button","bounds":[1,2,3,4],"clickable":true}"#.utf8))

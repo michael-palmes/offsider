@@ -25,6 +25,8 @@ final class TreeDumper {
     int trees;
     int nodes;
     int maxDepth;
+    private boolean keyboardShown;
+    private boolean keepHidden;
     int skippedInvisible;
     int testTagsFound;
     int testTagRefreshes;
@@ -49,6 +51,10 @@ final class TreeDumper {
         } else {
             source = "getWindows";
             AccessibilityWindowInfo app = options.appWindowsOnly ? appWindow(automation, list) : null;
+            keyboardShown = false;
+            for (AccessibilityWindowInfo window : list) {
+                keyboardShown = keyboardShown || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD;
+            }
             for (AccessibilityWindowInfo window : list) {
                 boolean tree = !options.appWindowsOnly || window == app
                         || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD;
@@ -70,10 +76,10 @@ final class TreeDumper {
         json.endArray();
     }
 
-    /** The active window, else the topmost application window, else the window of the active root. */
+    /** The active window unless it is the keyboard, else the topmost application window, else the window of the active root. */
     static AccessibilityWindowInfo appWindow(UiAutomation automation, List<AccessibilityWindowInfo> list) {
         for (AccessibilityWindowInfo window : list) {
-            if (window.isActive()) {
+            if (window.isActive() && window.getType() != AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
                 return window;
             }
         }
@@ -120,10 +126,18 @@ final class TreeDumper {
             if (root == null) {
                 json.nullValue();
             } else {
+                keepHidden = hiddenByKeyboard(window, root);
                 node(root, 0);
+                keepHidden = false;
             }
         }
         json.endObject();
+    }
+
+    /** A floating keyboard's window can mark the whole focused app as not visible to the user, though it is on screen. */
+    private boolean hiddenByKeyboard(AccessibilityWindowInfo window, AccessibilityNodeInfo root) {
+        return keyboardShown && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION && window.isActive()
+                && window.isFocused() && !root.isVisibleToUser();
     }
 
     /** Stands in for the window list when the platform returns none. */
@@ -190,6 +204,7 @@ final class TreeDumper {
         json.flag("selected", n.isSelected());
         json.flag("editable", n.isEditable());
         json.flag("password", n.isPassword());
+        json.flag("showingHint", n.isShowingHintText());
         if (!n.isVisibleToUser()) {
             json.field("visibleToUser", false);
         }
@@ -222,7 +237,7 @@ final class TreeDumper {
             if (child == null) {
                 continue;
             }
-            if (options.visibleOnly && !child.isVisibleToUser()) {
+            if (options.visibleOnly && !keepHidden && !child.isVisibleToUser()) {
                 skippedInvisible++;
                 continue;
             }

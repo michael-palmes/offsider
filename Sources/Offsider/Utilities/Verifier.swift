@@ -48,13 +48,10 @@ struct Verifier {
     static let screenshotCount = 3
     /// After-shots one attempt may take while a transition is still moving; a lagging stream may show it only from the second.
     static let maxScreenshots = 6
-    /// The share of tiles that still differ across the latest after-shots while a transition is running; a caret or spinner moves far fewer.
-    static let movingFraction = 0.1
-
-    /// True while the oldest and newest of `prints` differ on more than `movingFraction` of their tiles.
+    /// True while the oldest and newest of `prints` differ on more than `ScreenChange.movingFraction` of their tiles.
     static func isMoving(_ prints: [ImageFingerprint]) -> Bool {
         guard prints.count >= 2, let first = prints.first, let last = prints.last else { return false }
-        return ScreenCompare.outcome(changedFraction: first.changedFraction(comparedTo: last) ?? 1, threshold: movingFraction) == .changed
+        return ScreenCompare.outcome(changedFraction: first.changedFraction(comparedTo: last) ?? 1, threshold: ScreenChange.movingFraction) == .changed
     }
 
     /// While the screen moves: one after-shot past `screenshotCount` always, more only before the attempt's deadline, never past `maxScreenshots`.
@@ -95,7 +92,8 @@ struct Verifier {
             firstRead = await read(dependencies)
         }
         let first = firstRead.snapshot
-        let firstShot = ignoringText ? nil : try? await dependencies.screenshot()
+        // Without a tree to catch the change, a second before-shot lets motion the input starts count.
+        let firstShot = ignoringText || first.isKnown ? nil : try? await dependencies.screenshot()
         let firstShotTime = dependencies.now()
         try await dependencies.sleep(pollInterval)
         var baselineRead = await read(dependencies)
@@ -210,13 +208,7 @@ struct Verifier {
     ) async throws -> Outcome {
         let baseline: UITree
         if let initialTree { baseline = initialTree } else { baseline = try await dependencies.tree() }
-        if isOnScreen(id, in: baseline) {
-            throw CLIError(
-                errorDescription: "--verify-id '\(id)' is already on screen before the input, so it cannot show the input worked. Nothing was sent.",
-                reason: .verifyTargetPresent,
-                hint: "Pass an id that only the next screen has, or use --verify."
-            )
-        }
+        try refuseIfOnScreen(id, in: baseline)
         try await beforeAction(baseline)
         for (index, style) in attempts.enumerated() {
             let attempt = Attempt(number: index + 1, style: style)
@@ -237,6 +229,17 @@ struct Verifier {
             }
         }
         return Outcome(verified: false, attempts: attempts.count, change: .none, style: attempts.last ?? nil, summary: nil)
+    }
+
+    /// `--verify-id` cannot prove an input when its element shows already; the refusal says whether this command sent anything before it.
+    static func refuseIfOnScreen(_ id: String, in tree: UITree) throws {
+        guard isOnScreen(id, in: tree) else { return }
+        let sent = DispatchTracker.current.state == .no ? "Nothing was sent." : "Only earlier input, such as the tap that focused the field, was sent."
+        throw CLIError(
+            errorDescription: "--verify-id '\(id)' is already on screen before the input, so it cannot show the input worked. \(sent)",
+            reason: .verifyTargetPresent,
+            hint: "Pass an id that only the next screen has, or use --verify."
+        )
     }
 
     /// On screen when the tree has a screen to compare with; any match otherwise.

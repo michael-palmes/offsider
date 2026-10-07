@@ -57,12 +57,16 @@ private func tree(count: String, extra: [UINode] = []) -> UITree {
 
 private let emptyTree = UITree(platform: .ios, device: "fake-device", roots: [FakeUI.node(.application)])
 
-/// With `caret`, a 2 by 6 pixel bar that covers two tiles.
-private func screen(shade: UInt8, caret: Bool = false) -> Data {
+/// With `caret`, a 2 by 6 pixel bar that covers two tiles; with `label`, a 12 by 8 pixel block of that shade that covers six, as a countdown's text does.
+private func screen(shade: UInt8, caret: Bool = false, label: UInt8? = nil) -> Data {
     let width = 64, height = 128
     var bytes = [UInt8](repeating: 255, count: width * height * 4)
     for y in 64..<height {
-        for x in 0..<width { bytes[(y * width + x) * 4] = caret && (10..<12).contains(x) && (70..<76).contains(y) ? 0 : shade }
+        for x in 0..<width {
+            var red = caret && (10..<12).contains(x) && (70..<76).contains(y) ? 0 : shade
+            if let label, (8..<20).contains(x), (80..<88).contains(y) { red = label }
+            bytes[(y * width + x) * 4] = red
+        }
     }
     let provider = CGDataProvider(data: Data(bytes) as CFData)!
     let image = CGImage(
@@ -415,9 +419,9 @@ struct VerifierTests {
     /// A screen whose bottom half changes on every capture, as a playing video does.
     private static let endlessMotion = (0..<20).map { screen(shade: UInt8(10 + $0 * 12)) }
 
-    @Test("An input that starts endless motion verifies on its first attempt and is sent once, with or without a tree", arguments: [false, true])
-    func motionStartedByInputVerifies(knownTree: Bool) async throws {
-        let fake = FakeSimulator(trees: [knownTree ? tree(count: "0") : emptyTree], screens: [screen(shade: 10)] + Self.endlessMotion)
+    @Test("Without a tree, an input that starts endless motion verifies on its first attempt and is sent once")
+    func motionStartedByInputVerifies() async throws {
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10)] + Self.endlessMotion)
         var actions: [Verifier.Attempt] = []
         var retries: [Int] = []
         let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
@@ -427,6 +431,31 @@ struct VerifierTests {
         #expect(outcome.attempts == 1)
         #expect(actions.count == 1)
         #expect(retries.isEmpty)
+    }
+
+    @Test("With a tree that never changes, motion the input starts reads as no change, so the input is retried and unverified")
+    func motionStartedUnderUnchangedTreeIsNotCounted() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10)] + Self.endlessMotion)
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified)
+        #expect(outcome.change == ChangeKind.none)
+        #expect(actions.count == 2)
+    }
+
+    @Test("Before the input, a tree needs one screenshot and no tree two", arguments: [(true, 1), (false, 2)])
+    func beforeShotsFollowTheTree(knownTree: Bool, shots: Int) async throws {
+        let fake = FakeSimulator(trees: [knownTree ? tree(count: "0") : emptyTree], screens: [screen(shade: 10)])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        var shotsBeforeInput: Int?
+        _ = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries) { _ in
+            shotsBeforeInput = fake.screenReads
+        }
+
+        #expect(shotsBeforeInput == shots)
     }
 
     @Test("An input that changes nothing on a screen already moving does not verify")
@@ -452,16 +481,28 @@ struct VerifierTests {
         #expect(outcome.attempts == 1)
     }
 
-    @Test("A caret that both before-shots catch in one phase and that blinks after the input does not verify")
+    @Test("Without a tree, a caret that both before-shots catch in one phase and that blinks after the input does not verify")
     func caretBlinkingAfterStillBeforeDoesNotVerify() async throws {
         let on = screen(shade: 10, caret: true)
         let off = screen(shade: 10)
-        let fake = FakeSimulator(trees: [tree(count: "0")], screens: [on, on, off, on, off])
+        let fake = FakeSimulator(trees: [emptyTree], screens: [on, on, off, on, off])
         var actions: [Verifier.Attempt] = []
         var retries: [Int] = []
         let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
 
         #expect(!outcome.verified)
+    }
+
+    @Test("Without a tree, an input that changes nothing does not verify when a countdown label ticks between the after-shots")
+    func countdownTickDoesNotVerify() async throws {
+        let before = screen(shade: 10, label: 60)
+        let fake = FakeSimulator(trees: [emptyTree], screens: [before, before, before, screen(shade: 10, label: 90)])
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified)
+        #expect(outcome.change == ChangeKind.none)
     }
 
     @Test("The bands are scaled to pixels and excluded only in portrait")

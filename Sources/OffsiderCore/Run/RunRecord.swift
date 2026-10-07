@@ -1,6 +1,6 @@
 import Foundation
 
-/// Masks `run start` applies to every capture in the run that asks for none of its own.
+/// Masks `run start` adds to every capture in the run.
 public struct RunMasks: Codable, Equatable, Sendable {
     public var secure: Bool
     public var emails: Bool
@@ -13,6 +13,24 @@ public struct RunMasks: Codable, Equatable, Sendable {
     }
 
     public var isEmpty: Bool { !secure && !emails && ids.isEmpty }
+
+    /// These masks and `other`'s, each id once; a run's masks only ever grow until it stops.
+    public func union(_ other: RunMasks) -> RunMasks {
+        let merged = other.ids.reduce(into: ids) { result, id in
+            if !result.contains(id) { result.append(id) }
+        }
+        return RunMasks(secure: secure || other.secure, emails: emails || other.emails, ids: merged)
+    }
+
+    /// `password fields, email addresses and ids a, b`, or `none`.
+    public var summary: String {
+        var parts: [String] = []
+        if secure { parts.append("password fields") }
+        if emails { parts.append("email addresses") }
+        if !ids.isEmpty { parts.append("\(ids.count == 1 ? "id" : "ids") \(ids.joined(separator: ", "))") }
+        guard let last = parts.last else { return "none" }
+        return parts.count == 1 ? last : parts.dropLast().joined(separator: ", ") + " and " + last
+    }
 
     public var plan: MaskPlan {
         MaskPlan(secure: secure, ids: ids, emails: emails)

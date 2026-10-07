@@ -207,7 +207,10 @@ struct IOSDeviceDoctorTests {
             "lockState": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-lockstate.json"), stderr: ""),
             "displays": ProcessCaptureResult(status: 0, stdout: try IOSDeviceFixtures.text("devicectl-info-displays.json"), stderr: ""),
         ])
-        let probe = IOSDeviceDoctorProbe(host: .fake(devicectl, environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], existing: [IOSDeviceDoctorProbe.usbmuxdSocket]), xcodeTeams: { ["SHOULDNOTREAD"] }, hid: hid.probe)
+        let host = IOSDeviceHost.fake(
+            devicectl, environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], existing: [IOSDeviceDoctorProbe.usbmuxdSocket], usbmux: FakeUsbmuxListing.onUSB(Self.udid)
+        )
+        let probe = IOSDeviceDoctorProbe(host: host, xcodeTeams: { ["SHOULDNOTREAD"] }, hid: hid.probe)
         let facts = await probe.run(udid: Self.udid).facts
 
         #expect(devicectl.calls.map { $0.first == "list" ? "list" : $0[2] } == ["list", "details", "lockState", "displays"])
@@ -215,10 +218,41 @@ struct IOSDeviceDoctorTests {
         #expect(facts.row?.tunnelState == "connected")
         #expect(facts.lock == .read(passcodeRequired: true, backlightOn: false))
         #expect(facts.team == .environment("ABCDE12345"))
-        #expect(facts.usbmuxdSocket)
+        #expect(facts.usbmuxdSocket && facts.usbmux == .onUSB)
         #expect(facts.coreDeviceVersion == "651.13.4")
         #expect(facts.hid == .refused)
         #expect(hid.calls == ["00000000-0000-4000-8000-0000000000A1 \(Self.udid)"])
+    }
+
+    @Test("a usbmuxd that lists nothing while devicectl sees the device wired fails ios-device.usbmuxd with the replug hint")
+    func probeStaleUsbmux() async throws {
+        let usbmuxd = try FakeUsbmuxd(reply: { _ in .plist(["DeviceList": [Any]()]) })
+        defer { usbmuxd.stop() }
+        let devicectl = try FakeDevicectl.listing("devicectl-list-xcode27-disconnected.json", extra: [
+            "details": ProcessCaptureResult(status: 0, stdout: try Self.wiredDetails(), stderr: ""),
+        ])
+        let host = IOSDeviceHost.fake(devicectl, existing: [IOSDeviceDoctorProbe.usbmuxdSocket], usbmux: UsbmuxClient(socketPath: usbmuxd.path, timeout: 1))
+        let facts = await IOSDeviceDoctorProbe(host: host, xcodeTeams: { [] }, hid: HIDRecorder(.ready).probe).run(udid: Self.udid).facts
+
+        #expect(facts.usbmux == .notOnUSB)
+        #expect(usbmuxd.received.map { $0["MessageType"] as? String } == ["ListDevices"])
+        let check = try #require(IOSDeviceDoctorRules.checks(facts).first { $0.id == .iosDeviceUsbmuxd })
+        #expect(check.status == .fail)
+        #expect(check.hint == "Unplug and replug the cable, then retry.")
+    }
+
+    @Test("ios-device.usbmuxd passes only while usbmuxd lists the device on USB, and skips the list for a device off its cable", arguments: [
+        (true, IOSDeviceDoctorFacts.UsbmuxFact?.some(.onUSB), "wired", CheckStatus.pass),
+        (true, .notOnUSB, "wired", .fail),
+        (true, .notOnUSB, "localNetwork", .skip),
+        (true, .failed("it did not answer in time"), "wired", .fail),
+        (false, nil, "wired", .fail),
+    ])
+    func usbmuxdVerdicts(socket: Bool, usbmux: IOSDeviceDoctorFacts.UsbmuxFact?, transport: String, status: CheckStatus) {
+        var facts = Self.facts(listing: Self.row { $0.transportType = transport })
+        facts.usbmuxdSocket = socket
+        facts.usbmux = usbmux
+        #expect(IOSDeviceDoctorRules.checks(facts).first { $0.id == .iosDeviceUsbmuxd }?.status == status)
     }
 
     @Test("the probe never sends a device command to a device it cannot see or that does not trust the Mac")

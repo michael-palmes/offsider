@@ -436,10 +436,20 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     static func textNotAccepted(_ serial: String, field: AndroidFieldInfo?, pasted: Bool) -> AndroidError {
         let element = field.map { " (\($0.description))" } ?? ""
-        let tried = pasted ? "Ctrl+A, Delete, typed keys and a paste" : "Ctrl+A, Delete and typed keys"
+        let outcome = pasted
+            ? "does not hold exactly the text after Ctrl+A, Delete, typed keys and a paste"
+            : "holds less than the text after Ctrl+A, Delete and typed keys"
         return AndroidError(
             .textNotAccepted,
-            "The focused field on \(serial)\(element) holds less than the text after \(tried): the app filters what it accepts. Check it with describe-ui, and type what the field allows."
+            "The focused field on \(serial)\(element) \(outcome): the app filters what it accepts. Check it with describe-ui, and type what the field allows."
+        )
+    }
+
+    static func pasteFocusMoved(_ serial: String, expected: AndroidFieldInfo, focused: AndroidFieldInfo) -> AndroidError {
+        let now = focused.description.isEmpty ? "another field" : focused.description
+        return AndroidError(
+            .textNotAccepted,
+            "Input focus on \(serial) moved from the field Offsider typed into (\(expected.description)) to \(now) before the text could be pasted, so nothing was pasted. Tap the field and run the command again."
         )
     }
 

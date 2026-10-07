@@ -138,6 +138,16 @@ struct IOSAccessibilityMappingTests {
         #expect(nodes.allSatisfy { $0.state.selected == nil && $0.state.focused == nil })
     }
 
+    @Test("focus comes from the device runner's focused key; idb's tree, which has none, leaves it unknown")
+    func focusedState() throws {
+        let nodes = try roots("""
+        [{"type": "TextField", "AXUniqueId": "email", "focused": true}, {"type": "TextField", "AXUniqueId": "name"},
+         {"type": "TextField", "AXUniqueId": "notes", "focused": false}]
+        """)
+
+        #expect(nodes.map(\.state.focused) == [true, nil, nil])
+    }
+
     @Test("every legacy actionable type maps to an actionable role", arguments: IOSAccessibilityMappingTests.legacyActionableTypes)
     func legacyActionableTypesStayActionable(type: String) {
         #expect(role(type).isActionable)

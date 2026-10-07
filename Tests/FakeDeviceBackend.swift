@@ -59,6 +59,8 @@ final class FakeDeviceBackend: DeviceBackend {
     var listedDeviceName: String?
     /// Foreground reads in order, holding the last.
     var foregrounds: [ForegroundActivities] = []
+    /// Thrown by every foreground read when set.
+    var foregroundError: (any Error)?
     /// What the HOME intent brings to the front; nil changes nothing.
     var foregroundAfterIntent: ForegroundActivities?
     private(set) var homeIntents = 0
@@ -327,6 +329,7 @@ extension FakeDeviceBackend: ReactNativeDevMenuOpening {
 
 extension FakeDeviceBackend: ForegroundReading {
     func foreground(on id: DeviceID) async throws -> ForegroundActivities {
+        if let foregroundError { throw foregroundError }
         if homeIntents > 0, let foregroundAfterIntent { return foregroundAfterIntent }
         let reading = foregrounds.first ?? ForegroundActivities(top: nil, home: nil)
         if foregrounds.count > 1 { foregrounds.removeFirst() }

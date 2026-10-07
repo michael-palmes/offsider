@@ -6,9 +6,9 @@
 - USB only. A device on Wi-Fi exits 7 with `device_not_wired`: ask the user to connect its cable. Offsider never pairs a device or accepts a prompt on it.
 - The user prepares the device once: unlock it and tap Trust, turn on Developer Mode (Settings > Privacy & Security), and for input turn on Settings > Developer > UI Automation.
 - `offsider list-devices` shows the device with `kind` `physical`, `connection` `usb` or `network`, and a state: Booted (ready), Wireless, Untrusted, Developer Mode off, Preparing, Reconnecting or Unavailable. A hint on stderr says what to do for each problem state.
-- Run `offsider doctor --device <UDID> --json` first. Its `ios-device.*` checks cover Xcode, CoreDevice, the listing, the connection, trust, Developer Mode, the developer disk image, the tunnel, the lock state, HID input (`hid` round-trips a barrier on the button socket), UI Automation, the session broker, usbmuxd and runner signing. `--fix` only mounts the developer disk image.
+- Run `offsider doctor --device <UDID> --json` first. Its `ios-device.*` checks cover Xcode, CoreDevice, the listing, the connection, trust, Developer Mode, the developer disk image, the tunnel, the lock state, HID input (`hid` round-trips a barrier on the button socket), UI Automation, the session broker, usbmuxd and runner signing. `--fix` only mounts the developer disk image, on the device `--device` names or, without it, the one `OFFSIDER_DEVICE` names.
 - iOS does not report UI Automation, so `ios-device.ui-automation` is a skip naming the Settings path: ask the user to check it. `ios-device.session` is a skip when no broker is running; doctor never starts one.
-- The device must stay unlocked. A locked device refuses input with exit 7 `device_locked`: ask the user to unlock it. Offsider never types an iPhone passcode, and `wake`, `stay-awake` and `unlock-code` are Android only.
+- The device must stay unlocked. A locked device refuses input, and stops Xcode starting the runner, with exit 7 `device_locked`: ask the user to unlock it, then retry. Offsider never types an iPhone passcode, and `wake`, `stay-awake` and `unlock-code` are Android only.
 - Ask the user to set Settings > Display & Brightness > Auto-Lock to Never while you drive the device: once the screen dims, the next press may only brighten it.
 
 ## The session broker (Xcode 27)
@@ -40,12 +40,16 @@
 - The accessibility tree comes from a small XCUITest runner app. On first use Offsider builds it with `xcodebuild` (about a minute, with a line on stderr) and caches it under `~/Library/Caches/offsider/runner/`.
 - It is signed with the team in `OFFSIDER_IOS_TEAM_ID`, or with the one team signed in to Xcode. With none, or several, the command exits 9 with `team_missing`: ask the user for the team ID. A build that fails exits 1 with `runner_build_failed`, and its hint names the build log.
 - The runner keeps running in the background, reached over USB through usbmuxd with a per-session token, and stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300).
-- XCTest reads one named app at a time. `describe-ui`, `tap`, `wait` and `assert` take `--app <bundle-id>` on a device; later commands remember it. Without it the runner reads the app in front when it can tell which that is, else the Home Screen. An `--app` that is not in front fails: open the app, or leave out `--app`.
+- usbmuxd can stop listing a wired device that `devicectl` still sees. A command that needs the runner then exits 9 with `usbmux_unavailable` at once (about 10 s after the drop while the runner starts), and `doctor` fails `ios-device.usbmuxd`: ask the user to unplug and replug the cable, then retry.
+- Xcode starts the runner only on an unlocked device. When `xcodebuild` says it is waiting for the unlock, the command exits 7 with `device_locked` at once: ask the user to unlock the device, then retry. An `xcodebuild` that exits early fails at once with `runner_unavailable` and the end of its log; a runner that never answers fails after 150 s. Either way the hint names `runner.log`.
+- iOS can ask for the device passcode on behalf of XCTest (`Enter iPad Passcode for "XCTest"`) when the runner starts, for example the first time after the device was locked for a while. Until someone enters it on the device, XCTest cannot enable UI automation and gives up after about a minute; the command then exits 7 with `ui_automation_off` naming the prompt. Ask the user to look at the device and enter the passcode there (Offsider never types one), then retry.
+- XCTest reads one named app at a time. `describe-ui`, `tap`, `type`, `wait` and `assert` take `--app <bundle-id>` on a device, as do those `batch` steps; later commands and steps remember it. Without it the runner reads the app in front when it can tell which that is. When XCTest sees only SpringBoard in front, as on an iPad with Stage Manager, the runner reads the app last named with `--app` while that app is still in front, else the Home Screen. An `--app` that is not in front fails: open the app, or leave out `--app`.
 - An iPad app in a Stage Manager window reports frames relative to its window, so element taps (`tap --id`, `tap --label`) exit 1 with `not_supported`: ask the user to make the app full screen. Coordinate taps, screenshots and the tree still work.
 
 ```bash
 offsider describe-ui --summary --app <BUNDLE_ID> --device <UDID>
 offsider tap --id <identifier> --app <BUNDLE_ID> --verify --device <UDID>
+offsider type --into-id <identifier> "text" --app <BUNDLE_ID> --device <UDID>
 offsider session status --device <UDID> --json
 offsider session stop --device <UDID>
 ```
@@ -53,7 +57,7 @@ offsider session stop --device <UDID>
 ## Screenshots and settings
 
 - `screenshot` takes the broker's latest stream frame, about 230 ms; without the broker it uses `devicectl device capture screenshot`, about 2.3 s. The first one after the broker starts waits for the stream to settle, about 1.5 s more. `--verify` may take several screenshots, so prefer `wait` or `assert` when the tree shows the effect.
-- Screen comparisons (`--verify`, `wait` screen checks, `screenshot --compare`) average 8 by 8 pixel blocks and ignore drifts of a few colour units, the stream's compression noise; a caret, a toggle or new text still counts as a change.
+- Screen comparisons (`--verify`, `wait` screen checks, `screenshot --compare`) average 8 by 8 pixel blocks and ignore drifts of a few colour units, the stream's compression noise; a caret, a toggle or new text still counts as a change. `screenshot --compare` counts changed pixels, and `--diff-output` marks them, by those blocks too.
 - `appearance` and `content-size` go through `devicectl`; set them back when done. `orientation` waits for the screen to turn, which needs the device awake and unlocked and an app that supports the orientation.
 
 ## Refused on a device
@@ -69,10 +73,10 @@ offsider session stop --device <UDID>
 | `developer_mode_off` | 7 | Ask the user to turn on Developer Mode and restart |
 | `device_preparing` | 7 | Wait for Xcode, then retry |
 | `device_locked` | 7 | Ask the user to unlock the device |
-| `ui_automation_off` | 7 | Ask the user to turn on Settings > Developer > UI Automation |
+| `ui_automation_off` | 7 | Ask the user to enter the passcode if the device shows `Enter Passcode for "XCTest"`, else to turn on Settings > Developer > UI Automation |
 | `xcode_too_old` | 9 | The command needs Xcode 27; use a runner command or ask the user |
 | `team_missing` | 9 | Ask for the team ID for `OFFSIDER_IOS_TEAM_ID` |
-| `usbmux_unavailable` | 9 | Ask the user to reconnect the cable |
+| `usbmux_unavailable` | 9 | Ask the user to unplug and replug the cable |
 | `runner_build_failed` | 1 | Read the build log the hint names |
 | `runner_unavailable` | 1 | Nothing was sent; retry once, then run `doctor` |
 | `hid_broker_failed` | 1 | Nothing was sent; retry once, then `session stop` and retry |

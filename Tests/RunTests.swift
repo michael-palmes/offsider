@@ -92,7 +92,7 @@ struct RunTests {
 
     static func screenshot(_ arguments: [String], on backend: FakeDeviceBackend) async throws -> ScreenshotReport {
         let command = try Screenshot.parse(arguments + ["--device", device.rawValue])
-        let masks = command.masksWithRunDefaults(try command.maskPlan(environment: [:]), ownFlags: command.hasMaskFlags)
+        let masks = command.masksWithRunDefaults(try command.maskPlan(environment: [:]))
         return try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: masks)
     }
 
@@ -205,6 +205,49 @@ struct RunTests {
         let again = try fixture.start(variables: variables)
         #expect(again.unchanged)
         #expect(!again.continued)
+    }
+
+    @Test("starting the active folder again adds new masks to the run and never removes one")
+    func restartAddsMasks() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(masks: RunMasks(emails: true))
+        let added = try fixture.start(masks: RunMasks(secure: true, ids: ["card"]))
+        #expect(added.unchanged && added.addedMasks)
+        let again = try fixture.start(masks: RunMasks(ids: ["card"]))
+        #expect(again.unchanged && !again.addedMasks)
+
+        let all = RunMasks(secure: true, emails: true, ids: ["card"])
+        #expect(again.state.masks == all)
+        #expect(try RunRegistry.active(in: fixture.environment())?.masks == all)
+        #expect(try RunFolder(path: fixture.folder()).readState()?.masks == all)
+
+        let backend = try Self.screenshotBackend([SecureTextTests.passwordField()])
+        var report: ScreenshotReport?
+        try await fixture.command(fixture.recorder("screenshot")) { report = try await Self.screenshot([], on: backend) }
+        #expect(report?.maskedBy?[.secure] == 1)
+    }
+
+    @Test("with OFFSIDER_RUN=<dir> naming an active run, starting it again adds new masks to run.json")
+    func restartAddsMasksWithOverride() throws {
+        let fixture = try RunFixture()
+        let variables = ["OFFSIDER_RUN": fixture.folder()]
+        _ = try fixture.start(masks: RunMasks(secure: true), variables: variables)
+        let again = try fixture.start(masks: RunMasks(ids: ["card"]), variables: variables)
+        #expect(again.unchanged && again.addedMasks)
+        #expect(try RunRegistry.active(in: fixture.environment(variables: variables))?.masks == RunMasks(secure: true, ids: ["card"]))
+    }
+
+    @Test("run start on the active folder prints the masks now in force")
+    func restartPrintsMasks() async throws {
+        let fixture = try RunFixture()
+        let dir = fixture.folder()
+        _ = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)' --mask-emails", environment: ["OFFSIDER_RUN": dir])
+        let added = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)' --mask-id card --json", environment: ["OFFSIDER_RUN": dir])
+        #expect(added.exitCode == 0)
+        #expect(added.stderr.contains("Added masks to the active run in \(dir); masks now in force: email addresses and id card. To remove one, run `offsider run stop`, then start the run again."))
+        #expect(added.stdout.contains(#""masks":{"secure":false,"emails":true,"ids":["card"]}"#))
+        let same = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)'", environment: ["OFFSIDER_RUN": dir])
+        #expect(same.stderr.contains("A run is already active in \(dir) for this session; masks in force: email addresses and id card."))
     }
 
     @Test("stopping with no run active says so")
@@ -321,20 +364,50 @@ struct RunTests {
         #expect(lines[1].file == nil && lines[1].exit == 1 && lines[1].reason == "mask_unproven")
     }
 
-    @Test("run-wide masks apply to a capture that asks for none, and not to one that masks itself")
+    @Test("run-wide masks apply to every capture, and a capture's own masks add to them")
     func runWideMasks() async throws {
         let fixture = try RunFixture()
         _ = try fixture.start(masks: RunMasks(emails: true))
         let backend = try Self.screenshotBackend([
             FakeUI.node(.text, id: "profile-email", label: "e2e@example.com", frame: FakeUI.frame(16, 100, 200, 40)),
             FakeUI.node(.text, id: "name", label: "Ada", frame: FakeUI.frame(16, 300, 200, 40)),
+            SecureTextTests.passwordField(),
         ])
         var reports: [ScreenshotReport] = []
         try await fixture.command(fixture.recorder("screenshot")) { reports.append(try await Self.screenshot([], on: backend)) }
         try await fixture.command(fixture.recorder("screenshot")) { reports.append(try await Self.screenshot(["--mask-id", "name"], on: backend)) }
+        try await fixture.command(fixture.recorder("screenshot")) { reports.append(try await Self.screenshot(["--mask-secure"], on: backend)) }
 
-        #expect(reports.map(\.maskedBy) == [[.emails: 1], [.id: 1]])
-        #expect(fixture.manifest().map(\.masked) == [1, 1])
+        #expect(reports.map(\.maskedBy) == [[.emails: 1], [.id: 1, .emails: 1], [.secure: 1, .emails: 1]])
+        #expect(fixture.manifest().map(\.masked) == [1, 2, 2])
+    }
+
+    @Test("a batch screenshot step keeps the run's masks beside batch --mask-secure and its own masks")
+    func runWideMasksInBatch() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(masks: RunMasks(emails: true, ids: ["name"]))
+        let backend = try Self.screenshotBackend([
+            FakeUI.node(.text, id: "profile-email", label: "e2e@example.com", frame: FakeUI.frame(16, 100, 200, 40)),
+            FakeUI.node(.text, id: "name", label: "Ada", frame: FakeUI.frame(16, 300, 200, 40)),
+            SecureTextTests.passwordField(),
+        ])
+        let context = BatchContext(
+            backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200, maskSecure: true
+        )
+        let output = BatchOutput(json: true, write: { _ in }, writeError: { _ in })
+        var records: [BatchStepRecord] = []
+        try await fixture.command(fixture.recorder("batch")) {
+            records = try await Batch.runSteps(
+                ["screenshot", "screenshot --mask-id name"], context: context, session: backend.session,
+                continueOnError: true, output: output, logger: OffsiderLogger()
+            )
+        }
+        let reports = records.compactMap { record -> ScreenshotReport? in
+            if case .screenshot(let report) = record.detail { return report }
+            return nil
+        }
+        #expect(reports.map(\.maskedBy) == [[.secure: 1, .id: 1, .emails: 1], [.secure: 1, .id: 1, .emails: 1]])
+        #expect(fixture.manifest().map(\.masked) == [3, 3])
     }
 
     @Test("concurrent reservations under the folder lock never share a number")
@@ -374,6 +447,41 @@ struct RunTests {
         #expect(lines[1].diff == "002-screenshot-15.11.07-diff.png")
         #expect(lines.allSatisfy { $0.args == nil })
         #expect(!String(decoding: try Data(contentsOf: URL(fileURLWithPath: fixture.folder() + "/manifest.ndjson")), as: UTF8.self).contains("secret"))
+    }
+
+    @Test("recorded args and batch step lines show --mask-text, --mask-label and --grep values only as their length")
+    func selectorValuesStayOutOfManifest() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let backend = try Self.screenshotBackend([FakeUI.node(.text, id: "name", label: "Ada Lovelace", frame: FakeUI.frame(16, 300, 200, 40))])
+        let arguments = ["--mask-text", "Lovelace", "Byron", "--mask-label=Ada Lovelace", "--mask-id", "name", "--mask-region", "0,0,10,10"]
+        try await fixture.command(fixture.recorder("screenshot", arguments: arguments)) { _ = try await Self.screenshot(arguments, on: backend) }
+
+        let logs = FakeLogBackend(entries: [LogEntry(message: "Lovelace signed in")])
+        try await fixture.command(fixture.recorder("logs", arguments: ["--grep", "Lovelace"])) {
+            try await Logs.parse(["--grep", "Lovelace", "--device", "emulator-5554"])
+                .read(from: DeviceRouter.Route(backend: logs, device: DeviceID(rawValue: "emulator-5554", platform: .android))) { _ in }
+        }
+
+        let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+        var records: [BatchStepRecord] = []
+        try await fixture.command(fixture.recorder("batch")) {
+            records = try await Batch.runSteps(
+                ["screenshot --mask-label 'Ada Lovelace' --mask-id name"], context: context, session: backend.session,
+                continueOnError: true, output: BatchOutput(json: true, write: { _ in }, writeError: { _ in }), logger: OffsiderLogger()
+            )
+        }
+
+        let lines = fixture.manifest()
+        #expect(lines.map(\.args) == [
+            ["--mask-text", "<8 characters>", "<5 characters>", "--mask-label=<12 characters>", "--mask-id", "name", "--mask-region", "0,0,10,10"],
+            ["--grep", "<8 characters>"],
+            nil,
+        ])
+        #expect(lines.last?.line == "screenshot --mask-label <12 characters> --mask-id name")
+        #expect(records.map(\.line) == ["screenshot --mask-label <12 characters> --mask-id name"])
+        let manifest = String(decoding: try Data(contentsOf: URL(fileURLWithPath: fixture.folder() + "/manifest.ndjson")), as: UTF8.self)
+        #expect(!manifest.contains("Lovelace") && !manifest.contains("Byron"))
     }
 
     @Test("a screenshot's run copy and its diff are readable only by their owner, as every other run file is")
@@ -416,6 +524,28 @@ struct RunTests {
         let file = try String(contentsOfFile: fixture.folder() + "/" + (line.file ?? ""), encoding: .utf8)
         #expect(file == stdout.map { $0 + "\n" }.joined())
         #expect(line.entries == 2 && line.redacted == 1)
+    }
+
+    @Test("a logs run file is created new: a link already at its name is neither followed nor replaced, and stdout still gets every line")
+    func logsRunFileIsCreatedNew() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let outside = fixture.folder("outside.txt")
+        try Data("keep".utf8).write(to: URL(fileURLWithPath: outside))
+        let planted = fixture.folder() + "/001-logs-15.11.07.log"
+        try FileManager.default.createSymbolicLink(atPath: planted, withDestinationPath: outside)
+        let backend = FakeLogBackend(entries: [LogEntry(message: "one"), LogEntry(message: "two")])
+        var stdout: [String] = []
+
+        try await fixture.command(fixture.recorder("logs")) {
+            try await Logs.parse(["--device", "emulator-5554"])
+                .read(from: DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))) { stdout.append($0) }
+        }
+
+        #expect(stdout.joined(separator: "\n").contains("one") && stdout.joined(separator: "\n").contains("two"))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: planted) == outside)
+        #expect(try String(contentsOfFile: outside, encoding: .utf8) == "keep")
+        #expect(fixture.manifest().first?.file == nil)
     }
 
     @Test("a run copy whose writes fail stops being written after one report, and stdout gets every line")

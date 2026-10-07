@@ -102,6 +102,13 @@ final class BatchContext {
         }
     }
 
+    /// A step's `--app` stays for later steps, as for later commands; trees read for another app are dropped.
+    func applyApp(of step: Any) {
+        guard let option = (step as? AppTargeting)?.appOption, option.apply(to: route) else { return }
+        cachedTree = nil
+        lastTree = nil
+    }
+
     /// The guard's baseline: this batch's latest tree, with its last input or else the disk record's.
     func settlePolicy(stepOptedOut: Bool) -> SettlePolicy {
         guard !noSettle, !stepOptedOut else { return .off }

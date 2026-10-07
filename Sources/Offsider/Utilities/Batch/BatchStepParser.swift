@@ -98,23 +98,24 @@ struct BatchStepParser {
         case .keyCombo:
             return .input(try await parseCommand(KeyCombo.self, arguments: arguments, context: context, logger: logger))
         case .wait:
-            return .read(try parseRead(Wait.self, arguments: arguments))
+            return .read(try parseRead(Wait.self, arguments: arguments, context: context))
         case .assert:
-            return .read(try parseRead(Assert.self, arguments: arguments))
+            return .read(try parseRead(Assert.self, arguments: arguments, context: context))
         case .screenshot:
-            return .read(try parseRead(Screenshot.self, arguments: arguments))
+            return .read(try parseRead(Screenshot.self, arguments: arguments, context: context))
         case .describeUI:
-            return .read(try parseRead(DescribeUI.self, arguments: arguments))
+            return .read(try parseRead(DescribeUI.self, arguments: arguments, context: context))
         case .sleep:
             return .input([])
         }
     }
 
-    private static func parseRead<C: AsyncParsableCommand & BatchReadable>(_ type: C.Type, arguments: [String]) throws -> C {
+    private static func parseRead<C: AsyncParsableCommand & BatchReadable>(_ type: C.Type, arguments: [String], context: BatchContext) throws -> C {
         guard var parsed = try C.parseAsRoot(arguments) as? C else {
             throw CLIError(errorDescription: "Failed to parse batch step arguments: \(arguments.joined(separator: " "))", reason: .usage)
         }
         try parsed.validate()
+        context.applyApp(of: parsed)
         return parsed
     }
 
@@ -131,6 +132,7 @@ struct BatchStepParser {
             throw ValidationError(unsupportedFlagsMessage)
         }
         try parsed.validate()
+        context.applyApp(of: parsed)
         return try await parsed.toBatchPrimitives(context: context, logger: logger)
     }
 

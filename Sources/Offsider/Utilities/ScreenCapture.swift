@@ -260,7 +260,9 @@ enum ScreenCapture {
               var result = ScreenCompare.compare(before, current, threshold: threshold) else {
             throw ImageFailure(detail: "could not compare the capture with \(baselinePath)")
         }
-        let diff = try ScreenDiff.compare(baseline: baselineImage, current: rendered.image, excludingTop: exclusion.top, excludingBottom: exclusion.bottom)
+        let diff = try ScreenDiff.compare(
+            baseline: baselineImage, current: rendered.image, excludingTop: exclusion.top, excludingBottom: exclusion.bottom, tolerance: tolerance
+        )
         result.pixels = ScreenCompare.PixelCounts(changedPixels: diff.changedPixels, comparedPixels: diff.comparedPixels, bounds: diff.bounds)
         return (result, diff.image)
     }

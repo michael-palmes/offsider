@@ -9,7 +9,8 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         discussion: """
         The emulator runs detached with its window (use --headless to hide it) and always with -no-metrics; its output \
         goes to $TMPDIR/offsider-boot-<avd>.log. --memory, --no-snapshot-load and --emulator-arg add to that launch; \
-        --emulator-arg refuses flags that open a listener, send metrics or replace Offsider's own options. An AVD that is \
+        --emulator-arg takes only \(EmulatorArguments.allowedNames), each value in its own --emulator-arg, and anything \
+        else exits 64 before anything starts. An AVD that is \
         already running is not started again: boot prints its serial, waiting first if it is still booting, and says \
         which launch options it ignored. Ctrl+C stops the wait, not the emulator.
 
@@ -41,7 +42,7 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
     @Option(
         name: .customLong("emulator-arg"),
         parsing: .unconditionalSingleValue,
-        help: ArgumentHelp("One more token for the emulator command line; repeat for each token, such as --emulator-arg -gpu --emulator-arg host.", valueName: "token")
+        help: ArgumentHelp("One more token for the emulator command line, from the allowed flags and their values; repeat for each token, such as --emulator-arg -gpu --emulator-arg host.", valueName: "token")
     )
     var emulatorArguments: [String] = []
 

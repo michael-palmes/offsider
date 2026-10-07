@@ -27,8 +27,11 @@ public struct HomePressOutcome: Equatable, Sendable {
     public let reached: Bool
     /// Nil when the launcher never came to the front.
     public let via: Via?
-    public let before: ForegroundActivities
-    public let after: ForegroundActivities
+    /// Nil when the foreground could not be read.
+    public let before: ForegroundActivities?
+    public let after: ForegroundActivities?
+    /// Why the launcher could not be checked; the key was still sent.
+    public var unreadable: String? = nil
 }
 
 /// Some emulator images drop KEYCODE_HOME while an app is in front; the HOME intent reaches the launcher instead.
@@ -43,26 +46,44 @@ public enum HomePress {
         sleep: (Duration) async throws -> Void,
         window: Duration = window
     ) async throws -> HomePressOutcome {
-        let before = try await read()
+        let before: ForegroundActivities
+        do {
+            before = try await read()
+        } catch let error where !(error is CancellationError) {
+            try await sendKey()
+            return HomePressOutcome(reached: false, via: nil, before: nil, after: nil, unreadable: describe(error))
+        }
         try await sendKey()
-        var after = try await settle(read: read, sleep: sleep, window: window, isHome: { isHome($0, before: before) })
-        if isHome(after, before: before) {
-            return HomePressOutcome(reached: true, via: .key, before: before, after: after)
+        do {
+            var after = try await settle(read: read, sleep: sleep, window: window, isHome: { isHome($0, before: before) })
+            if isHome(after, before: before) {
+                return HomePressOutcome(reached: true, via: .key, before: before, after: after)
+            }
+            guard after.top == before.top else {
+                return HomePressOutcome(reached: false, via: nil, before: before, after: after)
+            }
+            try await sendIntent()
+            after = try await settle(read: read, sleep: sleep, window: window, isHome: { isHome($0, before: before) })
+            let reached = isHome(after, before: before)
+            return HomePressOutcome(reached: reached, via: reached ? .intent : nil, before: before, after: after)
+        } catch let error where !(error is CancellationError) {
+            return HomePressOutcome(reached: false, via: nil, before: before, after: nil, unreadable: describe(error))
         }
-        guard after.top == before.top else {
-            return HomePressOutcome(reached: false, via: nil, before: before, after: after)
-        }
-        try await sendIntent()
-        after = try await settle(read: read, sleep: sleep, window: window, isHome: { isHome($0, before: before) })
-        let reached = isHome(after, before: before)
-        return HomePressOutcome(reached: reached, via: reached ? .intent : nil, before: before, after: after)
     }
 
-    /// The launcher is on top; when the launcher is unknown, any change of activity counts.
+    /// An app of the launcher's package is on top (its HOME entry may be an alias of another class); when the launcher is unknown, any change of activity counts.
     static func isHome(_ reading: ForegroundActivities, before: ForegroundActivities) -> Bool {
         guard let top = reading.top else { return false }
-        if let home = reading.home ?? before.home { return top == home }
+        if let home = reading.home ?? before.home { return package(of: top) == package(of: home) }
         return top != before.top
+    }
+
+    static func package(of component: String) -> Substring {
+        component.split(separator: "/", maxSplits: 1).first ?? ""
+    }
+
+    private static func describe(_ error: any Error) -> String {
+        (error as? any OffsiderFailure)?.failureMessage ?? error.localizedDescription
     }
 
     private static func settle(

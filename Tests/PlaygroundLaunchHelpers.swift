@@ -90,7 +90,7 @@ extension TestHelpers {
                     }
                 } else {
                     let focusIndicator = UIStateParser.findElement(in: state) { element in
-                        element.identifier == "text-input-screen" && element.label == "✏️ Typing active"
+                        element.identifier == "typing-active-indicator" && element.label == "✏️ Typing active"
                     }
                     if focusIndicator != nil {
                         return state

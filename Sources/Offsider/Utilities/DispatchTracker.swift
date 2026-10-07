@@ -41,11 +41,13 @@ class TrackedInputSession: InputSession {
     var device: DeviceID { base.device }
 
     func perform(_ event: InputEvent) async throws {
+        try Self.requireUsable(event)
         defer { DeviceActivityLedger.current.recordInput(on: device) }
         try await DispatchTracker.current.sending { try await base.perform(event) }
     }
 
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+        try Self.requireUsable(.composite([.tapAt(x: point.x, y: point.y), .delay(preDelay ?? 0), .delay(postDelay ?? 0)]))
         defer { DeviceActivityLedger.current.recordInput(on: device) }
         try await DispatchTracker.current.sending {
             try await base.performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
@@ -54,6 +56,12 @@ class TrackedInputSession: InputSession {
 
     func close() async {
         await base.close()
+    }
+
+    /// Refuses, before anything is sent, numbers no backend could turn into input.
+    static func requireUsable(_ event: InputEvent) throws {
+        guard let problem = event.unusableNumber else { return }
+        throw CLIError(errorDescription: "Refused input: \(problem). Nothing was sent.", reason: .usage)
     }
 }
 

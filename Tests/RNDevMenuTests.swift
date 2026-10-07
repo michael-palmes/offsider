@@ -128,6 +128,42 @@ struct RNDevMenuTests {
         #expect(DevMenu.node(for: .close, label: nil, in: ios)?.id == "xmark")
     }
 
+    /// An app's own screen with Reload and Close buttons, an xmark and a Go home link.
+    static func appWithReload(platform: DevicePlatform = .android) -> UITree {
+        FakeUI.tree(platform: platform, [
+            FakeUI.node(.button, id: "xmark", label: "Close", frame: FakeUI.frame(350, 60, 36, 36), platform: platform),
+            FakeUI.node(.button, id: "app-reload", label: "Reload", frame: FakeUI.frame(16, 700, 370, 48), platform: platform),
+            FakeUI.node(.link, label: "Go home", frame: FakeUI.frame(16, 760, 370, 48), platform: platform),
+        ])
+    }
+
+    @Test("an app screen with Reload, Close and one menu item is no menu, so rn devmenu reload opens the menu and taps its Reload")
+    func appReloadIsNoMenu() async throws {
+        #expect(DevMenu.read(Self.appWithReload()) == nil)
+        #expect(DevMenu.read(Self.appWithReload(platform: .ios)) == nil)
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.appWithReload(), Self.expoMenu(), Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["reload", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
+        #expect(backend.devMenuOpens == 1)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 324))])
+    }
+
+    @Test("on a physical iPhone, which Offsider cannot open the menu on, the error says to shake it by hand and never suggests a two-finger touch")
+    func physicalDeviceHint() async throws {
+        let phone = DeviceID(rawValue: IOSDeviceFixtures.phone, platform: .ios)
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["reload", "--device", phone.rawValue])
+                .perform(on: DeviceRouter.Route(backend: NoDevMenuBackend(tree: Self.app), device: phone), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .notSupported)
+        #expect(error?.userFacingDescription.contains("Shake the device by hand") == true)
+        #expect(error?.userFacingDescription.contains("--fingers") == false)
+    }
+
     @Test("an app screen opens the menu, then reload is tapped and the menu closes")
     func opensAndChooses() async throws {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, Self.expoMenu(), Self.app], advanceTreeOnInput: true)
@@ -200,6 +236,24 @@ struct RNDevMenuTests {
         #expect(error?.reason == .notSupported)
         #expect(backend.opens == 0)
     }
+}
+
+/// A backend with no way to open the dev menu, as on a physical iPhone; serves one tree.
+@MainActor
+private final class NoDevMenuBackend: DeviceBackend {
+    let tree: UITree
+    init(tree: UITree) { self.tree = tree }
+    var platform: DevicePlatform { .ios }
+    func prepare() async throws {}
+    func listDevices() async throws -> [DeviceSummary] { [] }
+    func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice { BootedDevice(id: id, name: "Phone") }
+    func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree { tree }
+    func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? { nil }
+    func deviceCoordinates(for points: [(x: Double, y: Double)], tree: UITree?, on id: DeviceID) async throws -> [(x: Double, y: Double)] { points }
+    func openInputSession(for id: DeviceID) async throws -> any InputSession { RecordingInputSession() }
+    func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {}
+    func screenshotPNG(for id: DeviceID) async throws -> Data { Data() }
+    func volatileScreenBands(for id: DeviceID) async -> ScreenBands { ScreenBands(top: 0, bottom: 0) }
 }
 
 @MainActor

@@ -133,7 +133,7 @@ struct Screenshot: AsyncParsableCommand {
         let request = try request()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan(), ownFlags: hasMaskFlags))
+        let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan()))
 
         guard let comparison = report.comparison else {
             if json {
@@ -276,18 +276,11 @@ struct Screenshot: AsyncParsableCommand {
         }
     }
 
-    /// The run's default masks when the capture asks for none of its own; `OFFSIDER_MASK_SECURE` still adds password fields.
+    /// The capture's own masks with the run's added, so a capture can add masks but never drop one the run set.
     @MainActor
-    func masksWithRunDefaults(_ own: MaskPlan, ownFlags: Bool) -> MaskPlan {
-        guard !ownFlags, let defaults = EvidenceRecorder.current.defaultMasks else { return own }
-        var plan = defaults
-        plan.secure = plan.secure || own.secure
-        return plan
-    }
-
-    /// True when any mask flag was passed to this capture.
-    var hasMaskFlags: Bool {
-        maskSecure || maskEmails || !maskIDs.isEmpty || !maskLabels.isEmpty || !maskTexts.isEmpty || !maskRegions.isEmpty
+    func masksWithRunDefaults(_ own: MaskPlan) -> MaskPlan {
+        guard let defaults = EvidenceRecorder.current.defaultMasks else { return own }
+        return own.union(defaults)
     }
 
     private static func writeError(_ line: String) {

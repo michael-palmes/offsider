@@ -25,13 +25,13 @@ struct HelperNodeRef: Equatable, Sendable {
 
 /// Helper JSON to the `RawAndroidNode` shape `uiautomator` gives, so `AndroidTreeMapping` stays the one mapper.
 enum HelperTreeMapping {
-    /// `uiautomator` attribute names, booleans as "true" or "false", plus the helper's extra fields.
+    /// `uiautomator` attribute names, booleans as "true" or "false", plus the helper's extra fields; a field showing its hint has no text.
     static func rawNode(_ node: HelperNode) -> RawAndroidNode {
         var attributes: [String: String] = [
             "class": node.class ?? "",
             "package": node.package ?? "",
             "resource-id": node.resourceId ?? "",
-            "text": node.text ?? "",
+            "text": node.showingHint ? "" : node.text ?? "",
             "content-desc": node.contentDescription ?? "",
             "hint": node.hint ?? "",
             "bounds": bounds(node.bounds),

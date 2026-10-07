@@ -7,14 +7,21 @@ public enum BatchStepRedaction {
     /// `type`'s flags; a test checks these and `valueOptions` against its help.
     public static let flags: Set<String> = ["--stdin", "--replace", "--verify", "--verify-ignore-text", "--json", "--help", "-h"]
     /// `type`'s options that take a value, kept with their value.
-    public static let valueOptions: Set<String> = ["--file", "--verify-timeout", "--verify-id", "--retries", "--into-id", "--into-label", "--require-focus-id", "--device", "--wait-lock"]
+    public static let valueOptions: Set<String> = ["--file", "--verify-timeout", "--verify-id", "--retries", "--into-id", "--into-label", "--require-focus-id", "--app", "--device", "--wait-lock"]
 
-    /// A `type` line with its text as `<N characters>` and every option kept; other lines unchanged.
+    /// A `type` line with its text as `<N characters>` and every option kept; other lines with their mask and grep selectors as `<N characters>`.
     public static func redactedLine(_ line: String, tokens: [String]?) -> String {
         guard let tokens else {
-            return isTypeLine(line) ? "type <unparsed>" : line
+            if isTypeLine(line) { return "type <unparsed>" }
+            guard SelectorRedaction.mentionsSelector(line) else { return line }
+            let kind = line.prefix { !$0.isWhitespace }
+            let named = !kind.isEmpty && kind.allSatisfy { $0.isASCII && ($0.isLetter || $0 == "-") }
+            return (named ? "\(kind) " : "") + "<unparsed>"
         }
-        guard tokens.first == "type" else { return line }
+        guard tokens.first == "type" else {
+            let redacted = SelectorRedaction.redacted(tokens)
+            return redacted == tokens ? line : redacted.joined(separator: " ")
+        }
         var output = ["type"]
         var text: [String] = []
         var countIndex: Int?
@@ -82,7 +89,7 @@ public enum BatchStepRedaction {
         line == "type" || line.hasPrefix("type ") || line.hasPrefix("type\t")
     }
 
-    private static func characterCount(_ text: String) -> String {
+    static func characterCount(_ text: String) -> String {
         let count = text.precomposedStringWithCanonicalMapping.count
         return "<\(count) character\(count == 1 ? "" : "s")>"
     }

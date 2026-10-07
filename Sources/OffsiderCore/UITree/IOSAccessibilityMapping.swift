@@ -93,7 +93,7 @@ public enum IOSAccessibilityMapping {
             value: value,
             frame: frame(dictionary["frame"]),
             enabled: dictionary["enabled"] as? Bool,
-            state: UIState(checked: checked, selected: selected),
+            state: UIState(checked: checked, selected: selected, focused: dictionary["focused"] as? Bool == true ? true : nil),
             native: .ios(IOSNativeAttributes(
                 type: type,
                 role: nativeRole,

@@ -66,7 +66,7 @@ final class EvidenceRecorder {
         return cachedRun
     }
 
-    /// The run's default masks, applied to a capture that asks for none of its own.
+    /// The run's masks, added to every capture's own.
     var defaultMasks: MaskPlan? {
         guard let masks = (try? run())??.masks, !masks.isEmpty else { return nil }
         return masks.plan
@@ -117,7 +117,7 @@ final class EvidenceRecorder {
         let manifestLine = RunManifestLine(
             n: entry.number, file: entry.file, command: command, step: step, line: line, device: entry.device, platform: entry.platform,
             time: entry.reservedAt ?? entry.start, ms: Int((now.timeIntervalSince(entry.start) * 1000).rounded()), exit: Int(exit), reason: reason,
-            args: step == nil ? arguments.map { LogRedactor.redact($0).text } : nil,
+            args: step == nil ? SelectorRedaction.redacted(arguments).map { LogRedactor.redact($0).text } : nil,
             output: entry.output, diff: entry.diff, masked: entry.masked, changed: entry.changed, entries: entry.entries, redacted: entry.redacted
         )
         do {

@@ -1,0 +1,6 @@
+Command line invocation:
+    xcodebuild test-without-building -xctestrun Runner.xctestrun -destination id=<UDID> -resultBundlePath result.xcresult
+
+2026-10-07 08:14:03.205820+1030 OffsiderRunnerUITests-Runner[100:200] [Default] Failed to initialize for UI testing: Error Domain=com.apple.dt.XCTest.XCTFuture Code=1000 "Timed out while enabling automation mode." UserInfo={NSLocalizedDescription=Timed out while enabling automation mode.}
+Testing failed:
+	OffsiderRunnerUITests-Runner (100) encountered an error (The test runner failed to initialize for UI testing. (Underlying Error: Timed out while enabling automation mode.))

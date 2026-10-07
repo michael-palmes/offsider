@@ -10,7 +10,7 @@
 - 6: the selector matched several elements. Pick from `candidates`, add `--element-type` or use `--id`.
 - 7: the device was not found or is not booted. Run `offsider list-devices`, or `offsider boot <AVD>` on Android. With `device_locked`, a PIN, pattern or password lock screen stayed up after `wake`, `boot` found a device waiting for its first unlock since boot, or an iPhone or iPad is locked: ask the user to unlock the device (`guide device-state`). On an iPhone or iPad, `device_not_wired`, `device_untrusted`, `developer_mode_off`, `device_preparing` and `ui_automation_off` each need the user to act on the device (`guide ios-device`).
 - 8: the device is busy (see below).
-- 9: Xcode, adb or the Android SDK is missing. Fix the setup; retrying will not help. For an iPhone or iPad, `xcode_too_old` means the command needs Xcode 27, `team_missing` that no signing team was found for the runner, and `usbmux_unavailable` that usbmuxd is not answering.
+- 9: Xcode, adb or the Android SDK is missing. Fix the setup; retrying will not help. For an iPhone or iPad, `xcode_too_old` means the command needs Xcode 27, `team_missing` that no signing team was found for the runner, and `usbmux_unavailable` that usbmuxd is not answering or does not list the device on USB: ask the user to unplug and replug the cable.
 - 64: bad arguments. `--udid` and `list-simulators` were renamed to `--device` and `list-devices` in 0.3.0 and now exit 64 with a hint.
 
 Resending a single command is safe after 2, 6, 7, 8, 9 and 64: nothing was sent. A batch is different, since its earlier steps may have run: exit 2 or 6 alone does not make a batch resend safe. Check the summary line's `dispatched` first (`Dispatched:` in the text output): resend the whole batch only when it is `no`; otherwise check the screen and resend from the failed step.
@@ -18,10 +18,11 @@ Resending a single command is safe after 2, 6, 7, 8, 9 and 64: nothing was sent.
 ## Reasons to act on
 
 - `focus_not_confirmed` (exit 5) and `focus_mismatch` (exit 2): `type --into-id` or `--require-focus-id` sent no text because the field did not have focus. Check it with `describe-ui --summary`; never retype without checking which field has the text.
-- `text_not_accepted` (exit 5): on Android `type --replace` could not make the field hold the text; the message names its class, id and `inputType` (such as `number|decimal`). The field reads empty or shorter than the text, because the app filters what it accepts: type what the field allows.
+- `text_not_accepted` (exit 5): on Android `type --replace` could not make the field hold the text; the message names its class, id and `inputType` (such as `number|decimal`). The field reads empty or shorter than the text, or a paste did not leave exactly the text, because the app filters what it accepts: type what the field allows. When the message says input focus moved, nothing was pasted: tap the field and run it again.
 - `metro_not_running` (exit 9) and `rn_load_failed` (exit 1) come from `rn open`: ask the user to start Metro on the port, or read `logs --rn` for why the bundle failed (`guide react-native`).
 - `turnstile_challenge` (exit 1): Cloudflare showed a visual challenge. Hand back to a person; never retry `turnstile` in a loop (`guide turnstile`).
-- `verify_target_present` (exit 1, nothing sent): the `--verify-id` element was already on screen, so its appearing could not show the input worked. Pick an id that only the next screen has.
+- `target_under_keyboard` (exit 1, nothing sent): the on-screen keyboard covers the `tap` or `type --into-id` target, so the tap would press a key. Hide it (on Android, `offsider button back`) or scroll the target above it, then retry. `target_covered` (exit 1) is `tap --fail-if-covered` finding another element over it.
+- `verify_target_present` (exit 1, nothing sent): the `--verify-id` element was already on screen, so its appearing could not show the input worked. Pick an id that only the next screen has. With `type --into-id` it is checked before the focus tap too; when that tap brought the element on screen, only the tap was sent (`dispatched` `yes`) and no text was typed.
 
 ## JSON errors
 
