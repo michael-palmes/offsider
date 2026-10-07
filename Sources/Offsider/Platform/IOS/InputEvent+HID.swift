@@ -20,7 +20,7 @@ extension HardwareButton {
         case .lock: return FBSimulatorHIDButton(rawValue: 3)
         case .sideButton: return FBSimulatorHIDButton(rawValue: 4)
         case .siri: return FBSimulatorHIDButton(rawValue: 5)
-        case .back, .appSwitch, .volumeUp, .volumeDown: return nil
+        case .back, .appSwitch, .volumeUp, .volumeDown, .menu: return nil
         }
     }
 

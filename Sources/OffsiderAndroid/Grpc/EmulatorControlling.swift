@@ -6,9 +6,10 @@ struct EmulatorStatusSummary: Equatable, Sendable {
     let uptimeMilliseconds: UInt64
 }
 
-/// One `sendKey`: a USB `page << 16 | usage` code, a W3C key value such as `GoHome`, or printable text.
+/// One `sendKey`: a USB `page << 16 | usage` code, a Linux evdev code, a W3C key value such as `GoHome`, or printable text.
 enum EmulatorKeyEvent: Equatable, Sendable {
     case usb(UInt32, KeyPhase)
+    case evdev(UInt32, KeyPhase)
     case w3c(String, KeyPhase)
     case text(String)
 }

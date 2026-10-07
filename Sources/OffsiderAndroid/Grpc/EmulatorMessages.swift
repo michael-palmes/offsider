@@ -26,6 +26,10 @@ extension EmulatorControlClient {
             message.codeType = .usb
             message.keyCode = Int32(bitPattern: code)
             message.eventType = eventType(phase)
+        case let .evdev(code, phase):
+            message.codeType = .evdev
+            message.keyCode = Int32(bitPattern: code)
+            message.eventType = eventType(phase)
         case let .w3c(key, phase):
             message.key = key
             message.eventType = eventType(phase)

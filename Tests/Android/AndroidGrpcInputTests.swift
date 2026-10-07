@@ -98,6 +98,15 @@ struct AndroidGrpcInputTests {
         #expect(rig.emulator.calls == [.key(.w3c("GoBack", .press)), .key(.w3c("AppSwitch", .press)), .key(.w3c("AudioVolumeUp", .press)), .key(.w3c("AudioVolumeDown", .press))])
     }
 
+    @Test("the menu button and key 118 both go as evdev KEY_MENU (139): the emulator drops USB usage 118 and maps ContextMenu to Search")
+    func menu() async throws {
+        let rig = try Self.rig()
+        try await rig.backend.perform(.composite([.shortButtonPress(.menu), .shortKeyPress(118)]), on: Self.device)
+
+        #expect(rig.emulator.calls == [.key(.evdev(139, .press)), .key(.evdev(139, .press))])
+        #expect(rig.adbScripts.isEmpty)
+    }
+
     @Test("a held key is a real down, a host-timed pause and an up")
     func heldKey() async throws {
         let rig = try Self.rig()

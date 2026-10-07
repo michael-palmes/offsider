@@ -8,7 +8,7 @@ extension HardwareButton {
         case .home: return 0x40
         case .lock, .sideButton: return 0x30
         case .siri: return 0xCF
-        case .applePay, .back, .appSwitch, .volumeUp, .volumeDown: return nil
+        case .applePay, .back, .appSwitch, .volumeUp, .volumeDown, .menu: return nil
         }
     }
 

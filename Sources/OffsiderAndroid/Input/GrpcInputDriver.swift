@@ -39,11 +39,11 @@ struct GrpcInputDriver: Sendable {
                     try await touch(to, down: false)
                 }
             case let .key(phase, usage):
-                guard let code = AndroidKeyTable.usbCode(for: usage) else { throw AndroidError.unsupportedKey(usage) }
-                try await emulator.sendKey(.usb(code, phase))
+                guard let key = AndroidKeyTable.grpcKey(for: usage, phase: phase) else { throw AndroidError.unsupportedKey(usage) }
+                try await emulator.sendKey(key)
             case let .button(phase, button):
-                guard let key = AndroidButtonMap.w3cKey(for: button) else { throw AndroidError.unsupportedButton(button) }
-                try await emulator.sendKey(.w3c(key, phase))
+                guard let key = AndroidButtonMap.grpcKey(for: button, phase: phase) else { throw AndroidError.unsupportedButton(button) }
+                try await emulator.sendKey(key)
             case .pause(let seconds):
                 try await pause(seconds)
             }

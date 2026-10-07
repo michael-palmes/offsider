@@ -147,8 +147,7 @@ struct RNDevMenuTests {
             .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
 
         #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
-        #expect(backend.devMenuOpens == 1)
-        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 324))])
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
     }
 
     @Test("on a physical iPhone, which Offsider cannot open the menu on, the error says to shake it by hand and never suggests a two-finger touch")
@@ -164,12 +163,25 @@ struct RNDevMenuTests {
         #expect(error?.userFacingDescription.contains("--fingers") == false)
     }
 
-    @Test("an app screen opens the menu, then reload is tapped and the menu closes")
+    @Test("on Android the menu key opens the menu as input, then reload is tapped and the menu closes")
     func opensAndChooses() async throws {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, Self.expoMenu(), Self.app], advanceTreeOnInput: true)
         let command = try RNDevMenu.parse(["reload", "--device", Self.device.rawValue])
 
         let outcome = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
+        #expect(backend.devMenuOpens == 0)
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
+    }
+
+    @Test("on an iOS simulator the menu opens by shake, not by a key")
+    func iosOpensByShake() async throws {
+        let simulator = DeviceID(rawValue: UUID().uuidString, platform: .ios)
+        let backend = FakeDeviceBackend(platform: .ios, trees: [Self.app, Self.expoMenu(platform: .ios), Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["reload", "--device", simulator.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: simulator), clock: ScriptedClock().poll)
 
         #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
         #expect(backend.devMenuOpens == 1)
@@ -223,7 +235,7 @@ struct RNDevMenuTests {
         let result = try await RNToolsOff.parse(["--device", Self.device.rawValue]).turnOff(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
 
         #expect(result == (inspector: "off", perfMonitor: "turned-off"))
-        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 424))])
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 424))])
         #expect(DevMenu.toolsJSONLine(inspector: "off", perfMonitor: "turned-off") == #"{"version":1,"inspector":"off","perfMonitor":"turned-off"}"#)
     }
 
