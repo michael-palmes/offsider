@@ -31,7 +31,7 @@ struct ScreenStackTests {
 
         #expect(stack.beneath.map(\.name) == ["Mounted Stack"])
         #expect(stack.beneath.map(\.under) == ["stack-test-full-page-1"])
-        #expect(stack.isBeneath(try Self.node("stack-test-tab-dashboard", in: tree), in: tree.roots))
+        #expect(stack.isBeneath(try Self.node("stack-test-tab-products", in: tree), in: tree.roots))
         #expect(stack.isBeneath(try Self.node("BackButton", in: tree), in: tree.roots))
         #expect(!stack.isBeneath(try Self.node("stack-test-full-buy", in: tree), in: tree.roots))
         let buy = try #require(ScreenStack.index(of: try Self.node("stack-test-full-buy", in: tree), in: tree.roots))

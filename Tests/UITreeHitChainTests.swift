@@ -51,10 +51,10 @@ struct UITreeHitChainTests {
     @Test("on Android drawing order picks the sibling on top, whatever the listing order")
     func drawingOrderPicksTop() throws {
         let tree = try Self.fullPage()
-        let dashboard = try Self.node("stack-test-tab-dashboard", in: tree)
+        let products = try Self.node("stack-test-tab-products", in: tree)
         let home = try Self.node("stack-test-tab-home", in: tree)
 
-        #expect(tree.deepestNode(at: try #require(dashboard.frame?.center))?.id == "stack-test-full-buy")
+        #expect(tree.deepestNode(at: try #require(products.frame?.center))?.id == "stack-test-full-buy")
         #expect(tree.deepestNode(at: try #require(home.frame?.center))?.id == "stack-test-full-page-1")
     }
 
@@ -90,11 +90,11 @@ struct UITreeHitChainTests {
         #expect(whole.deepestNode(at: UIPoint(x: 10, y: 10))?.id == "field")
     }
 
-    @Test("zOrder says Buy is drawn over the Home Tab by drawing order, and falls back to tree order on iOS")
+    @Test("zOrder says Buy is drawn over the Products Tab by drawing order, and falls back to tree order on iOS")
     func zOrder() throws {
         let tree = try Self.fullPage()
         let buy = try Self.node("stack-test-full-buy", in: tree)
-        let tab = try Self.node("stack-test-tab-dashboard", in: tree)
+        let tab = try Self.node("stack-test-tab-products", in: tree)
         let android = try #require(UITree.zOrder(of: buy, over: tab, in: tree.roots))
         #expect(android.isAbove && android.byDrawingOrder)
         #expect(UITree.zOrder(of: tab, over: buy, in: tree.roots)?.isAbove == false)

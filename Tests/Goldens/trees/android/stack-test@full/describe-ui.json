@@ -817,8 +817,8 @@
         },
         {
           "role": "button",
-          "id": "stack-test-tab-dashboard",
-          "label": "Home Tab",
+          "id": "stack-test-tab-products",
+          "label": "Products Tab",
           "value": null,
           "frame": {
             "x": 205.71,
@@ -834,7 +834,7 @@
           },
           "native": {
             "className": "android.view.View",
-            "resourceId": "stack-test-tab-dashboard",
+            "resourceId": "stack-test-tab-products",
             "package": "com.mpalmes.offsider.playground.rn",
             "pixelFrame": {
               "x": 540,
@@ -843,7 +843,7 @@
               "height": 129
             },
             "text": null,
-            "contentDescription": "Home Tab",
+            "contentDescription": "Products Tab",
             "hint": null,
             "stateDescription": null,
             "roleDescription": "Tab",

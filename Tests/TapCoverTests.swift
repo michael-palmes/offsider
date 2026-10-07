@@ -28,11 +28,11 @@ struct TapCoverTests {
         UINode(role: .text, label: label, frame: frame, native: .ios(IOSNativeAttributes(type: "StaticText")))
     }
 
-    @Test("the field miss: a hit-test answering with Buy's text, inside the Home Tab's frame, is Buy covering the tab")
+    @Test("the field miss: a hit-test answering with Buy's text, inside the Products Tab's frame, is Buy covering the tab")
     func coveringButtonsTextInsideTarget() throws {
         let hit = Self.text("Buy", FakeUI.frame(276, 805.3, 30.7, 20.3))
 
-        let verdict = try #require(try Self.judge(try Self.iosFullPage(), target: "stack-test-tab-dashboard", hit: hit))
+        let verdict = try #require(try Self.judge(try Self.iosFullPage(), target: "stack-test-tab-products", hit: hit))
 
         #expect(verdict.cover.id == "stack-test-full-buy")
         #expect(verdict.evidence == .hitTest && verdict.isConfident)
@@ -47,7 +47,7 @@ struct TapCoverTests {
     @Test("a hit on a smaller container holding both the target and a candidate tells nothing, so the candidate is only a guess")
     func sharedAncestorHit() throws {
         let row = FakeUI.node(.group, frame: FakeUI.frame(0, 780, 402, 94), children: [
-            FakeUI.node(.button, id: "tab", label: "Home Tab", frame: FakeUI.frame(201, 791, 201, 49)),
+            FakeUI.node(.button, id: "tab", label: "Products Tab", frame: FakeUI.frame(201, 791, 201, 49)),
             FakeUI.node(.button, id: "buy", label: "Buy", frame: FakeUI.frame(197, 793, 189, 45)),
         ])
 
@@ -63,7 +63,7 @@ struct TapCoverTests {
         let screenGroup = tree.roots[0].children[0]
 
         for hit in [tree.roots[0], screenGroup] {
-            let verdict = try #require(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: hit))
+            let verdict = try #require(try Self.judge(tree, target: "stack-test-tab-products", hit: hit))
             #expect(verdict.cover.id == "stack-test-full-buy")
             #expect(verdict.evidence == .treeOrder && !verdict.isConfident)
         }
@@ -152,7 +152,7 @@ struct TapCoverTests {
         #expect(verdict.cover.label == "Open Flags" && verdict.isConfident)
     }
 
-    @Test("Buy's own button over the Home Tab, which it mostly overlaps, stays a confident cover, even read again 2 pt along")
+    @Test("Buy's own button over the Products Tab, which it mostly overlaps, stays a confident cover, even read again 2 pt along")
     func overlappingButtonWithOwnID() throws {
         let tree = try Self.iosFullPage()
         let buy = try #require(tree.roots.flatMap { $0.flattened() }.first { $0.id == "stack-test-full-buy" })
@@ -160,7 +160,7 @@ struct TapCoverTests {
         shifted.frame = FakeUI.frame(199, 793, 189, 45)
 
         for hit in [buy, shifted] {
-            let verdict = try #require(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: hit))
+            let verdict = try #require(try Self.judge(tree, target: "stack-test-tab-products", hit: hit))
             #expect(verdict.cover.id == "stack-test-full-buy" && verdict.isConfident)
         }
     }

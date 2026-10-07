@@ -1033,7 +1033,7 @@ struct StackedScreenTests {
         let roots = try Self.golden("stack-test@full")
 
         let buy = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("stack-test-full-buy"))
-        let tab = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("stack-test-tab-dashboard"))
+        let tab = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("stack-test-tab-products"))
 
         #expect(buy.coverCandidates.isEmpty)
         #expect(tab.coverCandidates.map(\.id) == ["stack-test-full-buy"])

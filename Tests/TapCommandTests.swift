@@ -165,11 +165,11 @@ struct TapCommandTests {
         try TreeGoldens.tree(of: TreeGoldens.Golden(platform: .android, screen: "stack-test@full"))
     }
 
-    @Test("on Android, drawing order refuses the Home Tab under the full page's Buy from one tree read, and taps Buy")
+    @Test("on Android, drawing order refuses the Products Tab under the full page's Buy from one tree read, and taps Buy")
     func androidDrawingOrderRefuses() async throws {
         let covered = FakeDeviceBackend(platform: .android, trees: [try Self.fullPage()])
         let error = await #expect(throws: CLIError.self) {
-            try await Self.tapAndroid(["--id", "stack-test-tab-dashboard"], on: covered)
+            try await Self.tapAndroid(["--id", "stack-test-tab-products"], on: covered)
         }
         #expect(error?.coveredBy?.id == "stack-test-full-buy")
         #expect(error?.coveredBy?.evidence == .drawingOrder)
@@ -221,7 +221,7 @@ struct TapCommandTests {
         }
         let backend = FakeDeviceBackend(platform: .android, trees: [page, page, closed])
 
-        try await Self.tapAndroid(["--id", "stack-test-tab-dashboard", "--wait-timeout", "3", "--poll-interval", "0.01"], on: backend)
+        try await Self.tapAndroid(["--id", "stack-test-tab-products", "--wait-timeout", "3", "--poll-interval", "0.01"], on: backend)
 
         #expect(backend.treeReads == 3)
         #expect(backend.session.calls.count == 1)

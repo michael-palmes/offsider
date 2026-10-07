@@ -1162,8 +1162,8 @@
                                     },
                                     {
                                       "role": "button",
-                                      "id": "stack-test-tab-dashboard",
-                                      "label": "Home Tab",
+                                      "id": "stack-test-tab-products",
+                                      "label": "Products Tab",
                                       "value": null,
                                       "frame": {
                                         "x": 201,

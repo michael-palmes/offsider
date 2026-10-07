@@ -18,17 +18,17 @@ struct GalaxyFoldStackTests {
         try #require(tree.roots.flatMap { $0.flattened() }.first { $0.id == id })
     }
 
-    @Test("One UI's dump carries drawing order, so the page's Buy is drawn over the Home Tab listed after it")
+    @Test("One UI's dump carries drawing order, so the page's Buy is drawn over the Products Tab listed after it")
     func buyDrawnOverTab() throws {
         let tree = try Self.tree()
-        let tab = try Self.node("stack-test-tab-dashboard", in: tree)
+        let tab = try Self.node("stack-test-tab-products", in: tree)
         let buy = try Self.node("stack-test-full-buy", in: tree)
 
         #expect(UITree.zOrder(of: buy, over: tab, in: tree.roots).map { $0.isAbove && $0.byDrawingOrder } == true)
         #expect(tree.deepestNode(at: try #require(tab.frame?.center))?.id == "stack-test-full-buy")
     }
 
-    @Test("the mounted stack lies beneath the full page, and a tap on its Home Tab is refused, naming Buy")
+    @Test("the mounted stack lies beneath the full page, and a tap on its Products Tab is refused, naming Buy")
     func tabUnderPageRefused() throws {
         let tree = try Self.tree()
         let viewport = try #require(tree.viewport)
@@ -36,7 +36,7 @@ struct GalaxyFoldStackTests {
         #expect(stack.beneath.map(\.name) == ["Mounted Stack"])
         #expect(stack.beneath.map(\.under) == ["stack-test-full-page-1"])
 
-        let tab = try Self.node("stack-test-tab-dashboard", in: tree)
+        let tab = try Self.node("stack-test-tab-products", in: tree)
         let buy = try Self.node("stack-test-full-buy", in: tree)
         let verdict = CoverJudge.judge(
             target: tab, matched: tab, point: try #require(tab.frame?.center), candidates: [buy],

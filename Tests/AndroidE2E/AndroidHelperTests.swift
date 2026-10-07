@@ -100,7 +100,7 @@ struct AndroidHelperTests {
         #expect(slider["value"] as? String == "25%")
     }
 
-    @Test("the helper's dump draws a full page's Buy above the Home Tab beneath it")
+    @Test("the helper's dump draws a full page's Buy above the Products Tab beneath it")
     func drawingOrderOnStackedPage() async throws {
         try await AndroidE2E.open("stack-test", waitingFor: "stack-test-open-full")
         try await AndroidE2E.run("tap --id stack-test-open-full")
@@ -118,7 +118,7 @@ struct AndroidHelperTests {
             if let root = window["root"] as? [String: Any] { visit(root) }
         }
         let buy = try #require(orders["stack-test-full-buy"], "\(orders)")
-        let tab = try #require(orders["stack-test-tab-dashboard"], "\(orders)")
+        let tab = try #require(orders["stack-test-tab-products"], "\(orders)")
         #expect(buy > tab)
         try await AndroidE2E.run("button back")
     }

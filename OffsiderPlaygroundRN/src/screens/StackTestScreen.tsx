@@ -14,7 +14,7 @@ import {
 } from '../fixtures';
 
 const maxDepth = 3;
-const tabs = ['Home', 'Dashboard'] as const;
+const tabs = ['Home', 'Products'] as const;
 type Tab = (typeof tabs)[number];
 const tabRowHeight = 49;
 const closeLaterMs = 800;

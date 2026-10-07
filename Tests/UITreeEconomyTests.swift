@@ -202,7 +202,7 @@ struct UITreeEconomyTests {
         let output = Self.rendered(try Self.golden(.android, "stack-test@full"))
 
         #expect(output.contains("button \"Buy\" id=stack-test-full-buy"))
-        #expect(!output.contains("stack-test-tab-dashboard"))
+        #expect(!output.contains("stack-test-tab-products"))
         #expect(!output.contains("Mounted Stack\" id="))
         #expect(output.hasSuffix("# beneath: \"Mounted Stack\" (15 elements) under \"stack-test-full-page-1\"\n"))
     }
@@ -224,8 +224,8 @@ struct UITreeEconomyTests {
         let text = Self.rendered(tree, UITreeRenderOptions(format: .text))
         let json = String(decoding: tree.jsonData(), as: UTF8.self)
 
-        #expect(text.contains("stack-test-tab-dashboard") && !text.contains("# beneath:"))
-        #expect(json.contains("stack-test-tab-dashboard"))
+        #expect(text.contains("stack-test-tab-products") && !text.contains("# beneath:"))
+        #expect(json.contains("stack-test-tab-products"))
     }
 }
 

@@ -21,4 +21,4 @@ application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
   group id=stack-test-tab-bar (0,850.3 411.4x73.1)
   button "Home Tab" id=stack-test-tab-home (0,850.7 205.7x49.1) selected
   button "Buy" id=stack-test-full-buy (201.9,852.2 193.5x45)
-  button "Home Tab" id=stack-test-tab-dashboard (205.7,850.7 205.7x49.1)
+  button "Products Tab" id=stack-test-tab-products (205.7,850.7 205.7x49.1)

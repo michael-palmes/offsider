@@ -16,12 +16,12 @@ struct ReactNativeStackCoverTests {
         return try #require(object["error"] as? [String: Any], "\(stdout)")
     }
 
-    @Test("the Home Tab under the page's Buy button is refused, naming Buy, and nothing is pressed", arguments: RNPlatform.enabled)
+    @Test("the Products Tab under the page's Buy button is refused, naming Buy, and nothing is pressed", arguments: RNPlatform.enabled)
     func coveredTabRefused(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await Self.openFullPage(app)
 
-        let result = try await app.offsider("batch --json --step \(AndroidE2E.quote("tap --id stack-test-tab-dashboard"))")
+        let result = try await app.offsider("batch --json --step \(AndroidE2E.quote("tap --id stack-test-tab-products"))")
 
         #expect(result.exitCode == 1, "\(result.stderr)")
         let error = try Self.batchError(result.stdout)
@@ -39,7 +39,7 @@ struct ReactNativeStackCoverTests {
         let app = RNApp(platform)
         try await Self.openFullPage(app)
 
-        let result = try await app.run("tap --id stack-test-tab-dashboard --allow-covered")
+        let result = try await app.run("tap --id stack-test-tab-products --allow-covered")
 
         #expect(result.stderr.contains("tapping anyway because of --allow-covered"), "\(result.stderr)")
         _ = try await app.waitForLabel(of: "stack-test-state") { $0 == "Stack State: Buy pressed" }
@@ -76,10 +76,10 @@ struct ReactNativeStackCoverTests {
         try await Self.openFullPage(app)
         try await app.run("tap --id stack-test-full-close-later")
 
-        let result = try await app.offsider("tap --id stack-test-tab-dashboard --wait-timeout 3")
+        let result = try await app.offsider("tap --id stack-test-tab-products --wait-timeout 3")
 
         #expect(result.exitCode == 0, "\(result.stderr)")
-        _ = try await app.waitForLabel(of: "stack-test-state") { $0 == "Stack State: Tab: Dashboard" }
+        _ = try await app.waitForLabel(of: "stack-test-state") { $0 == "Stack State: Tab: Products" }
     }
 
     @Test("--summary folds the mounted stack beneath the page on Android; iOS lists a React Native overlay page flat, so nothing folds", arguments: RNPlatform.enabled)
@@ -92,11 +92,11 @@ struct ReactNativeStackCoverTests {
         #expect(summary.contains("id=stack-test-full-buy"), "\(summary)")
         switch platform {
         case .android:
-            #expect(!summary.contains("id=stack-test-tab-dashboard"), "\(summary)")
+            #expect(!summary.contains("id=stack-test-tab-products"), "\(summary)")
             #expect(summary.contains("# beneath: \"Mounted Stack\""), "\(summary)")
             #expect(summary.contains("under \"stack-test-full-page-1\""), "\(summary)")
         case .ios:
-            #expect(summary.contains("id=stack-test-tab-dashboard") && !summary.contains("# beneath:"), "\(summary)")
+            #expect(summary.contains("id=stack-test-tab-products") && !summary.contains("# beneath:"), "\(summary)")
         }
     }
 }
