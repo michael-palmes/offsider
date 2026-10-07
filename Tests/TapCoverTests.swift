@@ -196,6 +196,33 @@ struct TapCoverTests {
         #expect(verdict?.isConfident == false)
     }
 
+    /// An Expo debug build on Android: the dev client's tools button sits in a full-screen host drawn over the app, with a tab bar and maybe a LogBox banner beneath.
+    static func toolsHostOverTabs(banner: Bool) -> UITree {
+        let fab = FakeUI.node(.group, frame: FakeUI.frame(330, 60, 60, 60), platform: .android, children: [
+            FakeUI.node(.image, label: "Tools", frame: FakeUI.frame(347, 77, 26, 26), platform: .android),
+        ])
+        let host = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), platform: .android, drawingOrder: 3, children: [
+            FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), platform: .android, children: [fab]),
+        ])
+        let tabs = FakeUI.node(.group, id: "tab-bar", frame: FakeUI.frame(0, 800, 402, 74), platform: .android, drawingOrder: 1, children: [
+            FakeUI.node(.button, id: "tab-search", label: "Search", frame: FakeUI.frame(134, 800, 134, 49), platform: .android),
+        ])
+        let toast = FakeUI.node(.button, label: "!, OffsiderFixture error 1", frame: FakeUI.frame(10, 790, 382, 48), platform: .android, drawingOrder: 2)
+        return FakeUI.tree(platform: .android, banner ? [host, tabs, toast] : [host, tabs])
+    }
+
+    @Test("on Android a full-screen host with nothing at the point, as the Expo dev client's tools button has, takes no tap, so a tab beneath it is clear")
+    func toolsHostIsNoCover() throws {
+        #expect(try Self.judge(Self.toolsHostOverTabs(banner: false), target: "tab-search", hit: nil) == nil)
+    }
+
+    @Test("on Android a LogBox banner beneath that host is still a confident cover by drawing order")
+    func bannerBeneathToolsHost() throws {
+        let verdict = try #require(try Self.judge(Self.toolsHostOverTabs(banner: true), target: "tab-search", hit: nil))
+        #expect(verdict.cover.label == "!, OffsiderFixture error 1")
+        #expect(verdict.evidence == .drawingOrder && verdict.isConfident)
+    }
+
     @Test("a coveredBy report names role, id, label, frame, screen and evidence, and its JSON keeps that order")
     func coverReportJSON() {
         let verdict = CoverVerdict(cover: FakeUI.node(.button, id: "buy", label: "Buy", frame: FakeUI.frame(1, 2, 3, 4)), evidence: .drawingOrder, isConfident: true, screen: "asset-page")
