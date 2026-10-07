@@ -16,16 +16,17 @@ struct TapCover {
         guard let target = resolution.target ?? resolution.matched, let viewport = tree.viewport else {
             return
         }
-        let roots = tree.roots
         let android = tree.platform == .android
         if android, AccessibilityTargetResolver.keyboardCover(resolution, in: tree) != nil {
             throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device)
         }
+        // On Android the keyboard's window bounds have decided; its root view spans the screen, so it leaves the judging.
+        let roots = android ? tree.roots.filter { $0.role != .keyboard } : tree.roots
         var candidates = resolution.coverCandidates
         if android {
-            candidates.removeAll { AccessibilityTargetResolver.isUnderKeyboard($0, in: roots) }
+            candidates.removeAll { AccessibilityTargetResolver.isUnderKeyboard($0, in: tree.roots) }
         }
-        let stack = resolution.stack ?? ScreenStack.build(roots: roots, viewport: viewport)
+        let stack = roots.count == tree.roots.count ? resolution.stack ?? ScreenStack.build(roots: roots, viewport: viewport) : ScreenStack.build(roots: roots, viewport: viewport)
         let matched = resolution.matched ?? target
         let beneath = stack.isBeneath(target, in: roots) || stack.isBeneath(matched, in: roots)
         guard android || !candidates.isEmpty || beneath else {
