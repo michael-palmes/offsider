@@ -225,6 +225,37 @@ struct TapCoverTests {
         #expect(try Self.judge(Self.toolsHostOverTabs(banner: false), target: "tab-search", hit: nil) == nil)
     }
 
+    /// `node` with Android's class name for it, and for its children their own.
+    static func classed(_ node: UINode, _ className: String, children: [String] = []) -> UINode {
+        var copy = node
+        if case .android(var attributes) = node.native {
+            attributes.className = className
+            copy.native = .android(attributes)
+        }
+        copy.children = zip(node.children, children).map { classed($0, $1) } + node.children.dropFirst(children.count)
+        return copy
+    }
+
+    @Test("on Android the Expo dev client's Compose host, named by its classes, still takes no tap")
+    func composeToolsHostIsNoCover() throws {
+        var tree = Self.toolsHostOverTabs(banner: false)
+        tree.roots[0].children[0] = Self.classed(tree.roots[0].children[0], "androidx.compose.ui.platform.ComposeView", children: ["android.view.View"])
+        #expect(try Self.judge(tree, target: "tab-search", hit: nil) == nil)
+    }
+
+    @Test("on Android a React Native view spanning the screen over the tab, which takes the touch in JavaScript, is a guessed cover", arguments: [
+        "android.view.ViewGroup", "android.view.View",
+    ])
+    func reactOverlayIsGuessedCover(className: String) throws {
+        var tree = Self.toolsHostOverTabs(banner: false)
+        tree.roots[0].children[0] = Self.classed(tree.roots[0].children[0], className, children: [className])
+
+        let verdict = try #require(try Self.judge(tree, target: "tab-search", hit: nil))
+
+        #expect(verdict.cover.frame == FakeUI.frame(0, 0, 402, 874))
+        #expect(verdict.evidence == .drawingOrder && !verdict.isConfident)
+    }
+
     @Test("on Android a LogBox banner beneath that host is still a confident cover by drawing order")
     func bannerBeneathToolsHost() throws {
         let verdict = try #require(try Self.judge(Self.toolsHostOverTabs(banner: true), target: "tab-search", hit: nil))
