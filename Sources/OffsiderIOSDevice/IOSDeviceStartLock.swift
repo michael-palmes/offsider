@@ -35,10 +35,11 @@ final class IOSDeviceStartLock: @unchecked Sendable {
         return IOSDeviceStartLock(path: path, descriptor: descriptor)
     }
 
-    /// Idempotent; the file stays, since unlinking a `flock` file races with the next opener.
+    /// Idempotent; unlocks before closing, as `DeviceLock.release` does, and the file stays, since unlinking a `flock` file races with the next opener.
     func release() {
         lock.withLock {
             guard descriptor >= 0 else { return }
+            _ = flock(descriptor, LOCK_UN)
             Darwin.close(descriptor)
             descriptor = -1
         }

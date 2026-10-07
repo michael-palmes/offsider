@@ -141,6 +141,8 @@ public final class DeviceLock: @unchecked Sendable {
     public func release() {
         guard descriptor >= 0 else { return }
         _ = ftruncate(descriptor, 0)
+        // Closing alone leaves the lock held while a child mid-`posix_spawn` on another thread still shares this open file.
+        _ = flock(descriptor, LOCK_UN)
         Darwin.close(descriptor)
         descriptor = -1
     }

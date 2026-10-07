@@ -129,7 +129,6 @@ struct DeviceClaimsTests {
         await #expect(throws: DeviceBusy.self) { try await other.claim(key) }
 
         claims.releaseAll()
-        other.configure(command: "batch", waitOption: TestDevices.releaseGrace)
         try await other.claim(key)
         other.releaseAll()
     }
