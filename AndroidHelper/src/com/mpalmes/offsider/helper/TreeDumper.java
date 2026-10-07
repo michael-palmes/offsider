@@ -2,10 +2,12 @@ package com.mpalmes.offsider.helper;
 
 import android.app.UiAutomation;
 import android.graphics.Rect;
+import android.graphics.Region;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Writes the window list as JSON, with node trees for the windows the options ask for. */
@@ -25,8 +27,12 @@ final class TreeDumper {
     int trees;
     int nodes;
     int maxDepth;
-    private boolean keyboardShown;
+    private List<AccessibilityWindowInfo> windowList;
+    private final List<AccessibilityWindowInfo> keyboards = new ArrayList<>();
     private boolean keepHidden;
+    private AccessibilityWindowInfo behindKeyboard;
+    private Region keyboardRegion;
+    private Region coverRegion;
     int skippedInvisible;
     int testTagsFound;
     int testTagRefreshes;
@@ -51,9 +57,12 @@ final class TreeDumper {
         } else {
             source = "getWindows";
             AccessibilityWindowInfo app = options.appWindowsOnly ? appWindow(automation, list) : null;
-            keyboardShown = false;
+            windowList = list;
+            keyboards.clear();
             for (AccessibilityWindowInfo window : list) {
-                keyboardShown = keyboardShown || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD;
+                if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                    keyboards.add(window);
+                }
             }
             for (AccessibilityWindowInfo window : list) {
                 boolean tree = !options.appWindowsOnly || window == app
@@ -127,8 +136,12 @@ final class TreeDumper {
                 json.nullValue();
             } else {
                 keepHidden = hiddenByKeyboard(window, root);
+                behindKeyboard = !keyboards.isEmpty() && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION ? window : null;
+                keyboardRegion = null;
+                coverRegion = null;
                 node(root, 0);
                 keepHidden = false;
+                behindKeyboard = null;
             }
         }
         json.endObject();
@@ -136,8 +149,52 @@ final class TreeDumper {
 
     /** A floating keyboard's window can mark the whole focused app as not visible to the user, though it is on screen. */
     private boolean hiddenByKeyboard(AccessibilityWindowInfo window, AccessibilityNodeInfo root) {
-        return keyboardShown && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION && window.isActive()
+        return !keyboards.isEmpty() && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION && window.isActive()
                 && window.isFocused() && !root.isVisibleToUser();
+    }
+
+    /** Android marks an app node the windows above wholly cover as not visible; with the keyboard among them it stays, marked so, as uiautomator lists it. */
+    private boolean coveredByKeyboard(AccessibilityNodeInfo n) {
+        if (behindKeyboard == null) {
+            return false;
+        }
+        n.getBoundsInScreen(rect);
+        if (rect.isEmpty()) {
+            return false;
+        }
+        if (coverRegion == null) {
+            readCovers();
+        }
+        return new Region(rect).op(keyboardRegion, Region.Op.INTERSECT) && !new Region(rect).op(coverRegion, Region.Op.DIFFERENCE);
+    }
+
+    /** What the keyboards, and every window above the one being written but an accessibility overlay, cover. */
+    private void readCovers() {
+        keyboardRegion = new Region();
+        coverRegion = new Region();
+        for (AccessibilityWindowInfo window : windowList) {
+            if (window.getLayer() <= behindKeyboard.getLayer() || window.getType() == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) {
+                continue;
+            }
+            Region region = touchRegion(window);
+            coverRegion.op(region, Region.Op.UNION);
+            if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                keyboardRegion.op(region, Region.Op.UNION);
+            }
+        }
+    }
+
+    /** Where a window takes touches: its region from API 33, else the bounds around it. */
+    private static Region touchRegion(AccessibilityWindowInfo window) {
+        Region region = new Region();
+        if (Build.VERSION.SDK_INT >= 33) {
+            window.getRegionInScreen(region);
+        } else {
+            Rect bounds = new Rect();
+            window.getBoundsInScreen(bounds);
+            region.set(bounds);
+        }
+        return region;
     }
 
     /** Stands in for the window list when the platform returns none. */
@@ -237,7 +294,7 @@ final class TreeDumper {
             if (child == null) {
                 continue;
             }
-            if (options.visibleOnly && !keepHidden && !child.isVisibleToUser()) {
+            if (options.visibleOnly && !keepHidden && !child.isVisibleToUser() && !coveredByKeyboard(child)) {
                 skippedInvisible++;
                 continue;
             }

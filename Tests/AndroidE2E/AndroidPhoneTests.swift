@@ -40,6 +40,38 @@ extension AndroidE2E {
         _ = try await waitForNode { $0["id"] as? String == "text-input-field" && ($0["state"] as? [String: Any])?["focused"] as? Bool == true }
     }
 
+    /// Opens text-input, types `hello world` into its focused field and waits until describe-ui lists the keyboard.
+    static func typeWithKeyboardUp() async throws {
+        try await open("text-input", waitingFor: "text-input-field")
+        try await focusField(mode: "input")
+        try await run("type 'hello world'")
+        _ = try await waitForFieldValue("hello world")
+        guard try await eventually(timeout: 20, { try await keyboardShown() }) else {
+            throw AndroidE2EError(description: "the keyboard never came up")
+        }
+    }
+
+    static func ids(in tree: [String: Any]) -> Set<String> {
+        Set(nodes(in: tree).compactMap { $0["id"] as? String })
+    }
+
+    /// Ids of app elements lying wholly within the band of the keyboard's keys, topmost first.
+    static func idsUnderKeys(in tree: [String: Any]) -> [String] {
+        func frame(_ node: [String: Any]) -> (top: Double, bottom: Double)? {
+            guard let frame = node["frame"] as? [String: Double], let y = frame["y"], let height = frame["height"], height > 0 else { return nil }
+            return (y, y + height)
+        }
+        let roots = (tree["roots"] as? [[String: Any]]) ?? []
+        let keys = roots.filter { $0["role"] as? String == "keyboard" }
+            .flatMap { nodes(in: ["roots": ($0["children"] as? [[String: Any]]) ?? []]) }.compactMap(frame)
+        guard let top = keys.map(\.top).min(), let bottom = keys.map(\.bottom).max() else { return [] }
+        return nodes(in: ["roots": roots.filter { $0["role"] as? String == "application" }])
+            .compactMap { node in (node["id"] as? String).flatMap { id in frame(node).map { (id, $0) } } }
+            .filter { $0.1.top >= top && $0.1.bottom <= bottom }
+            .sorted { $0.1.top < $1.1.top }
+            .map(\.0)
+    }
+
     /// Lines of `ps -A` that belong to an Offsider helper, by nice name or main class.
     static func helperProcesses() async throws -> [String] {
         try await shell("ps -A -o PID,ARGS || true").split(whereSeparator: \.isNewline).map(String.init).filter {
@@ -267,6 +299,33 @@ struct AndroidPhoneHelperTests {
                 return processes.isEmpty && after == before
             }
             #expect(clean, "helper processes \(processes), accessibility_enabled \(after) (was \(before))")
+        }
+    }
+
+    @Test("with the keyboard up, the helper lists every element uiautomator lists, including those the keyboard covers")
+    func keyboardCoveredListed() async throws {
+        try await AndroidE2E.onAwakePhone {
+            try await AndroidE2E.typeWithKeyboardUp()
+            let helper = try await AndroidE2E.tree()
+            let uiautomator = try DescribeUITree.parse(try await AndroidE2E.run("describe-ui", environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"]).stdout)
+            let missing = AndroidE2E.ids(in: uiautomator).subtracting(AndroidE2E.ids(in: helper))
+            #expect(missing.isEmpty, "uiautomator lists \(missing.sorted()) and the helper does not")
+        }
+    }
+
+    @Test("tap --id on an element the keyboard covers is refused with target_under_keyboard and sends nothing")
+    func tapUnderKeyboard() async throws {
+        try await AndroidE2E.onAwakePhone {
+            try await AndroidE2E.typeWithKeyboardUp()
+            guard let covered = AndroidE2E.idsUnderKeys(in: try await AndroidE2E.tree()).first else {
+                try Test.cancel("No text-input element lies under the keyboard on this phone's screen.")
+            }
+            let result = try await AndroidE2E.offsider("tap --id \(covered)")
+            #expect(result.exitCode == 1, "tap --id \(covered) exited \(result.exitCode): \(result.stderr)")
+            #expect(result.stderr.contains("The keyboard covers --id '\(covered)'"), "stderr: \(result.stderr)")
+            try await Task.sleep(for: .seconds(1))
+            let field = try #require(DescribeUITree.node(id: "text-input-field", in: try await AndroidE2E.tree()))
+            #expect(field["value"] as? String == "hello world", "a key reached the field: \(field["value"] ?? "no value")")
         }
     }
 
