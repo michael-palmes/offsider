@@ -14,7 +14,7 @@ struct LiveTextTests {
         }
         return FakeUI.tree([
             typed(FakeUI.node(.text, id: "live-ticker-price", label: price, frame: FakeUI.frame(16, 100, 370, 40)), "StaticText"),
-            typed(FakeUI.node(.text, id: "live-ticker-volume", label: "Orders (24h)", value: "$18,402,117", frame: FakeUI.frame(16, 160, 200, 20)), "StaticText"),
+            typed(FakeUI.node(.text, id: "live-ticker-orders", label: "Orders (24h)", value: "18,402", frame: FakeUI.frame(16, 160, 200, 20)), "StaticText"),
             typed(FakeUI.node(.switch, id: "live-ticker-toggle", label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: false)), "Switch"),
             typed(FakeUI.node(.button, id: "live-ticker-noop", label: "Do Nothing", frame: FakeUI.frame(16, 260, 180, 44)), "Button"),
         ] + extra)
@@ -32,10 +32,10 @@ struct LiveTextTests {
 
     @Test("text that changed between the cached tree and the first read, with no input between, is learnt live")
     func learnsTicker() throws {
-        let live = LiveText.learn(cached: try Self.record(Self.ticker("$64,012.34")), first: Self.ticker("$64,013.61"), readAt: Self.now)
+        let live = LiveText.learn(cached: try Self.record(Self.ticker("$129.95")), first: Self.ticker("$131.22"), readAt: Self.now)
         #expect(live.count == 1)
         let names = ChangeDetector().liveChanges(
-            AccessibilitySnapshot(tree: Self.ticker("$64,013.61")), AccessibilitySnapshot(tree: Self.ticker("$64,015.02")), live: live
+            AccessibilitySnapshot(tree: Self.ticker("$131.22")), AccessibilitySnapshot(tree: Self.ticker("$132.63")), live: live
         )
         #expect(names == ["live-ticker-price"])
     }
@@ -46,31 +46,31 @@ struct LiveTextTests {
         (10.0, 5.0, .preAction),
     ])
     func refusesUntrustedCache(readAgo: TimeInterval, inputAgo: TimeInterval, role: TreeCacheRecord.TreeRole) throws {
-        let record = try Self.record(Self.ticker("$64,012.34"), readAgo: readAgo, inputAgo: inputAgo, role: role)
-        #expect(LiveText.learn(cached: record, first: Self.ticker("$64,013.61"), readAt: Self.now).isEmpty)
-        #expect(LiveText.learn(cached: nil, first: Self.ticker("$64,013.61"), readAt: Self.now).isEmpty)
+        let record = try Self.record(Self.ticker("$129.95"), readAgo: readAgo, inputAgo: inputAgo, role: role)
+        #expect(LiveText.learn(cached: record, first: Self.ticker("$131.22"), readAt: Self.now).isEmpty)
+        #expect(LiveText.learn(cached: nil, first: Self.ticker("$131.22"), readAt: Self.now).isEmpty)
     }
 
     @Test("a row added to a list between the cached tree and the first read teaches nothing beneath the list, while the ticker beside it is still learnt")
     func shiftedRowsTeachNothing() throws {
-        func screen(_ price: String, trades: [String]) -> UITree {
-            let rows = trades.enumerated().map { index, trade in
-                FakeUI.node(.text, label: trade, frame: FakeUI.frame(16, 300 + Double(index) * 40, 370, 40))
+        func screen(_ price: String, orders: [String]) -> UITree {
+            let rows = orders.enumerated().map { index, order in
+                FakeUI.node(.text, label: order, frame: FakeUI.frame(16, 300 + Double(index) * 40, 370, 40))
             }
             return FakeUI.tree([
                 FakeUI.node(.text, id: "live-ticker-price", label: price, frame: FakeUI.frame(16, 100, 370, 40)),
-                FakeUI.node(.group, id: "recent-trades", frame: FakeUI.frame(0, 300, 402, 400), children: rows),
+                FakeUI.node(.group, id: "recent-orders", frame: FakeUI.frame(0, 300, 402, 400), children: rows),
             ])
         }
-        let trades = ["Bought 0.1 BTC", "Sold 2 ETH", "Bought 5 SOL", "Sold 0.3 BTC", "Bought 1 ETH"]
+        let orders = ["Kettle x1", "Toaster x2", "Blender x5", "Kettle x3", "Toaster x1"]
 
         let live = LiveText.learn(
-            cached: try Self.record(screen("$64,012.34", trades: trades)), first: screen("$64,013.61", trades: ["Sold 1 BTC"] + trades), readAt: Self.now
+            cached: try Self.record(screen("$129.95", orders: orders)), first: screen("$131.22", orders: ["Blender x2"] + orders), readAt: Self.now
         )
 
         #expect(live.count == 1)
         #expect(ChangeDetector().liveChanges(
-            AccessibilitySnapshot(tree: screen("$64,013.61", trades: trades)), AccessibilitySnapshot(tree: screen("$64,015.02", trades: trades)), live: live
+            AccessibilitySnapshot(tree: screen("$131.22", orders: orders)), AccessibilitySnapshot(tree: screen("$132.63", orders: orders)), live: live
         ) == ["live-ticker-price"])
     }
 
@@ -80,7 +80,7 @@ struct LiveTextTests {
             FakeUI.node(.button, id: "live-ticker-detail-back", label: "Back", frame: FakeUI.frame(0, 50, 80, 44)),
             FakeUI.node(.text, id: "live-ticker-price", label: "$1.00", frame: FakeUI.frame(16, 100, 370, 40)),
         ])
-        #expect(LiveText.learn(cached: try Self.record(other), first: Self.ticker("$64,013.61"), readAt: Self.now).isEmpty)
+        #expect(LiveText.learn(cached: try Self.record(other), first: Self.ticker("$131.22"), readAt: Self.now).isEmpty)
     }
 
     @Test("LogBox toasts come out of the tree with their frames; other nodes stay")

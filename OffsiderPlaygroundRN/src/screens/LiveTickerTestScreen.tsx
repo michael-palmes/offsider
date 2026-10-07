@@ -5,10 +5,10 @@ import { colours, fixtureLog, FullPage, iosValue, Readout, Screen, Target, useHa
 
 const tickMs = 1000;
 const openDetailMs = 1200;
-const basePriceCents = 6_401_234;
+const basePriceCents = 12_995;
 const priceStepsCents = [0, 127, 41, 268, 155, -82, 19, 203, -37, 96];
-const baseVolume = 18_402_117;
-const volumeStep = 1_373;
+const baseOrders = 18_402;
+const ordersStep = 3;
 const intervals = ['1D', '1W'] as const;
 type Interval = (typeof intervals)[number];
 
@@ -31,7 +31,7 @@ export function LiveTickerTestScreen() {
   const [selected, setSelected] = useState<Interval>('1D');
   const [detail, setDetail] = useState(false);
   const detailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const volume = `$${grouped(baseVolume + tick * volumeStep)}`;
+  const orders = grouped(baseOrders + tick * ordersStep);
 
   useEffect(() => {
     const timer = setInterval(() => setTick((current) => current + 1), tickMs);
@@ -78,17 +78,17 @@ export function LiveTickerTestScreen() {
         <Readout id="live-ticker-price" label={price(tick)} textStyle={styles.price} />
         <View style={styles.row}>
           <View
-            testID="live-ticker-volume"
+            testID="live-ticker-orders"
             accessible
             accessibilityRole="text"
             accessibilityLabel="Orders (24h)"
-            accessibilityValue={iosValue(volume)}
+            accessibilityValue={iosValue(orders)}
           >
             <Text importantForAccessibility="no" style={styles.label}>
               Orders (24h)
             </Text>
           </View>
-          <Readout id="live-ticker-volume-amount" label={volume} />
+          <Readout id="live-ticker-orders-count" label={orders} />
         </View>
         <Readout id="live-ticker-inert" label="Chart Area" style={styles.inert} textStyle={styles.inertText} />
         <View style={styles.row}>

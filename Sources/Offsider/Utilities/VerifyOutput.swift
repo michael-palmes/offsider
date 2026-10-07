@@ -186,7 +186,7 @@ enum VerifyOutput {
         text.map { "\"\($0)\"" } ?? "nothing"
     }
 
-    /// `; ignored as live: price, volume` and the like, for a failure.
+    /// `; ignored as live: price, orders` and the like, for a failure.
     static func ignoredText(_ ignored: [VerifyIgnored]) -> String {
         let groups: [(VerifyIgnored.Reason, String)] = [(.live, "live"), (.volatile, "already changing before the input"), (.toast, "LogBox toasts")]
         let parts = groups.compactMap { reason, name -> String? in

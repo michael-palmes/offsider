@@ -25,7 +25,7 @@ struct AndroidPhoneVerifyTests {
             #expect(result.exitCode == 0, "\(result.stderr)")
             #expect(report["attempts"] as? Int == 1)
             let changes = (report["changes"] as? [[String: Any]] ?? []).compactMap { $0["node"] as? String }
-            #expect(!changes.contains { $0.contains("live-ticker-price") || $0.contains("live-ticker-volume") }, "\(changes)")
+            #expect(!changes.contains { $0.contains("live-ticker-price") || $0.contains("live-ticker-orders") }, "\(changes)")
             #expect(!AndroidE2E.timingPhases(result.stderr).contains("baseline-capture"))
             #expect(Set(((report["phasesMs"] as? [String: Any]) ?? [:]).keys) == ["settle", "resolve", "baseline", "dispatch", "verify"])
             try await AndroidE2E.run("tap --id live-ticker-toggle")

@@ -669,7 +669,7 @@ struct VerifierLiveTests {
 
     private static func ticking(tick: Int, alerts: Bool = false, extra: [UINode] = []) -> UITree {
         FakeUI.tree([
-            FakeUI.node(.text, id: "live-ticker-price", label: "$64,01\(tick).34", frame: FakeUI.frame(16, 100, 370, 40)),
+            FakeUI.node(.text, id: "live-ticker-price", label: "$\(129 + tick).95", frame: FakeUI.frame(16, 100, 370, 40)),
             FakeUI.node(.switch, id: toggle, label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
             FakeUI.node(.button, id: "live-ticker-noop", label: "Do Nothing", frame: FakeUI.frame(16, 260, 180, 44)),
         ] + extra)
@@ -832,9 +832,9 @@ struct VerifierLiveTests {
             == #"✓ Tap on id=x verified: accessibility tree changed (checked of switch id=a "false" to "true"; button "Save" added; text id=old removed; and 3 more), attempt 1 of 2, simulator style (settle 0.4 s, tap 0.1 s, verify 1.2 s)"#)
 
         var failed = Verifier.Outcome(verified: false, attempts: 1, change: .none, style: .simulator, summary: nil)
-        failed.ignored = [VerifyIgnored(node: "live-ticker-price", reason: .live), VerifyIgnored(node: "live-ticker-volume", reason: .live)]
+        failed.ignored = [VerifyIgnored(node: "live-ticker-price", reason: .live), VerifyIgnored(node: "live-ticker-orders", reason: .live)]
         let line = VerifyOutput.unverifiedLine(failed, for: request)
-        #expect(line.contains("Ignored live: live-ticker-price, live-ticker-volume, which changed without the input; not retried."))
+        #expect(line.contains("Ignored live: live-ticker-price, live-ticker-orders, which changed without the input; not retried."))
         failed.ignored = [VerifyIgnored(node: "spinner", reason: .volatile)]
         #expect(VerifyOutput.unverifiedLine(failed, for: request).contains("Ignored already changing before the input: spinner, which changed without the input. "))
     }
