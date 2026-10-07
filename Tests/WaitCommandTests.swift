@@ -184,9 +184,41 @@ struct WaitCommandTests {
         (["--label", "a", "--value", "b"], "Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several."),
         (["--id", "a", "--id", "b"], "Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several."),
         (["--settled", "--has-value", "3"], "--has-value needs --id, --label or --value."),
+        (["--id", "a", "--ignore-values"], "--ignore-values applies to --settled only."),
+        (["--settled", "--settle-by", "screen", "--ignore-values"], "--ignore-values reads the accessibility tree, which --settle-by screen does not; use --settle-by tree or both."),
     ])
     func rejectsInvalidConditions(arguments: [String], message: String) {
         #expect(Self.validationMessage(arguments) == message)
+    }
+
+    @Test("a --settled timeout where only text moved suggests --ignore-values; with it, or when frames moved, it does not")
+    func ignoreValuesHint() throws {
+        var outcome = WaitOutcome(met: false, elapsed: 10, reason: "tree still changing")
+        outcome.onlyTextMoved = true
+        #expect(try Self.command(["--settled"]).failureLine(outcome).hasSuffix("add --ignore-values to let it settle."))
+        #expect(!(try Self.command(["--settled", "--ignore-values"]).failureLine(outcome).contains("--ignore-values")))
+        outcome.onlyTextMoved = false
+        #expect(!(try Self.command(["--settled"]).failureLine(outcome).contains("--ignore-values")))
+    }
+
+    @Test("the settle gate comes from this process's own input first, else from the cached record of the last command")
+    func settleGateSources() async throws {
+        let fixture = try TreeCacheFixture()
+        let route = DeviceRouter.Route(backend: FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 600)]), device: Self.device)
+        let before = Self.sheetScreen(applyY: 600)
+        try await fixture.run {
+            #expect(await Wait.settleGate(for: route) == nil)
+            try fixture.write(TreeCacheRecord(
+                platform: .ios, device: Self.device.rawValue, command: "tap", writtenAt: fixture.now, treeReadAt: fixture.now.addingTimeInterval(-0.4),
+                lastInputAt: fixture.now.addingTimeInterval(-0.3), treeRole: .preAction, roots: before.roots
+            ))
+            let cached = try #require(await Wait.settleGate(for: route))
+            #expect(cached.before != nil && abs(cached.sinceInput - 0.3) < 0.001)
+
+            DeviceActivityLedger.current.recordInput(on: Self.device)
+            let own = try #require(await Wait.settleGate(for: route))
+            #expect(own.before == nil && own.sinceInput == 0)
+        }
     }
 
     @Test("--timeout and --seconds accept up to 900 seconds, for cold bundles that take minutes", arguments: [
