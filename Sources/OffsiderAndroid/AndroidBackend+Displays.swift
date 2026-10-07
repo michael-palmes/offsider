@@ -139,9 +139,13 @@ extension AndroidBackend: DisplayControlling {
         return (display, foldable ? (reading ?? stateReadings[serial])?.committed.posture : nil)
     }
 
-    /// Logical display 0's panel, else the probe's viewport, else the only lit panel, else the one panel the probed geometry fits.
+    /// Logical display 0's panel, else the probe's viewport, else the only lit panel, else the one panel the probed geometry fits; none while every panel is dark.
     func activeDisplay(in list: AndroidDisplayList, serial: String) -> AndroidDisplayList.Physical? {
-        if let found = list.active ?? list.displays.first(where: { $0.uniqueId == activeUniqueIds[serial] }) ?? list.soleLitPanel {
+        if let active = list.active {
+            return active
+        }
+        guard !list.panelsDark else { return nil }
+        if let found = list.displays.first(where: { $0.uniqueId == activeUniqueIds[serial] }) ?? list.soleLitPanel {
             return found
         }
         guard let geometry = geometries[serial] else { return nil }

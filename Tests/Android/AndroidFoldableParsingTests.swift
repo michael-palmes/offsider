@@ -64,10 +64,10 @@ struct AndroidFoldableParsingTests {
         #expect(closed.active?.descriptor.pointWidth.rounded() == 443)
     }
 
-    @Test("One UI's CLOSE, HALF_FOLDED and OPEN are postures, its dual-screen states are open, and its tent state is unknown")
+    @Test("One UI's CLOSE, HALF_FOLDED and OPEN are postures, its tent state is half-opened, and its dual-screen states are open")
     func galaxyFoldStates() {
         let states = AndroidDeviceState.parseStates(GalaxyFoldFixtures.printStates)
-        #expect(states.map(\.posture) == [.closed, .unknown, .halfOpened, .open, .open, .open])
+        #expect(states.map(\.posture) == [.closed, .halfOpened, .halfOpened, .open, .open, .open])
         #expect(AndroidDeviceState.parseReading(GalaxyFoldFixtures.state(closed: true))?.committed.posture == .closed)
         #expect(AndroidDeviceState.parseReading(GalaxyFoldFixtures.state(closed: false))?.committed.posture == .open)
     }
@@ -86,7 +86,7 @@ struct AndroidFoldableParsingTests {
 
     @Test("posture output names a state that is not the posture's own, as One UI's or the platform's, in text and JSON")
     func postureStateNamed() {
-        #expect(DisplayReport.postureLine(.unknown, screen: nil, platform: .android, state: "TENT") == "Posture: unknown (One UI TENT)")
+        #expect(DisplayReport.postureLine(.halfOpened, screen: nil, platform: .android, state: "TENT") == "Posture: half-opened (One UI TENT)")
         #expect(DisplayReport.postureLine(.open, screen: nil, platform: .android, state: "DUAL") == "Posture: open (One UI DUAL)")
         #expect(DisplayReport.postureLine(.open, screen: nil, platform: .android, state: "OPEN") == "Posture: open")
         #expect(DisplayReport.postureLine(.unknown, screen: nil, platform: .android, state: "REAR_DISPLAY_STATE") == "Posture: unknown (state REAR_DISPLAY_STATE)")

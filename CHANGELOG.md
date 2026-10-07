@@ -109,7 +109,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --settled` within 2 s of an input waits for that input's effect: a read that differs from the screen before it, else 2 s after it, or 1 s when no read from before it was kept. An input checked with `--verify` needs no such wait.
 - `--verify` takes its baseline screenshot alongside its two reads before the input, and none for a switch, checkbox or radio button, whose effect the tree always shows.
 - A plain Android `screenshot` (PNG at native scale, with no `--region`, masks, `--compare`, `--display` or `--json`) writes the device's PNG as it came, sized from its header, without reading the screen's size, rotation or posture; routing a phone by serial reuses its device-list row, so the phone is listed once per command; the display status and the display probe are one shell call, and `describe-ui` and captures start it alongside the tree read or the capture.
-- One UI's `DUAL` and `REAR_DUAL` device states read as posture `open`; setting a posture prefers the state with the posture's own name.
+- One UI's `TENT` device state (half-folded with the hinge up and the cover lit) reads as posture `half-opened` on the `cover` display, and `DUAL` and `REAR_DUAL` as `open`; setting a posture prefers the state with the posture's own name.
 
 ### Fixed
 
@@ -166,7 +166,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Starting the runner on a locked iPhone or iPad now exits 7 with `device_locked` as soon as `xcodebuild` says it is waiting for the device to be unlocked, and stops it, instead of waiting 150 s and failing with `runner_unavailable`. An `xcodebuild` that exits before the runner answers now says so, instead of claiming the runner did not start within 150 s.
 - When iOS asks for the device passcode on behalf of XCTest (`Enter iPad Passcode for "XCTest"`) and nobody enters it, starting the runner now exits 7 with `ui_automation_off`, naming the prompt and asking for the passcode to be entered on the device, as soon as XCTest gives up enabling automation (about a minute), instead of a generic runner failure.
 - A `--verify` change that lands after the poll and the screenshot check, such as a push delayed past `--verify-timeout`, now verifies on the same attempt from one more read instead of sending the input again, and a change that never settled counts only while the latest read still shows it.
-- On a foldable whose device states could not be read, the screen is no longer named `main` from the display probe alone while `dumpsys display` lists two panels, and with both panels lit and none named for display 0, the panel the probed geometry fits names the screen.
+- On a foldable whose device states could not be read, the screen is no longer named `main` from the display probe alone while `dumpsys display` lists two panels, and with both panels lit and none named for display 0, the panel the probed geometry fits names the screen. While both panels are dark mid-fold, no panel is named from a stale probe: the screen read waits up to 2 s for one to light.
 
 ## [0.6.0] - 2026-10-05
 

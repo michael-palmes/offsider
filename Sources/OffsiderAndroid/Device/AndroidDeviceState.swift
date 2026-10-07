@@ -47,11 +47,11 @@ enum AndroidDeviceState {
         return committed.map { Reading(committed: $0, base: base, override: override) }
     }
 
-    /// AOSP's and One UI's names (`DUAL` and `REAR_DUAL` light both panels open); `TENT` and the rest have no posture.
+    /// AOSP's and One UI's names: `TENT` is half-folded with the cover lit, `DUAL` and `REAR_DUAL` open with both panels lit.
     static func posture(named name: String) -> Posture {
         switch name.uppercased() {
         case "CLOSED", "CLOSE": return .closed
-        case "HALF_OPENED", "HALF_FOLDED": return .halfOpened
+        case "HALF_OPENED", "HALF_FOLDED", "TENT": return .halfOpened
         case "OPENED", "OPEN", "DUAL", "REAR_DUAL": return .open
         default: return .unknown
         }
