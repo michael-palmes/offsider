@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-08
+
 ### Added
 
 - `tap`, `wait` and `assert` take `--id` with `--label`, `--value` or both as one selector that an element must match in full, such as `tap --id interval-btn --label 1W` among buttons sharing an id; when the id matches but no match has that label or value, it fails as `selector_not_found` and lists the matches. `--label` with `--value` and no `--id` is still a usage error, and `wait --any` keeps each selector separate.
@@ -407,5 +409,6 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/michael-palmes/offsider/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/michael-palmes/offsider/releases/tag/v0.7.0

@@ -23,7 +23,7 @@ brew install michael-palmes/tap/offsider
 Each release publishes `offsider-<version>-arm64.tar.gz`, a `SHA256SUMS` file and a GitHub build provenance attestation from `.github/workflows/release.yml`. The binary is signed with a Developer ID certificate and notarised.
 
 ```bash
-VERSION=0.7.0
+VERSION=0.8.0
 gh release download "v${VERSION}" --repo michael-palmes/offsider \
   --pattern "offsider-${VERSION}-arm64.tar.gz" --pattern SHA256SUMS
 shasum -a 256 -c SHA256SUMS
