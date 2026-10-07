@@ -34,6 +34,24 @@ struct AssertCommandTests {
         #expect(json.hasSuffix(#""reason":"has value '2', expected '3'","match":null,"matched":null}"#))
     }
 
+    @Test("--has-value that is the element's label says to use --label")
+    func hasValueThatIsTheLabel() async throws {
+        let (command, outcome, _) = try await Self.check(["--id", "save", "--has-value", "Save"], on: Self.screen())
+
+        #expect(!outcome.met)
+        #expect(command.failureLine(outcome) == "✗ Assertion failed: --id 'save' has no value, expected 'Save'; 'Save' is its label: use --label 'Save'.")
+    }
+
+    @Test("--id with --label passes only when one element matches both")
+    func idAndLabel() async throws {
+        let (both, met, _) = try await Self.check(["--id", "save", "--label", "Save"], on: Self.screen())
+        #expect(met.met)
+        #expect(both.successLine(met) == "✓ --id 'save' --label 'Save' is on screen")
+
+        let (_, unmet, _) = try await Self.check(["--id", "save", "--label", "Cancel"], on: Self.screen())
+        #expect(!unmet.met)
+    }
+
     @Test("a matching value passes and reports the element")
     func hasValueMatch() async throws {
         let (command, outcome, _) = try await Self.check(["--id", "count", "--has-value", "3"], on: Self.screen(countValue: "3"))

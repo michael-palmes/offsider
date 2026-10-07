@@ -181,7 +181,8 @@ struct WaitCommandTests {
         (["--id", "a", "--timeout", "901"], "--timeout must be from 0 to 900 seconds; got 901.0."),
         (["--seconds", "901"], "--seconds must be from 0 to 900 seconds; got 901.0."),
         (["--id", "a", "--poll-interval", "0.01"], "--poll-interval must be from 0.05 to 5 seconds; got 0.01."),
-        (["--id", "a", "--label", "b"], "Use only one of --id, --label, or --value, or pass --any to wait for the first of several."),
+        (["--label", "a", "--value", "b"], "Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several."),
+        (["--id", "a", "--id", "b"], "Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several."),
         (["--settled", "--has-value", "3"], "--has-value needs --id, --label or --value."),
     ])
     func rejectsInvalidConditions(arguments: [String], message: String) {
@@ -261,16 +262,17 @@ struct WaitAnyTests {
         (["--any", "--id", "a"], "--any needs two or more selectors"),
         (["--any", "--id", "a", "--id", "b", "--gone"], "does not take --gone"),
         (["--any", "--id", "a", "--id", "b", "--has-value", "1"], "does not take --has-value"),
-        (["--id", "a", "--label", "b"], "pass --any"),
+        (["--label", "a", "--label", "b"], "pass --any"),
     ])
     func validation(arguments: [String], message: String) {
         let error = #expect(throws: (any Error).self) { try Wait.parse(arguments + ["--device", Self.device.rawValue]) }
         #expect(error.map { Wait.message(for: $0).contains(message) } == true, "\(error.map { Wait.message(for: $0) } ?? "")")
     }
 
-    @Test("assert still takes one selector")
-    func assertTakesOne() {
-        let error = #expect(throws: (any Error).self) { try Assert.parse(["--id", "a", "--id", "b", "--device", Self.device.rawValue]) }
-        #expect(error.map { Assert.message(for: $0).contains("Use only one of --id, --label, or --value.") } == true)
+    @Test("assert takes one selector, or one --id narrowed by a label or value", arguments: [["--id", "a", "--id", "b"], ["--label", "a", "--value", "b"]])
+    func assertTakesOne(arguments: [String]) {
+        let error = #expect(throws: (any Error).self) { try Assert.parse(arguments + ["--device", Self.device.rawValue]) }
+        #expect(error.map { Assert.message(for: $0) } == SelectorQuery.refinementRule)
+        #expect(throws: Never.self) { try Assert.parse(["--id", "a", "--label", "b", "--value", "c", "--device", Self.device.rawValue]) }
     }
 }

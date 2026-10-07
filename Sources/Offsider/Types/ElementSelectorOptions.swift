@@ -4,11 +4,14 @@ import OffsiderCore
 
 /// The `--id`/`--label`/`--value` selector rules shared by `tap`, `slider`, `wait` and `assert`.
 enum SelectorQuery {
-    /// Rejects more than one selector, or an empty one; setting none is left to the caller.
-    static func validate(id: String?, label: String?, value: String?) throws {
+    static let refinementRule = "Use one of --id, --label or --value, or narrow one --id with a --label, a --value or both, which must all match one element."
+
+    /// Rejects more than one selector, unless `refining` lets `--label` and `--value` narrow an `--id`, and an empty one; setting none is left to the caller.
+    static func validate(id: String?, label: String?, value: String?, refining: Bool = false) throws {
         let selectors = [("--id", id), ("--label", label), ("--value", value)].filter { $0.1 != nil }
         if selectors.count > 1 {
-            throw ValidationError("Use only one of --id, --label, or --value.")
+            guard refining else { throw ValidationError("Use only one of --id, --label, or --value.") }
+            guard id != nil else { throw ValidationError(refinementRule) }
         }
         for (name, text) in selectors where text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
             throw ValidationError("\(name) must not be empty.")
@@ -27,7 +30,10 @@ enum SelectorQuery {
     }
 
     static func make(id: String?, label: String?, value: String?) -> AccessibilityQuery? {
-        if let id { return .id(id) }
+        if let id {
+            let refinements = [label.map(AccessibilityQuery.label), value.map(AccessibilityQuery.value)].compactMap { $0 }
+            return refinements.isEmpty ? .id(id) : .all(.id(id), refinedBy: refinements)
+        }
         if let label { return .label(label) }
         if let value { return .value(value) }
         return nil
@@ -54,7 +60,7 @@ struct ElementSelectorOptions: ParsableArguments {
     @Flag(name: .customLong("allow-offscreen"), help: "Count elements whose frame is outside the screen (off by default: only on-screen matches count).")
     var allowOffscreen: Bool = false
 
-    /// The count is left to the command, since only `wait --any` takes several.
+    /// The count is left to the command, since only `wait --any` takes several, and one `--id` narrowed by a label or value counts as one.
     func validate() throws {
         try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, values: elementValues, allowingSeveral: true)
         guard query == nil else { return }
@@ -63,9 +69,15 @@ struct ElementSelectorOptions: ParsableArguments {
         }
     }
 
-    /// The first selector; the only one outside `wait --any`.
+    /// The selector outside `wait --any`: the only one, or an `--id` with the `--label` and `--value` that narrow it.
     var query: AccessibilityQuery? {
-        queries.first
+        guard isConjunction else { return queries.first }
+        return .all(.id(elementIDs[0]), refinedBy: elementLabels.map(AccessibilityQuery.label) + elementValues.map(AccessibilityQuery.value))
+    }
+
+    /// One `--id` with at most one `--label` and one `--value`, all of which one element must match.
+    var isConjunction: Bool {
+        elementIDs.count == 1 && elementLabels.count <= 1 && elementValues.count <= 1 && !(elementLabels.isEmpty && elementValues.isEmpty)
     }
 
     /// Every selector, ids then labels then values.
@@ -74,7 +86,10 @@ struct ElementSelectorOptions: ParsableArguments {
     }
 
     func validateCount(allowingSeveral: Bool) throws {
-        try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, values: elementValues, allowingSeveral: allowingSeveral)
+        if !allowingSeveral, queries.count > 1, !isConjunction {
+            throw ValidationError(SelectorQuery.refinementRule)
+        }
+        try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, values: elementValues, allowingSeveral: true)
     }
 
     /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen.
@@ -97,7 +112,9 @@ struct ElementSelectorOptions: ParsableArguments {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
                 guard !valued.isEmpty else {
                     let actual = pool[0].normalizedValue.map { "has value '\($0)'" } ?? "has no value"
-                    return .absent(reason: "\(actual), expected '\(hasValue)'")
+                    let labelled = pool.contains { AccessibilityQuery.label(hasValue).matches($0) }
+                    let hint = labelled ? "; '\(hasValue)' is its label: use --label '\(hasValue)'" : ""
+                    return .absent(reason: "\(actual), expected '\(hasValue)'\(hint)")
                 }
                 pool = valued
             }

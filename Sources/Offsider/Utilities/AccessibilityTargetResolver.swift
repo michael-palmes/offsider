@@ -1,10 +1,12 @@
 import Foundation
 import OffsiderCore
 
-enum AccessibilityQuery {
+indirect enum AccessibilityQuery {
     case id(String)
     case label(String)
     case value(String)
+    /// `--id` narrowed by `--label` and `--value`: an element must match every part.
+    case all(AccessibilityQuery, refinedBy: [AccessibilityQuery])
 
     var allowsSiblingRedirection: Bool {
         switch self {
@@ -12,6 +14,8 @@ enum AccessibilityQuery {
             return true
         case .id, .value:
             return false
+        case .all(let primary, _):
+            return primary.allowsSiblingRedirection
         }
     }
 
@@ -20,7 +24,7 @@ enum AccessibilityQuery {
         switch self {
         case .label, .value:
             return true
-        case .id:
+        case .id, .all:
             return false
         }
     }
@@ -30,6 +34,7 @@ enum AccessibilityQuery {
         case .id: return "--id"
         case .label: return "--label"
         case .value: return "--value"
+        case .all(let primary, _): return primary.kind
         }
     }
 
@@ -37,11 +42,16 @@ enum AccessibilityQuery {
         switch self {
         case .id(let value), .label(let value), .value(let value):
             return value
+        case .all(let primary, _):
+            return primary.rawValue
         }
     }
 
     var selectorDescription: String {
-        "\(kind) '\(rawValue)'"
+        guard case .all(let primary, let refinements) = self else {
+            return "\(kind) '\(rawValue)'"
+        }
+        return ([primary] + refinements).map(\.selectorDescription).joined(separator: " ")
     }
 
     /// The trimmed field this query reads from `node`.
@@ -50,7 +60,15 @@ enum AccessibilityQuery {
         case .id: return node.normalizedID
         case .label: return node.normalizedLabel
         case .value: return node.isSecure ? nil : node.normalizedValue
+        case .all(let primary, _): return primary.field(of: node)
         }
+    }
+
+    /// True when the node's field equals the text exactly after trimming, or after folding quotes and spaces.
+    func matches(_ node: UINode) -> Bool {
+        guard let field = field(of: node) else { return false }
+        let wanted = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return field == wanted || (allowsFolding && SelectorText.folded(field) == SelectorText.folded(wanted))
     }
 }
 
@@ -127,6 +145,8 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     case invalidFrame(reason: String)
     case multipleSwitchDescendants(count: Int, selectorDescription: String)
     case nthOutOfRange(selector: String, nth: Int, count: Int)
+    /// The `--id` matched, but no match had the `--label` or `--value` asked for too.
+    case refinedOut(selector: String, candidates: [MatchSummary])
 
     static let maxListed = 5
 
@@ -172,6 +192,9 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
             return "\(reason) \(tip)"
         case .nthOutOfRange(let selector, let nth, let count):
             return "--nth \(nth) asked for match \(nth) of \(selector), but there \(count == 1 ? "is 1 match" : "are \(count) matches") on screen. \(tip)"
+        case .refinedOut(let selector, let candidates):
+            let listed = Self.listed(candidates.map(\.text), separator: "; ")
+            return "No accessibility element matched \(selector): the id matches \(listed), with another label or value. \(tip)"
         case .multipleSwitchDescendants(let count, let selectorDescription):
             return "Matched element for \(selectorDescription) contains multiple (\(count)) switch/toggle controls. Target the switch more specifically with --id when available, or use coordinates. Use --element-type only when describe-ui reports a specific role or type, such as switch or Toggle. \(tip)"
         }
@@ -180,7 +203,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     /// Missing, filtered out or off screen: a later tree may show the element, so `--wait-timeout` polls again.
     var isRetryable: Bool {
         switch self {
-        case .notFound, .filteredByElementType, .offScreen, .nthOutOfRange:
+        case .notFound, .filteredByElementType, .offScreen, .nthOutOfRange, .refinedOut:
             return true
         case .multipleMatches, .invalidFrame, .multipleSwitchDescendants:
             return false
@@ -198,7 +221,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
 
     var reason: FailureReason {
         switch self {
-        case .notFound, .nthOutOfRange: return .selectorNotFound
+        case .notFound, .nthOutOfRange, .refinedOut: return .selectorNotFound
         case .filteredByElementType: return .selectorFilteredByType
         case .offScreen: return .targetOffScreen
         case .multipleMatches: return .selectorAmbiguous
@@ -214,7 +237,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     var candidates: [FailureCandidate] {
         switch self {
         case .notFound(_, _, _, let candidates), .filteredByElementType(_, _, _, _, let candidates),
-             .multipleMatches(_, _, _, _, let candidates, _, _):
+             .multipleMatches(_, _, _, _, let candidates, _, _), .refinedOut(_, let candidates):
             return candidates.prefix(Self.maxListed).map(\.failureCandidate)
         case .offScreen, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange:
             return []
@@ -270,6 +293,11 @@ struct AccessibilityTargetResolver {
         query: AccessibilityQuery,
         elementType: String?
     ) -> SelectorCandidates {
+        if case .all(let primary, let refinements) = query {
+            let found = candidates(roots: roots, query: primary, elementType: elementType)
+            let refine = { (nodes: [UINode]) in nodes.filter { node in refinements.allSatisfy { $0.matches(node) } } }
+            return SelectorCandidates(matches: refine(found.matches), onScreen: refine(found.onScreen), viewport: found.viewport, folded: false)
+        }
         var elements = roots.flatMap { $0.flattened() }
         if let elementType {
             elements = elements.filter { $0.matches(elementType: elementType) }
@@ -344,7 +372,7 @@ struct AccessibilityTargetResolver {
             element = pool[nth - 1]
         case (.last?, _):
             element = pool[pool.count - 1]
-        case (nil, .id):
+        case (nil, .id), (nil, .all):
             element = try selectUniqueMatch(pool, ambiguity)
         case (nil, .label), (nil, .value):
             element = try selectBestLabelMatch(pool, ambiguity)
@@ -565,13 +593,24 @@ struct AccessibilityTargetResolver {
         return matches
     }
 
-    /// Explains a miss: matches that `--element-type` removed, else the closest values of the same field.
+    /// Explains a miss: elements the `--label` or `--value` refinement left out, matches that `--element-type` removed,
+    /// else the closest values of the same field.
     private static func notFoundError(
         roots: [UINode],
         query: AccessibilityQuery,
         elementType: String?,
         viewport: UIFrame?
     ) -> ElementResolutionError {
+        if case .all(let primary, _) = query {
+            let unrefined = candidates(roots: roots, query: primary, elementType: elementType).matches
+            guard !unrefined.isEmpty else {
+                return notFoundError(roots: roots, query: primary, elementType: elementType, viewport: viewport)
+            }
+            return .refinedOut(
+                selector: query.selectorDescription,
+                candidates: unrefined.prefix(ElementResolutionError.maxListed).map { MatchSummary($0, viewport: viewport) }
+            )
+        }
         if let elementType {
             let untyped = candidates(roots: roots, query: query, elementType: nil)
             if !untyped.matches.isEmpty {
