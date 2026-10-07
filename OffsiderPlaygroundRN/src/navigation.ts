@@ -177,6 +177,12 @@ export const routeInfo = {
     menuTitle: 'Permission State',
     subtitle: 'Camera and notification permissions',
   },
+  'live-ticker': {
+    section: 'Real-world RN',
+    title: 'Live Ticker',
+    menuTitle: 'Live Ticker Test',
+    subtitle: 'Ticking values, a delayed push and two log toasts',
+  },
 } satisfies Record<string, RouteInfo>;
 
 export type RouteId = keyof typeof routeInfo;
