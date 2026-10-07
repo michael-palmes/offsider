@@ -57,12 +57,12 @@ struct ScreenStackTests {
     /// iOS lists a stack's screens as siblings, the pushed one last.
     static func nestedScreens(lowerX: Double = 0, upperY: Double = 0) -> UITree {
         let lower = FakeUI.node(.group, frame: FakeUI.frame(lowerX, 0, 402, 874), children: [
-            FakeUI.node(.header, label: "Assets", frame: FakeUI.frame(lowerX + 60, 60, 282, 20)),
-            FakeUI.node(.button, id: "product-row", label: "Bitcoin", frame: FakeUI.frame(lowerX + 16, 120, 370, 60)),
+            FakeUI.node(.header, label: "Products", frame: FakeUI.frame(lowerX + 60, 60, 282, 20)),
+            FakeUI.node(.button, id: "product-row", label: "Kettle", frame: FakeUI.frame(lowerX + 16, 120, 370, 60)),
             FakeUI.node(.button, label: "Home Tab", frame: FakeUI.frame(lowerX, 790, 201, 49)),
         ])
         let upper = FakeUI.node(.group, frame: FakeUI.frame(0, upperY, 402, 874 - upperY), children: [
-            FakeUI.node(.header, label: "Bitcoin", frame: FakeUI.frame(60, upperY + 60, 282, 20)),
+            FakeUI.node(.header, label: "Kettle", frame: FakeUI.frame(60, upperY + 60, 282, 20)),
             FakeUI.node(.text, label: "Price", frame: FakeUI.frame(16, 300, 370, 20)),
             FakeUI.node(.button, label: "Buy", frame: FakeUI.frame(16, 790, 370, 49)),
         ])
@@ -74,8 +74,8 @@ struct ScreenStackTests {
         let tree = Self.nestedScreens()
         let stack = Self.stack(tree)
 
-        #expect(stack.beneath.map(\.name) == ["Assets"])
-        #expect(stack.beneath.map(\.under) == ["Bitcoin"])
+        #expect(stack.beneath.map(\.name) == ["Products"])
+        #expect(stack.beneath.map(\.under) == ["Kettle"])
         #expect(stack.beneath.map(\.elements) == [4])
         let tab = try #require(tree.roots[0].flattened().first { $0.label == "Home Tab" })
         #expect(stack.isBeneath(tab, in: tree.roots))
@@ -83,7 +83,7 @@ struct ScreenStackTests {
 
     @Test("a screen pushed partly off to the left is covered by the page enclosing what is left of it")
     func offsetScreen() {
-        #expect(Self.stack(Self.nestedScreens(lowerX: -120)).beneath.map(\.name) == ["Assets"])
+        #expect(Self.stack(Self.nestedScreens(lowerX: -120)).beneath.map(\.name) == ["Products"])
     }
 
     @Test("an earlier screen showing past the page's edge stays uncovered")
@@ -94,7 +94,7 @@ struct ScreenStackTests {
     /// An Android base screen with an overlay host drawn over it; `content` goes on the host.
     static func overlayHost(_ content: [UINode]) -> UITree {
         let base = [
-            FakeUI.node(.group, label: "Dashboard", frame: FakeUI.frame(60, 60, 282, 20), platform: .android, drawingOrder: 1),
+            FakeUI.node(.group, label: "Home", frame: FakeUI.frame(60, 60, 282, 20), platform: .android, drawingOrder: 1),
             FakeUI.node(.button, id: "tab", label: "Home Tab", frame: FakeUI.frame(0, 790, 201, 49), platform: .android, drawingOrder: 2),
         ]
         let host = FakeUI.node(.group, id: "host", frame: FakeUI.frame(0, 0, 402, 874), platform: .android, drawingOrder: 3)
@@ -120,7 +120,7 @@ struct ScreenStackTests {
         let title = FakeUI.node(.text, label: "Settings", frame: FakeUI.frame(16, 60, 370, 20), platform: .android, drawingOrder: 4)
         let row = FakeUI.node(.button, label: "Sign out", frame: FakeUI.frame(16, 700, 370, 44), platform: .android, drawingOrder: 5)
         let stack = Self.stack(Self.overlayHost([title, row]))
-        #expect(stack.beneath.map(\.name) == ["Dashboard"])
+        #expect(stack.beneath.map(\.name) == ["Home"])
         #expect(stack.beneath.map(\.under) == ["host"])
     }
 

@@ -71,8 +71,8 @@ struct TapCoverTests {
 
     @Test("a root hit over a target with only labelled content, no control, over its point warns of nothing")
     func screenRootHitOverContentIsClear() throws {
-        let tree = Self.priceRow(id: "btc-row")
-        #expect(try Self.judge(tree, target: "btc-row", hit: tree.roots[0]) == nil)
+        let tree = Self.priceRow(id: "kettle-row")
+        #expect(try Self.judge(tree, target: "kettle-row", hit: tree.roots[0]) == nil)
     }
 
     @Test("a shared ancestor hit over a target beneath a page is the page's control at the point, refused")
@@ -89,7 +89,7 @@ struct TapCoverTests {
         )
 
         #expect(verdict?.cover.label == "Buy")
-        #expect(verdict?.screen == "Bitcoin")
+        #expect(verdict?.screen == "Kettle")
         #expect(verdict?.isConfident == true)
     }
 
@@ -97,9 +97,9 @@ struct TapCoverTests {
     func labelInsideTarget() throws {
         let tree = FakeUI.tree([
             FakeUI.node(.group, id: "card", frame: FakeUI.frame(16, 200, 370, 120)),
-            FakeUI.node(.text, id: "card-title", label: "Bitcoin", frame: FakeUI.frame(32, 250, 200, 20)),
+            FakeUI.node(.text, id: "card-title", label: "Kettle", frame: FakeUI.frame(32, 250, 200, 20)),
         ])
-        #expect(try Self.judge(tree, target: "card", hit: Self.text("Bitcoin", FakeUI.frame(32, 250, 200, 20))) == nil)
+        #expect(try Self.judge(tree, target: "card", hit: Self.text("Kettle", FakeUI.frame(32, 250, 200, 20))) == nil)
     }
 
     @Test("a hit answering with the target read again half a point lower is still the target")
@@ -113,30 +113,30 @@ struct TapCoverTests {
         #expect(try Self.judge(tree, target: "save", hit: moved) == nil)
     }
 
-    /// A markets row whose label holds a live price, inside a labelled section that is a cover candidate.
+    /// A product row whose label holds a live price, inside a labelled section that is a cover candidate.
     static func priceRow(id: String?) -> UITree {
         FakeUI.tree([
-            FakeUI.node(.other, label: "Markets", frame: FakeUI.frame(0, 250, 402, 500)),
-            FakeUI.node(.button, id: id, label: "Bitcoin $64,012.34", frame: FakeUI.frame(0, 300, 402, 60)),
+            FakeUI.node(.other, label: "Products", frame: FakeUI.frame(0, 250, 402, 500)),
+            FakeUI.node(.button, id: id, label: "Kettle $129.95", frame: FakeUI.frame(0, 300, 402, 60)),
         ])
     }
 
     @Test("a hit with the target's role and id is the target, though its price ticked and it moved between the reads")
     func sameIDTickedHit() throws {
-        let ticked = FakeUI.node(.button, id: "btc-row", label: "Bitcoin $64,013.61", frame: FakeUI.frame(0, 303, 402, 60))
-        #expect(try Self.judge(Self.priceRow(id: "btc-row"), target: "btc-row", hit: ticked) == nil)
+        let ticked = FakeUI.node(.button, id: "kettle-row", label: "Kettle $131.22", frame: FakeUI.frame(0, 303, 402, 60))
+        #expect(try Self.judge(Self.priceRow(id: "kettle-row"), target: "kettle-row", hit: ticked) == nil)
     }
 
     @Test("without an id, a hit with the target's role within a point of its frame is the target, though its label ticked")
     func noIDTickedHit() throws {
-        let ticked = FakeUI.node(.button, label: "Bitcoin $64,013.61", frame: FakeUI.frame(0, 300.5, 402, 60))
-        #expect(try Self.judge(Self.priceRow(id: nil), target: "Bitcoin $64,012.34", hit: ticked) == nil)
+        let ticked = FakeUI.node(.button, label: "Kettle $131.22", frame: FakeUI.frame(0, 300.5, 402, 60))
+        #expect(try Self.judge(Self.priceRow(id: nil), target: "Kettle $129.95", hit: ticked) == nil)
     }
 
     @Test("without an id, a ticked hit of the target's role that moved further but mostly overlaps it is never a confident cover")
     func noIDMovedHitIsNotConfident() throws {
-        let moved = FakeUI.node(.button, label: "Bitcoin $64,013.61", frame: FakeUI.frame(0, 306, 402, 60))
-        #expect(try Self.judge(Self.priceRow(id: nil), target: "Bitcoin $64,012.34", hit: moved)?.isConfident != true)
+        let moved = FakeUI.node(.button, label: "Kettle $131.22", frame: FakeUI.frame(0, 306, 402, 60))
+        #expect(try Self.judge(Self.priceRow(id: nil), target: "Kettle $129.95", hit: moved)?.isConfident != true)
     }
 
     @Test("a hit the tree names as another element is that element, though it shares the target's role, id and frame")
@@ -165,22 +165,22 @@ struct TapCoverTests {
         }
     }
 
-    @Test("a page's Back over the home menu button below it is the cover")
-    func backOverHomeMenu() throws {
+    @Test("a page's Back over the menu button below it is the cover")
+    func backOverMenuButton() throws {
         let tree = FakeUI.tree([
             FakeUI.node(.button, id: "menu-button", label: "Menu", frame: FakeUI.frame(8, 62, 44, 44)),
-            FakeUI.node(.button, id: "asset-back", label: "Back", frame: FakeUI.frame(8, 62, 72, 44)),
+            FakeUI.node(.button, id: "product-back", label: "Back", frame: FakeUI.frame(8, 62, 72, 44)),
         ])
 
         let verdict = try #require(try Self.judge(tree, target: "menu-button", hit: Self.text("Back", FakeUI.frame(24.3, 73.7, 39.3, 20.3))))
 
-        #expect(verdict.cover.id == "asset-back")
+        #expect(verdict.cover.id == "product-back")
         #expect(verdict.isConfident)
     }
 
     /// An interval button drawn over the labelled list it sits on, which tree order alone took for a cover.
     static func intervalOverList(platform: DevicePlatform) -> UITree {
-        let list = FakeUI.node(.other, id: "popular-list", label: "Trending", frame: FakeUI.frame(0, 300, 402, 400), platform: platform, drawingOrder: 1)
+        let list = FakeUI.node(.other, id: "popular-list", label: "Popular", frame: FakeUI.frame(0, 300, 402, 400), platform: platform, drawingOrder: 1)
         let interval = FakeUI.node(.button, id: "interval-btn", label: "1D", frame: FakeUI.frame(16, 320, 60, 32), platform: platform, drawingOrder: 2)
         return FakeUI.tree(platform: platform, platform == .ios ? [interval, list] : [list, interval])
     }
@@ -265,10 +265,10 @@ struct TapCoverTests {
 
     @Test("a coveredBy report names role, id, label, frame, screen and evidence, and its JSON keeps that order")
     func coverReportJSON() {
-        let verdict = CoverVerdict(cover: FakeUI.node(.button, id: "buy", label: "Buy", frame: FakeUI.frame(1, 2, 3, 4)), evidence: .drawingOrder, isConfident: true, screen: "asset-page")
+        let verdict = CoverVerdict(cover: FakeUI.node(.button, id: "buy", label: "Buy", frame: FakeUI.frame(1, 2, 3, 4)), evidence: .drawingOrder, isConfident: true, screen: "product-page")
         let payload = ErrorPayload(reason: .targetCovered, message: "m", dispatched: .no, coveredBy: CoverReport(verdict))
 
-        #expect(payload.jsonLine().hasSuffix(#""candidates":[],"coveredBy":{"role":"button","id":"buy","label":"Buy","frame":{"x":1,"y":2,"width":3,"height":4},"screen":"asset-page","evidence":"drawingOrder"}}"#))
+        #expect(payload.jsonLine().hasSuffix(#""candidates":[],"coveredBy":{"role":"button","id":"buy","label":"Buy","frame":{"x":1,"y":2,"width":3,"height":4},"screen":"product-page","evidence":"drawingOrder"}}"#))
         #expect(!ErrorPayload(reason: .targetCovered, message: "m").jsonLine().contains("coveredBy"))
     }
 }

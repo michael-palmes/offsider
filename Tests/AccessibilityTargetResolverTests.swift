@@ -1023,9 +1023,9 @@ struct StackedScreenTests {
             try AccessibilityTargetResolver.resolveTap(roots: tree.roots, query: .label("Home Tab"))
         }
 
-        #expect(error?.candidates.map(\.screen) == ["Assets", "Bitcoin", "Bitcoin"])
+        #expect(error?.candidates.map(\.screen) == ["Products", "Kettle", "Kettle"])
         #expect(error?.candidates.map(\.beneath) == [true, false, false])
-        #expect(error?.userFacingDescription.contains("in screen=Assets (beneath another screen) (--nth 1)") == true)
+        #expect(error?.userFacingDescription.contains("in screen=Products (beneath another screen) (--nth 1)") == true)
     }
 
     @Test("cover candidates leave out elements beneath the page and, on Android, those drawn below the target")
