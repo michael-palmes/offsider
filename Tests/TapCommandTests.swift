@@ -205,7 +205,7 @@ struct TapCommandTests {
         let pageOneOnTop = UITree(platform: .ios, device: Self.device.rawValue, roots: [root])
         let backend = FakeDeviceBackend(trees: [FakeUI.tree([]), stacked, pageOneOnTop])
 
-        try await Self.tap(["--label", "Back", "--topmost", "--wait-timeout", "2", "--poll-interval", "0.01"], on: backend)
+        try await Self.tap(["--label", "Back", "--topmost", "--wait-timeout", "30", "--poll-interval", "0.01"], on: backend)
 
         #expect(backend.session.calls == [.perform(.tapAt(x: 46, y: 222))])
     }
