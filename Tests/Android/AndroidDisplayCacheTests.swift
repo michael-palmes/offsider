@@ -144,6 +144,22 @@ struct AndroidDisplayCacheTests {
         #expect(Self.execs(server, after: before) == ["exec:screencap -p", "exec:screencap -p"])
     }
 
+    @Test("a cached command's later capture of the same panel size is trusted without probing the display again")
+    func laterCaptureOfCachedPanelNeedsNoProbe() async throws {
+        let directory = try Self.cacheDirectory()
+        let server = Self.server(Phone())
+        _ = try await Self.command(server, cache: directory)
+        let backend = try Self.backend(server, cache: directory)
+        _ = try await backend.resolveAndroidName(Self.serial)
+        _ = try await backend.screenshotPNG(for: Self.phone)
+        let before = server.services.count
+
+        #expect(try await backend.screenshotPNG(for: Self.phone) == AndroidMultiDisplayCaptureTests.png(1768, 2208))
+        await backend.close()
+
+        #expect(server.services.dropFirst(before).filter { $0.hasPrefix("exec:") || $0.hasPrefix("shell") } == ["exec:screencap -p"])
+    }
+
     /// An entry as an earlier command wrote it, with no committed state as before API 31.
     static func writeEntry(_ directory: String, displayId: String, followsActive: Bool, width: Int, height: Int) throws {
         let entry = AndroidDisplayCacheEntry(

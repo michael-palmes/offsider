@@ -509,9 +509,15 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let capture = if let rejected { rejected } else { try await screencap(serial, format: format, display: nil) }
         guard AndroidScreenCapture.warnsOfSeveralDisplays(capture.output) else { return capture }
         let picked = size(capture.output)
-        if let known = displayEntries[serial], picked.map({ [$0.width, $0.height] != [known.width, known.height] }) ?? true {
-            log(.debug, "screencap on \(serial) no longer has the size of the panel last confirmed; reading the displays again after a fold")
-            forgetDisplay(of: serial)
+        if let known = displayEntries[serial] {
+            let samePanel = picked.map { [$0.width, $0.height] == [known.width, known.height] } ?? false
+            if samePanel, known.followsActive, screencapPicks[serial] == .activeDisplay {
+                return capture
+            }
+            if !samePanel {
+                log(.debug, "screencap on \(serial) no longer has the size of the panel last confirmed; reading the displays again after a fold")
+                forgetDisplay(of: serial)
+            }
         }
         if await hasActiveDisplaySize(picked, serial) {
             screencapPicks[serial] = .activeDisplay
