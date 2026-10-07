@@ -319,7 +319,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     /// iOS key events: with `replacing`, Command-A and Backspace first, in the same composite as the typing.
     static func iosEvents(for text: String, replacing: Bool) throws -> [InputEvent] {
         let typed = try TextToHIDEvents.convertTextToHIDEvents(text)
-        return replacing ? [InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey)] + typed : typed
+        return replacing ? [InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle)] + typed : typed
     }
 
     // MARK: - Input Methods

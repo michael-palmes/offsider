@@ -6,13 +6,14 @@ import Testing
 @Suite("Type --replace")
 @MainActor
 struct TypeReplaceTests {
-    /// Command down, `a`, Command up, 50 ms, Backspace: the clear that select-all makes possible on iOS.
+    /// Command down, `a`, Command up, 50 ms, Backspace, then 200 ms.
     static let iosClear = InputEvent.composite([
         .keyboard(direction: .down, keyCode: 227),
         .shortKeyPress(4),
         .keyboard(direction: .up, keyCode: 227),
         .delay(0.05),
         .shortKeyPress(42),
+        .delay(0.2),
     ])
 
     static func context(_ platform: DevicePlatform, mode: TypeSubmissionMode = .composite) -> BatchContext {

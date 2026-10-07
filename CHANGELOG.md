@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Android `type --replace` sets the text of the one focused text field when input focus is a non-editable view, such as a web view on the same screen (helper 1.5.0). Two focused text fields still refuse.
+- iOS `type --replace` waits 200 ms after Backspace before the new text, so the deletion is not still arriving when the first character is sent.
 
 ## [0.8.0] - 2026-10-08
 

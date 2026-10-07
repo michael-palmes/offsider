@@ -291,7 +291,7 @@ extension Type: BatchConvertible {
         try TextToHIDEvents.checkSupported(inputText)
 
         let hidEvents = try TextToHIDEvents.convertTextToHIDEvents(inputText)
-        let clear = replace ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey) : nil
+        let clear = replace ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle) : nil
         guard !hidEvents.isEmpty || clear != nil else {
             return []
         }
