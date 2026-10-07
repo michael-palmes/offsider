@@ -66,7 +66,7 @@ struct DeviceLockTests {
 
         held.release()
         #expect(DeviceLock.currentHolder(key, root: root, isOffsider: { _ in true }) == nil)
-        let next = try await DeviceLock.acquire(key, command: "tap", wait: nil, root: root)
+        let next = try await DeviceLock.acquire(key, command: "tap", wait: .seconds(TestDevices.releaseGrace), root: root)
         next.release()
     }
 
@@ -99,7 +99,7 @@ struct DeviceLockTests {
         let root = try makePrivateLockRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
         try await DeviceLock.acquire(key, command: "tap", wait: nil, root: root).release()
-        try await DeviceLock.acquire(key, command: "swipe", wait: nil, root: root).release()
+        try await DeviceLock.acquire(key, command: "swipe", wait: .seconds(TestDevices.releaseGrace), root: root).release()
     }
 
     @Test("--wait-lock waits for the holder to release")

@@ -3,6 +3,9 @@ import OffsiderCore
 
 /// Device ids no real device uses, for commands that lock in the shared private directory, and cleanup of what they leave.
 enum TestDevices {
+    /// Seconds a re-acquire after a release may wait: a child another test spawns keeps a copy of the descriptor until its exec completes, while a lock never freed still refuses.
+    static let releaseGrace: Double = 10
+
     static func simulatorUDID() -> String { UUID().uuidString }
 
     /// An `emulator-N` serial far above any running emulator's console port.
