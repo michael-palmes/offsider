@@ -68,13 +68,36 @@ struct LoginCommand: AsyncParsableCommand {
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         let profile = try LoginProfiles.load(project: project)
         let mode = LoginProfiles.mode(flag: turnstile, profile: profile)
+        let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWaitNotice.utf8)) }
+        var giveUp: DispatchWorkItem?
         let report = try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
-            try await Self.perform(on: route, profile: profile, mode: mode, key: key, timeout: timeout, logger: logger, onPrepared: ready)
+            try await Self.perform(
+                on: route, profile: profile, mode: mode, key: key, timeout: timeout, logger: logger,
+                onPrepared: ready,
+                keychainWillRead: { app in
+                    watchdog.disarm()
+                    let limit = DispatchWorkItem {
+                        ErrorReporter.exitFromTimer(reason: .commandFailed, message: Self.keychainTimeoutMessage, hint: "offsider credential status --app \(app)")
+                    }
+                    giveUp = limit
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice)
+                    DispatchQueue.global().asyncAfter(deadline: .now() + Self.keychainWaitLimit, execute: limit)
+                },
+                keychainDidRead: {
+                    notice.cancel()
+                    giveUp?.cancel()
+                    ready()
+                }
+            )
         }
         print(json ? report.jsonLine() : report.textLine())
     }
 
-    /// One lock, already held by the caller.
+    static let keychainWaitNotice = "Waiting for macOS to let offsider read the saved login. Answer the Keychain prompt.\n"
+    static let keychainWaitLimit: TimeInterval = 300
+    static let keychainTimeoutMessage = "The macOS Keychain prompt had no answer within 5 minutes, so the saved login was not read. Nothing was typed, and the device is free again."
+
+    /// One lock, already held by the caller. A macOS prompt can hold the Keychain reads, so they run between the keychain callbacks.
     @MainActor
     static func perform(
         on route: DeviceRouter.Route,
@@ -84,15 +107,23 @@ struct LoginCommand: AsyncParsableCommand {
         timeout: TimeInterval,
         logger: OffsiderLogger,
         store: any LoginCredentialStoring = KeychainLoginCredentialStore(),
-        onPrepared: @Sendable () -> Void = {}
+        onPrepared: @Sendable () -> Void = {},
+        keychainWillRead: (_ app: String) -> Void = { _ in },
+        keychainDidRead: () -> Void = {}
     ) async throws -> LoginReport {
         try await route.backend.prepare()
         onPrepared()
         let tree = try await route.backend.accessibilityTree(for: route.device)
         let app = try ForegroundAppLookup.identifier(in: tree, forLogin: true)
-        let canonical = try store.canonical(of: app)
-        let key = try resolveKey(requestedKey, app: app, canonical: canonical, device: route.device.rawValue, store: store)
-        let credential = try stored(app: canonical, key: key, foreground: app, store: store)
+        let key: String
+        let credential: LoginCredential
+        do {
+            keychainWillRead(app)
+            defer { keychainDidRead() }
+            let canonical = try store.canonical(of: app)
+            key = try resolveKey(requestedKey, app: app, canonical: canonical, device: route.device.rawValue, store: store)
+            credential = try stored(app: canonical, key: key, foreground: app, store: store)
+        }
         let services = LoginFlow.Services(
             readTree: { try await route.backend.accessibilityTree(for: route.device) },
             typeText: { text, field in

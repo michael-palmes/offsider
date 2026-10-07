@@ -8,7 +8,7 @@ The first login saved for an app is the default. A tag such as `dev` or `qa` nam
 
 Save test development credentials only. Anything that can run commands as you can then type them into this app.
 
-`login` types a credential only into an app it was saved for, or into an app linked to that one. The items live in your login Keychain (service `com.mpalmes.offsider.login`, never synchronised). macOS asks once before a new or rebuilt offsider reads one.
+`login` types a credential only into an app it was saved for, or into an app linked to that one. The items live in your login Keychain (service `com.mpalmes.offsider.login`, never synchronised). macOS asks once before a new or rebuilt offsider reads one. `login` holds the device while that prompt waits and prints a note after 3 seconds. The wait does not count as a hung device, but after 5 minutes without an answer login exits 1 and types nothing. `offsider credential status --app <id>` raises the same prompt without holding a device.
 
 `offsider credential join --device <DEVICE_ID>` links the app in front to an app that already has saved logins. It does not ask for the password. When only one app has logins, that is the one. When several do, a terminal lists them, and otherwise pass `--app com.example.app`. A bundle id and a package can then share one set of logins, and `login` on either id uses them. An app that already has its own saved logins is not linked: remove those first. The link item stores no password.
 

@@ -183,6 +183,36 @@ struct LoginCredentialTests {
         }
     }
 
+    @Test("login reads the Keychain between the keychain callbacks, so a macOS prompt never runs under the watchdog")
+    @MainActor
+    func keychainReadsSitOutsideTheWatchdog() async throws {
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        let app = UINode(
+            role: .application,
+            frame: UIFrame(x: 0, y: 0, width: 400, height: 800),
+            native: .android(AndroidNativeAttributes(package: "com.example.app"))
+        )
+        let backend = FakeDeviceBackend(platform: .android, trees: [UITree(platform: .android, device: device.rawValue, roots: [app])])
+        let store = MemoryLoginCredentialStore()
+        var paused = false
+        var reads = 0
+        var readsWhileArmed = 0
+        store.onRead = {
+            reads += 1
+            if !paused { readsWhileArmed += 1 }
+        }
+        await #expect(throws: CLIError.self) {
+            _ = try await LoginCommand.perform(
+                on: DeviceRouter.Route(backend: backend, device: device), profile: nil, mode: .off, key: "dev",
+                timeout: 5, logger: OffsiderLogger(), store: store,
+                keychainWillRead: { paused = $0 == "com.example.app" }, keychainDidRead: { paused = false }
+            )
+        }
+        #expect(reads > 0)
+        #expect(readsWhileArmed == 0)
+        #expect(!paused)
+    }
+
     private func refusal(username: String, password: String) -> String {
         do {
             _ = try CredentialCommand.credential(username: username, password: password)
@@ -214,9 +244,12 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
 
     var slots: [String: Slot] = [:]
     var links: [String: String] = [:]
+    /// Called on each read that `login` makes before it types.
+    var onRead: () -> Void = {}
 
     func load(app: String, key: String) throws -> LoginCredential? {
-        slots[LoginCredential.account(app: app, key: key)]?.credential
+        onRead()
+        return slots[LoginCredential.account(app: app, key: key)]?.credential
     }
 
     func list(app: String) throws -> [LoginCredentialSummary] {
@@ -231,7 +264,8 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
     }
 
     func defaultKey(app: String) throws -> String? {
-        try list(app: app).first { $0.isDefault }?.key
+        onRead()
+        return try list(app: app).first { $0.isDefault }?.key
     }
 
     func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool) throws {
@@ -261,7 +295,10 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
         return removed
     }
 
-    func canonical(of app: String) throws -> String { links[app] ?? app }
+    func canonical(of app: String) throws -> String {
+        onRead()
+        return links[app] ?? app
+    }
 
     func groups() throws -> [LoginAppGroup] {
         let apps = Set(slots.keys.compactMap { LoginCredential.parseAccount($0)?.app })

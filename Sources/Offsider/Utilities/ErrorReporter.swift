@@ -93,9 +93,14 @@ enum ErrorReporter {
     /// The watchdog's exit: the device stopped answering, so the process ends from another thread.
     @Sendable static func exitUnresponsive(_ line: String) {
         let message = line.hasPrefix("Error: ") ? String(line.dropFirst("Error: ".count)) : line
-        writeEnvelopeIfWanted(ErrorPayload(reason: .deviceUnresponsive, message: message, hint: context.device.map { "offsider doctor --device \($0)" }))
+        exitFromTimer(reason: .deviceUnresponsive, message: message, hint: context.device.map { "offsider doctor --device \($0)" })
+    }
+
+    /// Reports and exits from a timer, while the main actor is blocked and cannot throw.
+    @Sendable static func exitFromTimer(reason: FailureReason, message: String, hint: String?) {
+        writeEnvelopeIfWanted(ErrorPayload(reason: reason, message: message, hint: hint))
         writeErrorLine(message)
-        Darwin.exit(FailureReason.deviceUnresponsive.exitCode.rawValue)
+        Darwin.exit(reason.exitCode.rawValue)
     }
 
     static func writeEnvelopeIfWanted(_ payload: ErrorPayload) {
