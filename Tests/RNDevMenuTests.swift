@@ -188,6 +188,32 @@ struct RNDevMenuTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 324))])
     }
 
+    @Test("in batch, rn devmenu reload sends the menu key and its tap through the batch's own session")
+    func batchStep() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, Self.expoMenu(), Self.app], advanceTreeOnInput: true)
+        let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+
+        let records = try await Batch.runSteps(["rn devmenu reload"], context: context, session: backend.session, continueOnError: false, logger: OffsiderLogger())
+
+        #expect(records.map(\.ok) == [true])
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
+        #expect(backend.openedSessions.isEmpty)
+    }
+
+    @Test("a batch rn step must be rn devmenu with an item or --label, and sends nothing otherwise", arguments: ["rn devmenu", "rn logbox dismiss", "rn"])
+    func batchStepNeedsItem(step: String) async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, Self.expoMenu()], advanceTreeOnInput: true)
+        let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+
+        let error = await #expect(throws: ReportedFailure.self) {
+            try await Batch.runSteps([step], context: context, session: backend.session, continueOnError: false, logger: OffsiderLogger())
+        }
+
+        #expect(error?.exitCode == .usage)
+        #expect(error?.userFacingDescription.contains(BatchStepParser.rnStepMessage) == true)
+        #expect(backend.session.calls.isEmpty)
+    }
+
     @Test("choosing an item with --json prints one JSON object naming the menu, the item, the label tapped and that it closed")
     func choiceJSON() {
         let reload = RNDevMenu.Outcome.chose(menu: "expo", item: .reload, label: "Reload")

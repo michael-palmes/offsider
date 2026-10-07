@@ -115,11 +115,13 @@ struct RNDevMenu: AsyncParsableCommand {
         Without an item it prints the items and leaves the menu open. With one (reload, home, inspector, \
         perf-monitor, fast-refresh, debugger, close) or --label, it taps it and waits until the menu closes, \
         closing it after a switch. Exits 2 when the menu has no such item (the items are the candidates), 1 when \
-        the menu never opens (a Release build has none) and 5 when it stays open.
+        the menu never opens (a Release build has none) and 5 when it stays open. In batch, `rn devmenu` is \
+        an input step that needs an item or --label.
 
         Examples:
           offsider rn devmenu --device DEVICE_ID
           offsider rn devmenu reload --device DEVICE_ID
+          offsider batch --device DEVICE_ID --step "rn devmenu reload" --step "wait --id home-screen --timeout 20"
         """
     )
 

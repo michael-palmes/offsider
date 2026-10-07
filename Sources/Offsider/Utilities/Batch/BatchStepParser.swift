@@ -11,6 +11,8 @@ enum BatchStepKind: String {
     case key
     case keySequence = "key-sequence"
     case keyCombo = "key-combo"
+    /// `rn devmenu <item>`, the only `rn` step.
+    case rn
     case sleep
     case wait
     case assert
@@ -20,7 +22,7 @@ enum BatchStepKind: String {
     /// True when the step sends input or sleeps, so the screen may have changed after it.
     var mayChangeScreen: Bool {
         switch self {
-        case .tap, .swipe, .gesture, .touch, .type, .button, .key, .keySequence, .keyCombo, .sleep:
+        case .tap, .swipe, .gesture, .touch, .type, .button, .key, .keySequence, .keyCombo, .rn, .sleep:
             return true
         case .wait, .assert, .screenshot, .describeUI:
             return false
@@ -39,6 +41,7 @@ struct BatchStepParser {
     nonisolated static let unsupportedFlags = ["--verify", "--verify-timeout", "--retries"]
     nonisolated static let unsupportedFlagsMessage = "Batch steps do not support --verify. Run the command on its own with --verify, or check with describe-ui after the batch."
     nonisolated static let stepJSONMessage = "Batch steps do not take --json. Use batch --json for one JSON line per step."
+    nonisolated static let rnStepMessage = "The only rn batch step is rn devmenu with an item or --label, such as rn devmenu reload; listing the menu leaves it open, so run that on its own."
 
     nonisolated static func rejectUnsupportedFlags(_ tokens: [String]) throws {
         let arguments = tokens.dropFirst()
@@ -73,7 +76,10 @@ struct BatchStepParser {
         }
 
         try rejectUnsupportedFlags(tokens)
-        let stepArguments = Array(tokens.dropFirst())
+        if kind == .rn {
+            guard tokens.count > 1, tokens[1] == "devmenu" else { throw ValidationError(rnStepMessage) }
+        }
+        let stepArguments = Array(tokens.dropFirst(kind == .rn ? 2 : 1))
         try rejectPerStepDevice(stepArguments)
         // Before the step's own arguments, so a `--` terminator cannot turn the device into text.
         let arguments = ["--device", deviceID] + stepArguments
@@ -97,6 +103,8 @@ struct BatchStepParser {
             return .input(try await parseCommand(KeySequence.self, arguments: arguments, context: context, logger: logger))
         case .keyCombo:
             return .input(try await parseCommand(KeyCombo.self, arguments: arguments, context: context, logger: logger))
+        case .rn:
+            return .input(try await parseCommand(RNDevMenu.self, arguments: arguments, context: context, logger: logger))
         case .wait:
             return .read(try parseRead(Wait.self, arguments: arguments, context: context))
         case .assert:
