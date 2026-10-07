@@ -94,9 +94,9 @@ public enum CoverJudge {
         return visible.area >= 0.8 * viewport.area
     }
 
-    /// A control, or labelled content that is not a container: something a tap on it would visibly reach.
+    /// A control, or labelled content that is not a container: something a tap on it would visibly reach. Unlabelled groups wrap content rather than draw over it.
     public static func isPlausibleOccluder(_ node: UINode) -> Bool {
-        node.role.isActionable || (node.trimmedLabel != nil && !containerRoles.contains(node.role))
+        node.role.isActionable || (node.normalizedLabel != nil && !containerRoles.contains(node.role))
     }
 
     enum HitJudgement {
@@ -168,10 +168,10 @@ public enum CoverJudge {
             }
             return own.contains { node in
                 guard node.role == hit.role else { return false }
-                if let id = hit.trimmedID {
-                    return node.trimmedID == id
+                if let id = hit.normalizedID {
+                    return node.normalizedID == id
                 }
-                guard node.trimmedID == nil, let mine = node.frame, let theirs = hit.frame else { return false }
+                guard node.normalizedID == nil, let mine = node.frame, let theirs = hit.frame else { return false }
                 return mine.isWithinTolerance(of: theirs)
             }
         }
@@ -180,7 +180,7 @@ public enum CoverJudge {
         private func mayBeTarget(_ hit: UINode) -> Bool {
             [target, matched].contains { node in
                 guard node.role == hit.role, let mine = node.frame, let theirs = hit.frame,
-                      node.trimmedID == nil || hit.trimmedID == nil,
+                      node.normalizedID == nil || hit.normalizedID == nil,
                       let overlap = mine.intersection(theirs) else { return false }
                 return overlap.area >= 0.8 * max(mine.area, theirs.area)
             }
@@ -204,12 +204,12 @@ public enum CoverJudge {
             if isScreenRoot(hit, placed: placed) {
                 return pageOverTarget.map { .cover(cover(on: $0), confident: true) } ?? .clear
             }
-            if let label = hit.trimmedLabel, let frame = hit.frame {
+            if let label = hit.normalizedLabel, let frame = hit.frame {
                 let carriers = flat.filter { node in
                     !(placed.map { node.isSameElement(as: $0) } ?? false)
                         && (node.role.isActionable || isOwn(node))
                         && node.frame.map { $0.encloses(frame, tolerance: TransitionGuard.frameTolerance) } == true
-                        && node.trimmedLabel.map { $0 == label || $0.contains(label) } == true
+                        && node.normalizedLabel.map { $0 == label || $0.contains(label) } == true
                 }
                 if carriers.contains(where: isOwn) {
                     return .clear
@@ -279,21 +279,11 @@ extension UINode {
         }
     }
 
-    var trimmedLabel: String? {
-        guard let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
-        return trimmed
-    }
-
     /// A copy without `node` and what it holds.
     func removing(_ node: UINode) -> UINode {
         var copy = self
         copy.children = children.filter { !$0.isSameElement(as: node) }.map { $0.removing(node) }
         return copy
-    }
-
-    var trimmedID: String? {
-        guard let trimmed = id?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
-        return trimmed
     }
 
     var area: Double {
