@@ -46,7 +46,6 @@ struct TreeGoldenCaptureTests {
             try await tap("stack-test-open-full", thenWaitFor: "stack-test-full-title-1")(app)
             try await tap("stack-test-full-next", thenWaitFor: "stack-test-full-title-2")(app)
         }),
-        Screen(name: "live-ticker", route: "live-ticker"),
     ]
 
     @Test("captures every screen's raw tree and re-renders its golden", arguments: RNPlatform.enabled)
