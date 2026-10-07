@@ -5,7 +5,7 @@ import OffsiderCore
 
 extension IOSBackend: LogReading {
     /// The simulator's own `log show` for history or `log stream` for live output, as ndjson, with info and debug messages.
-    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
+    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void, onNote: @escaping @MainActor (LogNote) -> Void) async throws {
         let simulator = try await logSimulator(for: id)
         var executable: String?
         switch query.source {

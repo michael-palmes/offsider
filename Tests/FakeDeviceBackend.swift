@@ -358,15 +358,18 @@ extension FakeDeviceBackend: ForegroundReading {
 final class FakeLogBackend: LogReading {
     let platform: DevicePlatform
     let entries: [LogEntry]
+    let notes: [LogNote]
     private(set) var queries: [LogQuery] = []
 
-    init(platform: DevicePlatform = .android, entries: [LogEntry]) {
+    init(platform: DevicePlatform = .android, entries: [LogEntry], notes: [LogNote] = []) {
         self.platform = platform
         self.entries = entries
+        self.notes = notes
     }
 
-    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
+    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void, onNote: @escaping @MainActor (LogNote) -> Void) async throws {
         queries.append(query)
+        notes.forEach(onNote)
         entries.forEach(onEntry)
     }
 

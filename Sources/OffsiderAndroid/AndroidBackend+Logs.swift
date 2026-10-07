@@ -3,7 +3,7 @@ import OffsiderCore
 
 extension AndroidBackend: LogReading {
     /// `logcat -d` for history, or `logcat` over a shell stream until the window ends or the task is cancelled.
-    public func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
+    public func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void, onNote: @escaping @MainActor (LogNote) -> Void) async throws {
         guard query.predicate == nil else {
             throw AndroidError(.notSupported, "--predicate is iOS only; on Android use --app, --rn or --grep.")
         }
@@ -13,7 +13,12 @@ extension AndroidBackend: LogReading {
         let script = LogcatCommand.script(window: query.window, source: query.source)
         var stream = LogcatStream(source: query.source, serial: serial)
         let deliver: @MainActor (String) throws -> Void = { line in
-            if let entry = try stream.consume(line) { onEntry(entry) }
+            let entry = try stream.consume(line)
+            if let note = stream.note {
+                stream.note = nil
+                onNote(note)
+            }
+            if let entry { onEntry(entry) }
         }
         log(.debug, "Reading logs on \(serial): \(script)")
 

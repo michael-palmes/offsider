@@ -29,6 +29,8 @@ struct LogcatStream {
     let serial: String
     private(set) var pid: Int?
     private(set) var filter: LogcatAppFilter?
+    /// Set once from the device's clock line when it is past `LogClock.skewThreshold`; the reader takes it.
+    var note: LogNote?
     private(set) var started = false
     private var listing: [String] = []
     private var parser = LogcatParser()
@@ -38,10 +40,10 @@ struct LogcatStream {
         self.serial = serial
     }
 
-    /// The entry a line adds, nil for the preamble, separators and lines the source leaves out.
-    mutating func consume(_ line: String) throws -> LogEntry? {
+    /// The entry a line adds, nil for the preamble, separators and lines the source leaves out; `now` is this Mac's clock.
+    mutating func consume(_ line: String, now: Date = Date()) throws -> LogEntry? {
         guard started else {
-            try readPreamble(line.trimmingCharacters(in: .whitespacesAndNewlines))
+            try readPreamble(line.trimmingCharacters(in: .whitespacesAndNewlines), now: now)
             return nil
         }
         guard var entry = parser.parse(line) else { return nil }
@@ -57,7 +59,13 @@ struct LogcatStream {
         return entry
     }
 
-    private mutating func readPreamble(_ line: String) throws {
+    private mutating func readPreamble(_ line: String, now: Date) throws {
+        if line.hasPrefix(LogcatCommand.clockMarker) {
+            note = Int(line.dropFirst(LogcatCommand.clockMarker.count))
+                .flatMap { LogClock.skew(deviceSeconds: $0, hostNow: now) }
+                .map { .clockSkew(seconds: $0) }
+            return
+        }
         if line == LogcatCommand.notRunningMarker {
             throw Self.notRunning(source, serial: serial)
         }
