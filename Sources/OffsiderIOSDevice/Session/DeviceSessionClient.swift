@@ -142,8 +142,8 @@ public final class DeviceSessionClient {
         _ = try await call(.keys(steps), timeout: Self.inputTimeout + .seconds(Self.waited(steps)))
     }
 
-    public func displayChanged() async throws {
-        _ = try await call(.displayChanged, timeout: Self.pingTimeout)
+    public func displayChanged(timeout: Duration = pingTimeout) async throws {
+        _ = try await call(.displayChanged, timeout: timeout)
     }
 
     public func stop(timeout: Duration = .seconds(8)) async throws {
