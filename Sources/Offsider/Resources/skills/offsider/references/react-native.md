@@ -23,7 +23,7 @@ The checkbox frame includes the words beside the square, so `tap --label "Verify
 
 ## Logs
 
-`offsider logs --rn --device <DEVICE_ID>` prints `console.log`, `console.warn` and `console.error` output from the last 30 s, in release builds too, and is the best check that an action did something a screenshot cannot show, such as a request being sent. Windows, filters, `--json` and redaction are in `offsider guide evidence`.
+`offsider logs --rn --device <DEVICE_ID>` prints `console.log`, `console.warn` and `console.error` output from the last 30 s, in release builds too, and is the best check that an action did something a screenshot cannot show, such as a request being sent. Prefer `logs --rn --app <bundle id or package>`: an app's own logger often writes outside React Native's log, and on Android it keeps lines from before a restart. Windows, filters, `--json` and redaction are in `offsider guide evidence`.
 
 ## Debug builds
 

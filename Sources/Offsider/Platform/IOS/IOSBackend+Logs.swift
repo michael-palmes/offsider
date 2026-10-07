@@ -8,8 +8,11 @@ extension IOSBackend: LogReading {
     func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
         let simulator = try await logSimulator(for: id)
         var executable: String?
-        if case .app(let bundleID) = query.source {
+        switch query.source {
+        case .app(let bundleID), .reactNative(let bundleID?):
             executable = try await Self.executableName(of: bundleID, on: simulator)
+        case .all, .reactNative(nil), .process:
+            break
         }
         let predicate = LogText.iosPredicate(for: query.source, executable: executable, extra: query.predicate)
         let arguments = LogText.iosLogArguments(window: query.window, predicate: predicate)

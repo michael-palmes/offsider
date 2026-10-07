@@ -113,6 +113,14 @@ struct LogTextTests {
         )
     }
 
+    @Test("--rn --app reads React Native's subsystem or the app's process, so its own console lines come too")
+    func reactNativeAppPredicate() {
+        #expect(LogText.iosPredicate(for: .reactNative(app: "com.example.app"), executable: "Example")
+            == #"subsystem == "com.facebook.react.log" OR process == "Example""#)
+        #expect(LogText.iosPredicate(for: .reactNative(app: "com.example.app"), executable: "Example", extra: "messageType == error")
+            == #"(subsystem == "com.facebook.react.log" OR process == "Example") AND (messageType == error)"#)
+    }
+
     @Test("history uses log show with whole seconds or an epoch start, live uses stream, always ndjson with info and debug")
     func logArguments() {
         let flags = ["--style", "ndjson", "--info", "--debug"]

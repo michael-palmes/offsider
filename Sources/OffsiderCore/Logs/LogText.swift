@@ -23,14 +23,16 @@ public enum LogText {
 
     // MARK: iOS
 
-    /// The NSPredicate for `source` (with `executable` resolved for `.app`), ANDed with `extra`; nil reads everything.
+    /// The NSPredicate for `source` (with `executable` resolved for an app), ANDed with `extra`; nil reads everything.
     public static func iosPredicate(for source: LogSource, executable: String?, extra: String? = nil) -> String? {
         let base: String?
         switch source {
         case .all:
             base = nil
-        case .reactNative:
+        case .reactNative(nil):
             base = "subsystem == \(quoted(reactNativeSubsystem))"
+        case .reactNative(let bundleID?):
+            base = "subsystem == \(quoted(reactNativeSubsystem)) OR process == \(quoted(executable ?? bundleID))"
         case .app(let bundleID):
             base = "process == \(quoted(executable ?? bundleID))"
         case .process(let name):
