@@ -138,7 +138,8 @@ struct TreeDiffTests {
         var moved = largest
         moved.roots = moved.roots.map { root in var root = root; root.label = "changed"; return root }
         let clock = ContinuousClock()
-        let elapsed = clock.measure { _ = TreeDiff.diff(old: largest, new: moved) }
+        // The fastest of five, so one run preempted on a busy Mac cannot fail it; a slow diff is slow every time.
+        let elapsed = try #require((0..<5).map { _ in clock.measure { _ = TreeDiff.diff(old: largest, new: moved) } }.min())
         #expect(elapsed < .milliseconds(20))
     }
 

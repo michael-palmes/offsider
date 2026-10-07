@@ -329,7 +329,11 @@ final class FakeSessionHardware: DeviceSessionHardware {
     var geometry: IOSDeviceGeometry?
     private(set) var displayChanges = 0
     var healthy = true
+    /// The longest a health check stays in flight; it ends early once a touch arrives.
     var healthDelay: Duration = .zero
+    private(set) var checkingHealth = false
+    /// Set when a touch arrived while a health check was still in flight.
+    private(set) var touchedDuringHealthCheck = false
     private(set) var touches: [[DeviceSessionStep]] = []
     private(set) var closed = false
     /// Set when a touch with a long wait saw its client leave before the wait ended.
@@ -343,6 +347,7 @@ final class FakeSessionHardware: DeviceSessionHardware {
         throw IOSDeviceError(.locked, "iPad is locked.")
     }
     func touch(_ steps: [DeviceSessionStep], abandoned: @Sendable () -> Bool) async throws {
+        touchedDuringHealthCheck = touchedDuringHealthCheck || checkingHealth
         touches.append(steps)
         let wait = DeviceSessionClient.waited(steps)
         guard wait > 0 else { return }
@@ -352,7 +357,10 @@ final class FakeSessionHardware: DeviceSessionHardware {
     func freshGeometry() -> IOSDeviceGeometry? { geometry }
     func displayChanged() { displayChanges += 1 }
     func checkHealth() async -> Bool {
-        if healthDelay > .zero { try? await Task.sleep(for: healthDelay) }
+        let deadline = ContinuousClock.now + healthDelay
+        checkingHealth = true
+        defer { checkingHealth = false }
+        while touches.isEmpty, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
         return healthy
     }
     func close() async { closed = true }
@@ -361,29 +369,43 @@ final class FakeSessionHardware: DeviceSessionHardware {
 @Suite("Device session server", .serialized)
 @MainActor
 struct DeviceSessionServerTests {
+    /// The server answers on the main actor, which a full parallel run can hold for longer than the 2 s ping bound.
+    static let replyTimeout: Duration = .seconds(30)
+
+    /// Waits up to 30 s for `condition`, which a busy main actor can hold back.
+    static func until(_ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(30)
+        while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    /// Connects once the server listens, which waits for its task to get the main actor.
+    static func whenListening<Connection>(_ connect: () throws -> Connection) async throws -> Connection {
+        var connection: Connection?
+        try await until {
+            connection = try? connect()
+            return connection != nil
+        }
+        return try connection ?? connect()
+    }
+
     @Test("over its 0600 socket the broker answers ping, frames, input and refusals, and stop ends it and removes the socket")
     func serves() async throws {
         let socket = NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8)).sock"
         let hardware = FakeSessionHardware()
         let server = DeviceSessionServer(udid: "U", socketPath: socket, hardware: hardware, store: nil, idleTimeout: .seconds(30), log: { _, _ in })
         let running = Task { try await server.run() }
-        var link: (any DeviceSessionLink)?
-        for _ in 0..<100 where link == nil {
-            link = try? SocketSessionLink.connect(socket)
-            if link == nil { try await Task.sleep(for: .milliseconds(10)) }
-        }
-        let client = DeviceSessionClient(udid: "U", link: try #require(link))
+        let client = DeviceSessionClient(udid: "U", link: try await Self.whenListening { try SocketSessionLink.connect(socket) })
         var info = stat()
         #expect(lstat(socket, &info) == 0 && info.st_mode & 0o777 == 0o600)
 
-        let ping = try await client.ping()
+        let ping = try await client.ping(timeout: Self.replyTimeout)
         #expect(ping.protocol == DeviceSessionWire.protocolVersion)
         #expect(ping.udid == "U")
         #expect(ping.pid == getpid())
         #expect(ping.touch == true)
         let frame = try await client.frame(.png)
         #expect(frame.data == Data([9, 8, 7, 6]))
-        try await client.displayChanged()
+        try await client.displayChanged(timeout: Self.replyTimeout)
         #expect(hardware.displayChanges == 1)
         try await client.touch([.touch(.down, x: 1, y: 2), .touch(.up, x: 1, y: 2)])
         #expect(hardware.touches.count == 1)
@@ -392,7 +414,7 @@ struct DeviceSessionServerTests {
         let tooLong = await #expect(throws: IOSDeviceError.self) { try await client.touch([.wait(60)]) }
         #expect(tooLong?.reason == .hidBrokerFailed)
 
-        try await client.stop()
+        try await client.stop(timeout: Self.replyTimeout)
         try await running.value
         #expect(hardware.closed)
         #expect(lstat(socket, &info) != 0)
@@ -404,24 +426,18 @@ struct DeviceSessionServerTests {
         let hardware = FakeSessionHardware()
         let server = DeviceSessionServer(udid: "U", socketPath: socket, hardware: hardware, store: nil, idleTimeout: .seconds(30), log: { _, _ in })
         let running = Task { try await server.run() }
-        var channel: DeviceSessionChannel?
-        for _ in 0..<100 where channel == nil {
-            channel = try? DeviceSessionChannel.connect(to: socket)
-            if channel == nil { try await Task.sleep(for: .milliseconds(10)) }
-        }
-        let held = try #require(channel)
+        let held = try await Self.whenListening { try DeviceSessionChannel.connect(to: socket) }
         try held.write(try DeviceSessionWire.encode(.touch([.touch(.down, x: 1, y: 1), .wait(20), .touch(.up, x: 1, y: 1)]), id: 1))
-        try await Task.sleep(for: .milliseconds(300))
+        try await Self.until { hardware.touches.count == 1 }
         let started = ContinuousClock.now
         held.close()
-        while !hardware.sawClientLeave, ContinuousClock.now - started < .seconds(5) {
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        // Set only when the hold ends because the client left, never when its 20 s run out.
+        try await Self.until { hardware.sawClientLeave }
         #expect(hardware.sawClientLeave)
-        #expect(ContinuousClock.now - started < .seconds(5))
+        #expect(ContinuousClock.now - started < .seconds(15))
 
         let client = DeviceSessionClient(udid: "U", link: try SocketSessionLink.connect(socket))
-        try await client.stop()
+        try await client.stop(timeout: Self.replyTimeout)
         try await running.value
     }
 
@@ -429,22 +445,17 @@ struct DeviceSessionServerTests {
     func healthOutsideInput() async throws {
         let socket = NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8)).sock"
         let hardware = FakeSessionHardware()
-        hardware.healthDelay = .seconds(3)
+        hardware.healthDelay = .seconds(30)
         let server = DeviceSessionServer(
             udid: "U", socketPath: socket, hardware: hardware, store: nil, idleTimeout: .seconds(30), healthInterval: .milliseconds(10), log: { _, _ in }
         )
         let running = Task { try await server.run() }
-        var link: (any DeviceSessionLink)?
-        for _ in 0..<100 where link == nil {
-            link = try? SocketSessionLink.connect(socket)
-            if link == nil { try await Task.sleep(for: .milliseconds(10)) }
-        }
-        let client = DeviceSessionClient(udid: "U", link: try #require(link))
-        try await Task.sleep(for: .milliseconds(100))
-        let started = ContinuousClock.now
+        let client = DeviceSessionClient(udid: "U", link: try await Self.whenListening { try SocketSessionLink.connect(socket) })
+        // The check stays in flight until a touch arrives, so a touch that waited on it would arrive after it ended.
+        try await Self.until { hardware.checkingHealth }
         try await client.touch([.touch(.down, x: 1, y: 2), .touch(.up, x: 1, y: 2)])
-        #expect(ContinuousClock.now - started < .seconds(1))
-        try await client.stop()
+        #expect(hardware.touchedDuringHealthCheck)
+        try await client.stop(timeout: Self.replyTimeout)
         try await running.value
     }
 

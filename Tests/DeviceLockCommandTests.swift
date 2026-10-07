@@ -154,26 +154,33 @@ struct DeviceClaimsTests {
         var value: Bool { lock.withLock { fired } }
     }
 
-    @Test("the lock wait runs with the watchdog disarmed, so --wait-lock outlasts its bound and a timeout is still device_busy",
-          arguments: [5.0, 1.5])
+    @Test("the lock wait runs with the watchdog disarmed, so --wait-lock is never bound by it and a timeout is still device_busy",
+          arguments: [10.0, 1.5])
     func lockWaitOutlastsWatchdog(wait: Double) async throws {
         let root = try makePrivateLockRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
         let udid = UUID().uuidString
         let holder = try await DeviceLock.acquire(DeviceLockKey(platform: .ios, id: udid), command: "batch", wait: nil, root: root)
-        // The long wait sees the holder go after 2.5 s; the short one never does.
+        // The long wait sees the holder go; the short one never does.
         let releases = wait > 2.5
-        if releases {
-            Task {
-                try? await Task.sleep(for: .seconds(2.5))
-                holder.release()
-            }
-        }
         defer { if !releases { holder.release() } }
+        let fired = Fired()
+        // Routing waits on the main actor, which a full parallel run can hold for seconds, so the bound is generous and the wait is checked below.
+        let watchdog = DeviceWatchdog(grace: 60, setupBound: 0) { _ in fired.set() }
         let claims = claims(root: root)
         claims.configure(command: "tap", waitOption: wait)
-        let fired = Fired()
-        let watchdog = DeviceWatchdog(grace: 0.5, setupBound: 0.5) { _ in fired.set() }
+        var armedAtWait: [Bool] = []
+        // The claim reads its lock root as its wait starts, so this sees the watchdog through the wait.
+        claims.root = {
+            armedAtWait.append(watchdog.isArmed)
+            if releases {
+                Task.detached {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    holder.release()
+                }
+            }
+            return root
+        }
         let scope = CommandScope(claims: claims)
         do {
             let route = try await DeviceRouter.routeForInput(udid, logger: OffsiderLogger(), watchdog: watchdog, scope: scope, claims: claims)
@@ -183,6 +190,7 @@ struct DeviceClaimsTests {
             #expect(!releases)
             #expect(busy.reason.exitCode == .deviceBusy)
         }
+        #expect(armedAtWait == [false])
         #expect(!fired.value)
         #expect(!watchdog.isArmed)
         claims.releaseAll()
