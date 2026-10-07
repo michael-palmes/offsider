@@ -32,7 +32,7 @@ struct StartLockTests {
         #expect(held != nil)
         await #expect(throws: StartLockBusy.self) { _ = try await IOSDeviceStartLock.acquire(path, timeout: 0.1, poll: .milliseconds(10)) { StartLockBusy() } }
         held = nil
-        let next = try await IOSDeviceStartLock.acquire(path, timeout: 0, poll: .milliseconds(10)) { StartLockBusy() }
+        let next = try await IOSDeviceStartLock.acquire(path, timeout: TestDevices.releaseGrace, poll: .milliseconds(10)) { StartLockBusy() }
         #expect(FileManager.default.fileExists(atPath: path))
         next.release()
     }
