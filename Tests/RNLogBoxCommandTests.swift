@@ -47,6 +47,8 @@ struct RNLogBoxCommandTests {
             .perform(.tapAt(x: 370, y: 830)), .perform(.tapAt(x: 162.8, y: 830)),
             .perform(.tapAt(x: 100, y: 847)), .perform(.tapAt(x: 100, y: 847)),
         ])
+        #expect(backend.openedSessions.count == 1)
+        #expect(backend.session.isClosed)
     }
 
     @Test("logs still on screen are reported as remaining")

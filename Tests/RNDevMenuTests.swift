@@ -191,6 +191,17 @@ struct RNDevMenuTests {
         #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
     }
 
+    @Test("a Close the menu ignored while it was still presenting is tapped once more")
+    func closeTappedAgain() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.expoMenu(), Self.expoMenu(), Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["close", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .close, label: "Close"))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 368, y: 268)), .perform(.tapAt(x: 368, y: 268))])
+    }
+
     @Test("on an iOS simulator the menu opens by shake, not by a key")
     func iosOpensByShake() async throws {
         let simulator = DeviceID(rawValue: UUID().uuidString, platform: .ios)
