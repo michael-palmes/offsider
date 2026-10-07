@@ -2,7 +2,7 @@ import Foundation
 
 /// A point that resigns the software keyboard without pressing a key or a control.
 public enum KeyboardDismiss {
-    /// Nil when no keyboard is on screen, or when every point above it is a control.
+    /// Empty space above the keys first, then inert text. Nil when there is no keyboard, or every point is a control.
     public static func point(in tree: UITree) -> UIPoint? {
         let nodes = tree.roots.flatMap { $0.flattened() }
         let keyboards = nodes.filter { $0.role == .keyboard && ($0.frame?.height ?? 0) > 0 }
@@ -13,16 +13,18 @@ public enum KeyboardDismiss {
         guard let top = coverageFrames(in: tree).map(\.y).min(), let viewport = tree.viewport else { return nil }
         let xs = [viewport.x + viewport.width * 0.5, viewport.x + 40, viewport.x + viewport.width - 40]
             .filter { $0 >= viewport.x && $0 < viewport.x + viewport.width }
-        var y = top - 24
-        while y > viewport.y + 8 {
-            for x in xs {
-                let point = UIPoint(x: x, y: y)
-                let chain = chain(in: tree.roots, at: point, viewport: viewport)
-                if let hit = chain.last, !SignInHit.isHiddenByChrome(chain), isSafe(hit), hit.role != .keyboard {
-                    return point
+        for backgroundOnly in [true, false] {
+            var y = top - 24
+            while y > viewport.y + 8 {
+                for x in xs {
+                    let point = UIPoint(x: x, y: y)
+                    let chain = chain(in: tree.roots, at: point, viewport: viewport)
+                    guard let hit = chain.last, hit.role != .keyboard, !SignInHit.isHiddenByChrome(chain) else { continue }
+                    if chain.contains(where: \.isActionable) { continue }
+                    if backgroundOnly ? isBackground(hit) : isSafe(hit) { return point }
                 }
+                y -= 36
             }
-            y -= 36
         }
         return nil
     }
@@ -95,6 +97,20 @@ public enum KeyboardDismiss {
         guard node.role == .button || node.role == .other, node.frame != nil else { return false }
         let text = [node.label, node.id].compactMap { $0?.lowercased() }.joined(separator: " ")
         return text.contains("hide keyboard") || text.contains("dismiss keyboard")
+    }
+
+    /// Empty space: a window or an unlabelled container, never text a link might hide behind.
+    private static func isBackground(_ node: UINode) -> Bool {
+        switch node.role {
+        case .application, .window:
+            return true
+        case .group, .other:
+            return node.label?.isEmpty != false
+        case .scrollView:
+            return node.label?.isEmpty != false && (node.frame?.height ?? 0) >= 160
+        default:
+            return false
+        }
     }
 
     private static func isSafe(_ node: UINode) -> Bool {

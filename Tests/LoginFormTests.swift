@@ -100,6 +100,23 @@ struct KeyboardDismissTests {
         #expect(shell.frame?.contains(point!) == false)
     }
 
+    @Test("the dismiss tap prefers empty space over text, and never lands on or inside a control")
+    func dismissAvoidsControls() throws {
+        let link = FakeUI.node(.link, label: "Forgot password?", frame: FakeUI.frame(16, 640, 370, 40))
+        let pressable = FakeUI.node(.button, label: "Terms", frame: FakeUI.frame(0, 560, 402, 60), children: [
+            FakeUI.node(.text, label: "Read the terms", frame: FakeUI.frame(16, 570, 370, 40)),
+        ])
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 700, 402, 174))
+        let caption = FakeUI.node(.text, label: "Welcome back", frame: FakeUI.frame(0, 400, 402, 120))
+        let spaced = try #require(KeyboardDismiss.point(in: FakeUI.tree([caption, pressable, link, keyboard])))
+        #expect([link, pressable, caption].allSatisfy { $0.frame?.contains(spaced) == false })
+
+        let fullCaption = FakeUI.node(.text, label: "Welcome back", frame: FakeUI.frame(0, 0, 402, 560))
+        let packed = try #require(KeyboardDismiss.point(in: FakeUI.tree([fullCaption, pressable, link, keyboard])))
+        #expect(fullCaption.frame?.contains(packed) == true)
+        #expect([link, pressable].allSatisfy { $0.frame?.contains(packed) == false })
+    }
+
     @Test("the input assistant is not a safe place to dismiss the keyboard")
     func assistantIsNotADismissPoint() {
         let header = FakeUI.node(.text, label: "Welcome", frame: FakeUI.frame(0, 0, 402, 616))

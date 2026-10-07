@@ -20,7 +20,7 @@ Save test development credentials only. Anything that can run commands as you ca
 
 It finds the controls on its own. A candidate has to be in front: a point at its centre must land on it, so a screen mounted underneath does not count. The identity field is the one text field whose label or id is an email or a username. The password field is the one secure field. The submit button is a Log in, Sign in, Submit, Continue or Next button below the password, and it may be disabled until the fields are filled. Forgot, create, back, support and with (as in Continue with Google) are skipped. Words must be whole, and ids are split at capitals, so `signInButton` counts and Blog index or feedback do not. Zero matches exit 2 and two matches exit 6, and nothing is typed.
 
-The software keyboard is dismissed before the submit button. When it still covers the next control, login stops (`target_under_keyboard`) and does not tap submit. It does not press Back.
+The software keyboard is dismissed before the submit button, by a tap on empty space above the keys, or on plain text when there is none, never on a control. When it still covers the next control, login stops (`target_under_keyboard`) and does not tap submit. It does not press Back.
 
 `--timeout` (default 15 seconds) is how long login waits for the submit button to enable. `--wait-lock` waits while another command holds the device. `--json` prints one object. `identity` and `password` are the word `filled`, never the secret. `submitted` says whether the button was tapped.
 
