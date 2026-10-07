@@ -21,12 +21,12 @@ Resending a single command is safe after 2, 6, 7, 8, 9 and 64: nothing was sent.
 - `text_not_accepted` (exit 5): on Android `type --replace` could not make the field hold the text; the message names its class, id and `inputType` (such as `number|decimal`). The field reads empty or shorter than the text, or a paste did not leave exactly the text, because the app filters what it accepts: type what the field allows. When the message says input focus moved, nothing was pasted: tap the field and run it again.
 - `metro_not_running` (exit 9) and `rn_load_failed` (exit 1) come from `rn open`: ask the user to start Metro on the port, or read `logs --rn` for why the bundle failed (`guide react-native`).
 - `turnstile_challenge` (exit 1): Cloudflare showed a visual challenge. Hand back to a person; never retry `turnstile` in a loop (`guide turnstile`).
-- `target_under_keyboard` (exit 1, nothing sent): the on-screen keyboard covers the `tap` or `type --into-id` target, so the tap would press a key. Hide it (on Android, `offsider button back`) or scroll the target above it, then retry. `target_covered` (exit 1) is `tap --fail-if-covered` finding another element over it.
+- `target_under_keyboard` (exit 1, nothing sent): the on-screen keyboard covers the `tap` or `type --into-id` target, so the tap would press a key. Hide it (on Android, `offsider button back`) or scroll the target above it, then retry. `target_covered` (exit 1, nothing sent): a hit-test (iOS simulator) or Android's drawing order found another element over a selector's target, named in the message and in `coveredBy` with its `screen` and `evidence`; with `--fail-if-covered`, a tree-order guess too. Close the cover or wait for it (`--wait-timeout` reads again), and tap the element named only when that is what you meant; `--allow-covered` taps anyway.
 - `verify_target_present` (exit 1, nothing sent): the `--verify-id` element was already on screen, so its appearing could not show the input worked. Pick an id that only the next screen has. With `type --into-id` it is checked before the focus tap too; when that tap brought the element on screen, only the tap was sent (`dispatched` `yes`) and no text was typed.
 
 ## JSON errors
 
-With `--json`, every failure prints one object on stdout: `exitCode` and `error` with `reason`, `message`, `hint` (the next command), `dispatched` and `candidates`. The README lists every `reason`.
+With `--json`, every failure prints one object on stdout: `exitCode` and `error` with `reason`, `message`, `hint` (the next command), `dispatched` and `candidates`, plus `coveredBy` for `target_covered`. The README lists every `reason`.
 
 ## The device lock
 

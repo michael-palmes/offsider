@@ -457,37 +457,6 @@ struct AccessibilityTargetResolver {
         return KnownOverlays.logBoxToast(node, viewport: viewport) != nil ? KnownOverlays.logBoxTouchArea(of: frame, in: viewport) : frame
     }
 
-    /// The cover once a hit-test at the tap point found `hit`: nil when the hit is the target or its kin.
-    /// Without a hit, the first candidate not lying wholly inside the target, which is more likely underneath it,
-    /// and not a backdrop such as a sheet's scrim, which sits behind the content it surrounds.
-    static func confirmedCover(hit: UINode?, resolution: TapResolution, roots: [UINode]) -> UINode? {
-        guard !resolution.coverCandidates.isEmpty else {
-            return nil
-        }
-        guard let hit else {
-            let targetFrame = resolution.target?.frame
-            let viewport = UITree.viewport(in: roots)
-            return resolution.coverCandidates.first { candidate in
-                guard let frame = candidate.frame else { return true }
-                if let viewport, isBackdrop(frame, in: viewport) { return false }
-                guard let targetFrame else { return true }
-                return !targetFrame.encloses(frame)
-            }
-        }
-        let related = [resolution.target, resolution.matched].compactMap { $0 }.flatMap { family(of: $0, in: roots) }
-        if related.contains(where: { $0.isSameElement(as: hit) || $0.isSameTarget(as: hit) }) {
-            return nil
-        }
-        // A node drawn wholly inside the target is its own content, such as a control's text listed as a sibling.
-        if let targetFrame = resolution.target?.frame, let hitFrame = hit.frame, targetFrame.encloses(hitFrame) {
-            return nil
-        }
-        if resolution.coverCandidates.contains(where: { $0.isSameTarget(as: hit) }) {
-            return hit
-        }
-        return isPlausibleOccluder(hit, underKeyboard: hit.role == .keyboard) ? hit : nil
-    }
-
     /// The keyboard over the tap point, from the tree already read; on Android its window's bounds decide, as its root view spans the screen.
     static func keyboardCover(_ resolution: TapResolution, in tree: UITree) -> UINode? {
         let roots = tree.roots

@@ -580,6 +580,15 @@ struct AccessibilityTargetResolverTests {
 
     // MARK: Cover detection
 
+    /// What `CoverJudge` makes of a resolved tap, given a hit-test answer or none.
+    static func judgedCover(hit: UINode?, resolution: TapResolution, roots: [UINode]) -> UINode? {
+        guard let target = resolution.target, let matched = resolution.matched, let viewport = UITree.viewport(in: roots) else { return nil }
+        return CoverJudge.judge(
+            target: target, matched: matched, point: UIPoint(x: resolution.point.x, y: resolution.point.y), candidates: resolution.coverCandidates,
+            roots: roots, viewport: viewport, stack: ScreenStack.build(roots: roots, viewport: viewport), hit: hit
+        )?.cover
+    }
+
     static let bannerLabel = "Connection lost. Can’t reach the server."
 
     static let banner = FakeUI.node(.other, id: "banner", label: bannerLabel, frame: FakeUI.frame(0, 767, 402, 107))
@@ -622,7 +631,7 @@ struct AccessibilityTargetResolverTests {
         ])
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Dismiss"), elementType: "other")
 
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: text, resolution: resolution, roots: roots) == nil)
+        #expect(Self.judgedCover(hit: text, resolution: resolution, roots: roots) == nil)
     }
 
     @Test("tapping the banner itself lists the tab under its centre as a candidate")
@@ -715,7 +724,7 @@ struct AccessibilityTargetResolverTests {
         let roots = Self.bannerBeforeTabs()
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("banner"))
 
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: Self.banner, resolution: resolution, roots: roots) == nil)
+        #expect(Self.judgedCover(hit: Self.banner, resolution: resolution, roots: roots) == nil)
     }
 
     @Test("a hit-test that finds a candidate confirms it, and a failed read falls back to the first candidate")
@@ -723,10 +732,10 @@ struct AccessibilityTargetResolverTests {
         let roots = Self.bannerBeforeTabs()
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("tab-search"))
 
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: Self.banner, resolution: resolution, roots: roots)?.id == "banner")
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots)?.id == "banner")
+        #expect(Self.judgedCover(hit: Self.banner, resolution: resolution, roots: roots)?.id == "banner")
+        #expect(Self.judgedCover(hit: nil, resolution: resolution, roots: roots)?.id == "banner")
         let tab = Self.tabBar().children[1]
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: tab, resolution: resolution, roots: roots) == nil)
+        #expect(Self.judgedCover(hit: tab, resolution: resolution, roots: roots) == nil)
     }
 
     @Test("without a hit-test, a candidate lying wholly inside the target is taken to be underneath it")
@@ -735,7 +744,7 @@ struct AccessibilityTargetResolverTests {
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("banner"))
 
         #expect(resolution.coverCandidates.map(\.id) == ["tab-search"])
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots) == nil)
+        #expect(Self.judgedCover(hit: nil, resolution: resolution, roots: roots) == nil)
     }
 
     /// The Android shape of a bottom sheet: a labelled, clickable scrim fills the screen behind the sheet's buttons.
@@ -754,7 +763,7 @@ struct AccessibilityTargetResolverTests {
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("apply"))
 
         #expect(resolution.coverCandidates.map(\.label) == ["Dismiss"])
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots) == nil)
+        #expect(Self.judgedCover(hit: nil, resolution: resolution, roots: roots) == nil)
     }
 
     @Test("without a hit-test, a banner over a sheet's button is still a cover when a scrim lies behind both")
@@ -763,7 +772,7 @@ struct AccessibilityTargetResolverTests {
         let roots = Self.sheetOverScrim(banner: banner)
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("apply"))
 
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots)?.label == Self.bannerLabel)
+        #expect(Self.judgedCover(hit: nil, resolution: resolution, roots: roots)?.label == Self.bannerLabel)
     }
 
     /// The Android shape of a LogBox banner: its frame ends at 874, above a tab whose centre is at 875.
@@ -788,7 +797,7 @@ struct AccessibilityTargetResolverTests {
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("tab-search"))
 
         #expect(resolution.point.y == 875)
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots)?.label == "!, Request failed")
+        #expect(Self.judgedCover(hit: nil, resolution: resolution, roots: roots)?.label == "!, Request failed")
     }
 
     @Test("a target above a LogBox banner is not covered by it")
@@ -804,7 +813,7 @@ struct AccessibilityTargetResolverTests {
         let roots = Self.logBoxOverTabs(label: "3 unread")
         let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("tab-search"))
 
-        #expect(AccessibilityTargetResolver.confirmedCover(hit: nil, resolution: resolution, roots: roots) == nil)
+        #expect(Self.judgedCover(hit: nil, resolution: resolution, roots: roots) == nil)
     }
 
     private func decodeElements(_ json: String) throws -> [UINode] {

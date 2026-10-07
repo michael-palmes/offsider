@@ -32,6 +32,7 @@ struct AccessibilityPoller {
         allowOffscreen: Bool = false,
         settle: SettlePolicy = .off,
         pick: MatchPicker? = nil,
+        coverCheck: CoverCheck? = nil,
         logger: OffsiderLogger
     ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
@@ -43,11 +44,15 @@ struct AccessibilityPoller {
             allowOffscreen: allowOffscreen,
             settle: settle,
             pick: pick,
+            coverCheck: coverCheck,
             logger: logger
         ) {
             try await backend.accessibilityTree(for: device)
         }
     }
+
+    /// Refuses (`target_covered`), warns or returns for a resolved tap; `pollForResolution` retries a refusal until `--wait-timeout`.
+    typealias CoverCheck = (TapResolution, UITree) async throws -> Void
 
     static func resolveElementWithPolling(
         query: AccessibilityQuery,
@@ -90,8 +95,40 @@ struct AccessibilityPoller {
         allowOffscreen: Bool = false,
         settle: SettlePolicy = .off,
         pick: MatchPicker? = nil,
+        coverCheck: CoverCheck? = nil,
         logger: OffsiderLogger,
         clock: PollClock = .live,
+        treeFetcher: () async throws -> UITree
+    ) async throws -> Polled<TapResolution> {
+        let start = clock.now()
+        while true {
+            let remaining = max(0, waitTimeout - (clock.now() - start))
+            let polled = try await pollOnce(
+                query: query, waitTimeout: remaining, pollInterval: pollInterval, transientGrace: transientGrace, elementType: elementType,
+                allowOffscreen: allowOffscreen, settle: settle, pick: pick, logger: logger, clock: clock, treeFetcher: treeFetcher
+            )
+            guard let coverCheck else { return polled }
+            do {
+                try await coverCheck(polled.value, polled.tree)
+                return polled
+            } catch where TapCover.isRefusal(error) && clock.now() - start < waitTimeout {
+                logger.info().log("Target covered, checking again in \(pollInterval)s…")
+                try await clock.sleep(.seconds(pollInterval))
+            }
+        }
+    }
+
+    private static func pollOnce(
+        query: AccessibilityQuery,
+        waitTimeout: TimeInterval,
+        pollInterval: TimeInterval,
+        transientGrace: TimeInterval,
+        elementType: String?,
+        allowOffscreen: Bool,
+        settle: SettlePolicy,
+        pick: MatchPicker?,
+        logger: OffsiderLogger,
+        clock: PollClock,
         treeFetcher: () async throws -> UITree
     ) async throws -> Polled<TapResolution> {
         let resolver: ([UINode], Bool) async throws -> TapResolution = { roots, explain in

@@ -57,20 +57,20 @@ struct ReactNativeDebugSmokeTests {
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
     }
 
-    @Test("a LogBox error banner over the tab bar swallows a tab tap, with a cover warning on both platforms", arguments: RNPlatform.enabled)
+    @Test("a LogBox error banner over the tab bar refuses a tab tap, and swallows it with --allow-covered, on both platforms", arguments: RNPlatform.enabled)
     func logBoxBannerCoversTabs(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         let banner = try await Self.openWithErrorBanner(app)
         #expect(Self.label(banner) == "!, OffsiderFixture error 1", "\(banner)")
         #expect(banner["role"] as? String == (platform == .ios ? "other" : "button"))
 
-        let firstTap = try await app.offsider("tap --id overlay-test-tab-search --fail-if-covered")
-        #expect(firstTap.exitCode != 0)
-        #expect(firstTap.stderr.contains("may be covered by"), "\(firstTap.stderr)")
+        let firstTap = try await app.offsider("tap --id overlay-test-tab-search")
+        #expect(firstTap.exitCode == 1)
+        #expect(firstTap.stderr.contains("is covered by"), "\(firstTap.stderr)")
         #expect(firstTap.stderr.contains("OffsiderFixture error 1"), "\(firstTap.stderr)")
-        let warned = try await app.offsider("tap --id overlay-test-tab-search")
+        let warned = try await app.offsider("tap --id overlay-test-tab-search --allow-covered")
         #expect(warned.exitCode == 0, "\(warned.stderr)")
-        #expect(warned.stderr.contains("may be covered by"), "\(warned.stderr)")
+        #expect(warned.stderr.contains("is covered by"), "\(warned.stderr)")
         try await Task.sleep(for: .seconds(1))
         #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
     }
