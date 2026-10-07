@@ -37,12 +37,17 @@ struct DevMenuDriver {
                 hint: "offsider rn devmenu --device \(route.device.rawValue)"
             )
         }
+        // A menu sliding in moves its items, so a tap waits for two reads that agree.
         let deadline = clock.now() + Self.openWait
+        var seen: (DevMenu.State, UITree)?
         repeat {
             try await clock.sleep(Self.poll)
             let tree = try await read()
-            if let state = DevMenu.read(tree) { return (state, tree) }
+            let state = DevMenu.read(tree)
+            if let state, state == seen?.0 { return (state, tree) }
+            seen = state.map { ($0, tree) }
         } while clock.now() < deadline
+        if let seen { return seen }
         throw CLIError(
             errorDescription: "The React Native dev menu did not open on \(route.device.rawValue) within \(Int(Self.openWait)) s. Release builds have none; check this is a debug build.",
             reason: .stateNotReached,

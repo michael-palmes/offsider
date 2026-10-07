@@ -175,6 +175,22 @@ struct RNDevMenuTests {
         #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
     }
 
+    @Test("a menu still sliding in is tapped where it comes to rest, not where the first read saw it")
+    func waitsForMenuToSettle() async throws {
+        let sliding = FakeUI.tree(platform: .android, Self.expoMenu().roots[0].children.map { node in
+            var moved = node
+            moved.frame = node.frame.map { FakeUI.frame($0.x, $0.y + 120, $0.width, $0.height) }
+            return moved
+        })
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, sliding, Self.expoMenu(), Self.expoMenu(), Self.app])
+
+        let outcome = try await RNDevMenu.parse(["reload", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
+    }
+
     @Test("on an iOS simulator the menu opens by shake, not by a key")
     func iosOpensByShake() async throws {
         let simulator = DeviceID(rawValue: UUID().uuidString, platform: .ios)
