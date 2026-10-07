@@ -84,10 +84,16 @@ public struct RunFolder: Equatable, Sendable {
         String(format: "%03d", number) + "-\(kind)-\(RunClock.clock(date, separator: ".", timeZone: timeZone))\(suffix).\(pathExtension)"
     }
 
-    /// Writes a new run file readable only by its owner, as the manifest is; an existing file or a symlink is an error.
-    public static func writeNew(_ data: Data, toPath target: String) throws {
+    /// Creates a new run file readable only by its owner, as the manifest is, and returns its descriptor; an existing file or a symlink is an error.
+    public static func createNew(_ target: String) throws -> Int32 {
         let descriptor = Darwin.open(target, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw PrivateDirectoryError(.system(operation: "open", code: errno), path: target) }
+        return descriptor
+    }
+
+    /// Writes a new run file through `createNew`.
+    public static func writeNew(_ data: Data, toPath target: String) throws {
+        let descriptor = try createNew(target)
         defer { Darwin.close(descriptor) }
         var offset = 0
         while offset < data.count {

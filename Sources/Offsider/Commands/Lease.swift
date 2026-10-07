@@ -104,17 +104,10 @@ struct LeaseCommand: AsyncParsableCommand {
         switch action {
         case .set:
             guard let target, let label else { throw ValidationError(DeviceDefault.missingMessage) }
-            let existing = store.lease(platform: target.platform, key: target.key, now: now)
-            if let existing, existing.label != label, !force {
-                throw CLIError(
-                    errorDescription: "\(target.key) is leased to '\(existing.label)' since \(DeviceLeaseRules.clock(existing.created)), until \(DeviceLeaseRules.clock(existing.expires)). Choose another device, or pass --force if that lease is stale.",
-                    reason: .deviceLeased,
-                    hint: "offsider lease show --device \(target.key)"
-                )
+            let (existing, lease) = try store.set(platform: target.platform, key: target.key, now: now) { existing in
+                try claim(existing, key: target.key, label: label, minutes: minutes, force: force, now: now, pid: pid)
             }
             let renewing = existing?.label == label
-            let lease = DeviceLease(label: label, created: renewing ? existing!.created : now, expires: now.addingTimeInterval(TimeInterval(minutes * 60)), pid: pid)
-            try store.save(lease, platform: target.platform, key: target.key)
             if json { return report("set", target: target, lease: lease) }
             let verb = renewing ? "Renewed the lease on" : "Leased"
             return "\(verb) \(target.key) to '\(label)' until \(DeviceLeaseRules.clock(lease.expires)). Run `export OFFSIDER_LEASE=\(shellQuoted(label))` so `offsider doctor` knows this session holds it."
@@ -132,6 +125,19 @@ struct LeaseCommand: AsyncParsableCommand {
             return leases.map { "\($0.platform.rawValue)  \($0.key)  '\($0.lease.label)'  since \(DeviceLeaseRules.clock($0.lease.created)), until \(DeviceLeaseRules.clock($0.lease.expires))" }
                 .joined(separator: "\n")
         }
+    }
+
+    /// The lease `set` writes over `existing`: refused while another label holds it unless `force`, and renewed for the same label.
+    static func claim(_ existing: DeviceLease?, key: String, label: String, minutes: Int, force: Bool, now: Date, pid: Int32) throws -> DeviceLease {
+        if let existing, existing.label != label, !force {
+            throw CLIError(
+                errorDescription: "\(key) is leased to '\(existing.label)' since \(DeviceLeaseRules.clock(existing.created)), until \(DeviceLeaseRules.clock(existing.expires)). Choose another device, or pass --force if that lease is stale.",
+                reason: .deviceLeased,
+                hint: "offsider lease show --device \(key)"
+            )
+        }
+        let created = existing.flatMap { $0.label == label ? $0.created : nil } ?? now
+        return DeviceLease(label: label, created: created, expires: now.addingTimeInterval(TimeInterval(minutes * 60)), pid: pid)
     }
 
     static func shellQuoted(_ text: String) -> String {

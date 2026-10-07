@@ -76,7 +76,7 @@ final class Requests {
             } else if ("setText".equals(op)) {
                 Actions.setText(json, connection.automation(), request);
             } else if ("paste".equals(op)) {
-                Actions.paste(json, connection.automation());
+                Actions.paste(json, connection.automation(), request);
             } else if ("events".equals(op)) {
                 writeEvents(json, request);
             } else if ("inject".equals(op)) {

@@ -12,7 +12,7 @@ Every setter here changes the device and it stays changed. Read the current valu
 
 - `offsider orientation portrait|landscape-left|landscape-right|portrait-upside-down` (or `--rotation 0|90|180|270`) waits until the screen has turned and prints the new size. A portrait-only app stays portrait and the command times out.
 - It names the device turn, as Maestro does: `landscape-left` is turned anticlockwise, which UIKit and the app call interface orientation landscape-right. `orientation --json` prints `rotation`, the same number as `describe-ui` `screen.rotation`.
-- On Android, Offsider turns auto-rotate off while the device is turned and restores it on `orientation portrait`: the first turn away from portrait records auto-rotate and `user_rotation` (for that boot), and portrait writes auto-rotate back. `--json` on Android adds `autoRotate {before, now, restored}` and `userRotation {before, now}` (null on iOS and when reading). Finish an Android run with `orientation portrait`. The iPhone Duo simulator refuses orientation changes.
+- On Android, Offsider turns auto-rotate off while the device is turned and restores it on `orientation portrait`: the first turn in a boot, portrait included, records auto-rotate and `user_rotation` for that boot, and portrait writes auto-rotate back. When auto-rotate cannot be read or recorded, `orientation` fails before turning anything. `--json` on Android adds `autoRotate {before, now, restored}` and `userRotation {before, now}` (null on iOS and when reading). Finish an Android run with `orientation portrait`. The iPhone Duo simulator refuses orientation changes.
 
 ## Permissions
 

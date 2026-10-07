@@ -31,7 +31,7 @@ struct AccessibilityPoller {
         elementType: String? = nil,
         allowOffscreen: Bool = false,
         settle: SettlePolicy = .off,
-        pick: MatchPick? = nil,
+        pick: MatchPicker? = nil,
         logger: OffsiderLogger
     ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
@@ -89,14 +89,15 @@ struct AccessibilityPoller {
         elementType: String?,
         allowOffscreen: Bool = false,
         settle: SettlePolicy = .off,
-        pick: MatchPick? = nil,
+        pick: MatchPicker? = nil,
         logger: OffsiderLogger,
         clock: PollClock = .live,
         treeFetcher: () async throws -> UITree
     ) async throws -> Polled<TapResolution> {
-        let resolver: ([UINode], Bool) throws -> TapResolution = { roots, explain in
-            try AccessibilityTargetResolver.resolveTap(
-                roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, pick: pick, logger: logger
+        let resolver: ([UINode], Bool) async throws -> TapResolution = { roots, explain in
+            let chosen: MatchPick? = await pick?(roots) ?? nil
+            return try AccessibilityTargetResolver.resolveTap(
+                roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, pick: chosen, logger: logger
             )
         }
         let polled = try await poll(
@@ -111,7 +112,7 @@ struct AccessibilityPoller {
         )
         return try await settled(polled, policy: settle, target: { $0.target ?? $0.matched }, logger: logger, treeFetcher: treeFetcher) { roots in
             do {
-                return try resolver(roots, false)
+                return try await resolver(roots, false)
             } catch ElementResolutionError.multipleMatches {
                 // Mid-transition copies of the target: take the one nearest where it was first found.
                 guard let first = polled.value.matched, let centre = first.frame?.center,
@@ -133,7 +134,7 @@ struct AccessibilityPoller {
         logger: OffsiderLogger,
         environment: TreeCacheEnvironment = .current,
         treeFetcher: () async throws -> UITree,
-        resolve: ([UINode]) throws -> T
+        resolve: ([UINode]) async throws -> T
     ) async throws -> Polled<T> {
         var result = polled
         guard case .guarded(let cached) = policy else {
@@ -154,7 +155,7 @@ struct AccessibilityPoller {
             return try await treeFetcher()
         }
         do {
-            return Polled(value: try resolve(tree.roots), tree: tree, settledBy: decision)
+            return Polled(value: try await resolve(tree.roots), tree: tree, settledBy: decision)
         } catch {
             logger.info().log("The target was not found again after waiting for the screen to settle; acting where it was first found.")
             return result
@@ -169,7 +170,7 @@ struct AccessibilityPoller {
         transientGrace: TimeInterval,
         logger: OffsiderLogger,
         clock: PollClock,
-        resolver: ([UINode], Bool) throws -> T,
+        resolver: ([UINode], Bool) async throws -> T,
         position: (T) -> UIPoint,
         treeFetcher: () async throws -> UITree
     ) async throws -> Polled<T> {
@@ -192,7 +193,7 @@ struct AccessibilityPoller {
                 continue
             }
             do {
-                let polled = Polled(value: try resolver(tree.roots, false), tree: tree, waited: waitedForElement)
+                let polled = Polled(value: try await resolver(tree.roots, false), tree: tree, waited: waitedForElement)
                 guard waitedForElement else { return polled }
                 let current = position(polled.value)
                 if let lastPosition, ElementMotion.hasSettled(previous: lastPosition, current: current) { return polled }
@@ -208,7 +209,7 @@ struct AccessibilityPoller {
                 logger.info().log("\(reason), retrying in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
             } catch ElementResolutionError.notFound {
-                return Polled(value: try resolver(tree.roots, true), tree: tree)
+                return Polled(value: try await resolver(tree.roots, true), tree: tree)
             }
         }
     }

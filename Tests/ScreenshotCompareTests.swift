@@ -260,6 +260,45 @@ struct ScreenshotCompareTests {
         #expect(ScreenshotMaskTests.pixel(diff.image, 20, 20) == [221, 221, 221])
     }
 
+    /// A flat 256 x 512 screen; `noise` nudges every pixel up to 4 units, as a device stream does, and `caret` adds a 2 x 8 px black bar at (34, 80).
+    private static func streamed(noise: Bool, caret: Bool) -> CGImage {
+        let width = 256, height = 512
+        var bytes = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let nudge = noise ? UInt8((x * 7 + y * 13) % 5) : 0
+                let black = caret && (34..<36).contains(x) && (80..<88).contains(y)
+                bytes[offset] = black ? 0 : 120 + nudge
+                bytes[offset + 1] = black ? 0 : 120 + nudge
+                bytes[offset + 2] = black ? 0 : 120 - nudge
+            }
+        }
+        let provider = CGDataProvider(data: Data(bytes) as CFData)!
+        return CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        )!
+    }
+
+    @Test("with a noise tolerance, pixels count by the tiles' 8 x 8 blocks: noise in every pixel counts none, and a caret marks its whole block")
+    func toleranceCountsBlocks() throws {
+        let baseline = try ScreenImage.encode(Self.streamed(noise: false, caret: false), as: .png)
+        let screen = try capture(Self.streamed(noise: true, caret: true), screen: nil)
+        let (result, diffImage) = try ScreenCapture.comparison(
+            try ScreenCapture.render(screen, request: ScreenshotRequest()), capture: screen, baseline: baseline, baselinePath: "base.png",
+            bands: ScreenBands(top: 0, bottom: 0, noiseTolerance: 6), threshold: 0
+        )
+
+        #expect(result.changedTiles == 1)
+        #expect(result.pixels == ScreenCompare.PixelCounts(changedPixels: 64, comparedPixels: 256 * 512, bounds: PixelRect(x: 32, y: 80, width: 8, height: 8)))
+        #expect(ScreenshotMaskTests.pixel(diffImage, 39, 87) == [255, 0, 255])
+        #expect(ScreenshotMaskTests.pixel(diffImage, 40, 87) != [255, 0, 255])
+        #expect(ScreenshotMaskTests.pixel(diffImage, 101, 300) != [255, 0, 255])
+    }
+
     @Test("a compare reports changed pixels and their bounds after the tile keys, and the diff image is written only when asked")
     @MainActor
     func diffOutputWritten() async throws {

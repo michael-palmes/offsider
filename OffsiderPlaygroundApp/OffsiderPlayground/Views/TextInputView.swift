@@ -82,6 +82,7 @@ struct TextInputView: View {
         .padding()
         .navigationTitle("Text Input")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("text-input-screen")
         .onAppear {
             isTextFieldFocused = true

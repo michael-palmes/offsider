@@ -96,9 +96,27 @@ struct HelperWireTests {
         #expect(older.inputType == nil)
         let refusal = try JSONDecoder().decode(HelperErrorBody.self, from: Data(#"{"code":"secure-refused","message":"m","detail":null,"className":"android.widget.EditText","resourceId":"pin","inputType":18}"#.utf8))
         #expect(refusal.inputType == 18)
-        #expect(String(decoding: try HelperRequest.paste.payload(id: 4), as: UTF8.self) == #"{"id":4,"op":"paste"}"#)
         #expect(AndroidFieldInfo.describe(0x2002) == "number|decimal")
         #expect(AndroidFieldInfo.describe(0x21) == "text|email")
         #expect(AndroidFieldInfo.describe(3) == "phone")
+    }
+
+    @Test("paste names the field it may go into, an id the field lacks left out, and nothing when no field is known")
+    func pasteRequestNamesField() throws {
+        let amount = AndroidFieldInfo(className: "android.widget.EditText", resourceId: "amount", inputType: 2)
+        #expect(String(decoding: try HelperRequest.paste(expecting: amount).payload(id: 4), as: UTF8.self)
+            == #"{"expectClass":"android.widget.EditText","expectResourceId":"amount","id":4,"op":"paste"}"#)
+        let unnamed = AndroidFieldInfo(className: "android.widget.EditText", resourceId: nil)
+        #expect(String(decoding: try HelperRequest.paste(expecting: unnamed).payload(id: 5), as: UTF8.self)
+            == #"{"expectClass":"android.widget.EditText","id":5,"op":"paste"}"#)
+        #expect(String(decoding: try HelperRequest.paste(expecting: nil).payload(id: 6), as: UTF8.self) == #"{"id":6,"op":"paste"}"#)
+    }
+
+    @Test("a node showing its hint decodes as such; older dumps without the flag read as not showing it")
+    func showingHintDecodes() throws {
+        let hinted = try JSONDecoder().decode(HelperNode.self, from: Data(#"{"i":1,"class":"android.widget.EditText","text":"Amount","hint":"Amount","bounds":[0,0,1,1],"editable":true,"showingHint":true}"#.utf8))
+        #expect(hinted.showingHint)
+        let older = try JSONDecoder().decode(HelperNode.self, from: Data(#"{"i":1,"class":"android.widget.EditText","text":"Amount","bounds":[0,0,1,1]}"#.utf8))
+        #expect(!older.showingHint)
     }
 }

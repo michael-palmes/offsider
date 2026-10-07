@@ -73,25 +73,33 @@ extension AndroidBackend {
         return .useKeys(warning: "The focused field on \(serial)\(named) does not accept replacement text (\(refusal)), so Offsider clears it with Ctrl+A and Delete, then types.", field: field)
     }
 
-    /// The focused field's length and whether it is a password field, from the running helper's tree; nil without a helper.
+    /// The focused field's text, class and id and whether it is a password field, from the running helper's tree; nil without a helper.
     func focusedFieldReading(_ serial: String) async -> FocusedFieldReading? {
         guard let session = runningHelper(for: serial) else { return nil }
         do {
             let roots = try await helperRoots(serial, session: session).roots
-            let focused = roots.flatMap { $0.flattened() }.first { $0.state.focused == true && $0.role.isTextInput }
-            return focused.map { FocusedFieldReading(length: $0.isSecure ? nil : ($0.value ?? "").utf16.count, secure: $0.isSecure) }
+            guard let focused = roots.flatMap({ $0.flattened() }).first(where: { $0.state.focused == true && $0.role.isTextInput }),
+                  case .android(let native) = focused.native else { return nil }
+            return FocusedFieldReading(
+                text: focused.isSecure ? nil : native.text ?? "",
+                secure: focused.isSecure,
+                field: AndroidFieldInfo(className: native.className, resourceId: native.resourceId)
+            )
         } catch {
             log(.debug, "Could not read the focused field on \(serial): \((error as? AndroidError)?.message ?? error.localizedDescription)")
             return nil
         }
     }
 
-    /// The running helper's `paste`; nil when there is no helper or it has no such op.
-    func pasteIntoFocusedField(_ serial: String) async throws -> HelperTextResult? {
+    /// The running helper's `paste` into `field` only; nil when there is no helper, it has no such op or it refused for another reason.
+    func pasteIntoFocusedField(_ serial: String, expecting field: AndroidFieldInfo) async throws -> HelperTextResult? {
         guard let session = runningHelper(for: serial) else { return nil }
         do {
-            return try await session.paste()
+            return try await session.paste(expecting: field)
         } catch let error as HelperErrorBody {
+            if error.code == "focus-moved" {
+                throw AndroidError.pasteFocusMoved(serial, expected: field, focused: AndroidFieldInfo(className: error.className, resourceId: error.resourceId, inputType: error.inputType))
+            }
             log(.debug, "The helper could not paste on \(serial): \(error.code): \(error.message)")
             return nil
         }

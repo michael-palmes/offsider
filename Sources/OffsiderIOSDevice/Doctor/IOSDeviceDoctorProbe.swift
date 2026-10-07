@@ -58,6 +58,7 @@ public struct IOSDeviceDoctorProbe {
         let team: IOSDeviceDoctorFacts.TeamFact = host.environment[Self.teamVariable].flatMap { $0.isEmpty ? nil : .environment($0) }
             ?? .xcodeTeams(xcodeTeams())
         var facts = IOSDeviceDoctorFacts(udid: udid, xcode: .notFound("No Xcode was found"), usbmuxdSocket: host.fileExists(Self.usbmuxdSocket), team: team)
+        if facts.usbmuxdSocket { facts.usbmux = await Self.usbmuxFact(udid, usbmux: host.usbmux) }
         let xcode: XcodeLocation
         do {
             xcode = try await host.devicectl.locateXcode()
@@ -105,6 +106,19 @@ public struct IOSDeviceDoctorProbe {
             tunnelState: device.tunnelState
         ))
         return Result(facts: facts, xcode: xcode)
+    }
+
+    /// The device's row in usbmuxd's list, read off the main actor.
+    static func usbmuxFact(_ udid: String, usbmux: any UsbmuxListing) async -> IOSDeviceDoctorFacts.UsbmuxFact {
+        do {
+            return try await Task.detached { try usbmux.listsOnUSB(udid) }.value ? .onUSB : .notOnUSB
+        } catch UsbmuxError.socketUnavailable(let detail) {
+            return .failed(detail)
+        } catch UsbmuxError.timedOut {
+            return .failed("it did not answer in time")
+        } catch {
+            return .failed("its reply could not be read")
+        }
     }
 
     /// `--fix` on a wired phone: mounts the developer disk image, and nothing else.

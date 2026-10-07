@@ -16,6 +16,9 @@ enum MatchPick: Equatable, Sendable {
     case last
 }
 
+/// Chooses among a tree's matches on each read, so an iOS `--topmost` hit-test sees the tree it picks from.
+typealias MatchPicker = @MainActor ([UINode]) async -> MatchPick?
+
 struct TapResolution {
     let point: (x: Double, y: Double)
     let isSwitchLikeControl: Bool

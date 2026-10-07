@@ -13,7 +13,7 @@ public enum IOSDeviceDoctorRules {
         var checks = [DoctorCheckResult(id: .iosDeviceXcode, verdict: xcode(facts.xcode))]
         checks += deviceChecks(facts)
         checks.append(DoctorCheckResult(id: .iosDeviceSession, verdict: session(facts.session, udid: facts.udid)))
-        checks.append(DoctorCheckResult(id: .iosDeviceUsbmuxd, verdict: usbmuxd(facts.usbmuxdSocket)))
+        checks.append(DoctorCheckResult(id: .iosDeviceUsbmuxd, verdict: usbmuxd(facts)))
         checks.append(DoctorCheckResult(id: .iosDeviceRunnerSigning, verdict: runnerSigning(facts.team)))
         return checks
     }
@@ -243,10 +243,23 @@ public enum IOSDeviceDoctorRules {
         }
     }
 
-    public static func usbmuxd(_ socketExists: Bool) -> Verdict {
-        socketExists
-            ? (.pass, "/var/run/usbmuxd is present", nil)
-            : (.fail, "/var/run/usbmuxd is missing, so nothing can reach a device over USB", "Reconnect the cable; restart the Mac if it stays missing.")
+    /// usbmuxd can stop listing a wired device that devicectl still sees, and then nothing reaches its runner until the cable is replugged.
+    public static func usbmuxd(_ facts: IOSDeviceDoctorFacts) -> Verdict {
+        guard facts.usbmuxdSocket else {
+            return (.fail, "/var/run/usbmuxd is missing, so nothing can reach a device over USB", "Reconnect the cable; restart the Mac if it stays missing.")
+        }
+        switch facts.usbmux {
+        case nil:
+            return (.pass, "/var/run/usbmuxd is present", nil)
+        case .onUSB?:
+            return (.pass, "usbmuxd lists the device on USB", nil)
+        case .failed(let message)?:
+            return (.fail, "usbmuxd did not list its devices: \(message)", "Reconnect the cable; restart the Mac if it persists.")
+        case .notOnUSB? where facts.listing == .notListed || facts.row.map({ !($0.isConnected && $0.isWired) }) == true:
+            return (.skip, "not checked: the device is not connected by cable", nil)
+        case .notOnUSB?:
+            return (.fail, "usbmuxd does not list the device on USB, so Offsider cannot reach its runner", "Unplug and replug the cable, then retry.")
+        }
     }
 
     public static func runnerSigning(_ fact: IOSDeviceDoctorFacts.TeamFact) -> Verdict {

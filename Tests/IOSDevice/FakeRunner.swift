@@ -131,6 +131,7 @@ final class FakeRunnerBuilder: RunnerBuilding, @unchecked Sendable {
 }
 
 /// Launches nothing; pids in `alive` are running as `xcodebuild` started at `startTime`, unless `startTimes` names another start.
+/// A launch writes `launchLog` as xcodebuild's output, and with `exitsOnLaunch` its pid is gone at once.
 final class FakeRunnerProcesses: RunnerProcessControlling, @unchecked Sendable {
     static let startTime: UInt64 = 1_800_000_000_000_000
     static let identity = RunnerProcessIdentity(startTime: startTime, executable: "xcodebuild")
@@ -138,6 +139,7 @@ final class FakeRunnerProcesses: RunnerProcessControlling, @unchecked Sendable {
     struct Launch {
         let arguments: [String]
         let environment: [String: String]
+        let logPath: String
     }
 
     private let lock = NSLock()
@@ -146,20 +148,25 @@ final class FakeRunnerProcesses: RunnerProcessControlling, @unchecked Sendable {
     private var terminated: [Int32] = []
     private let startTimes: [Int32: UInt64]
     private let nextPID: Int32
+    private let launchLog: Data?
+    private let exitsOnLaunch: Bool
 
-    init(alive: Set<Int32> = [], startTimes: [Int32: UInt64] = [:], nextPID: Int32 = 5151) {
+    init(alive: Set<Int32> = [], startTimes: [Int32: UInt64] = [:], nextPID: Int32 = 5151, launchLog: Data? = nil, exitsOnLaunch: Bool = false) {
         liveSet = alive
         self.startTimes = startTimes
         self.nextPID = nextPID
+        self.launchLog = launchLog
+        self.exitsOnLaunch = exitsOnLaunch
     }
 
     var launches: [Launch] { lock.withLock { launched } }
     var terminations: [Int32] { lock.withLock { terminated } }
 
     func launch(arguments: [String], environment: [String: String], logPath: String) throws -> Int32 {
+        if let launchLog { FileManager.default.createFile(atPath: logPath, contents: launchLog, attributes: [.posixPermissions: 0o600]) }
         lock.withLock {
-            launched.append(Launch(arguments: arguments, environment: environment))
-            liveSet.insert(nextPID)
+            launched.append(Launch(arguments: arguments, environment: environment, logPath: logPath))
+            if !exitsOnLaunch { liveSet.insert(nextPID) }
         }
         return nextPID
     }
@@ -201,5 +208,39 @@ final class FakeRunnerConnector: RunnerConnecting {
 enum RunnerTestPaths {
     static func temporaryRoot() -> String {
         FileManager.default.temporaryDirectory.appendingPathComponent("offsider-runner-\(UUID().uuidString)").path
+    }
+}
+
+/// usbmuxd's device list as a test scripts it: each read takes the next list, then the last repeats.
+final class FakeUsbmuxListing: UsbmuxListing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var script: [[UsbmuxDevice]]
+    private var count = 0
+    /// Runs after each read with the read's number, from 1.
+    var onRead: (@Sendable (Int) -> Void)?
+
+    init(_ rows: [UsbmuxDevice]) {
+        script = [rows]
+    }
+
+    init(script: [[UsbmuxDevice]]) {
+        self.script = script
+    }
+
+    /// The device on USB, as usbmuxd lists a wired one.
+    static func onUSB(_ udid: String) -> FakeUsbmuxListing {
+        FakeUsbmuxListing([UsbmuxDevice(deviceID: 3, udid: udid, connectionType: "USB")])
+    }
+
+    var reads: Int { lock.withLock { count } }
+
+    func listDevices() throws -> [UsbmuxDevice] {
+        let (rows, number, hook) = lock.withLock {
+            count += 1
+            let rows = script.count > 1 ? script.removeFirst() : script[0]
+            return (rows, count, onRead)
+        }
+        hook?(number)
+        return rows
     }
 }

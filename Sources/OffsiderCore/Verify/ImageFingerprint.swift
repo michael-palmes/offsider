@@ -6,6 +6,9 @@ import ImageIO
 public struct ImageFingerprint: Equatable, Sendable {
     /// The side of the square pixel blocks averaged when there is a tolerance.
     public static let blockSize = 8
+    /// The grid a caller gets when it names none.
+    public static let defaultColumns = 16
+    public static let defaultRows = 32
 
     public let width: Int
     public let height: Int
@@ -25,8 +28,8 @@ public struct ImageFingerprint: Equatable, Sendable {
         width: Int,
         height: Int,
         bytesPerRow: Int,
-        columns: Int = 16,
-        rows: Int = 32,
+        columns: Int = defaultColumns,
+        rows: Int = defaultRows,
         excludingTopPixels: Int = 0,
         excludingBottomPixels: Int = 0,
         excludingLeftPixels: Int = 0,
@@ -55,17 +58,19 @@ public struct ImageFingerprint: Equatable, Sendable {
             blocks.reserveCapacity(3 * (width / Self.blockSize + columns) * (height / Self.blockSize + rows))
             var blockStarts = [0]
             blockStarts.reserveCapacity(columns * rows + 1)
-            for tileRow in 0..<rows {
-                let top = max((tileRow * height + rows - 1) / rows, firstRow)
-                let bottom = min(((tileRow + 1) * height + rows - 1) / rows, endRow)
-                for column in 0..<columns {
-                    if let base = rgba.baseAddress, bottom > top, spans[column].1 > spans[column].0 {
-                        Self.appendBlockMeans(
-                            to: &blocks, base, bytesPerRow: bytesPerRow, columns: spans[column].0..<spans[column].1, rows: top..<bottom
-                        )
+            for tile in Self.tileSpans(
+                width: width, height: height, columns: columns, rows: rows,
+                excludingTop: firstRow, excludingBottom: height - endRow, excludingLeft: firstColumn, excludingRight: width - endColumn
+            ) {
+                if let base = rgba.baseAddress {
+                    Self.forEachBlock(columns: tile.columns, rows: tile.rows) { columns, rows in
+                        let mean = Self.blockMean(base, bytesPerRow: bytesPerRow, columns: columns, rows: rows)
+                        blocks.append(mean.red)
+                        blocks.append(mean.green)
+                        blocks.append(mean.blue)
                     }
-                    blockStarts.append(blocks.count)
                 }
+                blockStarts.append(blocks.count)
             }
             self.blocks = blocks
             self.blockStarts = blockStarts
@@ -90,45 +95,74 @@ public struct ImageFingerprint: Equatable, Sendable {
         self.tiles = tiles
     }
 
-    /// Appends the rounded mean red, green and blue of each `blockSize` square in the span, row by row, two pixels per 8-byte word.
-    private static func appendBlockMeans(to means: inout [UInt8], _ base: UnsafeRawPointer, bytesPerRow: Int, columns: Range<Int>, rows: Range<Int>) {
-        let lanes: UInt64 = 0x00FF_00FF_00FF_00FF
+    /// Each tile's pixels with the bands left out, tile row by tile row; a tile inside a band is empty.
+    static func tileSpans(
+        width: Int, height: Int, columns: Int, rows: Int, excludingTop: Int, excludingBottom: Int, excludingLeft: Int, excludingRight: Int
+    ) -> [(columns: Range<Int>, rows: Range<Int>)] {
+        let columns = max(1, min(columns, max(width, 1)))
+        let rows = max(1, min(rows, max(height, 1)))
+        let firstRow = max(0, min(excludingTop, height))
+        let endRow = max(firstRow, height - max(0, excludingBottom))
+        let firstColumn = max(0, min(excludingLeft, width))
+        let endColumn = max(firstColumn, width - max(0, excludingRight))
+        var spans: [(columns: Range<Int>, rows: Range<Int>)] = []
+        spans.reserveCapacity(columns * rows)
+        for tileRow in 0..<rows {
+            let top = max((tileRow * height + rows - 1) / rows, firstRow)
+            let bottom = max(top, min(((tileRow + 1) * height + rows - 1) / rows, endRow))
+            for column in 0..<columns {
+                let left = max(column * width / columns, firstColumn)
+                let right = max(left, min((column + 1) * width / columns, endColumn))
+                spans.append((left..<right, top..<bottom))
+            }
+        }
+        return spans
+    }
+
+    /// Calls `body` with each `blockSize` square of the span, row by row; blocks at the span's right and bottom edges may be smaller.
+    static func forEachBlock(columns: Range<Int>, rows: Range<Int>, _ body: (Range<Int>, Range<Int>) -> Void) {
         var top = rows.lowerBound
         while top < rows.upperBound {
             let bottom = min(top + blockSize, rows.upperBound)
             var left = columns.lowerBound
             while left < columns.upperBound {
                 let right = min(left + blockSize, columns.upperBound)
-                let bytes = (right - left) * 4
-                var redBlue: UInt64 = 0
-                var greenAlpha: UInt64 = 0
-                var red = 0, green = 0, blue = 0
-                for y in top..<bottom {
-                    let row = base + y * bytesPerRow + left * 4
-                    var offset = 0
-                    while offset + 8 <= bytes {
-                        let word = UInt64(littleEndian: row.loadUnaligned(fromByteOffset: offset, as: UInt64.self))
-                        redBlue &+= word & lanes
-                        greenAlpha &+= (word >> 8) & lanes
-                        offset += 8
-                    }
-                    if offset < bytes {
-                        red += Int(row.load(fromByteOffset: offset, as: UInt8.self))
-                        green += Int(row.load(fromByteOffset: offset + 1, as: UInt8.self))
-                        blue += Int(row.load(fromByteOffset: offset + 2, as: UInt8.self))
-                    }
-                }
-                red += Int(redBlue & 0xFFFF) + Int((redBlue >> 32) & 0xFFFF)
-                blue += Int((redBlue >> 16) & 0xFFFF) + Int((redBlue >> 48) & 0xFFFF)
-                green += Int(greenAlpha & 0xFFFF) + Int((greenAlpha >> 32) & 0xFFFF)
-                let count = (bottom - top) * (right - left)
-                means.append(UInt8((red + count / 2) / count))
-                means.append(UInt8((green + count / 2) / count))
-                means.append(UInt8((blue + count / 2) / count))
+                body(left..<right, top..<bottom)
                 left = right
             }
             top = bottom
         }
+    }
+
+    /// The rounded mean red, green and blue of a block of RGBA pixels, two pixels per 8-byte word.
+    static func blockMean(_ base: UnsafeRawPointer, bytesPerRow: Int, columns: Range<Int>, rows: Range<Int>) -> (red: UInt8, green: UInt8, blue: UInt8) {
+        let lanes: UInt64 = 0x00FF_00FF_00FF_00FF
+        let bytes = columns.count * 4
+        var redBlue: UInt64 = 0
+        var greenAlpha: UInt64 = 0
+        var red = 0, green = 0, blue = 0
+        var y = rows.lowerBound
+        while y < rows.upperBound {
+            let row = base + y * bytesPerRow + columns.lowerBound * 4
+            y += 1
+            var offset = 0
+            while offset + 8 <= bytes {
+                let word = UInt64(littleEndian: row.loadUnaligned(fromByteOffset: offset, as: UInt64.self))
+                redBlue &+= word & lanes
+                greenAlpha &+= (word >> 8) & lanes
+                offset += 8
+            }
+            if offset < bytes {
+                red += Int(row.load(fromByteOffset: offset, as: UInt8.self))
+                green += Int(row.load(fromByteOffset: offset + 1, as: UInt8.self))
+                blue += Int(row.load(fromByteOffset: offset + 2, as: UInt8.self))
+            }
+        }
+        red += Int(redBlue & 0xFFFF) + Int((redBlue >> 32) & 0xFFFF)
+        blue += Int((redBlue >> 16) & 0xFFFF) + Int((redBlue >> 48) & 0xFFFF)
+        green += Int(greenAlpha & 0xFFFF) + Int((greenAlpha >> 32) & 0xFFFF)
+        let count = rows.count * columns.count
+        return (UInt8((red + count / 2) / count), UInt8((green + count / 2) / count), UInt8((blue + count / 2) / count))
     }
 
     /// FNV-1a over 8-byte words, so a full-resolution screenshot hashes quickly even in debug builds.
@@ -149,7 +183,7 @@ public struct ImageFingerprint: Equatable, Sendable {
     }
 
     public init?(
-        pngData: Data, columns: Int = 16, rows: Int = 32, excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0,
+        pngData: Data, columns: Int = defaultColumns, rows: Int = defaultRows, excludingTopPixels: Int = 0, excludingBottomPixels: Int = 0,
         excludingLeftPixels: Int = 0, excludingRightPixels: Int = 0, tolerance: Int = 0
     ) {
         guard let image = try? ScreenImage.decode(pngData) else { return nil }
@@ -163,8 +197,8 @@ public struct ImageFingerprint: Equatable, Sendable {
     public init?(
         image: CGImage,
         region: PixelRect? = nil,
-        columns: Int = 16,
-        rows: Int = 32,
+        columns: Int = defaultColumns,
+        rows: Int = defaultRows,
         excludingTopPixels: Int = 0,
         excludingBottomPixels: Int = 0,
         excludingLeftPixels: Int = 0,
@@ -246,16 +280,18 @@ public struct ImageFingerprint: Equatable, Sendable {
 }
 
 public enum ScreenChange {
-    /// The most tiles a blinking caret covers (two rows by two columns), which both before-shots can catch in one phase.
-    static let caretTiles = 4
+    /// The share of compared tiles that counts as motion: a transition, a video or a carousel moves more, a ticking label, a caret or a small spinner less.
+    public static let movingFraction = 0.1
 
-    /// Changed tiles still moving after the input (a caret, a spinner) count only when they were still across the before-shots and outnumber a caret's.
+    /// Changed tiles still moving after the input count only when they were still across the before-shots and cover more than `movingFraction` of the screen.
     public static func detect(before: [ImageFingerprint], after: [ImageFingerprint]) -> Bool {
         guard let reference = before.last, let last = after.last else { return false }
         guard let changed = reference.changedTiles(comparedTo: last) else { return true }
         if !changed.isSubset(of: movingTiles(after) ?? []) { return true }
         guard before.count > 1, let movingBefore = movingTiles(before) else { return false }
-        return changed.subtracting(movingBefore).count > caretTiles
+        let compared = max(min(reference.comparedTileCount, last.comparedTileCount), 1)
+        let started = Double(changed.subtracting(movingBefore).count) / Double(compared)
+        return ScreenCompare.outcome(changedFraction: started, threshold: movingFraction) == .changed
     }
 
     /// Tiles that differ between any two of `shots`; nil when two cannot be compared tile for tile.

@@ -62,7 +62,7 @@ public struct LeasedDevice: Equatable, Sendable {
     }
 }
 
-/// Leases under the private directory's `leases/`, one 0600 file per device; expired ones are removed when read.
+/// Leases under the private directory's `leases/`, one 0600 file per device, changed only under its `flock` on `<name>.lock`; expired ones are removed when read.
 public struct DeviceLeaseStore: Sendable {
     static let maxBytes = 4096
     static let suffix = ".lease"
@@ -87,18 +87,48 @@ public struct DeviceLeaseStore: Sendable {
         read(named: Self.fileName(platform: platform, key: key), now: now)
     }
 
-    public func save(_ lease: DeviceLease, platform: DevicePlatform, key: String) throws {
-        let directory = try OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.leasesDirectoryName, root: root)
-        try OffsiderPrivateDirectory.writeAtomically(Data(lease.fileContents.utf8), named: Self.fileName(platform: platform, key: key), in: directory)
+    /// Under the device's lock, passes the live lease to `decide` and writes the lease it returns; a throw from `decide` writes nothing.
+    @discardableResult
+    public func set(platform: DevicePlatform, key: String, now: Date, _ decide: (DeviceLease?) throws -> DeviceLease) throws -> (previous: DeviceLease?, lease: DeviceLease) {
+        let name = Self.fileName(platform: platform, key: key)
+        return try locked(name) { directory in
+            let previous = liveLease(named: name, now: now, locked: true)
+            let lease = try decide(previous)
+            try OffsiderPrivateDirectory.writeAtomically(Data(lease.fileContents.utf8), named: name, in: directory)
+            return (previous, lease)
+        }
     }
 
     /// The lease that was removed, if a live one existed.
     @discardableResult
     public func remove(platform: DevicePlatform, key: String, now: Date = Date()) -> DeviceLease? {
         let name = Self.fileName(platform: platform, key: key)
-        let existing = read(named: name, now: now)
-        unlink((directory as NSString).appendingPathComponent(name))
-        return existing
+        return try? locked(name) { directory in
+            let existing = liveLease(named: name, now: now, locked: true)
+            unlink((directory as NSString).appendingPathComponent(name))
+            return existing
+        }
+    }
+
+    /// Removes the device's lease only if, read again under its lock, it has expired; a fresh lease that replaced the one a reader saw stays.
+    func removeExpired(named name: String, now: Date) {
+        _ = try? locked(name) { directory in
+            guard let current = parse(named: name), current.expires <= now else { return }
+            unlink((directory as NSString).appendingPathComponent(name))
+        }
+    }
+
+    /// Holds the device's `flock` for `body`; the kernel drops it if the process dies.
+    private func locked<T>(_ name: String, _ body: (String) throws -> T) throws -> T {
+        let directory = try OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.leasesDirectoryName, root: root)
+        let lockPath = (directory as NSString).appendingPathComponent(name + ".lock")
+        let descriptor = try OffsiderPrivateDirectory.openPrivateFile(lockPath)
+        defer { Darwin.close(descriptor) }
+        while flock(descriptor, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw PrivateDirectoryError(.system(operation: "flock", code: errno), path: lockPath) }
+        }
+        defer { flock(descriptor, LOCK_UN) }
+        return try body(directory)
     }
 
     /// Every live lease, sorted by file name.
@@ -113,13 +143,26 @@ public struct DeviceLeaseStore: Sendable {
     }
 
     private func read(named name: String, now: Date) -> DeviceLease? {
-        guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: Self.maxBytes),
-              let lease = DeviceLease.parse(String(decoding: data, as: UTF8.self)) else { return nil }
+        liveLease(named: name, now: now, locked: false)
+    }
+
+    /// The unexpired lease; an expired one is removed, straight away when the caller holds the lock and through `removeExpired` otherwise.
+    private func liveLease(named name: String, now: Date, locked: Bool) -> DeviceLease? {
+        guard let lease = parse(named: name) else { return nil }
         guard lease.expires > now else {
-            unlink((directory as NSString).appendingPathComponent(name))
+            if locked {
+                unlink((directory as NSString).appendingPathComponent(name))
+            } else {
+                removeExpired(named: name, now: now)
+            }
             return nil
         }
         return lease
+    }
+
+    private func parse(named name: String) -> DeviceLease? {
+        guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: Self.maxBytes) else { return nil }
+        return DeviceLease.parse(String(decoding: data, as: UTF8.self))
     }
 }
 

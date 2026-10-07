@@ -5,7 +5,8 @@
 `offsider run start <dir> --label 'PR 123'` makes every later `screenshot`, `logs` and `batch` screenshot step from this session also write its file into `<dir>` (created 0700; an existing folder keeps its mode, with a warning when other users can write to it) as `NNN-<command>-<HH.MM.SS>.<ext>`, and adds one line per capture, failures included, to `manifest.ndjson`. End with `offsider run stop --summary` (or `--json`), which prints the timeline: one line per capture, then counts of files, failures and unrecorded files.
 
 - A screenshot without `--output` is written only into the run, and `path` is that file; with `--output` both are written and `--json` adds `runFile`. A `logs` file holds exactly what went to stdout.
-- `run start --mask-secure --mask-emails --mask-id <id>` sets masks for every capture that passes none of its own.
+- The manifest records `--mask-text`, `--mask-label` and `--grep` values as `<N characters>`, in `args` and in batch step lines; `--mask-id` and `--mask-region` values are kept.
+- `run start --mask-secure --mask-emails --mask-id <id>` masks every capture in the run, on top of the capture's own masks. `run start` again on the active folder adds masks and prints those in force; to drop one, `run stop` and start again.
 - The run belongs to your session (your agent or terminal), found through the process's parents, so other agents on the Mac keep their own runs. Run commands from the same session; `run status` shows the run, `run status --all` every run.
 - `run_active` (exit 1): this session already has a run in another folder; `run stop` first. `run_unavailable`: the folder cannot be written and it would hold the only copy, or no session was found; set `OFFSIDER_RUN=<dir>` to record into a folder whatever the session, or `OFFSIDER_RUN=off` to record nothing.
 - A stopped run's folder continues its numbering when started again. A run whose session exits is ended as `owner-exited`.
@@ -49,7 +50,7 @@ Redaction is on by default for every source: `message` and `raw` read `[redacted
 
 ## Pixel diffs
 
-`screenshot --compare before.png` counts exactly which pixels changed as well as its tile verdict: `--json` adds `changedPixels`, `comparedPixels` and `changedBounds` (`{x,y,width,height}` in the image's pixels, or null). `--diff-output <png>` (a file, or a directory for a generated name) writes the capture faded to white with every changed pixel magenta and the status bar band grey, so a report can show what moved. The exit code still follows the tiles and `--threshold`: 0 changed, 5 not. A baseline of another size writes no diff.
+`screenshot --compare before.png` counts which pixels changed as well as its tile verdict (by 8 by 8 block on a physical iPhone or iPad, `guide screenshots`): `--json` adds `changedPixels`, `comparedPixels` and `changedBounds` (`{x,y,width,height}` in the image's pixels, or null). `--diff-output <png>` (a file, or a directory for a generated name) writes the capture faded to white with every changed pixel magenta and the status bar band grey, so a report can show what moved. The exit code still follows the tiles and `--threshold`: 0 changed, 5 not. A baseline of another size writes no diff.
 
 ```bash
 offsider screenshot --compare before.png --diff-output diff.png --json --device <DEVICE_ID>

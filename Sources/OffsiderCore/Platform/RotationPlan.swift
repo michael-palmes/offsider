@@ -4,31 +4,35 @@ import Foundation
 public struct AutoRotateState: Equatable, Sendable {
     public let accelerometerRotation: Int?
     public let userRotation: Int?
+    /// The kernel's boot id, read in the same round trip so a phone's record can name its boot; nil when unreadable.
+    public let bootID: String?
 
-    public init(accelerometerRotation: Int?, userRotation: Int?) {
+    public init(accelerometerRotation: Int?, userRotation: Int?, bootID: String? = nil) {
         self.accelerometerRotation = accelerometerRotation
         self.userRotation = userRotation
+        self.bootID = bootID
     }
 
-    public static let readScript = "settings get system accelerometer_rotation; settings get system user_rotation"
+    public static let readScript = "settings get system accelerometer_rotation; settings get system user_rotation; cat /proc/sys/kernel/random/boot_id 2>/dev/null || true"
 
-    /// Two lines, each a number or `null` (never set, which Android reads as 0).
+    /// Two lines, each a number or `null` (never set, which Android reads as 0), then the boot id when the device let it be read.
     public static func parse(_ output: String) -> AutoRotateState? {
         let lines = output.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
         guard lines.count >= 2 else { return nil }
         func value(_ text: String) -> Int? { text == "null" ? 0 : Int(text) }
         guard let accelerometer = value(lines[0]), let user = value(lines[1]) else { return nil }
-        return AutoRotateState(accelerometerRotation: accelerometer, userRotation: user)
+        let bootID = lines.count > 2 ? UUID(uuidString: lines[2]).map { $0.uuidString.lowercased() } : nil
+        return AutoRotateState(accelerometerRotation: accelerometer, userRotation: user, bootID: bootID)
     }
 
     public var autoRotate: Bool? { accelerometerRotation.map { $0 != 0 } }
 }
 
-/// What auto-rotate was before Offsider first turned the device away from portrait, so `orientation portrait` can put it back.
+/// What auto-rotate was before Offsider first turned the device in this boot, so `orientation portrait` can put it back.
 public struct RotationRecord: Equatable, Sendable {
     public let accelerometerRotation: Int
     public let userRotation: Int
-    /// The emulator boot it was taken in; a record from an earlier boot is ignored.
+    /// The device boot it was taken in; a record from an earlier boot is ignored.
     public let bootMarker: String?
 
     public init(accelerometerRotation: Int, userRotation: Int, bootMarker: String?) {
@@ -69,21 +73,19 @@ public struct RotationPlan: Equatable, Sendable {
         self.restoreAccelerometer = restoreAccelerometer
     }
 
-    /// A non-portrait target keeps the first record of this boot; portrait restores and forgets it.
-    public static func make(before: AutoRotateState?, target: DeviceOrientation, record: RotationRecord?, bootMarker: String?) -> RotationPlan {
-        let current = record.flatMap { $0.bootMarker == bootMarker ? $0 : nil }
-        let stale = record != nil && current == nil
-        if target == .portrait {
-            return RotationPlan(recordToWrite: nil, deleteRecord: record != nil, restoreAccelerometer: current?.accelerometerRotation)
+    /// Any turn first records `before` unless this boot has a record, and portrait restores and forgets it; nil when a turn needs a record `before` cannot give.
+    public static func make(before: AutoRotateState?, target: DeviceOrientation, record: RotationRecord?, bootMarker: String?, turning: Bool) -> RotationPlan? {
+        var current = record.flatMap { $0.bootMarker == bootMarker ? $0 : nil }
+        var recordToWrite: RotationRecord?
+        if current == nil, turning {
+            guard let accelerometer = before?.accelerometerRotation, let user = before?.userRotation else { return nil }
+            recordToWrite = RotationRecord(accelerometerRotation: accelerometer, userRotation: user, bootMarker: bootMarker)
+            current = recordToWrite
         }
-        guard current == nil, let accelerometer = before?.accelerometerRotation, let user = before?.userRotation else {
-            return RotationPlan(recordToWrite: nil, deleteRecord: stale && before == nil, restoreAccelerometer: nil)
+        guard target == .portrait, let current else {
+            return RotationPlan(recordToWrite: recordToWrite, deleteRecord: false, restoreAccelerometer: nil)
         }
-        return RotationPlan(
-            recordToWrite: RotationRecord(accelerometerRotation: accelerometer, userRotation: user, bootMarker: bootMarker),
-            deleteRecord: false,
-            restoreAccelerometer: nil
-        )
+        return RotationPlan(recordToWrite: recordToWrite, deleteRecord: true, restoreAccelerometer: current.accelerometerRotation)
     }
 }
 

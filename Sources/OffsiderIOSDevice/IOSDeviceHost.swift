@@ -75,6 +75,8 @@ public struct IOSDeviceHost: Sendable {
     public var homeDirectory: URL
     public var devicectl: any DevicectlRunning
     public var fileExists: @Sendable (String) -> Bool
+    /// usbmuxd's device list, which doctor and the runner start read.
+    public var usbmux: any UsbmuxListing
     /// Offsider's private directory; `ios-devices/<udid>/` under it holds captures, geometry and the runner session.
     public var privateRoot: String
     public var timing: IOSDeviceTiming
@@ -92,6 +94,7 @@ public struct IOSDeviceHost: Sendable {
         homeDirectory: URL,
         devicectl: any DevicectlRunning,
         fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        usbmux: any UsbmuxListing = UsbmuxClient(),
         privateRoot: String = OffsiderPrivateDirectory.root,
         timing: IOSDeviceTiming = .disabled
     ) {
@@ -99,6 +102,7 @@ public struct IOSDeviceHost: Sendable {
         self.homeDirectory = homeDirectory
         self.devicectl = devicectl
         self.fileExists = fileExists
+        self.usbmux = usbmux
         self.privateRoot = privateRoot
         self.timing = timing
     }

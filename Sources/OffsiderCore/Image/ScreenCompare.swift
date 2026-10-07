@@ -6,7 +6,7 @@ public enum ScreenCompare {
         case unchanged
     }
 
-    /// Exact pixel counts beside the tile verdict; they never change it.
+    /// Pixel counts beside the tile verdict, by block when captures carry noise; they never change it.
     public struct PixelCounts: Equatable, Sendable {
         public let changedPixels: Int
         public let comparedPixels: Int

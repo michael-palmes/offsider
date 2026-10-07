@@ -10,8 +10,9 @@ struct RunCommand: AsyncParsableCommand {
         After `run start <dir>`, every screenshot, logs and batch screenshot step from this session (the agent or \
         terminal that ran `run start`, found through the process's parents) is also written to <dir> as \
         NNN-<command>-<HH.MM.SS>.<ext>, and manifest.ndjson gets one line per capture, failures included. \
-        `run stop --summary` ends the run and prints its timeline. OFFSIDER_RUN=off records nothing; \
-        OFFSIDER_RUN=<dir> records into <dir> whatever the session.
+        `run stop --summary` ends the run and prints its timeline. Masks given to `run start` apply to every capture \
+        in the run, on top of the capture's own; `run start` again on the active folder adds masks and never removes \
+        one. OFFSIDER_RUN=off records nothing; OFFSIDER_RUN=<dir> records into <dir> whatever the session.
         """,
         subcommands: [RunStart.self, RunStop.self, RunStatus.self]
     )
@@ -38,13 +39,13 @@ struct RunStart: AsyncParsableCommand {
     @Option(help: ArgumentHelp("A name for the run, shown in the summary.", valueName: "text"))
     var label: String?
 
-    @Flag(name: .customLong("mask-secure"), help: "Mask password fields in every capture that asks for no masks of its own.")
+    @Flag(name: .customLong("mask-secure"), help: "Mask password fields in every capture of the run, on top of its own masks.")
     var maskSecure = false
 
-    @Flag(name: .customLong("mask-emails"), help: "Mask email addresses in every capture that asks for no masks of its own.")
+    @Flag(name: .customLong("mask-emails"), help: "Mask email addresses in every capture of the run, on top of its own masks.")
     var maskEmails = false
 
-    @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Mask elements with this id in every capture that asks for no masks of its own. Repeatable.", valueName: "id"))
+    @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Mask elements with this id in every capture of the run, on top of its own masks. Repeatable.", valueName: "id"))
     var maskIDs: [String] = []
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
@@ -60,13 +61,21 @@ struct RunStart: AsyncParsableCommand {
             print("Warning: other users can write to \(path), so they could add or change files in the run.", to: &standardError)
         }
         if started.unchanged {
-            print("A run is already active in \(path) for this session.", to: &standardError)
+            print(Self.activeRunLine(path: path, masks: started.state.masks, added: started.addedMasks), to: &standardError)
         } else if started.continued {
             print("Continuing the run in \(path) from \(String(format: "%03d", started.state.next)).", to: &standardError)
         } else {
             print("Started a run in \(path); screenshots and logs from this session are numbered into it. Run `offsider run stop --summary` when done.", to: &standardError)
         }
         print(json ? started.state.startJSONLine(dir: path, continued: started.continued, timeZone: environment.timeZone) : path)
+    }
+
+    /// What `run start` says when this session's run already writes to the folder.
+    static func activeRunLine(path: String, masks: RunMasks, added: Bool) -> String {
+        let line = added
+            ? "Added masks to the active run in \(path); masks now in force: \(masks.summary)."
+            : "A run is already active in \(path) for this session; masks in force: \(masks.summary)."
+        return masks.isEmpty ? line : line + " To remove one, run `offsider run stop`, then start the run again."
     }
 }
 

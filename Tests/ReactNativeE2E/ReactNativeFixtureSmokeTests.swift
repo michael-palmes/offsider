@@ -108,10 +108,32 @@ struct ReactNativeFixtureSmokeTests {
         try await app.run("tap --id text-input-field")
         _ = try await app.waitForNode { $0["id"] as? String == "typing-active-indicator" }
 
-        try await app.run("type --into-id text-input-second-field --replace 'second'")
+        let command = "type --into-id text-input-second-field --replace 'second'"
+        let first = try await app.offsider(command)
+        if first.exitCode != 0 {
+            // A short screen, such as a Fold's inner display, can put the second field under the keyboard, which type refuses unsent.
+            try #require(
+                platform == .android && first.exitCode == 1 && first.stderr.contains("The keyboard covers --id 'text-input-second-field'"),
+                "offsider \(command) exited \(first.exitCode): \(first.stderr)"
+            )
+            try await app.run("button back")
+            try await Self.waitForKeyboardHidden(app)
+            try await app.run(command)
+        }
 
         _ = try await app.waitForLabel(of: "text-input-second-value") { $0 == "Second: second" }
         #expect(try await app.label(of: "character-count") == nil)
+    }
+
+    /// Polls describe-ui until its context reports no keyboard.
+    static func waitForKeyboardHidden(_ app: RNApp, timeout: TimeInterval = 10) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while (try await app.tree()["context"] as? [String: Any])?["keyboard"] as? Bool != false {
+            guard Date() < deadline else {
+                throw DescribeUIError(description: "the keyboard was still up \(Int(timeout)) s after button back")
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
     }
 
     @Test("on Android --require-focus-id with the other field focused is exit 2 and types nothing", .enabled(if: isAndroidE2EEnabled))

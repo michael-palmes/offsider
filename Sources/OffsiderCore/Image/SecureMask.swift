@@ -25,14 +25,14 @@ public enum SecureMask {
             throw MaskUnproven(detail: "\(subject) is on screen but the capture could not be mapped to points")
         }
         return try frames.compactMap { frame -> CGRect? in
-            guard let frame else {
+            guard let frame, ![frame.x, frame.y, frame.width, frame.height].contains(where: \.isNaN) else {
                 throw MaskUnproven(detail: "\(subject) on screen has no frame")
             }
             guard frame.width > 0, frame.height > 0 else { return nil }
-            let left = max(0, Int((frame.x * pixelsPerPoint).rounded(.down)))
-            let top = max(0, Int((frame.y * pixelsPerPoint).rounded(.down)))
-            let right = min(imageWidth, Int(((frame.x + frame.width) * pixelsPerPoint).rounded(.up)))
-            let bottom = min(imageHeight, Int(((frame.y + frame.height) * pixelsPerPoint).rounded(.up)))
+            let left = ScreenGeometry.pixel(frame.x, pixelsPerPoint: pixelsPerPoint, .down, limit: imageWidth)
+            let top = ScreenGeometry.pixel(frame.y, pixelsPerPoint: pixelsPerPoint, .down, limit: imageHeight)
+            let right = ScreenGeometry.pixel(frame.x + frame.width, pixelsPerPoint: pixelsPerPoint, .up, limit: imageWidth)
+            let bottom = ScreenGeometry.pixel(frame.y + frame.height, pixelsPerPoint: pixelsPerPoint, .up, limit: imageHeight)
             guard right > left, bottom > top else { return nil }
             return CGRect(x: left, y: top, width: right - left, height: bottom - top)
         }

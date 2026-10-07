@@ -49,14 +49,15 @@ extension IOSDeviceBackend {
             builder: builder,
             environment: host.environment,
             developerDirectory: xcode.developerDirectory,
-            log: log
+            log: log,
+            usbmux: host.usbmux
         )
         state.connector = manager
         return manager
     }
 
     func runnerInputSession(for id: DeviceID) async throws -> any InputSession {
-        RunnerInputSession(device: id, client: try await runner(for: id), app: targetApp)
+        RunnerInputSession(device: id, client: try await runner(for: id)) { [weak self] in self?.targetApp }
     }
 
     /// The runner serves hosts below the HID floor, and the text the HID keyboard cannot type.
@@ -91,13 +92,16 @@ final class RunnerInputSession: TextInputSession {
 
     let device: DeviceID
     let client: RunnerClient
-    let app: String?
+    private let targetApp: @MainActor () -> String?
 
-    init(device: DeviceID, client: RunnerClient, app: String?) {
+    /// `targetApp` is read at each call, so a batch step's `--app` reaches a session opened before it.
+    init(device: DeviceID, client: RunnerClient, targetApp: @escaping @MainActor () -> String?) {
         self.device = device
         self.client = client
-        self.app = app
+        self.targetApp = targetApp
     }
+
+    var app: String? { targetApp() }
 
     func perform(_ event: InputEvent) async throws {
         switch event {

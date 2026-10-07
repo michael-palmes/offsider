@@ -14,8 +14,9 @@ struct OrientationCommand: AsyncParsableCommand {
         Without a value, prints the current one.
         iOS reports the frontmost app's orientation, so a portrait-only app or the home screen stays portrait, and \
         iPhones without a home button never turn upside down. On Android, Offsider turns auto-rotate off while the \
-        device is turned and restores it on `orientation portrait`: the first turn away from portrait records \
-        auto-rotate and `user_rotation`, and portrait writes auto-rotate back and forgets the record.
+        device is turned and restores it on `orientation portrait`: the first turn in a boot, portrait included, \
+        records auto-rotate and `user_rotation`, and portrait writes auto-rotate back and forgets the record. When \
+        auto-rotate cannot be read or recorded, it fails before turning.
 
         Examples:
           offsider orientation --device DEVICE_ID
@@ -73,6 +74,7 @@ struct OrientationCommand: AsyncParsableCommand {
         try await watchdog.guarding(bound: timeout, device: deviceOption.id) { try await turn(target, on: route, logger: logger) }
     }
 
+    @MainActor
     private func turn(_ target: DeviceOrientation?, on route: DeviceRouter.Route, logger: OffsiderLogger) async throws {
         let backend = route.backend
         try await backend.prepare()
@@ -89,48 +91,95 @@ struct OrientationCommand: AsyncParsableCommand {
             try await report(previous, previous: nil, backend: backend, device: device)
             return
         }
-        let rotation = backend as? any AutoRotateControlling
-        let before = try? await rotation?.autoRotateState(on: device)
-        var plan: RotationPlan?
-        if rotation != nil {
-            let marker = await (backend as? any BootMarking)?.bootMarker(for: device)
-            let made = RotationPlan.make(before: before, target: target, record: RotationRecordStore().read(device.rawValue), bootMarker: marker)
-            if let record = made.recordToWrite { try? RotationRecordStore().write(record, serial: device.rawValue) }
-            plan = made
+        let turn: () async throws -> Void = {
+            try await turner.requestOrientation(target, on: device)
+            let outcome = try await StateWait.run(
+                target: target,
+                timeout: timeout,
+                read: { try await turner.orientation(of: device) },
+                request: { try await turner.requestOrientation(target, on: device) },
+                sleep: { try await Task.sleep(for: $0) },
+                now: { Date().timeIntervalSinceReferenceDate }
+            )
+            guard outcome == .reached else {
+                throw CLIError(errorDescription: Self.timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceOption.id, physical: device.isPhysicalIOSDevice), reason: .stateNotReached)
+            }
         }
-        guard previous != target else {
-            let restored = await finish(plan, rotation: rotation, device: device)
-            try await report(target, previous: previous, backend: backend, device: device, rotation: rotation == nil ? nil : RotationReport(before: before, now: try? await rotation?.autoRotateState(on: device), restored: restored))
+        guard let rotation = backend as? any AutoRotateControlling else {
+            if previous != target { try await turn() }
+            try await report(target, previous: previous, backend: backend, device: device)
             return
         }
-
-        try await turner.requestOrientation(target, on: device)
-        let outcome = try await StateWait.run(
+        let marker = await (backend as? any BootMarking)?.bootMarker(for: device)
+        let rotationReport = try await Self.turnKeepingAutoRotate(
             target: target,
-            timeout: timeout,
-            read: { try await turner.orientation(of: device) },
-            request: { try await turner.requestOrientation(target, on: device) },
-            sleep: { try await Task.sleep(for: $0) },
-            now: { Date().timeIntervalSinceReferenceDate }
+            turning: previous != target,
+            serial: device.rawValue,
+            emulatorMarker: marker,
+            store: RotationRecordStore(),
+            read: { try await rotation.autoRotateState(on: device) },
+            writeAccelerometer: { try await rotation.setAccelerometerRotation($0, on: device) },
+            turn: turn,
+            warn: { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
         )
-        guard outcome == .reached else {
-            throw CLIError(errorDescription: Self.timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceOption.id, physical: device.isPhysicalIOSDevice), reason: .stateNotReached)
-        }
-        let restored = await finish(plan, rotation: rotation, device: device)
-        try await report(target, previous: previous, backend: backend, device: device, rotation: rotation == nil ? nil : RotationReport(before: before, now: try? await rotation?.autoRotateState(on: device), restored: restored))
+        try await report(target, previous: previous, backend: backend, device: device, rotation: rotationReport)
     }
 
-    /// Once the device is portrait, writes auto-rotate back from this boot's record and forgets it; true when it was restored.
-    private func finish(_ plan: RotationPlan?, rotation: (any AutoRotateControlling)?, device: DeviceID) async -> Bool {
-        guard let plan, let rotation else { return false }
+    /// Records auto-rotate for this boot before a turn turns it off and writes it back on portrait; refuses to turn when it cannot record it.
+    @MainActor
+    static func turnKeepingAutoRotate(
+        target: DeviceOrientation,
+        turning: Bool,
+        serial: String,
+        emulatorMarker: String?,
+        store: RotationRecordStore,
+        read: () async throws -> AutoRotateState?,
+        writeAccelerometer: (Int) async throws -> Void,
+        turn: () async throws -> Void,
+        warn: (String) -> Void
+    ) async throws -> RotationReport {
+        var before: AutoRotateState?
+        var problem = "the settings read back in an unexpected form"
+        do {
+            before = try await read()
+        } catch {
+            problem = Self.message(error)
+        }
+        let marker = emulatorMarker ?? before?.bootID.map { "boot_id \($0)" }
+        guard let plan = RotationPlan.make(before: before, target: target, record: store.read(serial), bootMarker: marker, turning: turning) else {
+            throw CLIError(
+                errorDescription: "Offsider could not read auto-rotate on \(serial) (\(problem)), so it did not turn the device: turning switches auto-rotate off, and Offsider records it first so `orientation portrait` can switch it back. Check the device with `offsider doctor --device \(serial)` and try again.",
+                reason: .deviceControlFailed
+            )
+        }
+        if let record = plan.recordToWrite {
+            do {
+                try store.write(record, serial: serial)
+            } catch {
+                throw CLIError(
+                    errorDescription: "Offsider could not save auto-rotate for \(serial) before turning it (\(Self.message(error))), so it did not turn the device or change auto-rotate.",
+                    reason: (error as? any OffsiderFailure)?.reason ?? .commandFailed
+                )
+            }
+        }
+        if turning {
+            try await turn()
+        }
         var restored = false
         if let value = plan.restoreAccelerometer {
-            restored = (try? await rotation.setAccelerometerRotation(value, on: device)) != nil
+            do {
+                try await writeAccelerometer(value)
+                restored = true
+                if plan.deleteRecord { store.remove(serial: serial) }
+            } catch {
+                warn("Warning: Offsider could not switch auto-rotate back \(value == 0 ? "off" : "on") on \(serial) (\(Self.message(error))). Run `offsider orientation portrait --device \(serial)` to try again.")
+            }
         }
-        if plan.deleteRecord, restored || plan.restoreAccelerometer == nil {
-            RotationRecordStore().remove(serial: device.rawValue)
-        }
-        return restored
+        return RotationReport(before: before, now: try? await read(), restored: restored)
+    }
+
+    private static func message(_ error: any Error) -> String {
+        (error as? any OffsiderFailure)?.failureMessage ?? error.localizedDescription
     }
 
     static func timeoutMessage(target: DeviceOrientation, timeout: Double, platform: DevicePlatform, device: String, physical: Bool = false) -> String {

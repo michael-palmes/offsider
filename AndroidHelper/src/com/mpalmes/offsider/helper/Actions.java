@@ -85,8 +85,11 @@ final class Actions {
         writeField(out, node);
     }
 
-    /** Selects all of the input-focused field's text and pastes the clipboard over it; never on a password field. */
-    static void paste(Json out, UiAutomation automation) throws RequestFailure {
+    /** Pastes over all of the focused field's text; refuses password fields and, given an expected class or id, other fields. */
+    static void paste(Json out, UiAutomation automation, JSONObject request) throws RequestFailure {
+        boolean expecting = request.has("expectClass") || request.has("expectResourceId");
+        String expectClass = Requests.string(request, "expectClass", false);
+        String expectId = Requests.string(request, "expectResourceId", false);
         AccessibilityNodeInfo node = editableFocus(automation);
         CharSequence nodeClass = node.getClassName();
         String nodeId = node.getViewIdResourceName();
@@ -95,20 +98,44 @@ final class Actions {
             throw new RequestFailure("secure-refused", "the field with input focus is a password field", null)
                     .field(nodeClass, nodeId, type);
         }
+        if (expecting && (!same(expectClass, nodeClass) || !same(expectId, nodeId))) {
+            throw new RequestFailure("focus-moved", "the field with input focus is " + nodeClass
+                    + (nodeId == null ? " with no id" : " with id " + nodeId) + ", not the expected field", null)
+                    .field(nodeClass, nodeId, type);
+        }
         int paste = AccessibilityAction.ACTION_PASTE.getId();
         if (!hasAction(node, paste)) {
             throw RequestFailure.unsupported(nodeClass + " does not offer ACTION_PASTE").field(nodeClass, nodeId, type);
         }
         CharSequence current = node.isShowingHintText() ? null : node.getText();
-        Bundle selection = new Bundle();
-        selection.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
-        selection.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, current == null ? 0 : current.length());
-        node.performAction(AccessibilityAction.ACTION_SET_SELECTION.getId(), selection);
+        int length = current == null ? 0 : current.length();
+        if (length > 0 && !(node.getTextSelectionStart() == 0 && node.getTextSelectionEnd() == length)) {
+            selectAll(node, length);
+        }
         if (!node.performAction(paste)) {
             throw new RequestFailure("action-failed", nodeClass + " refused ACTION_PASTE", null).field(nodeClass, nodeId, type);
         }
         node.refresh();
         writeField(out, node);
+    }
+
+    /** Without the whole text selected a paste would add to it, so a field that cannot select it all is refused. */
+    private static void selectAll(AccessibilityNodeInfo node, int length) throws RequestFailure {
+        CharSequence nodeClass = node.getClassName();
+        String nodeId = node.getViewIdResourceName();
+        int type = node.getInputType();
+        int select = AccessibilityAction.ACTION_SET_SELECTION.getId();
+        if (!hasAction(node, select)) {
+            throw RequestFailure.unsupported(nodeClass + " cannot select its text (no ACTION_SET_SELECTION)")
+                    .field(nodeClass, nodeId, type);
+        }
+        Bundle selection = new Bundle();
+        selection.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
+        selection.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, length);
+        if (!node.performAction(select, selection)) {
+            throw RequestFailure.unsupported(nodeClass + " refused ACTION_SET_SELECTION")
+                    .field(nodeClass, nodeId, type);
+        }
     }
 
     /** The input-focused node, which must be editable. */

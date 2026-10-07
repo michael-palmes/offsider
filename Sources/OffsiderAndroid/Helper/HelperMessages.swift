@@ -57,7 +57,13 @@ struct HelperRequest: Equatable, Sendable {
         HelperRequest(op: "setText", fields: ["text": .string(text)])
     }
 
-    static let paste = HelperRequest(op: "paste", fields: [:])
+    /// Pastes over the focused field's whole text; with an expected class or id, the helper refuses any other field (an absent one means none).
+    static func paste(expecting field: AndroidFieldInfo?) -> HelperRequest {
+        var fields: [String: HelperValue] = [:]
+        fields["expectClass"] = field?.className.map(HelperValue.string)
+        fields["expectResourceId"] = field?.resourceId.map(HelperValue.string)
+        return HelperRequest(op: "paste", fields: fields)
+    }
 
     /// Touch, key, text and pause steps, all checked by the helper before the first is injected.
     static func inject(_ steps: [HelperValue], sync: Bool) -> HelperRequest {
@@ -254,6 +260,8 @@ struct HelperNode: Decodable, Equatable, Sendable {
     let selected: Bool
     let editable: Bool
     let password: Bool
+    /// The field is empty and `text` repeats its hint (from helper 1.3.0).
+    let showingHint: Bool
     let visibleToUser: Bool
     let rangeInfo: HelperRange?
     let children: [HelperNode]
@@ -286,6 +294,7 @@ struct HelperNode: Decodable, Equatable, Sendable {
         selected = try flag(.selected)
         editable = try flag(.editable)
         password = try flag(.password)
+        showingHint = try flag(.showingHint)
         visibleToUser = try flag(.visibleToUser, true)
         rangeInfo = try c.decodeIfPresent(HelperRange.self, forKey: .rangeInfo)
         children = try c.decodeIfPresent([HelperNode].self, forKey: .children) ?? []
@@ -294,7 +303,7 @@ struct HelperNode: Decodable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case i, `class`, package, resourceId, text, contentDescription, hint, stateDescription, roleDescription, testTag
         case bounds, checkable, checked, checkedState, clickable, longClickable, enabled, focusable, focused, scrollable
-        case selected, editable, password, visibleToUser, rangeInfo, children
+        case selected, editable, password, showingHint, visibleToUser, rangeInfo, children
     }
 }
 
