@@ -188,6 +188,29 @@ struct TapCommandTests {
         #expect(buy.session.calls.count == 1)
     }
 
+    @Test("on Android a keyboard window drawn over the app, whose root view spans the screen, does not cover a field above its keys")
+    func keyboardRootSpanningScreen() async throws {
+        var tree = TypeIntoTests.gboardForm(keysTop: 587)
+        for (index, layer) in [0, 1].enumerated() {
+            guard case .android(var attributes) = tree.roots[index].native else { continue }
+            attributes.windowLayer = layer
+            tree.roots[index].native = .android(attributes)
+        }
+        tree.roots[0].children = tree.roots[0].children.enumerated().map { order, node in
+            var copy = node
+            if case .android(var attributes) = copy.native {
+                attributes.drawingOrder = order + 1
+                copy.native = .android(attributes)
+            }
+            return copy
+        }
+        let backend = FakeDeviceBackend(platform: .android, trees: [tree])
+
+        try await Self.tapAndroid(["--id", "first-field"], on: backend)
+
+        #expect(backend.session.calls.count == 1)
+    }
+
     @Test("--wait-timeout reads again while a confident cover stays, and taps once it has gone")
     func waitOutlastsCover() async throws {
         let page = try Self.fullPage()
