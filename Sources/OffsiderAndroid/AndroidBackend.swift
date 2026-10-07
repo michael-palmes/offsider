@@ -24,6 +24,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var stateReadings: [String: AndroidDeviceState.Reading] = [:]
     /// The active panel the display cache named and this command's capture confirmed.
     var cachedDisplayIds: [String: String] = [:]
+    /// The display cache entry this command loaded or last saved, so an unchanged one is not written again.
+    private var displayEntries: [String: AndroidDisplayCacheEntry] = [:]
     private var avdNames: [String: String] = [:]
     /// Phones this command named, from their device-list row, once checked.
     var phones: [String: ConnectedPhone] = [:]
@@ -505,16 +507,20 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let capture = try await screencap(serial, format: format, display: nil)
         guard AndroidScreenCapture.warnsOfSeveralDisplays(capture.output) else { return capture }
         let picked = size(capture.output)
+        if let known = displayEntries[serial], picked.map({ [$0.width, $0.height] != [known.width, known.height] }) ?? true {
+            log(.debug, "screencap on \(serial) no longer has the size of the panel last confirmed; reading the displays again after a fold")
+            forgetDisplay(of: serial)
+        }
         if await hasActiveDisplaySize(picked, serial) {
             screencapPicks[serial] = .activeDisplay
-            rememberDisplay(serial, size: picked)
+            rememberDisplay(serial, size: picked, followsActive: true)
             return capture
         }
         if screencapPicks[serial] == .activeDisplay {
             log(.debug, "screencap on \(serial) no longer has the active display's size; reading the displays again after a fold")
             forgetDisplay(of: serial)
             if await hasActiveDisplaySize(picked, serial) {
-                rememberDisplay(serial, size: picked)
+                rememberDisplay(serial, size: picked, followsActive: true)
                 return capture
             }
         }
@@ -528,7 +534,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         log(.debug, "screencap on \(serial) did not pick the active display; capturing \(display) with -d")
         screencapPicks[serial] = .namedDisplay
         let named = try await screencap(serial, format: format, display: display)
-        rememberDisplay(serial, size: size(named.output))
+        rememberDisplay(serial, size: size(named.output), followsActive: false)
         return named
     }
 
@@ -537,7 +543,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         host.displayCacheDirectory().map(AndroidDisplayCache.init(directory:))
     }
 
-    /// The cached panel's capture, with `cmd device_state state` alongside; nil, dropping the entry, unless connection, state and size match.
+    /// The cached panel's capture with `cmd device_state state` alongside, nil unless all match; later captures name the panel only if `screencap` needed `-d`.
     private func cachedScreencap(
         _ serial: String,
         format: String?,
@@ -559,8 +565,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             cache.remove(serial: serial)
             return nil
         }
-        screencapPicks[serial] = .namedDisplay
+        screencapPicks[serial] = entry.followsActive ? .activeDisplay : .namedDisplay
         cachedDisplayIds[serial] = entry.displayId
+        displayEntries[serial] = entry
         if !entry.states.isEmpty {
             knownDeviceStates[serial] = knownDeviceStates[serial] ?? entry.states
         }
@@ -573,17 +580,21 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return capture
     }
 
-    /// Keeps what this capture confirmed for the next command: the active panel, its size and the device state.
-    private func rememberDisplay(_ serial: String, size: (width: Int, height: Int)?) {
+    /// Keeps what this capture confirmed for the next command: the active panel, its size, the device state and how `screencap` picked; written only when it changed.
+    private func rememberDisplay(_ serial: String, size: (width: Int, height: Int)?, followsActive: Bool) {
         guard let size, let cache = displayCache(), let transport = (phones[serial] ?? listedPhones[serial])?.transportId,
               let list = displayLists[serial], let active = activeDisplay(in: list, serial: serial),
               AndroidDisplayCacheEntry.isDisplayId(active.descriptor.platformId) else {
             return
         }
-        cache.save(AndroidDisplayCacheEntry(
+        let entry = AndroidDisplayCacheEntry(
             serial: serial, transportId: transport, displayId: active.descriptor.platformId, role: active.descriptor.role.rawValue,
-            states: knownDeviceStates[serial] ?? [], committed: stateReadings[serial]?.committed, width: size.width, height: size.height
-        ))
+            states: knownDeviceStates[serial] ?? [], committed: stateReadings[serial]?.committed, followsActive: followsActive,
+            width: size.width, height: size.height
+        )
+        guard entry != displayEntries[serial] else { return }
+        cache.save(entry)
+        displayEntries[serial] = entry
     }
 
     private func screencap(_ serial: String, format: String?, display: String?) async throws -> (output: Data, command: String) {
@@ -670,6 +681,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         statusTickets = [:]
         stateReadings = [:]
         cachedDisplayIds = [:]
+        displayEntries = [:]
         avdNames = [:]
         phones = [:]
         listedPhones = [:]
