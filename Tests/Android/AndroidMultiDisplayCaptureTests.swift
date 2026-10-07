@@ -31,7 +31,7 @@ struct AndroidMultiDisplayCaptureTests {
         fold(Hinge(closed: closed), picks: picks, raw: raw)
     }
 
-    /// A Galaxy Z Fold whose `screencap` without `-d` warns, then captures `picks`, or the active panel when nil, as the Fold does; folded, its cover captures at the `wm size` override.
+    /// A Samsung foldable whose `screencap` without `-d` warns, then captures `picks`, or the active panel when nil, as the Fold does; folded, its cover captures at the `wm size` override.
     static func fold(_ hinge: Hinge, picks: String?, raw: Data? = nil) -> FakeAdbServer {
         FakeAdbServer(handler: FakeAdbServer.devices(["R58M123ABC"], host: Self.host) { _, service in
             let closed = hinge.closed

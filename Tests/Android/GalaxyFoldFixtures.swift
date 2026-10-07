@@ -1,7 +1,7 @@
 import Foundation
 @testable import OffsiderAndroid
 
-/// `cmd device_state`, `dumpsys display` and display probe outputs, captured from a Galaxy Z Fold (One UI 6, API 34) over USB.
+/// `cmd device_state`, `dumpsys display` and display probe outputs, captured from a Samsung foldable (One UI 6, API 34) over USB.
 enum GalaxyFoldFixtures {
     nonisolated static let innerId = "4600000000000000001"
     nonisolated static let coverId = "4600000000000000002"
