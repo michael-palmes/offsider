@@ -198,6 +198,35 @@ struct ChangeDetectorLiveTests {
         #expect(detector.compare(baseline, toast, live: live) == .changed(summary: "element added: text#saved"))
     }
 
+    @Test("an element added to a flat screen beside the ticker still lets the ticker be learnt")
+    func addedElementKeepsLearning() {
+        let toast = FakeUI.node(.text, id: "saved", label: "Saved", frame: FakeUI.frame(16, 300, 100, 20))
+        let after = Self.screen(price: "$1.02", extra: [toast])
+
+        let live = detector.liveTextKeys(Self.screen(price: "$1.00"), after)
+
+        #expect(live.count == 1)
+        #expect(detector.liveChanges(after, Self.screen(price: "$1.03", extra: [toast]), live: live) == ["price"])
+    }
+
+    @Test("a row without an id added before a ticking text without one is lined up, so the ticker's key is the one later reads give it")
+    func insertedRowKeepsLaterKeys() {
+        func screen(clock: String, saved: String?) -> AccessibilitySnapshot {
+            let banner = saved.map { [FakeUI.node(.text, label: $0, frame: FakeUI.frame(16, 60, 200, 20))] } ?? []
+            return AccessibilitySnapshot(tree: FakeUI.tree(banner + [
+                FakeUI.node(.button, id: "refresh", label: "Refresh", frame: FakeUI.frame(16, 100, 120, 44)),
+                FakeUI.node(.text, label: clock, frame: FakeUI.frame(16, 160, 200, 20)),
+            ]))
+        }
+        let after = screen(clock: "Updated 12:00:02", saved: "Saved")
+
+        let live = detector.liveTextKeys(screen(clock: "Updated 12:00:01", saved: nil), after)
+
+        #expect(live.count == 1)
+        #expect(detector.compare(after, screen(clock: "Updated 12:00:03", saved: "Saved"), live: live) == .unchanged)
+        #expect(detector.compare(after, screen(clock: "Updated 12:00:02", saved: "Saved again"), live: live) != .unchanged)
+    }
+
     @Test("reads of different screens share few keys")
     func differentScreensShareFewKeys() {
         let other = AccessibilitySnapshot(tree: FakeUI.tree([FakeUI.node(.button, id: "back", label: "Back"), FakeUI.node(.text, id: "title", label: "Detail")]))

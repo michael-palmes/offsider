@@ -5,7 +5,7 @@ import Foundation
 /// siblings sharing that type and identifier. A shared key changes when its role, subrole, label,
 /// value, title, enabled, checked, selected or focused state, or frame (rounded to `framePrecision`)
 /// differs. The result is `changed` when the key sets or any shared signature differ outside the
-/// volatile keys, and `unknown` when either snapshot has no children to compare. Live keys (`role#identifier[n]`) line a cached tree up with a fresh read.
+/// volatile keys, and `unknown` when either snapshot has no children to compare. Live keys (`role#identifier[n]`) line a cached tree up with a fresh read, sibling by sibling.
 public struct ChangeDetector: Sendable {
     public struct Options: Sendable {
         public var framePrecision: Double
@@ -80,16 +80,17 @@ public struct ChangeDetector: Sendable {
         return Double(a.intersection(b).count) / Double(larger)
     }
 
-    /// Live keys whose label, value or title differ, whatever the text options say; only under parents whose children line up by role and id in both reads.
+    /// Live keys whose label, value or title differ, whatever the text options say; siblings are lined up by role and id, and each key is the second read's.
     public func liveTextKeys(_ first: AccessibilitySnapshot, _ second: AccessibilitySnapshot) -> Set<String> {
         var keys = Set<String>()
         func visit(_ old: [AccessibilitySnapshot.Node], _ new: [AccessibilitySnapshot.Node], parentKey: String) {
             let before = liveSiblings(old, parentKey: parentKey)
             let after = liveSiblings(new, parentKey: parentKey)
-            // A row added or removed shifts the ordinals of the siblings after it, so their keys name other elements.
-            guard before.map(\.component) == after.map(\.component) else { return }
-            for (previous, current) in zip(before, after) {
-                if previous.node.label != current.node.label || previous.node.value != current.node.value || previous.node.title != current.node.title {
+            // An added or removed row pairs with nothing, so neither the rows around it nor their later keys are taken for one another.
+            let pairs = Self.alignment(before.map(\.component), after.map(\.component)) { Self.sameText(before[$0].node, after[$1].node) }
+            for (index, otherIndex) in pairs {
+                let (previous, current) = (before[index], after[otherIndex])
+                if !Self.sameText(previous.node, current.node) {
                     keys.insert(current.key)
                 }
                 visit(previous.node.children, current.node.children, parentKey: current.key)
@@ -97,6 +98,60 @@ public struct ChangeDetector: Sendable {
         }
         visit(first.roots, second.roots, parentKey: "")
         return keys
+    }
+
+    private static func sameText(_ a: AccessibilitySnapshot.Node, _ b: AccessibilitySnapshot.Node) -> Bool {
+        a.label == b.label && a.value == b.value && a.title == b.title
+    }
+
+    /// Past this many cells, two sibling lists that differ are not lined up, so nothing beneath them is learnt.
+    static let maximumAlignmentCells = 1_000_000
+
+    /// Index pairs of a longest common subsequence of `a` and `b`, choosing among equally long ones the most pairs with `unchanged` text.
+    static func alignment(_ a: [String], _ b: [String], unchanged: (Int, Int) -> Bool) -> [(Int, Int)] {
+        if a == b {
+            return a.indices.map { ($0, $0) }
+        }
+        var start = 0
+        while start < a.count, start < b.count, a[start] == b[start], unchanged(start, start) {
+            start += 1
+        }
+        var (endA, endB) = (a.count, b.count)
+        while endA > start, endB > start, a[endA - 1] == b[endB - 1], unchanged(endA - 1, endB - 1) {
+            (endA, endB) = (endA - 1, endB - 1)
+        }
+        let (rows, columns) = (endA - start, endB - start)
+        let prefix = (0..<start).map { ($0, $0) }
+        let suffix = (0..<(a.count - endA)).map { (endA + $0, endB + $0) }
+        guard rows > 0, columns > 0 else { return prefix + suffix }
+        guard rows * columns <= maximumAlignmentCells else { return [] }
+        // One more pair outweighs any number of unchanged texts.
+        let pairWeight = min(rows, columns) + 1
+        func gain(_ row: Int, _ column: Int) -> Int? {
+            guard a[start + row] == b[start + column] else { return nil }
+            return pairWeight + (unchanged(start + row, start + column) ? 1 : 0)
+        }
+        let width = columns + 1
+        var best = [Int](repeating: 0, count: (rows + 1) * width)
+        for row in stride(from: rows - 1, through: 0, by: -1) {
+            for column in stride(from: columns - 1, through: 0, by: -1) {
+                let skip = max(best[(row + 1) * width + column], best[row * width + column + 1])
+                best[row * width + column] = gain(row, column).map { max(skip, best[(row + 1) * width + column + 1] + $0) } ?? skip
+            }
+        }
+        var middle: [(Int, Int)] = []
+        var (row, column) = (0, 0)
+        while row < rows, column < columns {
+            if let gain = gain(row, column), best[row * width + column] == best[(row + 1) * width + column + 1] + gain {
+                middle.append((start + row, start + column))
+                (row, column) = (row + 1, column + 1)
+            } else if best[(row + 1) * width + column] >= best[row * width + column + 1] {
+                row += 1
+            } else {
+                column += 1
+            }
+        }
+        return prefix + middle + suffix
     }
 
     /// The elements on `live` keys whose text differs between the reads, named as change summaries name them.
