@@ -174,6 +174,16 @@ Branch names are `type/short-kebab-description` (for example `fix/tap-landscape-
 - Comments are a last resort: one line max, only for context the code cannot show.
 - Write tests that can fail for a reason we care about: assert behaviour and contracts, mock boundaries only, never restate implementation.
 
+## Public repository: privacy
+
+The repository is public, and so are its PRs, issues and releases.
+
+- Never commit or post local device ids (serials, UDIDs, CoreDevice ids, panel ids), Apple team IDs, simulator or AVD names from the maintainer's machine, personal device models or local paths.
+- Never commit or post anything from the private apps the maintainer tests on: names, bundle ids, screens, labels, testIDs, copy or data. Call them "private apps".
+- Use placeholders (`<udid>`, `<serial>`, `/Users/me`) and the playground's own ids instead.
+- PR descriptions, comments and release notes follow the same rule.
+- The private deny-list lives outside the repo (`~/.config/offsider/private-denylist.txt` or `$OFFSIDER_PRIVATE_DENYLIST`); never copy its terms anywhere. `scripts/leak-gate.sh` checks staged changes, commit ranges and messages against it, and CI runs it on every pull request.
+
 ## Code style
 
 ```swift
