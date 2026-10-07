@@ -7,7 +7,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
-import java.util.ArrayList;
 import java.util.List;
 
 /** Writes the window list as JSON, with node trees for the windows the options ask for. */
@@ -28,7 +27,7 @@ final class TreeDumper {
     int nodes;
     int maxDepth;
     private List<AccessibilityWindowInfo> windowList;
-    private final List<AccessibilityWindowInfo> keyboards = new ArrayList<>();
+    private boolean keyboardShown;
     private boolean keepHidden;
     private AccessibilityWindowInfo behindKeyboard;
     private Region keyboardRegion;
@@ -58,11 +57,9 @@ final class TreeDumper {
             source = "getWindows";
             AccessibilityWindowInfo app = options.appWindowsOnly ? appWindow(automation, list) : null;
             windowList = list;
-            keyboards.clear();
+            keyboardShown = false;
             for (AccessibilityWindowInfo window : list) {
-                if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
-                    keyboards.add(window);
-                }
+                keyboardShown = keyboardShown || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD;
             }
             for (AccessibilityWindowInfo window : list) {
                 boolean tree = !options.appWindowsOnly || window == app
@@ -136,7 +133,7 @@ final class TreeDumper {
                 json.nullValue();
             } else {
                 keepHidden = hiddenByKeyboard(window, root);
-                behindKeyboard = !keyboards.isEmpty() && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION ? window : null;
+                behindKeyboard = keyboardShown && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION ? window : null;
                 keyboardRegion = null;
                 coverRegion = null;
                 node(root, 0);
@@ -149,7 +146,7 @@ final class TreeDumper {
 
     /** A floating keyboard's window can mark the whole focused app as not visible to the user, though it is on screen. */
     private boolean hiddenByKeyboard(AccessibilityWindowInfo window, AccessibilityNodeInfo root) {
-        return !keyboards.isEmpty() && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION && window.isActive()
+        return keyboardShown && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION && window.isActive()
                 && window.isFocused() && !root.isVisibleToUser();
     }
 
