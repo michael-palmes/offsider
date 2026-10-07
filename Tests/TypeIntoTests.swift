@@ -341,6 +341,31 @@ struct TypeIntoTests {
         #expect(backend.treeReads == 1)
     }
 
+    @Test("on an iOS simulator whose hit-test answers with the field beneath the keyboard, type --into-id and tap --allow-covered still refuse")
+    func simulatorHitTestBeneathKeyboard() async throws {
+        let field = FakeUI.node(.textField, id: "low-field", label: "low-field", frame: FakeUI.frame(20, 700, 360, 44))
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 590, 402, 226), children: [
+            FakeUI.node(.button, label: "v", frame: FakeUI.frame(182.3, 705, 39.3, 54)),
+        ])
+        // Listed last, the field is what the fake's hit-test answers with.
+        let tree = FakeUI.tree([keyboard, field])
+        let typing = HitTestingFakeBackend(trees: [tree])
+        let tapping = HitTestingFakeBackend(trees: [tree])
+
+        let typeError = await #expect(throws: CLIError.self) {
+            try await Self.quiet { try await Type.parse(["--into-id", "low-field", "hi", "--device", Self.simulator.rawValue])
+                .execute(on: DeviceRouter.Route(backend: typing, device: Self.simulator), progress: nil, logger: OffsiderLogger()) }
+        }
+        let tapError = await #expect(throws: CLIError.self) {
+            try await Tap.parse(["--id", "low-field", "--allow-covered", "--no-settle", "--device", Self.simulator.rawValue])
+                .execute(on: DeviceRouter.Route(backend: tapping, device: Self.simulator), progress: nil, logger: OffsiderLogger())
+        }
+
+        #expect(typeError?.reason == .targetUnderKeyboard)
+        #expect(tapError?.reason == .targetUnderKeyboard)
+        #expect(typing.session.calls.isEmpty && tapping.session.calls.isEmpty)
+    }
+
     @Test("tap refuses the field under the Android keyboard with type's message, without --fail-if-covered")
     func tapSharesTheRefusal() async throws {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.gboardForm(keysTop: 55.8, keys: FakeUI.frame(0, 240, 411.4, 300))])
