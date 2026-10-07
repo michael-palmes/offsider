@@ -55,8 +55,7 @@ enum LogcatCommand {
     static let pidMarker = "offsider-pid "
     static let notRunningMarker = "offsider-not-running"
 
-    /// The device's clock first, for the skew note; `--app` and `--process` look up the pid and stop when nothing runs;
-    /// `--rn --app` lists the package's user ID. `now` is this Mac's, which `--since` is counted back from.
+    /// Device clock first (skew); `--app`/`--process` find the pid or stop, `--rn --app` the uid; `--since` counts back from this Mac's `now`.
     static func script(window: LogWindow, source: LogSource, now: Date = Date()) -> String {
         var preamble = ["echo \"\(clockMarker)$(date +%s)\""]
         var pid: String?

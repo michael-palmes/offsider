@@ -44,8 +44,7 @@ extension UITree {
         return orders.count == siblings.count ? orders : nil
     }
 
-    /// Whether `upper` is drawn over `lower`, and whether Android's drawing order, window layers or nesting decided rather than tree order.
-    /// Nil when either node is not in `roots`; a descendant counts as drawn over its ancestor.
+    /// Whether `upper` is drawn over `lower` (a descendant over its ancestor), and whether more than tree order decided; nil when either is missing.
     public static func zOrder(of upper: UINode, over lower: UINode, in roots: [UINode]) -> (isAbove: Bool, byDrawingOrder: Bool)? {
         guard let upperPath = indexPath(to: upper, in: roots), let lowerPath = indexPath(to: lower, in: roots) else {
             return nil

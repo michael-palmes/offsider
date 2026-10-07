@@ -600,8 +600,7 @@ struct AccessibilityTargetResolver {
         return matches
     }
 
-    /// Explains a miss: elements the `--label` or `--value` refinement left out, matches that `--element-type` removed,
-    /// else the closest values of the same field.
+    /// Explains a miss: what the `--label` or `--value` refinement or `--element-type` left out, else the closest values of the field.
     private static func notFoundError(
         roots: [UINode],
         query: AccessibilityQuery,
