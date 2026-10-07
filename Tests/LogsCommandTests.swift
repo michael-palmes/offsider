@@ -226,6 +226,8 @@ struct LogsCommandTests {
         #expect(Logs.appHint(for: .reactNative, matched: 2, platform: .ios) == "Only 2 React Native entries. An app's console output can log under its own process instead; add --app <bundle-id> to read both.")
         #expect(Logs.appHint(for: .reactNative, matched: 0, platform: .android)?.hasSuffix("add --app <package> to read both.") == true)
         #expect(Logs.appHint(for: .reactNative, matched: 5, platform: .ios) == nil)
+        #expect(Logs.appHint(for: .reactNative, matched: 1, grepping: true, platform: .ios) == nil)
+        #expect(Logs.appHint(for: .reactNative, matched: 0, grepping: true, platform: .ios) != nil)
         #expect(Logs.appHint(for: .reactNative(app: "com.example"), matched: 0, platform: .ios) == nil)
         #expect(Logs.appHint(for: .all, matched: 0, platform: .ios) == nil)
     }

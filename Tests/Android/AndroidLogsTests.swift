@@ -111,24 +111,45 @@ struct AndroidLogsTests {
 
     // MARK: Commands
 
-    @Test("history dumps from a start the device computes, live starts at the device's clock, each after its marker line")
+    static let clock = #"echo "offsider-clock $(date +%s)"; "#
+
+    @Test("history dumps from a start the device computes, live starts at the device's clock, each after the clock and marker lines")
     func scripts() {
         #expect(LogcatCommand.script(window: .last(.seconds(30)), source: .all)
-            == #"echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-30)).000""#)
+            == Self.clock + #"echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-30)).000""#)
         #expect(LogcatCommand.script(window: .live(nil), source: .reactNative)
-            == #"echo offsider-logcat; logcat -v threadtime -v epoch -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#)
+            == Self.clock + #"echo offsider-logcat; logcat -v threadtime -v epoch -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#)
+    }
+
+    @Test("--since counts back from the device's own clock by how long ago it was on this Mac, so a skewed clock reads the same stretch")
+    func sinceOnDeviceClock() {
+        let now = Date(timeIntervalSince1970: 1_791_343_402.4)
+        #expect(LogcatCommand.script(window: .since(now.addingTimeInterval(-90)), source: .all, now: now)
+            == Self.clock + #"echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-90)).000""#)
+        #expect(LogcatCommand.script(window: .since(now.addingTimeInterval(60)), source: .all, now: now).hasSuffix(#"-T "$(($(date +%s)-0)).000""#))
+    }
+
+    @Test("a device clock line far from this Mac's becomes one skew note, and a close one none")
+    func skewNote() throws {
+        let now = Date(timeIntervalSince1970: 1_791_343_402)
+        var stream = LogcatStream(source: .all, serial: "RFCRA0TCR5B")
+        _ = try stream.consume("offsider-clock 1791345202", now: now)
+        #expect(stream.note == .clockSkew(seconds: 1800))
+        var close = LogcatStream(source: .all, serial: "RFCRA0TCR5B")
+        _ = try close.consume("offsider-clock 1791343404", now: now)
+        #expect(close.note == nil)
     }
 
     @Test("--app looks up the pid in the same script, stopping with a marker when nothing runs, and filters on it")
     func appScript() {
         #expect(LogcatCommand.script(window: .last(.seconds(5)), source: .app("com.example.app"))
-            == #"p=$(pidof -s 'com.example.app') || { echo offsider-not-running; exit 3; }; echo "offsider-pid $p"; echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-5)).000" --pid=$p"#)
+            == Self.clock + #"p=$(pidof -s 'com.example.app') || { echo offsider-not-running; exit 3; }; echo "offsider-pid $p"; echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-5)).000" --pid=$p"#)
     }
 
     @Test("--rn --app lists the package's user ID and reads every process with the uid column")
     func reactNativeAppScript() {
         #expect(LogcatCommand.script(window: .last(.seconds(120)), source: .reactNative(app: "com.example.app"))
-            == #"cmd package list packages -U 'com.example.app'; echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-120)).000" -v uid"#)
+            == Self.clock + #"cmd package list packages -U 'com.example.app'; echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-120)).000" -v uid"#)
     }
 
     @Test("--rn reads history with React Native filterspecs and parses the dump in one shell command")
@@ -213,7 +234,7 @@ struct AndroidLogsTests {
         let server = Self.server()
         let entries = try await Self.read(LogQuery(source: .reactNative, window: .live(.seconds(5))), from: server)
 
-        #expect(Self.shellCommands(server) == [#"echo offsider-logcat; logcat -v threadtime -v epoch -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#])
+        #expect(Self.shellCommands(server) == [Self.clock + #"echo offsider-logcat; logcat -v threadtime -v epoch -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#])
         #expect(entries.count == 3)
         #expect(server.closedStreams >= 1)
     }

@@ -134,11 +134,39 @@ public struct LogEntry: Equatable, Sendable {
     }
 }
 
+/// What a backend learnt while reading that the reader should hear about.
+public enum LogNote: Equatable, Sendable {
+    /// The device's clock minus this Mac's, in whole seconds, when they differ by more than `LogClock.skewThreshold`.
+    case clockSkew(seconds: Int)
+}
+
+/// Comparing a device's clock with this Mac's, whose times `--since` is given in.
+public enum LogClock {
+    public static let skewThreshold = 3
+
+    /// The skew when it is past the threshold, from the device's `date +%s` read at `hostNow`.
+    public static func skew(deviceSeconds: Int, hostNow: Date) -> Int? {
+        let seconds = deviceSeconds - Int(hostNow.timeIntervalSince1970.rounded())
+        return abs(seconds) > skewThreshold ? seconds : nil
+    }
+
+    public static func note(_ seconds: Int, device: String) -> String {
+        let direction = seconds > 0 ? "ahead of" : "behind"
+        return "Note: \(device)'s clock is \(abs(seconds)) s \(direction) this Mac's. Log times are the device's own; --last and --since were counted back from its clock."
+    }
+}
+
 /// Optional capability: reading the device's log for `logs`.
 @MainActor
 public protocol LogReading: DeviceBackend {
-    /// Delivers entries oldest first; returns when the window ends or the task is cancelled.
-    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws
+    /// Delivers entries oldest first, and notes as they come up; returns when the window ends or the task is cancelled.
+    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void, onNote: @escaping @MainActor (LogNote) -> Void) async throws
+}
+
+extension LogReading {
+    public func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
+        try await readLogs(query, on: id, onEntry: onEntry, onNote: { _ in })
+    }
 }
 
 extension Duration {

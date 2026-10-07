@@ -51,12 +51,14 @@ struct LogcatParser {
 enum LogcatCommand {
     static let reactNativeFilters = ["ReactNativeJS:V", "ReactNative:V", "*:S"]
     static let startMarker = "offsider-logcat"
+    static let clockMarker = "offsider-clock "
     static let pidMarker = "offsider-pid "
     static let notRunningMarker = "offsider-not-running"
 
-    /// `--app` and `--process` look up the pid and stop when nothing runs; `--rn --app` lists the package's user ID.
-    static func script(window: LogWindow, source: LogSource) -> String {
-        var preamble: [String] = []
+    /// The device's clock first, for the skew note; `--app` and `--process` look up the pid and stop when nothing runs;
+    /// `--rn --app` lists the package's user ID. `now` is this Mac's, which `--since` is counted back from.
+    static func script(window: LogWindow, source: LogSource, now: Date = Date()) -> String {
+        var preamble = ["echo \"\(clockMarker)$(date +%s)\""]
         var pid: String?
         switch source {
         case .app(let name), .process(let name):
@@ -69,21 +71,22 @@ enum LogcatCommand {
             break
         }
         preamble.append("echo \(startMarker)")
-        var logcat = logcatWords(window: window)
+        var logcat = logcatWords(window: window, now: now)
         if case .reactNative(_?) = source { logcat += ["-v", "uid"] }
         if let pid { logcat.append("--pid=\(pid)") }
         if source == .reactNative(app: nil) { logcat += reactNativeFilters.map(AdbShellQuoting.quote) }
         return (preamble + [logcat.joined(separator: " ")]).joined(separator: "; ")
     }
 
-    /// History is a dump (`-d`) from a start time; live output starts at the device's own clock, so host and device need not agree.
-    private static func logcatWords(window: LogWindow) -> [String] {
+    /// History is a dump (`-d`) counted back from the device's own clock, as is live output, so a skewed clock still reads the right stretch.
+    private static func logcatWords(window: LogWindow, now: Date) -> [String] {
         var words = ["logcat"]
         switch window {
         case .last(let duration):
             words += ["-d", "-v", "threadtime", "-v", "epoch", "-T", "\"$(($(date +%s)-\(duration.wholeSecondsRoundedUp))).000\""]
         case .since(let date):
-            words += ["-d", "-v", "threadtime", "-v", "epoch", "-T", AdbShellQuoting.quote(String(format: "%.3f", date.timeIntervalSince1970))]
+            let back = max(0, Int(now.timeIntervalSince(date).rounded(.up)))
+            words += ["-d", "-v", "threadtime", "-v", "epoch", "-T", "\"$(($(date +%s)-\(back))).000\""]
         case .live:
             words += ["-v", "threadtime", "-v", "epoch", "-T", "\"$(date +%s).000\""]
         }
