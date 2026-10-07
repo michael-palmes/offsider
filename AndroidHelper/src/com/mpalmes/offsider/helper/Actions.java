@@ -4,7 +4,6 @@ import android.app.UiAutomation;
 import android.os.Bundle;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction;
-import android.view.accessibility.AccessibilityWindowInfo;
 import java.util.List;
 import org.json.JSONObject;
 
@@ -146,7 +145,7 @@ final class Actions {
             return node;
         }
         // A web view can hold input focus while the text field a tap focused is focused too.
-        AccessibilityNodeInfo editable = onlyFocusedEditable(automation);
+        AccessibilityNodeInfo editable = onlyFocusedEditable(automation, node);
         if (editable != null) {
             return editable;
         }
@@ -160,20 +159,26 @@ final class Actions {
                 .field(nodeClass, nodeId, node.getInputType());
     }
 
-    /** The one focused editable node across windows, or null when there is none or more than one. */
-    private static AccessibilityNodeInfo onlyFocusedEditable(UiAutomation automation) {
+    /** The one focused editable node in the window holding input focus, or null when there is none or more than one. */
+    private static AccessibilityNodeInfo onlyFocusedEditable(UiAutomation automation, AccessibilityNodeInfo inputFocus) {
         AccessibilityNodeInfo[] found = new AccessibilityNodeInfo[1];
         int[] count = new int[1];
-        List<AccessibilityWindowInfo> windows = automation.getWindows();
-        if (windows != null) {
-            for (AccessibilityWindowInfo window : windows) {
-                collectFocusedEditable(window.getRoot(), found, count);
-            }
-        }
-        if (count[0] == 0) {
-            collectFocusedEditable(automation.getRootInActiveWindow(), found, count);
-        }
+        collectFocusedEditable(windowRoot(automation, inputFocus), found, count);
         return count[0] == 1 ? found[0] : null;
+    }
+
+    /** The root above the input-focused node, else the active window's, so a field behind a dialog is never chosen. */
+    private static AccessibilityNodeInfo windowRoot(UiAutomation automation, AccessibilityNodeInfo inputFocus) {
+        if (inputFocus == null) {
+            return automation.getRootInActiveWindow();
+        }
+        AccessibilityNodeInfo root = inputFocus;
+        AccessibilityNodeInfo parent = root.getParent();
+        for (int depth = 0; parent != null && depth < 256; depth++) {
+            root = parent;
+            parent = root.getParent();
+        }
+        return root;
     }
 
     private static void collectFocusedEditable(AccessibilityNodeInfo node, AccessibilityNodeInfo[] found, int[] count) {
