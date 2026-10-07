@@ -4,7 +4,7 @@ import OffsiderCore
 
 /// A phone's active panel, size and device state from its last capture, trusted only while connection, state and size still match.
 struct AndroidDisplayCacheEntry: Equatable, Sendable {
-    static let version = 1
+    static let version = 2
     static let maximumBytes = 16_384
 
     var serial: String
@@ -14,6 +14,8 @@ struct AndroidDisplayCacheEntry: Equatable, Sendable {
     var displayId: String
     /// `inner`, `cover` or `main`.
     var role: String
+    /// Whether `screencap` without `-d` captured the active panel, as the Fold's does, so a later capture can follow a fold without `-d`.
+    var followsActive: Bool
     /// Every state `print-states` listed; empty before API 31.
     var states: [AndroidDeviceState.State]
     /// The committed state when the entry was learnt; nil before API 31, where only the size is checked.
@@ -42,6 +44,7 @@ struct AndroidDisplayCacheEntry: Equatable, Sendable {
             "transportId": transportId,
             "displayId": displayId,
             "role": role,
+            "followsActive": followsActive,
             "states": states.map(state),
             "committed": committed.map(state) ?? NSNull(),
             "width": width,
@@ -56,7 +59,7 @@ struct AndroidDisplayCacheEntry: Equatable, Sendable {
               (object["version"] as? NSNumber)?.intValue == Self.version,
               let serial = object["serial"] as? String, let transportId = object["transportId"] as? String,
               let displayId = object["displayId"] as? String, Self.isDisplayId(displayId),
-              let role = object["role"] as? String,
+              let role = object["role"] as? String, let followsActive = (object["followsActive"] as? NSNumber)?.boolValue,
               let width = (object["width"] as? NSNumber)?.intValue, let height = (object["height"] as? NSNumber)?.intValue,
               width > 0, height > 0 else {
             return nil
@@ -69,17 +72,21 @@ struct AndroidDisplayCacheEntry: Equatable, Sendable {
         self.init(
             serial: serial, transportId: transportId, displayId: displayId, role: role,
             states: (object["states"] as? [Any] ?? []).compactMap(state), committed: state(object["committed"]),
-            width: width, height: height
+            followsActive: followsActive, width: width, height: height
         )
     }
 
-    init(serial: String, transportId: String, displayId: String, role: String, states: [AndroidDeviceState.State], committed: AndroidDeviceState.State?, width: Int, height: Int) {
+    init(
+        serial: String, transportId: String, displayId: String, role: String, states: [AndroidDeviceState.State],
+        committed: AndroidDeviceState.State?, followsActive: Bool, width: Int, height: Int
+    ) {
         self.serial = serial
         self.transportId = transportId
         self.displayId = displayId
         self.role = role
         self.states = states
         self.committed = committed
+        self.followsActive = followsActive
         self.width = width
         self.height = height
     }

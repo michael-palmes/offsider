@@ -17,6 +17,9 @@ struct AndroidDisplayCacheTests {
         private let lock = NSLock()
         private var isClosed = false
         private var transportId = 7
+        /// `screencap` without `-d` captures the inner panel whatever the hinge, so the cover needs `-d`.
+        let picksInner: Bool
+        init(picksInner: Bool = false) { self.picksInner = picksInner }
         var closed: Bool {
             get { lock.withLock { isClosed } }
             set { lock.withLock { isClosed = newValue } }
@@ -39,7 +42,7 @@ struct AndroidDisplayCacheTests {
             let innerPNG = AndroidMultiDisplayCaptureTests.png(1768, 2208)
             let coverPNG = AndroidMultiDisplayCaptureTests.png(840, 2289)
             switch service {
-            case "exec:screencap -p": return FakeAdbServer.exec(ScreencapRawTests.warning + (closed ? coverPNG : innerPNG))
+            case "exec:screencap -p": return FakeAdbServer.exec(ScreencapRawTests.warning + (closed && !phone.picksInner ? coverPNG : innerPNG))
             case "exec:screencap -d \(inner) -p": return FakeAdbServer.exec(innerPNG)
             case "exec:screencap -d \(cover) -p": return FakeAdbServer.exec(coverPNG)
             default: break
@@ -59,11 +62,15 @@ struct AndroidDisplayCacheTests {
         return try OffsiderPrivateDirectory.ensureSubdirectory("displays", root: root)
     }
 
-    /// One command: routes by serial, as the CLI does, then captures; returns the PNG and the services it sent.
-    static func command(_ server: FakeAdbServer, cache: String?) async throws -> (png: Data, services: [String]) {
+    static func backend(_ server: FakeAdbServer, cache: String?) throws -> AndroidBackend {
         var host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: server)
         host.displayCacheDirectory = { cache }
-        let backend = AndroidBackend(host: host) { _, _ in }
+        return AndroidBackend(host: host) { _, _ in }
+    }
+
+    /// One command: routes by serial, as the CLI does, then captures; returns the PNG and the services it sent.
+    static func command(_ server: FakeAdbServer, cache: String?) async throws -> (png: Data, services: [String]) {
+        let backend = try Self.backend(server, cache: cache)
         let before = server.services.count
         _ = try await backend.resolveAndroidName(serial)
         let png = try await backend.screenshotPNG(for: phone)
@@ -107,6 +114,68 @@ struct AndroidDisplayCacheTests {
         #expect(Self.entry(in: directory)?.displayId == Self.cover)
     }
 
+    static func execs(_ server: FakeAdbServer, after count: Int) -> [String] {
+        server.services.dropFirst(count).filter { $0.hasPrefix("exec:") }
+    }
+
+    @Test("on a phone whose screencap follows the active panel, a cached command takes its first capture with -d, then follows a fold partway through")
+    func cachedCommandFollowsFold() async throws {
+        let directory = try Self.cacheDirectory()
+        let phone = Phone()
+        let server = Self.server(phone)
+        _ = try await Self.command(server, cache: directory)
+        let backend = try Self.backend(server, cache: directory)
+        _ = try await backend.resolveAndroidName(Self.serial)
+        let before = server.services.count
+
+        #expect(try await backend.screenshotPNG(for: Self.phone) == AndroidMultiDisplayCaptureTests.png(1768, 2208))
+        phone.closed = true
+        #expect(try await backend.screenshotPNG(for: Self.phone) == AndroidMultiDisplayCaptureTests.png(840, 2289))
+        await backend.close()
+
+        #expect(Self.execs(server, after: before) == ["exec:screencap -d \(Self.inner) -p", "exec:screencap -p"])
+    }
+
+    @Test("on a phone whose screencap needed -d, a cached command keeps naming the cached panel")
+    func cachedNamedPickStays() async throws {
+        let directory = try Self.cacheDirectory()
+        let phone = Phone(picksInner: true)
+        phone.closed = true
+        let server = Self.server(phone)
+        _ = try await Self.command(server, cache: directory)
+        let backend = try Self.backend(server, cache: directory)
+        _ = try await backend.resolveAndroidName(Self.serial)
+        let before = server.services.count
+
+        #expect(try await backend.screenshotPNG(for: Self.phone) == AndroidMultiDisplayCaptureTests.png(840, 2289))
+        #expect(try await backend.screenshotPNG(for: Self.phone) == AndroidMultiDisplayCaptureTests.png(840, 2289))
+        await backend.close()
+
+        #expect(Self.execs(server, after: before) == ["exec:screencap -d \(Self.cover) -p", "exec:screencap -d \(Self.cover) -p"])
+    }
+
+    /// The cache file's inode, which every atomic write replaces.
+    static func fileNumber(in directory: String) throws -> Int? {
+        let path = (directory as NSString).appendingPathComponent(AndroidDisplayCacheEntry.fileName(serial: serial))
+        return (try FileManager.default.attributesOfItem(atPath: path)[.systemFileNumber] as? NSNumber)?.intValue
+    }
+
+    @Test("captures of the same panel within one command write the cache once, not once a capture")
+    func sameEntryWrittenOnce() async throws {
+        let directory = try Self.cacheDirectory()
+        let backend = try Self.backend(Self.server(Phone()), cache: directory)
+        _ = try await backend.resolveAndroidName(Self.serial)
+
+        _ = try await backend.screenshotPNG(for: Self.phone)
+        let written = try Self.fileNumber(in: directory)
+        _ = try await backend.screenshotPNG(for: Self.phone)
+        _ = try await backend.screenshotPNG(for: Self.phone)
+        await backend.close()
+
+        #expect(written != nil)
+        #expect(try Self.fileNumber(in: directory) == written)
+    }
+
     @Test("plugged in again, the phone's new adb connection is not trusted: the entry is dropped before any -d capture")
     func transportChangeInvalidates() async throws {
         let directory = try Self.cacheDirectory()
@@ -124,7 +193,7 @@ struct AndroidDisplayCacheTests {
     @Test("an entry whose display id is not digits is never sent to the shell, and is removed")
     func tamperedEntryIgnored() async throws {
         let directory = try Self.cacheDirectory()
-        let tampered = Data(#"{"version":1,"serial":"R58M123ABC","transportId":"7","displayId":"1; reboot","role":"inner","states":[],"committed":null,"width":1768,"height":2208}"#.utf8)
+        let tampered = Data(#"{"version":2,"serial":"R58M123ABC","transportId":"7","displayId":"1; reboot","role":"inner","followsActive":true,"states":[],"committed":null,"width":1768,"height":2208}"#.utf8)
         try OffsiderPrivateDirectory.writeAtomically(tampered, named: AndroidDisplayCacheEntry.fileName(serial: Self.serial), in: directory)
 
         let result = try await Self.command(Self.server(Phone()), cache: directory)
@@ -143,14 +212,16 @@ struct AndroidDisplayCacheTests {
         #expect(AndroidDisplayCache.isEnabled([:]))
     }
 
-    @Test("an entry survives encoding, and a serial never reaches its file name")
+    @Test("an entry survives encoding, an entry of the older version is dropped, and a serial never reaches its file name")
     func entryRoundTrip() throws {
         let entry = AndroidDisplayCacheEntry(
             serial: Self.serial, transportId: "7", displayId: Self.inner, role: "inner",
             states: [AndroidDeviceState.State(identifier: 3, name: "OPEN")], committed: AndroidDeviceState.State(identifier: 3, name: "OPEN"),
-            width: 1768, height: 2208
+            followsActive: true, width: 1768, height: 2208
         )
         #expect(AndroidDisplayCacheEntry(data: entry.encoded()) == entry)
+        let older = #"{"version":1,"serial":"R58M123ABC","transportId":"7","displayId":"1","role":"inner","states":[],"committed":null,"width":1768,"height":2208}"#
+        #expect(AndroidDisplayCacheEntry(data: Data(older.utf8)) == nil)
         #expect(!AndroidDisplayCacheEntry.fileName(serial: Self.serial).contains(Self.serial))
         #expect(!AndroidDisplayCacheEntry.isDisplayId("") && !AndroidDisplayCacheEntry.isDisplayId("-1") && AndroidDisplayCacheEntry.isDisplayId("0"))
     }
