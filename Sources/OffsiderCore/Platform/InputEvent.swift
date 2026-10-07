@@ -16,12 +16,14 @@ public enum HardwareButton: String, CaseIterable, Equatable, Sendable {
     case appSwitch
     case volumeUp
     case volumeDown
+    /// Android's KEYCODE_MENU, which opens a React Native debug build's dev menu.
+    case menu
 
     public var platforms: Set<DevicePlatform> {
         switch self {
         case .home, .lock: return [.ios, .android]
         case .applePay, .sideButton, .siri: return [.ios]
-        case .back, .appSwitch, .volumeUp, .volumeDown: return [.android]
+        case .back, .appSwitch, .volumeUp, .volumeDown, .menu: return [.android]
         }
     }
 }

@@ -282,8 +282,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
             case .text(let run):
                 try await emulator.sendKey(.text(run))
             case .key(let usage):
-                guard let code = AndroidKeyTable.usbCode(for: usage) else { throw AndroidError.unsupportedKey(usage) }
-                try await emulator.sendKey(.usb(code, .press))
+                guard let key = AndroidKeyTable.grpcKey(for: usage, phase: .press) else { throw AndroidError.unsupportedKey(usage) }
+                try await emulator.sendKey(key)
             }
         }
     }

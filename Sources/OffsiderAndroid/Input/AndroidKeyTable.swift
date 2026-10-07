@@ -17,6 +17,15 @@ enum AndroidKeyTable {
         keyCode(for: usage) == nil ? nil : 0x07 << 16 | usage
     }
 
+    /// Linux KEY_MENU: the emulator drops USB usage 118 and turns its W3C `ContextMenu` into KEYCODE_SEARCH.
+    static let evdevMenu: UInt32 = 139
+
+    /// The emulator's key event for a usage: Menu (118) as evdev KEY_MENU, the others on the USB keyboard page.
+    static func grpcKey(for usage: UInt32, phase: KeyPhase) -> EmulatorKeyEvent? {
+        if usage == AndroidButtonMap.menuUsage { return .evdev(evdevMenu, phase) }
+        return usbCode(for: usage).map { .usb($0, phase) }
+    }
+
     static func requireKeyCode(for usage: UInt32) throws -> Int {
         guard let code = keyCode(for: usage) else { throw AndroidError.unsupportedKey(usage) }
         return code
@@ -29,6 +38,7 @@ enum AndroidKeyTable {
         57: 115,
         73: 124, 74: 122, 75: 92, 76: 112, 77: 123, 78: 93,
         79: 22, 80: 21, 81: 20, 82: 19,
+        118: 82,
         127: 164, 128: 24, 129: 25,
         224: 113, 225: 59, 226: 57, 227: 117, 228: 114, 229: 60, 230: 58, 231: 118,
     ]
