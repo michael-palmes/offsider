@@ -29,8 +29,7 @@ public struct CoverVerdict: Equatable, Sendable {
 
 /// Decides whether a selector tap's point reaches its target, from a hit-test, Android's drawing order or, failing both, tree order.
 public enum CoverJudge {
-    /// What a tap at `point` meant for `target` (and the `matched` element it came from) would reach instead; nil when it reaches the target.
-    /// `hit` is the iOS simulator's hit-test answer, nil when there is none; `candidates` are the plausible occluders over the point.
+    /// What a tap at `point` on `target` (from `matched`) would reach instead, given the simulator's `hit` if any; nil when it reaches the target.
     public static func judge(
         target: UINode,
         matched: UINode,
@@ -41,7 +40,7 @@ public enum CoverJudge {
         stack: ScreenStack,
         hit: UINode?
     ) -> CoverVerdict? {
-        let context = Context(target: target, matched: matched, point: point, candidates: candidates, roots: roots, stack: stack)
+        let context = Context(target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack)
         if let hit {
             switch context.judge(hit: hit) {
             case .clear: return nil
@@ -74,6 +73,12 @@ public enum CoverJudge {
 
     private static let containerRoles: Set<UIRole> = [.window, .application, .scrollView, .list]
 
+    /// Covers at least 80 percent of the viewport, as a screen's root or backdrop does.
+    static func spans(_ frame: UIFrame, _ viewport: UIFrame) -> Bool {
+        guard let visible = frame.intersection(viewport) else { return false }
+        return visible.area >= 0.8 * viewport.area
+    }
+
     /// A control, or labelled content that is not a container: something a tap on it would visibly reach.
     public static func isPlausibleOccluder(_ node: UINode) -> Bool {
         node.role.isActionable || (node.trimmedLabel != nil && !containerRoles.contains(node.role))
@@ -91,17 +96,19 @@ public enum CoverJudge {
         let point: UIPoint
         let candidates: [UINode]
         let roots: [UINode]
+        let viewport: UIFrame
         let stack: ScreenStack
         let flat: [UINode]
         /// The target and the matched element with everything inside them.
         let own: [UINode]
 
-        init(target: UINode, matched: UINode, point: UIPoint, candidates: [UINode], roots: [UINode], stack: ScreenStack) {
+        init(target: UINode, matched: UINode, point: UIPoint, candidates: [UINode], roots: [UINode], viewport: UIFrame, stack: ScreenStack) {
             self.target = target
             self.matched = matched
             self.point = point
             self.candidates = candidates
             self.roots = roots
+            self.viewport = viewport
             self.stack = stack
             flat = roots.flatMap { $0.flattened() }
             own = target.flattened() + matched.flattened()
@@ -139,11 +146,49 @@ public enum CoverJudge {
             flat.first { $0.isSameElement(as: hit) } ?? flat.first { $0.isLoosely(hit) }
         }
 
+        /// The target read again after its label ticked: the same role and id, or with no id the same role within a point; never an element the tree names apart.
+        private func isOwnHit(_ hit: UINode, placed: UINode?) -> Bool {
+            if let placed {
+                return isOwn(placed)
+            }
+            return own.contains { node in
+                guard node.role == hit.role else { return false }
+                if let id = hit.trimmedID {
+                    return node.trimmedID == id
+                }
+                guard node.trimmedID == nil, let mine = node.frame, let theirs = hit.frame else { return false }
+                return mine.isWithinTolerance(of: theirs)
+            }
+        }
+
+        /// An unplaced hit of the target's role over most of its frame, with no other id: maybe the target moved, so never a confident cover.
+        private func mayBeTarget(_ hit: UINode) -> Bool {
+            [target, matched].contains { node in
+                guard node.role == hit.role, let mine = node.frame, let theirs = hit.frame,
+                      node.trimmedID == nil || hit.trimmedID == nil,
+                      let overlap = mine.intersection(theirs) else { return false }
+                return overlap.area >= 0.8 * max(mine.area, theirs.area)
+            }
+        }
+
+        /// The application or window root, or a node spanning the viewport around the target: a hit on it says nothing about the point.
+        private func isScreenRoot(_ hit: UINode, placed: UINode?) -> Bool {
+            let rootRoles: Set<UIRole> = [.application, .window]
+            guard let placed else {
+                return rootRoles.contains(hit.role) && roots.contains { $0.role == hit.role && $0.label == hit.label }
+            }
+            guard [target, matched].contains(where: { isAncestor(placed, of: $0) }) else { return false }
+            return rootRoles.contains(placed.role) || placed.frame.map { CoverJudge.spans($0, viewport) } == true
+        }
+
         func judge(hit: UINode) -> HitJudgement {
-            if isOwn(hit) {
+            let placed = placed(hit)
+            if isOwn(hit) || isOwnHit(hit, placed: placed) {
                 return .clear
             }
-            let placed = placed(hit)
+            if isScreenRoot(hit, placed: placed) {
+                return pageOverTarget.map { .cover(cover(on: $0), confident: true) } ?? .clear
+            }
             if let label = hit.trimmedLabel, let frame = hit.frame {
                 let carriers = flat.filter { node in
                     !(placed.map { node.isSameElement(as: $0) } ?? false)
@@ -170,7 +215,7 @@ public enum CoverJudge {
                 }
                 return enclosing.min { $0.area < $1.area }.map { .cover($0, confident: false) } ?? .clear
             } else if CoverJudge.isPlausibleOccluder(node) {
-                return .cover(node, confident: true)
+                return placed == nil && mayBeTarget(hit) ? .undecided : .cover(node, confident: true)
             }
             if let page = pageOverTarget {
                 return .cover(cover(on: page), confident: true)
@@ -189,8 +234,7 @@ public enum CoverJudge {
             }
         }
 
-        /// Without a hit-test or drawing order: a page over the target's screen, else the first candidate that is not
-        /// wholly inside the target (more likely its own content) or a backdrop (more likely behind the content it surrounds).
+        /// Without a hit-test or drawing order: a page over the target's screen, else the first candidate neither inside the target nor a backdrop.
         func guess(viewport: UIFrame) -> UINode? {
             if let page = pageOverTarget {
                 return cover(on: page)
@@ -198,7 +242,7 @@ public enum CoverJudge {
             let targetFrame = target.frame
             return candidates.first { candidate in
                 guard let frame = candidate.frame else { return true }
-                if let visible = frame.intersection(viewport), visible.area >= 0.8 * viewport.area { return false }
+                if CoverJudge.spans(frame, viewport) { return false }
                 guard let targetFrame else { return true }
                 return !targetFrame.encloses(frame, tolerance: 0)
             }
@@ -214,9 +258,7 @@ extension UINode {
         case (nil, nil):
             return true
         case (let mine?, let theirs?):
-            let tolerance = TransitionGuard.frameTolerance
-            return abs(mine.x - theirs.x) <= tolerance && abs(mine.y - theirs.y) <= tolerance
-                && abs(mine.width - theirs.width) <= tolerance && abs(mine.height - theirs.height) <= tolerance
+            return mine.isWithinTolerance(of: theirs)
         default:
             return false
         }
@@ -239,4 +281,11 @@ extension UINode {
 
 extension UIFrame {
     var area: Double { width * height }
+
+    /// Each edge and size within `TransitionGuard.frameTolerance`.
+    func isWithinTolerance(of other: UIFrame) -> Bool {
+        let tolerance = TransitionGuard.frameTolerance
+        return abs(x - other.x) <= tolerance && abs(y - other.y) <= tolerance
+            && abs(width - other.width) <= tolerance && abs(height - other.height) <= tolerance
+    }
 }

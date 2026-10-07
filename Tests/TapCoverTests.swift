@@ -4,9 +4,10 @@ import Testing
 
 @Suite("Tap cover judge")
 struct TapCoverTests {
-    static func judge(_ tree: UITree, target targetID: String, hit: UINode?, candidates: [String]? = nil) throws -> CoverVerdict? {
+    /// Judges a tap on the element whose id, else label, is `targetName`.
+    static func judge(_ tree: UITree, target targetName: String, hit: UINode?, candidates: [String]? = nil) throws -> CoverVerdict? {
         let nodes = tree.roots.flatMap { $0.flattened() }
-        let target = try #require(nodes.first { $0.id == targetID })
+        let target = try #require(nodes.first { $0.id == targetName } ?? nodes.first { $0.label == targetName })
         let point = try #require(target.frame?.center)
         let viewport = try #require(tree.viewport)
         let occluders = nodes.filter { node in
@@ -43,14 +44,26 @@ struct TapCoverTests {
         #expect(try Self.judge(try Self.iosFullPage(), target: "stack-test-full-buy", hit: hit) == nil)
     }
 
-    @Test("a hit on an ancestor of both the target and a candidate tells nothing, so the candidate is only a guess")
+    @Test("a hit on a smaller container holding both the target and a candidate tells nothing, so the candidate is only a guess")
     func sharedAncestorHit() throws {
-        let tree = try Self.iosFullPage()
+        let row = FakeUI.node(.group, frame: FakeUI.frame(0, 780, 402, 94), children: [
+            FakeUI.node(.button, id: "tab", label: "Home Tab", frame: FakeUI.frame(201, 791, 201, 49)),
+            FakeUI.node(.button, id: "buy", label: "Buy", frame: FakeUI.frame(197, 793, 189, 45)),
+        ])
 
-        let verdict = try #require(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: tree.roots[0]))
+        let verdict = try #require(try Self.judge(FakeUI.tree([row]), target: "tab", hit: row))
 
-        #expect(verdict.cover.id == "stack-test-full-buy")
+        #expect(verdict.cover.id == "buy")
         #expect(verdict.evidence == .treeOrder && !verdict.isConfident)
+    }
+
+    @Test("a hit on the application root or a group spanning the screen, as when the hit-test's retries run out, tells nothing and warns of nothing")
+    func screenRootHitTellsNothing() throws {
+        let tree = try Self.iosFullPage()
+        let screenGroup = tree.roots[0].children[0]
+
+        #expect(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: tree.roots[0]) == nil)
+        #expect(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: screenGroup) == nil)
     }
 
     @Test("a shared ancestor hit over a target beneath a page is the page's control at the point, refused")
@@ -89,6 +102,58 @@ struct TapCoverTests {
         let moved = FakeUI.node(.button, id: "save", label: "Save", frame: FakeUI.frame(20, 700.5, 350, 44))
 
         #expect(try Self.judge(tree, target: "save", hit: moved) == nil)
+    }
+
+    /// A markets row whose label holds a live price, inside a labelled section that is a cover candidate.
+    static func priceRow(id: String?) -> UITree {
+        FakeUI.tree([
+            FakeUI.node(.other, label: "Markets", frame: FakeUI.frame(0, 250, 402, 500)),
+            FakeUI.node(.button, id: id, label: "Bitcoin $64,012.34", frame: FakeUI.frame(0, 300, 402, 60)),
+        ])
+    }
+
+    @Test("a hit with the target's role and id is the target, though its price ticked and it moved between the reads")
+    func sameIDTickedHit() throws {
+        let ticked = FakeUI.node(.button, id: "btc-row", label: "Bitcoin $64,013.61", frame: FakeUI.frame(0, 303, 402, 60))
+        #expect(try Self.judge(Self.priceRow(id: "btc-row"), target: "btc-row", hit: ticked) == nil)
+    }
+
+    @Test("without an id, a hit with the target's role within a point of its frame is the target, though its label ticked")
+    func noIDTickedHit() throws {
+        let ticked = FakeUI.node(.button, label: "Bitcoin $64,013.61", frame: FakeUI.frame(0, 300.5, 402, 60))
+        #expect(try Self.judge(Self.priceRow(id: nil), target: "Bitcoin $64,012.34", hit: ticked) == nil)
+    }
+
+    @Test("without an id, a ticked hit of the target's role that moved further but mostly overlaps it is never a confident cover")
+    func noIDMovedHitIsNotConfident() throws {
+        let moved = FakeUI.node(.button, label: "Bitcoin $64,013.61", frame: FakeUI.frame(0, 306, 402, 60))
+        #expect(try Self.judge(Self.priceRow(id: nil), target: "Bitcoin $64,012.34", hit: moved)?.isConfident != true)
+    }
+
+    @Test("a hit the tree names as another element is that element, though it shares the target's role, id and frame")
+    func placedHitSharingID() throws {
+        let tree = FakeUI.tree([
+            FakeUI.node(.button, id: "cta", label: "Open Full Page", frame: FakeUI.frame(16, 738, 370, 44)),
+            FakeUI.node(.button, id: "cta", label: "Open Flags", frame: FakeUI.frame(16, 738, 370, 44)),
+        ])
+        let flags = tree.roots[0].children[1]
+
+        let verdict = try #require(try Self.judge(tree, target: "Open Full Page", hit: flags))
+
+        #expect(verdict.cover.label == "Open Flags" && verdict.isConfident)
+    }
+
+    @Test("Buy's own button over the Home Tab, which it mostly overlaps, stays a confident cover, even read again 2 pt along")
+    func overlappingButtonWithOwnID() throws {
+        let tree = try Self.iosFullPage()
+        let buy = try #require(tree.roots.flatMap { $0.flattened() }.first { $0.id == "stack-test-full-buy" })
+        var shifted = buy
+        shifted.frame = FakeUI.frame(199, 793, 189, 45)
+
+        for hit in [buy, shifted] {
+            let verdict = try #require(try Self.judge(tree, target: "stack-test-tab-dashboard", hit: hit))
+            #expect(verdict.cover.id == "stack-test-full-buy" && verdict.isConfident)
+        }
     }
 
     @Test("a page's Back over the home menu button below it is the cover")
