@@ -254,6 +254,7 @@ enum SignInFixture {
         coverPassword: Bool = false,
         keyboardNext: Bool = false,
         fullKeyboard: Bool = false,
+        lowKeyboard: Bool = false,
         assistantChrome: Bool = false,
         emptyCover: Bool = false,
         omitSubmit: Bool = false,
@@ -295,6 +296,9 @@ enum SignInFixture {
         }
         if fullKeyboard {
             children.append(FakeUI.node(.keyboard, frame: FakeUI.frame(0, 0, 402, 874)))
+        }
+        if lowKeyboard {
+            children.append(FakeUI.node(.keyboard, frame: FakeUI.frame(0, 560, 402, 314)))
         }
         if emptyCover {
             children.append(FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [

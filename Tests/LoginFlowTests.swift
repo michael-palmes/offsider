@@ -118,6 +118,22 @@ struct LoginFlowTests {
         #expect(report.turnstile == .passed)
     }
 
+    @Test("keys still sliding away after the dismiss tap are waited for, not taken for a keyboard that stayed")
+    func keyboardLeavesSlowly() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnSleep = true
+        let report = try await run(script, mode: .off)
+        #expect(script.hides == 0)
+        #expect(script.taps.count == 2)
+        #expect(report.submitLabel == "Log in")
+    }
+
     @Test("a keyboard with no safe point does not reach Turnstile or submit")
     func keyboardCoversSubmit() async {
         let script = script(buttonEnabled: true, keyboard: true)
@@ -171,6 +187,7 @@ final class LoginScript {
     var sleeps = 0
     var hides = 0
     var advanceOnHide = false
+    var advanceOnSleep = false
     var time: TimeInterval = 0
 
     init(trees: [UITree]) {
@@ -208,6 +225,7 @@ final class LoginScript {
                 now: { self.time },
                 sleep: { duration in
                     self.sleeps += 1
+                    if self.advanceOnSleep, self.index + 1 < self.trees.count { self.index += 1 }
                     let parts = duration.components
                     self.time += Double(parts.seconds) + Double(parts.attoseconds) / 1e18
                 }

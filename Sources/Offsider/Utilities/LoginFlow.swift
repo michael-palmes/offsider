@@ -113,15 +113,28 @@ enum LoginFlow {
             return tree
         }
         var current = tree
+        let gone: (UITree) -> Bool = { !keyboardOnScreen(keyboards(in: $0), in: $0) }
         if let point = KeyboardDismiss.point(in: tree) {
             try await services.tap(point, tree)
-            current = try await services.readTree()
+            current = try await readUntil(gone, services: services)
         }
-        if keyboardOnScreen(keyboards(in: current), in: current) {
+        if !gone(current) {
             try await services.hideKeyboard()
-            current = try await services.readTree()
+            current = try await readUntil(gone, services: services)
         }
         return current
+    }
+
+    static let keyboardSettle: TimeInterval = 1.5
+
+    /// The keys can still be sliding away when the tree is read straight after a dismiss.
+    private static func readUntil(_ done: (UITree) -> Bool, services: Services) async throws -> UITree {
+        let deadline = services.clock.now() + keyboardSettle
+        while true {
+            let tree = try await services.readTree()
+            if done(tree) || services.clock.now() >= deadline { return tree }
+            try await services.clock.sleep(.milliseconds(250))
+        }
     }
 
     private static func keyboards(in tree: UITree) -> [UINode] {
@@ -137,15 +150,16 @@ enum LoginFlow {
             return tree
         }
         var current = tree
+        let clear: (UITree) -> Bool = { !covered($0, submit: LoginForm.match(submit, in: $0) ?? submitNow, shell: shell) }
         if let point = KeyboardDismiss.point(in: tree) {
             try await services.tap(point, tree)
-            current = try await services.readTree()
-            if !covered(current, submit: LoginForm.match(submit, in: current) ?? submit, shell: shell) { return current }
+            current = try await readUntil(clear, services: services)
+            if clear(current) { return current }
         }
-        if covered(current, submit: LoginForm.match(submit, in: current) ?? submitNow, shell: shell) {
+        if !clear(current) {
             try await services.hideKeyboard()
-            current = try await services.readTree()
-            if covered(current, submit: LoginForm.match(submit, in: current) ?? submitNow, shell: shell) { throw keyboardError() }
+            current = try await readUntil(clear, services: services)
+            if !clear(current) { throw keyboardError() }
         }
         return current
     }
