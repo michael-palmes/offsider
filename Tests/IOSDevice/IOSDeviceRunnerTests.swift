@@ -433,8 +433,7 @@ struct RunnerSessionTests {
         #expect(error?.message.contains("still starting the runner") == true)
 
         held.release()
-        let patient = Self.manager(root: root, processes: FakeRunnerProcesses(), transport: FakeRunnerTransport(), lockTimeout: TestDevices.releaseGrace)
-        let next = try await patient.acquireStartLock(udid: Self.udid)
+        let next = try await manager.acquireStartLock(udid: Self.udid)
         #expect(try String(contentsOfFile: next.path, encoding: .utf8) == IOSDeviceStartLock.owner(getpid()))
         next.release()
     }
