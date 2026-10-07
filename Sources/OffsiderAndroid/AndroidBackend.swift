@@ -16,9 +16,21 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// How each device with several displays answers `screencap` without `-d`, learnt from this command's first capture.
     var screencapPicks: [String: ScreencapPick] = [:]
     var screenStatuses: [String: (display: ScreenDisplay?, posture: Posture?)] = [:]
+    /// Screen status reads under way, shared by every caller; the ticket keeps a read started before `forgetDisplay` from landing after it.
+    var statusTasks: [String: Task<(display: ScreenDisplay?, posture: Posture?), Never>] = [:]
+    var statusTickets: [String: Int] = [:]
+    var statusTicket = 0
+    /// The latest `cmd device_state state` of each device, from a status read.
+    var stateReadings: [String: AndroidDeviceState.Reading] = [:]
+    /// The active panel the display cache named and this command's capture confirmed.
+    var cachedDisplayIds: [String: String] = [:]
+    /// The display cache entry this command loaded or last saved, so an unchanged one is not written again.
+    private var displayEntries: [String: AndroidDisplayCacheEntry] = [:]
     private var avdNames: [String: String] = [:]
-    /// Phones this command named, from their device-list row.
+    /// Phones this command named, from their device-list row, once checked.
     var phones: [String: ConnectedPhone] = [:]
+    /// The row routing read for a phone, so `requireConnectedPhone` checks it without listing again.
+    private var listedPhones: [String: ConnectedPhone] = [:]
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
     private var dumpCounter = 0
@@ -97,7 +109,13 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         if let cached = phones[serial] {
             return cached
         }
-        guard let phone = try await directory().connectedPhone(serial: serial) else {
+        let listed: ConnectedPhone?
+        if let row = listedPhones[serial] {
+            listed = row
+        } else {
+            listed = try await directory().connectedPhone(serial: serial)
+        }
+        guard let phone = listed else {
             throw AndroidError.phoneNotConnected(serial)
         }
         guard phone.kind == .usb else { throw AndroidError.networkDevice(serial) }
@@ -119,7 +137,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         } catch is PlatformUnavailable {
             throw AndroidError.noDeviceNamed(name)
         }
-        return try await directory().resolve(name: name)
+        let resolved = try await directory().resolveListing(name: name)
+        if let phone = resolved.phone {
+            listedPhones[phone.serial] = phone
+        }
+        return resolved.serial
     }
 
     /// The helper's dump (else `uiautomator dump --compressed`) mapped to dp; with `point`, the deepest node there as the only root.
@@ -188,8 +210,15 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// Logical size over scale, scale = density / 160, orientation from the viewport rotation, and on a foldable its posture.
     public func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
         let serial = id.rawValue
-        var geometry = try await geometry(for: serial)
+        // Status first: with the geometry unknown it reads the probe in the same shell call.
         var status = await screenStatus(serial)
+        // Mid-fold both panels are dark for a moment; the display is named only once one lights.
+        for _ in 0..<Self.darkPanelReads where status.display == nil && displayLists[serial]?.panelsDark == true {
+            try await host.sleep(.milliseconds(250))
+            forgetDisplay(of: serial)
+            status = await screenStatus(serial)
+        }
+        var geometry = try await geometry(for: serial)
         if (knownDeviceStates[serial]?.count ?? 0) >= 2 {
             let settled = try await settledGeometry(serial)
             if settled != geometry {
@@ -463,7 +492,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return png
     }
 
-    /// `screencap` of the active display: plain while its own pick has the active display's size, else with `-d` for the rest of the command.
+    /// `screencap` of the active display: the cached panel while it holds, else plain while its pick has the active size, else `-d`.
     private func activeScreencap(
         _ serial: String,
         format: String?,
@@ -472,17 +501,34 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         if screencapPicks[serial] == .namedDisplay, let display = knownActiveDisplayId(serial) {
             return try await screencap(serial, format: format, display: display)
         }
-        let capture = try await screencap(serial, format: format, display: nil)
+        var rejected: (output: Data, command: String)?
+        if screencapPicks[serial] == nil, let cached = await cachedScreencap(serial, format: format, size: size) {
+            guard !cached.trusted else { return cached.capture }
+            rejected = cached.capture
+        }
+        let capture = if let rejected { rejected } else { try await screencap(serial, format: format, display: nil) }
         guard AndroidScreenCapture.warnsOfSeveralDisplays(capture.output) else { return capture }
         let picked = size(capture.output)
+        if let known = displayEntries[serial] {
+            let samePanel = picked.map { [$0.width, $0.height] == [known.width, known.height] } ?? false
+            if samePanel, known.followsActive, screencapPicks[serial] == .activeDisplay {
+                return capture
+            }
+            if !samePanel {
+                log(.debug, "screencap on \(serial) no longer has the size of the panel last confirmed; reading the displays again after a fold")
+                forgetDisplay(of: serial)
+            }
+        }
         if await hasActiveDisplaySize(picked, serial) {
             screencapPicks[serial] = .activeDisplay
+            rememberDisplay(serial, size: picked, followsActive: true)
             return capture
         }
         if screencapPicks[serial] == .activeDisplay {
             log(.debug, "screencap on \(serial) no longer has the active display's size; reading the displays again after a fold")
             forgetDisplay(of: serial)
             if await hasActiveDisplaySize(picked, serial) {
+                rememberDisplay(serial, size: picked, followsActive: true)
                 return capture
             }
         }
@@ -495,7 +541,79 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         }
         log(.debug, "screencap on \(serial) did not pick the active display; capturing \(display) with -d")
         screencapPicks[serial] = .namedDisplay
-        return try await screencap(serial, format: format, display: display)
+        let named = try await screencap(serial, format: format, display: display)
+        rememberDisplay(serial, size: size(named.output), followsActive: false)
+        return named
+    }
+
+    /// The display cache for this host, or nil when it is off.
+    private func displayCache() -> AndroidDisplayCache? {
+        host.displayCacheDirectory().map(AndroidDisplayCache.init(directory:))
+    }
+
+    /// The cached panel's capture (plain when `screencap` follows the active panel, else `-d`), trusted only while its size and any committed state match; a rejected plain capture is reused.
+    private func cachedScreencap(
+        _ serial: String,
+        format: String?,
+        size: (Data) -> (width: Int, height: Int)?
+    ) async -> (capture: (output: Data, command: String), trusted: Bool)? {
+        guard let cache = displayCache(), let entry = cache.load(serial: serial) else { return nil }
+        guard let transport = (phones[serial] ?? listedPhones[serial])?.transportId, entry.transportId == transport else {
+            log(.debug, "The display cache of \(serial) was learnt on another adb connection; reading the displays again")
+            cache.remove(serial: serial)
+            return nil
+        }
+        // `-d` of a panel folded away still answers at its size, so only the device state can vouch for a named one.
+        guard entry.followsActive || entry.committed != nil else {
+            log(.debug, "The display cache of \(serial) names a panel with no device state to check it against; reading the displays again")
+            cache.remove(serial: serial)
+            return nil
+        }
+        async let capturing = try? screencap(serial, format: format, display: entry.followsActive ? nil : entry.displayId)
+        async let reading = entry.committed == nil ? nil : try? deviceStateReading(serial)
+        let (capture, state) = await (capturing, reading)
+        let captured = capture.flatMap { size($0.output) }
+        guard let capture, let captured, captured.width == entry.width, captured.height == entry.height,
+              entry.committed == nil || state?.committed == entry.committed else {
+            log(.debug, "The display cache of \(serial) no longer matches its panel, posture or size; reading the displays again")
+            cache.remove(serial: serial)
+            return entry.followsActive ? capture.map { ($0, false) } : nil
+        }
+        screencapPicks[serial] = entry.followsActive ? .activeDisplay : .namedDisplay
+        cachedDisplayIds[serial] = entry.displayId
+        displayEntries[serial] = entry
+        if !entry.states.isEmpty {
+            knownDeviceStates[serial] = knownDeviceStates[serial] ?? entry.states
+        }
+        if let state {
+            stateReadings[serial] = state
+        }
+        if screenStatuses[serial] == nil, entry.states.count >= 2 {
+            screenStatuses[serial] = (ScreenDisplay(id: entry.role, platformId: entry.displayId), state?.committed.posture)
+        }
+        return (capture, true)
+    }
+
+    /// Keeps what this capture confirmed for the next command (a panel that needed `-d` only with a committed state); written only when it changed.
+    private func rememberDisplay(_ serial: String, size: (width: Int, height: Int)?, followsActive: Bool) {
+        guard let size, let cache = displayCache(), let transport = (phones[serial] ?? listedPhones[serial])?.transportId,
+              let list = displayLists[serial], let active = activeDisplay(in: list, serial: serial),
+              AndroidDisplayCacheEntry.isDisplayId(active.descriptor.platformId) else {
+            return
+        }
+        guard followsActive || stateReadings[serial] != nil else {
+            cache.remove(serial: serial)
+            displayEntries[serial] = nil
+            return
+        }
+        let entry = AndroidDisplayCacheEntry(
+            serial: serial, transportId: transport, displayId: active.descriptor.platformId, role: active.descriptor.role.rawValue,
+            states: knownDeviceStates[serial] ?? [], committed: stateReadings[serial]?.committed, followsActive: followsActive,
+            width: size.width, height: size.height
+        )
+        guard entry != displayEntries[serial] else { return }
+        cache.save(entry)
+        displayEntries[serial] = entry
     }
 
     private func screencap(_ serial: String, format: String?, display: String?) async throws -> (output: Data, command: String) {
@@ -511,9 +629,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return [size.width, size.height].sorted() == [geometry.logicalWidth, geometry.logicalHeight].sorted()
     }
 
-    /// The active display's platform id from this command's display list or display probe; nil when neither has read it.
+    static let darkPanelReads = 8
+
+    /// The active display's platform id from this command's display list or display probe; nil when neither has read it, or every panel is dark.
     func knownActiveDisplayId(_ serial: String) -> String? {
-        displayLists[serial].flatMap { activeDisplay(in: $0, serial: serial) }?.descriptor.platformId ?? viewportPlatformId(serial)
+        guard displayLists[serial]?.panelsDark != true else { return nil }
+        return displayLists[serial].flatMap { activeDisplay(in: $0, serial: serial) }?.descriptor.platformId ?? cachedDisplayIds[serial] ?? viewportPlatformId(serial)
     }
 
     func requireClient() throws -> AdbClient {
@@ -531,6 +652,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     func geometry(for serial: String) async throws -> AndroidDisplayGeometry {
         if let cached = geometries[serial] {
             return cached
+        }
+        if let pending = statusTasks[serial] {
+            _ = await pending.value
+            if let cached = geometries[serial] {
+                return cached
+            }
         }
         if let measured = try await helperGeometry(serial) {
             geometries[serial] = measured
@@ -569,8 +696,14 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         knownDeviceStates = [:]
         displayLists = [:]
         screenStatuses = [:]
+        statusTasks = [:]
+        statusTickets = [:]
+        stateReadings = [:]
+        cachedDisplayIds = [:]
+        displayEntries = [:]
         avdNames = [:]
         phones = [:]
+        listedPhones = [:]
         warnedAboutOverride = []
         for helper in helpers {
             await helper.close()

@@ -17,6 +17,7 @@ private func resolveBatchTapPoint(
     allowOffscreen: Bool,
     settle: SettlePolicy,
     pick: MatchPicker?,
+    coverCheck: AccessibilityPoller.CoverCheck?,
     logger: OffsiderLogger
 ) async throws -> Polled<TapResolution> {
     let fetchTree = context.pollingTreeSource()
@@ -28,6 +29,7 @@ private func resolveBatchTapPoint(
         allowOffscreen: allowOffscreen,
         settle: settle,
         pick: pick,
+        coverCheck: coverCheck,
         logger: logger
     ) {
         try await fetchTree()
@@ -97,12 +99,12 @@ extension Tap: BatchConvertible {
                 allowOffscreen: allowOffscreen,
                 settle: context.settlePolicy(stepOptedOut: noSettle),
                 pick: matchPicker(query: query, backend: context.backend, device: context.device),
+                coverCheck: coverCheck(selector: query.selectorDescription, backend: context.backend, device: context.device),
                 logger: logger
             )
             resolution = resolved.value
             resolvedTree = resolved.tree
             Self.warnIfOffScreen(subject: query.selectorDescription, at: resolution.point, in: resolved.tree)
-            try await checkCover(resolution, selector: query.selectorDescription, tree: resolved.tree, backend: context.backend, device: context.device)
         }
 
         let physicalPoint = try await context.backend.deviceCoordinates(
@@ -213,6 +215,7 @@ extension Button: BatchConvertible {
 
 extension Key: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        try systemKeys.check([keycode], on: context.device)
         if let duration {
             let composite = InputEvent.composite([
                 .keyboard(direction: .down, keyCode: UInt32(keycode)),
@@ -229,6 +232,7 @@ extension Key: BatchConvertible {
 extension KeySequence: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
+        try systemKeys.check(parsedKeycodes, on: context.device)
         let keyDelay = delay ?? 0.1
         var events: [InputEvent] = []
 
@@ -246,6 +250,7 @@ extension KeySequence: BatchConvertible {
 extension KeyCombo: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let parsedModifiers = try parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")
+        try systemKeys.check(parsedModifiers + [key], on: context.device)
 
         var events: [InputEvent] = []
         for modifier in parsedModifiers {
@@ -306,5 +311,18 @@ extension Type: BatchConvertible {
             }
             return primitives
         }
+    }
+}
+
+extension RNDevMenu: BatchConvertible {
+    func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        guard item != nil || label != nil else { throw ValidationError(BatchStepParser.rnStepMessage) }
+        return [.run { session in
+            if context.device.platform == .android {
+                _ = try await perform(on: context.route, clock: .live) { event in try await session.perform(event) }
+            } else {
+                _ = try await perform(on: context.route, clock: .live)
+            }
+        }]
     }
 }

@@ -138,3 +138,17 @@ public protocol DisplayCapturing: DeviceBackend {
     /// `display` is a platform id from `displays(of:)`; nil captures the active display.
     func screenshotPNG(for id: DeviceID, display: String?) async throws -> Data
 }
+
+/// Optional capability: the platform's own name for a foldable's posture, such as One UI's `TENT`.
+@MainActor
+public protocol PostureStateNaming: PostureControlling {
+    /// The state the latest `posture(of:)` read committed; nil when the device names none.
+    func postureStateName(of id: DeviceID) async -> String?
+}
+
+/// Optional capability: starting the read `screenInfo` needs before it is needed, so it runs alongside a capture or a tree read.
+@MainActor
+public protocol ScreenStatusPrefetching: DeviceBackend {
+    /// Returns at once; a later `screenInfo` shares the read.
+    func prefetchScreenStatus(for id: DeviceID)
+}

@@ -66,11 +66,12 @@ struct OffsiderCommand: AsyncParsableCommand {
     static func main() async {
         Timings.installTotal()
         let arguments = Array(CommandLine.arguments.dropFirst())
-        if let message = LegacyArguments.migrationMessage(for: arguments) {
+        if let hint = ArgumentHints.hint(for: arguments) {
+            let reason: FailureReason = hint.isLegacy ? .legacyArgument : .usage
             ErrorReporter.prepare(command: nil, arguments: arguments)
-            ErrorReporter.writeEnvelopeIfWanted(ErrorPayload(reason: .legacyArgument, message: message))
-            FileHandle.standardError.write(Data("Error: \(message)\n".utf8))
-            Darwin.exit(FailureReason.legacyArgument.exitCode.rawValue)
+            ErrorReporter.writeEnvelopeIfWanted(ErrorPayload(reason: reason, message: hint.message))
+            FileHandle.standardError.write(Data("Error: \(hint.message)\n".utf8))
+            Darwin.exit(reason.exitCode.rawValue)
         }
         // ArgumentParser's own `main(nil)`, with the command's backends closed before the process exits.
         var parsed: (any ParsableCommand)?

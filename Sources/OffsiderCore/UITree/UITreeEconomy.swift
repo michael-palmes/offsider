@@ -30,27 +30,34 @@ public enum UITreeEconomy {
         "# folded \(count) repeated label\(count == 1 ? "" : "s")"
     }
 
-    /// The node and run lines in document order, and how many nodes had a label folded.
+    /// `# beneath: "Products" (42 elements) under "Kettle"`: a screen a page covers, left out of on-screen text.
+    public static func beneathLine(_ screen: ScreenStack.Beneath) -> String {
+        let count = "\(screen.elements) element\(screen.elements == 1 ? "" : "s")"
+        return "# beneath: \(UITreeRenderer.quoted(SelectorText.truncated(screen.name, limit: 40))) (\(count)) under \(UITreeRenderer.quoted(SelectorText.truncated(screen.under, limit: 40)))"
+    }
+
+    /// The node and run lines in document order, how many nodes had a label folded, and the covered screens left out.
     static func lines(
         _ tree: UITree,
         _ options: UITreeRenderOptions,
         fields: Set<UIField>,
         render: @escaping (UINode, _ label: String?, _ value: String?) -> String
-    ) -> (lines: [UITextLine], folded: Int) {
+    ) -> (lines: [UITextLine], folded: Int, beneath: [ScreenStack.Beneath]) {
         var walker = Walker(tree: tree, options: options, fields: fields, render: render)
         for root in tree.roots {
             walker.visit(root, depth: 0, ancestorLabel: nil, ancestor: .absent)
         }
         walker.flushRun()
-        return (walker.lines, walker.folded)
+        return (walker.lines, walker.folded, walker.beneath)
     }
 
-    /// The header, the lines that fit `maxBytes` (nil for all) with a cut marker, then the closing notes.
-    static func budgeted(_ lines: [UITextLine], header: String, folded: Int, sourceTruncated: Bool, maxBytes: Int?) -> String {
+    /// The header, the lines that fit `maxBytes` (nil for all) with a cut marker, then the closing notes, which the budget never cuts.
+    static func budgeted(_ lines: [UITextLine], header: String, folded: Int, sourceTruncated: Bool, maxBytes: Int?, beneath: [ScreenStack.Beneath] = []) -> String {
         let rendered = lines.map { String(repeating: "  ", count: min($0.depth, maxIndent)) + $0.text + "\n" }
         var closing = ""
         if sourceTruncated { closing += deviceTruncationMarker + "\n" }
         if folded > 0 { closing += foldedLine(folded) + "\n" }
+        for screen in beneath { closing += beneathLine(screen) + "\n" }
         let head = header + "\n"
         let total = rendered.reduce(head.utf8.count + closing.utf8.count) { $0 + $1.utf8.count }
         guard let maxBytes, total > maxBytes else {
@@ -91,6 +98,9 @@ public enum UITreeEconomy {
         let rect: UIFrame?
         let otherFilters: UITreeFilter
         let summarisesRuns: Bool
+        /// Screens a page covers, which on-screen output leaves out; and their elements' pre-order indexes.
+        let beneath: [ScreenStack.Beneath]
+        let covered: Set<Int>
         /// Nested output keeps the ancestors of matches, by pre-order index.
         var kept: [Bool] = []
         var index = 0
@@ -107,6 +117,8 @@ public enum UITreeEconomy {
             others.onScreen = false
             otherFilters = others
             summarisesRuns = options.filter.onScreen && rect != nil
+            beneath = summarisesRuns ? ScreenStack.build(roots: tree.roots, viewport: tree.viewport).beneath : []
+            covered = Set(beneath.flatMap(\.indexes))
             if !options.flat {
                 for root in tree.roots {
                     _ = mark(root)
@@ -117,7 +129,7 @@ public enum UITreeEconomy {
         private mutating func mark(_ node: UINode) -> Bool {
             let position = kept.count
             kept.append(false)
-            var any = options.filter.matches(node, visibleRect: rect)
+            var any = !covered.contains(position) && options.filter.matches(node, visibleRect: rect)
             for child in node.children where mark(child) {
                 any = true
             }
@@ -128,9 +140,10 @@ public enum UITreeEconomy {
         mutating func visit(_ node: UINode, depth: Int, ancestorLabel: String?, ancestor: Ancestor) {
             let position = index
             index += 1
-            let matches = options.filter.matches(node, visibleRect: rect)
+            let isCovered = covered.contains(position)
+            let matches = !isCovered && options.filter.matches(node, visibleRect: rect)
             let shown = options.flat ? matches : kept[position]
-            let passesOthers = otherFilters.matches(node, visibleRect: rect)
+            let passesOthers = !isCovered && otherFilters.matches(node, visibleRect: rect)
             var childDepth = depth
             var childLabel = ancestorLabel
             if shown {

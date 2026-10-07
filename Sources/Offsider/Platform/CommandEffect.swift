@@ -58,6 +58,7 @@ enum CommandEffect: String, Sendable {
         "rn tools off": .input,
         "rn logbox status": .read,
         "rn logbox dismiss": .input,
+        "rn logbox open": .input,
         "hid-broker": .none,
         "runner status": .none,
         "runner stop": .none,

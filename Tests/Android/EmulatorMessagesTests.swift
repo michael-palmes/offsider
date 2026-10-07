@@ -13,6 +13,15 @@ struct EmulatorMessagesTests {
         #expect(message.key.isEmpty && message.text.isEmpty)
     }
 
+    @Test("an evdev key says so in its code type, with the Linux code and its phase")
+    func evdevKey() {
+        let message = EmulatorControlClient.keyboardEvent(.evdev(139, .up))
+        #expect(message.codeType == .evdev)
+        #expect(message.keyCode == 139)
+        #expect(message.eventType == .keyup)
+        #expect(message.key.isEmpty && message.text.isEmpty)
+    }
+
     @Test("buttons are W3C key values and text goes in the text field")
     func w3cAndText() {
         let home = EmulatorControlClient.keyboardEvent(.w3c("GoHome", .down))

@@ -41,6 +41,11 @@ struct TreeGoldenCaptureTests {
         Screen(name: "overlay-test", route: "overlay-test"),
         Screen(name: "slider-value-test", route: "slider-value-test"),
         Screen(name: "text-input@keyboard", route: "text-input", prepare: tap("text-input-field", thenWaitFor: "typing-active-indicator")),
+        Screen(name: "stack-test@full", route: "stack-test", prepare: tap("stack-test-open-full", thenWaitFor: "stack-test-full-title-1")),
+        Screen(name: "stack-test@flags", route: "stack-test", prepare: { app in
+            try await tap("stack-test-open-full", thenWaitFor: "stack-test-full-title-1")(app)
+            try await tap("stack-test-full-next", thenWaitFor: "stack-test-full-title-2")(app)
+        }),
     ]
 
     @Test("captures every screen's raw tree and re-renders its golden", arguments: RNPlatform.enabled)

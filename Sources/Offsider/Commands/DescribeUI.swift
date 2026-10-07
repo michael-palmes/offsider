@@ -71,13 +71,15 @@ struct DescribeUI: AsyncParsableCommand {
             print(String(decoding: try await Self.rawCapture(on: route), as: UTF8.self))
             return
         }
-        print(try await describe(on: route), terminator: "")
+        let described = try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+        print(described, terminator: "")
     }
 
     /// The output for one read; with `--diff`, compared against the device's cached tree.
     @MainActor
     func describe(on route: DeviceRouter.Route) async throws -> String {
         let base = diff ? await TreeCache.load(for: route.device, backend: route.backend) : nil
+        (route.backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: route.device)
         let tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
         if point == nil {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)

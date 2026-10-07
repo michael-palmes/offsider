@@ -247,6 +247,8 @@ struct HelperNode: Decodable, Equatable, Sendable {
     let testTag: String?
     /// `[left, top, right, bottom]` in pixels in the current rotation.
     let bounds: [Int]
+    /// The view's z-order among its siblings, higher drawn later; only on a node with siblings (from helper 1.4.0).
+    let drawingOrder: Int?
     let checkable: Bool
     let checked: Bool
     /// "checked", "unchecked" or "partial" (API 36 and later).
@@ -282,6 +284,7 @@ struct HelperNode: Decodable, Equatable, Sendable {
         roleDescription = try c.decodeIfPresent(String.self, forKey: .roleDescription)
         testTag = try c.decodeIfPresent(String.self, forKey: .testTag)
         bounds = try c.decodeIfPresent([Int].self, forKey: .bounds) ?? []
+        drawingOrder = try c.decodeIfPresent(Int.self, forKey: .drawingOrder)
         checkable = try flag(.checkable)
         checked = try flag(.checked)
         checkedState = try c.decodeIfPresent(String.self, forKey: .checkedState)
@@ -302,7 +305,7 @@ struct HelperNode: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case i, `class`, package, resourceId, text, contentDescription, hint, stateDescription, roleDescription, testTag
-        case bounds, checkable, checked, checkedState, clickable, longClickable, enabled, focusable, focused, scrollable
+        case bounds, drawingOrder, checkable, checked, checkedState, clickable, longClickable, enabled, focusable, focused, scrollable
         case selected, editable, password, showingHint, visibleToUser, rangeInfo, children
     }
 }

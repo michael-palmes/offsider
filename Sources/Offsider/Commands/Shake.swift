@@ -14,7 +14,7 @@ struct Shake: AsyncParsableCommand {
         """
     )
 
-    static let androidMessage = "shake is iOS only: Android emulators have no shake event."
+    static let androidMessage = "shake is iOS only: Android emulators have no shake event. To open a React Native dev menu, run offsider rn devmenu (it sends the menu key, as offsider button menu does)."
 
     @OptionGroup
     var deviceOption: DeviceOption

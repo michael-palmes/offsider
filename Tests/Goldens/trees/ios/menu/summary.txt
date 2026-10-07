@@ -15,7 +15,7 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
   button "Text Input" id=menu-text-input (16,707 370x57)
   button "Key Press" id=menu-key-press (16,764 370x57)
   button "Key Sequence" id=menu-key-sequence (16,821 370x57)
-  [off-screen below] 22 items: id=menu-section-hardware to id=menu-permission-state
+  [off-screen below] 23 items: id=menu-section-hardware to id=menu-live-ticker
   slider "Vertical scroll bar, 3 pages" value="0%" (369,62 30x750)
   slider "Horizontal scroll bar, 1 page" value="0%" (62,841 278x30)
   slider "Vertical scroll bar, 3 pages" value="0%" (369,62 30x750)

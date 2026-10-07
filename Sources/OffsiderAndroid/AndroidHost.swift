@@ -95,6 +95,8 @@ public struct AndroidHost: Sendable {
     public var claimDevice: @Sendable (String) async throws -> Void = { _ in }
     /// Phase lines for `OFFSIDER_TIMINGS=1`; disabled unless the executable turns it on.
     public var timing: AndroidTiming
+    /// The private `displays/` directory for the display cache, or nil for none; none by default.
+    public var displayCacheDirectory: @Sendable () -> String? = { nil }
 
     init(
         environment: [String: String],
@@ -140,6 +142,12 @@ public struct AndroidHost: Sendable {
         let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
             ?? FileManager.default.homeDirectoryForCurrentUser
         return AndroidHost(environment: environment, homeDirectory: home, helperDex: helperDex, timing: timing)
+    }
+
+    /// The private directory's `displays/`, made 0700 on first use; nil when `OFFSIDER_DISPLAY_CACHE=off` or it cannot be made private.
+    public static func privateDisplayCache(environment: [String: String]) -> @Sendable () -> String? {
+        guard AndroidDisplayCache.isEnabled(environment) else { return { nil } }
+        return { try? OffsiderPrivateDirectory.ensureSubdirectory(AndroidDisplayCache.directoryName) }
     }
 
     /// `EPERM` means the process exists but belongs to another user, so it counts as alive.

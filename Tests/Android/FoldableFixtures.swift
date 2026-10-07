@@ -134,4 +134,9 @@ enum FoldableFixtures {
     nonisolated static func status(_ states: String, _ reading: String, _ dumpsys: String) -> String {
         [states, reading, dumpsys].joined(separator: "\(AndroidDisplayStatus.separator)\n")
     }
+
+    /// `AndroidDisplayStatus.scriptWithProbe`'s output: the status, then the display probe.
+    nonisolated static func withProbe(_ status: String, _ probe: String) -> String {
+        (status.hasSuffix("\n") ? status : status + "\n") + "\(AndroidDisplayStatus.separator)\n" + probe
+    }
 }

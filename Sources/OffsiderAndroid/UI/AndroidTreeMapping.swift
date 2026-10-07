@@ -9,8 +9,8 @@ enum AndroidTreeMapping {
         return [node(from: root, scale: scale, rootRole: .application, rootLabel: nil)]
     }
 
-    /// A root takes `rootRole` and `rootLabel` (a window and its title); other nodes map from their attributes.
-    static func node(from raw: RawAndroidNode, scale: Double, rootRole: UIRole? = nil, rootLabel: String? = nil) -> UINode {
+    /// A root takes `rootRole`, `rootLabel` and `windowLayer` (a window's); other nodes map from their attributes.
+    static func node(from raw: RawAndroidNode, scale: Double, rootRole: UIRole? = nil, rootLabel: String? = nil, windowLayer: Int? = nil) -> UINode {
         let role = rootRole ?? self.role(for: raw)
         let pixels = pixelFrame(raw["bounds"])
         let secure = role == .secureTextField || raw.flag("password")
@@ -43,7 +43,9 @@ enum AndroidTreeMapping {
                 stateDescription: nonEmpty(raw["state-description"]),
                 roleDescription: nonEmpty(raw["role-description"]),
                 testTag: nonEmpty(raw["test-tag"]),
-                visibleToUser: nonEmpty(raw["visible-to-user"]).map { $0 == "true" }
+                visibleToUser: nonEmpty(raw["visible-to-user"]).map { $0 == "true" },
+                drawingOrder: nonEmpty(raw["drawing-order"]).flatMap { Int($0) },
+                windowLayer: rootRole == nil ? nil : windowLayer
             )),
             children: raw.children.map { node(from: $0, scale: scale) }
         )

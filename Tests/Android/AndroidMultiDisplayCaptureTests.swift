@@ -51,6 +51,8 @@ struct AndroidMultiDisplayCaptureTests {
             case AndroidDeviceState.readState: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.state(closed: closed))
             case AndroidDisplayList.command: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.dumpsys(closed: closed))
             case AndroidDisplayStatus.script: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.status(closed: closed))
+            case AndroidDisplayStatus.scriptWithProbe:
+                return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(GalaxyFoldFixtures.status(closed: closed), GalaxyFoldFixtures.geometry(closed: closed)))
             case AndroidDisplayGeometry.probeScript: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.geometry(closed: closed))
             default: return FakeAdbServer.shell(stderr: "unexpected", status: 1)
             }
@@ -87,7 +89,7 @@ struct AndroidMultiDisplayCaptureTests {
         hinge.closed = true
         #expect(try await backend.screenshotPNG(for: Self.phone) == Self.png(840, 2289))
         #expect(Self.execs(server) == ["exec:screencap -p", "exec:screencap -p"])
-        #expect(server.services.filter { $0 == "shell,v2,raw:\(AndroidDisplayGeometry.probeScript)" }.count == 2)
+        #expect(server.services.filter { $0.hasSuffix(AndroidDisplayGeometry.probeScript) }.count == 2)
     }
 
     @Test("folded, a pick of the dark inner panel is captured again from the cover, and later captures name the cover")
@@ -124,6 +126,10 @@ struct AndroidMultiDisplayCaptureTests {
             switch String(service.dropFirst("shell,v2,raw:".count)) {
             case AndroidDisplayStatus.script:
                 return FakeAdbServer.shell(stdout: FoldableFixtures.status(FoldableFixtures.foldPrintStates, FoldableFixtures.foldStateClosed, FoldableFixtures.foldDumpsysClosed))
+            case AndroidDisplayStatus.scriptWithProbe:
+                return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(
+                    FoldableFixtures.status(FoldableFixtures.foldPrintStates, FoldableFixtures.foldStateClosed, FoldableFixtures.foldDumpsysClosed), probes.next()
+                ))
             case AndroidDisplayList.command: return FakeAdbServer.shell(stdout: FoldableFixtures.foldDumpsysClosed)
             case AndroidDisplayGeometry.probeScript: return FakeAdbServer.shell(stdout: probes.next())
             default: return FakeAdbServer.shell(stderr: "unexpected", status: 1)
@@ -166,7 +172,7 @@ struct AndroidMultiDisplayCaptureTests {
         #expect(Self.execs(server) == ["exec:screencap", "exec:screencap -d \(Self.cover)"])
     }
 
-    @Test("before any probe, the screen status names the lit panel and One UI's posture, not main")
+    @Test("the first screen status names the lit panel and One UI's posture, not main, from one shell call with the probe")
     func screenStatusNamesLitPanel() async throws {
         for (closed, display, posture) in [(false, ScreenDisplay(id: "inner", platformId: Self.inner), Posture.open), (true, ScreenDisplay(id: "cover", platformId: Self.cover), .closed)] {
             let server = Self.fold(closed: closed, picks: Self.inner)
@@ -174,7 +180,7 @@ struct AndroidMultiDisplayCaptureTests {
             let status = await backend.screenStatus("R58M123ABC")
             #expect(status.display == display)
             #expect(status.posture == posture)
-            #expect(!server.services.contains("shell,v2,raw:\(AndroidDisplayGeometry.probeScript)"))
+            #expect(server.services.filter { $0.hasPrefix("shell,v2,raw:") } == ["shell,v2,raw:\(AndroidDisplayStatus.scriptWithProbe)"])
         }
     }
 
@@ -198,5 +204,93 @@ struct AndroidMultiDisplayCaptureTests {
 
         let error = await #expect(throws: AndroidError.self) { try await backend.screenshotPNG(for: Self.phone, display: Self.cover) }
         #expect(error?.message == "The cover display (\(Self.cover)) of R58M123ABC is off (posture open), so it has nothing to capture. Fold the phone, then retry.")
+    }
+}
+
+@Suite("Android screen status on a foldable")
+@MainActor
+struct AndroidFoldScreenStatusTests {
+    /// One UI with both panels on, as during a fold, and a probe whose viewport names no panel.
+    static func bothLit(stateFails: Bool = false) -> FakeAdbServer {
+        let dumpsys = GalaxyFoldFixtures.dumpsys(closed: false).replacingOccurrences(of: "state OFF, committedState OFF", with: "state ON, committedState ON")
+        let probe = GalaxyFoldFixtures.geometryOpen.replacingOccurrences(of: "uniqueId=local:\(GalaxyFoldFixtures.innerId), ", with: "")
+        let states = stateFails ? "" : GalaxyFoldFixtures.printStates
+        let reading = stateFails ? "" : GalaxyFoldFixtures.state(closed: false)
+        return FakeAdbServer(handler: FakeAdbServer.devices(["R58M123ABC"], host: AndroidMultiDisplayCaptureTests.host) { _, service in
+            String(service.dropFirst("shell,v2,raw:".count)) == AndroidDisplayStatus.scriptWithProbe
+                ? FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(FoldableFixtures.status(states, reading, dumpsys), probe))
+                : FakeAdbServer.shell(stderr: "unexpected", status: 1)
+        })
+    }
+
+    @Test("with both panels lit and no panel named, the screen is the panel the probed geometry fits")
+    func bothLitNamesInner() async throws {
+        let backend = try AndroidMultiDisplayCaptureTests.backend(Self.bothLit())
+        let status = await backend.screenStatus("R58M123ABC")
+        #expect(status.display == ScreenDisplay(id: "inner", platformId: GalaxyFoldFixtures.innerId))
+        #expect(status.posture == .open)
+    }
+
+    @Test("when device_state cannot be read, two panels in dumpsys still name the inner one, never main, with no posture")
+    func stateFailureStillNamesPanel() async throws {
+        let backend = try AndroidMultiDisplayCaptureTests.backend(Self.bothLit(stateFails: true))
+        let status = await backend.screenStatus("R58M123ABC")
+        #expect(status.display == ScreenDisplay(id: "inner", platformId: GalaxyFoldFixtures.innerId))
+        #expect(status.posture == nil)
+    }
+
+    @Test("a status read already under way is shared: a prefetch and a later screen read send one shell call")
+    func prefetchIsShared() async throws {
+        let server = AndroidMultiDisplayCaptureTests.fold(closed: false, picks: nil)
+        let backend = try AndroidMultiDisplayCaptureTests.backend(server)
+        backend.prefetchScreenStatus(for: AndroidMultiDisplayCaptureTests.phone)
+        let screen = try #require(try await backend.screenInfo(for: AndroidMultiDisplayCaptureTests.phone))
+        #expect(screen.display?.id == "inner")
+        #expect(server.services.filter { $0.hasPrefix("shell,v2,raw:") } == ["shell,v2,raw:\(AndroidDisplayStatus.scriptWithProbe)"])
+    }
+
+    /// Status reads in turn, the last repeated; each is the status and the probe in one reply.
+    static func sequence(_ replies: [String]) -> FakeAdbServer {
+        final class Replies: @unchecked Sendable {
+            let lock = NSLock()
+            var remaining: [String]
+            init(_ replies: [String]) { remaining = replies }
+            func next() -> String { lock.withLock { remaining.count > 1 ? remaining.removeFirst() : remaining[0] } }
+        }
+        let replies = Replies(replies)
+        return FakeAdbServer(handler: FakeAdbServer.devices(["R58M123ABC"], host: AndroidMultiDisplayCaptureTests.host) { _, service in
+            String(service.dropFirst("shell,v2,raw:".count)) == AndroidDisplayStatus.scriptWithProbe
+                ? FakeAdbServer.shell(stdout: replies.next())
+                : FakeAdbServer.shell(stderr: "unexpected", status: 1)
+        })
+    }
+
+    static func reply(state: String, innerOn: Bool, coverOn: Bool, probe: String) -> String {
+        FoldableFixtures.withProbe(FoldableFixtures.status(GalaxyFoldFixtures.printStates, state, GalaxyFoldFixtures.dumpsys(innerOn: innerOn, coverOn: coverOn)), probe)
+    }
+
+    @Test("One UI's tent stance reads half-opened on the lit cover, and posture names TENT")
+    func tentNamesCover() async throws {
+        let tent = Self.reply(state: GalaxyFoldFixtures.tentState, innerOn: false, coverOn: true, probe: GalaxyFoldFixtures.geometryClosed)
+        let backend = try AndroidMultiDisplayCaptureTests.backend(Self.sequence([tent]))
+        let status = await backend.screenStatus("R58M123ABC")
+        #expect(status.display == ScreenDisplay(id: "cover", platformId: GalaxyFoldFixtures.coverId))
+        #expect(status.posture == .halfOpened)
+        #expect(DisplayReport.postureLine(.halfOpened, screen: nil, platform: .android, state: "TENT") == "Posture: half-opened (One UI TENT)")
+    }
+
+    @Test("mid-fold, with both panels dark, no panel is named from the stale probe; the screen is named once the cover lights")
+    func darkPanelsNameNothing() async throws {
+        let dark = Self.reply(state: GalaxyFoldFixtures.state(closed: false), innerOn: false, coverOn: false, probe: GalaxyFoldFixtures.geometryOpen)
+        let lit = Self.reply(state: GalaxyFoldFixtures.state(closed: true), innerOn: false, coverOn: true, probe: GalaxyFoldFixtures.geometryClosed)
+
+        let first = try AndroidMultiDisplayCaptureTests.backend(Self.sequence([dark]))
+        #expect(await first.screenStatus("R58M123ABC").display == nil)
+        #expect(first.knownActiveDisplayId("R58M123ABC") == nil)
+
+        let backend = try AndroidMultiDisplayCaptureTests.backend(Self.sequence([dark, dark, lit]))
+        let screen = try #require(try await backend.screenInfo(for: AndroidMultiDisplayCaptureTests.phone))
+        #expect(screen.display == ScreenDisplay(id: "cover", platformId: GalaxyFoldFixtures.coverId))
+        #expect(screen.posture == .closed)
     }
 }

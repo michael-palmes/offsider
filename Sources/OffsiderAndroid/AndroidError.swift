@@ -465,7 +465,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     static func unsupportedKey(_ usage: UInt32) -> AndroidError {
         AndroidError(
             .unsupportedKey,
-            "Key \(usage) has no Android equivalent. Supported HID usages: 4 to 49, 51 to 57, 58 to 69 (F1 to F12), 73 to 82, 127 to 129 and 224 to 231."
+            "Key \(usage) has no Android equivalent. Supported HID usages: 4 to 49, 51 to 57, 58 to 69 (F1 to F12), 73 to 82, 118 (Menu), 127 to 129 and 224 to 231."
         )
     }
 
@@ -581,7 +581,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     )
 
     static func unsupportedButton(_ button: HardwareButton) -> AndroidError {
-        AndroidError(.unsupportedButton, "The \(Self.buttonName(button)) button is iOS only. Android buttons: back, app-switch, home, lock, volume-up, volume-down.")
+        AndroidError(.unsupportedButton, "The \(Self.buttonName(button)) button is iOS only. Android buttons: back, app-switch, home, lock, menu, volume-up, volume-down.")
     }
 
     static func inputFailed(serial: String, detail: String) -> AndroidError {

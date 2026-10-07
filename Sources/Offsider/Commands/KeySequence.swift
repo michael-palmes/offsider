@@ -23,6 +23,9 @@ struct KeySequence: AsyncParsableCommand {
     var delay: Double?
     
     @OptionGroup
+    var systemKeys: SystemKeyOptions
+
+    @OptionGroup
     var deviceOption: DeviceOption
     
     func validate() throws {
@@ -58,12 +61,17 @@ struct KeySequence: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        try await perform(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger), logger: logger)
+    }
+
+    @MainActor
+    func perform(on route: DeviceRouter.Route, logger: OffsiderLogger) async throws {
         let backend = route.backend
         let device = route.device
+        let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
+        try systemKeys.check(parsedKeycodes, on: device)
         try await backend.prepare()
 
-        let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
         let keyDelay = delay ?? 0.1  // Default 100ms delay between keys
         
         logger.info().log("Pressing key sequence: \(parsedKeycodes)")

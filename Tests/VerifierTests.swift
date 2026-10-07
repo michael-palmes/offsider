@@ -15,6 +15,11 @@ private final class FakeSimulator {
     var bands = ScreenBands(top: 60, bottom: 0)
     /// Gives the verifier a change wait, as a backend with accessibility events does.
     var waitsForChange = false
+    /// The device's cached tree, dated against `LiveTextTests.now`.
+    var cached: TreeCacheRecord?
+    /// Each read and capture yields once, as device I/O does, so work started alongside it can run.
+    var yields = false
+    private(set) var events: [String] = []
     private(set) var treeReads = 0
     private(set) var screenReads = 0
     private(set) var sleeps: [Duration] = []
@@ -29,11 +34,16 @@ private final class FakeSimulator {
         Verifier.Dependencies(
             tree: { [unowned self] in
                 treeReads += 1
+                events.append("tree")
+                if yields { await Task.yield() }
                 clock += 0.3
                 return trees.count > 1 ? trees.removeFirst() : trees[0]
             },
             screenshot: { [unowned self] in
                 screenReads += 1
+                events.append("shot-start")
+                if yields { for _ in 0..<5 { await Task.yield() } }
+                events.append("shot-end")
                 guard !screens.isEmpty else { throw CLIError(errorDescription: "no screenshot") }
                 return screens.count > 1 ? screens.removeFirst() : screens[0]
             },
@@ -46,8 +56,14 @@ private final class FakeSimulator {
             waitForChange: waitsForChange ? { [unowned self] duration in
                 waits.append(duration)
                 clock += Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
-            } : nil
+            } : nil,
+            cachedRecord: { [unowned self] in cached },
+            date: { LiveTextTests.now }
         )
+    }
+
+    func record(_ event: String) {
+        events.append(event)
     }
 }
 
@@ -643,5 +659,183 @@ struct VerifierModeTests {
         #expect(try VerificationOptions.parse(["--verify-ignore-text"]).mode == .change(ignoringText: true))
         #expect(try VerificationOptions.parse(["--verify-id", "a", "--retries", "2"]).resolvedRetries == 2)
         #expect(throws: (any Error).self) { try VerificationOptions.parse(["--verify-id", "a", "--verify-ignore-text"]) }
+    }
+}
+
+@MainActor
+@Suite("Verifier live values, LogBox and phases")
+struct VerifierLiveTests {
+    private static let toggle = "live-ticker-toggle"
+
+    private static func ticking(tick: Int, alerts: Bool = false, extra: [UINode] = []) -> UITree {
+        FakeUI.tree([
+            FakeUI.node(.text, id: "live-ticker-price", label: "$\(129 + tick).95", frame: FakeUI.frame(16, 100, 370, 40)),
+            FakeUI.node(.switch, id: toggle, label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
+            FakeUI.node(.button, id: "live-ticker-noop", label: "Do Nothing", frame: FakeUI.frame(16, 260, 180, 44)),
+        ] + extra)
+    }
+
+    private static func run(_ fake: FakeSimulator, styles: [TapDeliveryStyle?] = [.simulator, .physical], target: UINode? = nil) async throws -> (Verifier.Outcome, Int) {
+        var sent = 0
+        let outcome = try await Verifier.run(styles: styles, timeout: .seconds(1), dependencies: fake.dependencies, target: target) { _ in sent += 1 }
+        return (outcome, sent)
+    }
+
+    @Test("a ticker learnt from the cache is not taken for the input's effect, the input is not retried, and the price is named as ignored")
+    func cachedTickerIsIgnored() async throws {
+        // The price ticks every other read, so the two reads before the input agree.
+        let ticks = (0..<40).map { Self.ticking(tick: 1 + $0 / 2) }
+        let fake = FakeSimulator(trees: ticks)
+        fake.cached = try LiveTextTests.record(Self.ticking(tick: 0))
+        let (outcome, sent) = try await Self.run(fake)
+        #expect(!outcome.verified && outcome.change == ChangeKind.none)
+        #expect(sent == 1)
+        #expect(outcome.ignored.contains(VerifyIgnored(node: "live-ticker-price", reason: .live)))
+
+        let unlearnt = FakeSimulator(trees: ticks)
+        #expect(try await Self.run(unlearnt).0.verified, "without the cache the first tick reads as the input's effect")
+    }
+
+    @Test("a real change on a ticking screen verifies on the first attempt, and its change list leaves the ticker out")
+    func realChangeOnTickingScreen() async throws {
+        let fake = FakeSimulator(trees: [Self.ticking(tick: 1), Self.ticking(tick: 1), Self.ticking(tick: 2, alerts: true), Self.ticking(tick: 3, alerts: true)])
+        fake.cached = try LiveTextTests.record(Self.ticking(tick: 0))
+        let (outcome, sent) = try await Self.run(fake)
+        #expect(outcome.verified && outcome.attempts == 1 && sent == 1)
+        #expect(outcome.changes == [VerifyChange(kind: .changed, node: #"switch "Price Alerts" id=live-ticker-toggle"#, field: "checked", old: "false", new: "true")])
+    }
+
+    @Test("a LogBox toast's count going up is no change, and the input is still retried")
+    func toastCountIgnored() async throws {
+        func toast(_ count: String) -> UINode {
+            FakeUI.node(.other, label: "\(count), OffsiderFixture warning toast", frame: FakeUI.frame(10, 806, 382, 48))
+        }
+        let fake = FakeSimulator(trees: [Self.ticking(tick: 1, extra: [toast("!")]), Self.ticking(tick: 1, extra: [toast("!")]), Self.ticking(tick: 1, extra: [toast("2")])])
+        let (outcome, sent) = try await Self.run(fake)
+        #expect(!outcome.verified)
+        #expect(sent == 2)
+        #expect(outcome.ignored == [VerifyIgnored(node: "LogBox toast", reason: .toast)])
+    }
+
+    private static func spinning(_ step: Int, alerts: Bool = false) -> UITree {
+        FakeUI.tree([
+            FakeUI.node(.other, id: "spinner", label: "Loading", frame: FakeUI.frame(Double(16 + step), 400, 40, 40)),
+            FakeUI.node(.switch, id: toggle, label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
+        ])
+    }
+
+    @Test("a dropped first input on a screen with a spinner already moving is sent again, and the second takes effect")
+    func volatileScreenRetries() async throws {
+        let fake = FakeSimulator(trees: (0..<40).map { Self.spinning($0) })
+        var sent = 0
+        let outcome = try await Verifier.run(styles: [.simulator, .physical], timeout: .seconds(1), dependencies: fake.dependencies) { attempt in
+            sent += 1
+            if attempt.number == 2 { fake.trees = (100..<140).map { Self.spinning($0, alerts: true) } }
+        }
+
+        #expect(outcome.verified && outcome.attempts == 2 && sent == 2)
+        #expect(outcome.ignored.contains(VerifyIgnored(node: "spinner", reason: .volatile)))
+    }
+
+    @Test("the LogBox inspector opening fails at once with logbox_opened, unless the input aimed at a toast")
+    func inspectorFailsFast() async throws {
+        let toast = FakeUI.node(.other, label: "!, OffsiderFixture error toast", frame: FakeUI.frame(10, 806, 382, 48))
+        let inspector = FakeUI.node(.text, label: "Log 1 of 1", frame: FakeUI.frame(0, 60, 402, 30))
+        let trees = [Self.ticking(tick: 1, extra: [toast]), Self.ticking(tick: 1, extra: [toast]), Self.ticking(tick: 1, extra: [inspector])]
+        let fake = FakeSimulator(trees: trees)
+        let (outcome, sent) = try await Self.run(fake)
+        #expect(!outcome.verified && outcome.note == .logBoxOpened)
+        #expect(sent == 1 && fake.treeReads == 3)
+
+        let aimed = try await Self.run(FakeSimulator(trees: trees), target: toast)
+        #expect(aimed.0.verified)
+    }
+
+    @Test("pixels under live text are left out of the screenshot check; a change elsewhere still verifies")
+    func liveTilesExcluded() async throws {
+        func small(_ price: String) -> UITree {
+            FakeUI.tree(width: 64, height: 128, [
+                FakeUI.node(.text, id: "price", label: price, frame: FakeUI.frame(8, 80, 12, 8)),
+                FakeUI.node(.button, id: "noop", label: "Do Nothing", frame: FakeUI.frame(30, 100, 30, 10)),
+            ])
+        }
+        let ticks = (0..<40).map { small("$\($0 / 2 + 1)") }
+        for (after, verified) in [(screen(shade: 10, label: 90), false), (screen(shade: 200, label: 90), true)] {
+            let fake = FakeSimulator(trees: ticks, screens: [screen(shade: 10, label: 60), after])
+            fake.cached = try LiveTextTests.record(small("$0"))
+            let (outcome, _) = try await Self.run(fake, styles: [nil])
+            #expect(outcome.verified == verified)
+            #expect(outcome.change == (verified ? .screenshot : ChangeKind.none))
+        }
+    }
+
+    @Test("the baseline capture runs alongside the second read, and the input waits for both")
+    func captureRunsAlongsideRead() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), tree(count: "1")], screens: [screen(shade: 10)])
+        fake.yields = true
+        _ = try await Verifier.run(styles: [nil], timeout: .seconds(1), dependencies: fake.dependencies) { _ in fake.record("action") }
+        let events = fake.events
+        let secondRead = try #require(events.indices.filter { events[$0] == "tree" }.dropFirst().first)
+        let start = try #require(events.firstIndex(of: "shot-start"))
+        let end = try #require(events.firstIndex(of: "shot-end"))
+        let action = try #require(events.firstIndex(of: "action"))
+        #expect(start < action && end < action && secondRead < action)
+        #expect(events.prefix(action).filter { $0 == "tree" }.count == 2)
+        #expect(start <= secondRead + 1, "the capture starts before the second read returns")
+    }
+
+    @Test("a switch target takes no baseline capture")
+    func switchSkipsCapture() async throws {
+        let fake = FakeSimulator(trees: [Self.ticking(tick: 1), Self.ticking(tick: 1), Self.ticking(tick: 1, alerts: true)], screens: [screen(shade: 10)])
+        let target = Self.ticking(tick: 1).roots[0].children[1]
+        let (outcome, _) = try await Self.run(fake, target: target)
+        #expect(outcome.verified)
+        #expect(fake.screenReads == 0)
+    }
+
+    @Test("a change that lands after the poll and the screenshot check verifies on the same attempt, from one more read")
+    func lateChangeVerifiesBeforeRetry() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), tree(count: "0"), tree(count: "0"), tree(count: "1")], screens: [screen(shade: 10)])
+        let (outcome, sent) = try await Self.run(fake)
+        #expect(outcome.verified && outcome.attempts == 1 && outcome.change == .accessibilityTree)
+        #expect(sent == 1)
+    }
+
+    @Test("phases: settle covers the gap and second read, dispatch the input, verify the polls")
+    func phases() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "1"), tree(count: "1")])
+        let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(2), dependencies: fake.dependencies, initialTree: tree(count: "0")) { _ in
+            fake.clock += 0.1
+        }
+        #expect(outcome.verified)
+        #expect(abs(outcome.phases.settle - 0.5) < 0.001)
+        #expect(abs(outcome.phases.dispatch - 0.1) < 0.001)
+        #expect(abs(outcome.phases.verify - 1.0) < 0.001)
+    }
+
+    @Test("the verified line lists up to three changes and ends with the timing suffix; a failure names what it ignored, and says not retried only for live text")
+    func humanLines() throws {
+        let request = VerifyRequest(
+            command: "tap", subject: "Tap on id=x", target: "id=x", backend: StubBackend(session: RecordingInputSession()),
+            device: DeviceID(rawValue: "emulator-5556", platform: .android), options: try VerificationOptions.parse(["--verify"]), styles: [.simulator, .physical]
+        )
+        var outcome = Verifier.Outcome(verified: true, attempts: 1, change: .accessibilityTree, style: .simulator, summary: "first")
+        outcome.changes = [
+            VerifyChange(kind: .changed, node: "switch id=a", field: "checked", old: "false", new: "true"),
+            VerifyChange(kind: .added, node: #"button "Save""#),
+            VerifyChange(kind: .removed, node: "text id=old"),
+            VerifyChange(kind: .changed, node: "text id=b", field: "frame", old: "(0, 0) 1x1", new: "(0, 9) 1x1"),
+        ]
+        outcome.changesTruncated = 2
+        outcome.phases = VerifyPhases(settle: 0.3, resolve: 0.1, dispatch: 0.1, verify: 1.2)
+        #expect(VerifyOutput.verifiedLine(outcome, for: request)
+            == #"✓ Tap on id=x verified: accessibility tree changed (checked of switch id=a "false" to "true"; button "Save" added; text id=old removed; and 3 more), attempt 1 of 2, simulator style (settle 0.4 s, tap 0.1 s, verify 1.2 s)"#)
+
+        var failed = Verifier.Outcome(verified: false, attempts: 1, change: .none, style: .simulator, summary: nil)
+        failed.ignored = [VerifyIgnored(node: "live-ticker-price", reason: .live), VerifyIgnored(node: "live-ticker-orders", reason: .live)]
+        let line = VerifyOutput.unverifiedLine(failed, for: request)
+        #expect(line.contains("Ignored live: live-ticker-price, live-ticker-orders, which changed without the input; not retried."))
+        failed.ignored = [VerifyIgnored(node: "spinner", reason: .volatile)]
+        #expect(VerifyOutput.unverifiedLine(failed, for: request).contains("Ignored already changing before the input: spinner, which changed without the input. "))
     }
 }

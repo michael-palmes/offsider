@@ -22,8 +22,12 @@ public struct VerifyReport: Equatable, Sendable {
     public let change: ChangeKind
     public let changes: [VerifyChange]
     public let changesTruncated: Int
+    public let ignored: [VerifyIgnored]
     public let note: VerifyNote?
     public let style: TapDeliveryStyle?
+    /// From the command's start to the report, in seconds.
+    public let elapsed: TimeInterval
+    public let phases: VerifyPhases
     public let error: ErrorPayload?
 
     public init(
@@ -35,8 +39,11 @@ public struct VerifyReport: Equatable, Sendable {
         change: ChangeKind,
         changes: [VerifyChange] = [],
         changesTruncated: Int = 0,
+        ignored: [VerifyIgnored] = [],
         note: VerifyNote? = nil,
         style: TapDeliveryStyle? = nil,
+        elapsed: TimeInterval = 0,
+        phases: VerifyPhases = VerifyPhases(),
         error: ErrorPayload? = nil
     ) {
         self.version = Self.schemaVersion
@@ -48,8 +55,11 @@ public struct VerifyReport: Equatable, Sendable {
         self.change = change
         self.changes = changes
         self.changesTruncated = changesTruncated
+        self.ignored = ignored
         self.note = note
         self.style = style
+        self.elapsed = elapsed
+        self.phases = phases
         self.error = error
     }
 
@@ -59,7 +69,7 @@ public struct VerifyReport: Equatable, Sendable {
         return dispatched == .yes ? .unverified : .failure
     }
 
-    /// Keys in order: version, command, target, dispatched, verified, attempts, change, changes, changesTruncated, note, style, exitCode, error.
+    /// Keys in order: version, command, target, dispatched, verified, attempts, change, changes, changesTruncated, ignored, note, style, elapsedMs, phasesMs, exitCode, error.
     public func jsonData() throws -> Data {
         let members: [(String, OrderedJSON)] = [
             ("version", .integer(version)),
@@ -71,8 +81,11 @@ public struct VerifyReport: Equatable, Sendable {
             ("change", .string(change.rawValue)),
             ("changes", .array(changes.map(\.jsonValue))),
             ("changesTruncated", .integer(changesTruncated)),
+            ("ignored", .array(ignored.map(\.jsonValue))),
             ("note", .optional(note?.rawValue, OrderedJSON.string)),
             ("style", .optional(style?.rawValue, OrderedJSON.string)),
+            ("elapsedMs", .integer(VerifyPhases.milliseconds(elapsed))),
+            ("phasesMs", phases.jsonValue),
             ("exitCode", .integer(Int(exitCode.rawValue))),
             ("error", error.map(\.jsonValue) ?? .null),
         ]

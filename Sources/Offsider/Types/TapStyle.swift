@@ -27,4 +27,6 @@ struct TapResolution {
     var matched: UINode? = nil
     /// Elements that may draw over the tap point; empty when none do or the check was skipped.
     var coverCandidates: [UINode] = []
+    /// The pages the tree showed, read only when there were candidates.
+    var stack: ScreenStack? = nil
 }

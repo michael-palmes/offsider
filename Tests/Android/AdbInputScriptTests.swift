@@ -45,10 +45,15 @@ struct AdbInputScriptTests {
         #expect(try AdbInputScript.scripts(for: [.key(.press, usage: 40), .button(.press, .home)]) == ["input keyevent 66 && input keyevent 3"])
     }
 
-    @Test("back, app-switch and the volume keys are their KEYCODE values")
+    @Test("back, app-switch, the volume keys and menu are their KEYCODE values")
     func androidButtons() throws {
-        let presses: [AndroidInputStep] = [.button(.press, .back), .button(.press, .appSwitch), .button(.press, .volumeUp), .button(.press, .volumeDown)]
-        #expect(try AdbInputScript.scripts(for: presses) == ["input keyevent 4 && input keyevent 187 && input keyevent 24 && input keyevent 25"])
+        let presses: [AndroidInputStep] = [.button(.press, .back), .button(.press, .appSwitch), .button(.press, .volumeUp), .button(.press, .volumeDown), .button(.press, .menu)]
+        #expect(try AdbInputScript.scripts(for: presses) == ["input keyevent 4 && input keyevent 187 && input keyevent 24 && input keyevent 25 && input keyevent 82"])
+    }
+
+    @Test("HID usage 118 (Menu) is KEYCODE_MENU over adb")
+    func menuUsage() throws {
+        #expect(try AdbInputScript.scripts(for: [.key(.press, usage: 118)]) == ["input keyevent 82"])
     }
 
     @Test("a key held across other input cannot be sent over adb")

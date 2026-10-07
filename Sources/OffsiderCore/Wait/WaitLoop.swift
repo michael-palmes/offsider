@@ -43,7 +43,8 @@ public enum WaitCondition {
     case element(probe: (UITree) -> ElementProbe, gone: Bool, stableFor: TimeInterval = 0)
     /// Met when the first of several selectors, in order, is present; each entry names its selector for the report.
     case anyElement([(selector: WaitMatch, probe: (UITree) -> ElementProbe)], stableFor: TimeInterval = 0)
-    case settled(by: SettleSource, quiet: TimeInterval)
+    /// With `ignoreValues`, label and value changes do not count; with `gate`, a pass waits for a recent input's effect.
+    case settled(by: SettleSource, quiet: TimeInterval, ignoreValues: Bool = false, gate: SettleGate? = nil)
     case region(mode: RegionMode, quiet: TimeInterval, threshold: Double)
     case duration(TimeInterval)
 }
@@ -72,6 +73,8 @@ public struct WaitOutcome: Equatable, Sendable {
     public let match: UINode?
     /// Which selector of a `wait --any` was met.
     public let matched: WaitMatch?
+    /// For `--settled`: every change the tree showed was to text, which `--ignore-values` leaves out.
+    public var onlyTextMoved = false
 
     public init(met: Bool, elapsed: TimeInterval, reason: String, match: UINode? = nil, matched: WaitMatch? = nil) {
         self.met = met
@@ -79,6 +82,43 @@ public struct WaitOutcome: Equatable, Sendable {
         self.reason = reason
         self.match = match
         self.matched = matched
+    }
+}
+
+/// Holds a `--settled` pass after an input until a read differs from the screen before it, `hold` passes, or `floor` with no screen from before.
+public struct SettleGate: Equatable, Sendable {
+    public static let hold: TimeInterval = 2
+    public static let floor: TimeInterval = 1
+
+    /// Seconds from the input to the start of the wait.
+    public let sinceInput: TimeInterval
+    /// The screen before the input, when a read of it was kept.
+    public let before: AccessibilitySnapshot?
+
+    /// Nil when the input is already older than the gate would hold.
+    public init?(sinceInput: TimeInterval, before: UITree?) {
+        let snapshot = before.map(AccessibilitySnapshot.init(tree:)).flatMap { $0.isKnown ? $0 : nil }
+        let limit = snapshot == nil ? Self.floor : Self.hold
+        guard sinceInput < limit else { return nil }
+        self.sinceInput = max(0, sinceInput)
+        self.before = snapshot
+    }
+
+    /// How long after the input the gate opens by itself.
+    public var limit: TimeInterval { before == nil ? Self.floor : Self.hold }
+
+    /// The gate for a record's last input; none without one, when it is old, or when its command read the screen after it (a verified input).
+    public static func after(_ record: TreeCacheRecord?, now: Date) -> SettleGate? {
+        guard let record, let input = record.lastInputAt else { return nil }
+        let since = now.timeIntervalSince(input)
+        switch record.treeRole {
+        case .postAction?:
+            return nil
+        case .preAction?:
+            return SettleGate(sinceInput: since, before: record.tree)
+        case .read?, nil:
+            return SettleGate(sinceInput: since, before: nil)
+        }
     }
 }
 
@@ -111,6 +151,7 @@ public enum WaitLoop {
 
         let deadline = start + timeout
         var state = State()
+        state.start = start
         var lastReason = "not checked"
         var lastTransient: Error?
         var succeededOnce = false
@@ -141,7 +182,9 @@ public enum WaitLoop {
         if state.treeReads >= 2, !state.readableTree {
             throw WaitUnreadableError.settledTree
         }
-        return WaitOutcome(met: false, elapsed: sources.now() - start, reason: lastReason)
+        var outcome = WaitOutcome(met: false, elapsed: sources.now() - start, reason: lastReason)
+        outcome.onlyTextMoved = state.treeChanges > 0 && !state.structureMoved
+        return outcome
     }
 
     /// "1.2 s" style: whole seconds without a fraction, others to one decimal.
@@ -172,6 +215,11 @@ public enum WaitLoop {
         var metSince: TimeInterval?
         var metReads = 0
         var metSelector: WaitMatch?
+        var start: TimeInterval = 0
+        /// A settle gate's state: set once a read showed the input's effect.
+        var gateOpen = false
+        var treeChanges = 0
+        var structureMoved = false
     }
 
     private static func evaluate(_ condition: WaitCondition, state: inout State, sources: WaitSources) async throws -> Step {
@@ -209,18 +257,27 @@ public enum WaitLoop {
             state.metSelector = step.matched
             return dwell(step, stableFor: stableFor, gone: false, state: &state, sources: sources)
 
-        case .settled(let source, let quiet):
+        case .settled(let source, let quiet, let ignoreValues, let gate):
             var change: String?
+            let detector = ChangeDetector(options: .init(ignoreText: ignoreValues))
             if source != .screen {
                 let snapshot = AccessibilitySnapshot(tree: try await sources.tree())
                 state.treeReads += 1
                 state.readableTree = state.readableTree || snapshot.isKnown
                 if let previous = state.snapshot {
-                    switch ChangeDetector().compare(previous, snapshot) {
+                    switch detector.compare(previous, snapshot) {
                     case .unchanged: break
                     case .unknown: change = "accessibility tree not readable"
-                    case .changed(let summary): change = "tree still changing (\(summary))"
+                    case .changed(let summary):
+                        change = "tree still changing (\(summary))"
+                        state.treeChanges += 1
+                        if ChangeDetector(options: .init(ignoreText: true)).compare(previous, snapshot) != .unchanged {
+                            state.structureMoved = true
+                        }
                     }
+                }
+                if let before = gate?.before, case .changed = detector.compare(before, snapshot) {
+                    state.gateOpen = true
                 }
                 state.snapshot = snapshot
             }
@@ -231,7 +288,14 @@ public enum WaitLoop {
                 }
                 state.fingerprint = fingerprint
             }
-            return quietStep(change: change, quiet: quiet, met: "settled", state: &state, sources: sources)
+            let step = quietStep(change: change, quiet: quiet, met: "settled", state: &state, sources: sources)
+            guard step.met, let gate, !state.gateOpen else { return step }
+            let sinceInput = gate.sinceInput + sources.now() - state.start
+            if sinceInput + 1e-9 >= gate.limit {
+                state.gateOpen = true
+                return step
+            }
+            return Step(met: false, reason: "waiting for the last input's effect (\(seconds(sinceInput)) of \(seconds(gate.limit)) since it)")
 
         case .region(let mode, let quiet, let threshold):
             let fingerprint = try await sources.fingerprint()

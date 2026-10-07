@@ -1,10 +1,12 @@
 import Foundation
 import OffsiderCore
 
-enum AccessibilityQuery {
+indirect enum AccessibilityQuery {
     case id(String)
     case label(String)
     case value(String)
+    /// `--id` narrowed by `--label` and `--value`: an element must match every part.
+    case all(AccessibilityQuery, refinedBy: [AccessibilityQuery])
 
     var allowsSiblingRedirection: Bool {
         switch self {
@@ -12,6 +14,8 @@ enum AccessibilityQuery {
             return true
         case .id, .value:
             return false
+        case .all(let primary, _):
+            return primary.allowsSiblingRedirection
         }
     }
 
@@ -20,7 +24,7 @@ enum AccessibilityQuery {
         switch self {
         case .label, .value:
             return true
-        case .id:
+        case .id, .all:
             return false
         }
     }
@@ -30,6 +34,7 @@ enum AccessibilityQuery {
         case .id: return "--id"
         case .label: return "--label"
         case .value: return "--value"
+        case .all(let primary, _): return primary.kind
         }
     }
 
@@ -37,11 +42,16 @@ enum AccessibilityQuery {
         switch self {
         case .id(let value), .label(let value), .value(let value):
             return value
+        case .all(let primary, _):
+            return primary.rawValue
         }
     }
 
     var selectorDescription: String {
-        "\(kind) '\(rawValue)'"
+        guard case .all(let primary, let refinements) = self else {
+            return "\(kind) '\(rawValue)'"
+        }
+        return ([primary] + refinements).map(\.selectorDescription).joined(separator: " ")
     }
 
     /// The trimmed field this query reads from `node`.
@@ -50,7 +60,15 @@ enum AccessibilityQuery {
         case .id: return node.normalizedID
         case .label: return node.normalizedLabel
         case .value: return node.isSecure ? nil : node.normalizedValue
+        case .all(let primary, _): return primary.field(of: node)
         }
+    }
+
+    /// True when the node's field equals the text exactly after trimming, or after folding quotes and spaces.
+    func matches(_ node: UINode) -> Bool {
+        guard let field = field(of: node) else { return false }
+        let wanted = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return field == wanted || (allowsFolding && SelectorText.folded(field) == SelectorText.folded(wanted))
     }
 }
 
@@ -66,8 +84,10 @@ struct MatchSummary: Equatable {
     var index: Int? = nil
     /// The title of the window (Android) or app it is in.
     var window: String? = nil
-    /// The id of the nearest ancestor that fills the screen, such as a page kept mounted under another.
+    /// The screen it is on: a covered screen's or page's name, else the id of the nearest ancestor that fills the screen.
     var screen: String? = nil
+    /// True when a page is drawn over it; nil when no page covers anything.
+    var beneath: Bool? = nil
 
     init(role: UIRole, id: String?, label: String? = nil, frame: UIFrame?, isOnScreen: Bool?) {
         self.role = role
@@ -77,7 +97,7 @@ struct MatchSummary: Equatable {
         self.isOnScreen = isOnScreen
     }
 
-    init(_ node: UINode, viewport: UIFrame?, index: Int? = nil, roots: [UINode] = []) {
+    init(_ node: UINode, viewport: UIFrame?, index: Int? = nil, roots: [UINode] = [], stack: ScreenStack = .empty) {
         self.init(
             role: node.role,
             id: node.normalizedID,
@@ -93,6 +113,10 @@ struct MatchSummary: Equatable {
                 ancestor.normalizedID != nil && ancestor.frame.map { AccessibilityTargetResolver.isBackdrop($0, in: viewport) } == true
             }?.normalizedID
         }
+        if !stack.beneath.isEmpty, let position = ScreenStack.index(of: node, in: roots) {
+            beneath = stack.isBeneath(index: position)
+            screen = stack.screenName(of: position).map { SelectorText.truncated($0) } ?? screen
+        }
     }
 
     var text: String {
@@ -102,12 +126,13 @@ struct MatchSummary: Equatable {
         parts.append(frame?.summary ?? "with no frame")
         if isOnScreen == false { parts.append("off screen") }
         if let screen { parts.append("in screen=\(screen)") }
+        if beneath == true { parts.append("(beneath another screen)") }
         if let index { parts.append("(--nth \(index))") }
         return parts.joined(separator: " ")
     }
 
     var failureCandidate: FailureCandidate {
-        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen, index: index, window: window, screen: screen)
+        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen, index: index, window: window, screen: screen, beneath: beneath)
     }
 }
 
@@ -120,6 +145,10 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     case invalidFrame(reason: String)
     case multipleSwitchDescendants(count: Int, selectorDescription: String)
     case nthOutOfRange(selector: String, nth: Int, count: Int)
+    /// The `--id` matched, but no match had the `--label` or `--value` asked for too.
+    case refinedOut(selector: String, candidates: [MatchSummary])
+    /// The text is in LogBox toast `toast`, whose banner is not a separate element per line.
+    case inLogBoxToast(kind: String, value: String, toast: Int)
 
     static let maxListed = 5
 
@@ -165,6 +194,11 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
             return "\(reason) \(tip)"
         case .nthOutOfRange(let selector, let nth, let count):
             return "--nth \(nth) asked for match \(nth) of \(selector), but there \(count == 1 ? "is 1 match" : "are \(count) matches") on screen. \(tip)"
+        case .refinedOut(let selector, let candidates):
+            let listed = Self.listed(candidates.map(\.text), separator: "; ")
+            return "No accessibility element matched \(selector): the id matches \(listed), with another label or value. \(tip)"
+        case .inLogBoxToast(let kind, let value, let toast):
+            return "No accessibility element matched \(kind) '\(value)', but LogBox toast \(toast) shows that text. Read the log with `offsider rn logbox open --index \(toast)`, or clear it with `offsider rn logbox dismiss --index \(toast)`."
         case .multipleSwitchDescendants(let count, let selectorDescription):
             return "Matched element for \(selectorDescription) contains multiple (\(count)) switch/toggle controls. Target the switch more specifically with --id when available, or use coordinates. Use --element-type only when describe-ui reports a specific role or type, such as switch or Toggle. \(tip)"
         }
@@ -173,7 +207,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     /// Missing, filtered out or off screen: a later tree may show the element, so `--wait-timeout` polls again.
     var isRetryable: Bool {
         switch self {
-        case .notFound, .filteredByElementType, .offScreen, .nthOutOfRange:
+        case .notFound, .filteredByElementType, .offScreen, .nthOutOfRange, .refinedOut, .inLogBoxToast:
             return true
         case .multipleMatches, .invalidFrame, .multipleSwitchDescendants:
             return false
@@ -191,7 +225,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
 
     var reason: FailureReason {
         switch self {
-        case .notFound, .nthOutOfRange: return .selectorNotFound
+        case .notFound, .nthOutOfRange, .refinedOut, .inLogBoxToast: return .selectorNotFound
         case .filteredByElementType: return .selectorFilteredByType
         case .offScreen: return .targetOffScreen
         case .multipleMatches: return .selectorAmbiguous
@@ -202,14 +236,17 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
 
     var failureMessage: String { userFacingDescription }
 
-    var hint: String? { "offsider describe-ui --device <DEVICE_ID> --summary" }
+    var hint: String? {
+        if case .inLogBoxToast = self { return "offsider rn logbox status --device <DEVICE_ID>" }
+        return "offsider describe-ui --device <DEVICE_ID> --summary"
+    }
 
     var candidates: [FailureCandidate] {
         switch self {
         case .notFound(_, _, _, let candidates), .filteredByElementType(_, _, _, _, let candidates),
-             .multipleMatches(_, _, _, _, let candidates, _, _):
+             .multipleMatches(_, _, _, _, let candidates, _, _), .refinedOut(_, let candidates):
             return candidates.prefix(Self.maxListed).map(\.failureCandidate)
-        case .offScreen, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange:
+        case .offScreen, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange, .inLogBoxToast:
             return []
         }
     }
@@ -263,6 +300,11 @@ struct AccessibilityTargetResolver {
         query: AccessibilityQuery,
         elementType: String?
     ) -> SelectorCandidates {
+        if case .all(let primary, let refinements) = query {
+            let found = candidates(roots: roots, query: primary, elementType: elementType)
+            let refine = { (nodes: [UINode]) in nodes.filter { node in refinements.allSatisfy { $0.matches(node) } } }
+            return SelectorCandidates(matches: refine(found.matches), onScreen: refine(found.onScreen), viewport: found.viewport, folded: false)
+        }
         var elements = roots.flatMap { $0.flattened() }
         if let elementType {
             elements = elements.filter { $0.matches(elementType: elementType) }
@@ -337,7 +379,7 @@ struct AccessibilityTargetResolver {
             element = pool[nth - 1]
         case (.last?, _):
             element = pool[pool.count - 1]
-        case (nil, .id):
+        case (nil, .id), (nil, .all):
             element = try selectUniqueMatch(pool, ambiguity)
         case (nil, .label), (nil, .value):
             element = try selectBestLabelMatch(pool, ambiguity)
@@ -389,16 +431,33 @@ struct AccessibilityTargetResolver {
             point = (x: visible.center.x, y: visible.center.y)
         }
 
-        let candidates = allowOffscreen ? [] : UITree.viewport(in: roots).map { viewport in
-            coverCandidates(of: activationElement, matched: match.element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, roots: roots)
-        } ?? []
+        var candidates: [UINode] = []
+        var stack: ScreenStack?
+        if !allowOffscreen, let viewport = UITree.viewport(in: roots) {
+            candidates = coverCandidates(of: activationElement, matched: match.element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, roots: roots)
+            if !candidates.isEmpty {
+                let built = ScreenStack.build(roots: roots, viewport: viewport)
+                candidates = onTopCandidates(candidates, over: activationElement, roots: roots, stack: built)
+                stack = built
+            }
+        }
         return TapResolution(
             point: point,
             isSwitchLikeControl: activationElement.isSwitch,
             target: activationElement,
             matched: match.element,
-            coverCandidates: candidates
+            coverCandidates: candidates,
+            stack: stack
         )
+    }
+
+    /// Drops candidates on a screen beneath a page, and on Android those its drawing order puts below the target.
+    static func onTopCandidates(_ candidates: [UINode], over target: UINode, roots: [UINode], stack: ScreenStack) -> [UINode] {
+        candidates.filter { candidate in
+            guard !stack.isBeneath(candidate, in: roots) else { return false }
+            guard candidate.isAndroid, let order = UITree.zOrder(of: candidate, over: target, in: roots), order.byDrawingOrder else { return true }
+            return order.isAbove
+        }
     }
 
     /// Plausible occluders whose frame holds `point`; tree order is not z-order on either platform, so a real hit-test must confirm one.
@@ -431,37 +490,6 @@ struct AccessibilityTargetResolver {
     private static func coverArea(of node: UINode, in viewport: UIFrame) -> UIFrame? {
         guard let frame = node.frame else { return nil }
         return KnownOverlays.logBoxToast(node, viewport: viewport) != nil ? KnownOverlays.logBoxTouchArea(of: frame, in: viewport) : frame
-    }
-
-    /// The cover once a hit-test at the tap point found `hit`: nil when the hit is the target or its kin.
-    /// Without a hit, the first candidate not lying wholly inside the target, which is more likely underneath it,
-    /// and not a backdrop such as a sheet's scrim, which sits behind the content it surrounds.
-    static func confirmedCover(hit: UINode?, resolution: TapResolution, roots: [UINode]) -> UINode? {
-        guard !resolution.coverCandidates.isEmpty else {
-            return nil
-        }
-        guard let hit else {
-            let targetFrame = resolution.target?.frame
-            let viewport = UITree.viewport(in: roots)
-            return resolution.coverCandidates.first { candidate in
-                guard let frame = candidate.frame else { return true }
-                if let viewport, isBackdrop(frame, in: viewport) { return false }
-                guard let targetFrame else { return true }
-                return !targetFrame.encloses(frame)
-            }
-        }
-        let related = [resolution.target, resolution.matched].compactMap { $0 }.flatMap { family(of: $0, in: roots) }
-        if related.contains(where: { $0.isSameElement(as: hit) || $0.isSameTarget(as: hit) }) {
-            return nil
-        }
-        // A node drawn wholly inside the target is its own content, such as a control's text listed as a sibling.
-        if let targetFrame = resolution.target?.frame, let hitFrame = hit.frame, targetFrame.encloses(hitFrame) {
-            return nil
-        }
-        if resolution.coverCandidates.contains(where: { $0.isSameTarget(as: hit) }) {
-            return hit
-        }
-        return isPlausibleOccluder(hit, underKeyboard: hit.role == .keyboard) ? hit : nil
     }
 
     /// The keyboard over the tap point, from the tree already read; on Android its window's bounds decide, as its root view spans the screen.
@@ -527,14 +555,9 @@ struct AccessibilityTargetResolver {
         ancestors(of: element, in: roots) + element.flattened()
     }
 
-    private static let containerRoles: Set<UIRole> = [.window, .application, .scrollView, .list]
-
-    /// Unlabelled groups never count: they wrap content rather than draw over it. A labelled one can be a banner on Android.
+    /// Anything in a keyboard, else what `CoverJudge` takes for a plausible occluder; a labelled group can be a banner on Android.
     private static func isPlausibleOccluder(_ node: UINode, underKeyboard: Bool) -> Bool {
-        if node.role.isActionable || underKeyboard {
-            return true
-        }
-        return node.normalizedLabel != nil && !containerRoles.contains(node.role)
+        underKeyboard || CoverJudge.isPlausibleOccluder(node)
     }
 
     static func ancestorsOf(_ element: UINode, in roots: [UINode]) -> [UINode] {
@@ -572,13 +595,23 @@ struct AccessibilityTargetResolver {
         return matches
     }
 
-    /// Explains a miss: matches that `--element-type` removed, else the closest values of the same field.
+    /// Explains a miss: what the `--label` or `--value` refinement or `--element-type` left out, else the closest values of the field.
     private static func notFoundError(
         roots: [UINode],
         query: AccessibilityQuery,
         elementType: String?,
         viewport: UIFrame?
     ) -> ElementResolutionError {
+        if case .all(let primary, _) = query {
+            let unrefined = candidates(roots: roots, query: primary, elementType: elementType).matches
+            guard !unrefined.isEmpty else {
+                return notFoundError(roots: roots, query: primary, elementType: elementType, viewport: viewport)
+            }
+            return .refinedOut(
+                selector: query.selectorDescription,
+                candidates: unrefined.prefix(ElementResolutionError.maxListed).map { MatchSummary($0, viewport: viewport) }
+            )
+        }
         if let elementType {
             let untyped = candidates(roots: roots, query: query, elementType: nil)
             if !untyped.matches.isEmpty {
@@ -592,6 +625,9 @@ struct AccessibilityTargetResolver {
             }
         }
 
+        if query.kind != "--id", let toast = KnownOverlays.logBoxToast(containing: query.rawValue, in: roots, viewport: viewport) {
+            return .inLogBoxToast(kind: query.kind, value: query.rawValue, toast: toast.index)
+        }
         let elements = roots.flatMap { $0.flattened() }
         let onScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) == true } ?? true }
         let offScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) != true } ?? false }
@@ -629,9 +665,9 @@ struct AccessibilityTargetResolver {
         var pool: [UINode] = []
         var roots: [UINode] = []
 
-        func summary(_ node: UINode) -> MatchSummary {
+        func summary(_ node: UINode, stack: ScreenStack) -> MatchSummary {
             let index = pool.firstIndex { $0.isSameElement(as: node) }.map { $0 + 1 }
-            return MatchSummary(node, viewport: viewport, index: index, roots: roots)
+            return MatchSummary(node, viewport: viewport, index: index, roots: roots, stack: stack)
         }
     }
 
@@ -643,10 +679,14 @@ struct AccessibilityTargetResolver {
             throw ElementResolutionError.notFound(kind: ambiguity.query.kind, value: ambiguity.query.rawValue)
         }
         guard matches.count == 1 else {
+            let stack = ScreenStack.build(roots: ambiguity.roots, viewport: ambiguity.viewport)
+            if let chosen = stackedPick(matches, roots: ambiguity.roots, stack: stack) {
+                return chosen
+            }
             let hasUniqueIDs = matches.contains {
                 $0.normalizedID != nil
             }
-            let summaries = matches.prefix(ElementResolutionError.maxListed).map(ambiguity.summary)
+            let summaries = matches.prefix(ElementResolutionError.maxListed).map { ambiguity.summary($0, stack: stack) }
             throw ElementResolutionError.multipleMatches(
                 count: matches.count,
                 kind: ambiguity.query.kind,
@@ -658,6 +698,23 @@ struct AccessibilityTargetResolver {
             )
         }
         return matches[0]
+    }
+
+    /// Among several matches, the only one not beneath a page; else, when they all share one activation point, the one a touch there reaches.
+    static func stackedPick(_ matches: [UINode], roots: [UINode], stack: ScreenStack) -> UINode? {
+        let uncovered = matches.filter { !stack.isBeneath($0, in: roots) }
+        if uncovered.count == 1 {
+            return uncovered[0]
+        }
+        let pool = uncovered.isEmpty ? matches : uncovered
+        let points = pool.compactMap { node in node.frame.map { activationPoint(for: node, frame: $0) } }
+        guard points.count == pool.count, let first = points.first, points.allSatisfy({ point in
+            abs(point.x - first.x) <= TransitionGuard.frameTolerance && abs(point.y - first.y) <= TransitionGuard.frameTolerance
+        }) else {
+            return nil
+        }
+        let chain = UITree.hitChain(in: roots, at: UIPoint(x: first.x, y: first.y))
+        return pool.first { match in chain.contains { $0.isSameElement(as: match) } } ?? pool.last
     }
 
     private static func selectBestLabelMatch(
@@ -754,9 +811,6 @@ struct AccessibilityTargetResolver {
 }
 
 extension UINode {
-    var normalizedID: String? { Self.trimmed(id) }
-    var normalizedLabel: String? { Self.trimmed(label) }
-    var normalizedValue: String? { Self.trimmed(value) }
     var isSwitch: Bool { role == .switch }
     var isSlider: Bool { role == .slider }
 
@@ -774,13 +828,6 @@ extension UINode {
     /// `--element-type` matches the neutral role in any case, or the native type name exactly.
     func matches(elementType: String) -> Bool {
         role.rawValue.caseInsensitiveCompare(elementType) == .orderedSame || native.typeName == elementType
-    }
-
-    private static func trimmed(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
-            return nil
-        }
-        return trimmed
     }
 }
 

@@ -8,8 +8,8 @@ struct ReactNativeOverlayTests {
     /// iOS maps the accessible banner View to `other`; Android maps it to a labelled `group`.
     private static func coverText(_ platform: RNPlatform) -> String {
         switch platform {
-        case .ios: return "may be covered by other '\(bannerText)'"
-        case .android: return "may be covered by group '\(bannerText)'"
+        case .ios: return "is covered by other '\(bannerText)'"
+        case .android: return "is covered by group '\(bannerText)'"
         }
     }
 
@@ -19,15 +19,22 @@ struct ReactNativeOverlayTests {
         _ = try await app.waitForNode { $0["id"] as? String == "overlay-test-banner" }
     }
 
-    @Test("a tab under a banner taps with a warning that names the banner", arguments: RNPlatform.enabled)
-    func coveredTabWarns(platform: RNPlatform) async throws {
+    @Test("a tab under a banner is refused, naming the banner, and --allow-covered lets the banner swallow it", arguments: RNPlatform.enabled)
+    func coveredTabRefused(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await Self.openWithBanner(app)
 
-        let result = try await app.offsider("tap --id overlay-test-tab-search")
+        let refused = try await app.offsider("tap --id overlay-test-tab-search")
 
-        #expect(result.exitCode == 0, "\(result.stderr)")
-        #expect(result.stderr.contains(Self.coverText(platform)), "\(result.stderr)")
+        #expect(refused.exitCode == 1, "\(refused.stderr)")
+        #expect(refused.stderr.contains(Self.coverText(platform)), "\(refused.stderr)")
+        try await Task.sleep(for: .seconds(1))
+        #expect(try await app.label(of: "overlay-test-swallowed") == "Swallowed Taps: 0")
+
+        let allowed = try await app.offsider("tap --id overlay-test-tab-search --allow-covered")
+
+        #expect(allowed.exitCode == 0, "\(allowed.stderr)")
+        #expect(allowed.stderr.contains(Self.coverText(platform)), "\(allowed.stderr)")
         _ = try await app.waitForLabel(of: "overlay-test-swallowed") { $0 == "Swallowed Taps: 1" }
         #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
     }
@@ -39,7 +46,7 @@ struct ReactNativeOverlayTests {
 
         let result = try await app.offsider("tap --id overlay-test-tab-search --fail-if-covered")
 
-        #expect(result.exitCode != 0)
+        #expect(result.exitCode == 1)
         #expect(result.stderr.contains(Self.coverText(platform)), "\(result.stderr)")
         try await Task.sleep(for: .seconds(1))
         #expect(try await app.label(of: "overlay-test-swallowed") == "Swallowed Taps: 0")
