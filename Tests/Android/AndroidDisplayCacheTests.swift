@@ -19,7 +19,12 @@ struct AndroidDisplayCacheTests {
         private var transportId = 7
         /// `screencap` without `-d` captures the inner panel whatever the hinge, so the cover needs `-d`.
         let picksInner: Bool
-        init(picksInner: Bool = false) { self.picksInner = picksInner }
+        /// False before API 31, where `cmd device_state` does not exist.
+        let hasDeviceState: Bool
+        init(picksInner: Bool = false, hasDeviceState: Bool = true) {
+            self.picksInner = picksInner
+            self.hasDeviceState = hasDeviceState
+        }
         var closed: Bool {
             get { lock.withLock { isClosed } }
             set { lock.withLock { isClosed = newValue } }
@@ -47,10 +52,13 @@ struct AndroidDisplayCacheTests {
             case "exec:screencap -d \(cover) -p": return FakeAdbServer.exec(coverPNG)
             default: break
             }
+            let status = phone.hasDeviceState
+                ? GalaxyFoldFixtures.status(closed: closed)
+                : FoldableFixtures.status("", "", GalaxyFoldFixtures.dumpsys(closed: closed))
             switch String(service.dropFirst("shell,v2,raw:".count)) {
-            case AndroidDeviceState.readState: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.state(closed: closed))
+            case AndroidDeviceState.readState where phone.hasDeviceState: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.state(closed: closed))
             case AndroidDisplayStatus.scriptWithProbe:
-                return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(GalaxyFoldFixtures.status(closed: closed), GalaxyFoldFixtures.geometry(closed: closed)))
+                return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(status, GalaxyFoldFixtures.geometry(closed: closed)))
             case AndroidDisplayGeometry.probeScript: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.geometry(closed: closed))
             default: return FakeAdbServer.shell(stderr: "unexpected", status: 1)
             }
@@ -83,7 +91,7 @@ struct AndroidDisplayCacheTests {
         AndroidDisplayCache(directory: directory).load(serial: serial)
     }
 
-    @Test("the first command learns the inner panel from one status shell; the second captures it with -d alongside device_state and nothing else")
+    @Test("the first command learns the inner panel from one status shell; the second takes a plain capture, which follows the panel, alongside device_state and nothing else")
     func secondCommandUsesCache() async throws {
         let directory = try Self.cacheDirectory()
         let server = Self.server(Phone())
@@ -96,7 +104,7 @@ struct AndroidDisplayCacheTests {
 
         let second = try await Self.command(server, cache: directory)
         #expect(second.png == AndroidMultiDisplayCaptureTests.png(1768, 2208))
-        #expect(Set(second.services) == ["exec:screencap -d \(Self.inner) -p", "shell,v2,raw:\(AndroidDeviceState.readState)"])
+        #expect(Set(second.services) == ["exec:screencap -p", "shell,v2,raw:\(AndroidDeviceState.readState)"])
         #expect(server.services.filter { $0 == "host:devices-l" }.count == 2)
     }
 
@@ -118,7 +126,7 @@ struct AndroidDisplayCacheTests {
         server.services.dropFirst(count).filter { $0.hasPrefix("exec:") }
     }
 
-    @Test("on a phone whose screencap follows the active panel, a cached command takes its first capture with -d, then follows a fold partway through")
+    @Test("on a phone whose screencap follows the active panel, a cached command takes plain captures, which follow a fold partway through")
     func cachedCommandFollowsFold() async throws {
         let directory = try Self.cacheDirectory()
         let phone = Phone()
@@ -133,7 +141,45 @@ struct AndroidDisplayCacheTests {
         #expect(try await backend.screenshotPNG(for: Self.phone) == AndroidMultiDisplayCaptureTests.png(840, 2289))
         await backend.close()
 
-        #expect(Self.execs(server, after: before) == ["exec:screencap -d \(Self.inner) -p", "exec:screencap -p"])
+        #expect(Self.execs(server, after: before) == ["exec:screencap -p", "exec:screencap -p"])
+    }
+
+    /// An entry as an earlier command wrote it, with no committed state as before API 31.
+    static func writeEntry(_ directory: String, displayId: String, followsActive: Bool, width: Int, height: Int) throws {
+        let entry = AndroidDisplayCacheEntry(
+            serial: serial, transportId: "7", displayId: displayId, role: displayId == inner ? "inner" : "cover",
+            states: [], committed: nil, followsActive: followsActive, width: width, height: height
+        )
+        AndroidDisplayCache(directory: directory).save(entry)
+        #expect(Self.entry(in: directory) == entry)
+    }
+
+    @Test("folded between commands with no device state to read, a phone whose screencap follows the panel captures the cover, not the dark inner panel")
+    func foldWithoutDeviceStateFollowsPanel() async throws {
+        let directory = try Self.cacheDirectory()
+        try Self.writeEntry(directory, displayId: Self.inner, followsActive: true, width: 1768, height: 2208)
+        let phone = Phone()
+        phone.closed = true
+
+        let folded = try await Self.command(Self.server(phone), cache: directory)
+
+        #expect(folded.png == AndroidMultiDisplayCaptureTests.png(840, 2289))
+        #expect(!folded.services.contains("exec:screencap -d \(Self.inner) -p"))
+        #expect(Self.entry(in: directory)?.displayId == Self.cover)
+    }
+
+    @Test("with no device state to check it against, a panel that needed -d is never captured from the cache, nor cached")
+    func namedPanelNeedsDeviceState() async throws {
+        let directory = try Self.cacheDirectory()
+        try Self.writeEntry(directory, displayId: Self.cover, followsActive: false, width: 840, height: 2289)
+        let phone = Phone(picksInner: true, hasDeviceState: false)
+        phone.closed = true
+
+        let result = try await Self.command(Self.server(phone), cache: directory)
+
+        #expect(result.png == AndroidMultiDisplayCaptureTests.png(840, 2289))
+        #expect(result.services.first == "exec:screencap -p")
+        #expect(Self.entry(in: directory) == nil)
     }
 
     @Test("on a phone whose screencap needed -d, a cached command keeps naming the cached panel")
