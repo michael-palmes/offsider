@@ -10,6 +10,50 @@ func makePrivateLockRoot() throws -> String {
     return path
 }
 
+/// `/bin/sleep 10`, keeping `inherited` open across its exec when given; plain `posix_spawn` passes every descriptor not marked close-on-exec.
+private func spawnSleep(inheriting inherited: Int32? = nil) throws -> pid_t {
+    var actions = posix_spawn_file_actions_t(nil as OpaquePointer?)
+    posix_spawn_file_actions_init(&actions)
+    defer { posix_spawn_file_actions_destroy(&actions) }
+    if let inherited { posix_spawn_file_actions_addinherit_np(&actions, inherited) }
+    var pid: pid_t = 0
+    let arguments: [UnsafeMutablePointer<CChar>?] = [strdup("/bin/sleep"), strdup("10"), nil]
+    defer { arguments.forEach { free($0) } }
+    try #require(posix_spawn(&pid, "/bin/sleep", &actions, nil, arguments, environ) == 0)
+    return pid
+}
+
+private func reap(_ pid: pid_t) {
+    kill(pid, SIGKILL)
+    var status: Int32 = 0
+    waitpid(pid, &status, 0)
+}
+
+/// The descriptor this process holds open on `path`, matched by device and inode.
+private func openDescriptor(for path: String) -> Int32? {
+    var target = stat()
+    guard stat(path, &target) == 0 else { return nil }
+    var info = stat()
+    return (0..<getdtablesize()).first { fstat($0, &info) == 0 && info.st_dev == target.st_dev && info.st_ino == target.st_ino }
+}
+
+/// Whether `pid` holds a descriptor open on `path`, read through libproc.
+private func process(_ pid: pid_t, holds path: String) -> Bool {
+    var target = stat()
+    guard stat(path, &target) == 0 else { return false }
+    let stride = MemoryLayout<proc_fdinfo>.stride
+    var descriptors = [proc_fdinfo](repeating: proc_fdinfo(), count: 256)
+    let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &descriptors, Int32(descriptors.count * stride))
+    return descriptors.prefix(max(0, Int(bytes)) / stride).contains { descriptor in
+        guard descriptor.proc_fdtype == UInt32(PROX_FDTYPE_VNODE) else { return false }
+        var info = vnode_fdinfowithpath()
+        let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
+        guard proc_pidfdinfo(pid, descriptor.proc_fd, PROC_PIDFDVNODEPATHINFO, &info, size) == size else { return false }
+        let file = info.pvip.vip_vi.vi_stat
+        return file.vst_dev == UInt32(bitPattern: target.st_dev) && file.vst_ino == target.st_ino
+    }
+}
+
 private final class FakeLockClock: @unchecked Sendable {
     private let lock = NSLock()
     private let start = ContinuousClock.now
@@ -188,23 +232,29 @@ struct DeviceLockTests {
         let root = try makePrivateLockRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
         let lock = try await DeviceLock.acquire(key, command: "tap", wait: nil, root: root)
+        defer { lock.release() }
 
-        // posix_spawn without CLOEXEC_DEFAULT passes every descriptor not marked close-on-exec.
-        var pid: pid_t = 0
-        let arguments: [UnsafeMutablePointer<CChar>?] = [strdup("/bin/sleep"), strdup("10"), nil]
-        defer { arguments.forEach { free($0) } }
-        #expect(posix_spawn(&pid, "/bin/sleep", nil, nil, arguments, environ) == 0)
-        defer {
-            kill(pid, SIGKILL)
-            var status: Int32 = 0
-            waitpid(pid, &status, 0)
-        }
+        let pid = try spawnSleep()
+        defer { reap(pid) }
+        #expect(kill(pid, 0) == 0)
+        #expect(!process(pid, holds: lock.path))
+    }
+
+    @Test("a release frees the device at once while a child still shares the lock's open file")
+    func releaseWhileChildSharesLock() async throws {
+        let root = try makePrivateLockRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let lock = try await DeviceLock.acquire(key, command: "tap", wait: nil, root: root)
+        let shared = try #require(openDescriptor(for: lock.path))
+
+        // As a child mid-posix_spawn on another thread shares it until its exec; this one shares it for its life.
+        let pid = try spawnSleep(inheriting: shared)
+        defer { reap(pid) }
+        #expect(process(pid, holds: lock.path))
 
         lock.release()
-        // A short wait covers the child closing close-on-exec descriptors as its exec completes; an inherited lock would last 10 s.
-        let again = try await DeviceLock.acquire(key, command: "tap", wait: .seconds(1), root: root)
+        let again = try await DeviceLock.acquire(key, command: "swipe", wait: nil, root: root)
         again.release()
-        #expect(kill(pid, 0) == 0)
     }
 
     @Test("a lock file the holder has not written yet still refuses, naming no pid")
