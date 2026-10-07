@@ -21,7 +21,7 @@
 - Something that drags only after a long press (a reorderable row, a tile) needs a hold before the move: `drag ... --hold-ms 800`, or `gesture long-press-drag --x <X> --y <Y> --to-x <X2> --to-y <Y2>`. A plain `drag` holds 50 ms, so it scrolls or does nothing there.
 - Use `--pre-delay` and `--post-delay` on `tap`, `swipe` and `gesture` for fixed delays around actions, and `--duration` for how long a swipe, gesture, button press or key press lasts.
 - Keep a held touch in one command (`touch --down --up`) or one `batch`.
-- `touch -x <X> -y <Y> --fingers 2 --hold <ms>` puts two fingers down `--spread` points apart (default 60) around the point, holds them and lifts both, for menus behind a two-finger hold. It works on a simulator's main display and Android emulators (gRPC, or the UiAutomation helper when input goes over adb); a physical iPhone and the iPhone Duo's inner display refuse it.
+- `touch -x <X> -y <Y> --fingers 2 --hold <ms>` puts two fingers down `--spread` points apart (default 60) around the point, holds them and lifts both, for menus behind a two-finger hold. It works on a simulator's main display, Android emulators (gRPC) and Android phones (the UiAutomation helper, started for the command, about 1.7 s on a Pixel 2 XL); `OFFSIDER_ANDROID_INPUT=input`, a physical iPhone and the iPhone Duo's inner display refuse it.
 
 ```bash
 offsider tap --label 'Weather Alerts' --device <DEVICE_ID>
