@@ -18,7 +18,7 @@ struct AndroidDisplayCacheEntry: Equatable, Sendable {
     var followsActive: Bool
     /// Every state `print-states` listed; empty before API 31.
     var states: [AndroidDeviceState.State]
-    /// The committed state when the entry was learnt; nil before API 31, where only the size is checked.
+    /// The committed state when the entry was learnt; nil before API 31, where only a plain capture is trusted, on its size.
     var committed: AndroidDeviceState.State?
     var width: Int
     var height: Int
