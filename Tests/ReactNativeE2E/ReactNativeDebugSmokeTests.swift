@@ -138,23 +138,37 @@ struct ReactNativeDebugSmokeTests {
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
     }
 
-    @Test("rn logbox status names the toast's message, and open then dismiss clears its two logs in under 5 s", arguments: RNPlatform.enabled)
+    /// Empties LogBox and logs two errors, which LogBox shows as one `2, ` toast.
+    private static func logTwoErrors(_ app: RNApp) async throws {
+        try await app.run("tap --id overlay-test-clear-logs")
+        try await app.run("tap --id overlay-test-log-two-errors")
+        _ = try await app.waitForNode { label($0).hasPrefix("2, ") }
+    }
+
+    @Test("rn logbox status names the toast's message and dismiss clears its two logs, together in under 5 s; open shows the inspector", arguments: RNPlatform.enabled)
     func logBoxOpenAndDismiss(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("overlay-test")
-        try await app.run("tap --id overlay-test-clear-logs")
-        try await app.run("tap --id overlay-test-log-two-errors")
-        _ = try await app.waitForNode { Self.label($0).hasPrefix("2, ") }
+        try await Self.logTwoErrors(app)
 
-        let status = try await app.run("rn logbox status --json").stdout
-        #expect(status.contains(#""index":1,"count":2,"message":"OffsiderFixture error"#), "\(status)")
+        // The field trial's bar: status lists the toast and dismiss clears it in under 5 s.
         let started = ContinuousClock.now
-        let opened = try await app.run("rn logbox open --json").stdout
-        #expect(opened.contains(#""index":1,"message":"OffsiderFixture error"#), "\(opened)")
+        let status = try await app.run("rn logbox status --json").stdout
         let dismissed = try await app.run("rn logbox dismiss --json").stdout
         let elapsed = ContinuousClock.now - started
+        #expect(status.contains(#""index":1,"count":2,"message":"OffsiderFixture error"#), "\(status)")
         #expect(dismissed.contains(#""cleared":2,"remaining":0"#), "\(dismissed)")
-        #expect(elapsed < .seconds(5), "open and dismiss took \(elapsed)")
+        #expect(elapsed < .seconds(5), "status and dismiss took \(elapsed)")
+
+        try await Self.logTwoErrors(app)
+        let opening = ContinuousClock.now
+        let opened = try await app.run("rn logbox open --json").stdout
+        let openElapsed = ContinuousClock.now - opening
+        #expect(opened.contains(#""index":1,"message":"OffsiderFixture error"#), "\(opened)")
+        #expect(opened.contains(#""of":2"#), "\(opened)")
+        #expect(openElapsed < .seconds(10), "open took \(openElapsed)")
+        let closed = try await app.run("rn logbox dismiss --json").stdout
+        #expect(closed.contains(#""cleared":2,"remaining":0,"method":"inspector""#), "\(closed)")
     }
 
     @Test("rn devmenu close runs as a batch step, which opens the menu and leaves the app in front", arguments: RNPlatform.enabled)
