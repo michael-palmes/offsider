@@ -203,7 +203,7 @@ struct TapCommandTests {
         root.children.reverse()
         // The fake's point read serves the next tree, where page 1 is listed last and so drawn on top.
         let pageOneOnTop = UITree(platform: .ios, device: Self.device.rawValue, roots: [root])
-        let backend = FakeDeviceBackend(trees: [FakeUI.tree([]), stacked, pageOneOnTop])
+        let backend = HitTestingFakeBackend(trees: [FakeUI.tree([]), stacked, pageOneOnTop])
 
         try await Self.tap(["--label", "Back", "--topmost", "--wait-timeout", "2", "--poll-interval", "0.01"], on: backend)
 

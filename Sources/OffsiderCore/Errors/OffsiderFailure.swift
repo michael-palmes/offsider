@@ -18,10 +18,12 @@ public struct FailureCandidate: Equatable, Sendable {
     public let index: Int?
     /// The window or app title it is in.
     public let window: String?
-    /// The id of the nearest screen-filling ancestor.
+    /// The screen it is on: a covered screen's or page's name, else the id of the nearest screen-filling ancestor.
     public let screen: String?
+    /// True when a page is drawn over its screen; nil when no page covers anything.
+    public let beneath: Bool?
 
-    public init(id: String?, label: String?, role: String, frame: UIFrame?, onScreen: Bool?, index: Int? = nil, window: String? = nil, screen: String? = nil) {
+    public init(id: String?, label: String?, role: String, frame: UIFrame?, onScreen: Bool?, index: Int? = nil, window: String? = nil, screen: String? = nil, beneath: Bool? = nil) {
         self.id = id
         self.label = label
         self.role = role
@@ -30,6 +32,7 @@ public struct FailureCandidate: Equatable, Sendable {
         self.index = index
         self.window = window
         self.screen = screen
+        self.beneath = beneath
     }
 
     var jsonValue: OrderedJSON {
@@ -42,6 +45,7 @@ public struct FailureCandidate: Equatable, Sendable {
             ("index", .optional(index, OrderedJSON.integer)),
             ("window", .optional(window, OrderedJSON.string)),
             ("screen", .optional(screen, OrderedJSON.string)),
+            ("beneath", .optional(beneath, OrderedJSON.bool)),
         ])
     }
 }

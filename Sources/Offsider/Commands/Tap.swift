@@ -49,7 +49,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("nth"), help: ArgumentHelp("With several on-screen matches, tap the nth in tree order (1-based) instead of failing as ambiguous.", valueName: "n"))
     var nth: Int?
 
-    @Flag(name: .customLong("topmost"), help: "With several on-screen matches, tap the one drawn on top: the last in tree order on Android, the one a hit-test at its point reaches on iOS.")
+    @Flag(name: .customLong("topmost"), help: "With several on-screen matches, tap the one drawn on top: the one a hit-test at its point reaches on an iOS simulator, else the one the tree draws on top there (Android drawing order, or tree order).")
     var topmost: Bool = false
 
     @Flag(name: .customLong("no-settle"), help: "Tap a selector's target at once, without waiting out a transition an input under 500 ms ago may have started.")
@@ -265,16 +265,17 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         return false
     }
 
-    /// `--nth` as given; `--topmost` the last match on Android, and on iOS the one `topmostPick` finds on each tree read.
+    /// `--nth` as given; `--topmost` the one `topmostPick` finds on each tree read, hit-testing on a simulator and walking the tree elsewhere.
     func matchPicker(query: AccessibilityQuery, backend: any DeviceBackend, device: DeviceID) -> MatchPicker? {
         if let nth { return { _ in .nth(nth) } }
         guard topmost else { return nil }
-        guard device.platform == .ios else { return { _ in .last } }
         let elementType = elementType
         let allowOffscreen = allowOffscreen
+        let hitTester = backend as? any PointHitTesting
         return { roots in
             await Self.topmostPick(roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen) { point in
-                (try? await backend.accessibilityTree(for: device, point: point))?.roots.first
+                guard let hitTester else { return UITree.hitChain(in: roots, at: point).last }
+                return try? await hitTester.hitTest(at: point, on: device)
             }
         }
     }
