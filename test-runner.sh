@@ -177,6 +177,8 @@ RN_SUITES=(
     "ReactNativeChoiceTests"
     "ReactNativeGestureTests"
     "ReactNativeEvidenceTests"
+    "ReactNativeLiveTests"
+    "ReactNativeStackCoverTests"
 )
 RN_DEBUG_SUITES=(
     "ReactNativeDebugSmokeTests"
@@ -809,7 +811,8 @@ run_android_phone_tests() {
     resolve_android_apk
     export OFFSIDER_ANDROID_APK
     print_info "Environment: OFFSIDER_ANDROID_PHONE=$OFFSIDER_ANDROID_PHONE, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
-    run_suite_list "AndroidPhoneInputTests" "AndroidPhoneScreenshotTests" "AndroidPhoneHelperTests" "AndroidPhoneTimingTests"
+    run_suite_list "AndroidPhoneInputTests" "AndroidPhoneScreenshotTests" "AndroidPhoneHelperTests" "AndroidPhoneTimingTests" \
+        "AndroidPhoneVerifyTests" "AndroidPhoneFoldableTests"
     print_success "Android phone suites passed"
 }
 
