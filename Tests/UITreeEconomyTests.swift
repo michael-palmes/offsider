@@ -196,4 +196,36 @@ struct UITreeEconomyTests {
         #expect(output.contains("\n" + String(repeating: "  ", count: 10) + "button \"Deep\""))
         #expect(!output.contains(String(repeating: "  ", count: 11)))
     }
+
+    @Test("on-screen text leaves out the screen beneath a full page and closes with a beneath line")
+    func beneathScreenFolded() throws {
+        let output = Self.rendered(try Self.golden(.android, "stack-test@full"))
+
+        #expect(output.contains("button \"Buy\" id=stack-test-full-buy"))
+        #expect(!output.contains("stack-test-tab-dashboard"))
+        #expect(!output.contains("Mounted Stack\" id="))
+        #expect(output.hasSuffix("# beneath: \"Mounted Stack\" (15 elements) under \"stack-test-full-page-1\"\n"))
+    }
+
+    @Test("the beneath line survives a byte budget that cuts the page's own lines")
+    func beneathLineSurvivesBudget() throws {
+        var options = UITreeRenderOptions.summary
+        options.maxBytes = 300
+
+        let output = Self.rendered(try Self.golden(.android, "stack-test@full"), options)
+
+        #expect(output.contains("# truncated:"))
+        #expect(output.hasSuffix("# beneath: \"Mounted Stack\" (15 elements) under \"stack-test-full-page-1\"\n"))
+    }
+
+    @Test("without the on-screen filter, text and JSON still list the covered screen")
+    func coveredScreenKeptElsewhere() throws {
+        let tree = try Self.golden(.android, "stack-test@full")
+        let text = Self.rendered(tree, UITreeRenderOptions(format: .text))
+        let json = String(decoding: tree.jsonData(), as: UTF8.self)
+
+        #expect(text.contains("stack-test-tab-dashboard") && !text.contains("# beneath:"))
+        #expect(json.contains("stack-test-tab-dashboard"))
+    }
 }
+
