@@ -73,19 +73,29 @@ public enum CoverJudge {
         return chain
     }
 
-    /// The drawn chain's top, looking beneath full-screen hosts with nothing to touch at the point (an Expo dev client's tools button), as Android passes the touch on.
+    /// The drawn chain's top, looking beneath full-screen native hosts with nothing to touch at the point (an Expo dev client's tools button), as Android passes the touch on.
     static func drawnTop(at point: UIPoint, in roots: [UINode], holding targets: [UINode], viewport: UIFrame, stack: ScreenStack) -> UINode? {
         var remaining = roots
         for _ in 0..<8 {
             guard let chain = drawnChain(at: point, in: remaining), let top = chain.last else { return nil }
             let onPage = ScreenStack.index(of: top, in: roots).map { index in stack.pages.contains { $0.content.contains(index) } } ?? false
-            guard chain.count > 1, !onPage, !isPlausibleOccluder(top), let frame = top.frame, spans(frame, viewport),
+            guard chain.count > 1, !onPage, !isPlausibleOccluder(top), !isReactView(top, in: chain), let frame = top.frame, spans(frame, viewport),
                   !targets.contains(where: { target in top.flattened().contains { $0.isSameElement(as: target) } }) else {
                 return top
             }
             remaining = remaining.map { $0.removing(top) }
         }
         return nil
+    }
+
+    /// The classes Android names a React Native view by: `ReactViewGroup`'s own, or a role's.
+    private static let reactViewClasses: Set<String> = ["android.view.ViewGroup", "android.view.View"]
+
+    /// A React Native view outside a Compose host (whose nodes are `android.view.View` too): React takes its touches in JavaScript, so nothing passes beneath it.
+    static func isReactView(_ node: UINode, in chain: [UINode]) -> Bool {
+        guard let className = node.androidClassName else { return false }
+        if className.hasPrefix("com.facebook.react.") { return true }
+        return reactViewClasses.contains(className) && !chain.contains { $0.androidClassName?.hasPrefix("androidx.compose.") == true }
     }
 
     private static let containerRoles: Set<UIRole> = [.window, .application, .scrollView, .list]
@@ -292,6 +302,11 @@ extension UINode {
         default:
             return false
         }
+    }
+
+    var androidClassName: String? {
+        guard case .android(let attributes) = native else { return nil }
+        return attributes.className
     }
 
     /// A copy without `node` and what it holds.
