@@ -100,6 +100,29 @@ struct AndroidHelperTests {
         #expect(slider["value"] as? String == "25%")
     }
 
+    @Test("the helper's dump draws a full page's Buy above the Dashboard Tab beneath it")
+    func drawingOrderOnStackedPage() async throws {
+        try await AndroidE2E.open("stack-test", waitingFor: "stack-test-open-full")
+        try await AndroidE2E.run("tap --id stack-test-open-full")
+        _ = try await AndroidE2E.waitForNode { $0["id"] as? String == "stack-test-full-title-1" }
+
+        let raw = try await AndroidE2E.run("describe-ui --raw-source")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(raw.stdout.utf8)) as? [String: Any])
+        let dump = try #require(object["source"] as? [String: Any])
+        var orders: [String: Int] = [:]
+        func visit(_ node: [String: Any]) {
+            if let id = node["resourceId"] as? String, let order = node["drawingOrder"] as? Int { orders[id] = order }
+            (node["children"] as? [[String: Any]] ?? []).forEach(visit)
+        }
+        for window in dump["windows"] as? [[String: Any]] ?? [] {
+            if let root = window["root"] as? [String: Any] { visit(root) }
+        }
+        let buy = try #require(orders["stack-test-full-buy"], "\(orders)")
+        let tab = try #require(orders["stack-test-tab-dashboard"], "\(orders)")
+        #expect(buy > tab)
+        try await AndroidE2E.run("button back")
+    }
+
     @Test("another UiAutomation client makes describe-ui fail as busy, without falling back")
     func busyWithAnotherClient() async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")

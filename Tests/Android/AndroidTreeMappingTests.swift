@@ -43,6 +43,17 @@ struct AndroidTreeMappingTests {
         )))
     }
 
+    @Test("uiautomator's drawing-order reaches native; a missing or blank one is nil")
+    func drawingOrder() throws {
+        let roots = try Self.tree(#"<node index="0" text="" resource-id="beneath" class="android.view.View" content-desc="Dashboard Tab" checkable="false" checked="false" clickable="false" password="false" bounds="[540,2233][1080,2362]" drawing-order="16" \#(Self.common) /><node index="1" text="" resource-id="unordered" class="android.view.View" content-desc="Buy" checkable="false" checked="false" clickable="false" password="false" bounds="[530,2237][1038,2355]" drawing-order="" \#(Self.common) />"#)
+        func order(_ id: String) throws -> Int? {
+            guard case .android(let attributes) = try Self.node(id, in: roots).native else { return nil }
+            return attributes.drawingOrder
+        }
+        #expect(try order("beneath") == 16)
+        #expect(try order("unordered") == nil)
+    }
+
     @Test("tap-test: a readout TextView takes its label from content-desc")
     func readout() throws {
         let roots = try Self.tree(#"<node index="0" text="" resource-id="tap-count" class="android.widget.TextView" content-desc="Tap Count: 0" checkable="false" checked="false" clickable="false" password="false" bounds="[413,418][668,479]" \#(Self.common) />"#)

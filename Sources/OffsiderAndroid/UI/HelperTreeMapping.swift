@@ -52,6 +52,7 @@ enum HelperTreeMapping {
         attributes["role-description"] = node.roleDescription
         attributes["test-tag"] = node.testTag
         attributes["checked-state"] = node.checkedState
+        attributes["drawing-order"] = node.drawingOrder.map(String.init)
         if let range = node.rangeInfo {
             attributes["range-type"] = range.type
             attributes["range-min"] = number(range.min)
@@ -91,11 +92,11 @@ enum HelperTreeMapping {
             return ([], HelperTreeIndex(pid: pid, generation: dump.generation, entries: []))
         }
         var trees: [(HelperNode, UINode)] = [
-            (appRoot, AndroidTreeMapping.node(from: rawNode(appRoot), scale: scale, rootRole: .application, rootLabel: app.title)),
+            (appRoot, AndroidTreeMapping.node(from: rawNode(appRoot), scale: scale, rootRole: .application, rootLabel: app.title, windowLayer: app.layer)),
         ]
         for keyboard in dump.windows where keyboard.type == "inputMethod" {
             guard let root = keyboard.root else { continue }
-            trees.append((root, AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .keyboard, rootLabel: keyboard.title)))
+            trees.append((root, AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .keyboard, rootLabel: keyboard.title, windowLayer: keyboard.layer)))
         }
         var entries: [HelperTreeEntry] = []
         for (helperRoot, mappedRoot) in trees {
