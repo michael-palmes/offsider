@@ -217,6 +217,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 options: verification,
                 styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries),
                 initialTree: resolvedTree,
+                targetNode: resolution.target ?? resolution.matched,
                 beforeAction: { tree in
                     let pick: MatchPick? = await picker?(tree.roots) ?? nil
                     guard let query, let moved = try? AccessibilityTargetResolver.resolveTap(

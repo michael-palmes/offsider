@@ -37,6 +37,12 @@ enum Timings {
         return try body()
     }
 
+    /// A phase measured elsewhere, such as one that began before the code that knows its name.
+    static func record(_ phase: String, seconds: TimeInterval) {
+        guard isEnabled else { return }
+        emit(PhaseTimings.Phase(name: phase, nanoseconds: UInt64(max(0, seconds) * 1e9)))
+    }
+
     /// Starts the total clock and prints the total line at exit, including `Darwin.exit` paths.
     static func installTotal() {
         guard isEnabled else { return }
