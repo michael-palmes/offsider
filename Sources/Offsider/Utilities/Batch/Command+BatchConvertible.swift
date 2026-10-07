@@ -17,6 +17,7 @@ private func resolveBatchTapPoint(
     allowOffscreen: Bool,
     settle: SettlePolicy,
     pick: MatchPicker?,
+    coverCheck: AccessibilityPoller.CoverCheck?,
     logger: OffsiderLogger
 ) async throws -> Polled<TapResolution> {
     let fetchTree = context.pollingTreeSource()
@@ -28,6 +29,7 @@ private func resolveBatchTapPoint(
         allowOffscreen: allowOffscreen,
         settle: settle,
         pick: pick,
+        coverCheck: coverCheck,
         logger: logger
     ) {
         try await fetchTree()
@@ -97,12 +99,12 @@ extension Tap: BatchConvertible {
                 allowOffscreen: allowOffscreen,
                 settle: context.settlePolicy(stepOptedOut: noSettle),
                 pick: matchPicker(query: query, backend: context.backend, device: context.device),
+                coverCheck: coverCheck(selector: query.selectorDescription, backend: context.backend, device: context.device),
                 logger: logger
             )
             resolution = resolved.value
             resolvedTree = resolved.tree
             Self.warnIfOffScreen(subject: query.selectorDescription, at: resolution.point, in: resolved.tree)
-            try await checkCover(resolution, selector: query.selectorDescription, tree: resolved.tree, backend: context.backend, device: context.device)
         }
 
         let physicalPoint = try await context.backend.deviceCoordinates(

@@ -39,6 +39,46 @@ struct AccessibilityPollerTests {
         ) { try reads.next() }.value
     }
 
+    /// A cover check that refuses the first `covered` resolutions, as a page that then closes would.
+    private final class Covers {
+        var covered: Int
+        var checks = 0
+        init(_ covered: Int) { self.covered = covered }
+
+        func check(_ resolution: TapResolution, _ tree: UITree) throws {
+            checks += 1
+            guard covered > 0 else { return }
+            covered -= 1
+            throw CLIError(errorDescription: "covered", reason: .targetCovered)
+        }
+    }
+
+    private func resolve(_ reads: Reads, covers: Covers, wait: TimeInterval) async throws -> TapResolution {
+        try await AccessibilityPoller.pollForResolution(
+            query: .id("go"), waitTimeout: wait, pollInterval: 0.25, elementType: nil,
+            coverCheck: { try covers.check($0, $1) }, logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) { try reads.next() }.value
+    }
+
+    @Test("a covered target is read again until the cover goes, within --wait-timeout")
+    func coverRetriedUnderWait() async throws {
+        let reads = Reads([]), covers = Covers(2)
+        _ = try await resolve(reads, covers: covers, wait: 2)
+        #expect(covers.checks == 3)
+        #expect(reads.count == 3)
+    }
+
+    @Test("without --wait-timeout, or once it runs out, the cover is the error")
+    func coverRefusedWithoutWait() async {
+        let once = Reads([]), immediate = Covers(1)
+        await #expect(throws: CLIError.self) { try await resolve(once, covers: immediate, wait: 0) }
+        #expect(once.count == 1)
+
+        let reads = Reads([]), lasting = Covers(100)
+        await #expect(throws: CLIError.self) { try await resolve(reads, covers: lasting, wait: 1) }
+        #expect(reads.count == 5)
+    }
+
     @Test("a transient read failure is retried within the verify grace")
     func transientFailureRetriedUnderGrace() async throws {
         let reads = Reads([Flicker()])

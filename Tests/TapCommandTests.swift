@@ -86,17 +86,49 @@ struct TapCommandTests {
         return FakeUI.tree(width: 402, height: 874, bannerOnTop ? [tabBar, banner] : [banner, tabBar])
     }
 
-    @Test("a covered tap reads the point once and still sends input by default")
-    func coveredTapStillTaps() async throws {
+    @Test("a cover a simulator's hit-test finds refuses with target_covered, naming it in coveredBy, and sends nothing")
+    func hitTestedCoverRefuses() async {
+        let backend = HitTestingFakeBackend(trees: [Self.bannerScreen()])
+
+        let error = await #expect(throws: CLIError.self) {
+            try await Self.tap(["--id", "tab-search"], on: backend)
+        }
+
+        let label = AccessibilityTargetResolverTests.bannerLabel
+        #expect(error?.reason == .targetCovered)
+        #expect(error?.userFacingDescription.hasPrefix("--id 'tab-search' at (201, 814.5) is covered by other '\(label)' (0, 767) 402x107 (a hit-test at the point found it), so the tap would land on it. Nothing was sent.") == true)
+        #expect(error?.coveredBy == CoverReport(role: "other", id: "banner", label: label, frame: FakeUI.frame(0, 767, 402, 107), screen: nil, evidence: .hitTest))
+        #expect(backend.hitTests == 1)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("--allow-covered taps through a confident cover")
+    func allowCoveredTaps() async throws {
+        let backend = HitTestingFakeBackend(trees: [Self.bannerScreen()])
+
+        try await Self.tap(["--id", "tab-search", "--allow-covered"], on: backend)
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 814.5))])
+    }
+
+    @Test("--allow-covered and --fail-if-covered together are a usage error")
+    func allowAndFailExclusive() {
+        let error = #expect(throws: (any Error).self) { try Tap.parse(["--id", "a", "--allow-covered", "--fail-if-covered", "--device", "emulator-5554"]) }
+        #expect(error.map { Tap.exitCode(for: $0) } == .validationFailure)
+        #expect(error.map { Tap.message(for: $0) } == "Use only one of --allow-covered or --fail-if-covered.")
+    }
+
+    @Test("without a hit-test, as on a physical iPhone, a cover is a tree-order guess: it warns and taps from one tree read")
+    func guessWarnsFromOneRead() async throws {
         let backend = FakeDeviceBackend(trees: [Self.bannerScreen()])
 
         try await Self.tap(["--id", "tab-search"], on: backend)
 
-        #expect(backend.treeReads == 2)
+        #expect(backend.treeReads == 1)
         #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 814.5))])
     }
 
-    @Test("--fail-if-covered names the cover the hit-test found and sends no input")
+    @Test("--fail-if-covered refuses a tree-order guess, naming the cover, and sends no input")
     func failIfCoveredStops() async {
         let backend = FakeDeviceBackend(trees: [Self.bannerScreen()])
 
@@ -106,19 +138,70 @@ struct TapCommandTests {
 
         let label = AccessibilityTargetResolverTests.bannerLabel
         #expect(error?.userFacingDescription == "--id 'tab-search' at (201, 814.5) may be covered by other '\(label)' (0, 767) 402x107; the tap may land on it.")
+        #expect(error?.coveredBy?.evidence == .treeOrder)
         #expect(backend.openedSessions.isEmpty)
         #expect(backend.session.calls.isEmpty)
     }
 
     @Test("a candidate the hit-test does not find is no cover")
     func hitOnTargetIsNoCover() async throws {
-        let underneath = FakeDeviceBackend(trees: [Self.bannerScreen(bannerOnTop: false)])
+        let underneath = HitTestingFakeBackend(trees: [Self.bannerScreen(bannerOnTop: false)])
         try await Self.tap(["--id", "tab-search", "--fail-if-covered"], on: underneath)
         #expect(underneath.session.calls == [.perform(.tapAt(x: 201, y: 814.5))])
 
-        let bannerItself = FakeDeviceBackend(trees: [Self.bannerScreen()])
+        let bannerItself = HitTestingFakeBackend(trees: [Self.bannerScreen()])
         try await Self.tap(["--id", "banner", "--fail-if-covered"], on: bannerItself)
         #expect(bannerItself.session.calls == [.perform(.tapAt(x: 201, y: 820.5))])
+    }
+
+    static let android = DeviceID(rawValue: "emulator-5554", platform: .android)
+
+    private static func tapAndroid(_ arguments: [String], on backend: FakeDeviceBackend) async throws {
+        try await Tap.parse(arguments + ["--no-settle", "--device", android.rawValue])
+            .execute(on: DeviceRouter.Route(backend: backend, device: android), progress: nil, logger: OffsiderLogger())
+    }
+
+    static func fullPage() throws -> UITree {
+        try TreeGoldens.tree(of: TreeGoldens.Golden(platform: .android, screen: "stack-test@full"))
+    }
+
+    @Test("on Android, drawing order refuses the Home Tab under the full page's Buy from one tree read, and taps Buy")
+    func androidDrawingOrderRefuses() async throws {
+        let covered = FakeDeviceBackend(platform: .android, trees: [try Self.fullPage()])
+        let error = await #expect(throws: CLIError.self) {
+            try await Self.tapAndroid(["--id", "stack-test-tab-dashboard"], on: covered)
+        }
+        #expect(error?.coveredBy?.id == "stack-test-full-buy")
+        #expect(error?.coveredBy?.evidence == .drawingOrder)
+        #expect(error?.coveredBy?.screen == "stack-test-full-page-1")
+        #expect(covered.treeReads == 1)
+        #expect(covered.session.calls.isEmpty)
+
+        let home = FakeDeviceBackend(platform: .android, trees: [try Self.fullPage()])
+        let homeError = await #expect(throws: CLIError.self) {
+            try await Self.tapAndroid(["--id", "stack-test-tab-home"], on: home)
+        }
+        #expect(homeError?.coveredBy?.id == "stack-test-full-page-1")
+
+        let buy = FakeDeviceBackend(platform: .android, trees: [try Self.fullPage()])
+        try await Self.tapAndroid(["--id", "stack-test-full-buy"], on: buy)
+        #expect(buy.session.calls.count == 1)
+    }
+
+    @Test("--wait-timeout reads again while a confident cover stays, and taps once it has gone")
+    func waitOutlastsCover() async throws {
+        let page = try Self.fullPage()
+        var closed = page
+        closed.roots[0].children.removeAll { node in
+            guard let order = node.drawingOrder else { return false }
+            return order >= 17
+        }
+        let backend = FakeDeviceBackend(platform: .android, trees: [page, page, closed])
+
+        try await Self.tapAndroid(["--id", "stack-test-tab-dashboard", "--wait-timeout", "3", "--poll-interval", "0.01"], on: backend)
+
+        #expect(backend.treeReads == 3)
+        #expect(backend.session.calls.count == 1)
     }
 
     @Test("on Android a candidate warns without a point read, which only walks tree order")
@@ -196,6 +279,19 @@ struct TapCommandTests {
         #expect(first.session.calls == [.perform(.tapAt(x: 46, y: 222))])
     }
 
+    @Test("--topmost on Android takes the match drawn over the others, even where nothing in the tree covers the other's point")
+    func topmostByDrawingOrder() async throws {
+        func page(_ number: Int, x: Double, order: Int) -> [UINode] {
+            [FakeUI.node(.button, id: "mark", label: "Mark Page", frame: FakeUI.frame(x + 148, 447, 115, 44), platform: .android, drawingOrder: order)]
+        }
+        let tree = FakeUI.tree(platform: .android, device: Self.android.rawValue, page(1, x: -123, order: 1) + page(2, x: 0, order: 2))
+        let backend = FakeDeviceBackend(platform: .android, trees: [tree])
+
+        try await Self.tapAndroid(["--id", "mark", "--topmost"], on: backend)
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 205.5, y: 469))])
+    }
+
     @Test("iOS --topmost hit-tests the tree it taps from, not an earlier read that had no match yet")
     func topmostPicksOnPolledTree() async throws {
         var root = StackedScreenTests.stack(platform: .ios)[0]
@@ -250,9 +346,9 @@ struct TapCommandTests {
     func coverLabelTruncated() {
         let cover = FakeUI.node(.other, label: String(repeating: "a", count: 80), frame: FakeUI.frame(0, 0, 10, 10))
 
-        let message = Tap.coverMessage(selector: "--id 'x'", at: (x: 5, y: 5), cover: cover)
+        let message = TapCover.describe(CoverVerdict(cover: cover, evidence: .hitTest, isConfident: true))
 
-        #expect(message.contains("other '\(String(repeating: "a", count: 59))…' (0, 0) 10x10"))
+        #expect(message == "other '\(String(repeating: "a", count: 59))…' (0, 0) 10x10")
     }
 
     @Test("a slider drag on iOS converts its points with the tree it resolved from")

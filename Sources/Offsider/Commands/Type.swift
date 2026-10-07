@@ -140,14 +140,16 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             return
         }
         guard let query = intoQuery else { return }
+        let cover = TapCover(override: "tap the field with `offsider tap --allow-covered` and type without --into-id")
         let polled = try await AccessibilityPoller.resolveWithPolling(
             query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25,
-            settle: .guarded(record: await TreeCache.load(for: device, backend: backend)), logger: logger
+            settle: .guarded(record: await TreeCache.load(for: device, backend: backend)),
+            coverCheck: { resolution, tree in
+                try await cover.check(resolution, selector: query.selectorDescription, tree: tree, backend: backend, device: device)
+            },
+            logger: logger
         )
         let field = polled.value.matched ?? polled.value.target
-        if AccessibilityTargetResolver.keyboardCover(polled.value, in: polled.tree) != nil {
-            throw Tap.keyboardCoverError(selector: query.selectorDescription, at: polled.value.point, device: device)
-        }
         let point = try await backend.deviceCoordinates(for: [polled.value.point], tree: polled.tree, on: device)[0]
         let keyboardAlreadyUp = simulator && polled.tree.roots.flatMap { $0.flattened() }.contains { $0.role == .keyboard }
         try beforeTap(polled.tree)
