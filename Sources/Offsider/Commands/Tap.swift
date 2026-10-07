@@ -43,7 +43,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Flag(name: .customLong("allow-offscreen"), help: "Resolve elements whose frame is outside the screen (off by default: selectors prefer on-screen matches).")
     var allowOffscreen: Bool = false
 
-    @Flag(name: .customLong("fail-if-covered"), help: "Also refuse when another element may cover the target by tree order alone, a guess that otherwise only warns. A cover a hit-test or Android's drawing order finds, and the keyboard, always refuse.")
+    @Flag(name: .customLong("fail-if-covered"), help: "Also refuse when another element may cover the target by tree order alone, a guess that otherwise only warns. A cover a hit-test or Android's drawing order finds refuses without it, and the keyboard always does.")
     var failIfCovered: Bool = false
 
     @Flag(name: .customLong("allow-covered"), help: "Tap even when a hit-test or Android's drawing order finds another element over the target, with a warning; the keyboard still refuses.")
