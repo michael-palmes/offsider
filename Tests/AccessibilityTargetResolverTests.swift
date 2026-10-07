@@ -961,4 +961,56 @@ struct StackedScreenTests {
         #expect(error?.candidates.map(\.screen) == ["page-1", "page-2"])
         #expect(error?.candidates.first?.window == "Playground")
     }
+
+    static func golden(_ screen: String) throws -> [UINode] {
+        try TreeGoldens.tree(of: TreeGoldens.Golden(platform: .android, screen: screen)).roots
+    }
+
+    @Test("several matches: the only one not beneath a page is taken")
+    func onlyUncoveredMatch() throws {
+        var tree = ScreenStackTests.nestedScreens()
+        tree.roots[0].children[1].children.append(FakeUI.node(.button, label: "Home Tab", frame: FakeUI.frame(201, 700, 201, 49)))
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: tree.roots, query: .label("Home Tab"))
+
+        #expect(resolution.point.x == 301.5 && resolution.point.y == 724.5)
+    }
+
+    @Test("stacked Back buttons sharing one point: the one a touch there reaches is taken, drawn on top on Android")
+    func samePointMatches() throws {
+        let roots = try Self.golden("stack-test@flags")
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Back"))
+
+        #expect(resolution.matched?.id == "stack-test-full-back-2")
+    }
+
+    @Test("matches at different points on the top screen stay ambiguous, each named with its screen and whether it is beneath")
+    func ambiguousAcrossScreens() throws {
+        var tree = ScreenStackTests.nestedScreens()
+        tree.roots[0].children[1].children += [
+            FakeUI.node(.button, label: "Home Tab", frame: FakeUI.frame(201, 700, 201, 49)),
+            FakeUI.node(.button, label: "Home Tab", frame: FakeUI.frame(0, 600, 201, 49)),
+        ]
+
+        let error = #expect(throws: ElementResolutionError.self) {
+            try AccessibilityTargetResolver.resolveTap(roots: tree.roots, query: .label("Home Tab"))
+        }
+
+        #expect(error?.candidates.map(\.screen) == ["Assets", "Bitcoin", "Bitcoin"])
+        #expect(error?.candidates.map(\.beneath) == [true, false, false])
+        #expect(error?.userFacingDescription.contains("in screen=Assets (beneath another screen) (--nth 1)") == true)
+    }
+
+    @Test("cover candidates leave out elements beneath the page and, on Android, those drawn below the target")
+    func candidatesOnTop() throws {
+        let roots = try Self.golden("stack-test@full")
+
+        let buy = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("stack-test-full-buy"))
+        let tab = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .id("stack-test-tab-dashboard"))
+
+        #expect(buy.coverCandidates.isEmpty)
+        #expect(tab.coverCandidates.map(\.id) == ["stack-test-full-buy"])
+    }
 }
+

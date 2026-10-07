@@ -62,6 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- With several matches and no `--nth` or `--topmost`, selectors take the only match not on a screen beneath a full-screen page drawn over it, and matches that share one point, such as stacked Back buttons, tap that point, which reaches the one on top. Ambiguous-match candidates gain `beneath` and name the page or covered screen they are on. `tap --topmost` on Android takes the match drawn on top by drawing order rather than the last listed, and on a physical iPhone or iPad walks the tree it read instead of reading the screen again for each match.
 - When the helper carries Android input, a key or button can stay held across other input, which `input` refuses; Android reports an accessibility service as enabled for that command, as it does for screen reads.
 - An Android input failure now asks you to check that the device is still connected, not that the emulator is running.
 - A physical iPhone or iPad UDID now routes to the device instead of failing as an unknown Android device name.

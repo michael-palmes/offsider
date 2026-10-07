@@ -66,8 +66,10 @@ struct MatchSummary: Equatable {
     var index: Int? = nil
     /// The title of the window (Android) or app it is in.
     var window: String? = nil
-    /// The id of the nearest ancestor that fills the screen, such as a page kept mounted under another.
+    /// The screen it is on: a covered screen's or page's name, else the id of the nearest ancestor that fills the screen.
     var screen: String? = nil
+    /// True when a page is drawn over it; nil when no page covers anything.
+    var beneath: Bool? = nil
 
     init(role: UIRole, id: String?, label: String? = nil, frame: UIFrame?, isOnScreen: Bool?) {
         self.role = role
@@ -77,7 +79,7 @@ struct MatchSummary: Equatable {
         self.isOnScreen = isOnScreen
     }
 
-    init(_ node: UINode, viewport: UIFrame?, index: Int? = nil, roots: [UINode] = []) {
+    init(_ node: UINode, viewport: UIFrame?, index: Int? = nil, roots: [UINode] = [], stack: ScreenStack = .empty) {
         self.init(
             role: node.role,
             id: node.normalizedID,
@@ -93,6 +95,10 @@ struct MatchSummary: Equatable {
                 ancestor.normalizedID != nil && ancestor.frame.map { AccessibilityTargetResolver.isBackdrop($0, in: viewport) } == true
             }?.normalizedID
         }
+        if !stack.beneath.isEmpty, let position = ScreenStack.index(of: node, in: roots) {
+            beneath = stack.isBeneath(index: position)
+            screen = stack.screenName(of: position).map { SelectorText.truncated($0) } ?? screen
+        }
     }
 
     var text: String {
@@ -102,12 +108,13 @@ struct MatchSummary: Equatable {
         parts.append(frame?.summary ?? "with no frame")
         if isOnScreen == false { parts.append("off screen") }
         if let screen { parts.append("in screen=\(screen)") }
+        if beneath == true { parts.append("(beneath another screen)") }
         if let index { parts.append("(--nth \(index))") }
         return parts.joined(separator: " ")
     }
 
     var failureCandidate: FailureCandidate {
-        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen, index: index, window: window, screen: screen)
+        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen, index: index, window: window, screen: screen, beneath: beneath)
     }
 }
 
@@ -389,16 +396,33 @@ struct AccessibilityTargetResolver {
             point = (x: visible.center.x, y: visible.center.y)
         }
 
-        let candidates = allowOffscreen ? [] : UITree.viewport(in: roots).map { viewport in
-            coverCandidates(of: activationElement, matched: match.element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, roots: roots)
-        } ?? []
+        var candidates: [UINode] = []
+        var stack: ScreenStack?
+        if !allowOffscreen, let viewport = UITree.viewport(in: roots) {
+            candidates = coverCandidates(of: activationElement, matched: match.element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, roots: roots)
+            if !candidates.isEmpty {
+                let built = ScreenStack.build(roots: roots, viewport: viewport)
+                candidates = onTopCandidates(candidates, over: activationElement, roots: roots, stack: built)
+                stack = built
+            }
+        }
         return TapResolution(
             point: point,
             isSwitchLikeControl: activationElement.isSwitch,
             target: activationElement,
             matched: match.element,
-            coverCandidates: candidates
+            coverCandidates: candidates,
+            stack: stack
         )
+    }
+
+    /// Drops candidates on a screen beneath a page, and on Android those its drawing order puts below the target.
+    static func onTopCandidates(_ candidates: [UINode], over target: UINode, roots: [UINode], stack: ScreenStack) -> [UINode] {
+        candidates.filter { candidate in
+            guard !stack.isBeneath(candidate, in: roots) else { return false }
+            guard candidate.isAndroid, let order = UITree.zOrder(of: candidate, over: target, in: roots), order.byDrawingOrder else { return true }
+            return order.isAbove
+        }
     }
 
     /// Plausible occluders whose frame holds `point`; tree order is not z-order on either platform, so a real hit-test must confirm one.
@@ -629,9 +653,9 @@ struct AccessibilityTargetResolver {
         var pool: [UINode] = []
         var roots: [UINode] = []
 
-        func summary(_ node: UINode) -> MatchSummary {
+        func summary(_ node: UINode, stack: ScreenStack) -> MatchSummary {
             let index = pool.firstIndex { $0.isSameElement(as: node) }.map { $0 + 1 }
-            return MatchSummary(node, viewport: viewport, index: index, roots: roots)
+            return MatchSummary(node, viewport: viewport, index: index, roots: roots, stack: stack)
         }
     }
 
@@ -643,10 +667,14 @@ struct AccessibilityTargetResolver {
             throw ElementResolutionError.notFound(kind: ambiguity.query.kind, value: ambiguity.query.rawValue)
         }
         guard matches.count == 1 else {
+            let stack = ScreenStack.build(roots: ambiguity.roots, viewport: ambiguity.viewport)
+            if let chosen = stackedPick(matches, roots: ambiguity.roots, stack: stack) {
+                return chosen
+            }
             let hasUniqueIDs = matches.contains {
                 $0.normalizedID != nil
             }
-            let summaries = matches.prefix(ElementResolutionError.maxListed).map(ambiguity.summary)
+            let summaries = matches.prefix(ElementResolutionError.maxListed).map { ambiguity.summary($0, stack: stack) }
             throw ElementResolutionError.multipleMatches(
                 count: matches.count,
                 kind: ambiguity.query.kind,
@@ -658,6 +686,23 @@ struct AccessibilityTargetResolver {
             )
         }
         return matches[0]
+    }
+
+    /// Among several matches, the only one not beneath a page; else, when they all share one activation point, the one a touch there reaches.
+    static func stackedPick(_ matches: [UINode], roots: [UINode], stack: ScreenStack) -> UINode? {
+        let uncovered = matches.filter { !stack.isBeneath($0, in: roots) }
+        if uncovered.count == 1 {
+            return uncovered[0]
+        }
+        let pool = uncovered.isEmpty ? matches : uncovered
+        let points = pool.compactMap { node in node.frame.map { activationPoint(for: node, frame: $0) } }
+        guard points.count == pool.count, let first = points.first, points.allSatisfy({ point in
+            abs(point.x - first.x) <= TransitionGuard.frameTolerance && abs(point.y - first.y) <= TransitionGuard.frameTolerance
+        }) else {
+            return nil
+        }
+        let chain = UITree.hitChain(in: roots, at: UIPoint(x: first.x, y: first.y))
+        return pool.first { match in chain.contains { $0.isSameElement(as: match) } } ?? pool.last
     }
 
     private static func selectBestLabelMatch(

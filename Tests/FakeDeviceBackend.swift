@@ -4,7 +4,7 @@ import OffsiderCore
 
 /// A scripted backend: serves `trees` and `screenshots` in order, holding the last, and records input.
 @MainActor
-final class FakeDeviceBackend: DeviceBackend {
+class FakeDeviceBackend: DeviceBackend {
     let platform: DevicePlatform
     let trees: [UITree]
     let screenshots: [Data]
@@ -188,6 +188,17 @@ extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeContro
 }
 
 /// Small builders for trees in unit tests.
+/// A simulator's backend: a hit-test is a point read of the next tree, which answers with the deepest node by sibling order there.
+@MainActor
+final class HitTestingFakeBackend: FakeDeviceBackend, PointHitTesting {
+    private(set) var hitTests = 0
+
+    func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        hitTests += 1
+        return try await accessibilityTree(for: id, point: point).roots.first
+    }
+}
+
 enum FakeUI {
     static func frame(_ x: Double, _ y: Double, _ width: Double, _ height: Double) -> UIFrame {
         UIFrame(x: x, y: y, width: width, height: height)
