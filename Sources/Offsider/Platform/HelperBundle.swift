@@ -33,6 +33,7 @@ extension AndroidHost {
     static func cli() -> AndroidHost {
         var host = AndroidHost.live(helperDex: { try HelperBundle.load() }, timing: Timings.android)
         host.claimDevice = { serial in try await DeviceClaims.current.claim(DeviceLockKey(platform: .android, id: serial)) }
+        host.displayCacheDirectory = AndroidHost.privateDisplayCache(environment: host.environment)
         return host
     }
 }

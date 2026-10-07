@@ -33,9 +33,10 @@ struct TreeGoldenTests {
         #expect(try UITree(jsonData: committed).jsonData() == committed, "\(golden.name)")
     }
 
+    /// Rendered from the raw capture, since Android's drawing order, which folds covered screens, stays out of the JSON.
     @Test("every golden's summary and text renderings match their committed files", arguments: goldens)
     func renderingsMatch(golden: TreeGoldens.Golden) throws {
-        let tree = try UITree(jsonData: try golden.data(TreeGoldens.jsonFile))
+        let tree = try TreeGoldens.tree(of: golden)
         for file in [TreeGoldens.summaryFile, TreeGoldens.textFile] {
             let rendered = String(decoding: TreeGoldens.renderings(of: tree)[file]!, as: UTF8.self)
             let committed = String(decoding: try golden.data(file), as: UTF8.self)
@@ -144,7 +145,7 @@ struct OutputEconomyTests {
     @Test("no golden's summary or text output exceeds its budget", arguments: goldens)
     func withinBudget(golden: TreeGoldens.Golden) throws {
         let budget = try #require(try TreeGoldens.budgets()[golden.name])
-        let renderings = TreeGoldens.renderings(of: try UITree(jsonData: try golden.data(TreeGoldens.jsonFile)))
+        let renderings = TreeGoldens.renderings(of: try TreeGoldens.tree(of: golden))
         let summary = renderings[TreeGoldens.summaryFile]!.count
         let text = renderings[TreeGoldens.textFile]!.count
         #expect(summary <= budget.summary, "\(golden.name) summary is \(summary) bytes, over its \(budget.summary) byte budget. \(Self.raise)")
@@ -154,7 +155,7 @@ struct OutputEconomyTests {
     @Test("no budget is more than 20 percent above the output it bounds, or above its 64-byte rounding when that is more", arguments: goldens)
     func noSlack(golden: TreeGoldens.Golden) throws {
         let budget = try #require(try TreeGoldens.budgets()[golden.name])
-        let renderings = TreeGoldens.renderings(of: try UITree(jsonData: try golden.data(TreeGoldens.jsonFile)))
+        let renderings = TreeGoldens.renderings(of: try TreeGoldens.tree(of: golden))
         for (name, size, limit) in [
             ("summary", renderings[TreeGoldens.summaryFile]!.count, budget.summary),
             ("text", renderings[TreeGoldens.textFile]!.count, budget.text),

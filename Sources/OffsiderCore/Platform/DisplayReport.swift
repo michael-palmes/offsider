@@ -43,9 +43,9 @@ public enum DisplayReport {
         ]).rendered(compact: true)
     }
 
-    /// `Posture: open (inner, 669 x 951 pt)`.
-    public static func postureLine(_ posture: Posture, screen: UIScreenInfo?, platform: DevicePlatform) -> String {
-        var text = "Posture: \(posture.rawValue)"
+    /// `Posture: open (inner, 669 x 951 pt)`, with a `state` that is not the posture's own name after it: `open (One UI DUAL)`.
+    public static func postureLine(_ posture: Posture, screen: UIScreenInfo?, platform: DevicePlatform, state: String? = nil) -> String {
+        var text = "Posture: \(posture.rawValue)\(stateNote(state))"
         if let screen {
             let unit = platform == .android ? "dp" : "pt"
             text += " (\(screen.resolvedDisplay(on: platform).id), \(number(screen.width)) x \(number(screen.height)) \(unit))"
@@ -53,13 +53,23 @@ public enum DisplayReport {
         return text
     }
 
-    public static func postureJSON(_ posture: Posture, previous: Posture?, screen: UIScreenInfo?, platform: DevicePlatform) -> String {
+    public static func postureJSON(_ posture: Posture, previous: Posture?, screen: UIScreenInfo?, platform: DevicePlatform, state: String? = nil) -> String {
         OrderedJSON.object([
             ("posture", .string(posture.rawValue)),
+            ("state", .optional(state, OrderedJSON.string)),
             ("previous", .optional(previous?.rawValue, OrderedJSON.string)),
             ("display", .optional(screen?.resolvedDisplay(on: platform).id, OrderedJSON.string)),
             ("screen", .optional(screen) { .object([("width", .number($0.width)), ("height", .number($0.height))]) }),
         ]).rendered(compact: true)
+    }
+
+    /// Names that are a posture's own, AOSP's and One UI's, which need no note.
+    static let plainStateNames: Set<String> = ["CLOSED", "CLOSE", "HALF_OPENED", "HALF_FOLDED", "OPENED", "OPEN"]
+    static let oneUIStateNames: Set<String> = ["TENT", "DUAL", "REAR_DUAL"]
+
+    static func stateNote(_ state: String?) -> String {
+        guard let state, !state.isEmpty, !plainStateNames.contains(state.uppercased()) else { return "" }
+        return oneUIStateNames.contains(state.uppercased()) ? " (One UI \(state))" : " (state \(state))"
     }
 
     public static func notFoldable(device: String) -> String {

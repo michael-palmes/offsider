@@ -183,6 +183,32 @@ struct HelperTreeMappingTests {
         #expect(windows[0].package == nil)
     }
 
+    @Test("drawing order and each root's window layer reach native, while JSON and equality ignore them")
+    func drawingOrderAndLayer() throws {
+        let children = [
+            #"{"i":1,"class":"android.view.View",\#(Self.package),"resourceId":"tab","contentDescription":"Home Tab","bounds":[540,2233,1080,2362],"drawingOrder":16,"focusable":true}"#,
+            #"{"i":2,"class":"android.widget.Button",\#(Self.package),"resourceId":"buy","contentDescription":"Buy","bounds":[530,2237,1038,2355],"drawingOrder":25,"clickable":true}"#,
+        ].joined(separator: ",")
+        let keyboard = #"{"id":2337,"type":"inputMethod","layer":4,"title":"Gboard","bounds":[0,1187,1080,2424],"active":false,"focused":false,"root":{"i":3,"class":"android.widget.FrameLayout","bounds":[0,1187,1080,2424]}}"#
+        let windows = Self.appWindow(children, layer: 3) + "," + keyboard
+        let roots = HelperTreeMapping.roots(from: try Self.dump(windows), scale: Self.scale, pid: 1).roots
+        func native(_ node: UINode?) -> AndroidNativeAttributes? {
+            if case .android(let attributes)? = node?.native { return attributes }
+            return nil
+        }
+        let nodes = Self.flat([roots[0]])
+        #expect(nodes.compactMap { native($0)?.drawingOrder } == [16, 25])
+        #expect(native(roots[0])?.windowLayer == 3)
+        #expect(native(nodes[1])?.windowLayer == nil)
+        #expect(roots.dropFirst().compactMap { native($0)?.windowLayer } == [4])
+
+        var unordered = nodes[2]
+        unordered.native = .android(AndroidNativeAttributes(className: native(nodes[2])?.className, resourceId: "buy", package: native(nodes[2])?.package, pixelFrame: native(nodes[2])?.pixelFrame, contentDescription: "Buy"))
+        #expect(unordered == nodes[2])
+        let json = String(decoding: UITree(platform: .android, device: "emulator-5554", roots: roots).jsonData(), as: UTF8.self)
+        #expect(!json.contains("drawingOrder") && !json.contains("windowLayer"))
+    }
+
     @Test("an active application window over another is a modal; a lone one is the app")
     func modalFromTwoApplicationWindows() throws {
         let modal = Self.appWindow("", title: "Lab Toggles", active: true, layer: 2)

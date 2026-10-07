@@ -54,7 +54,7 @@ struct LogBoxDetectionTests {
         let toast = FakeUI.node(.other, label: "!, A props object containing a \"key\" prop", frame: FakeUI.frame(10, 806, 382, 48))
         let found = KnownOverlays.logBoxToasts(in: Self.tree([toast]).roots, viewport: Self.viewport)
 
-        #expect(found == [LogBoxToast(count: 1, frame: FakeUI.frame(10, 806, 382, 48))])
+        #expect(found == [LogBoxToast(count: 1, frame: FakeUI.frame(10, 806, 382, 48), message: "A props object containing a \"key\" prop", index: 1)])
         #expect(found.first?.dismissPoint == UIPoint(x: 370, y: 830))
     }
 
@@ -73,7 +73,27 @@ struct LogBoxDetectionTests {
         let tree = Self.tree([warnings, errors])
 
         #expect(KnownOverlays.logBoxToasts(in: tree.roots, viewport: Self.viewport).map(\.count) == [2, 3])
+        #expect(KnownOverlays.logBoxToasts(in: tree.roots, viewport: Self.viewport).map(\.index) == [1, 2])
         #expect(KnownOverlays.logBox(in: tree) == UITreeContext.LogBox(logs: 5, inspector: false))
+    }
+
+    @Test("a toast's message drops its count and joins its lines, as the banner shows it")
+    func messages() {
+        #expect(KnownOverlays.logBoxMessage("!, Request failed") == "Request failed")
+        #expect(KnownOverlays.logBoxMessage("12, Warning: Each child\n  in a list   should have a key") == "Warning: Each child in a list should have a key")
+        #expect(KnownOverlays.logBoxMessage("3 unread, 2 new") == nil)
+    }
+
+    @Test("a selector's text is found in a toast whatever its spacing and case, and short or absent text is not")
+    func containing() {
+        let warning = FakeUI.node(.other, label: "!, OffsiderFixture\nwarn from live ticker", frame: FakeUI.frame(10, 754, 382, 48))
+        let error = FakeUI.node(.other, label: "!, OffsiderFixture error from live ticker", frame: FakeUI.frame(10, 806, 382, 48))
+        let roots = Self.tree([warning, error]).roots
+
+        #expect(KnownOverlays.logBoxToast(containing: "offsiderfixture warn", in: roots, viewport: Self.viewport)?.index == 2)
+        #expect(KnownOverlays.logBoxToast(containing: "OffsiderFixture error", in: roots, viewport: Self.viewport)?.index == 1)
+        #expect(KnownOverlays.logBoxToast(containing: "Buy", in: roots, viewport: Self.viewport) == nil)
+        #expect(KnownOverlays.logBoxToast(containing: "er", in: roots, viewport: Self.viewport) == nil)
     }
 
     @Test("the inspector is its Log n of m header, or Dismiss and Minimize at the bottom")

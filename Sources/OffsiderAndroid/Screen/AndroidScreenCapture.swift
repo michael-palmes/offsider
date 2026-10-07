@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import OffsiderCore
 import UniformTypeIdentifiers
 
 /// Emulator frames made upright for the guest: a PNG passes through untouched when no crop or turn is needed.
@@ -215,7 +216,7 @@ enum AndroidScreenCapture {
         return line.map { String($0.prefix(200)) } ?? "no output"
     }
 
-    static let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+    static let pngSignature = PNGHeader.signature
 
     /// The PNG within screencap's output, after any warning text it printed first; nil when there is none.
     static func png(fromScreencap output: Data) -> Data? {
@@ -226,10 +227,7 @@ enum AndroidScreenCapture {
 
     /// The width and height in a PNG's IHDR chunk, read without decoding the image.
     static func pngSize(_ png: Data) -> (width: Int, height: Int)? {
-        let bytes = [UInt8](png.prefix(24))
-        guard bytes.count == 24, bytes.starts(with: pngSignature), bytes[12..<16].elementsEqual("IHDR".utf8) else { return nil }
-        let word = { (at: Int) in bytes[at..<(at + 4)].reduce(0) { $0 << 8 | Int($1) } }
-        return (word(16), word(20))
+        PNGHeader.size(of: png)
     }
 
     static func encodePNG(_ pixels: Pixels) throws -> Data {

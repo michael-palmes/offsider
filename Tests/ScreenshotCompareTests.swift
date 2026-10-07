@@ -356,3 +356,38 @@ struct ScreenshotCompareTests {
         #expect(result.stderr.contains("--diff-output"))
     }
 }
+
+@Suite("Plain Android screenshot")
+@MainActor
+struct PlainScreenshotTests {
+    @Test("a plain Android capture is written exactly as the device sent it, sized from its PNG header, without reading the screen")
+    func plainWritesDeviceBytes() async throws {
+        let png = try ScreenImage.encode(TestImages.make(width: 40, height: 80), as: .png)
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-plain-\(UUID().uuidString).png").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let screen = UIScreenInfo(width: 20, height: 40, scale: 2, rotation: .portrait)
+        func take(_ platform: DevicePlatform, plain: Bool, _ extra: [String] = []) async throws -> ScreenshotReport {
+            let device = DeviceID(rawValue: platform == .android ? "emulator-5556" : "fake-device", platform: platform)
+            let backend = FakeDeviceBackend(platform: platform, trees: [FakeUI.tree()], screenshots: [png], screen: screen)
+            let command = try Screenshot.parse(["--output", path, "--device", device.rawValue] + extra)
+            return try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: .none, plain: plain)
+        }
+
+        let plain = try await take(.android, plain: true)
+        #expect((plain.width, plain.height) == (40, 80))
+        #expect(plain.orientation == nil && plain.display == nil)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == png)
+
+        #expect(try await take(.android, plain: false).orientation == "portrait")
+        #expect(try await take(.ios, plain: true).orientation == "portrait")
+        #expect(try await take(.android, plain: true, ["--scale", "0.5"]).orientation == "portrait")
+    }
+
+    @Test("the PNG header gives the size without decoding, and anything else gives none")
+    func pngHeader() throws {
+        let png = try ScreenImage.encode(TestImages.make(width: 3, height: 5), as: .png)
+        #expect(PNGHeader.size(of: png).map { [$0.width, $0.height] } == [3, 5])
+        #expect(PNGHeader.size(of: Data("not a png at all, just text".utf8)) == nil)
+        #expect(PNGHeader.size(of: png.prefix(20)) == nil)
+    }
+}

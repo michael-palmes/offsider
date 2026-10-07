@@ -14,17 +14,21 @@ struct KeyCombo: AsyncParsableCommand {
           224 - Left Control
           225 - Left Shift
           226 - Left Alt/Option
-          227 - Left Command (GUI)
+          227 - Left GUI: Command on iOS, Meta on Android
           228 - Right Control
           229 - Right Shift
           230 - Right Alt/Option
-          231 - Right Command (GUI)
+          231 - Right GUI: Command on iOS, Meta on Android
+
+        On a physical Android phone, 227 and 231 are refused (exit 64) unless --allow-system-keys: phones take \
+        Meta combinations as system shortcuts, such as Meta+M opening Maps. Use Control (224) there.
 
         Examples:
           offsider key-combo --modifiers 227 --key 4 --device DEVICE_ID          # Cmd+A (Select All)
           offsider key-combo --modifiers 227 --key 6 --device DEVICE_ID          # Cmd+C (Copy)
           offsider key-combo --modifiers 227 --key 25 --device DEVICE_ID         # Cmd+V (Paste)
           offsider key-combo --modifiers 227,225 --key 4 --device DEVICE_ID      # Cmd+Shift+A
+          offsider key-combo --modifiers 224 --key 4 --device emulator-5554      # Ctrl+A on Android
         """
     )
 
@@ -33,6 +37,9 @@ struct KeyCombo: AsyncParsableCommand {
 
     @Option(name: .customLong("key"), help: "The HID keycode to press while modifiers are held (0-255).")
     var key: Int
+
+    @OptionGroup
+    var systemKeys: SystemKeyOptions
 
     @OptionGroup
     var deviceOption: DeviceOption
@@ -61,12 +68,16 @@ struct KeyCombo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        try await perform(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger), logger: logger)
+    }
+
+    @MainActor
+    func perform(on route: DeviceRouter.Route, logger: OffsiderLogger) async throws {
         let backend = route.backend
         let device = route.device
-        try await backend.prepare()
-
         let parsedModifiers = try parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")
+        try systemKeys.check(parsedModifiers + [key], on: device)
+        try await backend.prepare()
 
         logger.info().log("Pressing key combo: modifiers=\(parsedModifiers), key=\(key)")
 

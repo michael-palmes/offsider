@@ -11,7 +11,7 @@ struct ButtonPlatformTests {
     func iosButtonOnAndroidExits64() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("button siri --device emulator-5556")
         #expect(result.exitCode == 64)
-        #expect(result.stderr.contains("The siri button is iOS only, and emulator-5556 is an Android emulator. Android buttons: back, app-switch, home, lock, volume-up, volume-down."))
+        #expect(result.stderr.contains("The siri button is iOS only, and emulator-5556 is an Android emulator. Android buttons: back, app-switch, home, lock, menu, volume-up, volume-down."))
     }
 
     @Test("an Android-only button with a simulator UUID is a usage error before any device work")

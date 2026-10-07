@@ -12,7 +12,9 @@ struct Wait: AsyncParsableCommand {
         Choose one condition: a selector (--id, --label or --value, with --gone to wait for it to leave), --settled, \
         --region with --changed or --stable, or --seconds. Selectors count only on-screen matches unless --allow-offscreen. \
         --region watches pixels in points as describe-ui prints them, for content the accessibility tree cannot see such as charts \
-        or web views. Exits 0 when the condition is met and 5 when --timeout passes first; --settled exits 1 when the \
+        or web views. Within 2 s of an input, --settled also waits for that input's effect to show (a read that differs from the \
+        screen before it, else 2 s after it, or 1 s when no read from before it was kept), so a delayed push is not missed; an input \
+        checked with --verify needs no such wait. Exits 0 when the condition is met and 5 when --timeout passes first; --settled exits 1 when the \
         accessibility tree was never readable, where --settle-by screen still works.
         """
     )
@@ -31,6 +33,9 @@ struct Wait: AsyncParsableCommand {
 
     @Option(name: .customLong("settle-by"), help: "What --settled watches (default tree).")
     var settleBy: SettleSource?
+
+    @Flag(name: .customLong("ignore-values"), help: "With --settled, label and value changes do not count, so a ticking price or clock cannot keep the screen unsettled; moves and elements added or removed still do.")
+    var ignoreValues = false
 
     @Option(name: .customLong("stable-for"), help: ArgumentHelp("With a selector, how long the element must stay on screen (or, with --gone, stay gone) before the wait is met, from 0 to 60000 ms. Default 500 for --gone when --timeout is at least 0.5 s, else 0.", valueName: "ms"))
     var stableForMs: Int?
@@ -78,8 +83,8 @@ struct Wait: AsyncParsableCommand {
             }
             if gone { throw ValidationError("--any waits for the first selector on screen; it does not take --gone.") }
             if selector.hasValue != nil { throw ValidationError("--any does not take --has-value; use --value as one of the selectors.") }
-        } else if selector.queries.count > 1 {
-            throw ValidationError("Use only one of --id, --label, or --value, or pass --any to wait for the first of several.")
+        } else if selector.queries.count > 1, !selector.isConjunction {
+            throw ValidationError("Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several.")
         }
         if (changed || stable) && region == nil {
             throw ValidationError("--changed and --stable need --region.")
@@ -110,6 +115,12 @@ struct Wait: AsyncParsableCommand {
         }
         if settleBy != nil && !settled {
             throw ValidationError("--settle-by applies to --settled only.")
+        }
+        if ignoreValues {
+            guard settled else { throw ValidationError("--ignore-values applies to --settled only.") }
+            if settleBy == .screen {
+                throw ValidationError("--ignore-values reads the accessibility tree, which --settle-by screen does not; use --settle-by tree or both.")
+            }
         }
         if let region {
             do {
@@ -177,10 +188,26 @@ struct Wait: AsyncParsableCommand {
         onPrepared()
         let sources = try await liveSources(on: route, tree: tree, clock: clock)
         logger.info().log("Waiting for \(target)")
-        return try await WaitLoop.run(condition, timeout: timeout, interval: pollInterval, sources: sources)
+        let gate = settled ? await Self.settleGate(for: route) : nil
+        return try await WaitLoop.run(condition(gate: gate), timeout: timeout, interval: pollInterval, sources: sources)
     }
 
-    var condition: WaitCondition {
+    /// The gate for the device's last input: this process's own when it sent one (a batch step), else the cached record's.
+    @MainActor
+    static func settleGate(for route: DeviceRouter.Route) async -> SettleGate? {
+        let ledger = DeviceActivityLedger.current
+        let environment = TreeCacheEnvironment.current
+        let now = environment.now()
+        if let activity = ledger.activity(for: route.device), activity.lastInputAt != nil {
+            let record = TreeCacheRecord.committing(activity, previous: nil, command: "wait", inputAtEnd: false, bootMarker: nil, now: now)
+            return SettleGate.after(record, now: now)
+        }
+        return SettleGate.after(await TreeCache.load(for: route.device, backend: route.backend, environment: environment), now: now)
+    }
+
+    var condition: WaitCondition { condition(gate: nil) }
+
+    func condition(gate: SettleGate?) -> WaitCondition {
         if any {
             let queries = selector.queries
             let selectors = queries.enumerated().map { index, query in
@@ -192,7 +219,7 @@ struct Wait: AsyncParsableCommand {
             return .element(probe: selector.probe(for: query), gone: gone, stableFor: stableFor)
         }
         if settled {
-            return .settled(by: settleBy ?? .tree, quiet: quiet)
+            return .settled(by: settleBy ?? .tree, quiet: quiet, ignoreValues: ignoreValues, gate: gate)
         }
         if region != nil {
             return .region(mode: stable ? .stable : .changed, quiet: quiet, threshold: threshold ?? 0)
@@ -216,7 +243,10 @@ struct Wait: AsyncParsableCommand {
 
     /// `✗ Timed out after 10 s waiting for --id 'save' (last: off screen at (20, 10700) 350x44).`
     func failureLine(_ outcome: WaitOutcome) -> String {
-        "✗ Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target) (last: \(outcome.reason))."
+        let hint = settled && !ignoreValues && outcome.onlyTextMoved
+            ? " Only text kept changing, as a live price or clock does; add --ignore-values to let it settle."
+            : ""
+        return "✗ Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target) (last: \(outcome.reason)).\(hint)"
     }
 
     private var target: String {

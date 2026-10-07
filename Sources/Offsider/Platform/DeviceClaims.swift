@@ -105,6 +105,7 @@ extension RNDevMenu: DeviceOptionCommand {}
 extension RNToolsOff: DeviceOptionCommand {}
 extension RNLogBoxStatus: DeviceOptionCommand {}
 extension RNLogBoxDismiss: DeviceOptionCommand {}
+extension RNLogBoxOpen: DeviceOptionCommand {}
 extension Screenshot: DeviceOptionCommand {}
 extension Shake: DeviceOptionCommand {}
 extension Slider: DeviceOptionCommand {}

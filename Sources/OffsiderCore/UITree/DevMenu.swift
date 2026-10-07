@@ -1,6 +1,6 @@
 import Foundation
 
-/// Optional capability: opening a React Native debug build's dev menu, by shake on an iOS simulator and the menu key on Android.
+/// Optional capability: opening a React Native debug build's dev menu by shake on an iOS simulator; Android sends the menu key as input.
 @MainActor
 public protocol ReactNativeDevMenuOpening: DeviceBackend {
     func openDevMenu(_ id: DeviceID) async throws

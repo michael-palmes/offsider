@@ -23,14 +23,16 @@ public enum LogText {
 
     // MARK: iOS
 
-    /// The NSPredicate for `source` (with `executable` resolved for `.app`), ANDed with `extra`; nil reads everything.
+    /// The NSPredicate for `source` (with `executable` resolved for an app), ANDed with `extra`; nil reads everything.
     public static func iosPredicate(for source: LogSource, executable: String?, extra: String? = nil) -> String? {
         let base: String?
         switch source {
         case .all:
             base = nil
-        case .reactNative:
+        case .reactNative(nil):
             base = "subsystem == \(quoted(reactNativeSubsystem))"
+        case .reactNative(let bundleID?):
+            base = "subsystem == \(quoted(reactNativeSubsystem)) OR process == \(quoted(executable ?? bundleID))"
         case .app(let bundleID):
             base = "process == \(quoted(executable ?? bundleID))"
         case .process(let name):
@@ -134,11 +136,11 @@ public enum LogText {
 
     // MARK: Output
 
-    /// `HH:MM:SS.mmm Level process[pid] tag: message`, leaving out what the entry lacks.
+    /// `HH:MM:SS.mmm+10:30 Level process[pid] tag: message` (UTC ends `Z`), leaving out what the entry lacks.
     public static func format(_ entry: LogEntry, timeZone: TimeZone = .current) -> String {
         var parts: [String] = []
         if let timestamp = entry.timestamp {
-            parts.append(clockTime(timestamp, timeZone: timeZone))
+            parts.append(clockTime(timestamp, timeZone: timeZone) + offset(at: timestamp, in: timeZone))
         }
         if let level = entry.level {
             parts.append(level.padding(toLength: max(level.count, 7), withPad: " ", startingAt: 0))
@@ -154,6 +156,14 @@ public enum LogText {
         }
         parts.append(entry.message)
         return parts.joined(separator: " ")
+    }
+
+    /// The zone's offset at `date`, so summer and standard time differ: `+10:30`, `-05:00`, or `Z` for UTC.
+    static func offset(at date: Date, in timeZone: TimeZone) -> String {
+        let seconds = timeZone.secondsFromGMT(for: date)
+        if seconds == 0, ["UTC", "GMT"].contains(timeZone.identifier) { return "Z" }
+        let minutes = abs(seconds) / 60
+        return String(format: "%@%02d:%02d", seconds < 0 ? "-" : "+", minutes / 60, minutes % 60)
     }
 
     static func clockTime(_ date: Date, timeZone: TimeZone) -> String {

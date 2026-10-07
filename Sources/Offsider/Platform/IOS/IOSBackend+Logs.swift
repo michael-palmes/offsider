@@ -5,11 +5,14 @@ import OffsiderCore
 
 extension IOSBackend: LogReading {
     /// The simulator's own `log show` for history or `log stream` for live output, as ndjson, with info and debug messages.
-    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
+    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void, onNote: @escaping @MainActor (LogNote) -> Void) async throws {
         let simulator = try await logSimulator(for: id)
         var executable: String?
-        if case .app(let bundleID) = query.source {
+        switch query.source {
+        case .app(let bundleID), .reactNative(let bundleID?):
             executable = try await Self.executableName(of: bundleID, on: simulator)
+        case .all, .reactNative(nil), .process:
+            break
         }
         let predicate = LogText.iosPredicate(for: query.source, executable: executable, extra: query.predicate)
         let arguments = LogText.iosLogArguments(window: query.window, predicate: predicate)

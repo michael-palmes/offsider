@@ -69,6 +69,13 @@ extension DeviceBackend {
     }
 }
 
+/// Optional capability: the platform's own hit-test, which knows what is drawn on top; only the iOS simulator has one.
+@MainActor
+public protocol PointHitTesting: DeviceBackend {
+    /// The element a touch at `point` reaches, as the platform reports it; nil when nothing answers there.
+    func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode?
+}
+
 /// Optional capability: the platform's own tree reply before mapping, for the committed tree goldens.
 @MainActor
 public protocol RawAccessibilitySource: DeviceBackend {

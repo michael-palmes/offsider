@@ -250,7 +250,7 @@ struct DoctorRunner {
         checks.append(transportCheck)
 
         let accessibility = await DoctorProbes.accessibility(udid: udid, logger: logger)
-        checks.append(DoctorCheckResult(id: .accessibility, verdict: DoctorRules.accessibility(accessibility)))
+        checks.append(DoctorCheckResult(id: .accessibility, verdict: DoctorRules.accessibility(accessibility, udid: udid)))
         return checks
     }
 }

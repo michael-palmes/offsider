@@ -271,6 +271,33 @@ public struct ImageFingerprint: Equatable, Sendable {
         }
     }
 
+    /// The tiles any of `rects` touches, in this fingerprint's pixels, for leaving pixels the tree explains out of a comparison.
+    public func tiles(intersecting rects: [PixelRect]) -> Set<Int> {
+        guard width > 0, height > 0 else { return [] }
+        var touched = Set<Int>()
+        for rect in rects where rect.width > 0 && rect.height > 0 {
+            let left = max(0, rect.x), right = min(width, rect.x + rect.width)
+            let top = max(0, rect.y), bottom = min(height, rect.y + rect.height)
+            guard right > left, bottom > top else { continue }
+            let firstRow = max(0, top * rows / height - 1), lastRow = min(rows - 1, (bottom - 1) * rows / height + 1)
+            let firstColumn = max(0, left * columns / width - 1), lastColumn = min(columns - 1, (right - 1) * columns / width + 1)
+            for row in firstRow...lastRow {
+                for column in firstColumn...lastColumn where Self.overlaps(
+                    column: column, row: row, left: left, right: right, top: top, bottom: bottom, width: width, height: height, columns: columns, rows: rows
+                ) {
+                    touched.insert(row * columns + column)
+                }
+            }
+        }
+        return touched
+    }
+
+    private static func overlaps(column: Int, row: Int, left: Int, right: Int, top: Int, bottom: Int, width: Int, height: Int, columns: Int, rows: Int) -> Bool {
+        let tileLeft = column * width / columns, tileRight = (column + 1) * width / columns
+        let tileTop = (row * height + rows - 1) / rows, tileBottom = ((row + 1) * height + rows - 1) / rows
+        return tileLeft < right && left < tileRight && tileTop < bottom && top < tileBottom
+    }
+
     /// Changed tiles over compared tiles; nil when the grids differ.
     public func changedFraction(comparedTo other: ImageFingerprint) -> Double? {
         guard let changed = changedTiles(comparedTo: other) else { return nil }
@@ -283,10 +310,10 @@ public enum ScreenChange {
     /// The share of compared tiles that counts as motion: a transition, a video or a carousel moves more, a ticking label, a caret or a small spinner less.
     public static let movingFraction = 0.1
 
-    /// Changed tiles still moving after the input count only when they were still across the before-shots and cover more than `movingFraction` of the screen.
-    public static func detect(before: [ImageFingerprint], after: [ImageFingerprint]) -> Bool {
+    /// Tiles in `ignoring` never count; changed tiles still moving after the input count only when still across the before-shots and over `movingFraction`.
+    public static func detect(before: [ImageFingerprint], after: [ImageFingerprint], ignoring: Set<Int> = []) -> Bool {
         guard let reference = before.last, let last = after.last else { return false }
-        guard let changed = reference.changedTiles(comparedTo: last) else { return true }
+        guard let changed = reference.changedTiles(comparedTo: last)?.subtracting(ignoring) else { return true }
         if !changed.isSubset(of: movingTiles(after) ?? []) { return true }
         guard before.count > 1, let movingBefore = movingTiles(before) else { return false }
         let compared = max(min(reference.comparedTileCount, last.comparedTileCount), 1)

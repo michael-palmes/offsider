@@ -12,7 +12,7 @@ enum ButtonType: String, CaseIterable, ExpressibleByArgument {
     case appSwitch = "app-switch"
     case volumeUp = "volume-up"
     case volumeDown = "volume-down"
-
+    case menu = "menu"
 
     var hardwareButton: HardwareButton {
         switch self {
@@ -25,6 +25,7 @@ enum ButtonType: String, CaseIterable, ExpressibleByArgument {
         case .appSwitch: return .appSwitch
         case .volumeUp: return .volumeUp
         case .volumeDown: return .volumeDown
+        case .menu: return .menu
         }
     }
 
@@ -39,13 +40,14 @@ enum ButtonType: String, CaseIterable, ExpressibleByArgument {
         case .appSwitch: return "App switch button"
         case .volumeUp: return "Volume up button"
         case .volumeDown: return "Volume down button"
+        case .menu: return "Menu button"
         }
     }
 
     static func names(on platform: DevicePlatform) -> String {
         switch platform {
         case .ios: return "apple-pay, home, lock, side-button, siri"
-        case .android: return "back, app-switch, home, lock, volume-up, volume-down"
+        case .android: return "back, app-switch, home, lock, menu, volume-up, volume-down"
         }
     }
 }
@@ -55,12 +57,13 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         abstract: "Press a hardware button on the device.",
         discussion: """
         iOS buttons: apple-pay, home, lock, side-button, siri
-        Android buttons: back, app-switch, home, lock (the power key), volume-up, volume-down
+        Android buttons: back, app-switch, home, lock (the power key), menu, volume-up, volume-down
 
         Examples:
           offsider button home --device DEVICE_ID
           offsider button lock --duration 2.0 --device DEVICE_ID
           offsider button back --device emulator-5554
+          offsider button menu --device emulator-5554    # opens a React Native debug build's dev menu
 
         Android home: Offsider checks that the launcher came to the front, sending the HOME intent once when the
         key was ignored, and still sends the key when it cannot read the foreground. --verify reports that check,

@@ -33,6 +33,9 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
     var verification: VerificationOptions
 
     @OptionGroup
+    var systemKeys: SystemKeyOptions
+
+    @OptionGroup
     var deviceOption: DeviceOption
 
     func validate() throws {
@@ -67,6 +70,7 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let backend = route.backend
         let device = route.device
+        try systemKeys.check([keycode], on: device)
         try await backend.prepare()
 
         logger.info().log("Pressing key with keycode: \(keycode)")

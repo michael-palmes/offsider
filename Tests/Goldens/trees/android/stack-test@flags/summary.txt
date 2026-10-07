@@ -1,0 +1,13 @@
+# android <android-device> 411.4x923.4 @2.625x portrait 0°
+application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
+  group id=stack-test-full-page-1 (0,0 411.4x923.4)
+  group id=stack-test-full-page-2 (0,0 411.4x923.4)
+  button "Back" id=stack-test-full-back-1 (8,54.1 72x44.2)
+  button "Back" id=stack-test-full-back-2 (8,54.1 72x44.2)
+  group "Full Page" id=stack-test-full-title-1 (88,64.4 235.4x23.2)
+  group "Flags" id=stack-test-full-title-2 (88,64.4 235.4x23.2)
+  button "Close Later" id=stack-test-full-close-later (145.9,114.7 119.6x43.8)
+  button "Open Flags" id=stack-test-full-next (16,798.1 379.4x43.8)
+  group id=stack-test-tab-bar (0,850.3 411.4x73.1)
+  button "Buy" id=stack-test-full-buy (201.9,852.2 193.5x45)
+# beneath: "Mounted Stack" (15 elements) under "stack-test-full-page-1"

@@ -18,10 +18,12 @@ public struct FailureCandidate: Equatable, Sendable {
     public let index: Int?
     /// The window or app title it is in.
     public let window: String?
-    /// The id of the nearest screen-filling ancestor.
+    /// The screen it is on: a covered screen's or page's name, else the id of the nearest screen-filling ancestor.
     public let screen: String?
+    /// True when a page is drawn over its screen; nil when no page covers anything.
+    public let beneath: Bool?
 
-    public init(id: String?, label: String?, role: String, frame: UIFrame?, onScreen: Bool?, index: Int? = nil, window: String? = nil, screen: String? = nil) {
+    public init(id: String?, label: String?, role: String, frame: UIFrame?, onScreen: Bool?, index: Int? = nil, window: String? = nil, screen: String? = nil, beneath: Bool? = nil) {
         self.id = id
         self.label = label
         self.role = role
@@ -30,6 +32,7 @@ public struct FailureCandidate: Equatable, Sendable {
         self.index = index
         self.window = window
         self.screen = screen
+        self.beneath = beneath
     }
 
     var jsonValue: OrderedJSON {
@@ -42,6 +45,49 @@ public struct FailureCandidate: Equatable, Sendable {
             ("index", .optional(index, OrderedJSON.integer)),
             ("window", .optional(window, OrderedJSON.string)),
             ("screen", .optional(screen, OrderedJSON.string)),
+            ("beneath", .optional(beneath, OrderedJSON.bool)),
+        ])
+    }
+}
+
+/// What a refused tap would have landed on, and how Offsider knew; never a value.
+public struct CoverReport: Equatable, Sendable {
+    public let role: String
+    public let id: String?
+    public let label: String?
+    public let frame: UIFrame?
+    /// The page or covered screen it is on.
+    public let screen: String?
+    public let evidence: CoverEvidence
+
+    public init(role: String, id: String?, label: String?, frame: UIFrame?, screen: String?, evidence: CoverEvidence) {
+        self.role = role
+        self.id = id
+        self.label = label
+        self.frame = frame
+        self.screen = screen
+        self.evidence = evidence
+    }
+
+    public init(_ verdict: CoverVerdict) {
+        self.init(
+            role: verdict.cover.role.rawValue,
+            id: verdict.cover.normalizedID,
+            label: verdict.cover.normalizedLabel.map { SelectorText.truncated($0) },
+            frame: verdict.cover.frame,
+            screen: verdict.screen.map { SelectorText.truncated($0) },
+            evidence: verdict.evidence
+        )
+    }
+
+    var jsonValue: OrderedJSON {
+        .object([
+            ("role", .string(role)),
+            ("id", .optional(id, OrderedJSON.string)),
+            ("label", .optional(label, OrderedJSON.string)),
+            ("frame", frame.map(\.jsonValue) ?? .null),
+            ("screen", .optional(screen, OrderedJSON.string)),
+            ("evidence", .string(evidence.rawValue)),
         ])
     }
 }
@@ -52,10 +98,12 @@ public protocol OffsiderFailure: Error {
     var failureMessage: String { get }
     var hint: String? { get }
     var candidates: [FailureCandidate] { get }
+    var coveredBy: CoverReport? { get }
 }
 
 extension OffsiderFailure {
     public var hint: String? { nil }
     public var candidates: [FailureCandidate] { [] }
+    public var coveredBy: CoverReport? { nil }
     public var exitCode: OffsiderExitCode { reason.exitCode }
 }

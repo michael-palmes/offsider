@@ -10,34 +10,41 @@ public struct ErrorPayload: Equatable, Sendable {
     /// Nil for commands that send no input.
     public let dispatched: DispatchState?
     public let candidates: [FailureCandidate]
+    /// What a refused tap would have landed on; only `target_covered` carries it.
+    public let coveredBy: CoverReport?
 
-    public init(reason: FailureReason, message: String, hint: String? = nil, dispatched: DispatchState? = nil, candidates: [FailureCandidate] = []) {
+    public init(reason: FailureReason, message: String, hint: String? = nil, dispatched: DispatchState? = nil, candidates: [FailureCandidate] = [], coveredBy: CoverReport? = nil) {
         self.reason = reason
         self.message = message
         self.hint = hint
         self.dispatched = dispatched
         self.candidates = Array(candidates.prefix(Self.maxCandidates))
+        self.coveredBy = coveredBy
     }
 
     public init(_ failure: any OffsiderFailure, dispatched: DispatchState? = nil) {
-        self.init(reason: failure.reason, message: failure.failureMessage, hint: failure.hint, dispatched: dispatched, candidates: failure.candidates)
+        self.init(reason: failure.reason, message: failure.failureMessage, hint: failure.hint, dispatched: dispatched, candidates: failure.candidates, coveredBy: failure.coveredBy)
     }
 
     public var exitCode: OffsiderExitCode { reason.exitCode }
 
     /// The same payload with `scrub` applied to the message and hint.
     public func scrubbed(_ scrub: (String) -> String) -> ErrorPayload {
-        ErrorPayload(reason: reason, message: scrub(message), hint: hint.map(scrub), dispatched: dispatched, candidates: candidates)
+        ErrorPayload(reason: reason, message: scrub(message), hint: hint.map(scrub), dispatched: dispatched, candidates: candidates, coveredBy: coveredBy)
     }
 
     var jsonValue: OrderedJSON {
-        .object([
+        var members: [(String, OrderedJSON)] = [
             ("reason", .string(reason.rawValue)),
             ("message", .string(message)),
             ("hint", .optional(hint, OrderedJSON.string)),
             ("dispatched", .optional(dispatched?.rawValue, OrderedJSON.string)),
             ("candidates", .array(candidates.map(\.jsonValue))),
-        ])
+        ]
+        if let coveredBy {
+            members.append(("coveredBy", coveredBy.jsonValue))
+        }
+        return .object(members)
     }
 
     public func jsonLine() -> String {

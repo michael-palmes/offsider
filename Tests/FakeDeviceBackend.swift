@@ -4,7 +4,7 @@ import OffsiderCore
 
 /// A scripted backend: serves `trees` and `screenshots` in order, holding the last, and records input.
 @MainActor
-final class FakeDeviceBackend: DeviceBackend {
+class FakeDeviceBackend: DeviceBackend {
     let platform: DevicePlatform
     let trees: [UITree]
     let screenshots: [Data]
@@ -188,6 +188,17 @@ extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeContro
 }
 
 /// Small builders for trees in unit tests.
+/// A simulator's backend: a hit-test is a point read of the next tree, which answers with the deepest node by sibling order there.
+@MainActor
+final class HitTestingFakeBackend: FakeDeviceBackend, PointHitTesting {
+    private(set) var hitTests = 0
+
+    func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        hitTests += 1
+        return try await accessibilityTree(for: id, point: point).roots.first
+    }
+}
+
 enum FakeUI {
     static func frame(_ x: Double, _ y: Double, _ width: Double, _ height: Double) -> UIFrame {
         UIFrame(x: x, y: y, width: width, height: height)
@@ -202,11 +213,12 @@ enum FakeUI {
         enabled: Bool? = nil,
         state: UIState = UIState(),
         platform: DevicePlatform = .ios,
+        drawingOrder: Int? = nil,
         children: [UINode] = []
     ) -> UINode {
         let native: UINative = platform == .ios
             ? .ios(IOSNativeAttributes())
-            : .android(AndroidNativeAttributes(resourceId: id))
+            : .android(AndroidNativeAttributes(resourceId: id, drawingOrder: drawingOrder))
         return UINode(
             role: role, id: id, label: label, value: value, frame: frame,
             enabled: enabled, state: state, native: native, children: children
@@ -346,15 +358,18 @@ extension FakeDeviceBackend: ForegroundReading {
 final class FakeLogBackend: LogReading {
     let platform: DevicePlatform
     let entries: [LogEntry]
+    let notes: [LogNote]
     private(set) var queries: [LogQuery] = []
 
-    init(platform: DevicePlatform = .android, entries: [LogEntry]) {
+    init(platform: DevicePlatform = .android, entries: [LogEntry], notes: [LogNote] = []) {
         self.platform = platform
         self.entries = entries
+        self.notes = notes
     }
 
-    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void) async throws {
+    func readLogs(_ query: LogQuery, on id: DeviceID, onEntry: @escaping @MainActor (LogEntry) -> Void, onNote: @escaping @MainActor (LogNote) -> Void) async throws {
         queries.append(query)
+        notes.forEach(onNote)
         entries.forEach(onEntry)
     }
 

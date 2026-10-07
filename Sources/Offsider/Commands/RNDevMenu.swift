@@ -4,14 +4,16 @@ import OffsiderCore
 
 extension DevMenu.Item: ExpressibleByArgument {}
 
-/// Shared by `rn devmenu` and `rn tools off`: open the menu, tap one item, and wait for the menu to close.
+/// Shared by `rn devmenu`, its batch step and `rn tools off`: open the menu, tap one item, and wait for the menu to close.
 @MainActor
 struct DevMenuDriver {
     let route: DeviceRouter.Route
     let clock: PollClock
+    /// Sends the menu key and taps; a batch step passes its own session so they count as the step's input.
+    var send: (@MainActor (InputEvent) async throws -> Void)?
 
     static let openWait: TimeInterval = 5
-    static let closeWait: TimeInterval = 3
+    static let closeWait: TimeInterval = 5
     static let poll: Duration = .milliseconds(300)
     static let switchHold: TimeInterval = 0.2
 
@@ -23,20 +25,29 @@ struct DevMenuDriver {
     func open() async throws -> (DevMenu.State, UITree) {
         let tree = try await read()
         if let state = DevMenu.read(tree) { return (state, tree) }
-        guard let opener = route.backend as? any ReactNativeDevMenuOpening else {
+        if route.device.platform == .android {
+            try await perform(.shortButtonPress(.menu))
+        } else if let opener = route.backend as? any ReactNativeDevMenuOpening {
+            defer { DeviceActivityLedger.current.recordInput(on: route.device) }
+            try await DispatchTracker.current.sending { try await opener.openDevMenu(route.device) }
+        } else {
             throw CLIError(
                 errorDescription: "Offsider cannot open the dev menu on \(route.device.rawValue): a physical iPhone or iPad refuses shake and two-finger touches. Shake the device by hand, or open the menu from the app, then run this again: it uses a menu that is already open.",
                 reason: .notSupported,
                 hint: "offsider rn devmenu --device \(route.device.rawValue)"
             )
         }
-        try await opener.openDevMenu(route.device)
+        // A menu sliding in moves its items, so a tap waits for two reads that agree.
         let deadline = clock.now() + Self.openWait
+        var seen: (DevMenu.State, UITree)?
         repeat {
             try await clock.sleep(Self.poll)
             let tree = try await read()
-            if let state = DevMenu.read(tree) { return (state, tree) }
+            let state = DevMenu.read(tree)
+            if let state, state == seen?.0 { return (state, tree) }
+            seen = state.map { ($0, tree) }
         } while clock.now() < deadline
+        if let seen { return seen }
         throw CLIError(
             errorDescription: "The React Native dev menu did not open on \(route.device.rawValue) within \(Int(Self.openWait)) s. Release builds have none; check this is a debug build.",
             reason: .stateNotReached,
@@ -58,7 +69,8 @@ struct DevMenuDriver {
         }
         try await tap(frame.center, tree: tree, hold: node.role == .switch)
         if try await closed(leaving: state.menu) { return tapped }
-        if item?.isToggle == true || label != nil, let close = DevMenu.node(for: .close, label: nil, in: try await read()), let closeFrame = close.frame {
+        // A switch or label can leave the menu open, and a Close tapped while the menu still presents can be ignored.
+        if item?.isToggle == true || label != nil || item == .close, let close = DevMenu.node(for: .close, label: nil, in: try await read()), let closeFrame = close.frame {
             try await tap(closeFrame.center, tree: nil)
             if try await closed(leaving: state.menu) { return tapped }
         }
@@ -83,11 +95,19 @@ struct DevMenuDriver {
     private func tap(_ point: UIPoint, tree: UITree?, hold: Bool = false) async throws {
         let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: tree, on: route.device)[0]
         guard hold else {
-            try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: route.device)
+            try await perform(.tapAt(x: physical.x, y: physical.y))
             return
         }
         defer { DeviceActivityLedger.current.recordInput(on: route.device) }
         try await route.backend.sendDetachedTouch([.down(x: physical.x, y: physical.y), .hold(Self.switchHold), .up(x: physical.x, y: physical.y)], to: route.device)
+    }
+
+    private func perform(_ event: InputEvent) async throws {
+        if let send {
+            try await send(event)
+        } else {
+            try await route.backend.performTracked(event, on: route.device)
+        }
     }
 }
 
@@ -96,15 +116,18 @@ struct RNDevMenu: AsyncParsableCommand {
         commandName: "devmenu",
         abstract: "Open a React Native debug build's dev menu, list its items, or choose one.",
         discussion: """
-        Opens the Expo dev menu (or React Native's) by shake on an iOS simulator and the menu key on Android. \
+        Opens the Expo dev menu (or React Native's) by shake on an iOS simulator and the menu key \
+        (KEYCODE_MENU, as `button menu` sends it) on Android emulators and phones. \
         Without an item it prints the items and leaves the menu open. With one (reload, home, inspector, \
         perf-monitor, fast-refresh, debugger, close) or --label, it taps it and waits until the menu closes, \
         closing it after a switch. Exits 2 when the menu has no such item (the items are the candidates), 1 when \
-        the menu never opens (a Release build has none) and 5 when it stays open.
+        the menu never opens (a Release build has none) and 5 when it stays open. In batch, `rn devmenu` is \
+        an input step that needs an item or --label.
 
         Examples:
           offsider rn devmenu --device DEVICE_ID
           offsider rn devmenu reload --device DEVICE_ID
+          offsider batch --device DEVICE_ID --step "rn devmenu reload" --step "wait --id home-screen --timeout 20"
         """
     )
 
@@ -159,9 +182,9 @@ struct RNDevMenu: AsyncParsableCommand {
     }
 
     @MainActor
-    func perform(on route: DeviceRouter.Route, clock: PollClock) async throws -> Outcome {
+    func perform(on route: DeviceRouter.Route, clock: PollClock, send: (@MainActor (InputEvent) async throws -> Void)? = nil) async throws -> Outcome {
         try await route.backend.prepare()
-        let driver = DevMenuDriver(route: route, clock: clock)
+        let driver = DevMenuDriver(route: route, clock: clock, send: send)
         let (state, tree) = try await driver.open()
         guard item != nil || label != nil else { return .listed(state) }
         let tapped = try await driver.choose(item, label: label, state: state, tree: tree)

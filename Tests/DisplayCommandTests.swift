@@ -48,7 +48,7 @@ struct DisplayCommandTests {
     func read() async throws {
         let backend = Self.folded()
         #expect(try await posture(nil, on: backend) == "Posture: closed (cover, 466 x 678 pt)")
-        #expect(try await posture(nil, json: true, on: backend) == #"{"posture":"closed","previous":null,"display":"cover","screen":{"width":466,"height":678}}"#)
+        #expect(try await posture(nil, json: true, on: backend) == #"{"posture":"closed","state":null,"previous":null,"display":"cover","screen":{"width":466,"height":678}}"#)
         #expect(backend.requestedPostures.isEmpty)
     }
 
@@ -62,7 +62,7 @@ struct DisplayCommandTests {
     @Test("setting the posture the device already has sends nothing")
     func alreadyThere() async throws {
         let backend = Self.folded()
-        #expect(try await posture(.closed, json: true, on: backend) == #"{"posture":"closed","previous":"closed","display":"cover","screen":{"width":466,"height":678}}"#)
+        #expect(try await posture(.closed, json: true, on: backend) == #"{"posture":"closed","state":null,"previous":"closed","display":"cover","screen":{"width":466,"height":678}}"#)
         #expect(backend.requestedPostures.isEmpty)
     }
 
@@ -82,7 +82,7 @@ struct DisplayCommandTests {
     func setReached() async throws {
         let backend = Self.folded(screen: Self.innerScreen)
         backend.postures = [.closed, .closed, .halfOpened, .open]
-        #expect(try await posture(.open, json: true, on: backend) == #"{"posture":"open","previous":"closed","display":"inner","screen":{"width":951,"height":669}}"#)
+        #expect(try await posture(.open, json: true, on: backend) == #"{"posture":"open","state":null,"previous":"closed","display":"inner","screen":{"width":951,"height":669}}"#)
         #expect(backend.requestedPostures == [.open])
     }
 
@@ -102,7 +102,7 @@ struct DisplayCommandTests {
         let backend = Self.folded(screen: Self.innerScreen)
         backend.hingeAngles = [180, 150, 121, 120]
         backend.postures = [.open, .halfOpened, .halfOpened]
-        #expect(try await posture(nil, angle: 120, json: true, on: backend) == #"{"posture":"half-opened","previous":"open","display":"inner","screen":{"width":951,"height":669}}"#)
+        #expect(try await posture(nil, angle: 120, json: true, on: backend) == #"{"posture":"half-opened","state":null,"previous":"open","display":"inner","screen":{"width":951,"height":669}}"#)
         #expect(backend.requestedAngles == [120])
         #expect(backend.requestedPostures.isEmpty)
     }
@@ -112,7 +112,7 @@ struct DisplayCommandTests {
         let backend = Self.folded(screen: Self.innerScreen)
         backend.hingeAngles = [180]
         backend.postures = [.open]
-        #expect(try await posture(nil, angle: 180, json: true, on: backend) == #"{"posture":"open","previous":"open","display":"inner","screen":{"width":951,"height":669}}"#)
+        #expect(try await posture(nil, angle: 180, json: true, on: backend) == #"{"posture":"open","state":null,"previous":"open","display":"inner","screen":{"width":951,"height":669}}"#)
         #expect(backend.requestedAngles.isEmpty)
         #expect(backend.requestedPostures.isEmpty)
     }
@@ -122,7 +122,7 @@ struct DisplayCommandTests {
         let backend = Self.folded(screen: Self.innerScreen)
         backend.hingeAngles = [180]
         backend.postures = [.closed, .open]
-        #expect(try await posture(nil, angle: 180, json: true, on: backend) == #"{"posture":"open","previous":"closed","display":"inner","screen":{"width":951,"height":669}}"#)
+        #expect(try await posture(nil, angle: 180, json: true, on: backend) == #"{"posture":"open","state":null,"previous":"closed","display":"inner","screen":{"width":951,"height":669}}"#)
         #expect(backend.requestedAngles == [180])
     }
 

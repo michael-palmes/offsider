@@ -7,6 +7,7 @@ enum AndroidPhase: String, CaseIterable, Sendable {
     case adbDevices = "adb-devices"
     case adbShell = "adb-shell"
     case displayProbe = "display-probe"
+    case displayStatus = "display-status"
     case helperLaunch = "helper-launch"
     case dexPush = "dex-push"
     case helperHello = "helper-hello"

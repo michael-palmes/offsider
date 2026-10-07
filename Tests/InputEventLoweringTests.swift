@@ -16,7 +16,7 @@ struct InputEventLoweringTests {
         #expect(Set(HardwareButton.allCases.compactMap(\.hidButton)) == Set(FBSimulatorHIDButton.allCases))
     }
 
-    @Test("Android-only buttons throw on iOS instead of reaching the HID layer", arguments: [HardwareButton.back, .appSwitch, .volumeUp, .volumeDown])
+    @Test("Android-only buttons throw on iOS instead of reaching the HID layer", arguments: [HardwareButton.back, .appSwitch, .volumeUp, .volumeDown, .menu])
     func androidButtonsThrowOnIOS(button: HardwareButton) {
         #expect(button.hidButton == nil)
         #expect(throws: CLIError.self) { try InputEvent.shortButtonPress(button).hidEvent() }

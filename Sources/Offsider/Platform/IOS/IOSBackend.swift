@@ -259,6 +259,12 @@ final class IOSBackend: DeviceBackend {
     }
 }
 
+extension IOSBackend: PointHitTesting {
+    func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        try await accessibilityTree(for: id, point: point).roots.first
+    }
+}
+
 extension IOSBackend: RawAccessibilitySource {
     func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
         try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(from: try await simulator(for: id), logger: logger)

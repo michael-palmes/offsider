@@ -57,20 +57,20 @@ struct ReactNativeDebugSmokeTests {
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
     }
 
-    @Test("a LogBox error banner over the tab bar swallows a tab tap, with a cover warning on both platforms", arguments: RNPlatform.enabled)
+    @Test("a LogBox error banner over the tab bar refuses a tab tap, and swallows it with --allow-covered, on both platforms", arguments: RNPlatform.enabled)
     func logBoxBannerCoversTabs(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         let banner = try await Self.openWithErrorBanner(app)
         #expect(Self.label(banner) == "!, OffsiderFixture error 1", "\(banner)")
         #expect(banner["role"] as? String == (platform == .ios ? "other" : "button"))
 
-        let firstTap = try await app.offsider("tap --id overlay-test-tab-search --fail-if-covered")
-        #expect(firstTap.exitCode != 0)
-        #expect(firstTap.stderr.contains("may be covered by"), "\(firstTap.stderr)")
+        let firstTap = try await app.offsider("tap --id overlay-test-tab-search")
+        #expect(firstTap.exitCode == 1)
+        #expect(firstTap.stderr.contains("is covered by"), "\(firstTap.stderr)")
         #expect(firstTap.stderr.contains("OffsiderFixture error 1"), "\(firstTap.stderr)")
-        let warned = try await app.offsider("tap --id overlay-test-tab-search")
+        let warned = try await app.offsider("tap --id overlay-test-tab-search --allow-covered")
         #expect(warned.exitCode == 0, "\(warned.stderr)")
-        #expect(warned.stderr.contains("may be covered by"), "\(warned.stderr)")
+        #expect(warned.stderr.contains("is covered by"), "\(warned.stderr)")
         try await Task.sleep(for: .seconds(1))
         #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
     }
@@ -136,6 +136,49 @@ struct ReactNativeDebugSmokeTests {
         #expect(after.contains(#""logs":0"#) && !after.contains("10, pcs"), "\(after)")
         try await app.run("tap --id overlay-test-tab-search --fail-if-covered")
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
+    }
+
+    /// Empties LogBox and logs two errors, which LogBox shows as one `2, ` toast.
+    private static func logTwoErrors(_ app: RNApp) async throws {
+        try await app.run("tap --id overlay-test-clear-logs")
+        try await app.run("tap --id overlay-test-log-two-errors")
+        _ = try await app.waitForNode { label($0).hasPrefix("2, ") }
+    }
+
+    @Test("rn logbox status names the toast's message and dismiss clears its two logs, together in under 5 s; open shows the inspector", arguments: RNPlatform.enabled)
+    func logBoxOpenAndDismiss(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await Self.logTwoErrors(app)
+
+        // The field trial's bar: status lists the toast and dismiss clears it in under 5 s.
+        let started = ContinuousClock.now
+        let status = try await app.run("rn logbox status --json").stdout
+        let dismissed = try await app.run("rn logbox dismiss --json").stdout
+        let elapsed = ContinuousClock.now - started
+        #expect(status.contains(#""index":1,"count":2,"message":"OffsiderFixture error"#), "\(status)")
+        #expect(dismissed.contains(#""cleared":2,"remaining":0"#), "\(dismissed)")
+        #expect(elapsed < .seconds(5), "status and dismiss took \(elapsed)")
+
+        try await Self.logTwoErrors(app)
+        let opening = ContinuousClock.now
+        let opened = try await app.run("rn logbox open --json").stdout
+        let openElapsed = ContinuousClock.now - opening
+        #expect(opened.contains(#""index":1,"message":"OffsiderFixture error"#), "\(opened)")
+        #expect(opened.contains(#""of":2"#), "\(opened)")
+        #expect(openElapsed < .seconds(10), "open took \(openElapsed)")
+        let closed = try await app.run("rn logbox dismiss --json").stdout
+        #expect(closed.contains(#""cleared":2,"remaining":0,"method":"inspector""#), "\(closed)")
+    }
+
+    @Test("rn devmenu close runs as a batch step, which opens the menu and leaves the app in front", arguments: RNPlatform.enabled)
+    func devMenuBatchStep(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+
+        let result = try await app.run("batch --json --step 'rn devmenu close' --step 'wait --id overlay-test-screen --timeout 10'")
+        #expect(result.stdout.contains(#""step":1,"kind":"rn","line":"rn devmenu close","ok":true"#), "\(result.stdout)")
+        #expect(result.stdout.contains(#""dispatched":"yes""#), "\(result.stdout)")
     }
 
     @Test("a full-width 10, pcs button near the bottom is never read as LogBox", arguments: RNPlatform.enabled)

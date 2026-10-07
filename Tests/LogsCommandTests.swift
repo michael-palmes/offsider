@@ -218,11 +218,23 @@ struct LogsCommandTests {
         #expect(try Self.command(["--process", "SpringBoard", "--last", "2m", "--predicate", "messageType == error"]).query()
             == LogQuery(source: .process("SpringBoard"), window: .last(.seconds(120)), predicate: "messageType == error"))
         #expect(try Self.command(["--since", "1790945238"]).query().window == .since(Date(timeIntervalSince1970: 1_790_945_238)))
+        #expect(try Self.command(["--rn", "--app", "com.example", "--last", "2m"]).query() == LogQuery(source: .reactNative(app: "com.example"), window: .last(.seconds(120))))
+    }
+
+    @Test("a --rn read without --app that finds few entries suggests --app, naming the platform's id")
+    func appHint() {
+        #expect(Logs.appHint(for: .reactNative, matched: 2, platform: .ios) == "Only 2 React Native entries. An app's console output can log under its own process instead; add --app <bundle-id> to read both.")
+        #expect(Logs.appHint(for: .reactNative, matched: 0, platform: .android)?.hasSuffix("add --app <package> to read both.") == true)
+        #expect(Logs.appHint(for: .reactNative, matched: 5, platform: .ios) == nil)
+        #expect(Logs.appHint(for: .reactNative, matched: 1, grepping: true, platform: .ios) == nil)
+        #expect(Logs.appHint(for: .reactNative, matched: 0, grepping: true, platform: .ios) != nil)
+        #expect(Logs.appHint(for: .reactNative(app: "com.example"), matched: 0, platform: .ios) == nil)
+        #expect(Logs.appHint(for: .all, matched: 0, platform: .ios) == nil)
     }
 
     @Test("conflicting flags are named", arguments: [
-        (["--rn", "--app", "x"], "Use only one of --rn, --app or --process; got --rn and --app."),
-        (["--rn", "--app", "x", "--process", "y"], "Use only one of --rn, --app or --process; got --rn, --app and --process."),
+        (["--rn", "--process", "x"], "--process reads one process alone: drop --rn, or drop --process. --rn and --app combine."),
+        (["--rn", "--app", "x", "--process", "y"], "--process reads one process alone: drop --rn and --app, or drop --process. --rn and --app combine."),
         (["--last", "1m", "--follow"], "Use only one of --last, --since, --duration or --follow; got --last and --follow."),
         (["--since", "0", "--duration", "2"], "Use only one of --last, --since, --duration or --follow; got --since and --duration."),
     ])

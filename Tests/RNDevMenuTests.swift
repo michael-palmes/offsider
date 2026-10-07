@@ -147,8 +147,7 @@ struct RNDevMenuTests {
             .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
 
         #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
-        #expect(backend.devMenuOpens == 1)
-        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 324))])
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
     }
 
     @Test("on a physical iPhone, which Offsider cannot open the menu on, the error says to shake it by hand and never suggests a two-finger touch")
@@ -164,7 +163,7 @@ struct RNDevMenuTests {
         #expect(error?.userFacingDescription.contains("--fingers") == false)
     }
 
-    @Test("an app screen opens the menu, then reload is tapped and the menu closes")
+    @Test("on Android the menu key opens the menu as input, then reload is tapped and the menu closes")
     func opensAndChooses() async throws {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, Self.expoMenu(), Self.app], advanceTreeOnInput: true)
         let command = try RNDevMenu.parse(["reload", "--device", Self.device.rawValue])
@@ -172,8 +171,74 @@ struct RNDevMenuTests {
         let outcome = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
 
         #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
+        #expect(backend.devMenuOpens == 0)
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
+    }
+
+    @Test("a menu still sliding in is tapped where it comes to rest, not where the first read saw it")
+    func waitsForMenuToSettle() async throws {
+        let sliding = FakeUI.tree(platform: .android, Self.expoMenu().roots[0].children.map { node in
+            var moved = node
+            moved.frame = node.frame.map { FakeUI.frame($0.x, $0.y + 120, $0.width, $0.height) }
+            return moved
+        })
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, sliding, Self.expoMenu(), Self.expoMenu(), Self.app])
+
+        let outcome = try await RNDevMenu.parse(["reload", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
+    }
+
+    @Test("a Close the menu ignored while it was still presenting is tapped once more")
+    func closeTappedAgain() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.expoMenu(), Self.expoMenu(), Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["close", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .close, label: "Close"))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 368, y: 268)), .perform(.tapAt(x: 368, y: 268))])
+    }
+
+    @Test("on an iOS simulator the menu opens by shake, not by a key")
+    func iosOpensByShake() async throws {
+        let simulator = DeviceID(rawValue: UUID().uuidString, platform: .ios)
+        let backend = FakeDeviceBackend(platform: .ios, trees: [Self.app, Self.expoMenu(platform: .ios), Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["reload", "--device", simulator.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: simulator), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
         #expect(backend.devMenuOpens == 1)
         #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 324))])
+    }
+
+    @Test("in batch, rn devmenu reload sends the menu key and its tap through the batch's own session")
+    func batchStep() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, Self.expoMenu(), Self.app], advanceTreeOnInput: true)
+        let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+
+        let records = try await Batch.runSteps(["rn devmenu reload"], context: context, session: backend.session, continueOnError: false, logger: OffsiderLogger())
+
+        #expect(records.map(\.ok) == [true])
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 324))])
+        #expect(backend.openedSessions.isEmpty)
+    }
+
+    @Test("a batch rn step must be rn devmenu with an item or --label, and sends nothing otherwise", arguments: ["rn devmenu", "rn logbox dismiss", "rn"])
+    func batchStepNeedsItem(step: String) async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app, Self.expoMenu()], advanceTreeOnInput: true)
+        let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+
+        let error = await #expect(throws: ReportedFailure.self) {
+            try await Batch.runSteps([step], context: context, session: backend.session, continueOnError: false, logger: OffsiderLogger())
+        }
+
+        #expect(error?.exitCode == .usage)
+        #expect(error?.userFacingDescription.contains(BatchStepParser.rnStepMessage) == true)
+        #expect(backend.session.calls.isEmpty)
     }
 
     @Test("choosing an item with --json prints one JSON object naming the menu, the item, the label tapped and that it closed")
@@ -223,7 +288,7 @@ struct RNDevMenuTests {
         let result = try await RNToolsOff.parse(["--device", Self.device.rawValue]).turnOff(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
 
         #expect(result == (inspector: "off", perfMonitor: "turned-off"))
-        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 424))])
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 424))])
         #expect(DevMenu.toolsJSONLine(inspector: "off", perfMonitor: "turned-off") == #"{"version":1,"inspector":"off","perfMonitor":"turned-off"}"#)
     }
 

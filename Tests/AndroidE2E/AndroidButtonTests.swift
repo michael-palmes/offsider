@@ -17,6 +17,15 @@ struct AndroidButtonTests {
         return log.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The age of the newest KEYCODE_MENU press in the input dispatcher's recent queue, in milliseconds.
+    private func newestMenuPressAge() async throws -> Int? {
+        let queue = try await AndroidE2E.shell("dumpsys input | sed -n '/RecentQueue/,/PendingEvent/p'")
+        return queue.split(separator: "\n")
+            .filter { $0.contains("keyCode=MENU(82)") && $0.contains("action=DOWN") }
+            .compactMap { line in line.firstMatch(of: #/age=(\d+)ms/#).flatMap { Int($0.1) } }
+            .min()
+    }
+
     private func waitFor(_ description: String, timeout: TimeInterval = 10, _ check: () async throws -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -77,6 +86,16 @@ struct AndroidButtonTests {
         }
         try await AndroidE2E.run("button lock")
         try await waitFor("wake") { try await wakefulness().contains("Awake") }
+    }
+
+    @Test("button menu and key 118 reach Android as KEYCODE_MENU, over gRPC and over adb", arguments: [
+        ("button menu", nil), ("key 118", nil), ("button menu", "adb"), ("key 118", "adb"),
+    ] as [(String, String?)])
+    func menu(command: String, transport: String?) async throws {
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await AndroidE2E.run(command, environment: transport.map { ["OFFSIDER_ANDROID_TRANSPORT": $0] })
+        let age = try await newestMenuPressAge()
+        #expect(age.map { $0 < 3000 } == true, "no KEYCODE_MENU press in the last 3 s; newest is \(age.map { "\($0) ms old" } ?? "absent")")
     }
 
     @Test("iOS-only buttons are usage errors on Android", arguments: ["apple-pay", "side-button", "siri"])

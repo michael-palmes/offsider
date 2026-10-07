@@ -11,6 +11,7 @@ struct Batch: AsyncParsableCommand {
 
         Input steps:
           tap, swipe, gesture, touch, type, button, key, key-sequence, key-combo
+          rn devmenu <item> (or --label <text>)
           sleep <seconds>
 
         Read steps:

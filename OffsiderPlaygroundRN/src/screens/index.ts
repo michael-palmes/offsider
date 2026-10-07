@@ -12,6 +12,7 @@ import { GesturePresetsScreen } from './GesturePresetsScreen';
 import { HoldDragScreen } from './HoldDragScreen';
 import { KeyPressScreen } from './KeyPressScreen';
 import { KeySequenceScreen } from './KeySequenceScreen';
+import { LiveTickerTestScreen } from './LiveTickerTestScreen';
 import { LongScrollTestScreen } from './LongScrollTestScreen';
 import { ModalNavigationTestScreen } from './ModalNavigationTestScreen';
 import { MultiTouchScreen } from './MultiTouchScreen';
@@ -61,4 +62,5 @@ export const screens: Record<RouteId, ComponentType> = {
   'rows-test': RowsTestScreen,
   'environment-test': EnvironmentTestScreen,
   'permission-state': PermissionStateTestScreen,
+  'live-ticker': LiveTickerTestScreen,
 };
