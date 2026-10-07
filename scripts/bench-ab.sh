@@ -17,7 +17,7 @@ OUT=""
 ALLOW_OUTPUT_CHANGE=0
 PHONE=0
 
-ALLOWED_AVDS="Offsider_E2E Offsider_E2E_Fold"
+ALLOWED_AVDS="${OFFSIDER_ANDROID_E2E_AVD:-Offsider_E2E} ${OFFSIDER_ANDROID_FOLD_AVD:-Offsider_E2E_Fold}"
 KNOWN_SCENARIOS="android-describe android-describe-uiautomator android-tap-id android-tap-id-verify android-tap-id-verify-live android-batch-describe-5 \
 android-tap-xy android-tap-xy-input android-tap-xy-helper android-tap-physical android-swipe android-type-ascii android-type-ascii-helper \
 android-screenshot android-screenshot-json android-screenshot-raw android-screenshot-helper android-batch-tap-5 android-wait-settled \

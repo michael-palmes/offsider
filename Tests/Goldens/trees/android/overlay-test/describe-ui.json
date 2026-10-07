@@ -711,7 +711,7 @@
         {
           "role": "button",
           "id": "overlay-test-amount",
-          "label": "10, AUD",
+          "label": "10, pcs",
           "value": null,
           "frame": {
             "x": 16,
@@ -736,7 +736,7 @@
               "height": 147
             },
             "text": null,
-            "contentDescription": "10, AUD",
+            "contentDescription": "10, pcs",
             "hint": null,
             "stateDescription": null,
             "roleDescription": null,

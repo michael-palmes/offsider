@@ -1232,7 +1232,7 @@
                                     {
                                       "role": "button",
                                       "id": "overlay-test-amount",
-                                      "label": "10, AUD",
+                                      "label": "10, pcs",
                                       "value": null,
                                       "frame": {
                                         "x": 16,

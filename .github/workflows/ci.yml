@@ -56,6 +56,47 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -color
 
+  leak-gate:
+    name: Leak gate (private strings)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Forks and Dependabot get no secret, so only the generic patterns run there.
+      - name: Write the private deny-list
+        env:
+          DENYLIST_CONTENT: ${{ secrets.OFFSIDER_PRIVATE_DENYLIST }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DENYLIST_CONTENT" ]; then
+            echo "::notice title=Leak gate::No private deny-list secret here (fork or Dependabot), so only the generic patterns run"
+            exit 0
+          fi
+          list="$RUNNER_TEMP/private-denylist.txt"
+          (umask 077 && printf '%s\n' "$DENYLIST_CONTENT" > "$list")
+          echo "OFFSIDER_PRIVATE_DENYLIST=$list" >> "$GITHUB_ENV"
+
+      - name: Scan the new commits
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = pull_request ]; then
+            scripts/leak-gate.sh --range "$PR_BASE..$PR_HEAD"
+          elif [ "$EVENT_NAME" = push ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            scripts/leak-gate.sh --range "$PUSH_BEFORE..$GITHUB_SHA"
+          else
+            echo "::notice title=Leak gate::No earlier commit to compare with, so only the head commit is scanned"
+            scripts/leak-gate.sh --range "$GITHUB_SHA~1..$GITHUB_SHA"
+          fi
+
   helper:
     name: Android helper (rebuild and compare)
     runs-on: ubuntu-24.04

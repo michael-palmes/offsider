@@ -10,7 +10,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_OUTPUT_DIR="${BUILD_OUTPUT_DIR:-${REPO_ROOT}/build_products}"
 ENTITLEMENTS="${ENTITLEMENTS:-${REPO_ROOT}/entitlements.plist}"
 GITHUB_REPO="${GITHUB_REPO:-michael-palmes/offsider}"
-TEAM_ID="${TEAM_ID:-ABCDE12345}"
+# The signing team comes from the environment (.env locally, a secret in CI); Developer ID checks need it.
+TEAM_ID="${TEAM_ID:-}"
 EXPECTED_AUTHORITY="${EXPECTED_AUTHORITY:-Developer ID Application: Michael Palmes (${TEAM_ID})}"
 
 EXE=offsider
@@ -199,6 +200,7 @@ verify_code() {
     require_line "$p" "$info" "Signature=adhoc"
     case "$info" in *"flags=0x10002(adhoc,runtime)"*) ;; *) die "$p: hardened runtime flag missing" ;; esac
   else
+    [ -n "$TEAM_ID" ] || die "set TEAM_ID (the Apple team that signs releases) in .env; --adhoc needs no team"
     for line in "Authority=${EXPECTED_AUTHORITY}" "Authority=Developer ID Certification Authority" \
                 "Authority=Apple Root CA" "TeamIdentifier=${TEAM_ID}"; do
       require_line "$p" "$info" "$line"

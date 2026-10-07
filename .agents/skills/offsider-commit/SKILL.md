@@ -1,6 +1,6 @@
 ---
 name: offsider-commit
-description: Plans and creates git commits for the Offsider repo. Reviews uncommitted changes for red flags (secrets, axe rename leaks, AXE_ env vars, hard-coded UDIDs or Xcode paths, em dashes), runs swift build, swift test and the rename-leak gate, groups changes into logical conventional commits and executes them. Use for every commit in this repo, whenever asked to "commit", "commit my changes", "plan commits", "review and commit", "smart commit", or before opening a PR. Project-scoped distillation of ps-commit.
+description: Plans and creates git commits for the Offsider repo. Reviews uncommitted changes for red flags (secrets, axe rename leaks, AXE_ env vars, hard-coded UDIDs or Xcode paths, local paths, private-app content, em dashes), runs swift build, swift test, the rename-leak gate and the private-string leak gate, groups changes into logical conventional commits and executes them. Use for every commit in this repo, whenever asked to "commit", "commit my changes", "plan commits", "review and commit", "smart commit", or before opening a PR. Project-scoped distillation of ps-commit.
 ---
 
 # offsider-commit
@@ -24,16 +24,19 @@ Reviews all uncommitted changes, validates them, groups them into logical conven
    git grep -nIP --untracked '(?<![A-Za-z])[Aa][Xx][Ee](?!s\b)|(?<=[a-z])Axe|AXE_' -- . \
      ':!CHANGELOG.md' ':!LICENSE' ':!THIRD_PARTY_LICENSES' ':!README.md' ':!NOTICE.md' \
      ':!CONTRIBUTING.md' ':!AGENTS.md' ':!CLAUDE.md' ':!.agents/skills/offsider-commit/SKILL.md'
+   git add -A && scripts/leak-gate.sh --staged; git reset -q
    cmp -s AGENTS.md CLAUDE.md && test -L .claude/skills
    ```
    - `swift build` fails because `build_products/XCFrameworks` is missing: run `./scripts/build.sh dev` first. Never commit with validation skipped.
    - Unit tests run without a simulator; E2E suites are gated by `OFFSIDER_E2E`. Never set it here: E2E runs are a separate, deliberate step.
-   - The leak gate must print nothing. A hit means a missed rename: rename it (`git mv` for paths). Never widen the exclusions to silence it.
+   - The rename-leak gate must print nothing. A hit means a missed rename: rename it (`git mv` for paths). Never widen the exclusions to silence it.
+   - `scripts/leak-gate.sh` must print nothing. It checks generic device id, team ID and home-path patterns plus the private deny-list (`~/.config/offsider/private-denylist.txt` or `$OFFSIDER_PRIVATE_DENYLIST`), and prints `path:line: <rule>`, never the text. A hit means a private string or a test id that looks real: use a placeholder, a playground id or an obviously synthetic id such as `00000000-0000-0000-0000-000000000001`. Never edit the deny-list or the gate to pass. Step 7 reruns it per commit with the message.
    - `cmp` fails: copy the edited file over the other so both match.
 4. **Light review.** Scan `git diff HEAD` and untracked files for:
    - Secrets or signing material: `.p12`, `.p8`, `.cer`, `.mobileprovision`, `.env`, `keys/`, private-key blocks, `ghp_` or `github_pat_` tokens, App Store Connect key IDs. Unstage and add to `.gitignore`; values belong in `.env` or GitHub secrets.
    - Rename leaks the gate cannot see: `axe` in user-facing strings built at runtime, `AXE_` variables read via string concatenation, `com.cameroncooke` identifiers.
    - Hard-coded simulator UDIDs: `grep -nE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}'` on added lines. Use `SIMULATOR_UDID` or `list-devices` output instead.
+   - Private details the gate catches only when they are on its deny-list: device ids (serials, UDIDs, CoreDevice ids, panel ids), team IDs, simulator and AVD names from the maintainer's machine, personal device models, local paths, and anything from the private apps the maintainer tests on (names, bundle ids, screens, labels, testIDs, copy, data). The repo is public, so a leak means rewriting history. Use placeholders (`<udid>`, `<serial>`, `/Users/me`) and the playground's own ids instead.
    - `/Applications/Xcode` paths. Resolve via `xcode-select -p` or `DEVELOPER_DIR`.
    - Debug output: `debugPrint(`, `dump(`, stray `print("DEBUG`, `set -x`. Real CLI output goes through the command's output path.
    - Network or telemetry: new `URLSession`, `NWConnection` or `http` URLs in `Sources/`. Offsider stays local-only; flag it.
@@ -43,7 +46,7 @@ Reviews all uncommitted changes, validates them, groups them into logical conven
    - Accidental files: `.DS_Store`, `.build/`, `build_products/`, `build_derived_data/`, `idb_checkout/`, `dist/`, `Version.swift`.
 5. **Group into commits.** One logical change per commit; split unrelated work, never split one cohesive change. Tests stage with the source they cover; `git mv` renames stage with the edits that make them compile. Message: `type: subject`, lowercase imperative, under 72 characters, no scope, no body, no trailers or attribution lines. Types: feat, fix, docs, refactor, perf, test, chore, ci, build, revert.
 6. **Approve or auto-commit.** A single commit with no review findings commits straight away. Multiple commits or any finding: present the findings and the plan (message and files per commit) and wait for approval.
-7. **Execute.** `git reset HEAD` first, then per commit: `git add -- <files>` (use `git add -p` when one file spans commits), check `git diff --cached --stat`, then `git commit -m "type: subject"`. Never pass a second `-m`. If a hook rejects the commit, stop and show its output; never retry with `--no-verify`. Instead, fix the reported problem and rerun from step 3.
+7. **Execute.** `git reset HEAD` first, then per commit: `git add -- <files>` (use `git add -p` when one file spans commits), check `git diff --cached --stat`, write the subject to a temp file `$msg`, run `scripts/leak-gate.sh --staged --message "$msg"` (must print nothing), then `git commit -F "$msg"`. The file holds the subject line only. If a hook rejects the commit, stop and show its output; never retry with `--no-verify`. Instead, fix the reported problem and rerun from step 3.
 8. **Verify.** `git log --oneline -n <count>` and `git status`; report anything left uncommitted and why.
 
 ## Examples

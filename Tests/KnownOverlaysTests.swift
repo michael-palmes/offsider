@@ -60,7 +60,7 @@ struct LogBoxDetectionTests {
 
     @Test("a count label mid-screen and a full-width call to action with 16-point margins are not toasts")
     func lookAlikes() {
-        let amount = FakeUI.node(.button, id: "overlay-test-amount", label: "10, AUD", frame: FakeUI.frame(16, 400, 370, 56))
+        let amount = FakeUI.node(.button, id: "overlay-test-amount", label: "10, pcs", frame: FakeUI.frame(16, 400, 370, 56))
         let cta = FakeUI.node(.button, label: "3, Continue", frame: FakeUI.frame(16, 790, 370, 56))
         #expect(KnownOverlays.logBoxToasts(in: Self.tree([amount, cta]).roots, viewport: Self.viewport).isEmpty)
         #expect(KnownOverlays.logBox(in: Self.tree([amount, cta])) == nil)

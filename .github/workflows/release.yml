@@ -27,7 +27,6 @@ defaults:
 env:
   XCODEGEN_VERSION: "2.46.0"
   XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
-  SIGNING_IDENTITY_NAME: "Developer ID Application: Michael Palmes (ABCDE12345)"
   TAP_REPO: michael-palmes/homebrew-tap
 
 jobs:
@@ -141,9 +140,12 @@ jobs:
         env:
           P12_BASE64: ${{ secrets.DEVELOPER_ID_P12 }}
           P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           umask 077
+          [ -n "${APPLE_TEAM_ID:-}" ] || { echo "::error::APPLE_TEAM_ID is not set in the release environment"; exit 1; }
+          SIGNING_IDENTITY_NAME="Developer ID Application: Michael Palmes (${APPLE_TEAM_ID})"
           kc="$RUNNER_TEMP/offsider-signing.keychain-db"
           kc_pw="$(openssl rand -base64 32)"
           p12="$RUNNER_TEMP/developer-id.p12"
@@ -159,7 +161,7 @@ jobs:
           security list-keychains -d user -s "$kc" $existing
           identity="$(security find-identity -v -p codesigning "$kc" | grep -F "\"${SIGNING_IDENTITY_NAME}\"" | awk '{ print $2 }' | head -1)"
           [ -n "$identity" ] || { echo "::error::'${SIGNING_IDENTITY_NAME}' not found in the imported p12"; exit 1; }
-          { echo "SIGNING_KEYCHAIN=$kc"; echo "OFFSIDER_SIGNING_IDENTITY=$identity"; } >> "$GITHUB_ENV"
+          { echo "SIGNING_KEYCHAIN=$kc"; echo "OFFSIDER_SIGNING_IDENTITY=$identity"; echo "TEAM_ID=$APPLE_TEAM_ID"; } >> "$GITHUB_ENV"
 
       - name: Sign (inside-out, hardened runtime, secure timestamp)
         run: scripts/release.sh sign --version "$VERSION"
@@ -282,7 +284,7 @@ jobs:
               gh attestation verify ${ARCHIVE} --repo ${GITHUB_REPOSITORY} \\
                 --signer-workflow ${GITHUB_REPOSITORY}/.github/workflows/release.yml --source-ref refs/tags/${TAG}
 
-          Signed with Developer ID Application: Michael Palmes (ABCDE12345), hardened runtime, notarised by Apple.
+          Signed with a Developer ID Application certificate, hardened runtime, notarised by Apple.
           EOF
           flags=(--repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Offsider ${VERSION}" --notes-file notes.md --generate-notes)
           if [ "$PRERELEASE" = true ]; then flags+=(--prerelease --latest=false); fi
