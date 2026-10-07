@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import {
   type AccessibilityRole,
   type AccessibilityState,
+  BackHandler,
   type GestureResponderEvent,
   Platform,
   Pressable,
@@ -168,6 +169,48 @@ export function Screen({ route, headerRight, children, style }: ScreenProps) {
   );
 }
 
+type FullPageProps = {
+  id: string;
+  backId: string;
+  titleId: string;
+  title: string;
+  onBack: () => void;
+  children?: ReactNode;
+};
+
+export function FullPage({ id, backId, titleId, title, onBack, children }: FullPageProps) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View testID={id} style={styles.fullPage}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <Target
+          id={backId}
+          label="Back"
+          onPress={onBack}
+          style={styles.fullPageBack}
+          textStyle={styles.fullPageBackText}
+        />
+        <HeaderMarker id={titleId} title={title} style={styles.headerMarker} />
+        <View style={styles.fullPageSpacer} />
+      </View>
+      {children}
+    </View>
+  );
+}
+
+export function useHardwareBack(active: boolean, onBack: () => void) {
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      onBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [active, onBack]);
+}
+
 export const colours = {
   background: '#FFFFFF',
   panel: '#F2F2F7',
@@ -204,4 +247,8 @@ const styles = StyleSheet.create({
   headerMarker: { flex: 1, marginHorizontal: 8 },
   headerRight: { minWidth: 44, alignItems: 'flex-end' },
   content: { flex: 1 },
+  fullPage: { ...StyleSheet.absoluteFill, backgroundColor: colours.background },
+  fullPageBack: { width: 72, height: 44, paddingHorizontal: 8, backgroundColor: 'transparent' },
+  fullPageBackText: { color: colours.accent },
+  fullPageSpacer: { width: 72 },
 });
