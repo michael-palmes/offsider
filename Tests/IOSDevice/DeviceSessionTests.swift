@@ -448,6 +448,18 @@ struct DeviceSessionServerTests {
         try await running.value
     }
 
+    @Test("the broker refuses to listen in a folder other users can open")
+    func refusesSharedFolder() throws {
+        let folder = NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8))"
+        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        chmod(folder, 0o755)
+        let socket = folder + "/b.sock"
+        #expect(throws: PrivateDirectoryError.self) { try DeviceSessionServer.listen(at: socket, udid: "U") }
+        var info = stat()
+        #expect(lstat(socket, &info) != 0)
+    }
+
     @Test("queued input is dropped unsent once its client has gone or would no longer wait for the reply")
     func staleInput() {
         let now = ContinuousClock.now

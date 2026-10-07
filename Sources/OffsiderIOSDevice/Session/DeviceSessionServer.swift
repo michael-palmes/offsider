@@ -242,8 +242,10 @@ public final class DeviceSessionServer {
 
     // MARK: Socket
 
-    /// Binds `path` 0600; refuses when a broker already answers there, and replaces a stale socket this user owns.
+    /// Binds `path` 0600 inside a private folder; refuses when a broker already answers there, and replaces a stale socket this user owns.
     nonisolated static func listen(at path: String, udid: String) throws -> Int32 {
+        // The private folder keeps the socket out of reach until its chmod, without a process-wide umask that would strip other threads' new folders.
+        try OffsiderPrivateDirectory.ensurePrivateDirectory((path as NSString).deletingLastPathComponent, uid: getuid())
         if let channel = try? DeviceSessionChannel.connect(to: path) {
             channel.close()
             throw IOSDeviceError(.sessionFailed, "Another device session already serves \(udid) on \(path).")
@@ -261,11 +263,9 @@ public final class DeviceSessionServer {
         setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         do {
             var address = try DeviceSessionChannel.unixAddress(path)
-            let previous = umask(0o177)
             let bound = withUnsafePointer(to: &address) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
             }
-            umask(previous)
             guard bound == 0 else { throw posix("bind", path) }
             guard chmod(path, S_IRUSR | S_IWUSR) == 0 else { throw posix("chmod", path) }
             guard Darwin.listen(descriptor, SOMAXCONN) == 0 else { throw posix("listen", path) }
