@@ -18,9 +18,10 @@ ALLOW_OUTPUT_CHANGE=0
 PHONE=0
 
 ALLOWED_AVDS="Offsider_E2E_Pixel_9 Offsider_E2E_Pixel_9_Pro_Fold"
-KNOWN_SCENARIOS="android-describe android-describe-uiautomator android-tap-id android-tap-id-verify android-batch-describe-5 \
+KNOWN_SCENARIOS="android-describe android-describe-uiautomator android-tap-id android-tap-id-verify android-tap-id-verify-live android-batch-describe-5 \
 android-tap-xy android-tap-xy-input android-tap-xy-helper android-tap-physical android-swipe android-type-ascii android-type-ascii-helper \
-android-screenshot android-screenshot-raw android-screenshot-helper android-batch-tap-5 ios-describe ios-tap-id ios-tap-id-verify"
+android-screenshot android-screenshot-json android-screenshot-raw android-screenshot-helper android-batch-tap-5 android-wait-settled \
+ios-describe ios-tap-id ios-tap-id-verify ios-tap-id-verify-live"
 PLAYGROUND_RN="com.mpalmes.offsider.playground.rn"
 
 usage() {
@@ -30,7 +31,10 @@ Usage: $0 --device <id> --scenario <name>[,<name>...] [--base <ref>|--base-bin <
 
 Runs each scenario as pairs of base and head samples in a seeded order, drops pairs whose
 exit code or stdout hash differ, and reports medians, a bootstrap 95% interval and a verdict
-(faster, slower, same or unresolved; a 5% dead zone and a 10 ms floor).
+(faster, slower, same or unresolved; a 5% dead zone and a 10 ms floor). Timings a verified
+command prints are left out of the hash; *-live scenarios toggle a switch, so only their exit
+codes are compared, and each sample reads the screen 2 s after the last one first, untimed,
+so the ticker can be learnt.
 
 Devices: an emulator-<port> whose AVD is one of: ${ALLOWED_AVDS}
          or a simulator whose name starts with Offsider,
@@ -213,7 +217,10 @@ fi
 
 open_screen() {
   local screen="$1"
-  if [[ "$PHONE" == "1" ]]; then
+  if [[ "$PLATFORM" == "ios" && "$screen" == "live-ticker" ]]; then
+    xcrun simctl launch --terminate-running-process "$DEVICE" "$PLAYGROUND_RN" -OffsiderScreen "$screen" >/dev/null 2>&1 \
+      || echo "bench-ab: warning: could not open $screen in the React Native playground; running on the screen that is showing" >&2
+  elif [[ "$PHONE" == "1" ]]; then
     adb_shell am start -S -W -a android.intent.action.VIEW -d "offsiderplaygroundrn://screen/$screen" "$PLAYGROUND_RN" >/dev/null \
       || echo "bench-ab: warning: could not open $screen; running on the screen that is showing" >&2
   elif [[ "$PLATFORM" == "android" ]]; then
@@ -228,6 +235,7 @@ open_screen() {
 # The screen each scenario starts on; tap-test is static, so describe and tap output hashes stay stable.
 scenario_screen() {
   case "$1" in
+    *-live) echo live-ticker ;;
     android-type-*) echo text-input ;;
     android-swipe) echo swipe-test ;;
     *) echo tap-test ;;
@@ -338,6 +346,8 @@ commands = {
     "android-describe-uiautomator": (["describe-ui", "--device", device], {"OFFSIDER_ANDROID_TREE": "uiautomator"}),
     "android-tap-id": (["tap", "--id", "tap-test-area", "--device", device], {}),
     "android-tap-id-verify": (["tap", "--id", "tap-test-area", "--verify", "--device", device], {}),
+    "android-tap-id-verify-live": (["tap", "--id", "live-ticker-toggle", "--verify", "--device", device], {}),
+    "android-wait-settled": (["wait", "--settled", "--device", device], {}),
     "android-batch-describe-5": (["batch", "--device", device] + ["--step", "describe-ui"] * 5, {}),
     "android-tap-physical": (["tap", "--id", "tap-test-area", "--tap-style", "physical", "--device", device], {}),
     "android-type-ascii": (["type", "hello", "--device", device], {}),
@@ -346,6 +356,7 @@ commands = {
     "ios-describe": (["describe-ui", "--device", device], {}),
     "ios-tap-id": (["tap", "--id", "tap-test-area", "--device", device], {}),
     "ios-tap-id-verify": (["tap", "--id", "tap-test-area", "--verify", "--device", device], {}),
+    "ios-tap-id-verify-live": (["tap", "--id", "live-ticker-toggle", "--verify", "--device", device], {}),
 }
 x, y = os.environ.get("BENCH_ANCHOR_X", ""), os.environ.get("BENCH_ANCHOR_Y", "")
 if x and y:
@@ -358,19 +369,31 @@ if x and y:
     )
 shot = ["screenshot", "--output", os.path.join(os.environ["BENCH_SCRATCH"], "shot.png"), "--device", device]
 commands["android-screenshot"] = (shot, {})
+commands["android-screenshot-json"] = (shot + ["--json"], {})
 commands["android-screenshot-raw"] = (shot, {"OFFSIDER_ANDROID_CAPTURE": "raw"})
 commands["android-screenshot-helper"] = (shot, {"OFFSIDER_ANDROID_CAPTURE": "helper"})
 arguments, extra = commands[scenario]
 environment = dict(os.environ, OFFSIDER_TIMINGS="1", ADB_MDNS="0", **extra)
 timing_line = re.compile(r"^offsider timing: (\S+) (\d+) ms$")
 timestamp = re.compile(r'"timestamp"\s*:\s*("[^"]*"|[0-9.]+)')
+# A verified line's timing suffix and a report's times change every run.
+verify_timing = re.compile(r' \(settle [0-9.]+ s, [a-z]+ [0-9.]+ s, verify [0-9.]+ s\)|"(elapsedMs)"\s*:\s*[0-9]+|"phasesMs"\s*:\s*\{[^}]*\}')
+live = scenario.endswith("-live")
+
+def normalised(text):
+    if live:
+        return ""
+    return verify_timing.sub("", timestamp.sub('"timestamp":0', text))
 
 def sample(side):
+    if live:
+        time.sleep(2)
+        subprocess.run([bins[side], "describe-ui", "--device", device], env=dict(os.environ, ADB_MDNS="0"), stdin=subprocess.DEVNULL, capture_output=True)
     start = time.perf_counter_ns()
     result = subprocess.run([bins[side]] + arguments, env=environment, stdin=subprocess.DEVNULL, capture_output=True)
     wall = (time.perf_counter_ns() - start) / 1e6
     text = result.stdout.decode("utf-8", "replace").replace(device, "<device>")
-    digest = hashlib.sha256(timestamp.sub('"timestamp":0', text).encode()).hexdigest()[:16]
+    digest = hashlib.sha256(normalised(text).encode()).hexdigest()[:16]
     phases = {}
     for line in result.stderr.decode("utf-8", "replace").splitlines():
         match = timing_line.match(line.strip())

@@ -154,4 +154,39 @@ struct BenchScriptTests {
             #expect(source.contains("\"\(scenario)\""), "\(scenario) has no command")
         }
     }
+
+    @Test("a verified command's timing suffix and report times are left out of the output hash, so its pairs are kept")
+    func verifyTimingNormalised() async throws {
+        let sdk = try Self.fakePhoneSDK(playgroundInstalled: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-bench-timing-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: sdk)
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let fake = root.appendingPathComponent("offsider")
+        let body = """
+        #!/bin/sh
+        echo "✓ Tap on id=tap-test-area verified: accessibility tree changed, attempt 1 of 2, simulator style (settle 0.$$ s, tap 0.1 s, verify 1.$$ s)"
+        echo '{"verified":true,"elapsedMs":'$$',"phasesMs":{"settle":'$$',"verify":1}}'
+        """
+        try Data(body.utf8).write(to: fake)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+        var environment = ProcessInfo.processInfo.environment
+        environment["ANDROID_HOME"] = sdk.path
+        let out = root.appendingPathComponent("records")
+        let result = try await ProcessCapture.run(
+            executable: "/bin/bash",
+            arguments: [Self.script, "--phone", "--device", "R5CRFAKE01", "--scenario", "android-tap-id-verify", "--out", out.path,
+                        "--base-bin", fake.path, "--head-bin", fake.path, "--pairs", "3", "--warmup", "0"],
+            environment: environment,
+            timeout: 60
+        )
+
+        #expect(result.status == 0, "stderr: \(result.stderr)")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: out.appendingPathComponent("result.json"))) as? [String: Any])
+        let scenario = try #require((object["scenarios"] as? [[String: Any]])?.first)
+        #expect(scenario["kept"] as? Int == 3)
+        #expect(scenario["verdict"] as? String != "unstable")
+    }
 }
