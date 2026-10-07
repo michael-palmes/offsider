@@ -210,6 +210,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let serial = id.rawValue
         // Status first: with the geometry unknown it reads the probe in the same shell call.
         var status = await screenStatus(serial)
+        // Mid-fold both panels are dark for a moment; the display is named only once one lights.
+        for _ in 0..<Self.darkPanelReads where status.display == nil && displayLists[serial]?.panelsDark == true {
+            try await host.sleep(.milliseconds(250))
+            forgetDisplay(of: serial)
+            status = await screenStatus(serial)
+        }
         var geometry = try await geometry(for: serial)
         if (knownDeviceStates[serial]?.count ?? 0) >= 2 {
             let settled = try await settledGeometry(serial)
@@ -593,9 +599,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return [size.width, size.height].sorted() == [geometry.logicalWidth, geometry.logicalHeight].sorted()
     }
 
-    /// The active display's platform id from this command's display list or display probe; nil when neither has read it.
+    static let darkPanelReads = 8
+
+    /// The active display's platform id from this command's display list or display probe; nil when neither has read it, or every panel is dark.
     func knownActiveDisplayId(_ serial: String) -> String? {
-        displayLists[serial].flatMap { activeDisplay(in: $0, serial: serial) }?.descriptor.platformId ?? cachedDisplayIds[serial] ?? viewportPlatformId(serial)
+        guard displayLists[serial]?.panelsDark != true else { return nil }
+        return displayLists[serial].flatMap { activeDisplay(in: $0, serial: serial) }?.descriptor.platformId ?? cachedDisplayIds[serial] ?? viewportPlatformId(serial)
     }
 
     func requireClient() throws -> AdbClient {

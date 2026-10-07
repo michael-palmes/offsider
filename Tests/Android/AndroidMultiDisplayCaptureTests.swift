@@ -248,4 +248,49 @@ struct AndroidFoldScreenStatusTests {
         #expect(screen.display?.id == "inner")
         #expect(server.services.filter { $0.hasPrefix("shell,v2,raw:") } == ["shell,v2,raw:\(AndroidDisplayStatus.scriptWithProbe)"])
     }
+
+    /// Status reads in turn, the last repeated; each is the status and the probe in one reply.
+    static func sequence(_ replies: [String]) -> FakeAdbServer {
+        final class Replies: @unchecked Sendable {
+            let lock = NSLock()
+            var remaining: [String]
+            init(_ replies: [String]) { remaining = replies }
+            func next() -> String { lock.withLock { remaining.count > 1 ? remaining.removeFirst() : remaining[0] } }
+        }
+        let replies = Replies(replies)
+        return FakeAdbServer(handler: FakeAdbServer.devices(["R58M123ABC"], host: AndroidMultiDisplayCaptureTests.host) { _, service in
+            String(service.dropFirst("shell,v2,raw:".count)) == AndroidDisplayStatus.scriptWithProbe
+                ? FakeAdbServer.shell(stdout: replies.next())
+                : FakeAdbServer.shell(stderr: "unexpected", status: 1)
+        })
+    }
+
+    static func reply(state: String, innerOn: Bool, coverOn: Bool, probe: String) -> String {
+        FoldableFixtures.withProbe(FoldableFixtures.status(GalaxyFoldFixtures.printStates, state, GalaxyFoldFixtures.dumpsys(innerOn: innerOn, coverOn: coverOn)), probe)
+    }
+
+    @Test("One UI's tent stance reads half-opened on the lit cover, and posture names TENT")
+    func tentNamesCover() async throws {
+        let tent = Self.reply(state: GalaxyFoldFixtures.tentState, innerOn: false, coverOn: true, probe: GalaxyFoldFixtures.geometryClosed)
+        let backend = try AndroidMultiDisplayCaptureTests.backend(Self.sequence([tent]))
+        let status = await backend.screenStatus("R58M123ABC")
+        #expect(status.display == ScreenDisplay(id: "cover", platformId: GalaxyFoldFixtures.coverId))
+        #expect(status.posture == .halfOpened)
+        #expect(DisplayReport.postureLine(.halfOpened, screen: nil, platform: .android, state: "TENT") == "Posture: half-opened (One UI TENT)")
+    }
+
+    @Test("mid-fold, with both panels dark, no panel is named from the stale probe; the screen is named once the cover lights")
+    func darkPanelsNameNothing() async throws {
+        let dark = Self.reply(state: GalaxyFoldFixtures.state(closed: false), innerOn: false, coverOn: false, probe: GalaxyFoldFixtures.geometryOpen)
+        let lit = Self.reply(state: GalaxyFoldFixtures.state(closed: true), innerOn: false, coverOn: true, probe: GalaxyFoldFixtures.geometryClosed)
+
+        let first = try AndroidMultiDisplayCaptureTests.backend(Self.sequence([dark]))
+        #expect(await first.screenStatus("R58M123ABC").display == nil)
+        #expect(first.knownActiveDisplayId("R58M123ABC") == nil)
+
+        let backend = try AndroidMultiDisplayCaptureTests.backend(Self.sequence([dark, dark, lit]))
+        let screen = try #require(try await backend.screenInfo(for: AndroidMultiDisplayCaptureTests.phone))
+        #expect(screen.display == ScreenDisplay(id: "cover", platformId: GalaxyFoldFixtures.coverId))
+        #expect(screen.posture == .closed)
+    }
 }

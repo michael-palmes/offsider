@@ -22,6 +22,12 @@ struct AndroidDisplayList: Equatable, Sendable {
         displays.first { $0.uniqueId == activeUniqueId } ?? (displays.count == 1 ? displays.first : nil)
     }
 
+    /// Two built-in panels or more and none on, as for a moment while a foldable folds.
+    var panelsDark: Bool {
+        let panels = displays.filter { !$0.external }
+        return panels.count >= 2 && !panels.contains(where: \.on)
+    }
+
     /// The only built-in panel that is on, which on a foldable is the active one unless both are lit.
     var soleLitPanel: Physical? {
         let lit = displays.filter { $0.on && !$0.external }
