@@ -202,11 +202,12 @@ enum FakeUI {
         enabled: Bool? = nil,
         state: UIState = UIState(),
         platform: DevicePlatform = .ios,
+        drawingOrder: Int? = nil,
         children: [UINode] = []
     ) -> UINode {
         let native: UINative = platform == .ios
             ? .ios(IOSNativeAttributes())
-            : .android(AndroidNativeAttributes(resourceId: id))
+            : .android(AndroidNativeAttributes(resourceId: id, drawingOrder: drawingOrder))
         return UINode(
             role: role, id: id, label: label, value: value, frame: frame,
             enabled: enabled, state: state, native: native, children: children
