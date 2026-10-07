@@ -133,7 +133,8 @@ public enum UITreeRenderer {
             header: ([header(tree)] + tree.context.headerLines).joined(separator: "\n"),
             folded: result.folded,
             sourceTruncated: tree.sourceTruncated,
-            maxBytes: options.maxBytes
+            maxBytes: options.maxBytes,
+            beneath: result.beneath
         )
     }
 
