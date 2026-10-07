@@ -78,8 +78,8 @@ struct Wait: AsyncParsableCommand {
             }
             if gone { throw ValidationError("--any waits for the first selector on screen; it does not take --gone.") }
             if selector.hasValue != nil { throw ValidationError("--any does not take --has-value; use --value as one of the selectors.") }
-        } else if selector.queries.count > 1 {
-            throw ValidationError("Use only one of --id, --label, or --value, or pass --any to wait for the first of several.")
+        } else if selector.queries.count > 1, !selector.isConjunction {
+            throw ValidationError("Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several.")
         }
         if (changed || stable) && region == nil {
             throw ValidationError("--changed and --stable need --region.")

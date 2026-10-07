@@ -16,10 +16,10 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: [.customLong("id")], help: "Tap the activation point of the element whose describe-ui id matches (accessibilityIdentifier, or testID in React Native). Ignored if -x and -y are provided.")
     var elementID: String?
 
-    @Option(name: [.customLong("label")], help: "Tap the activation point of the element whose describe-ui label matches (accessibilityLabel). Ignored if -x and -y are provided.")
+    @Option(name: [.customLong("label")], help: "Tap the activation point of the element whose describe-ui label matches (accessibilityLabel); with --id, the element must match both. Ignored if -x and -y are provided.")
     var elementLabel: String?
 
-    @Option(name: [.customLong("value")], help: "Tap the activation point of the element whose describe-ui value matches (the current value of a control). Ignored if -x and -y are provided.")
+    @Option(name: [.customLong("value")], help: "Tap the activation point of the element whose describe-ui value matches (the current value of a control); with --id, the element must match both. Ignored if -x and -y are provided.")
     var elementValue: String?
 
     @Option(name: [.customLong("element-type")], help: "Filter matches to this describe-ui role in any case (e.g. button, textField, switch) or exact native type (e.g. TextEditor). Narrows --id/--label/--value results when multiple elements match.")
@@ -77,7 +77,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw ValidationError("Coordinates must be non-negative values.")
             }
         } else {
-            try SelectorQuery.validate(id: elementID, label: elementLabel, value: elementValue)
+            try SelectorQuery.validate(id: elementID, label: elementLabel, value: elementValue, refining: true)
             if query == nil {
                 throw ValidationError("Either provide both -x/-y, or use --id/--label/--value to tap an element.")
             }

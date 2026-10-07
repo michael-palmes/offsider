@@ -381,6 +381,32 @@ struct TapCommandTests {
         #expect(backend.session.calls.isEmpty)
     }
 
+    @Test("--id with --label taps the one element matching both, and a label no match has fails as not found")
+    func idAndLabel() async throws {
+        let screen = FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.button, id: "interval", label: "1D", frame: FakeUI.frame(20, 600, 60, 44)),
+            FakeUI.node(.button, id: "interval", label: "1W", frame: FakeUI.frame(100, 600, 60, 44)),
+        ])
+        let backend = FakeDeviceBackend(trees: [screen])
+        try await Self.tap(["--id", "interval", "--label", "1W"], on: backend)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 130, y: 622))])
+
+        let missing = FakeDeviceBackend(trees: [screen])
+        let error = await #expect(throws: ElementResolutionError.self) {
+            try await Self.tap(["--id", "interval", "--label", "1Y"], on: missing)
+        }
+        #expect(error?.exitCode == .selectorNotFound)
+        #expect(error?.userFacingDescription.hasPrefix("No accessibility element matched --id 'interval' --label '1Y': the id matches button id=interval label=\"1D\"") == true)
+        #expect(error?.candidates.map(\.label) == ["1D", "1W"])
+        #expect(missing.session.calls.isEmpty)
+    }
+
+    @Test("--label with --value, without --id, is a usage error")
+    func labelAndValueRejected() {
+        let error = #expect(throws: (any Error).self) { try Tap.parse(["--label", "a", "--value", "b", "--device", "emulator-5554"]) }
+        #expect(error.map { Tap.message(for: $0) } == SelectorQuery.refinementRule)
+    }
+
     @Test("a duplicated id exits 6 and names both candidates")
     func duplicatedIDExits6() async {
         let backend = FakeDeviceBackend(trees: [FakeUI.tree(width: 393, height: 852, [
