@@ -472,6 +472,9 @@ struct AccessibilityTargetResolver {
             return nil
         }
         let keyboardCandidates = resolution.coverCandidates.filter { isUnderKeyboard($0, in: roots) }
+        if isHiddenByKeyboard(resolution, in: roots) {
+            return keyboardCandidates.last ?? roots.first { $0.role == .keyboard }
+        }
         if let touchAreas = keyboardTouchAreas(in: tree) {
             let point = UIPoint(x: resolution.point.x, y: resolution.point.y)
             guard touchAreas.contains(where: { $0.contains(point) }) else { return nil }
@@ -483,6 +486,16 @@ struct AccessibilityTargetResolver {
             guard let frame = candidate.frame else { return false }
             if let viewport, isBackdrop(frame, in: viewport) { return false }
             return targetFrame.map { !$0.encloses(frame) } ?? true
+        }
+    }
+
+    /// The helper lists an Android app node the keyboard and the bars beside it wholly cover, marked not visible, so a tap on it lands on one of them.
+    static func isHiddenByKeyboard(_ resolution: TapResolution, in roots: [UINode]) -> Bool {
+        guard let target = resolution.target, target.androidVisibleToUser == false, roots.contains(where: { $0.role == .keyboard }) else {
+            return false
+        }
+        return roots.contains { root in
+            root.role == .application && root.androidVisibleToUser != false && root.flattened().contains { $0.isSameElement(as: target) }
         }
     }
 
