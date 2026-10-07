@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `credential set`, `status`, `remove` and `join` save a test username and password in the login Keychain (service `com.mpalmes.offsider.login`, never synchronised). The first login for an app is the default, and a tag such as `dev` names another. A later `set` on a terminal asks whether to update one or add a tagged login. Without a terminal it requires `--update` or a tag. `credential join` links another bundle id or package to that app without a second password, so `login` on either id uses the same saved logins. `login` fills the sign-in form in front and taps the submit button once. With no tag it uses the default. Fields are detected, or pinned by `offsider.login.json`. An Android keyboard is never taken for the app in front, and when its keys hide the submit button, `login` taps above them first. It never presses Back. Exit 0 means the button was tapped, not that the server accepted the login. The password is never printed. A physical iPhone or iPad is refused. `offsider guide login` is the note.
+
 ### Fixed
 
 - Android `type --replace` sets the text of the one focused text field when input focus is a non-editable view, such as a web view on the same screen (helper 1.5.0). Two focused text fields still refuse.

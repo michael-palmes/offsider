@@ -115,6 +115,7 @@ extension Swipe: DeviceOptionCommand {}
 extension Tap: DeviceOptionCommand {}
 extension Touch: DeviceOptionCommand {}
 extension Turnstile: DeviceOptionCommand {}
+extension LoginCommand: DeviceOptionCommand {}
 extension Type: DeviceOptionCommand {}
 extension Wait: DeviceOptionCommand {}
 extension Wake: DeviceOptionCommand {}

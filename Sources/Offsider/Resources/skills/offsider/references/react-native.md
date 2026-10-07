@@ -19,7 +19,7 @@
 
 ## Cloudflare Turnstile
 
-The checkbox frame includes the words beside the square, so `tap --label "Verify you are human"` lands on the words. `offsider turnstile` taps the square. `turnstile --status` reads it without a tap. When testing sign-in, run `turnstile` yourself and hand back only after exit 1 (a visual challenge) or 5 (the device was not accepted). It does not bypass Turnstile: the widget passes only when Cloudflare accepts the device. Read `offsider guide turnstile` before you rely on it.
+The checkbox frame includes the words beside the square, so `tap --label "Verify you are human"` lands on the words. `offsider turnstile` taps the square. `turnstile --status` reads it without a tap. It does not bypass Turnstile: the widget passes only when Cloudflare accepts the device. Read `offsider guide turnstile` before you rely on it.
 
 ## Logs
 
