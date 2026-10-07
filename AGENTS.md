@@ -44,8 +44,8 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
 | `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites (needs `OFFSIDER_ANDROID_DEVICE`) |
-| `./test-runner.sh --foldable` or `make e2e-foldable` | Build Offsider and the playground, run `FoldableTests` on the `Offsider Duo` (or `SIMULATOR_UDID`) |
-| `./test-runner.sh --android-fold` or `make e2e-android-fold` | Build Offsider and run `AndroidFoldableTests` on `Offsider_E2E_Fold` |
+| `./test-runner.sh --foldable` or `make e2e-foldable` | Build Offsider and the playground, run `FoldableTests` on the iPhone Duo simulator `OFFSIDER_FOLDABLE_SIMULATOR_NAME` names (default `Offsider Duo`, or `SIMULATOR_UDID`) |
+| `./test-runner.sh --android-fold` or `make e2e-android-fold` | Build Offsider and run `AndroidFoldableTests` on the AVD `OFFSIDER_ANDROID_FOLD_AVD` names (default `Offsider_E2E_Fold`) |
 | `OFFSIDER_ANDROID_PHONE=<serial> ./test-runner.sh --android-phone` or `make e2e-android-phone` | Build Offsider and run the `AndroidPhone*Tests` suites on that one USB phone (only when the user names it) |
 | `OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> ./test-runner.sh --ios-device` or `make e2e-ios-device` | Build Offsider and run the `IOSDevice*E2ETests` suites on that one wired iPhone or iPad (only when the user names it); input, tree and runner suites skip while its screen is off |
 | `./test-runner.sh --rn-ios` or `make e2e-rn-ios` | Build Offsider and the RN playground, run the React Native suites on a simulator (needs pnpm) |
@@ -74,10 +74,12 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_DEVICE` | The E2E emulator's serial or AVD name (required for Android E2E) |
 | `OFFSIDER_ANDROID_APK` | The React Native playground's release APK the Android suites install |
 | `OFFSIDER_ANDROID_E2E_AVD` | The only AVD Android E2E may drive (default `Offsider_E2E`) |
+| `OFFSIDER_ANDROID_FOLD_AVD` | The fold AVD `--android-fold` drives (default `Offsider_E2E_Fold`) |
+| `OFFSIDER_SIMULATOR_NAME`, `OFFSIDER_FOLDABLE_SIMULATOR_NAME` | The simulator names `test-runner.sh` picks for the simulator and foldable suites (defaults: a stock iPhone, `Offsider Duo`); `SIMULATOR_UDID` overrides both. `test-runner.sh` loads a git-ignored `.env` first, so machine-specific names live there (see `.env.example`) |
 | `OFFSIDER_ANDROID_LANDSCAPE_E2E=1` | Adds the Android landscape suite (Settings) |
 | `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD |
 | `OFFSIDER_FOLDABLE_E2E=1` | Enables `FoldableTests` on the iPhone Duo simulator named by `SIMULATOR_UDID` |
-| `OFFSIDER_ANDROID_FOLD_E2E=1` | Enables `AndroidFoldableTests` (needs `OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E_Fold`) |
+| `OFFSIDER_ANDROID_FOLD_E2E=1` | Enables `AndroidFoldableTests` (needs `OFFSIDER_ANDROID_E2E_AVD` set to the fold AVD) |
 | `OFFSIDER_ANDROID_PHONE` | The exact USB serial the `AndroidPhone*Tests` suites drive (an `adb devices -l` row with `usb:` and state `device`; refused beside `OFFSIDER_ANDROID_E2E`) |
 | `OFFSIDER_IOS_DEVICE_E2E=1` | Enables the `IOSDevice*E2ETests` suites in `swift test` (`test-runner.sh --ios-device` sets it) |
 | `OFFSIDER_IOS_DEVICE` | The exact UDID the iOS device suites drive (a physical iOS or iPadOS row in `devicectl list devices`; never a simulator) |
@@ -131,7 +133,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` and rejects peers running as another user.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
-- The `Offsider Duo` simulator (iPhone Duo) is the foldable fixture; `offsider posture` folds and unfolds it through the hinge service, so `FoldableTests` runs unattended. The Duo refuses orientation changes.
+- An iPhone Duo simulator, named by `OFFSIDER_FOLDABLE_SIMULATOR_NAME` (default `Offsider Duo`), is the foldable fixture; `offsider posture` folds and unfolds it through the hinge service, so `FoldableTests` runs unattended. The Duo refuses orientation changes.
 
 ## Physical iPhone caveats
 
@@ -148,7 +150,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 - `boot --emulator-arg` refuses listener, metrics and Offsider-owned flags by name (`EmulatorArguments.refusedFlags`); add any new emulator listener flag there.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
 - A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names its serial. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
-- E2E and manual checks drive only `Offsider_E2E` and the foldable `Offsider_E2E_Fold`, and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
+- E2E and manual checks drive only the AVDs `OFFSIDER_ANDROID_E2E_AVD` and `OFFSIDER_ANDROID_FOLD_AVD` name (defaults `Offsider_E2E` and `Offsider_E2E_Fold`), and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
 - Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
 - The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
 - `permission`, `status-bar` and `biometric` change state that outlives the command on both platforms, as `stay-awake` does on Android; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).

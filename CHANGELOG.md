@@ -61,6 +61,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `test-runner.sh` loads a git-ignored `.env` from the repository root before anything else, and names its devices through env vars with neutral defaults: `OFFSIDER_SIMULATOR_NAME` (a stock iPhone), `OFFSIDER_FOLDABLE_SIMULATOR_NAME` (`Offsider Duo`), `OFFSIDER_ANDROID_E2E_AVD` (`Offsider_E2E`) and the new `OFFSIDER_ANDROID_FOLD_AVD` (`Offsider_E2E_Fold`). `scripts/bench-ab.sh` allows the same two AVDs. `scripts/release.sh` reads the signing team from `TEAM_ID` (set in `.env`) and has no built-in default; `--adhoc` runs need none.
+
 - When the helper carries Android input, a key or button can stay held across other input, which `input` refuses; Android reports an accessibility service as enabled for that command, as it does for screen reads.
 - An Android input failure now asks you to check that the device is still connected, not that the emulator is running.
 - A physical iPhone or iPad UDID now routes to the device instead of failing as an unknown Android device name.

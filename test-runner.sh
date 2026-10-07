@@ -5,6 +5,14 @@
 
 set -e  # Exit on any error
 
+# A git-ignored .env beside this script names the local simulators, AVDs and signing team (see .env.example).
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$(dirname "${BASH_SOURCE[0]}")/.env"
+    set +a
+fi
+
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
 
 # Any adb server the suites start sends no mDNS multicast on the LAN.
@@ -79,6 +87,7 @@ show_usage() {
     echo "  OFFSIDER_REUSE_IDB=1      Skip the IDB framework rebuild when existing XCFrameworks pass verification"
     echo "  OFFSIDER_SIMULATOR_NAME   Exact name of the simulator to test on (default: a stock iPhone on the Xcode's iOS major, booted first)"
     echo "  SIMULATOR_UDID            UDID of the simulator to test on (overrides OFFSIDER_SIMULATOR_NAME)"
+    echo "  A git-ignored .env in the repository root is loaded first, so these names can live there (see .env.example)."
     echo ""
     echo "Android (--android):"
     echo "  OFFSIDER_ANDROID_DEVICE   Required: the E2E emulator's serial or AVD name, for example Offsider_E2E"
@@ -89,8 +98,8 @@ show_usage() {
     echo "  OFFSIDER_ANDROID_DEBUG_APK        The Debug APK for --rn-debug (default: built by scripts/rn-playground.sh build-android --debug)"
     echo ""
     echo "Foldables (--foldable, --android-fold):"
-    echo "  SIMULATOR_UDID            The iPhone Duo simulator for --foldable (default: the one named Offsider Duo, booted first)"
-    echo "  OFFSIDER_ANDROID_DEVICE   For --android-fold: the fold emulator's serial or AVD name (default: Offsider_E2E_Fold)"
+    echo "  OFFSIDER_FOLDABLE_SIMULATOR_NAME  The iPhone Duo simulator for --foldable (default: Offsider Duo); SIMULATOR_UDID overrides it"
+    echo "  OFFSIDER_ANDROID_FOLD_AVD The fold AVD for --android-fold (default: Offsider_E2E_Fold); OFFSIDER_ANDROID_DEVICE overrides it"
     echo ""
     echo "Android phone (--android-phone):"
     echo "  OFFSIDER_ANDROID_PHONE    Required: the phone's exact USB serial from adb devices -l; no other device is touched"
@@ -159,8 +168,8 @@ FOLDABLE=false
 ANDROID_FOLD=false
 ANDROID_PHONE=false
 IOS_DEVICE=false
-FOLDABLE_SIMULATOR_NAME="Offsider Duo"
-ANDROID_FOLD_AVD="Offsider_E2E_Fold"
+FOLDABLE_SIMULATOR_NAME="${OFFSIDER_FOLDABLE_SIMULATOR_NAME:-Offsider Duo}"
+ANDROID_FOLD_AVD="${OFFSIDER_ANDROID_FOLD_AVD:-Offsider_E2E_Fold}"
 CLEAN_BUILD=false
 SEQUENTIAL=true
 VERBOSE=false
