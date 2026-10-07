@@ -30,6 +30,24 @@ struct LoginFormTests {
         #expect(throws: LoginFormError.self) { try LoginForm.detect(in: SignInFixture.tree(coverPassword: true)) }
     }
 
+    @Test("a Continue with Google button is not the submit control, and words must be whole")
+    func socialSignInIsNotSubmit() throws {
+        func tree(_ buttons: [UINode]) -> UITree {
+            FakeUI.tree([
+                FakeUI.node(.textField, id: "email-field", label: "Email", frame: FakeUI.frame(17, 212, 367, 45)),
+                FakeUI.node(.secureTextField, id: "password-field", label: "Password", frame: FakeUI.frame(17, 316, 367, 45)),
+            ] + buttons)
+        }
+        let primary = FakeUI.node(.button, label: "Log in", frame: FakeUI.frame(16, 600, 370, 44))
+        let google = FakeUI.node(.button, label: "Continue with Google", frame: FakeUI.frame(16, 660, 370, 44))
+        let apple = FakeUI.node(.button, id: "signInWithAppleButton", frame: FakeUI.frame(16, 720, 370, 44))
+        #expect(try LoginForm.detect(in: tree([primary, google, apple])).submit.label == "Log in")
+
+        let camel = FakeUI.node(.button, id: "signInButton", frame: FakeUI.frame(16, 600, 370, 44))
+        let blog = FakeUI.node(.button, label: "Blog index", frame: FakeUI.frame(16, 660, 370, 44))
+        #expect(try LoginForm.detect(in: tree([camel, blog])).submit.id == "signInButton")
+    }
+
     @Test("a Next key on the keyboard is not the submit button")
     func keyboardNextIsNotSubmit() throws {
         let found = try LoginForm.detect(in: SignInFixture.tree(keyboardNext: true))

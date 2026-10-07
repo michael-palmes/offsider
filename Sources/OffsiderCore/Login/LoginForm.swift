@@ -191,17 +191,34 @@ public enum LoginForm {
         return flat.contains("email") || flat.contains("username")
     }
 
+    /// Whole words or two adjacent ones, so Log in matches and Blog index does not. "with" marks a social sign-in button.
     private static func isSubmitName(_ node: UINode) -> Bool {
         let words = tokens(node)
-        if words.contains(where: { ["forgot", "create", "back", "support"].contains($0) }) { return false }
-        let flat = words.joined()
-        if flat.contains("login") || flat.contains("signin") || flat.contains("submit") || flat.contains("continue") { return true }
-        return words.contains("next")
+        if words.contains(where: { ["forgot", "create", "back", "support", "with"].contains($0) }) { return false }
+        let candidates = Set(words + zip(words, words.dropFirst()).map { $0 + $1 })
+        return !candidates.isDisjoint(with: ["login", "signin", "submit", "continue", "next"])
     }
 
     private static func tokens(_ node: UINode) -> [String] {
-        let raw = [node.label, node.id].compactMap { $0?.lowercased() }.joined(separator: " ")
+        let raw = [node.label, node.id].compactMap { $0 }.map(splitCamelCase).joined(separator: " ").lowercased()
         return raw.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    }
+
+    /// `signInButton` and `OSLogin` become `sign In Button` and `OS Login`.
+    private static func splitCamelCase(_ text: String) -> String {
+        let characters = Array(text)
+        var output = ""
+        for (index, character) in characters.enumerated() {
+            if index > 0, character.isUppercase {
+                let previous = characters[index - 1]
+                let nextIsLower = index + 1 < characters.count && characters[index + 1].isLowercase
+                if previous.isLowercase || previous.isNumber || (previous.isUppercase && nextIsLower) {
+                    output.append(" ")
+                }
+            }
+            output.append(character)
+        }
+        return output
     }
 
     private static func sameIdentity(_ node: UINode, _ sample: UINode) -> Bool {
