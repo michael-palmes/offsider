@@ -96,21 +96,33 @@ struct RNLogBoxOpen: AsyncParsableCommand {
     @MainActor
     func open(on route: DeviceRouter.Route, clock: PollClock = .live) async throws -> Opened {
         try await route.backend.prepare()
-        var state = LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
+        let screen = LogBoxScreen(route: route)
+        do {
+            let opened = try await open(on: screen, clock: clock)
+            await screen.close()
+            return opened
+        } catch {
+            await screen.close()
+            throw error
+        }
+    }
+
+    @MainActor
+    private func open(on screen: LogBoxScreen, clock: PollClock) async throws -> Opened {
+        var state = try await screen.read()
         if let inspector = state.inspector { return Opened(toast: nil, inspector: inspector) }
-        guard let toast = state.toast(index) else { throw RNLogBox.noToast(index, in: state, device: route.device.rawValue) }
-        let point = try await route.backend.deviceCoordinates(for: [(x: toast.bodyPoint.x, y: toast.bodyPoint.y)], tree: nil, on: route.device)[0]
-        try await route.backend.performTracked(.tapAt(x: point.x, y: point.y), on: route.device)
+        guard let toast = state.toast(index) else { throw RNLogBox.noToast(index, in: state, device: screen.device) }
+        try await screen.tap(toast.bodyPoint)
         let deadline = clock.now() + Self.inspectorWait
         repeat {
             try await clock.sleep(Self.poll)
-            state = LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
+            state = try await screen.read()
             if let inspector = state.inspector { return Opened(toast: toast, inspector: inspector) }
         } while clock.now() < deadline
         throw CLIError(
             errorDescription: "Tapped LogBox toast \(index), but the inspector did not open within \(Int(Self.inspectorWait)) s.",
             reason: .notVerified,
-            hint: "offsider describe-ui --summary --device \(route.device.rawValue)"
+            hint: "offsider describe-ui --summary --device \(screen.device)"
         )
     }
 }
@@ -184,49 +196,45 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
     @MainActor
     func dismiss(on route: DeviceRouter.Route, clock: PollClock = .live) async throws -> Outcome {
         try await route.backend.prepare()
-        let taps = SessionTaps(route: route)
+        let screen = LogBoxScreen(route: route)
         do {
-            let outcome = try await dismiss(on: route, taps: taps, clock: clock)
-            await taps.close()
+            let outcome = try await dismiss(on: screen, clock: clock)
+            await screen.close()
             return outcome
         } catch {
-            await taps.close()
+            await screen.close()
             throw error
         }
     }
 
     @MainActor
-    private func dismiss(on route: DeviceRouter.Route, taps: SessionTaps, clock: PollClock) async throws -> Outcome {
+    private func dismiss(on screen: LogBoxScreen, clock: PollClock) async throws -> Outcome {
         let deadline = clock.now() + timeout
-        var state = try await read(route)
+        var state = try await screen.read()
         if let index {
-            return try await dismissOnly(index, from: state, route: route, taps: taps, clock: clock, deadline: deadline)
+            return try await dismissOnly(index, from: state, screen: screen, clock: clock, deadline: deadline)
         }
         let initial = max(state.logs, state.inspector?.of ?? 0)
         guard !state.isEmpty else { return Outcome(cleared: 0, remaining: 0, method: .none) }
         var method = Method.none
 
         if state.inspector != nil {
-            state = try await dismissInspector(state, presses: (state.inspector?.of ?? 1) + 2, route: route, taps: taps, clock: clock, deadline: deadline)
+            state = try await dismissInspector(state, presses: (state.inspector?.of ?? 1) + 2, screen: screen, clock: clock, deadline: deadline)
             method = .inspector
         }
         while let toast = state.toasts.first, clock.now() < deadline {
             let before = state.logs
-            try await taps.tap(toast.dismissPoint)
+            try await screen.tap(toast.dismissPoint)
             try await clock.sleep(Self.settle)
-            state = try await read(route)
+            state = try await screen.read()
             if state.logs <= before - toast.count {
                 if method == .none { method = .dismissButton }
                 continue
             }
-            try await taps.tap(toast.bodyPoint)
-            let opened = clock.now() + Self.inspectorWait
-            repeat {
-                try await clock.sleep(Self.settle)
-                state = try await read(route)
-            } while state.inspector == nil && clock.now() < opened
+            try await screen.tap(toast.bodyPoint)
+            state = try await waitForInspector(screen: screen, clock: clock)
             guard state.inspector != nil else { break }
-            state = try await dismissInspector(state, presses: toast.count + 2, route: route, taps: taps, clock: clock, deadline: deadline)
+            state = try await dismissInspector(state, presses: toast.count + 2, screen: screen, clock: clock, deadline: deadline)
             method = .inspector
             if state.inspector != nil { break }
         }
@@ -236,35 +244,44 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
 
     /// Clears toast `index` alone: its clear button, else its inspector with one Dismiss per log it counts.
     @MainActor
-    private func dismissOnly(_ index: Int, from start: LogBoxState, route: DeviceRouter.Route, taps: SessionTaps, clock: PollClock, deadline: TimeInterval) async throws -> Outcome {
+    private func dismissOnly(_ index: Int, from start: LogBoxState, screen: LogBoxScreen, clock: PollClock, deadline: TimeInterval) async throws -> Outcome {
         guard start.inspector == nil else {
             throw CLIError(
                 errorDescription: "The LogBox inspector is open, so its toasts are hidden. Close it with `tap --label Minimize`, then dismiss toast \(index); or clear every log with `rn logbox dismiss`.",
                 reason: .stateNotReached,
-                hint: "offsider tap --label Minimize --device \(route.device.rawValue)"
+                hint: "offsider tap --label Minimize --device \(screen.device)"
             )
         }
-        guard let toast = start.toast(index) else { throw RNLogBox.noToast(index, in: start, device: route.device.rawValue) }
-        try await taps.tap(toast.dismissPoint)
+        guard let toast = start.toast(index) else { throw RNLogBox.noToast(index, in: start, device: screen.device) }
+        try await screen.tap(toast.dismissPoint)
         try await clock.sleep(Self.settle)
-        var state = try await read(route)
+        var state = try await screen.read()
         if state.logs <= start.logs - toast.count {
             return Outcome(cleared: start.logs - state.logs, remaining: 0, method: .dismissButton)
         }
-        try await taps.tap(toast.bodyPoint)
-        let opened = clock.now() + Self.inspectorWait
-        repeat {
-            try await clock.sleep(Self.settle)
-            state = try await read(route)
-        } while state.inspector == nil && clock.now() < opened
+        try await screen.tap(toast.bodyPoint)
+        state = try await waitForInspector(screen: screen, clock: clock)
         guard state.inspector != nil else { return Outcome(cleared: 0, remaining: toast.count, method: .none) }
-        state = try await dismissInspector(state, presses: toast.count, route: route, taps: taps, clock: clock, deadline: deadline)
+        state = try await dismissInspector(state, presses: toast.count, screen: screen, clock: clock, deadline: deadline)
         let left = state.inspector != nil ? max(state.inspector?.of ?? 1, 1) : max(0, state.logs - (start.logs - toast.count))
         return Outcome(cleared: max(toast.count - left, 0), remaining: min(left, toast.count), method: .inspector)
     }
 
+    /// Reads until the inspector a body tap opens is up, for up to `inspectorWait`; the last read either way.
     @MainActor
-    private func dismissInspector(_ start: LogBoxState, presses: Int, route: DeviceRouter.Route, taps: SessionTaps, clock: PollClock, deadline: TimeInterval) async throws -> LogBoxState {
+    private func waitForInspector(screen: LogBoxScreen, clock: PollClock) async throws -> LogBoxState {
+        let opened = clock.now() + Self.inspectorWait
+        var state: LogBoxState
+        repeat {
+            try await clock.sleep(Self.settle)
+            state = try await screen.read()
+        } while state.inspector == nil && clock.now() < opened
+        return state
+    }
+
+    /// One Dismiss per log the header counts, then one read, as the inspector stays up until its last log goes; without a header, a read per press.
+    @MainActor
+    private func dismissInspector(_ start: LogBoxState, presses: Int, screen: LogBoxScreen, clock: PollClock, deadline: TimeInterval) async throws -> LogBoxState {
         var state = start
         var left = presses
         while left > 0, let inspector = state.inspector, clock.now() < deadline {
@@ -272,36 +289,46 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
                 throw CLIError(
                     errorDescription: "The LogBox inspector is open but its Dismiss button is not in the tree.",
                     reason: .notSupported,
-                    hint: "offsider tap --label Dismiss --device \(route.device.rawValue)"
+                    hint: "offsider tap --label Dismiss --device \(screen.device)"
                 )
             }
-            try await taps.tap(button.center)
+            let run = min(left, max(inspector.of ?? 1, 1))
+            for press in 0..<run {
+                if press > 0 {
+                    try await clock.sleep(Self.settle)
+                    guard clock.now() < deadline else { break }
+                }
+                try await screen.tap(button.center)
+                left -= 1
+            }
             try await clock.sleep(Self.settle)
-            state = try await read(route)
-            left -= 1
+            state = try await screen.read()
         }
         return state
     }
-
-    @MainActor
-    private func read(_ route: DeviceRouter.Route) async throws -> LogBoxState {
-        LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
-    }
-
 }
 
-/// Taps through one input session, opened at the first tap, so a run of taps pays for the session once.
+/// Reads LogBox and taps it through one input session, opened at the first tap; a tap maps through the last tree read.
 @MainActor
-private final class SessionTaps {
+private final class LogBoxScreen {
     let route: DeviceRouter.Route
+    private var tree: UITree?
     private var session: (any InputSession)?
 
     init(route: DeviceRouter.Route) {
         self.route = route
     }
 
+    var device: String { route.device.rawValue }
+
+    func read() async throws -> LogBoxState {
+        let read = try await route.backend.accessibilityTree(for: route.device)
+        tree = read
+        return LogBoxState(tree: read)
+    }
+
     func tap(_ point: UIPoint) async throws {
-        let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: nil, on: route.device)[0]
+        let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: tree, on: route.device)[0]
         if session == nil {
             session = try await route.backend.openTrackedSession(for: route.device)
         }

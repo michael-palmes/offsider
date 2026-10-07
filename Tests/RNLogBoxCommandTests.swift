@@ -27,12 +27,27 @@ struct RNLogBoxCommandTests {
         return (outcome, backend)
     }
 
-    @Test("a toast whose clear button works takes one tap at its right-hand end")
+    @Test("a toast whose clear button works takes one tap at its right-hand end, mapped through the first read, and one read to confirm")
     func buttonPath() async throws {
         let (outcome, backend) = try await Self.dismiss([FakeUI.tree([Self.toast(1)]), FakeUI.tree()])
 
         #expect(outcome == LogBoxDismissal(cleared: 1, remaining: 0, method: .dismissButton))
         #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830))])
+        #expect(backend.treeReads == 2)
+    }
+
+    @Test("stacked toasts clear bottom first, with one read after each clear and no read of its own for a tap")
+    func stackedButtons() async throws {
+        let (outcome, backend) = try await Self.dismiss([
+            Self.stacked(),
+            FakeUI.tree([FakeUI.node(.other, label: "!, Login failed for token=abc123def456", frame: FakeUI.frame(10, 806, 382, 48))]),
+            FakeUI.tree(),
+        ])
+
+        #expect(outcome == LogBoxDismissal(cleared: 2, remaining: 0, method: .dismissButton))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830)), .perform(.tapAt(x: 370, y: 830))])
+        #expect(backend.treeReads == 3)
+        #expect(backend.openedSessions.count == 1)
     }
 
     @Test("when the clear button does nothing, the toast's body opens the inspector and Dismiss goes once per log")
@@ -49,6 +64,30 @@ struct RNLogBoxCommandTests {
         ])
         #expect(backend.openedSessions.count == 1)
         #expect(backend.session.isClosed)
+        #expect(backend.treeReads == 4)
+    }
+
+    @Test("an open inspector takes one Dismiss per log it counts, then a single read confirms it closed")
+    func openInspectorPressesPerLog() async throws {
+        let (outcome, backend) = try await Self.dismiss([
+            FakeUI.tree(Self.inspector(log: 1, of: 2)), FakeUI.tree(Self.inspector(log: 1, of: 1)), FakeUI.tree(),
+        ])
+
+        #expect(outcome == LogBoxDismissal(cleared: 2, remaining: 0, method: .inspector))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 100, y: 847)), .perform(.tapAt(x: 100, y: 847))])
+        #expect(backend.treeReads == 2)
+    }
+
+    @Test("a Dismiss the inspector misses is made up after the read, and never pressed past its last log")
+    func missedDismissIsMadeUp() async throws {
+        let (outcome, backend) = try await Self.dismiss([
+            FakeUI.tree(Self.inspector(log: 1, of: 2)), FakeUI.tree(Self.inspector(log: 1, of: 2)),
+            FakeUI.tree(Self.inspector(log: 1, of: 1)), FakeUI.tree(),
+        ])
+
+        #expect(outcome == LogBoxDismissal(cleared: 2, remaining: 0, method: .inspector))
+        #expect(backend.session.calls == [RecordingInputSession.Call](repeating: .perform(.tapAt(x: 100, y: 847)), count: 3))
+        #expect(backend.treeReads == 3)
     }
 
     @Test("logs still on screen are reported as remaining")
@@ -103,6 +142,8 @@ struct RNLogBoxCommandTests {
         #expect(opened.toast?.index == 2)
         #expect(opened.inspector.of == 2)
         #expect(backend.session.calls == [.perform(.tapAt(x: 162.8, y: 778))])
+        #expect(backend.treeReads == 2)
+        #expect(backend.session.isClosed)
         #expect(opened.jsonLine(redacts: true) == #"{"version":1,"index":2,"message":"Login failed for token=[redacted]","log":1,"of":2}"#)
         #expect(opened.textLine(redacts: true) == "✓ Opened LogBox toast 2 (Login failed for token=[redacted]): log 1 of 2")
     }
