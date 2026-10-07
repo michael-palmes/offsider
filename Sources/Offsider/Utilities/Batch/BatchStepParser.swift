@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderCore
 
 enum BatchStepKind: String {
     case tap
@@ -81,6 +82,9 @@ struct BatchStepParser {
         }
         let stepArguments = Array(tokens.dropFirst(kind == .rn ? 2 : 1))
         try rejectPerStepDevice(stepArguments)
+        if let hint = ArgumentHints.hint(for: tokens) {
+            throw ValidationError(hint.message)
+        }
         // Before the step's own arguments, so a `--` terminator cannot turn the device into text.
         let arguments = ["--device", deviceID] + stepArguments
 
