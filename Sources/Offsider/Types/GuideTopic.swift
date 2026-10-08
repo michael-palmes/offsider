@@ -8,6 +8,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
     case iosDevice = "ios-device"
     case reactNative = "react-native"
     case turnstile
+    case login
     case foldables
     case batch
     case screenshots
@@ -25,6 +26,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
         case .iosDevice: "The device is a physical iPhone or iPad, named by its UDID"
         case .reactNative: "The app is React Native or Expo, debug or release"
         case .turnstile: "You need to tick a Cloudflare Turnstile checkbox, or to know the tap does not bypass the check"
+        case .login: "You are filling a sign-in form, or saving the test username and password it types"
         case .foldables: "The device folds or has more than one display"
         case .batch: "A flow has three or more steps"
         case .screenshots: "You need pixels: charts, maps, web views, masked secure fields or video"

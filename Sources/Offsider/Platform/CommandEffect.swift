@@ -19,6 +19,8 @@ enum CommandEffect: String, Sendable {
         "guide": .none,
         "tap": .input,
         "turnstile": .input,
+        "login": .input,
+        "credential": .read,
         "slider": .input,
         "type": .input,
         "swipe": .input,

@@ -248,7 +248,7 @@ final class FakeHelperDevice: @unchecked Sendable {
         switch op {
         case "hello":
             let ops = lock.withLock { helloOps }.map { #","ops":[\#($0.map { "\"\($0)\"" }.joined(separator: ","))]"# } ?? ""
-            return .ok(#"{"helper":"1.4.0","protocol":2\#(ops)}"#)
+            return .ok(#"{"helper":"1.5.0","protocol":2\#(ops)}"#)
         case "ping", "quit": return .ok("{}")
         case "dump": return .ok(lock.withLock { dump })
         case "display": return .ok(Self.displayReply)

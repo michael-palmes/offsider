@@ -115,6 +115,40 @@ struct AccessibilityPollerTests {
         #expect(reads.count == 1)
     }
 
+    @Test("a keyboard over the target is read again for up to a second, so one still appearing or changing mode does not refuse")
+    func keyboardCoverIsReadAgain() async throws {
+        let device = DeviceID(rawValue: "emulator-5556", platform: .android)
+        var checks = 0
+        var reads = 0
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("go"), waitTimeout: 0, pollInterval: 0.25, elementType: nil,
+            coverCheck: { resolution, _ in
+                checks += 1
+                if checks == 1 { throw Tap.keyboardCoverError(selector: "--id 'go'", at: resolution.point, device: device) }
+            },
+            logger: OffsiderLogger(), clock: ScriptedClock().poll
+        ) {
+            reads += 1
+            return Self.tree
+        }
+        #expect(polled.value.target?.id == "go")
+        #expect(reads == 2)
+
+        var stayed = 0
+        let error = await #expect(throws: CLIError.self) {
+            try await AccessibilityPoller.pollForResolution(
+                query: .id("go"), waitTimeout: 0, pollInterval: 0.25, elementType: nil,
+                coverCheck: { resolution, _ in throw Tap.keyboardCoverError(selector: "--id 'go'", at: resolution.point, device: device) },
+                logger: OffsiderLogger(), clock: ScriptedClock().poll
+            ) {
+                stayed += 1
+                return Self.tree
+            }
+        }
+        #expect(error?.reason == .targetUnderKeyboard)
+        #expect(stayed == 5)
+    }
+
     @Test("the verify grace does not extend the wait for a missing element")
     func graceDoesNotWaitForMissingElements() async {
         let empty = UITree(platform: .android, device: "emulator-5556", roots: [])

@@ -138,20 +138,61 @@ final class Actions {
         }
     }
 
-    /** The input-focused node, which must be editable. */
+    /** The input-focused node when it is editable, else the only other focused text field. */
     private static AccessibilityNodeInfo editableFocus(UiAutomation automation) throws RequestFailure {
         AccessibilityNodeInfo node = automation.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        if (node != null && node.isEditable()) {
+            return node;
+        }
+        // A web view can hold input focus while the text field a tap focused is focused too.
+        AccessibilityNodeInfo editable = onlyFocusedEditable(automation, node);
+        if (editable != null) {
+            return editable;
+        }
         if (node == null) {
             throw new RequestFailure("no-focus", "nothing has input focus", null);
         }
-        if (!node.isEditable()) {
-            CharSequence nodeClass = node.getClassName();
-            String nodeId = node.getViewIdResourceName();
-            throw new RequestFailure("not-editable", "the element with input focus (" + nodeClass
-                    + (nodeId == null ? "" : ", id " + nodeId) + ") is not editable", null)
-                    .field(nodeClass, nodeId, node.getInputType());
+        CharSequence nodeClass = node.getClassName();
+        String nodeId = node.getViewIdResourceName();
+        throw new RequestFailure("not-editable", "the element with input focus (" + nodeClass
+                + (nodeId == null ? "" : ", id " + nodeId) + ") is not editable", null)
+                .field(nodeClass, nodeId, node.getInputType());
+    }
+
+    /** The one focused editable node in the window holding input focus, or null when there is none or more than one. */
+    private static AccessibilityNodeInfo onlyFocusedEditable(UiAutomation automation, AccessibilityNodeInfo inputFocus) {
+        AccessibilityNodeInfo[] found = new AccessibilityNodeInfo[1];
+        int[] count = new int[1];
+        collectFocusedEditable(windowRoot(automation, inputFocus), found, count);
+        return count[0] == 1 ? found[0] : null;
+    }
+
+    /** The root above the input-focused node, else the active window's, so a field behind a dialog is never chosen. */
+    private static AccessibilityNodeInfo windowRoot(UiAutomation automation, AccessibilityNodeInfo inputFocus) {
+        if (inputFocus == null) {
+            return automation.getRootInActiveWindow();
         }
-        return node;
+        AccessibilityNodeInfo root = inputFocus;
+        AccessibilityNodeInfo parent = root.getParent();
+        for (int depth = 0; parent != null && depth < 256; depth++) {
+            root = parent;
+            parent = root.getParent();
+        }
+        return root;
+    }
+
+    private static void collectFocusedEditable(AccessibilityNodeInfo node, AccessibilityNodeInfo[] found, int[] count) {
+        if (node == null || count[0] > 1) {
+            return;
+        }
+        if (node.isFocused() && node.isEditable()) {
+            count[0]++;
+            found[0] = node;
+        }
+        int children = node.getChildCount();
+        for (int i = 0; i < children && count[0] < 2; i++) {
+            collectFocusedEditable(node.getChild(i), found, count);
+        }
     }
 
     /** "className", "resourceId", "inputType", then "length" in UTF-16 units, null for passwords. */

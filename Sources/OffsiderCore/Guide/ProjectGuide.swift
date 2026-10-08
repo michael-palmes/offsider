@@ -19,7 +19,7 @@ public enum ProjectGuide {
     }
 
     /// Searches `path` (a file's directory) and each parent, stopping after the first directory holding `.git`, at `home`, at `/` or after 32 levels.
-    public static func locate(from path: String, home: String = NSHomeDirectory(), fileManager: FileManager = .default) throws -> Found {
+    public static func locate(fileName: String = ProjectGuide.fileName, from path: String, home: String = NSHomeDirectory(), fileManager: FileManager = .default) throws -> Found {
         let expanded = (path as NSString).expandingTildeInPath
         let absolute = expanded.hasPrefix("/") ? expanded : (fileManager.currentDirectoryPath as NSString).appendingPathComponent(expanded)
         var start = URL(fileURLWithPath: absolute).standardizedFileURL.path

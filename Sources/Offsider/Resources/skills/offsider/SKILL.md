@@ -1,6 +1,6 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox", "number and mask screenshots for a report", "redact logs", "React Native dev menu or LogBox", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)".
+description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox", "log in with a saved test credential", "number and mask screenshots for a report", "redact logs", "React Native dev menu or LogBox", or "interact with an iOS, Android or React Native app (Expo dev client, LogBox, debug or release build)".
 ---
 # Offsider
 
@@ -17,7 +17,7 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from 
 ## The loop: look, act, verify
 
 1. **Look.** `offsider describe-ui --summary --device <DEVICE_ID>` prints one line per on-screen node with a label, id or value, such as `button "Save" id=save-button (170.7,313.3 61x34.3)` (role, label, id, value, then x,y and size). Copy `--id` and `--label` values from it (`guide describe-ui`).
-2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors survive layout changes, prefer on-screen matches and wait with `--wait-timeout`; fall back to `tap -x <X> -y <Y>` with points from `describe-ui` (`guide selectors`). On a Cloudflare Turnstile checkbox run `offsider turnstile` yourself (`--status` reads it); hand back only after exit 1 or 5. It does not bypass Turnstile (`guide turnstile`). If something is drawn over the target, `tap` exits 1 `target_covered` naming it: close it or wait, and pass `--allow-covered` only to tap it anyway.
+2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors prefer on-screen matches and wait with `--wait-timeout`; or use `tap -x <X> -y <Y>` from `describe-ui` (`guide selectors`). `login` fills a saved test login (`guide login`); exit 0 is the tap, not a server login. If something is drawn over the target, `tap` exits 1 `target_covered` naming it: close it or wait, and pass `--allow-covered` only to tap it anyway.
 3. **Verify.** Most input is fire-and-forget. Add `--verify` to `tap`, `type`, `key` or `button` (exit 5 when nothing changed; `--verify-id <id>` for navigation), or check with `wait` (`--any` for either outcome), `assert` or `describe-ui --diff`, which prints only what changed since the previous command's tree (`guide verify`). On a live screen (a ticker), run `describe-ui` first so `--verify` learns the live text.
 4. **Batch.** For three or more steps, run one `offsider batch` call (`guide batch`).
 
@@ -51,7 +51,7 @@ With `--json`, a failure prints `exitCode` and an `error` object. `dispatched: n
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. Run `offsider <command> --help` for every option; `guide selectors` lists `button` names.
+`doctor`, `init`, `guide`, `boot`, `list-devices`, `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. Run `offsider <command> --help` for every option; `guide selectors` lists `button` names.
 
 ## Topics
 
@@ -66,6 +66,7 @@ Run `offsider guide <topic>` to print one; `offsider guide` lists them.
 | `ios-device` | The device is a physical iPhone or iPad, named by its UDID |
 | `react-native` | The app is React Native or Expo, debug or release |
 | `turnstile` | You need to tick a Cloudflare Turnstile checkbox, or to know the tap does not bypass the check |
+| `login` | You are filling a sign-in form, or saving the test username and password it types |
 | `foldables` | The device folds or has more than one display |
 | `batch` | A flow has three or more steps |
 | `screenshots` | You need pixels: charts, maps, web views, masked secure fields or video |
