@@ -532,7 +532,9 @@ struct AccessibilityTargetResolver {
         guard tree.platform == .android, let windows = tree.windows else { return nil }
         let areas = windows.filter { $0.kind == "inputMethod" }.compactMap(\.bounds).filter { $0.width > 0 && $0.height > 0 }
         guard !areas.isEmpty else { return nil }
-        guard let viewport = UITree.viewport(in: tree.roots), let keys = keyArea(in: tree.roots, viewport: viewport) else { return areas }
+        guard let viewport = UITree.viewport(in: tree.roots) else { return areas }
+        // With no keys listed, a window that spans the screen says nothing about where the keys are.
+        guard let keys = keyArea(in: tree.roots, viewport: viewport) else { return areas.filter { !isBackdrop($0, in: viewport) } }
         return areas.compactMap { $0.intersection(keys) }
     }
 

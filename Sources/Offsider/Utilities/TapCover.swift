@@ -94,4 +94,11 @@ struct TapCover {
     static func isRefusal(_ error: any Error) -> Bool {
         (error as? CLIError)?.reason == .targetCovered
     }
+
+    /// How long a keyboard over the target is read again, so one caught as it appears or changes mode does not refuse.
+    static let keyboardSettle: TimeInterval = 1
+
+    static func isKeyboardRefusal(_ error: any Error) -> Bool {
+        (error as? CLIError)?.reason == .targetUnderKeyboard
+    }
 }

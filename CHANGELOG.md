@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Android `type --replace` sets the text of the one focused text field when input focus is on a non-editable view in the same window, such as a web view (helper 1.5.0). A focused field behind a dialog is never chosen. Two focused text fields still refuse.
 - iOS `type --replace` waits 200 ms after Backspace before the new text, so the deletion is not still arriving when the first character is sent.
+- `tap` and `type --into-id` read the screen again for up to 1 s before refusing with `target_under_keyboard`, and an Android keyboard window that spans the screen with no keys listed no longer counts as keys. A keyboard caught as it appeared or changed mode, such as Gboard switching to its floating toolbar, refused a field it did not cover.
 
 ## [0.8.0] - 2026-10-08
 

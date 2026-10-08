@@ -114,6 +114,9 @@ struct AccessibilityPoller {
             } catch where TapCover.isRefusal(error) && clock.now() - start < waitTimeout {
                 logger.info().log("Target covered, checking again in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
+            } catch where TapCover.isKeyboardRefusal(error) && clock.now() - start < max(waitTimeout, TapCover.keyboardSettle) {
+                logger.info().log("The keyboard covers the target, checking again in \(pollInterval)s…")
+                try await clock.sleep(.seconds(pollInterval))
             }
         }
     }

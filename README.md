@@ -563,7 +563,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `input_failed` | 1 | Sending input failed | Read `dispatched` before resending |
 | `input_outcome_unknown` | 1 | The input request was lost on the way and not replayed | Check the screen before resending |
 | `target_covered` | 1 | A hit-test or Android's drawing order found another element over the selector's target (or `--fail-if-covered` a guessed one); nothing was sent, and `coveredBy` names it | Close the cover or wait for it with `--wait-timeout`, then retry; `--allow-covered` taps anyway |
-| `target_under_keyboard` | 1 | `tap`, `type --into-id` or `login` found the keyboard over the target; nothing further was sent | For `tap` or `type`, hide the keyboard (on Android, `button back`) or scroll the target above it, then retry. `login` stops and does not press Back |
+| `target_under_keyboard` | 1 | `tap`, `type --into-id` or `login` found the keyboard over the target, still there after a second look up to 1 s later; nothing further was sent | For `tap` or `type`, hide the keyboard (on Android, `button back`) or scroll the target above it, then retry. `login` stops and does not press Back |
 | `target_has_no_frame` | 1 | The match has no usable frame | Target another element |
 | `target_moved` | 1 | The slider changed while it was being set | Retry when the screen is still |
 | `not_a_slider` | 1 | `slider` matched something that is not a slider | Use `--element-type slider` or a narrower selector |

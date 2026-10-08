@@ -276,7 +276,7 @@ struct TypeIntoTests {
 
     static let coveredMessage = "The keyboard covers --id 'second-field' at (205.7, 276.2), so the tap would press a key. Hide the keyboard with `offsider button back` (or scroll the target above it), then retry. Nothing was sent."
 
-    @Test("on Android a field under the keyboard's keys, inside its window's bounds, is refused from the one tree read, before the focus tap")
+    @Test("on Android a field under the keyboard's keys, inside its window's bounds, is refused once a second look still finds them, before the focus tap")
     func androidFieldUnderKeyboard() async throws {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.gboardForm(keysTop: 55.8, keys: FakeUI.frame(0, 240, 411.4, 300))])
 
@@ -289,7 +289,19 @@ struct TypeIntoTests {
         #expect(error?.userFacingDescription == Self.coveredMessage)
         #expect(error?.hint == "offsider button back --device \(Self.android.rawValue)")
         #expect(backend.session.calls.isEmpty)
-        #expect(backend.treeReads == 1)
+        #expect(backend.treeReads > 1)
+    }
+
+    @Test("on Android a keyboard window that spans the screen with no keys listed yet does not cover a field")
+    func androidScreenWideWindowWithoutKeys() async throws {
+        func form(_ focused: String) -> UITree {
+            var tree = Self.gboardForm(keysTop: 54.1, focused: focused)
+            tree.roots[1].children = []
+            return tree
+        }
+        let sent = try await Self.focus(["--into-id", "second-field"], trees: [form("first-field"), form("second-field")])
+
+        #expect(sent == [.tapAt(x: 205.7, y: 276.2)])
     }
 
     @Test("on Android the keyboard's root view spanning the screen does not cover a field above its window's bounds")
@@ -338,7 +350,7 @@ struct TypeIntoTests {
         #expect(error?.reason == .targetUnderKeyboard)
         #expect(error?.userFacingDescription.hasPrefix("The keyboard covers --id 'low-field' at (200, 722)") == true)
         #expect(backend.session.calls.isEmpty)
-        #expect(backend.treeReads == 1)
+        #expect(backend.treeReads > 1)
     }
 
     @Test("on an iOS simulator whose hit-test answers with the field beneath the keyboard, type --into-id and tap --allow-covered still refuse")
