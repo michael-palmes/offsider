@@ -39,6 +39,11 @@ public enum PromptScreen {
         String(repeating: "•", count: count)
     }
 
+    /// Typed text as drawn: a control character shows as `?`, never as itself.
+    public static func visible(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.map { $0.value < 0x20 || $0.value == 0x7F ? "?" : $0 }))
+    }
+
     public static func nextStep(_ label: String, command: String, style: TerminalStyle) -> String {
         "   " + style.dim("▶ \(label): ") + style.cyan(command)
     }

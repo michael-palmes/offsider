@@ -2,7 +2,7 @@ import Darwin
 
 /// One key from a terminal in raw mode.
 public enum TerminalKey: Equatable, Sendable {
-    /// Printable bytes, possibly several characters pasted at once.
+    /// Typed bytes, possibly several characters pasted at once. A stray control character stays, so the answer is refused rather than saved without it.
     case text([UInt8])
     case enter
     case backspace
@@ -46,6 +46,10 @@ public enum TerminalKey: Equatable, Sendable {
                     continue
                 }
                 let introducer = bytes[index]
+                if introducer == 0x1B {
+                    keys.append(.cancel)
+                    continue
+                }
                 index += 1
                 guard introducer == UInt8(ascii: "[") || introducer == UInt8(ascii: "O") else {
                     keys.append(.ignored)
@@ -61,8 +65,6 @@ public enum TerminalKey: Equatable, Sendable {
                 let final = bytes[index]
                 index += 1
                 keys.append(final == UInt8(ascii: "A") ? .up : final == UInt8(ascii: "B") ? .down : .ignored)
-            case 0x00..<0x20:
-                flush(); keys.append(.ignored)
             default:
                 run.append(byte)
             }

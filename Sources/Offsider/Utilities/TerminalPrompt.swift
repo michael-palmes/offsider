@@ -6,12 +6,16 @@ import OffsiderCore
 /// Escape, Control-C or a closed terminal at a prompt. Nothing was saved.
 struct PromptCancelled: Error {}
 
-/// A block of questions on the terminal with echo off. Closing it erases every line it drew.
+/// A block of questions on the terminal. Closing it erases every line it drew.
 final class TerminalPrompt {
     let style: TerminalStyle
     private let descriptor: Int32
     private let ownsDescriptor: Bool
     private var original = termios()
+    private var raw = termios()
+    /// Echo and signals are off only while waiting for keys, so Control-C still stops a slow Keychain read.
+    private var isRaw = false
+    private var flushedTypeahead = false
     /// Finished rows drawn since the block began.
     private var rows = 0
     /// Rows of the line or menu still being edited.
@@ -32,18 +36,12 @@ final class TerminalPrompt {
             if ownsDescriptor, self.descriptor >= 0 { Darwin.close(self.descriptor) }
             throw CLIError(errorDescription: "Could not open the terminal: \(reason). Pass --stdin to pipe the answers in instead.", reason: .usage)
         }
-        var raw = original
+        raw = original
         raw.c_lflag &= ~tcflag_t(ECHO | ICANON | ISIG | IEXTEN)
         raw.c_iflag &= ~tcflag_t(IXON | ICRNL | INLCR | ISTRIP | BRKINT)
         withUnsafeMutableBytes(of: &raw.c_cc) { cc in
             cc[Int(VMIN)] = 1
             cc[Int(VTIME)] = 0
-        }
-        TerminalRestore.arm(descriptor: self.descriptor, original: original)
-        guard tcsetattr(self.descriptor, TCSAFLUSH, &raw) == 0 else {
-            TerminalRestore.disarm()
-            if ownsDescriptor { Darwin.close(self.descriptor) }
-            throw CLIError(errorDescription: "Could not switch off echo on the terminal. Pass --stdin to pipe the answers in instead.", reason: .usage)
         }
         style = TerminalStyle.detect(isTerminal: true, environment: environment)
     }
@@ -105,6 +103,8 @@ final class TerminalPrompt {
 
     /// An arrow-key menu. The chosen row stays as a one-line reminder.
     func choose(_ title: String, options: [String]) throws -> Int {
+        try enterRaw()
+        defer { leaveRaw() }
         var menu = ChoiceMenu(count: options.count)
         write("\u{1B}[?25l")
         defer { write("\u{1B}[?25h") }
@@ -125,10 +125,12 @@ final class TerminalPrompt {
 
     /// The answer, and its line as drawn: dots when `masked`.
     private func read(_ label: String, masked: Bool, placeholder: String?) throws -> (String, String) {
+        try enterRaw()
+        defer { leaveRaw() }
         var editor = LineEditor()
         defer { editor.wipe() }
         let prefix = style.cyan(label)
-        func line() -> String { prefix + (masked ? PromptScreen.dots(editor.length) : editor.text) }
+        func line() -> String { prefix + (masked ? PromptScreen.dots(editor.length) : PromptScreen.visible(editor.text)) }
         func render() {
             if editor.bytes.isEmpty, let placeholder {
                 draw(prefix + style.dim(placeholder) + "\u{1B}[\(TerminalText.width(placeholder))D")
@@ -200,13 +202,31 @@ final class TerminalPrompt {
         liveRows = 0
     }
 
+    private func enterRaw() throws {
+        guard !isRaw else { return }
+        TerminalRestore.arm(descriptor: descriptor, original: original)
+        guard tcsetattr(descriptor, flushedTypeahead ? TCSANOW : TCSAFLUSH, &raw) == 0 else {
+            TerminalRestore.disarm()
+            throw CLIError(errorDescription: "Could not switch off echo on the terminal. Pass --stdin to pipe the answers in instead.", reason: .usage)
+        }
+        flushedTypeahead = true
+        isRaw = true
+    }
+
+    private func leaveRaw() {
+        guard isRaw else { return }
+        _ = tcsetattr(descriptor, TCSANOW, &original)
+        TerminalRestore.disarm()
+        isRaw = false
+    }
+
     private func close(saying message: String? = nil) {
         erase(to: 0)
         if let message { write(message + "\n") }
         write("\u{1B}[?25h")
         pending.removeAll()
-        _ = tcsetattr(descriptor, TCSAFLUSH, &original)
-        TerminalRestore.disarm()
+        leaveRaw()
+        _ = tcflush(descriptor, TCIFLUSH)
         if ownsDescriptor { Darwin.close(descriptor) }
     }
 

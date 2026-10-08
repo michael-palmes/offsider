@@ -15,7 +15,14 @@ struct TerminalPromptTests {
         #expect(TerminalKey.parse([0x1B, 0x5B, 0x43]) == [.ignored])
         #expect(TerminalKey.parse(Array("qa".utf8) + [0x1B]) == [.text(Array("qa".utf8)), .cancel])
         #expect(TerminalKey.parse([0x03]) == [.cancel])
-        #expect(TerminalKey.parse([0x09]) == [.ignored])
+        #expect(TerminalKey.parse([0x1B, 0x1B]) == [.cancel, .cancel])
+    }
+
+    @Test("a pasted tab stays in the answer, so the password is refused instead of saved without it")
+    func controlCharactersAreKept() {
+        #expect(TerminalKey.parse(Array("pass\tword\r".utf8)) == [.text(Array("pass\tword".utf8)), .enter])
+        #expect(CredentialScreen.passwordProblem("pass\tword") == PromptScreen.untypeable)
+        #expect(PromptScreen.visible("ada\t@") == "ada?@")
     }
 
     @Test("the editor deletes whole characters, clears on Control-U and cancels on Control-D only when empty")
@@ -141,6 +148,19 @@ struct TerminalPromptTests {
         #expect(output.contains("ada@example.com"))
     }
 
+    @Test("echo and Control-C stay on while no question waits, so a slow Keychain read can still be stopped")
+    func normalTerminalBetweenQuestions() throws {
+        let terminal = try PseudoTerminal()
+        terminal.type("ada\r")
+        let states = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+            let before = terminal.signals
+            _ = try prompt.ask("👤 ") { _ in nil }
+            return [before, terminal.signals]
+        }
+        _ = terminal.finish()
+        #expect(states == [true, true])
+    }
+
     @Test("Escape says nothing was saved, exits 130 and gives the terminal back")
     func escapeCancels() throws {
         let terminal = try PseudoTerminal()
@@ -226,6 +246,12 @@ private final class PseudoTerminal: @unchecked Sendable {
             let bytes = Array(keys.utf8)
             _ = bytes.withUnsafeBytes { write(primary, $0.baseAddress, $0.count) }
         }
+    }
+
+    /// True while Control-C raises a signal rather than arriving as a key.
+    var signals: Bool {
+        var settings = termios()
+        return tcgetattr(secondary, &settings) == 0 && settings.c_lflag & tcflag_t(ISIG) != 0
     }
 
     /// True once the prompt has put echo back on.
