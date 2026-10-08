@@ -6,6 +6,8 @@ public enum LoginSetIntent: Equatable, Sendable {
     case write(key: String, makeDefault: Bool)
     /// Saved logins already exist and the terminal should ask.
     case choose
+    /// The tag is already saved and the terminal should ask before replacing it.
+    case confirm(key: String, makeDefault: Bool)
     /// A message for the user. Nothing is saved.
     case refused(String)
 }
@@ -34,6 +36,7 @@ public enum LoginDirectory {
         if let tag {
             if let existing = entries.first(where: { $0.key == tag }) {
                 guard update else {
+                    if interactive { return .confirm(key: tag, makeDefault: existing.isDefault) }
                     return .refused("The tag \(tag) is already saved for this app. Pass --update to replace it. Nothing was saved.")
                 }
                 return .write(key: tag, makeDefault: existing.isDefault)
@@ -91,45 +94,9 @@ public enum LoginDirectory {
         return .refused("Several apps have saved logins (\(names)). Pass --app with the one to share. Nothing was linked.")
     }
 
-    public static func setMenu(app: String, entries: [LoginCredentialSummary]) -> String {
-        if entries.count == 1, let only = entries.first {
-            return "A login is already saved for \(app) (\(LoginCredential.displayKey(only.key)), \(only.username)). Type u to update it, or n to create a new one with a tag: "
-        }
-        var lines = ["Saved logins for \(app):"]
-        for (index, entry) in entries.enumerated() {
-            let mark = entry.isDefault ? " (default)" : ""
-            lines.append("  \(index + 1). \(LoginCredential.displayKey(entry.key))\(mark), \(entry.username)")
-        }
-        lines.append("Type a number to update that login, or n to create a new one: ")
-        return lines.joined(separator: "\n")
-    }
-
-    public static func interpretSetChoice(_ answer: String, entries: [LoginCredentialSummary]) -> LoginSetChoice? {
-        let text = answer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if text == "n" || text == "new" { return .create }
-        if entries.count == 1, text == "u" || text == "update", let only = entries.first {
-            return .update(key: only.key)
-        }
-        if let number = Int(text), entries.indices.contains(number - 1) {
-            return .update(key: entries[number - 1].key)
-        }
-        return nil
-    }
-
-    public static func joinMenu(groups: [LoginAppGroup]) -> String {
-        var lines = ["Which saved app should this one share logins with?"]
-        for (index, group) in groups.enumerated() {
-            let extra = group.members.isEmpty ? "" : " (also \(group.members.joined(separator: ", ")))"
-            lines.append("  \(index + 1). \(group.canonical)\(extra)")
-        }
-        lines.append("Type a number: ")
-        return lines.joined(separator: "\n")
-    }
-
-    public static func interpretJoinChoice(_ answer: String, groups: [LoginAppGroup]) -> String? {
-        let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let number = Int(text), groups.indices.contains(number - 1) else { return nil }
-        return groups[number - 1].canonical
+    /// The menu row at `index`: a saved login to update, or the last row to add one.
+    public static func setChoice(at index: Int, entries: [LoginCredentialSummary]) -> LoginSetChoice {
+        entries.indices.contains(index) ? .update(key: entries[index].key) : .create
     }
 
     private static func resolve(_ requested: String, in groups: [LoginAppGroup]) -> String? {
