@@ -100,11 +100,7 @@ struct StreamVideo: AsyncParsableCommand {
         FileHandle.standardError.write(Data("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
-        // A first frame that cannot be masked ends the stream before anything is sent; without regions the loop retries it.
-        var pending: CGImage?
-        do {
-            pending = try await source.start()
-        } catch where source.regions.isEmpty {
+        var pending = try await source.firstFrame { error in
             FileHandle.standardError.write(Data("Error capturing frame: \(error.localizedDescription)\n".utf8))
         }
         let frameInterval = 1.0 / Double(fps)

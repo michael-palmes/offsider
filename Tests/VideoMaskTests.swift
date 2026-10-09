@@ -7,7 +7,7 @@ import Testing
 
 /// A fake whose orientation reads are scripted, holding the last.
 @MainActor
-final class TurningFakeBackend: FakeDeviceBackend, OrientationControlling {
+class TurningFakeBackend: FakeDeviceBackend, OrientationControlling {
     var orientations: [DeviceOrientation?]
     private(set) var orientationReads = 0
 
@@ -22,6 +22,19 @@ final class TurningFakeBackend: FakeDeviceBackend, OrientationControlling {
     }
 
     func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws {}
+}
+
+/// Fails its first capture, as a screencap or broker hiccup can, then serves its screenshots.
+final class FlakyFirstCaptureBackend: TurningFakeBackend {
+    private var failed = false
+
+    override func screenshotPNG(for id: DeviceID) async throws -> Data {
+        guard failed else {
+            failed = true
+            throw CLIError(errorDescription: "capture failed once")
+        }
+        return try await super.screenshotPNG(for: id)
+    }
 }
 
 @Suite("Video masks")
@@ -173,6 +186,32 @@ struct VideoMaskTests {
         #expect(!next.held)
         #expect(backend.orientationReads == 0)
         #expect(ScreenshotMaskTests.pixel(next.image, 10, 10) == Self.white)
+    }
+
+    @Test("without regions a stream reports a failed first capture and takes the next frame")
+    func streamRetriesFirstFrame() async throws {
+        let screen = UIScreenInfo(width: 390, height: 844, scale: 3, rotation: .portrait)
+        let backend = FlakyFirstCaptureBackend(orientations: [.portrait], screenshots: [try Self.whitePNG(width: 1170, height: 2532)], screen: screen)
+        let source = VideoFrameSource(backend: backend, device: Self.device, scale: 1, regions: [])
+        var reported: [String] = []
+
+        let first = try await source.firstFrame { reported.append($0.localizedDescription) }
+        let next = try await source.next()
+
+        #expect(first == nil)
+        #expect(reported == ["capture failed once"])
+        #expect(next.image.width == 1170 && !next.held)
+    }
+
+    @Test("with a region a failed first capture ends the stream before anything is sent")
+    func regionStreamStopsOnFirstFrame() async throws {
+        let screen = UIScreenInfo(width: 390, height: 844, scale: 3, rotation: .portrait)
+        let backend = FlakyFirstCaptureBackend(orientations: [.portrait], screenshots: [try Self.whitePNG(width: 1170, height: 2532)], screen: screen)
+        let source = VideoFrameSource(backend: backend, device: Self.device, scale: 1, regions: [PointRegion(x: 0, y: 0, width: 50, height: 50)])
+        var reported: [String] = []
+
+        await #expect(throws: CLIError.self) { _ = try await source.firstFrame { reported.append($0.localizedDescription) } }
+        #expect(reported.isEmpty)
     }
 
     // MARK: - Commands

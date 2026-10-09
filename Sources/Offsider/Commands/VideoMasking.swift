@@ -142,6 +142,16 @@ final class VideoFrameSource {
         throw Self.unplaceable("the screen's orientation could not be read steadily")
     }
 
+    /// `start()` for a stream: without regions a failed first capture is reported and nil, so the next tick retries it.
+    func firstFrame(reporting report: (any Error) -> Void) async throws -> CGImage? {
+        do {
+            return try await start()
+        } catch where regions.isEmpty {
+            report(error)
+            return nil
+        }
+    }
+
     /// The next frame; a frame not proven in the first frame's orientation and size is replaced by the last good one.
     func next() async throws -> VideoFrame {
         guard let turner = backend as? any OrientationControlling, var gate, let lastGood else {
