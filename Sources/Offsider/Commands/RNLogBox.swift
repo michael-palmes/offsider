@@ -278,8 +278,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         return try await waitForInspector(screen: screen, clock: clock)
     }
 
-    /// Reads again for up to `emptyDialogWait` while the empty dialog React Native can leave after its last log is up; true when it stayed.
-    /// Only a dialog from the app whose LogBox this run saw counts.
+    /// Rereads for up to `emptyDialogWait` while an empty dialog from the app whose LogBox this run saw is up; true when it stayed.
     @MainActor
     private func settleEmptyDialog(_ start: LogBoxState, package: String?, screen: LogBoxScreen, clock: PollClock) async throws -> (LogBoxState, Bool) {
         guard start.emptyDialog, package == nil || start.window?.package == package else { return (start, false) }

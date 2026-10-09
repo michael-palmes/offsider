@@ -1,8 +1,7 @@
 import Foundation
 import OffsiderCore
 
-/// React Native LogBox screens as the trees show them. Android lists windows, so its inspector and the empty dialog
-/// LogBox can leave are untitled windows over the app, which Android then leaves out of the tree.
+/// React Native LogBox screens as the trees show them; on Android the inspector and the empty dialog are untitled windows that hide the app.
 enum LogBoxTrees {
     static let package = "com.example.app"
 

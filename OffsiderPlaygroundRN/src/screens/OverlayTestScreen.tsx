@@ -26,8 +26,7 @@ const flickerCycles = 6;
 const bannerLabel = 'Connection lost. Can’t reach the server.';
 // clearAllLogs exists at runtime but is missing from React Native's LogBox typings.
 const logBox = LogBox as typeof LogBox & { clearAllLogs: () => void };
-// LogBox's lowest toast sits this far above the bottom inset. Its list also takes touches a point above the toast and, on
-// Android, the top inset more, as it pads by every system bar; the edge row's centre sits inside that band.
+// The lowest toast's top above the bottom inset; LogBox takes touches a point higher (on Android, the top inset more too).
 const toastTopAboveInset = Platform.OS === 'ios' ? 52.33 : 73.1;
 const edgeRowHeight = 44;
 const edgeRowLift = Platform.OS === 'ios' ? 0.5 : 30;

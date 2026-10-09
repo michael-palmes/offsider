@@ -8,8 +8,7 @@ public struct WaitReport: Equatable, Sendable {
         self.outcome = outcome
     }
 
-    /// `{"met":true,"elapsedMs":1200,"reason":"on screen","match":{...},"matched":null,"nearest":[]}`; `match` is null unless one element matched,
-    /// `matched` unless `wait --any` was met, and `nearest` empty unless a selector timed out not found near other elements.
+    /// `{"met":true,"elapsedMs":1200,"reason":"on screen","match":{...},"matched":null,"nearest":[]}`; `nearest` lists near misses after a not-found timeout.
     public func jsonLine() -> String {
         OrderedJSON.object([
             ("met", .bool(outcome.met)),

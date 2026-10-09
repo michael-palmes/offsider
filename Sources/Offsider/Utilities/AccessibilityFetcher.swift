@@ -127,8 +127,7 @@ struct AccessibilityFetcher {
         return data
     }
 
-    /// Reads until the tree has a descendant, up to `attempts` times with a growing pause. When those reads asked for traits and all came back
-    /// empty, one more read without traits decides, once per process: a full tree there is used, and traits stay off from then on.
+    /// Reads until the tree has a descendant, `attempts` times at most; when all asked for traits and came back empty, one read without them decides, once per process.
     static func readingFrontmostTree(
         attempts: Int = 5,
         traits request: TraitsRequest? = nil,
@@ -419,8 +418,7 @@ struct AccessibilityFetcher {
     ]
 }
 
-/// Whether simulator tree reads ask for traits, which carry Selected. Some Xcode versions were seen to empty the tree when asked for them,
-/// so an empty read with traits is tried once without them; a full tree then turns them off for the rest of the process.
+/// Whether simulator reads ask for traits (which carry Selected): some Xcode versions empty the tree for them, so a full read without them turns them off.
 @MainActor
 final class TraitsRequest {
     static let process = TraitsRequest()
