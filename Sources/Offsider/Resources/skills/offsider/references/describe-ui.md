@@ -16,7 +16,7 @@ After an action, `describe-ui --diff` prints only what changed since the previou
 
 ## JSON
 
-- Without those flags the output is `{"version": 2, "platform", "device", "screen", "roots": [...]}`. Each node has `role`, `id`, `label`, `value`, `frame`, `enabled`, `state` (`checked`, `selected`, `focused`), `native` and `children`; every key is present, with `null` when unknown. `--point` returns the same envelope with the hit element as the only root.
+- Without those flags the output is `{"version": 2, "platform", "device", "screen", "roots": [...]}`. Each node has `role`, `id`, `label`, `value`, `frame`, `enabled`, `state` (`checked`, `selected`, `focused`), `native` and `children`; every key is present, with `null` when unknown. `selected` is `true` or `false` on both platforms (from the Selected trait on iOS). describe-ui prints JSON by default and has no `--json`. `--point` returns the same envelope with the hit element as the only root.
 - `role` is one of `application`, `window`, `group`, `other`, `button`, `link`, `menuItem`, `tab`, `tabBar`, `segmentedControl`, `text`, `header`, `image`, `progress`, `textField`, `secureTextField`, `searchField`, `textArea`, `switch`, `checkbox`, `radioButton`, `slider`, `picker`, `cell`, `list`, `scrollView` or `keyboard`.
 - `native` keeps the platform attributes, such as the iOS `type` (`TextField`, `RadioButton`), `role` (`AXButton`) and `roleDescription`.
 - Password and other secure fields read as bullets, one per character.

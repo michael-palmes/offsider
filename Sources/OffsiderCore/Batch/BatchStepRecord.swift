@@ -3,7 +3,7 @@ import Foundation
 /// One `batch --json` line for a finished step.
 ///
 /// Keys in order: `step`, `kind`, `line`, `ok`, `ms`; a failure adds `exitCode` and `error`; then the step's own keys:
-/// `wait` and `assert` add `met`, `reason`, `match`, `matched`; `screenshot` adds its report keys;
+/// `wait` and `assert` add `met`, `reason`, `match`, `matched`, `nearest`; `screenshot` adds its report keys;
 /// `describe-ui` adds `tree` for json or `output` for ndjson and text.
 public struct BatchStepRecord: Sendable {
     public enum Detail: Sendable {
@@ -68,6 +68,7 @@ public struct BatchStepRecord: Sendable {
                 ("reason", .string(outcome.reason)),
                 ("match", .optional(outcome.match) { .object($0.jsonFields) }),
                 ("matched", .optional(outcome.matched) { .object([("by", .string($0.by)), ("text", .string($0.text))]) }),
+                ("nearest", WaitReport.nearest(outcome)),
             ]
         case .screenshot(let report):
             members += report.jsonMembers

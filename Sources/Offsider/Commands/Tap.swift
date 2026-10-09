@@ -19,6 +19,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: [.customLong("label")], help: "Tap the activation point of the element whose describe-ui label matches (accessibilityLabel); with --id, the element must match both. Ignored if -x and -y are provided.")
     var elementLabel: String?
 
+    @Option(name: [.customLong("label-contains")], help: ArgumentHelp("Like --label, for the element whose describe-ui label holds this text, in the same case, such as one part of a label React Native merged.", valueName: "text"))
+    var elementLabelContains: String?
+
     @Option(name: [.customLong("value")], help: "Tap the activation point of the element whose describe-ui value matches (the current value of a control); with --id, the element must match both. Ignored if -x and -y are provided.")
     var elementValue: String?
 
@@ -77,7 +80,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw ValidationError("Coordinates must be non-negative values.")
             }
         } else {
-            try SelectorQuery.validate(id: elementID, label: elementLabel, value: elementValue, refining: true)
+            try SelectorQuery.validate(id: elementID, label: elementLabel, labelContains: elementLabelContains, value: elementValue, refining: true)
             if query == nil {
                 throw ValidationError("Either provide both -x/-y, or use --id/--label/--value to tap an element.")
             }
@@ -126,8 +129,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     var resolvedWaitTimeout: Double { waitTimeout ?? 0 }
     var resolvedPollInterval: Double { pollInterval ?? 0.25 }
 
-    private var query: AccessibilityQuery? {
-        SelectorQuery.make(id: elementID, label: elementLabel, value: elementValue)
+    var query: AccessibilityQuery? {
+        SelectorQuery.make(id: elementID, label: elementLabel, labelContains: elementLabelContains, value: elementValue)
     }
 
     func run() async throws {
@@ -144,6 +147,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         if let pointX, let pointY { return VerifyOutput.pointDescription(x: pointX, y: pointY) }
         if let elementID { return "id=\(elementID)" }
         if let elementLabel { return "label=\(elementLabel)" }
+        if let elementLabelContains { return "label-contains=\(elementLabelContains)" }
         return "value=\(elementValue ?? "")"
     }
 

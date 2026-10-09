@@ -14,6 +14,9 @@ struct VideoMaskOptions: ParsableArguments {
     @Option(name: .customLong("mask-label"), parsing: .upToNextOption, help: ArgumentHelp("Refused with video_unmasked: use screenshot --mask-label.", valueName: "text"))
     var maskLabels: [String] = []
 
+    @Option(name: .customLong("mask-label-contains"), parsing: .upToNextOption, help: ArgumentHelp("Refused with video_unmasked: use screenshot --mask-label-contains.", valueName: "text"))
+    var maskLabelContains: [String] = []
+
     @Option(name: .customLong("mask-text"), parsing: .upToNextOption, help: ArgumentHelp("Refused with video_unmasked: use screenshot --mask-text.", valueName: "regex"))
     var maskTexts: [String] = []
 
@@ -32,6 +35,7 @@ struct VideoMaskOptions: ParsableArguments {
             maskSecure ? "--mask-secure" : nil,
             maskIDs.isEmpty ? nil : "--mask-id",
             maskLabels.isEmpty ? nil : "--mask-label",
+            maskLabelContains.isEmpty ? nil : "--mask-label-contains",
             maskTexts.isEmpty ? nil : "--mask-text",
             maskEmails ? "--mask-emails" : nil,
         ].compactMap { $0 }

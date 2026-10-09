@@ -9,13 +9,15 @@ struct Wait: AsyncParsableCommand {
         commandName: "wait",
         abstract: "Wait until an element is on screen or gone, the screen settles, a region changes or stays still, or a fixed time passes",
         discussion: """
-        Choose one condition: a selector (--id, --label or --value, with --gone to wait for it to leave), --settled, \
+        Choose one condition: a selector (--id, --label, --label-contains or --value, with --gone to wait for it to leave), --settled, \
         --region with --changed or --stable, or --seconds. Selectors count only on-screen matches unless --allow-offscreen. \
         --region watches pixels in points as describe-ui prints them, for content the accessibility tree cannot see such as charts \
         or web views. Within 2 s of an input, --settled also waits for that input's effect to show (a read that differs from the \
         screen before it, else 2 s after it, or 1 s when no read from before it was kept), so a delayed push is not missed; an input \
-        checked with --verify needs no such wait. Exits 0 when the condition is met and 5 when --timeout passes first; --settled exits 1 when the \
-        accessibility tree was never readable, where --settle-by screen still works.
+        checked with --verify needs no such wait. Exits 0 when the condition is met and 5 when --timeout passes first, naming the \
+        nearest element when a selector found nothing; --settled exits 1 when the accessibility tree was never readable, where \
+        --settle-by screen still works. A selector exits 1 (logbox_inspector_open) once React Native's LogBox inspector has hidden \
+        the app on Android for 1.5 s, since nothing in the app can match until it closes.
         """
     )
 
@@ -25,7 +27,7 @@ struct Wait: AsyncParsableCommand {
     @Flag(name: .customLong("gone"), help: "Wait until no matching element is on screen.")
     var gone = false
 
-    @Flag(name: .customLong("any"), help: "With two or more selectors (--id, --label, --value, each repeatable), wait until the first of them is on screen.")
+    @Flag(name: .customLong("any"), help: "With two or more selectors (--id, --label, --label-contains, --value, each repeatable), wait until the first of them is on screen.")
     var any = false
 
     @Flag(name: .customLong("settled"), help: "Wait until nothing has changed for --quiet-ms.")
@@ -83,6 +85,8 @@ struct Wait: AsyncParsableCommand {
             }
             if gone { throw ValidationError("--any waits for the first selector on screen; it does not take --gone.") }
             if selector.hasValue != nil { throw ValidationError("--any does not take --has-value; use --value as one of the selectors.") }
+        } else if selector.mixesLabelSelectors {
+            throw ValidationError(SelectorQuery.oneLabelRule)
         } else if selector.queries.count > 1, !selector.isConjunction {
             throw ValidationError("Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several.")
         }
@@ -213,10 +217,10 @@ struct Wait: AsyncParsableCommand {
             let selectors = queries.enumerated().map { index, query in
                 (selector: WaitMatch(by: String(query.kind.dropFirst(2)), text: query.rawValue, position: index + 1, of: queries.count), probe: selector.probe(for: query))
             }
-            return .anyElement(selectors, stableFor: stableFor)
+            return .anyElement(selectors, stableFor: stableFor, explain: Self.explainAny(queries))
         }
         if let query = selector.query {
-            return .element(probe: selector.probe(for: query), gone: gone, stableFor: stableFor)
+            return .element(probe: selector.probe(for: query), gone: gone, stableFor: stableFor, explain: SelectorQuery.explain(query))
         }
         if settled {
             return .settled(by: settleBy ?? .tree, quiet: quiet, ignoreValues: ignoreValues, gate: gate)
@@ -246,7 +250,20 @@ struct Wait: AsyncParsableCommand {
         let hint = settled && !ignoreValues && outcome.onlyTextMoved
             ? " Only text kept changing, as a live price or clock does; add --ignore-values to let it settle."
             : ""
-        return "✗ Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target) (last: \(outcome.reason)).\(hint)"
+        let nearest = outcome.nearMiss.map { "; nearest: \($0.summary)" } ?? ""
+        return "✗ Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target) (last: \(outcome.reason)\(nearest)).\(hint)"
+    }
+
+    /// Each `--any` selector that matched nothing, with what it came closest to.
+    static func explainAny(_ queries: [AccessibilityQuery]) -> (UITree) -> WaitNearMiss? {
+        { tree in
+            let misses = queries.compactMap { query in AccessibilityTargetResolver.nearMiss(roots: tree.roots, query: query).map { (query, $0) } }
+            guard !misses.isEmpty else { return nil }
+            return WaitNearMiss(
+                summary: misses.map { "\($0.0.selectorDescription): \($0.1.summary)" }.joined(separator: "; "),
+                candidates: misses.flatMap(\.1.candidates)
+            )
+        }
     }
 
     private var target: String {

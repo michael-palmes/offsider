@@ -16,7 +16,7 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from 
 
 ## The loop: look, act, verify
 
-1. **Look.** `offsider describe-ui --summary --device <DEVICE_ID>` prints one line per on-screen node with a label, id or value, such as `button "Save" id=save-button (170.7,313.3 61x34.3)` (role, label, id, value, then x,y and size). Copy `--id` and `--label` values from it (`guide describe-ui`).
+1. **Look.** `offsider describe-ui --summary --device <DEVICE_ID>` prints one line per on-screen node with a label, id or value, such as `button "Save" id=save-button (170.7,313.3 61x34.3)` Copy `--id` and `--label` values from it, or part of a label with `--label-contains` (`guide describe-ui`).
 2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors prefer on-screen matches and wait with `--wait-timeout`; or use `tap -x <X> -y <Y>` from `describe-ui` (`guide selectors`). `login` fills a saved test login (`guide login`); exit 0 is the tap, not a server login. If something is drawn over the target, `tap` exits 1 `target_covered` naming it: close it or wait, and pass `--allow-covered` only to tap it anyway.
 3. **Verify.** Most input is fire-and-forget. Add `--verify` to `tap`, `type`, `key` or `button` (exit 5 when nothing changed; `--verify-id <id>` for navigation), or check with `wait` (`--any` for either outcome), `assert` or `describe-ui --diff`, which prints only what changed since the previous command's tree (`guide verify`). On a live screen, run `describe-ui` first so `--verify` learns the live text.
 4. **Batch.** For three or more steps, run one `offsider batch` call (`guide batch`).

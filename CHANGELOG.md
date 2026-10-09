@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `--label-contains <text>` matches an element whose label holds the text, in the same case, such as the heading of a label React Native merged from a heading and its detail. It works on `tap`, `slider`, `wait` (repeatable with `--any`), `assert`, `type --into-label-contains` and `screenshot --mask-label-contains`, can narrow an `--id`, and is refused beside `--label`. `--label-prefix` and `--label-includes` point to it, and `describe-ui --json` says that `describe-ui` prints JSON by default.
+- When a selector finds nothing, `wait` and `assert` name the nearest element and the selector that would match it, such as `nearest: header "Choose a layout. Rows can show as a list or…" starts with it, use --label-contains 'Choose a layout'`. `--json` and batch records carry `nearest`.
 - `wait` and `assert` stop with `logbox_inspector_open` (exit 1, nothing dispatched) when a selector matches nothing while React Native's LogBox inspector, in its own window on Android, hides the app: a wait after 1.5 s, `assert` and short timeouts on the last read. `--gone` stops rather than passing, and the `hint` is `tap --label Minimize`. A timeout's `last:` adds `LogBox inspector open` on either platform.
 - `describe-ui` marks an untitled Android dialog that spans the screen with nothing in it as `# window: <package> (modal, empty)`, with `context.window.empty` in JSON. `rn logbox status` and `rn logbox dismiss --json` add `emptyDialog`.
 - `logs --exclude <regex>` (repeatable) drops entries whose message matches, as `--grep` matches, on both platforms and in every mode, before stdout or an evidence run sees them, so a monitoring SDK's copy of each console line stays out of the run's log. `--json` adds `excluded`, stderr says how many, and the run manifest shows each pattern as `<N characters>`.
@@ -20,8 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On a terminal, `credential set` picks the login to update, or adds a tagged one, from an arrow-key menu, and asks before replacing a saved tag instead of refusing without `--update`. `credential join` picks the app to share from a menu. Without a terminal, both still need `--update`, a tag or `--app`.
 - When standard output is a terminal, `credential` and `unlock-code` print a short summary with emoji, coloured unless `NO_COLOR` is set, and `credential` shows a spinner while it reads the app in front. Piped output and `--json` are unchanged.
 - `lease set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes `device.lease` for any later command of that session without `OFFSIDER_LEASE`, and otherwise names the session holding the lease or says it has ended. `OFFSIDER_LEASE`, when set, still decides.
-- `record-video` and `stream-video` refuse `--mask-secure`, `--mask-id`, `--mask-label`, `--mask-text` and `--mask-emails`, and refuse to run while the evidence run has masks or `OFFSIDER_MASK_SECURE=1` is set, with the new reason `video_unmasked` (exit 1), before the device is reached and with no file written. `--unmasked` records anyway, with a warning.
+- `record-video` and `stream-video` refuse `--mask-secure`, `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text` and `--mask-emails`, and refuse to run while the evidence run has masks or `OFFSIDER_MASK_SECURE=1` is set, with the new reason `video_unmasked` (exit 1), before the device is reached and with no file written. `--unmasked` records anyway, with a warning.
 - A React Native LogBox toast's touch area starts a point above its top edge, and on an edge-to-edge Android app higher still by the status bar's height, since LogBox's toast list pads itself by it. Covers by it report `evidence` `logBoxTouchArea`, and a target whose frame only reaches that area gets a warning that `--fail-if-covered` turns into a refusal.
+- Near-miss suggestions rank a case difference first, then labels that start with, contain or sit inside your text, then typos. Each `selector_not_found` candidate carries `closeness` (`case`, `prefix`, `contains` or `similar`), and the message says when `--label-contains` would match.
 
 ### Fixed
 
@@ -29,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - iOS `tap` let through a tap on a row centred just above a LogBox toast, where the toast took the touch.
 - `rn logbox dismiss` on Android exited 0 with `dismiss-button` when its clear tap opened the inspector, or when React Native left its LogBox dialog up and empty. It now takes the inspector path, and exits 5 with `emptyDialog` and sends nothing more if the empty dialog stays; `rn open` closes it.
 - iOS `logs` marks an entry the unified log cut at about 1 KB (ending `<…>`): `"truncated": true` in `--json`, with the message kept as stored, text lines ending `<…> [truncated]`, and a stderr line saying how many were cut and that `rn logbox open` shows the whole error in a debug build.
+- A batch `tap` step with `--id` and `--label` or `--value` needs one element to match all of them, as `tap` does, instead of dropping the label or value.
 - `record-video` and `stream-video` on a landscape iOS simulator, iPhone or iPad record upright frames, as `screenshot` does.
 
 ## [0.9.0] - 2026-10-08

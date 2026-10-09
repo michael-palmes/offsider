@@ -19,7 +19,7 @@ struct StreamVideo: AsyncParsableCommand {
         a rectangle in points black on every one of them, and a frame that may have been taken in another orientation \
         or size than the first is replaced by the last masked frame. bgra passes the device's own video stream through \
         and takes no --mask-region. Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, \
-        --mask-label, --mask-text and --mask-emails exit 1 with video_unmasked and send nothing, as does a stream \
+        --mask-label, --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and send nothing, as does a stream \
         while the evidence run has masks or OFFSIDER_MASK_SECURE=1 is set; --unmasked streams anyway, with a warning.
         """
     )

@@ -548,8 +548,79 @@ struct AccessibilityTargetResolverTests {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Sign in"))
         }?.userFacingDescription ?? ""
 
-        #expect(message.hasPrefix("No accessibility element matched --label 'Sign in'. Did you mean 'Sign In' or 'Sign in with Apple'? "))
+        #expect(message.hasPrefix("No accessibility element matched --label 'Sign in'. Did you mean 'Sign In' or 'Sign in with Apple' (starts with your text; --label-contains matches it)? "))
         #expect(message.hasSuffix(AccessibilityTargetResolver.describeUITip))
+    }
+
+    // MARK: --label-contains
+
+    /// A React Native bottom sheet whose heading and detail text are merged into one header.
+    static let mergedHeader = FakeUI.node(
+        .header, id: "layout-sheet-title", label: "Choose a layout. Rows can show as a list or a grid, and the grid holds up to four columns.",
+        frame: FakeUI.frame(16, 500, 361, 60)
+    )
+
+    @Test("--label-contains finds part of a merged label, in the same case, and taps it")
+    func labelContainsMatchesPart() throws {
+        let roots = Self.screen([Self.mergedHeader, FakeUI.node(.button, label: "Done", frame: FakeUI.frame(16, 700, 361, 44))])
+
+        let tap = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("Choose a layout"))
+        #expect(tap.matched?.id == "layout-sheet-title")
+        #expect(try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("list or a grid")).matched?.id == "layout-sheet-title")
+
+        let lowercase = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("choose a layout"))
+        }
+        #expect(lowercase?.reason == .selectorNotFound)
+        #expect(lowercase?.userFacingDescription.contains("(starts with your text; --label-contains 'Choose a layout' matches it)") == true)
+        #expect(lowercase?.candidates.first?.closeness == .prefix)
+    }
+
+    @Test("--label misses a merged label and points at --label-contains")
+    func labelMissPointsAtContains() throws {
+        let roots = Self.screen([Self.mergedHeader])
+
+        let error = try #require(Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Choose a layout"))
+        })
+
+        #expect(error.userFacingDescription.hasPrefix("No accessibility element matched --label 'Choose a layout'. Did you mean 'Choose a layout. Rows can show as a list or a grid, and the…' (starts with your text; --label-contains matches it)? "))
+        #expect(error.candidates.map(\.closeness) == [.prefix])
+        #expect(error.candidates.first?.id == "layout-sheet-title")
+    }
+
+    @Test("--label-contains narrows an --id, and an --id whose label lacks the text is refined out")
+    func labelContainsRefinesID() throws {
+        let roots = Self.screen([
+            FakeUI.node(.button, id: "row", label: "Wi-Fi, on", frame: FakeUI.frame(16, 200, 361, 44)),
+            FakeUI.node(.button, id: "row", label: "Bluetooth, off", frame: FakeUI.frame(16, 260, 361, 44)),
+        ])
+
+        let tap = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .all(.id("row"), refinedBy: [.labelContains("Bluetooth")]))
+        #expect(tap.matched?.label == "Bluetooth, off")
+
+        guard case .refinedOut? = Self.resolutionError({
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .all(.id("row"), refinedBy: [.labelContains("Cellular")]))
+        }) else {
+            Issue.record("expected the --id to be refined out")
+            return
+        }
+    }
+
+    @Test("several elements holding the text are ambiguous as --label-contains, and --nth picks one")
+    func labelContainsAmbiguity() throws {
+        let roots = Self.screen([
+            FakeUI.node(.text, label: "Reminder for Monday", frame: FakeUI.frame(16, 200, 361, 44)),
+            FakeUI.node(.text, label: "Reminder for Tuesday", frame: FakeUI.frame(16, 260, 361, 44)),
+        ])
+
+        let error = Self.resolutionError {
+            _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("Reminder for"))
+        }
+        #expect(error?.reason == .selectorAmbiguous)
+        #expect(error?.userFacingDescription.hasPrefix("Multiple (2) accessibility elements matched --label-contains 'Reminder for' on screen") == true)
+        let second = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("Reminder for"), pick: .nth(2))
+        #expect(second.matched?.label == "Reminder for Tuesday")
     }
 
     @Test("a label that is only inside a LogBox toast names the toast and the logbox commands, not near misses")
@@ -864,7 +935,7 @@ struct AccessibilityTargetResolverTests {
 
         #expect(error.exitCode == .selectorNotFound)
         #expect(error.reason == .selectorNotFound)
-        #expect(error.candidates == [FailureCandidate(id: "log-in", label: "Log in", role: "button", frame: FakeUI.frame(16, 620, 361, 50), onScreen: true)])
+        #expect(error.candidates == [FailureCandidate(id: "log-in", label: "Log in", role: "button", frame: FakeUI.frame(16, 620, 361, 50), onScreen: true, closeness: .similar)])
         #expect(error.hint == "offsider describe-ui --device <DEVICE_ID> --summary")
     }
 

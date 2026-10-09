@@ -16,7 +16,7 @@ struct Screenshot: AsyncParsableCommand {
         is captured as it is, often dark. \
         --mask-secure (or OFFSIDER_MASK_SECURE=1) reads the accessibility tree first and paints every password field \
         opaque black before the image is written or compared; when a password field cannot be located, the image is \
-        withheld and no file is written. --mask-id, --mask-label, --mask-text and --mask-emails paint the elements \
+        withheld and no file is written. --mask-id, --mask-label, --mask-label-contains, --mask-text and --mask-emails paint the elements \
         they match the same way; --mask-region paints a rectangle in points before any --region crop and reads no \
         tree. A selector that matches nothing is named in maskUnmatched and on stderr, and the image is still written. \
         Masks cover what the tree describes: web views, canvases, images and text drawn after the tree read can \
@@ -62,6 +62,9 @@ struct Screenshot: AsyncParsableCommand {
 
     @Option(name: .customLong("mask-label"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this label black, matched as --label matches. Repeatable.", valueName: "text"))
     var maskLabels: [String] = []
+
+    @Option(name: .customLong("mask-label-contains"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element whose label holds this text black, matched as --label-contains matches. Repeatable.", valueName: "text"))
+    var maskLabelsContaining: [String] = []
 
     @Option(name: .customLong("mask-text"), parsing: .upToNextOption, help: ArgumentHelp("Paint the innermost elements whose label, value, title, text, content description or hint matches this case-insensitive regular expression black. Repeatable.", valueName: "regex"))
     var maskTexts: [String] = []
@@ -123,6 +126,7 @@ struct Screenshot: AsyncParsableCommand {
             secure: Self.masksSecure(flag: maskSecure || secureByDefault, environment: environment),
             ids: maskIDs,
             labels: maskLabels,
+            labelsContaining: maskLabelsContaining,
             texts: maskTexts,
             emails: maskEmails,
             regions: try maskRegions.map { try PointRegion.parse($0, option: "--mask-region") }

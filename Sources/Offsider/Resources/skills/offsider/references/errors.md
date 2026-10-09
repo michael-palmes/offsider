@@ -4,7 +4,7 @@
 
 - 0: done.
 - 1: anything else. Read `dispatched`: `no` is safe to resend, `unknown` means check with `describe-ui` first, and never resend `type` text without checking the field.
-- 2: the selector matched nothing. Read `candidates`, fix the selector or wait for the element.
+- 2: the selector matched nothing. Read `candidates`, fix the selector or wait for the element; a candidate whose `closeness` is `prefix` or `contains` holds your text, so `--label-contains` matches it.
 - 3 and 4: `doctor` found warnings or failures.
 - 5: the input was sent but nothing changed, or a `wait`, `assert` or compare condition was not met. Check the screen before sending again.
 - 6: the selector matched several elements. Pick from `candidates`, add `--element-type` or use `--id`.

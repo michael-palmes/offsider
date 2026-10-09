@@ -5,6 +5,7 @@ public enum MaskKind: String, CaseIterable, Sendable {
     case secure
     case id
     case label
+    case labelContains
     case text
     case emails
     case region
@@ -22,16 +23,19 @@ public struct MaskPlan: Equatable, Sendable {
     public var secure: Bool
     public var ids: [String]
     public var labels: [String]
+    /// Text a label must hold, matched as `--label-contains` matches.
+    public var labelsContaining: [String]
     /// Case-insensitive ICU regular expressions.
     public var texts: [String]
     public var emails: Bool
     /// Points, painted before any `--region` crop.
     public var regions: [PointRegion]
 
-    public init(secure: Bool = false, ids: [String] = [], labels: [String] = [], texts: [String] = [], emails: Bool = false, regions: [PointRegion] = []) {
+    public init(secure: Bool = false, ids: [String] = [], labels: [String] = [], labelsContaining: [String] = [], texts: [String] = [], emails: Bool = false, regions: [PointRegion] = []) {
         self.secure = secure
         self.ids = ids
         self.labels = labels
+        self.labelsContaining = labelsContaining
         self.texts = texts
         self.emails = emails
         self.regions = regions
@@ -50,6 +54,7 @@ public struct MaskPlan: Equatable, Sendable {
             secure: secure || other.secure,
             ids: merged(ids, other.ids),
             labels: merged(labels, other.labels),
+            labelsContaining: merged(labelsContaining, other.labelsContaining),
             texts: merged(texts, other.texts),
             emails: emails || other.emails,
             regions: merged(regions, other.regions)
@@ -60,7 +65,7 @@ public struct MaskPlan: Equatable, Sendable {
 
     /// Only regions can be painted without reading the accessibility tree.
     public var needsTree: Bool {
-        secure || !ids.isEmpty || !labels.isEmpty || !texts.isEmpty || emails
+        secure || !ids.isEmpty || !labels.isEmpty || !labelsContaining.isEmpty || !texts.isEmpty || emails
     }
 
     /// The kinds asked for, in `MaskKind` order.
@@ -70,6 +75,7 @@ public struct MaskPlan: Equatable, Sendable {
             case .secure: secure
             case .id: !ids.isEmpty
             case .label: !labels.isEmpty
+            case .labelContains: !labelsContaining.isEmpty
             case .text: !texts.isEmpty
             case .emails: emails
             case .region: !regions.isEmpty

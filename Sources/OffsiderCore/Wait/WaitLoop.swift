@@ -40,11 +40,36 @@ public enum RegionMode: Sendable {
     case stable
 }
 
+/// What a selector that found nothing came closest to: a phrase for the failure line and the elements behind it.
+public struct WaitNearMiss: Equatable, Sendable {
+    public let summary: String
+    public let candidates: [FailureCandidate]
+
+    public init(summary: String, candidates: [FailureCandidate]) {
+        self.summary = summary
+        self.candidates = candidates
+    }
+}
+
+extension ElementProbe {
+    /// The reason a probe gives when nothing matched the selector at all.
+    public static let notFound = "not found"
+}
+
+extension WaitCondition {
+    var explain: ((UITree) -> WaitNearMiss?)? {
+        switch self {
+        case .element(_, _, _, let explain), .anyElement(_, _, let explain): explain
+        case .settled, .region, .duration: nil
+        }
+    }
+}
+
 public enum WaitCondition {
-    /// `stableFor` is how long the element must stay present (or gone) across reads before the wait is met.
-    case element(probe: (UITree) -> ElementProbe, gone: Bool, stableFor: TimeInterval = 0)
+    /// `stableFor` is how long the element must stay present (or gone) across reads before the wait is met; `explain` reads the last tree once when a wait for it times out not found.
+    case element(probe: (UITree) -> ElementProbe, gone: Bool, stableFor: TimeInterval = 0, explain: ((UITree) -> WaitNearMiss?)? = nil)
     /// Met when the first of several selectors, in order, is present; each entry names its selector for the report.
-    case anyElement([(selector: WaitMatch, probe: (UITree) -> ElementProbe)], stableFor: TimeInterval = 0)
+    case anyElement([(selector: WaitMatch, probe: (UITree) -> ElementProbe)], stableFor: TimeInterval = 0, explain: ((UITree) -> WaitNearMiss?)? = nil)
     /// With `ignoreValues`, label and value changes do not count; with `gate`, a pass waits for a recent input's effect.
     case settled(by: SettleSource, quiet: TimeInterval, ignoreValues: Bool = false, gate: SettleGate? = nil)
     case region(mode: RegionMode, quiet: TimeInterval, threshold: Double)
@@ -77,6 +102,8 @@ public struct WaitOutcome: Equatable, Sendable {
     public let matched: WaitMatch?
     /// For `--settled`: every change the tree showed was to text, which `--ignore-values` leaves out.
     public var onlyTextMoved = false
+    /// For a selector that timed out not found: the closest elements on the last read.
+    public var nearMiss: WaitNearMiss?
 
     public init(met: Bool, elapsed: TimeInterval, reason: String, match: UINode? = nil, matched: WaitMatch? = nil) {
         self.met = met
@@ -158,7 +185,7 @@ public enum WaitLoop {
         var lastTransient: Error?
         var succeededOnce = false
         var lastBlock: LogBoxBlock?
-        let gone = if case .element(_, let isGone, _) = condition { isGone } else { false }
+        let gone = if case .element(_, let isGone, _, _) = condition { isGone } else { false }
 
         while true {
             do {
@@ -175,6 +202,7 @@ public enum WaitLoop {
                 state.blockedSince = nil
                 state.blockedReads = 0
                 lastBlock = nil
+                state.missed = false
                 lastTransient = error
                 lastReason = error.localizedDescription
             }
@@ -195,6 +223,9 @@ public enum WaitLoop {
         }
         var outcome = WaitOutcome(met: false, elapsed: sources.now() - start, reason: lastReason)
         outcome.onlyTextMoved = state.treeChanges > 0 && !state.structureMoved
+        if state.missed, let tree = state.lastTree {
+            outcome.nearMiss = condition.explain?(tree)
+        }
         return outcome
     }
 
@@ -235,24 +266,33 @@ public enum WaitLoop {
         /// When the LogBox inspector began to hide the app, and the reads since.
         var blockedSince: TimeInterval?
         var blockedReads = 0
+        /// The last tree an element condition read, and whether a selector found nothing on it.
+        var lastTree: UITree?
+        var missed = false
     }
 
     private static func evaluate(_ condition: WaitCondition, state: inout State, sources: WaitSources) async throws -> Step {
         switch condition {
-        case .element(let probe, let gone, let stableFor):
+        case .element(let probe, let gone, let stableFor, _):
             let step: Step
-            switch probe(try await sources.tree()) {
+            let tree = try await sources.tree()
+            state.lastTree = tree
+            state.missed = false
+            switch probe(tree) {
             case .present(let node):
                 step = gone ? Step(met: false, reason: "still on screen") : Step(met: true, reason: "on screen", match: node)
             case .absent(let reason):
                 step = Step(met: gone, reason: reason)
+                state.missed = reason == ElementProbe.notFound
             case .blocked(let block):
                 step = Step(met: false, reason: LogBoxBlock.reason, block: block)
             }
             return dwell(step, stableFor: stableFor, gone: gone, state: &state, sources: sources)
 
-        case .anyElement(let selectors, let stableFor):
+        case .anyElement(let selectors, let stableFor, _):
             let tree = try await sources.tree()
+            state.lastTree = tree
+            state.missed = false
             var reasons: [String] = []
             var blocks: [LogBoxBlock] = []
             var step = Step(met: false, reason: "")
@@ -262,6 +302,7 @@ public enum WaitLoop {
                     step = Step(met: true, reason: "on screen", match: node, matched: selector.selector)
                 case .absent(let reason):
                     reasons.append("--\(selector.selector.by) '\(selector.selector.text)' \(reason)")
+                    state.missed = state.missed || reason == ElementProbe.notFound
                     continue
                 case .blocked(let block):
                     blocks.append(block)

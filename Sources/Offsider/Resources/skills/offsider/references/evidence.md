@@ -5,7 +5,7 @@
 `offsider run start <dir> --label 'PR 123'` makes every later `screenshot`, `logs` and `batch` screenshot step from this session also write its file into `<dir>` (created 0700; an existing folder keeps its mode, with a warning when other users can write to it) as `NNN-<command>-<HH.MM.SS>.<ext>`, and adds one line per capture, failures included, to `manifest.ndjson`. End with `offsider run stop --summary` (or `--json`), which prints the timeline: one line per capture, then counts of files, failures and unrecorded files.
 
 - A screenshot without `--output` is written only into the run, and `path` is that file; with `--output` both are written and `--json` adds `runFile`. A `logs` file holds exactly what went to stdout, so filter with `logs --exclude` rather than after a pipe to keep noise out of the run.
-- The manifest records `--mask-text`, `--mask-label`, `--grep` and `--exclude` values as `<N characters>`, in `args` and in batch step lines; `--mask-id` and `--mask-region` values are kept.
+- The manifest records `--mask-text`, `--mask-label`, `--mask-label-contains`, `--grep` and `--exclude` values as `<N characters>`, in `args` and in batch step lines; `--mask-id` and `--mask-region` values are kept.
 - `run start --mask-secure --mask-emails --mask-id <id>` masks every capture in the run, on top of the capture's own masks. `run start` again on the active folder adds masks and prints those in force; to drop one, `run stop` and start again.
 - The run belongs to your session (your agent or terminal), found through the process's parents, so other agents on the Mac keep their own runs. Run commands from the same session; `run status` shows the run, `run status --all` every run.
 - `run_active` (exit 1): this session already has a run in another folder; `run stop` first. `run_unavailable`: the folder cannot be written and it would hold the only copy, or no session was found; set `OFFSIDER_RUN=<dir>` to record into a folder whatever the session, or `OFFSIDER_RUN=off` to record nothing.
@@ -23,7 +23,7 @@ offsider run stop --summary
 Masks paint opaque black boxes over the image before it is written or compared, so the file never holds what they cover.
 
 - `--mask-secure` paints password fields; add it before sharing any screen with one. `OFFSIDER_MASK_SECURE=1` turns it on by default.
-- `--mask-id <id>` paints every element with that id; `--mask-label <text>` every element with that label, matched as `--label` matches.
+- `--mask-id <id>` paints every element with that id; `--mask-label <text>` every element with that label, matched as `--label` matches, and `--mask-label-contains <text>` every element whose label holds the text.
 - `--mask-text <regex>` paints the innermost elements whose label, value, title, text, content description or hint matches, case-insensitively; a secure field's value is never searched. `--mask-emails` does the same for email addresses.
 - `--mask-region <x,y,w,h>` paints a rectangle in points before any `--region` crop, and reads no tree. Use it for content the tree cannot see.
 - Each mask flag takes several values and can repeat. `batch` screenshot steps take the same flags and reuse the batch's tree.

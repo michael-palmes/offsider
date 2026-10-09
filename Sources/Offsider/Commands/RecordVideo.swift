@@ -11,9 +11,10 @@ struct RecordVideo: AsyncParsableCommand {
         Each frame is a screenshot, upright as `screenshot` takes it. --mask-region paints a rectangle in points \
         black on every frame; Offsider reads the screen's orientation after every capture, and a frame that may have \
         been taken in another orientation or size than the first is replaced by the last masked frame (heldFrames). \
-        Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, --mask-label, --mask-text and \
-        --mask-emails exit 1 with video_unmasked and write nothing, as does a recording while the evidence run has \
-        masks or OFFSIDER_MASK_SECURE=1 is set; --unmasked records anyway, with a warning. For masked evidence use \
+        Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, --mask-label, \
+        --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and write nothing, as does \
+        a recording while the evidence run has masks or OFFSIDER_MASK_SECURE=1 is set; --unmasked records anyway, \
+        with a warning. For masked evidence use \
         `screenshot` or screenshot steps in a batch.
         """
     )

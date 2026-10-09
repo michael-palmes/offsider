@@ -25,6 +25,9 @@ struct Slider: AsyncParsableCommand {
     @Option(name: [.customLong("label")], help: "Set the slider whose describe-ui label matches (accessibilityLabel).")
     var elementLabel: String?
 
+    @Option(name: [.customLong("label-contains")], help: ArgumentHelp("Set the slider whose describe-ui label holds this text, in the same case.", valueName: "text"))
+    var elementLabelContains: String?
+
     @Option(name: [.customLong("element-type")], help: "Filter matches to this describe-ui role (any case, usually slider) or native type.")
     var elementType: String?
 
@@ -47,11 +50,11 @@ struct Slider: AsyncParsableCommand {
     var deviceOption: DeviceOption
 
     func validate() throws {
-        let selectorCount = [elementID != nil, elementLabel != nil].filter { $0 }.count
+        let selectorCount = [elementID != nil, elementLabel != nil, elementLabelContains != nil].filter { $0 }.count
         guard selectorCount == 1 else {
-            throw ValidationError("Use exactly one of --id or --label to target a slider.")
+            throw ValidationError("Use exactly one of --id, --label or --label-contains to target a slider.")
         }
-        try SelectorQuery.validate(id: elementID, label: elementLabel, value: nil)
+        try SelectorQuery.validate(id: elementID, label: elementLabel, labelContains: elementLabelContains, value: nil)
 
         guard value.isFinite, (0...100).contains(value) else {
             throw ValidationError("--value must be a finite number between 0 and 100.")
@@ -109,7 +112,7 @@ struct Slider: AsyncParsableCommand {
     }
 
     private func accessibilityQuery() throws -> AccessibilityQuery {
-        guard let query = SelectorQuery.make(id: elementID, label: elementLabel, value: nil) else {
+        guard let query = SelectorQuery.make(id: elementID, label: elementLabel, labelContains: elementLabelContains, value: nil) else {
             throw CLIError(errorDescription: "Unexpected state: no slider selector.", reason: .internalError)
         }
         return query
@@ -237,6 +240,7 @@ struct Slider: AsyncParsableCommand {
 
     private var selectorArgument: String {
         if let elementID { return "--id '\(elementID)'" }
+        if let elementLabelContains { return "--label-contains '\(elementLabelContains)'" }
         return "--label '\(elementLabel ?? "")'"
     }
 

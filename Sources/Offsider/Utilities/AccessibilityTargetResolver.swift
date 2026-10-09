@@ -4,13 +4,15 @@ import OffsiderCore
 indirect enum AccessibilityQuery {
     case id(String)
     case label(String)
+    /// The folded label holds the folded text anywhere, in the same case.
+    case labelContains(String)
     case value(String)
-    /// `--id` narrowed by `--label` and `--value`: an element must match every part.
+    /// `--id` narrowed by `--label`, `--label-contains` and `--value`: an element must match every part.
     case all(AccessibilityQuery, refinedBy: [AccessibilityQuery])
 
     var allowsSiblingRedirection: Bool {
         switch self {
-        case .label:
+        case .label, .labelContains:
             return true
         case .id, .value:
             return false
@@ -19,12 +21,12 @@ indirect enum AccessibilityQuery {
         }
     }
 
-    /// Labels and values match after folding quotes and spaces; ids stay exact.
+    /// Labels and values match after folding quotes and spaces; ids stay exact, and `--label-contains` always folds.
     var allowsFolding: Bool {
         switch self {
         case .label, .value:
             return true
-        case .id, .all:
+        case .id, .labelContains, .all:
             return false
         }
     }
@@ -33,6 +35,7 @@ indirect enum AccessibilityQuery {
         switch self {
         case .id: return "--id"
         case .label: return "--label"
+        case .labelContains: return "--label-contains"
         case .value: return "--value"
         case .all(let primary, _): return primary.kind
         }
@@ -40,7 +43,7 @@ indirect enum AccessibilityQuery {
 
     var rawValue: String {
         switch self {
-        case .id(let value), .label(let value), .value(let value):
+        case .id(let value), .label(let value), .labelContains(let value), .value(let value):
             return value
         case .all(let primary, _):
             return primary.rawValue
@@ -58,16 +61,19 @@ indirect enum AccessibilityQuery {
     func field(of node: UINode) -> String? {
         switch self {
         case .id: return node.normalizedID
-        case .label: return node.normalizedLabel
+        case .label, .labelContains: return node.normalizedLabel
         case .value: return node.isSecure ? nil : node.normalizedValue
         case .all(let primary, _): return primary.field(of: node)
         }
     }
 
-    /// True when the node's field equals the text exactly after trimming, or after folding quotes and spaces.
+    /// True when the node's field equals the text exactly after trimming, or after folding quotes and spaces; `--label-contains` wants it anywhere in the folded label.
     func matches(_ node: UINode) -> Bool {
         guard let field = field(of: node) else { return false }
         let wanted = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if case .labelContains = self {
+            return SelectorText.folded(field, contains: wanted)
+        }
         return field == wanted || (allowsFolding && SelectorText.folded(field) == SelectorText.folded(wanted))
     }
 }
@@ -88,6 +94,8 @@ struct MatchSummary: Equatable {
     var screen: String? = nil
     /// True when a page is drawn over it; nil when no page covers anything.
     var beneath: Bool? = nil
+    /// How close it came to a selector that matched nothing.
+    var closeness: SelectorText.Closeness? = nil
 
     init(role: UIRole, id: String?, label: String? = nil, frame: UIFrame?, isOnScreen: Bool?) {
         self.role = role
@@ -132,13 +140,54 @@ struct MatchSummary: Equatable {
     }
 
     var failureCandidate: FailureCandidate {
-        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen, index: index, window: window, screen: screen, beneath: beneath)
+        FailureCandidate(id: id, label: label, role: role.rawValue, frame: frame, onScreen: isOnScreen, index: index, window: window, screen: screen, beneath: beneath, closeness: closeness)
+    }
+}
+
+/// How a near miss is told: its relation to the text asked for, and the selector that would match it.
+enum NearMissPhrase {
+    /// ` (starts with your text; --label-contains matches it)` after a suggestion that holds the text; empty for others.
+    static func annotation(_ near: SelectorText.NearMatch, kind: String, query: String) -> String {
+        guard let relation = holding(near.closeness) else { return "" }
+        guard isLabel(kind), let contained = SelectorText.containedText(of: query, in: near.text) else {
+            return " (\(relation) your text)"
+        }
+        let selector = contained == SelectorText.folded(query) ? "--label-contains" : "--label-contains '\(contained)'"
+        return " (\(relation) your text; \(selector) matches it)"
+    }
+
+    /// `starts with it, use --label-contains 'Choose a'`, or `is close, use --label 'Settings'`.
+    static func relation(_ near: SelectorText.NearMatch, kind: String, query: String) -> String {
+        let said: String
+        switch near.closeness {
+        case .case: said = "differs only in case"
+        case .prefix: said = "starts with it"
+        case .contains: said = "contains it"
+        case .similar: said = "is close"
+        }
+        if holding(near.closeness) != nil, isLabel(kind),
+           let contained = SelectorText.containedText(of: query, in: near.text) {
+            return "\(said), use --label-contains '\(contained)'"
+        }
+        return "\(said), use \(kind == "--label-contains" ? "--label" : kind) '\(near.text)'"
+    }
+
+    private static func isLabel(_ kind: String) -> Bool {
+        kind == "--label" || kind == "--label-contains"
+    }
+
+    private static func holding(_ closeness: SelectorText.Closeness) -> String? {
+        switch closeness {
+        case .prefix: "starts with"
+        case .contains: "contains"
+        case .case, .similar: nil
+        }
     }
 }
 
 enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     /// `candidates` are the elements behind `suggestions`.
-    case notFound(kind: String, value: String, suggestions: [String] = [], candidates: [MatchSummary] = [])
+    case notFound(kind: String, value: String, suggestions: [SelectorText.NearMatch] = [], candidates: [MatchSummary] = [])
     case filteredByElementType(kind: String, value: String, elementType: String, roles: [UIRole], candidates: [MatchSummary] = [])
     case offScreen(selector: String, frames: [UIFrame], viewport: UIFrame)
     case multipleMatches(count: Int, kind: String, value: String, hasUniqueIDs: Bool, candidates: [MatchSummary] = [], onScreenOnly: Bool = false, offScreenIgnored: Int = 0)
@@ -159,7 +208,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
             guard !suggestions.isEmpty else {
                 return "No accessibility element matched \(kind) '\(value)'. \(tip)"
             }
-            let quoted = suggestions.map { "'\(SelectorText.truncated($0))'" }
+            let quoted = suggestions.map { "'\(SelectorText.truncated($0.text))'" + NearMissPhrase.annotation($0, kind: kind, query: value) }
             return "No accessibility element matched \(kind) '\(value)'. Did you mean \(Self.alternatives(quoted))? \(tip)"
         case .filteredByElementType(let kind, let value, let elementType, let roles, _):
             let field = kind.hasPrefix("--") ? String(kind.dropFirst(2)) : kind
@@ -381,7 +430,7 @@ struct AccessibilityTargetResolver {
             element = pool[pool.count - 1]
         case (nil, .id), (nil, .all):
             element = try selectUniqueMatch(pool, ambiguity)
-        case (nil, .label), (nil, .value):
+        case (nil, .label), (nil, .labelContains), (nil, .value):
             element = try selectBestLabelMatch(pool, ambiguity)
         }
 
@@ -602,6 +651,9 @@ struct AccessibilityTargetResolver {
     }
 
     private static func exactMatches(in elements: [UINode], query: AccessibilityQuery) -> [UINode] {
+        if case .labelContains = query {
+            return elements.filter(query.matches)
+        }
         let value = query.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         var matches = elements.filter { query.field(of: $0) == value }
         if case .id = query, matches.isEmpty, !value.isEmpty {
@@ -644,17 +696,39 @@ struct AccessibilityTargetResolver {
         if query.kind != "--id", let toast = KnownOverlays.logBoxToast(containing: query.rawValue, in: roots, viewport: viewport) {
             return .inLogBoxToast(kind: query.kind, value: query.rawValue, toast: toast.index)
         }
+        let near = nearMatches(roots: roots, query: query, viewport: viewport)
+        return .notFound(kind: query.kind, value: query.rawValue, suggestions: near.map(\.match), candidates: near.compactMap(\.summary))
+    }
+
+    /// The fields closest to the query's text, on-screen elements first, each with the first element showing it.
+    private static func nearMatches(roots: [UINode], query: AccessibilityQuery, viewport: UIFrame?) -> [(match: SelectorText.NearMatch, summary: MatchSummary?)] {
         let elements = roots.flatMap { $0.flattened() }
         let onScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) == true } ?? true }
         let offScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) != true } ?? false }
         let ordered = onScreen + offScreen
-        let suggestions = SelectorText.suggestions(for: query.rawValue, among: ordered.compactMap { query.field(of: $0) })
-        let behind = suggestions.compactMap { suggestion in ordered.first { query.field(of: $0) == suggestion } }
-        return .notFound(
-            kind: query.kind,
-            value: query.rawValue,
-            suggestions: suggestions,
-            candidates: behind.map { MatchSummary($0, viewport: viewport) }
+        return SelectorText.nearMatches(for: query.rawValue, among: ordered.compactMap { query.field(of: $0) }).map { near in
+            let summary = ordered.first { query.field(of: $0) == near.text }.map { node in
+                var summary = MatchSummary(node, viewport: viewport)
+                summary.closeness = near.closeness
+                return summary
+            }
+            return (near, summary)
+        }
+    }
+
+    /// What a selector that matched nothing came closest to, for a wait or assert that ends not found; nil when it matched something.
+    static func nearMiss(roots: [UINode], query: AccessibilityQuery) -> WaitNearMiss? {
+        if case .all(let primary, _) = query {
+            return candidates(roots: roots, query: primary, elementType: nil).matches.isEmpty ? nearMiss(roots: roots, query: primary) : nil
+        }
+        guard candidates(roots: roots, query: query, elementType: nil).matches.isEmpty else { return nil }
+        let near = nearMatches(roots: roots, query: query, viewport: UITree.viewport(in: roots))
+        guard let first = near.first, let summary = first.summary else { return nil }
+        let shown = query.kind == "--id" ? summary.id.map { "id=\($0)" } : summary.label.map { "\"\(SelectorText.truncated($0, limit: 44))\"" }
+        let subject = ([summary.role.rawValue] + [shown].compactMap { $0 }).joined(separator: " ")
+        return WaitNearMiss(
+            summary: "\(subject) \(NearMissPhrase.relation(first.match, kind: query.kind, query: query.rawValue))",
+            candidates: near.compactMap { $0.summary?.failureCandidate }
         )
     }
 

@@ -50,6 +50,32 @@ struct SelectorTextTests {
         #expect(suggestions == ["Sign In", "Sign in with Apple"])
     }
 
+    @Test("near matches rank case, then prefix, contains, a candidate the text holds, then a typo, each with its closeness")
+    func nearMatchTiers() {
+        let near = SelectorText.nearMatches(
+            for: "Choose a layout",
+            among: ["Chose a layut", "Layout", "Please choose a layout now", "Choose a layout. Rows can show as a list", "choose a LAYOUT", "Cancel"],
+            limit: 5
+        )
+        #expect(near == [
+            .init(text: "choose a LAYOUT", closeness: .case),
+            .init(text: "Choose a layout. Rows can show as a list", closeness: .prefix),
+            .init(text: "Please choose a layout now", closeness: .contains),
+            .init(text: "Layout", closeness: .similar),
+            .init(text: "Chose a layut", closeness: .similar),
+        ])
+    }
+
+    @Test("--label-contains holds folded text in the same case, and names the label's own spelling for another case")
+    func containment() {
+        #expect(SelectorText.folded("Don\u{2019}t allow tracking", contains: "Don't allow"))
+        #expect(!SelectorText.folded("Choose a layout", contains: "choose a layout"))
+        #expect(!SelectorText.folded("Anything", contains: " \u{200B} "))
+        #expect(SelectorText.containedText(of: "Choose a", in: "Choose a layout.") == "Choose a")
+        #expect(SelectorText.containedText(of: "choose A", in: "Choose a layout.") == "Choose a")
+        #expect(SelectorText.containedText(of: "Colour", in: "Choose a layout.") == nil)
+    }
+
     @Test("a small typo is suggested")
     func typoSuggested() {
         #expect(SelectorText.suggestions(for: "Setings", among: ["Settings", "Profile"]) == ["Settings"])

@@ -2,13 +2,15 @@ import ArgumentParser
 import Foundation
 import OffsiderCore
 
-/// The `--id`/`--label`/`--value` selector rules shared by `tap`, `slider`, `wait` and `assert`.
+/// The `--id`/`--label`/`--label-contains`/`--value` selector rules shared by `tap`, `slider`, `type`, `wait` and `assert`.
 enum SelectorQuery {
-    static let refinementRule = "Use one of --id, --label or --value, or narrow one --id with a --label, a --value or both, which must all match one element."
+    static let refinementRule = "Use one of --id, --label, --label-contains or --value, or narrow one --id with a --label or --label-contains, a --value or both, which must all match one element."
+    static let oneLabelRule = "Use only one of --label or --label-contains."
 
-    /// Rejects more than one selector, unless `refining` lets `--label` and `--value` narrow an `--id`, and an empty one; setting none is left to the caller.
-    static func validate(id: String?, label: String?, value: String?, refining: Bool = false) throws {
-        let selectors = [("--id", id), ("--label", label), ("--value", value)].filter { $0.1 != nil }
+    /// Rejects more than one selector, unless `refining` lets `--label` (or `--label-contains`) and `--value` narrow an `--id`, and an empty one; setting none is left to the caller.
+    static func validate(id: String?, label: String?, labelContains: String? = nil, value: String?, refining: Bool = false) throws {
+        if label != nil, labelContains != nil { throw ValidationError(oneLabelRule) }
+        let selectors = [("--id", id), ("--label", label), ("--label-contains", labelContains), ("--value", value)].filter { $0.1 != nil }
         if selectors.count > 1 {
             guard refining else { throw ValidationError("Use only one of --id, --label, or --value.") }
             guard id != nil else { throw ValidationError(refinementRule) }
@@ -19,8 +21,8 @@ enum SelectorQuery {
     }
 
     /// `wait --any` takes several selectors; every other command takes one.
-    static func validate(ids: [String], labels: [String], values: [String], allowingSeveral: Bool) throws {
-        let named = ids.map { ("--id", $0) } + labels.map { ("--label", $0) } + values.map { ("--value", $0) }
+    static func validate(ids: [String], labels: [String], labelsContaining: [String] = [], values: [String], allowingSeveral: Bool) throws {
+        let named = ids.map { ("--id", $0) } + labels.map { ("--label", $0) } + labelsContaining.map { ("--label-contains", $0) } + values.map { ("--value", $0) }
         if named.count > 1 && !allowingSeveral {
             throw ValidationError("Use only one of --id, --label, or --value.")
         }
@@ -29,14 +31,20 @@ enum SelectorQuery {
         }
     }
 
-    static func make(id: String?, label: String?, value: String?) -> AccessibilityQuery? {
+    static func make(id: String?, label: String?, labelContains: String? = nil, value: String?) -> AccessibilityQuery? {
+        let labelQuery = label.map(AccessibilityQuery.label) ?? labelContains.map(AccessibilityQuery.labelContains)
         if let id {
-            let refinements = [label.map(AccessibilityQuery.label), value.map(AccessibilityQuery.value)].compactMap { $0 }
+            let refinements = [labelQuery, value.map(AccessibilityQuery.value)].compactMap { $0 }
             return refinements.isEmpty ? .id(id) : .all(.id(id), refinedBy: refinements)
         }
-        if let label { return .label(label) }
+        if let labelQuery { return labelQuery }
         if let value { return .value(value) }
         return nil
+    }
+
+    /// Names the elements closest to `query` once a wait or assert ends with nothing matching it.
+    static func explain(_ query: AccessibilityQuery) -> (UITree) -> WaitNearMiss? {
+        { tree in AccessibilityTargetResolver.nearMiss(roots: tree.roots, query: query) }
     }
 }
 
@@ -47,6 +55,9 @@ struct ElementSelectorOptions: ParsableArguments {
 
     @Option(name: [.customLong("label")], help: "The element whose describe-ui label matches (accessibilityLabel); repeat with wait --any.")
     var elementLabels: [String] = []
+
+    @Option(name: [.customLong("label-contains")], help: ArgumentHelp("The element whose describe-ui label holds this text, in the same case, such as one part of a label React Native merged; repeat with wait --any.", valueName: "text"))
+    var elementLabelsContaining: [String] = []
 
     @Option(name: [.customLong("value")], help: "The element whose describe-ui value matches (the current value of a control); repeat with wait --any.")
     var elementValues: [String] = []
@@ -62,7 +73,7 @@ struct ElementSelectorOptions: ParsableArguments {
 
     /// The count is left to the command, since only `wait --any` takes several, and one `--id` narrowed by a label or value counts as one.
     func validate() throws {
-        try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, values: elementValues, allowingSeveral: true)
+        try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, labelsContaining: elementLabelsContaining, values: elementValues, allowingSeveral: true)
         guard query == nil else { return }
         for (name, isSet) in [("--element-type", elementType != nil), ("--has-value", hasValue != nil), ("--allow-offscreen", allowOffscreen)] where isSet {
             throw ValidationError("\(name) needs --id, --label or --value.")
@@ -72,24 +83,36 @@ struct ElementSelectorOptions: ParsableArguments {
     /// The selector outside `wait --any`: the only one, or an `--id` with the `--label` and `--value` that narrow it.
     var query: AccessibilityQuery? {
         guard isConjunction else { return queries.first }
-        return .all(.id(elementIDs[0]), refinedBy: elementLabels.map(AccessibilityQuery.label) + elementValues.map(AccessibilityQuery.value))
+        return .all(.id(elementIDs[0]), refinedBy: labelQueries + elementValues.map(AccessibilityQuery.value))
     }
 
-    /// One `--id` with at most one `--label` and one `--value`, all of which one element must match.
+    /// One `--id` with at most one `--label` or `--label-contains` and one `--value`, all of which one element must match.
     var isConjunction: Bool {
-        elementIDs.count == 1 && elementLabels.count <= 1 && elementValues.count <= 1 && !(elementLabels.isEmpty && elementValues.isEmpty)
+        elementIDs.count == 1 && labelQueries.count <= 1 && elementValues.count <= 1 && !(labelQueries.isEmpty && elementValues.isEmpty)
     }
 
     /// Every selector, ids then labels then values.
     var queries: [AccessibilityQuery] {
-        elementIDs.map(AccessibilityQuery.id) + elementLabels.map(AccessibilityQuery.label) + elementValues.map(AccessibilityQuery.value)
+        elementIDs.map(AccessibilityQuery.id) + labelQueries + elementValues.map(AccessibilityQuery.value)
+    }
+
+    private var labelQueries: [AccessibilityQuery] {
+        elementLabels.map(AccessibilityQuery.label) + elementLabelsContaining.map(AccessibilityQuery.labelContains)
+    }
+
+    /// Outside `wait --any`, `--label` and `--label-contains` both read the label, so only one may be given.
+    var mixesLabelSelectors: Bool {
+        !elementLabels.isEmpty && !elementLabelsContaining.isEmpty
     }
 
     func validateCount(allowingSeveral: Bool) throws {
+        if !allowingSeveral, mixesLabelSelectors {
+            throw ValidationError(SelectorQuery.oneLabelRule)
+        }
         if !allowingSeveral, queries.count > 1, !isConjunction {
             throw ValidationError(SelectorQuery.refinementRule)
         }
-        try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, values: elementValues, allowingSeveral: true)
+        try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, labelsContaining: elementLabelsContaining, values: elementValues, allowingSeveral: true)
     }
 
     /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen.

@@ -28,7 +28,7 @@ struct SliderCommandSurfaceTests {
         let result = try await TestHelpers.runOffsiderCommandAllowFailure("slider --value 75 --device invalid")
 
         #expect(result.exitCode != 0)
-        #expect(result.output.contains("Use exactly one of --id or --label to target a slider."))
+        #expect(result.output.contains("Use exactly one of --id, --label or --label-contains to target a slider."))
     }
 
     @Test("Slider drag endpoints stay within the application frame")

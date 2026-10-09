@@ -45,6 +45,11 @@ struct ArgumentHintsTests {
         (["assert", "--id", "a", "--timeout", "5"], "assert checks once and has no --timeout. To wait for the condition, run offsider wait with the same selector and --timeout <seconds>.", ["wait", "--id", "a", "--timeout", "5"]),
         (["tap", "--id", "a", "--timeout", "5"], "tap has no --timeout: --wait-timeout <seconds> waits for the element to appear, and --verify-timeout <seconds> (with --verify) waits for the tap's effect.", ["tap", "--id", "a", "--wait-timeout", "5"]),
         (["tap", "--id", "a", "--timeout", "5"], "tap has no --timeout: --wait-timeout <seconds> waits for the element to appear, and --verify-timeout <seconds> (with --verify) waits for the tap's effect.", ["tap", "--id", "a", "--verify", "--verify-timeout", "5"]),
+        (["tap", "--label-prefix", "Select"], "tap takes --label-contains <text> for part of a label, in the same case.", ["tap", "--label-contains", "Select"]),
+        (["wait", "--label-includes", "Select"], "wait takes --label-contains <text> for part of a label, in the same case.", ["wait", "--label-contains", "Select"]),
+        (["assert", "--label-prefix=Select"], "assert takes --label-contains <text> for part of a label, in the same case.", ["assert", "--label-contains", "Select"]),
+        (["slider", "--label-includes", "Volume", "--value", "5"], "slider takes --label-contains <text> for part of a label, in the same case.", ["slider", "--label-contains", "Volume", "--value", "5"]),
+        (["describe-ui", "--json"], "describe-ui prints JSON by default and has no --json; --format chooses json, ndjson or text.", ["describe-ui", "--format", "json"]),
     ]
 
     @Test("each misnamed option gets its hint as a usage error, never a rename", arguments: misnamed.indices)
