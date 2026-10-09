@@ -9,8 +9,8 @@ const basePriceCents = 12_995;
 const priceStepsCents = [0, 127, 41, 268, 155, -82, 19, 203, -37, 96];
 const baseOrders = 18_402;
 const ordersStep = 3;
-const intervals = ['1D', '1W'] as const;
-type Interval = (typeof intervals)[number];
+const sizes = ['S', 'M'] as const;
+type Size = (typeof sizes)[number];
 
 function grouped(value: number): string {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -28,7 +28,7 @@ function onOff(value: boolean): string {
 export function LiveTickerTestScreen() {
   const [tick, setTick] = useState(0);
   const [alerts, setAlerts] = useState(false);
-  const [selected, setSelected] = useState<Interval>('1D');
+  const [selected, setSelected] = useState<Size>('S');
   const [detail, setDetail] = useState(false);
   const detailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const orders = grouped(baseOrders + tick * ordersStep);
@@ -66,9 +66,9 @@ export function LiveTickerTestScreen() {
     }, openDetailMs);
   };
 
-  const selectInterval = (value: Interval) => {
-    console.log(`OffsiderFixture Range Selected ${value}`);
-    fixtureLog('live-ticker', `interval ${value}`);
+  const selectSize = (value: Size) => {
+    console.log(`OffsiderFixture Size Selected ${value}`);
+    fixtureLog('live-ticker', `size ${value}`);
     setSelected(value);
   };
 
@@ -92,28 +92,28 @@ export function LiveTickerTestScreen() {
         </View>
         <Readout id="live-ticker-inert" label="Chart Area" style={styles.inert} textStyle={styles.inertText} />
         <View style={styles.row}>
-          <View style={styles.intervals}>
-            {intervals.map((value) => (
+          <View style={styles.sizes}>
+            {sizes.map((value) => (
               <Target
                 key={value}
-                id={`live-ticker-interval-${value.toLowerCase()}`}
+                id={`live-ticker-size-${value.toLowerCase()}`}
                 label={value}
                 state={{ selected: selected === value }}
-                onPress={() => selectInterval(value)}
-                style={[styles.interval, selected === value && styles.rangeSelected]}
-                textStyle={[styles.intervalText, selected === value && styles.intervalTextSelected]}
+                onPress={() => selectSize(value)}
+                style={[styles.size, selected === value && styles.sizeSelected]}
+                textStyle={[styles.sizeText, selected === value && styles.sizeTextSelected]}
               />
             ))}
           </View>
           <View
-            testID="live-ticker-interval"
+            testID="live-ticker-size"
             accessible
             accessibilityRole="text"
-            accessibilityLabel="Interval"
+            accessibilityLabel="Size"
             accessibilityValue={iosValue(selected)}
           >
             <Text importantForAccessibility="no" style={styles.label}>
-              {`Interval: ${selected}`}
+              {`Size: ${selected}`}
             </Text>
           </View>
         </View>
@@ -180,11 +180,11 @@ const styles = StyleSheet.create({
     backgroundColor: colours.panel,
   },
   inertText: { color: colours.secondary },
-  intervals: { flexDirection: 'row', gap: 8 },
-  interval: { minWidth: 56, backgroundColor: colours.panel },
-  rangeSelected: { backgroundColor: colours.accent },
-  intervalText: { color: colours.accent },
-  intervalTextSelected: { color: '#FFFFFF' },
+  sizes: { flexDirection: 'row', gap: 8 },
+  size: { minWidth: 56, backgroundColor: colours.panel },
+  sizeSelected: { backgroundColor: colours.accent },
+  sizeText: { color: colours.accent },
+  sizeTextSelected: { color: '#FFFFFF' },
   track: {
     width: 52,
     minHeight: 32,

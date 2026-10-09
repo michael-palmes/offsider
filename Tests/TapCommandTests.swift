@@ -443,20 +443,20 @@ struct TapCommandTests {
     @Test("--id with --label taps the one element matching both, and a label no match has fails as not found")
     func idAndLabel() async throws {
         let screen = FakeUI.tree(width: 393, height: 852, [
-            FakeUI.node(.button, id: "interval", label: "1D", frame: FakeUI.frame(20, 600, 60, 44)),
-            FakeUI.node(.button, id: "interval", label: "1W", frame: FakeUI.frame(100, 600, 60, 44)),
+            FakeUI.node(.button, id: "size", label: "S", frame: FakeUI.frame(20, 600, 60, 44)),
+            FakeUI.node(.button, id: "size", label: "M", frame: FakeUI.frame(100, 600, 60, 44)),
         ])
         let backend = FakeDeviceBackend(trees: [screen])
-        try await Self.tap(["--id", "interval", "--label", "1W"], on: backend)
+        try await Self.tap(["--id", "size", "--label", "M"], on: backend)
         #expect(backend.session.calls == [.perform(.tapAt(x: 130, y: 622))])
 
         let missing = FakeDeviceBackend(trees: [screen])
         let error = await #expect(throws: ElementResolutionError.self) {
-            try await Self.tap(["--id", "interval", "--label", "1Y"], on: missing)
+            try await Self.tap(["--id", "size", "--label", "XL"], on: missing)
         }
         #expect(error?.exitCode == .selectorNotFound)
-        #expect(error?.userFacingDescription.hasPrefix("No accessibility element matched --id 'interval' --label '1Y': the id matches button id=interval label=\"1D\"") == true)
-        #expect(error?.candidates.map(\.label) == ["1D", "1W"])
+        #expect(error?.userFacingDescription.hasPrefix("No accessibility element matched --id 'size' --label 'XL': the id matches button id=size label=\"S\"") == true)
+        #expect(error?.candidates.map(\.label) == ["S", "M"])
         #expect(missing.session.calls.isEmpty)
     }
 

@@ -178,29 +178,29 @@ struct TapCoverTests {
         #expect(verdict.isConfident)
     }
 
-    /// An interval button drawn over the labelled list it sits on, which tree order alone took for a cover.
-    static func intervalOverList(platform: DevicePlatform) -> UITree {
+    /// A size button drawn over the labelled list it sits on, which tree order alone took for a cover.
+    static func sizeOverList(platform: DevicePlatform) -> UITree {
         let list = FakeUI.node(.other, id: "popular-list", label: "Popular", frame: FakeUI.frame(0, 300, 402, 400), platform: platform, drawingOrder: 1)
-        let interval = FakeUI.node(.button, id: "interval-btn", label: "1D", frame: FakeUI.frame(16, 320, 60, 32), platform: platform, drawingOrder: 2)
-        return FakeUI.tree(platform: platform, platform == .ios ? [interval, list] : [list, interval])
+        let size = FakeUI.node(.button, id: "size-btn", label: "S", frame: FakeUI.frame(16, 320, 60, 32), platform: platform, drawingOrder: 2)
+        return FakeUI.tree(platform: platform, platform == .ios ? [size, list] : [list, size])
     }
 
-    @Test("an interval button drawn over a list stays clear, by hit-test on iOS and by drawing order on Android")
-    func intervalOverListIsClear() throws {
-        let hit = Self.text("1D", FakeUI.frame(36, 326, 20, 20))
-        #expect(try Self.judge(Self.intervalOverList(platform: .ios), target: "interval-btn", hit: hit) == nil)
-        #expect(try Self.judge(Self.intervalOverList(platform: .android), target: "interval-btn", hit: nil) == nil)
+    @Test("a size button drawn over a list stays clear, by hit-test on iOS and by drawing order on Android")
+    func sizeOverListIsClear() throws {
+        let hit = Self.text("S", FakeUI.frame(36, 326, 20, 20))
+        #expect(try Self.judge(Self.sizeOverList(platform: .ios), target: "size-btn", hit: hit) == nil)
+        #expect(try Self.judge(Self.sizeOverList(platform: .android), target: "size-btn", hit: nil) == nil)
     }
 
     @Test("on Android without drawing order, the same list is only a guessed cover")
     func listGuessWithoutDrawingOrder() throws {
-        var tree = Self.intervalOverList(platform: .android)
+        var tree = Self.sizeOverList(platform: .android)
         tree.roots[0].children = tree.roots[0].children.map { node in
             var copy = node
             copy.native = .android(AndroidNativeAttributes(resourceId: node.id))
             return copy
         }
-        let verdict = try Self.judge(tree, target: "interval-btn", hit: nil)
+        let verdict = try Self.judge(tree, target: "size-btn", hit: nil)
         #expect(verdict?.cover.id == "popular-list")
         #expect(verdict?.isConfident == false)
     }
