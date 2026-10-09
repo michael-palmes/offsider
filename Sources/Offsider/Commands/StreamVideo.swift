@@ -113,6 +113,7 @@ struct StreamVideo: AsyncParsableCommand {
         }
 
         var frameCount: UInt64 = 0
+        var heldCount = 0
         let startTime = Date()
 
         while true {
@@ -126,14 +127,14 @@ struct StreamVideo: AsyncParsableCommand {
             let frameStartTime = Date()
 
             do {
-                let image: CGImage
+                let frame: VideoFrame
                 if let first = pending {
-                    image = first
+                    frame = VideoFrame(image: first, held: false)
                     pending = nil
                 } else {
-                    image = try await source.next().image
+                    frame = try await source.next()
                 }
-                let processedData = try VideoFrameUtilities.jpegData(from: image, scale: source.scalesItself ? 1 : scale, quality: quality)
+                let processedData = try VideoFrameUtilities.jpegData(from: frame.image, scale: source.scalesItself ? 1 : scale, quality: quality)
 
                 switch format {
                 case .mjpeg:
@@ -152,6 +153,7 @@ struct StreamVideo: AsyncParsableCommand {
                 }
 
                 frameCount += 1
+                if frame.held { heldCount += 1 }
 
                 if frameCount % UInt64(max(1, fps)) == 0 {
                     let elapsed = Date().timeIntervalSince(startTime)
@@ -178,7 +180,7 @@ struct StreamVideo: AsyncParsableCommand {
         let elapsed = Date().timeIntervalSince(startTime)
         if frameCount > 0 && elapsed > 0 {
             let avgFPS = Double(frameCount) / elapsed
-            let held = source.heldFrames > 0 ? ", \(source.heldFrames) held" : ""
+            let held = heldCount > 0 ? ", \(heldCount) held" : ""
             let summary = String(format: "Streamed %llu frames in %.1f seconds (%.1f FPS average)", frameCount, elapsed, avgFPS)
             FileHandle.standardError.write(Data("\(summary)\(held)\n".utf8))
         }

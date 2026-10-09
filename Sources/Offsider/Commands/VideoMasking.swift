@@ -93,8 +93,6 @@ final class VideoFrameSource {
     private var screen: UIScreenInfo?
     private var gate: VideoFrameGate?
     private var lastGood: CGImage?
-    private(set) var frames = 0
-    private(set) var heldFrames = 0
     /// Rectangles painted on each frame.
     private(set) var painted = 0
 
@@ -114,7 +112,6 @@ final class VideoFrameSource {
         guard !regions.isEmpty else {
             screen = try? await backend.screenInfo(for: device)
             let image = try await capture().image
-            frames = 1
             return image
         }
         guard let turner = backend as? any OrientationControlling else {
@@ -136,7 +133,6 @@ final class VideoFrameSource {
             gate = VideoFrameGate(orientation: before, width: capture.image.width, height: capture.image.height)
             painted = masked.painted[.region] ?? 0
             lastGood = masked.capture.image
-            frames = 1
             return masked.capture.image
         }
         throw Self.unplaceable("the screen's orientation could not be read steadily")
@@ -156,8 +152,7 @@ final class VideoFrameSource {
     func next() async throws -> VideoFrame {
         guard let turner = backend as? any OrientationControlling, var gate, let lastGood else {
             let image = try await capture().image
-            frames += 1
-            return VideoFrame(image: image, held: false)
+                return VideoFrame(image: image, held: false)
         }
         let captured: Result<CapturedScreen, any Error>
         do {
@@ -171,9 +166,7 @@ final class VideoFrameSource {
         let admitted = gate.admits(width: size.0, height: size.1, after: after)
         self.gate = gate
         let capture = try captured.get()
-        frames += 1
         guard admitted, let masked = try? ScreenCapture.masking(capture, plan: MaskPlan(regions: regions), tree: nil) else {
-            heldFrames += 1
             if !holding {
                 holding = true
                 FileHandle.standardError.write(Data("The screen left the orientation the recording started in, so --mask-region cannot be placed; repeating the last masked frame until it returns.\n".utf8))

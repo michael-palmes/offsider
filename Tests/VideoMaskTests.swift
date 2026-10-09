@@ -148,8 +148,6 @@ struct VideoMaskTests {
         #expect([good.held, turned.held, after.held, back.held] == [false, true, true, false])
         #expect(turned.image === good.image)
         #expect(after.image === good.image)
-        #expect(source.frames == 5)
-        #expect(source.heldFrames == 2)
         #expect(ScreenshotMaskTests.pixel(back.image, 10, 10) == Self.black)
     }
 
@@ -171,7 +169,6 @@ struct VideoMaskTests {
 
         let error = await #expect(throws: CLIError.self) { _ = try await source.start() }
         #expect(error?.reason == .maskUnproven)
-        #expect(source.frames == 0)
     }
 
     @Test("without regions no orientation is read and every frame is used")

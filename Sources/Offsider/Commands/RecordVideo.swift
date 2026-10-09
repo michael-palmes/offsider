@@ -77,7 +77,7 @@ struct RecordVideo: AsyncParsableCommand {
         defer { signalObserver.invalidate() }
 
         let source = VideoFrameSource(backend: backend, device: booted.id, scale: scale, regions: regions)
-        let written: Int
+        let written: (frames: Int, held: Int)
         do {
             written = try await recordVideo(
                 from: source,
@@ -92,10 +92,10 @@ struct RecordVideo: AsyncParsableCommand {
         } catch {
             throw CLIError(errorDescription: "Failed to record video: \(error.localizedDescription)", reason: .videoFailed)
         }
-        let held = source.heldFrames > 0 ? ", \(source.heldFrames) of \(written) frames held" : ""
+        let held = written.held > 0 ? ", \(written.held) of \(written.frames) frames held" : ""
         FileHandle.standardError.write(Data("Recording saved to \(outputURL.path)\(held)\n".utf8))
         if json {
-            print(VideoRecordingReport(path: outputURL.path, frames: written, heldFrames: source.heldFrames, regions: source.painted, unmasked: masks.unmasked).jsonLine())
+            print(VideoRecordingReport(path: outputURL.path, frames: written.frames, heldFrames: written.held, regions: source.painted, unmasked: masks.unmasked).jsonLine())
         } else {
             print(outputURL.path)
         }
@@ -109,7 +109,7 @@ struct RecordVideo: AsyncParsableCommand {
         quality: Int,
         scale: Double,
         cancellationFlag: CancellationFlag
-    ) async throws -> Int {
+    ) async throws -> (frames: Int, held: Int) {
         let initialImage = try await source.start()
 
         let dimensions = VideoFrameUtilities.computeDimensions(for: initialImage, scale: source.scalesItself ? 1.0 : scale)
@@ -124,6 +124,7 @@ struct RecordVideo: AsyncParsableCommand {
 
         let frameInterval = 1.0 / Double(fps)
         var frameCount: Int64 = 1
+        var heldCount = 0
         var lastLogFrame: Int64 = 0
         let startTime = Date()
         var lastPresentationTime = CMTime.zero
@@ -153,6 +154,7 @@ struct RecordVideo: AsyncParsableCommand {
                 try recorder.append(image: frame.image, presentationTime: presentationTime)
                 lastPresentationTime = presentationTime
                 frameCount += 1
+                if frame.held { heldCount += 1 }
 
                 if frameCount - lastLogFrame >= Int64(fps) {
                     lastLogFrame = frameCount
@@ -172,7 +174,7 @@ struct RecordVideo: AsyncParsableCommand {
         }
 
         try await recorder.finish()
-        return Int(frameCount)
+        return (Int(frameCount), heldCount)
     }
 
     private func prepareOutputURL() throws -> URL {
