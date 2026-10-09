@@ -39,14 +39,16 @@ struct ListDevices: AsyncParsableCommand {
         sessionLabel: String? = ProcessInfo.processInfo.environment[DeviceLeaseRules.sessionVariable],
         processes: ProcessTable = .live, selfPID: Int32 = getpid()
     ) -> [DeviceSummary] {
-        let ancestors = ProcessAncestry.ancestors(of: selfPID, in: processes)
+        var ancestors: [ProcessIdentity]?
         return devices.map { device in
             guard let key = StableDeviceKey.of(device) else { return device }
             var device = device
             device.lease = store.lease(platform: device.platform, key: key, now: now)
-            device.leaseIsMine = device.lease.map {
-                DeviceLeaseRules.ownership(of: $0, sessionLabel: sessionLabel, ancestors: ancestors, processes: processes) == .thisSession
-            } ?? false
+            if let lease = device.lease {
+                let chain = ancestors ?? ProcessAncestry.ancestors(of: selfPID, in: processes)
+                ancestors = chain
+                device.leaseIsMine = DeviceLeaseRules.ownership(of: lease, sessionLabel: sessionLabel, ancestors: chain, processes: processes) == .thisSession
+            }
             return device
         }
     }
