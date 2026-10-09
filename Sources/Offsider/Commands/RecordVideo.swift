@@ -77,8 +77,9 @@ struct RecordVideo: AsyncParsableCommand {
         defer { signalObserver.invalidate() }
 
         let source = VideoFrameSource(backend: backend, device: booted.id, scale: scale, regions: regions)
+        let written: Int
         do {
-            try await recordVideo(
+            written = try await recordVideo(
                 from: source,
                 outputURL: outputURL,
                 fps: fps,
@@ -91,10 +92,10 @@ struct RecordVideo: AsyncParsableCommand {
         } catch {
             throw CLIError(errorDescription: "Failed to record video: \(error.localizedDescription)", reason: .videoFailed)
         }
-        let held = source.heldFrames > 0 ? ", \(source.heldFrames) of \(source.frames) frames held" : ""
+        let held = source.heldFrames > 0 ? ", \(source.heldFrames) of \(written) frames held" : ""
         FileHandle.standardError.write(Data("Recording saved to \(outputURL.path)\(held)\n".utf8))
         if json {
-            print(VideoRecordingReport(path: outputURL.path, frames: source.frames, heldFrames: source.heldFrames, regions: source.painted, unmasked: masks.unmasked).jsonLine())
+            print(VideoRecordingReport(path: outputURL.path, frames: written, heldFrames: source.heldFrames, regions: source.painted, unmasked: masks.unmasked).jsonLine())
         } else {
             print(outputURL.path)
         }
@@ -108,7 +109,7 @@ struct RecordVideo: AsyncParsableCommand {
         quality: Int,
         scale: Double,
         cancellationFlag: CancellationFlag
-    ) async throws {
+    ) async throws -> Int {
         let initialImage = try await source.start()
 
         let dimensions = VideoFrameUtilities.computeDimensions(for: initialImage, scale: source.scalesItself ? 1.0 : scale)
@@ -171,6 +172,7 @@ struct RecordVideo: AsyncParsableCommand {
         }
 
         try await recorder.finish()
+        return Int(frameCount)
     }
 
     private func prepareOutputURL() throws -> URL {
