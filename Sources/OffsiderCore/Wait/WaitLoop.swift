@@ -54,6 +54,11 @@ public struct WaitNearMiss: Equatable, Sendable {
 extension ElementProbe {
     /// The reason a probe gives when nothing matched the selector at all.
     public static let notFound = "not found"
+
+    /// True for `notFound`, alone or with a note after it such as `; LogBox inspector open`.
+    static func foundNothing(_ reason: String) -> Bool {
+        reason == notFound || reason.hasPrefix(notFound + ";")
+    }
 }
 
 extension WaitCondition {
@@ -283,7 +288,7 @@ public enum WaitLoop {
                 step = gone ? Step(met: false, reason: "still on screen") : Step(met: true, reason: "on screen", match: node)
             case .absent(let reason):
                 step = Step(met: gone, reason: reason)
-                state.missed = reason == ElementProbe.notFound
+                state.missed = ElementProbe.foundNothing(reason)
             case .blocked(let block):
                 step = Step(met: false, reason: LogBoxBlock.reason, block: block)
             }
@@ -302,7 +307,7 @@ public enum WaitLoop {
                     step = Step(met: true, reason: "on screen", match: node, matched: selector.selector)
                 case .absent(let reason):
                     reasons.append("--\(selector.selector.by) '\(selector.selector.text)' \(reason)")
-                    state.missed = state.missed || reason == ElementProbe.notFound
+                    state.missed = state.missed || ElementProbe.foundNothing(reason)
                     continue
                 case .blocked(let block):
                     blocks.append(block)

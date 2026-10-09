@@ -122,12 +122,19 @@ struct ElementSelectorOptions: ParsableArguments {
         let hasValue = hasValue
         return { tree in
             let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType)
+            var read: LogBoxInspector??
+            func inspector() -> LogBoxInspector? {
+                if let read { return read }
+                let inspector = KnownOverlays.logBoxInspector(in: tree.roots, viewport: tree.viewport)
+                read = .some(inspector)
+                return inspector
+            }
             func absent(_ reason: String) -> ElementProbe {
-                guard KnownOverlays.logBoxInspector(in: tree.roots, viewport: tree.viewport) != nil else { return .absent(reason: reason) }
+                guard inspector() != nil else { return .absent(reason: reason) }
                 return .absent(reason: reason + "; LogBox inspector open")
             }
             guard let first = found.matches.first else {
-                if let block = LogBoxBlock.hiding(tree, subject: query.selectorDescription) {
+                if let block = LogBoxBlock.hiding(tree, inspector: inspector(), subject: query.selectorDescription) {
                     return .blocked(block)
                 }
                 return absent("not found")

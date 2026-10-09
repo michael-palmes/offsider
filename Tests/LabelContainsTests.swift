@@ -65,6 +65,17 @@ struct LabelContainsTests {
         #expect(nearest.first?["onScreen"] as? Bool == true)
     }
 
+    @Test("an iOS wait that times out while the LogBox inspector is open still names the nearest element")
+    func waitNamesNearestBesideInspector() async throws {
+        let roots = Self.sheet().roots + LogBoxTrees.inspector()
+        let tree = FakeUI.tree(width: 393, height: 852, roots)
+        let (wait, outcome) = try await Self.wait(["--label", "Choose a layout", "--timeout", "0.2"], trees: [tree])
+
+        #expect(outcome.reason == "not found; LogBox inspector open")
+        #expect(wait.failureLine(outcome).contains("nearest: header \"Choose a layout. Rows can show as a list or…\" starts with it"))
+        #expect(try Self.nearest(outcome).first?["id"] as? String == "layout-sheet-title")
+    }
+
     @Test("a typo is named with the exact selector to use, and a miss with nothing close names none")
     func nearestForTypoAndNothing() async throws {
         let (wait, typo) = try await Self.wait(["--label", "Dome", "--timeout", "0"])

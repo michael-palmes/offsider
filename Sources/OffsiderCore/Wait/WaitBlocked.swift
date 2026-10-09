@@ -12,10 +12,10 @@ public struct LogBoxBlock: Equatable, Sendable {
         self.minimize = minimize
     }
 
-    /// The block `tree` shows for `subject`; nil while the app is in the tree.
-    public static func hiding(_ tree: UITree, subject: String) -> LogBoxBlock? {
-        guard KnownOverlays.logBoxInspectorHidesApp(tree) else { return nil }
-        return LogBoxBlock(subject: subject, minimize: KnownOverlays.logBoxInspector(in: tree.roots, viewport: tree.viewport)?.minimize != nil)
+    /// The block `tree` shows for `subject`, given the inspector already read from it; nil while the app is in the tree.
+    public static func hiding(_ tree: UITree, inspector: LogBoxInspector?, subject: String) -> LogBoxBlock? {
+        guard let inspector, tree.context.window?.kind == .modal else { return nil }
+        return LogBoxBlock(subject: subject, minimize: inspector.minimize != nil)
     }
 
     /// What a read it blocked reports.
