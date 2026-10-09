@@ -47,9 +47,9 @@ final class EvidenceRecorder {
         self.arguments = arguments
     }
 
-    /// The commands that look for a run.
+    /// The commands that look for a run; video only reads its masks, to refuse them.
     static func records(_ command: String) -> Bool {
-        ["screenshot", "logs", "batch"].contains(command) || command.hasPrefix("run ")
+        ["screenshot", "logs", "batch", "record-video", "stream-video"].contains(command) || command.hasPrefix("run ")
     }
 
     /// The caller's run, found once; a run that cannot be found is no run, but an `OFFSIDER_RUN` folder that cannot be used is an error.

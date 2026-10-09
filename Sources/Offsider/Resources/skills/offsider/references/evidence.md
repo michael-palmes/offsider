@@ -30,6 +30,7 @@ Masks paint opaque black boxes over the image before it is written or compared, 
 - `--json` adds `masked` (rectangles painted), `maskedBy` (rectangles per kind you asked for) and `maskUnmatched` (selectors that matched nothing, also warned on stderr; the image is still written).
 - An element to mask without a frame withholds the image (`mask_unproven`): retry when the screen is still.
 - Masks cover what the accessibility tree describes. Web views, canvases, images, and text that appears between the tree read and the capture can still show: check the image before sharing it, and add `--mask-region` for what is left.
+- Video takes no tree masks: with masks in the run, or `OFFSIDER_MASK_SECURE=1`, `record-video` and `stream-video` exit 1 with `video_unmasked` and write nothing. Capture the steps with `screenshot` instead, or pass `--unmasked` only when the screen shows nothing private. Their `--mask-region` paints a fixed rectangle on every frame (`guide screenshots`). Video files are not numbered into the run.
 
 ```bash
 offsider screenshot --mask-secure --mask-emails --mask-id profile-name --json --device <DEVICE_ID>
