@@ -71,10 +71,6 @@ public enum SelectorText {
         return Array(ranked.prefix(limit))
     }
 
-    public static func suggestions(for query: String, among candidates: [String], limit: Int = 3) -> [String] {
-        nearMatches(for: query, among: candidates, limit: limit).map(\.text)
-    }
-
     /// True when the folded `text` holds the folded `query`, in the same case; an empty query holds nothing.
     public static func folded(_ text: String, contains query: String) -> Bool {
         let wanted = folded(query)

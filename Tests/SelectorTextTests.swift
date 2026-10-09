@@ -43,10 +43,10 @@ struct SelectorTextTests {
 
     @Test("suggestions rank a case-only difference first, then containment")
     func suggestionRanking() {
-        let suggestions = SelectorText.suggestions(
+        let suggestions = SelectorText.nearMatches(
             for: "Sign in",
             among: ["Sign in with Apple", "Cancel", "Sign In"]
-        )
+        ).map(\.text)
         #expect(suggestions == ["Sign In", "Sign in with Apple"])
     }
 
@@ -78,18 +78,18 @@ struct SelectorTextTests {
 
     @Test("a small typo is suggested")
     func typoSuggested() {
-        #expect(SelectorText.suggestions(for: "Setings", among: ["Settings", "Profile"]) == ["Settings"])
+        #expect(SelectorText.nearMatches(for: "Setings", among: ["Settings", "Profile"]).map(\.text) == ["Settings"])
     }
 
     @Test("the limit is respected")
     func limitRespected() {
-        let suggestions = SelectorText.suggestions(for: "Save", among: ["save", "SAVE", "Save draft", "Save all"], limit: 2)
+        let suggestions = SelectorText.nearMatches(for: "Save", among: ["save", "SAVE", "Save draft", "Save all"], limit: 2).map(\.text)
         #expect(suggestions == ["save", "SAVE"])
     }
 
     @Test("distant strings give no suggestion")
     func distantStrings() {
-        #expect(SelectorText.suggestions(for: "Delete account", among: ["Settings", "Profile", "OK"]).isEmpty)
+        #expect(SelectorText.nearMatches(for: "Delete account", among: ["Settings", "Profile", "OK"]).isEmpty)
     }
 
     @Test("text over the limit is cut to the limit with an ellipsis; text at the limit is kept")

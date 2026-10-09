@@ -53,10 +53,13 @@ struct KnownOverlaysTests {
 struct LogBoxWindowTests {
     @Test("the inspector hides the app only in its own modal window, as on Android; on iOS it is drawn over the app's nodes")
     func inspectorHidesApp() {
-        #expect(KnownOverlays.logBoxInspectorHidesApp(LogBoxTrees.androidInspector()))
-        #expect(!KnownOverlays.logBoxInspectorHidesApp(FakeUI.tree(LogBoxTrees.inspector())))
-        #expect(!KnownOverlays.logBoxInspectorHidesApp(LogBoxTrees.androidTree(LogBoxTrees.inspector(platform: .android), title: "Playground")))
-        #expect(!KnownOverlays.logBoxInspectorHidesApp(LogBoxTrees.androidTree([], title: nil)))
+        func hides(_ tree: UITree) -> Bool {
+            LogBoxBlock.hiding(tree, inspector: KnownOverlays.logBoxInspector(in: tree.roots, viewport: tree.viewport), subject: "--id x") != nil
+        }
+        #expect(hides(LogBoxTrees.androidInspector()))
+        #expect(!hides(FakeUI.tree(LogBoxTrees.inspector())))
+        #expect(!hides(LogBoxTrees.androidTree(LogBoxTrees.inspector(platform: .android), title: "Playground")))
+        #expect(!hides(LogBoxTrees.androidTree([], title: nil)))
     }
 
     @Test("an untitled modal from the app with nothing labelled, named or actionable is an empty dialog, in the summary and JSON")

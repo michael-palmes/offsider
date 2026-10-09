@@ -45,13 +45,7 @@ public enum KnownOverlays {
         return underBar ? bottom - app.y : 0
     }
 
-    /// The LogBox inspector in its own modal window, which on Android leaves the app's windows out of the tree.
-    public static func logBoxInspectorHidesApp(_ tree: UITree) -> Bool {
-        tree.context.window?.kind == .modal && logBoxInspector(in: tree.roots, viewport: tree.viewport) != nil
-    }
-
-    /// A modal window's tree that spans the screen with nothing labelled, named or actionable in it, as the dialog React Native's
-    /// LogBox can leave up on Android after its last log is gone.
+    /// A screen-spanning modal with nothing labelled, named or actionable, as React Native's LogBox can leave on Android.
     static func isEmptyDialog(_ tree: UITree) -> Bool {
         let app = tree.roots.filter { $0.role != .keyboard }
         guard app.count == 1, let frame = app[0].frame, let screen = screenFrame(of: tree), CoverJudge.spans(frame, screen) else { return false }
