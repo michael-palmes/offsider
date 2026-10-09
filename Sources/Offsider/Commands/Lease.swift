@@ -11,7 +11,9 @@ struct LeaseCommand: AsyncParsableCommand {
         A lease is a label and an expiry kept under the device's stable name (an AVD name, a phone serial or a UDID), \
         so it survives an emulator restart on another serial; a shut-down AVD can be leased by name. `set` fails with \
         exit 8 (device_leased) while another label holds a live lease, unless --force; the same label renews it. \
-        `list-devices` shows leases, and `doctor --device` warns about one unless OFFSIDER_LEASE matches its label.
+        `set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes \
+        for any later command of that session and warns for any other. When OFFSIDER_LEASE is set it decides \
+        instead, passing only for a matching label. `list-devices` shows leases.
 
         Examples:
           offsider lease set --device Offsider_E2E --label 'PR 123 review'
@@ -77,7 +79,7 @@ struct LeaseCommand: AsyncParsableCommand {
         let target = try await device.asyncMap { try await Self.resolve($0) }
         print(try Self.perform(
             try parsedAction(), target: target, label: label.flatMap(DeviceLease.validLabel), minutes: ttl ?? DeviceLease.defaultMinutes,
-            force: force, json: json, store: store, now: Date(), pid: getppid()
+            force: force, json: json, store: store, now: Date(), pid: getppid(), owner: ProcessAncestry.owner(from: getppid(), in: .live)
         ))
     }
 
@@ -99,18 +101,23 @@ struct LeaseCommand: AsyncParsableCommand {
 
     static func perform(
         _ action: Action, target: (platform: DevicePlatform, key: String)?, label: String?, minutes: Int, force: Bool, json: Bool,
-        store: DeviceLeaseStore, now: Date, pid: Int32
+        store: DeviceLeaseStore, now: Date, pid: Int32, owner: ProcessIdentity? = nil
     ) throws -> String {
         switch action {
         case .set:
             guard let target, let label else { throw ValidationError(DeviceDefault.missingMessage) }
             let (existing, lease) = try store.set(platform: target.platform, key: target.key, now: now) { existing in
-                try claim(existing, key: target.key, label: label, minutes: minutes, force: force, now: now, pid: pid)
+                try claim(existing, key: target.key, label: label, minutes: minutes, force: force, now: now, pid: pid, owner: owner)
             }
             let renewing = existing?.label == label
             if json { return report("set", target: target, lease: lease) }
             let verb = renewing ? "Renewed the lease on" : "Leased"
-            return "\(verb) \(target.key) to '\(label)' until \(DeviceLeaseRules.clock(lease.expires)). Run `export OFFSIDER_LEASE=\(shellQuoted(label))` so `offsider doctor` knows this session holds it."
+            let quoted = DeviceLeaseRules.shellQuoted(label)
+            let leased = "\(verb) \(target.key) to '\(label)' until \(DeviceLeaseRules.clock(lease.expires))"
+            guard let owner = lease.owner else {
+                return "\(leased). Run `export OFFSIDER_LEASE=\(quoted)` so `offsider doctor` knows this session holds it."
+            }
+            return "\(leased) for this session (\(owner.name), pid \(owner.pid)); `offsider doctor` recognises it from any command this session runs. From another session, set OFFSIDER_LEASE=\(quoted)."
         case .release:
             guard let target else { throw ValidationError(DeviceDefault.missingMessage) }
             let removed = store.remove(platform: target.platform, key: target.key, now: now)
@@ -127,8 +134,8 @@ struct LeaseCommand: AsyncParsableCommand {
         }
     }
 
-    /// The lease `set` writes over `existing`: refused while another label holds it unless `force`, and renewed for the same label.
-    static func claim(_ existing: DeviceLease?, key: String, label: String, minutes: Int, force: Bool, now: Date, pid: Int32) throws -> DeviceLease {
+    /// The lease `set` writes over `existing`: refused while another label holds it unless `force`, and renewed for the same label by whichever session sets it now.
+    static func claim(_ existing: DeviceLease?, key: String, label: String, minutes: Int, force: Bool, now: Date, pid: Int32, owner: ProcessIdentity? = nil) throws -> DeviceLease {
         if let existing, existing.label != label, !force {
             throw CLIError(
                 errorDescription: "\(key) is leased to '\(existing.label)' since \(DeviceLeaseRules.clock(existing.created)), until \(DeviceLeaseRules.clock(existing.expires)). Choose another device, or pass --force if that lease is stale.",
@@ -137,11 +144,7 @@ struct LeaseCommand: AsyncParsableCommand {
             )
         }
         let created = existing.flatMap { $0.label == label ? $0.created : nil } ?? now
-        return DeviceLease(label: label, created: created, expires: now.addingTimeInterval(TimeInterval(minutes * 60)), pid: pid)
-    }
-
-    static func shellQuoted(_ text: String) -> String {
-        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return DeviceLease(label: label, created: created, expires: now.addingTimeInterval(TimeInterval(minutes * 60)), pid: pid, owner: owner)
     }
 
     static func report(_ action: String, target: (platform: DevicePlatform, key: String), lease: DeviceLease?) -> String {

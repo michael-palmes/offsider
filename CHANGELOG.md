@@ -6,11 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `list-devices --json` lease objects add `mine`, and `lease --json` lease objects add `owner` (`{pid, name, startedAt}`).
+
 ### Changed
 
 - `credential set` and `unlock-code set` on a terminal open with a short header saying the secret stays in the login Keychain, show a dot for each password character, ask again in place when an answer cannot be saved or the two entries differ, and clear their prompts once saved, leaving a short summary and the next command. Escape or Control-C cancels with nothing saved (exit 130).
 - On a terminal, `credential set` picks the login to update, or adds a tagged one, from an arrow-key menu, and asks before replacing a saved tag instead of refusing without `--update`. `credential join` picks the app to share from a menu. Without a terminal, both still need `--update`, a tag or `--app`.
 - When standard output is a terminal, `credential` and `unlock-code` print a short summary with emoji, coloured unless `NO_COLOR` is set, and `credential` shows a spinner while it reads the app in front. Piped output and `--json` are unchanged.
+- `lease set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes `device.lease` for any later command of that session without `OFFSIDER_LEASE`, and otherwise names the session holding the lease or says it has ended. `OFFSIDER_LEASE`, when set, still decides.
 
 ## [0.9.0] - 2026-10-08
 

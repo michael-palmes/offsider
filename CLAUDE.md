@@ -95,7 +95,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_TREE_CACHE` | `off` stops reading and writing the per-device tree cache under the private directory's `trees/` (`describe-ui --diff` and the tap guard then see no earlier tree) |
 | `OFFSIDER_DISPLAY_CACHE` | `off` stops reading and writing the per-phone display cache under the private directory's `displays/` (a foldable phone's active panel, its size and device state, so the next capture skips the display reads) |
 | `OFFSIDER_DEVICE` | The default `--device` for device commands (an explicit `--device` wins; blank is unset); `doctor --fix` with it set to an iPhone or iPad's UDID mounts the developer disk image on that device; `test-runner.sh` and test child processes unset it |
-| `OFFSIDER_LEASE` | The label of this session's `lease set`; `doctor`'s `device.lease` passes when it matches |
+| `OFFSIDER_LEASE` | The label of this session's `lease set`; when set, `doctor`'s `device.lease` passes only when it matches. Unset, a lease passes for any later command of the session that set it |
 | `OFFSIDER_RUN` | `off` keeps captures out of any evidence run (`test-runner.sh`, `bench-ab.sh` and test helpers set it); `<dir>` records into that folder whatever the session |
 | `OFFSIDER_WAIT_LOCK` | Default seconds to wait for a device another Offsider command holds (`--wait-lock` wins; `test-runner.sh` sets 30) |
 | `OFFSIDER_TIMINGS=1` | Prints iOS and Android phase timings to stderr (`offsider timing: <phase> <n> ms`) |

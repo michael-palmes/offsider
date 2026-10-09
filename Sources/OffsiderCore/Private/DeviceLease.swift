@@ -12,12 +12,15 @@ public struct DeviceLease: Equatable, Sendable {
     public let expires: Date
     /// The process that set it, usually the agent's shell.
     public let pid: Int32
+    /// The session that set it: the first ancestor of `lease set` that is not a shell or wrapper, such as an agent harness or a terminal's `login`; nil in older lease files.
+    public let owner: ProcessIdentity?
 
-    public init(label: String, created: Date, expires: Date, pid: Int32) {
+    public init(label: String, created: Date, expires: Date, pid: Int32, owner: ProcessIdentity? = nil) {
         self.label = label
         self.created = created
         self.expires = expires
         self.pid = pid
+        self.owner = owner
     }
 
     /// 1 to 80 printable characters, trimmed; nil otherwise.
@@ -28,7 +31,19 @@ public struct DeviceLease: Equatable, Sendable {
     }
 
     var fileContents: String {
-        "label=\(label)\ncreated=\(Int(created.timeIntervalSince1970))\nexpires=\(Int(expires.timeIntervalSince1970))\npid=\(pid)\n"
+        var text = "label=\(label)\ncreated=\(Int(created.timeIntervalSince1970))\nexpires=\(Int(expires.timeIntervalSince1970))\npid=\(pid)\n"
+        if let owner {
+            let name = String(owner.name.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+            text += "owner=\(owner.pid):\(owner.startTime):\(name)\n"
+        }
+        return text
+    }
+
+    /// `<pid>:<startTime>:<name>`, as `fileContents` writes it.
+    static func parseOwner(_ text: Substring) -> ProcessIdentity? {
+        let parts = text.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3, let pid = Int32(parts[0]), pid > 0, let startTime = UInt64(parts[1]) else { return nil }
+        return ProcessIdentity(pid: pid, startTime: startTime, name: String(parts[2]))
     }
 
     static func parse(_ text: String) -> DeviceLease? {
@@ -44,7 +59,8 @@ public struct DeviceLease: Equatable, Sendable {
             label: label,
             created: Date(timeIntervalSince1970: created),
             expires: Date(timeIntervalSince1970: expires),
-            pid: fields["pid"].flatMap { Int32($0) } ?? 0
+            pid: fields["pid"].flatMap { Int32($0) } ?? 0,
+            owner: fields["owner"].flatMap(parseOwner)
         )
     }
 }
@@ -172,6 +188,16 @@ extension DeviceStateReport {
             ("label", .string(lease.label)),
             ("since", .string(ProcessStamp.timestamp(lease.created))),
             ("expiresAt", .string(ProcessStamp.timestamp(lease.expires))),
+            ("owner", .optional(lease.owner) { ownerObject($0) }),
+        ])
+    }
+
+    /// `{"pid":4242,"name":"claude","startedAt":"…"}`: the session that set the lease.
+    static func ownerObject(_ owner: ProcessIdentity) -> OrderedJSON {
+        .object([
+            ("pid", .integer(Int(owner.pid))),
+            ("name", .string(owner.name)),
+            ("startedAt", .string(ProcessStamp.timestamp(owner.startDate))),
         ])
     }
 
