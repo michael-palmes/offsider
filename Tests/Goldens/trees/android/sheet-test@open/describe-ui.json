@@ -18,7 +18,8 @@
     "window": {
       "title": null,
       "kind": "modal",
-      "package": "com.mpalmes.offsider.playground.rn"
+      "package": "com.mpalmes.offsider.playground.rn",
+      "empty": false
     },
     "keyboard": false,
     "logbox": null

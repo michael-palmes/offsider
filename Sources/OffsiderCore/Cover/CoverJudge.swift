@@ -8,6 +8,8 @@ public enum CoverEvidence: String, Sendable {
     case drawingOrder
     /// The order the tree lists elements in, which is not how they are drawn: only a guess.
     case treeOrder
+    /// A LogBox toast's touch area, which reaches beyond the frame the tree gives it.
+    case logBoxTouchArea
 }
 
 /// What a selector tap would land on instead of its target.
@@ -30,6 +32,7 @@ public struct CoverVerdict: Equatable, Sendable {
 /// Decides whether a selector tap's point reaches its target, from a hit-test, Android's drawing order or, failing both, tree order.
 public enum CoverJudge {
     /// What a tap at `point` on `target` (from `matched`) would reach instead, given the simulator's `hit` if any; nil when it reaches the target.
+    /// `logBoxInset` grows a LogBox toast's touch area as `KnownOverlays.logBoxTopInset` says.
     public static func judge(
         target: UINode,
         matched: UINode,
@@ -38,9 +41,25 @@ public enum CoverJudge {
         roots: [UINode],
         viewport: UIFrame,
         stack: ScreenStack,
-        hit: UINode?
+        hit: UINode?,
+        logBoxInset: Double = 0
     ) -> CoverVerdict? {
-        let context = Context(target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack)
+        var context = Context(target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack)
+        context.logBoxInset = logBoxInset
+        let judged = judged(context, hit: hit)
+        if judged?.isConfident == true {
+            return judged
+        }
+        // A toast's touch area reaches past its frame, so only a confident verdict outweighs it.
+        let toast = context.logBoxTouchCover()
+        if toast?.isConfident == true {
+            return toast
+        }
+        return judged ?? toast
+    }
+
+    /// The verdict from a hit-test, Android's drawing order or tree order alone; nil when the point is clear.
+    private static func judged(_ context: Context, hit: UINode?) -> CoverVerdict? {
         if let hit {
             switch context.judge(hit: hit) {
             case .clear: return nil
@@ -48,16 +67,16 @@ public enum CoverJudge {
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
             case .undecided: break
             }
-        } else if target.isAndroidNode, let top = drawnTop(at: point, in: roots, holding: [target, matched], viewport: viewport, stack: stack) {
+        } else if context.target.isAndroidNode,
+                  let top = drawnTop(at: context.point, in: context.roots, holding: [context.target, context.matched], viewport: context.viewport, stack: context.stack) {
             switch context.judge(hit: top) {
-            case .clear:
-                return context.logBoxBelowFrame(viewport: viewport).map { context.verdict($0, .drawingOrder, confident: true) }
+            case .clear: return nil
             case .cover(let node, let confident): return context.verdict(node, .drawingOrder, confident: confident)
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
             case .undecided: break
             }
         }
-        return context.guess(viewport: viewport).map { context.verdict($0, .treeOrder, confident: false) }
+        return context.guess(viewport: context.viewport).map { context.verdict($0, .treeOrder, confident: false) }
     }
 
     /// The hit chain when Android's drawing order or window layers order every set of siblings it passes; nil otherwise.
@@ -100,6 +119,12 @@ public enum CoverJudge {
 
     private static let containerRoles: Set<UIRole> = [.window, .application, .scrollView, .list]
 
+    /// True when `area` overlaps `frame` by a point or more of height.
+    public static func reaches(_ area: UIFrame, _ frame: UIFrame?) -> Bool {
+        guard let frame, let overlap = area.intersection(frame) else { return false }
+        return overlap.height >= 1
+    }
+
     /// Covers at least 80 percent of the viewport, as a screen's root or backdrop does.
     static func spans(_ frame: UIFrame, _ viewport: UIFrame) -> Bool {
         guard let visible = frame.intersection(viewport) else { return false }
@@ -130,6 +155,7 @@ public enum CoverJudge {
         let flat: [UINode]
         /// The target and the matched element with everything inside them.
         let own: [UINode]
+        var logBoxInset = 0.0
 
         init(target: UINode, matched: UINode, point: UIPoint, candidates: [UINode], roots: [UINode], viewport: UIFrame, stack: ScreenStack) {
             self.target = target
@@ -266,12 +292,17 @@ public enum CoverJudge {
             }
         }
 
-        /// A LogBox toast drawn over the target whose touch area, reaching below its frame, takes the point.
-        func logBoxBelowFrame(viewport: UIFrame) -> UINode? {
-            candidates.first { candidate in
-                guard KnownOverlays.logBoxToast(candidate, viewport: viewport) != nil, candidate.frame?.contains(point) == false else { return false }
-                return UITree.zOrder(of: candidate, over: target, in: roots)?.isAbove == true
+        /// A LogBox toast over the target whose touch area takes the point beyond its frame; a guess when that area only reaches the target's frame.
+        func logBoxTouchCover() -> CoverVerdict? {
+            let toasts = candidates.compactMap { candidate -> (node: UINode, area: UIFrame)? in
+                guard let area = KnownOverlays.logBoxTouchArea(of: candidate, in: viewport, inset: logBoxInset), !stack.isBeneath(candidate, in: roots),
+                      UITree.zOrder(of: candidate, over: target, in: roots)?.isAbove == true else { return nil }
+                return (candidate, area)
             }
+            if let taking = toasts.first(where: { $0.area.contains(point) && $0.node.frame?.contains(point) == false }) {
+                return verdict(taking.node, .logBoxTouchArea, confident: true)
+            }
+            return toasts.first { CoverJudge.reaches($0.area, target.frame) }.map { verdict($0.node, .logBoxTouchArea, confident: false) }
         }
 
         /// Without a hit-test or drawing order: a page over the target's screen, else the first candidate neither inside the target nor a backdrop.

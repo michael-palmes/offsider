@@ -99,14 +99,21 @@ struct ElementSelectorOptions: ParsableArguments {
         let hasValue = hasValue
         return { tree in
             let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType)
+            func absent(_ reason: String) -> ElementProbe {
+                guard KnownOverlays.logBoxInspector(in: tree.roots, viewport: tree.viewport) != nil else { return .absent(reason: reason) }
+                return .absent(reason: reason + "; LogBox inspector open")
+            }
             guard let first = found.matches.first else {
-                return .absent(reason: "not found")
+                if let block = LogBoxBlock.hiding(tree, subject: query.selectorDescription) {
+                    return .blocked(block)
+                }
+                return absent("not found")
             }
             var pool = allowOffscreen || found.viewport == nil ? found.matches : found.onScreen
             guard !pool.isEmpty else {
                 let place = first.hasPositiveFrame ? first.frame.map { "off screen at \($0.summary)" } : nil
                 let more = found.matches.count > 1 ? " (and \(found.matches.count - 1) more)" : ""
-                return .absent(reason: (place ?? "has no usable frame") + more)
+                return absent((place ?? "has no usable frame") + more)
             }
             if let hasValue {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
@@ -114,7 +121,7 @@ struct ElementSelectorOptions: ParsableArguments {
                     let actual = pool[0].normalizedValue.map { "has value '\($0)'" } ?? "has no value"
                     let labelled = pool.contains { AccessibilityQuery.label(hasValue).matches($0) }
                     let hint = labelled ? "; '\(hasValue)' is its label: use --label '\(hasValue)'" : ""
-                    return .absent(reason: "\(actual), expected '\(hasValue)'\(hint)")
+                    return absent("\(actual), expected '\(hasValue)'\(hint)")
                 }
                 pool = valued
             }

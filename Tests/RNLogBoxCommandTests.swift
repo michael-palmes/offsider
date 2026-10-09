@@ -95,7 +95,7 @@ struct RNLogBoxCommandTests {
         let (outcome, _) = try await Self.dismiss([FakeUI.tree([Self.toast(2)])], timeout: "2")
 
         #expect(outcome.remaining == 2 && outcome.cleared == 0)
-        #expect(outcome.jsonLine() == #"{"version":1,"cleared":0,"remaining":2,"method":"none"}"#)
+        #expect(outcome.jsonLine() == #"{"version":1,"cleared":0,"remaining":2,"method":"none","emptyDialog":false}"#)
     }
 
     @Test("a screen without LogBox sends nothing")
@@ -109,7 +109,7 @@ struct RNLogBoxCommandTests {
     @Test("status reads each toast's index, count and message as JSON")
     func statusJSON() {
         let state = LogBoxState(tree: FakeUI.tree([Self.toast(2)]))
-        #expect(state.jsonLine() == #"{"version":1,"logs":2,"toasts":[{"index":1,"count":2,"message":"Request failed","frame":{"x":10,"y":806,"width":382,"height":48}}],"inspector":false}"#)
+        #expect(state.jsonLine() == #"{"version":1,"logs":2,"toasts":[{"index":1,"count":2,"message":"Request failed","frame":{"x":10,"y":806,"width":382,"height":48}}],"inspector":false,"emptyDialog":false}"#)
         #expect(state.text() == "LogBox: 2 logs in 1 toast, bottom first\n  1. Request failed (2 logs)")
     }
 
@@ -200,5 +200,98 @@ struct RNLogBoxCommandTests {
             #expect(error?.reason == reason)
             #expect(backend.session.calls.isEmpty)
         }
+    }
+
+    // MARK: Android, where the inspector and LogBox's dialog are windows that hide the app's toasts
+
+    static let android = DeviceID(rawValue: "emulator-5554", platform: .android)
+    static let androidToast = LogBoxTrees.androidApp([LogBoxTrees.toast(1, platform: .android)])
+    static let androidClean = LogBoxTrees.androidApp([FakeUI.node(.button, id: "home", label: "Home", frame: FakeUI.frame(16, 120, 370, 44), platform: .android)])
+
+    static func dismissAndroid(_ trees: [UITree], advanceOnInput: Bool = true, arguments: [String] = []) async throws -> (LogBoxDismissal, FakeDeviceBackend, ScriptedClock) {
+        let backend = FakeDeviceBackend(platform: .android, trees: trees, advanceTreeOnInput: advanceOnInput)
+        let clock = ScriptedClock()
+        let command = try RNLogBoxDismiss.parse(arguments + ["--device", android.rawValue])
+        let outcome = try await command.dismiss(on: DeviceRouter.Route(backend: backend, device: android), clock: clock.poll)
+        return (outcome, backend, clock)
+    }
+
+    @Test("a clear tap that opens the inspector, which hides the toast, is the inspector path: no body tap, one Dismiss, method inspector")
+    func clearTapOpensInspector() async throws {
+        let (outcome, backend, _) = try await Self.dismissAndroid([Self.androidToast, LogBoxTrees.androidInspector(), Self.androidClean])
+
+        #expect(outcome == LogBoxDismissal(cleared: 1, remaining: 0, method: .inspector))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830)), .perform(.tapAt(x: 100, y: 847))])
+    }
+
+    @Test("an empty dialog left after the clear tap is never a clean exit, and gets no tap on the toast's body or anything else")
+    func emptyModalAfterClearTap() async throws {
+        let (outcome, backend, _) = try await Self.dismissAndroid([Self.androidToast, LogBoxTrees.androidEmptyDialog()])
+
+        #expect(outcome == LogBoxDismissal(cleared: 1, remaining: 0, method: .inspector, emptyDialog: true))
+        #expect(!outcome.isClear)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830))])
+    }
+
+    @Test("another dialog over the app after the clear tap hides the toast, so its log still counts as remaining")
+    func otherDialogAfterClearTap() async throws {
+        let dialog = LogBoxTrees.androidTree([FakeUI.node(.text, label: "Loading", frame: FakeUI.frame(100, 400, 200, 20), platform: .android)], title: nil)
+
+        let (outcome, backend, _) = try await Self.dismissAndroid([Self.androidToast, dialog])
+
+        #expect(outcome == LogBoxDismissal(cleared: 0, remaining: 1, method: .inspector))
+        #expect(!outcome.isClear)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830))])
+    }
+
+    @Test("an empty dialog that stays 1.5 s after the last Dismiss is reported, exit 5 with emptyDialog, and nothing more is sent")
+    func persistentEmptyDialog() async throws {
+        let (outcome, backend, clock) = try await Self.dismissAndroid([Self.androidToast, LogBoxTrees.androidInspector(), LogBoxTrees.androidEmptyDialog()])
+
+        #expect(outcome == LogBoxDismissal(cleared: 1, remaining: 0, method: .inspector, emptyDialog: true))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830)), .perform(.tapAt(x: 100, y: 847))])
+        #expect(clock.now >= RNLogBoxDismiss.emptyDialogWait)
+        #expect(outcome.jsonLine() == #"{"version":1,"cleared":1,"remaining":0,"method":"inspector","emptyDialog":true}"#)
+        #expect(RNLogBoxDismiss.line(outcome, index: nil, device: Self.android.rawValue).hasPrefix(
+            "✗ Cleared 1 LogBox log, but React Native left its empty LogBox dialog over the app; nothing more was sent. Reload the app to close it, in an Expo dev client with: offsider rn open --port <metro port> --bundle-id <package> --device emulator-5554"
+        ))
+    }
+
+    @Test("an empty dialog that closes within 1.5 s of the last Dismiss is a clean exit with no extra input")
+    func emptyDialogCloses() async throws {
+        let (outcome, backend, _) = try await Self.dismissAndroid(
+            [Self.androidToast, LogBoxTrees.androidInspector(), LogBoxTrees.androidEmptyDialog(), Self.androidClean], advanceOnInput: false
+        )
+
+        #expect(outcome == LogBoxDismissal(cleared: 1, remaining: 0, method: .inspector))
+        #expect(outcome.isClear)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830)), .perform(.tapAt(x: 100, y: 847))])
+        #expect(backend.treeReads == 4)
+    }
+
+    @Test("a screen that starts with the empty dialog exits 5 with emptyDialog and sends nothing, with or without --index", arguments: [[String](), ["--index", "1"]])
+    func startsWithEmptyDialog(arguments: [String]) async throws {
+        let (outcome, backend, _) = try await Self.dismissAndroid([LogBoxTrees.androidEmptyDialog()], arguments: arguments)
+
+        #expect(outcome == LogBoxDismissal(cleared: 0, remaining: 0, method: .none, emptyDialog: true))
+        #expect(!outcome.isClear)
+        #expect(backend.session.calls.isEmpty)
+        #expect(RNLogBoxDismiss.line(outcome, index: nil, device: "emulator-5554").hasPrefix("✗ No LogBox logs on screen, but React Native's empty LogBox dialog is over the app; nothing more was sent."))
+    }
+
+    @Test("status reads the empty dialog without a tap")
+    func statusEmptyDialog() {
+        let state = LogBoxState(tree: LogBoxTrees.androidEmptyDialog())
+
+        #expect(state.jsonLine() == #"{"version":1,"logs":0,"toasts":[],"inspector":false,"emptyDialog":true}"#)
+        #expect(state.text() == "No LogBox logs on screen, but an empty dialog covers the app, as React Native can leave its LogBox dialog")
+    }
+
+    @Test("a clear tap that works on Android, with the app's window in front, stays the dismiss-button path")
+    func androidClearButton() async throws {
+        let (outcome, backend, _) = try await Self.dismissAndroid([Self.androidToast, Self.androidClean])
+
+        #expect(outcome == LogBoxDismissal(cleared: 1, remaining: 0, method: .dismissButton))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830))])
     }
 }

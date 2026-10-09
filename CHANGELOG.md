@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `wait` and `assert` stop with `logbox_inspector_open` (exit 1, nothing dispatched) when a selector matches nothing while React Native's LogBox inspector, in its own window on Android, hides the app: a wait after 1.5 s, `assert` and short timeouts on the last read. `--gone` stops rather than passing, and the `hint` is `tap --label Minimize`. A timeout's `last:` adds `LogBox inspector open` on either platform.
+- `describe-ui` marks an untitled Android dialog that spans the screen with nothing in it as `# window: <package> (modal, empty)`, with `context.window.empty` in JSON. `rn logbox status` and `rn logbox dismiss --json` add `emptyDialog`.
 - `logs --exclude <regex>` (repeatable) drops entries whose message matches, as `--grep` matches, on both platforms and in every mode, before stdout or an evidence run sees them, so a monitoring SDK's copy of each console line stays out of the run's log. `--json` adds `excluded`, stderr says how many, and the run manifest shows each pattern as `<N characters>`.
 - `record-video` and `stream-video` take `--mask-region x,y,w,h` (points, repeatable), painted black on every frame except with `stream-video --format bgra`. A frame the screen may have turned or resized during repeats the last masked frame. `record-video --json` prints `path`, `frames`, `heldFrames`, `maskedBy` and `unmasked`.
 - `list-devices --json` lease objects add `mine`, and `lease --json` lease objects add `owner` (`{pid, name, startedAt}`).
@@ -19,9 +21,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - When standard output is a terminal, `credential` and `unlock-code` print a short summary with emoji, coloured unless `NO_COLOR` is set, and `credential` shows a spinner while it reads the app in front. Piped output and `--json` are unchanged.
 - `lease set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes `device.lease` for any later command of that session without `OFFSIDER_LEASE`, and otherwise names the session holding the lease or says it has ended. `OFFSIDER_LEASE`, when set, still decides.
 - `record-video` and `stream-video` refuse `--mask-secure`, `--mask-id`, `--mask-label`, `--mask-text` and `--mask-emails`, and refuse to run while the evidence run has masks or `OFFSIDER_MASK_SECURE=1` is set, with the new reason `video_unmasked` (exit 1), before the device is reached and with no file written. `--unmasked` records anyway, with a warning.
+- A React Native LogBox toast's touch area starts a point above its top edge, and on an edge-to-edge Android app higher still by the status bar's height, since LogBox's toast list pads itself by it. Covers by it report `evidence` `logBoxTouchArea`, and a target whose frame only reaches that area gets a warning that `--fail-if-covered` turns into a refusal.
 
 ### Fixed
 
+- iOS `tap` let through a tap on a row centred just above a LogBox toast, where the toast took the touch.
+- `rn logbox dismiss` on Android exited 0 with `dismiss-button` when its clear tap opened the inspector, or when React Native left its LogBox dialog up and empty. It now takes the inspector path, and exits 5 with `emptyDialog` and sends nothing more if the empty dialog stays; `rn open` closes it.
 - iOS `logs` marks an entry the unified log cut at about 1 KB (ending `<…>`): `"truncated": true` in `--json`, with the message kept as stored, text lines ending `<…> [truncated]`, and a stderr line saying how many were cut and that `rn logbox open` shows the whole error in a debug build.
 - `record-video` and `stream-video` on a landscape iOS simulator, iPhone or iPad record upright frames, as `screenshot` does.
 

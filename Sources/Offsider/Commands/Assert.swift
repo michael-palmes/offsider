@@ -81,7 +81,7 @@ struct Assert: AsyncParsableCommand {
 
     /// Turns a loop reason such as "not found" into the end of a sentence: "was not found".
     static func predicate(_ reason: String) -> String {
-        if reason == "not found" { return "was not found" }
+        if reason == "not found" || reason.hasPrefix("not found;") { return "was \(reason)" }
         if reason.hasPrefix("off screen") || reason.hasPrefix("still") { return "is \(reason)" }
         return reason
     }

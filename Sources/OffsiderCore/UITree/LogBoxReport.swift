@@ -1,14 +1,23 @@
 import Foundation
 
-/// What `rn logbox status` reads: the toasts, bottom first, and whether the inspector is open.
+/// What `rn logbox status` reads: the toasts, bottom first, whether the inspector is open, and the window around them.
 public struct LogBoxState: Equatable, Sendable {
     public var toasts: [LogBoxToast]
     public var inspector: LogBoxInspector?
+    /// The active window, on Android only.
+    public var window: UITreeContext.Window?
 
     public init(tree: UITree) {
         toasts = KnownOverlays.logBoxToasts(in: tree.roots, viewport: tree.viewport)
         inspector = KnownOverlays.logBoxInspector(in: tree.roots, viewport: tree.viewport)
+        window = tree.context.window
     }
+
+    /// A modal window is up, which on Android hides the app's toasts: the inspector, or its dialog before it draws.
+    public var modal: Bool { window?.kind == .modal }
+
+    /// The empty dialog React Native can leave up after its last log.
+    public var emptyDialog: Bool { window?.empty == true }
 
     public var logs: Int { toasts.reduce(0) { $0 + $1.count } }
     public var isEmpty: Bool { toasts.isEmpty && inspector == nil }
@@ -36,6 +45,7 @@ public struct LogBoxState: Equatable, Sendable {
                 ])
             })),
             ("inspector", .bool(inspector != nil)),
+            ("emptyDialog", .bool(emptyDialog)),
         ]).rendered(compact: true)
     }
 
@@ -44,7 +54,9 @@ public struct LogBoxState: Equatable, Sendable {
         if let inspector {
             return "LogBox inspector open" + (inspector.of.map { " (log \(inspector.log ?? 1) of \($0))" } ?? "")
         }
-        guard !toasts.isEmpty else { return "No LogBox logs on screen" }
+        guard !toasts.isEmpty else {
+            return emptyDialog ? "No LogBox logs on screen, but an empty dialog covers the app, as React Native can leave its LogBox dialog" : "No LogBox logs on screen"
+        }
         let head = "LogBox: \(logs) log\(logs == 1 ? "" : "s") in \(toasts.count) toast\(toasts.count == 1 ? "" : "s"), bottom first"
         let lines = toasts.map { toast in
             "  \(toast.index). \(Self.shown(toast.message, redacts: redacts))" + (toast.count > 1 ? " (\(toast.count) logs)" : "")
@@ -53,7 +65,7 @@ public struct LogBoxState: Equatable, Sendable {
     }
 }
 
-/// What `rn logbox dismiss` did: logs cleared, logs left, and how.
+/// What `rn logbox dismiss` did: logs cleared, logs left, how, and whether React Native's empty LogBox dialog stayed over the app.
 public struct LogBoxDismissal: Equatable, Sendable {
     public enum Method: String, Sendable {
         case none
@@ -64,12 +76,17 @@ public struct LogBoxDismissal: Equatable, Sendable {
     public var cleared: Int
     public var remaining: Int
     public var method: Method
+    public var emptyDialog: Bool
 
-    public init(cleared: Int, remaining: Int, method: Method) {
+    public init(cleared: Int, remaining: Int, method: Method, emptyDialog: Bool = false) {
         self.cleared = cleared
         self.remaining = remaining
         self.method = method
+        self.emptyDialog = emptyDialog
     }
+
+    /// No log is left and nothing covers the app.
+    public var isClear: Bool { remaining == 0 && !emptyDialog }
 
     public func jsonLine() -> String {
         OrderedJSON.object([
@@ -77,6 +94,7 @@ public struct LogBoxDismissal: Equatable, Sendable {
             ("cleared", .integer(cleared)),
             ("remaining", .integer(remaining)),
             ("method", .string(method.rawValue)),
+            ("emptyDialog", .bool(emptyDialog)),
         ]).rendered(compact: true)
     }
 }

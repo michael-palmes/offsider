@@ -25,6 +25,8 @@ public struct WaitSources {
 public enum ElementProbe: Equatable, Sendable {
     case present(UINode?)
     case absent(reason: String)
+    /// Nothing matched while the LogBox inspector hides the app, so nothing can until it closes.
+    case blocked(LogBoxBlock)
 }
 
 public enum SettleSource: String, CaseIterable, Sendable {
@@ -155,6 +157,8 @@ public enum WaitLoop {
         var lastReason = "not checked"
         var lastTransient: Error?
         var succeededOnce = false
+        var lastBlock: LogBoxBlock?
+        let gone = if case .element(_, let isGone, _) = condition { isGone } else { false }
 
         while true {
             do {
@@ -164,9 +168,13 @@ public enum WaitLoop {
                     return WaitOutcome(met: true, elapsed: sources.now() - start, reason: step.reason, match: step.match, matched: step.matched)
                 }
                 lastReason = step.reason
+                lastBlock = try holdBlock(step.block, gone: gone, state: &state, sources: sources)
             } catch where error.isTransientFailure {
                 state.metSince = nil
                 state.metReads = 0
+                state.blockedSince = nil
+                state.blockedReads = 0
+                lastBlock = nil
                 lastTransient = error
                 lastReason = error.localizedDescription
             }
@@ -178,6 +186,9 @@ public enum WaitLoop {
 
         if !succeededOnce, let lastTransient {
             throw lastTransient
+        }
+        if let lastBlock {
+            throw WaitBlockedError(block: lastBlock, gone: gone)
         }
         if state.treeReads >= 2, !state.readableTree {
             throw WaitUnreadableError.settledTree
@@ -201,6 +212,7 @@ public enum WaitLoop {
         let reason: String
         var match: UINode? = nil
         var matched: WaitMatch? = nil
+        var block: LogBoxBlock? = nil
     }
 
     /// The previous read and when the current quiet window began.
@@ -220,6 +232,9 @@ public enum WaitLoop {
         var gateOpen = false
         var treeChanges = 0
         var structureMoved = false
+        /// When the LogBox inspector began to hide the app, and the reads since.
+        var blockedSince: TimeInterval?
+        var blockedReads = 0
     }
 
     private static func evaluate(_ condition: WaitCondition, state: inout State, sources: WaitSources) async throws -> Step {
@@ -231,12 +246,15 @@ public enum WaitLoop {
                 step = gone ? Step(met: false, reason: "still on screen") : Step(met: true, reason: "on screen", match: node)
             case .absent(let reason):
                 step = Step(met: gone, reason: reason)
+            case .blocked(let block):
+                step = Step(met: false, reason: LogBoxBlock.reason, block: block)
             }
             return dwell(step, stableFor: stableFor, gone: gone, state: &state, sources: sources)
 
         case .anyElement(let selectors, let stableFor):
             let tree = try await sources.tree()
             var reasons: [String] = []
+            var blocks: [LogBoxBlock] = []
             var step = Step(met: false, reason: "")
             for selector in selectors {
                 switch selector.probe(tree) {
@@ -245,11 +263,18 @@ public enum WaitLoop {
                 case .absent(let reason):
                     reasons.append("--\(selector.selector.by) '\(selector.selector.text)' \(reason)")
                     continue
+                case .blocked(let block):
+                    blocks.append(block)
+                    reasons.append("--\(selector.selector.by) '\(selector.selector.text)' \(LogBoxBlock.reason)")
+                    continue
                 }
                 break
             }
             if !step.met {
                 step = Step(met: false, reason: reasons.joined(separator: "; "))
+                if blocks.count == selectors.count, let first = blocks.first {
+                    step.block = LogBoxBlock(subject: blocks.map(\.subject).joined(separator: " or "), minimize: first.minimize)
+                }
             } else if state.metSelector != step.matched {
                 state.metSince = nil
                 state.metReads = 0
@@ -324,6 +349,23 @@ public enum WaitLoop {
         case .duration:
             return Step(met: true, reason: "waited")
         }
+    }
+
+    /// Throws once the LogBox inspector has hidden the app for `WaitBlockedError.grace` over two reads or more; the step's block otherwise.
+    private static func holdBlock(_ block: LogBoxBlock?, gone: Bool, state: inout State, sources: WaitSources) throws -> LogBoxBlock? {
+        guard let block else {
+            state.blockedSince = nil
+            state.blockedReads = 0
+            return nil
+        }
+        let now = sources.now()
+        let since = state.blockedSince ?? now
+        state.blockedSince = since
+        state.blockedReads += 1
+        if state.blockedReads >= 2, now - since + 1e-9 >= WaitBlockedError.grace {
+            throw WaitBlockedError(block: block, gone: gone)
+        }
+        return block
     }
 
     /// Holds a met step back until it has held on every read for `stableFor`, over two reads or more.

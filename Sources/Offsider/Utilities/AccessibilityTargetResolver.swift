@@ -463,15 +463,22 @@ struct AccessibilityTargetResolver {
     /// Plausible occluders whose frame holds `point`; tree order is not z-order on either platform, so a real hit-test must confirm one.
     /// On Android a node in a lower window (the app beneath a keyboard) or not visible to the user cannot cover the target;
     /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top.
+    /// A LogBox toast counts when its touch area holds the point or reaches the target's frame.
     static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, roots: [UINode]) -> [UINode] {
         let related = family(of: target, in: roots) + family(of: matched, in: roots)
         let android = target.isAndroid
         let targetRoot = roots.firstIndex { root in root.flattened().contains { $0.isSameElement(as: target) || $0.isSameElement(as: matched) } } ?? 0
+        func reaches(_ node: UINode) -> Bool {
+            guard let area = KnownOverlays.logBoxTouchArea(of: node, in: viewport) else {
+                return node.frame.map { $0.contains(point) && $0.isVisible(in: viewport) } ?? false
+            }
+            return area.contains(point) || CoverJudge.reaches(area, target.frame)
+        }
         var found: [UINode] = []
         func visit(_ node: UINode, root: Int, underKeyboard: Bool) {
             let underKeyboard = underKeyboard || node.role == .keyboard
             let beneath = android && (root < targetRoot || node.androidVisibleToUser == false)
-            if !beneath, let frame = coverArea(of: node, in: viewport), frame.contains(point), frame.isVisible(in: viewport),
+            if !beneath, reaches(node),
                isPlausibleOccluder(node, underKeyboard: underKeyboard),
                !related.contains(where: { $0.isSameElement(as: node) }) {
                 found.append(node)
@@ -484,12 +491,6 @@ struct AccessibilityTargetResolver {
             visit(root, root: index, underKeyboard: false)
         }
         return found
-    }
-
-    /// The node's frame, or for a LogBox toast the strip beneath it that its unlisted touch container swallows.
-    private static func coverArea(of node: UINode, in viewport: UIFrame) -> UIFrame? {
-        guard let frame = node.frame else { return nil }
-        return KnownOverlays.logBoxToast(node, viewport: viewport) != nil ? KnownOverlays.logBoxTouchArea(of: frame, in: viewport) : frame
     }
 
     /// The keyboard over the tap point, from the tree already read; on Android its window's bounds decide, as its root view spans the screen.

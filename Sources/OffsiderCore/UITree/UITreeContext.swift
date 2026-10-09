@@ -37,11 +37,14 @@ public struct UITreeContext: Equatable, Sendable {
         public var title: String?
         public var kind: Kind
         public var package: String?
+        /// An untitled modal with nothing in it, as React Native can leave its LogBox dialog on Android.
+        public var empty: Bool
 
-        public init(title: String?, kind: Kind, package: String?) {
+        public init(title: String?, kind: Kind, package: String?, empty: Bool = false) {
             self.title = title
             self.kind = kind
             self.package = package
+            self.empty = empty
         }
     }
 
@@ -67,10 +70,16 @@ public struct UITreeContext: Equatable, Sendable {
     }
 
     public init(tree: UITree) {
+        var window = tree.windows.flatMap(Self.window(in:))
+        let logBox = KnownOverlays.logBox(in: tree)
+        if let found = window, found.kind == .modal, found.package != nil, logBox == nil,
+           found.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
+            window?.empty = KnownOverlays.isEmptyDialog(tree)
+        }
         self.init(
-            window: tree.windows.flatMap(Self.window(in:)),
+            window: window,
             keyboard: tree.roots.contains { $0.flattened().contains { $0.role == .keyboard } },
-            logBox: KnownOverlays.logBox(in: tree)
+            logBox: logBox
         )
     }
 
@@ -93,11 +102,11 @@ public struct UITreeContext: Equatable, Sendable {
         return Window(title: top.title, kind: kind, package: top.package)
     }
 
-    /// `# window: Lab Toggles (modal)`, `# keyboard shown` and `# logbox: 2 logs`, each only when it applies.
+    /// `# window: Lab Toggles (modal)` (`(modal, empty)` for an empty dialog), `# keyboard shown` and `# logbox: 2 logs`, each only when it applies.
     public var headerLines: [String] {
         var lines: [String] = []
         if let window, window.kind != .app {
-            lines.append("# window: \(window.title ?? window.package ?? "untitled") (\(window.kind.rawValue))")
+            lines.append("# window: \(window.title ?? window.package ?? "untitled") (\(window.kind.rawValue)\(window.empty ? ", empty" : ""))")
         }
         if keyboard {
             lines.append("# keyboard shown")
@@ -115,6 +124,7 @@ public struct UITreeContext: Equatable, Sendable {
                     ("title", .optional(window.title, OrderedJSON.string)),
                     ("kind", .string(window.kind.rawValue)),
                     ("package", .optional(window.package, OrderedJSON.string)),
+                    ("empty", .bool(window.empty)),
                 ])
             } ?? .null),
             ("keyboard", .bool(keyboard)),
