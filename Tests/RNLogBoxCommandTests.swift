@@ -276,7 +276,7 @@ struct RNLogBoxCommandTests {
         #expect(outcome == LogBoxDismissal(cleared: 0, remaining: 0, method: .none, emptyDialog: true))
         #expect(!outcome.isClear)
         #expect(backend.session.calls.isEmpty)
-        #expect(RNLogBoxDismiss.line(outcome, index: nil, device: "emulator-5554").hasPrefix("✗ No LogBox logs on screen, but React Native's empty LogBox dialog is over the app; nothing more was sent."))
+        #expect(RNLogBoxDismiss.line(outcome, index: nil, device: "emulator-5554").hasPrefix("✗ No LogBox logs on screen, but an empty dialog covers the app, as React Native can leave its LogBox dialog; nothing was sent."))
     }
 
     @Test("status reads the empty dialog without a tap")

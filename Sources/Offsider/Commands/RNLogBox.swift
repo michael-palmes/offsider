@@ -194,8 +194,10 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
     static func line(_ outcome: Outcome, index: Int?, device: String) -> String {
         let logs = "\(outcome.cleared) LogBox log\(outcome.cleared == 1 ? "" : "s")"
         if outcome.emptyDialog {
-            let lead = outcome.cleared == 0 ? "No LogBox logs on screen, but React Native's empty LogBox dialog is" : "Cleared \(logs), but React Native left its empty LogBox dialog"
-            return "✗ \(lead) over the app; nothing more was sent. Reload the app to close it, in an Expo dev client with: offsider rn open --port <metro port> --bundle-id <package> --device \(device)"
+            let lead = outcome.cleared == 0
+                ? "No LogBox logs on screen, but an empty dialog covers the app, as React Native can leave its LogBox dialog; nothing was sent."
+                : "Cleared \(logs), but React Native left its empty LogBox dialog over the app; nothing more was sent."
+            return "✗ \(lead) Reload the app to close it, in an Expo dev client with: offsider rn open --port <metro port> --bundle-id <package> --device \(device)"
         }
         if outcome.cleared == 0 && outcome.remaining == 0 && index == nil {
             return "No LogBox logs on screen"

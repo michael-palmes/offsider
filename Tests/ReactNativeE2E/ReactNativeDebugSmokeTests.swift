@@ -254,7 +254,7 @@ struct ReactNativeDebugSmokeTests {
         let dismissed = try await app.offsider("rn logbox dismiss --json")
         #expect(dismissed.exitCode == 5, "\(dismissed.stderr)")
         #expect(dismissed.stdout.contains(#""cleared":0,"remaining":0,"method":"none","emptyDialog":true"#), "\(dismissed.stdout)")
-        #expect(dismissed.stderr.contains("React Native's empty LogBox dialog is over the app"), "\(dismissed.stderr)")
+        #expect(dismissed.stderr.contains("an empty dialog covers the app"), "\(dismissed.stderr)")
         #expect(try await app.run("describe-ui --summary").stdout.contains("(modal, empty)\n"))
 
         // Back would close the dialog but leave LogBox's view attached to it, so the next inspector would crash the app.
