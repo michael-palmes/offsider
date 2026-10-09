@@ -526,6 +526,29 @@ struct RunTests {
         #expect(line.entries == 2 && line.redacted == 1)
     }
 
+    @Test("an entry --exclude drops never reaches a logs run file, live or not, and the manifest shows the pattern only as its length", arguments: [
+        ["--exclude", #"\[MIRROR\]"#], ["--follow", "--json", "--exclude", #"\[MIRROR\]"#],
+    ])
+    func logsExcludeKeepsRunClean(arguments: [String]) async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let backend = FakeLogBackend(entries: [
+            LogEntry(tag: "javascript", message: "WARN slow render"),
+            LogEntry(message: "Wrapper.m:41 [MIRROR] warn: slow render"),
+        ])
+        var stdout: [String] = []
+        try await fixture.command(fixture.recorder("logs", arguments: arguments)) {
+            try await Logs.parse(arguments + ["--device", "emulator-5554"])
+                .read(from: DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android)), note: { _ in }, write: { stdout.append($0) })
+        }
+        let line = try #require(fixture.manifest().first)
+        let file = try String(contentsOfFile: fixture.folder() + "/" + (try #require(line.file)), encoding: .utf8)
+        #expect(file.contains("slow render"))
+        #expect(!file.contains("MIRROR") && !stdout.joined().contains("MIRROR"))
+        #expect(line.entries == 1)
+        #expect(line.args?.last == "<10 characters>")
+    }
+
     @Test("a logs run file is created new: a link already at its name is neither followed nor replaced, and stdout still gets every line")
     func logsRunFileIsCreatedNew() async throws {
         let fixture = try RunFixture()

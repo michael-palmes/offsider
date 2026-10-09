@@ -3,6 +3,10 @@ import Foundation
 /// Pure text work for `logs`: ANSI stripping, iOS predicates and `log` arguments, ndjson parsing and the human line.
 public enum LogText {
     public static let reactNativeSubsystem = "com.facebook.react.log"
+    /// What iOS's unified log puts after the first 1,015 bytes of a longer message; the rest is never stored.
+    public static let iosTruncationMarker = "<\u{2026}>"
+    /// What a text line adds after a message the device's log cut short.
+    public static let truncatedSuffix = " [truncated]"
 
     // MARK: ANSI
 
@@ -91,7 +95,8 @@ public enum LogText {
             pid: (object["processID"] as? NSNumber)?.intValue,
             tag: tag,
             message: message,
-            raw: message
+            raw: message,
+            truncated: message.hasSuffix(iosTruncationMarker)
         )
     }
 
@@ -136,7 +141,7 @@ public enum LogText {
 
     // MARK: Output
 
-    /// `HH:MM:SS.mmm+10:30 Level process[pid] tag: message` (UTC ends `Z`), leaving out what the entry lacks.
+    /// `HH:MM:SS.mmm+10:30 Level process[pid] tag: message` (UTC ends `Z`), leaving out what the entry lacks; a cut message ends ` [truncated]`.
     public static func format(_ entry: LogEntry, timeZone: TimeZone = .current) -> String {
         var parts: [String] = []
         if let timestamp = entry.timestamp {
@@ -154,7 +159,7 @@ public enum LogText {
         if let tag = entry.tag {
             parts.append("\(tag):")
         }
-        parts.append(entry.message)
+        parts.append(entry.truncated ? entry.message + truncatedSuffix : entry.message)
         return parts.joined(separator: " ")
     }
 

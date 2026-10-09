@@ -1,9 +1,9 @@
 import Foundation
 
-/// Keeps mask and grep selectors out of run manifests and batch records, since they often spell the personal data they hide.
+/// Keeps mask, grep and exclude selectors out of run manifests and batch records, since they often spell the personal data they hide.
 public enum SelectorRedaction {
     /// Options whose values become `<N characters>`. `--mask-id` values are the app's own element ids and `--mask-region` values are coordinates, so both stay.
-    public static let options: Set<String> = ["--mask-text", "--mask-label", "--grep"]
+    public static let options: Set<String> = ["--mask-text", "--mask-label", "--grep", "--exclude"]
 
     /// The tokens with each selector value as `<N characters>`, in `--option value ...` and `--option=value` forms.
     public static func redacted(_ tokens: [String]) -> [String] {
