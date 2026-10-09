@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- iOS `state.selected` is `true` on the selected tab or segment and `false` elsewhere, instead of always `null`. When a tree read that asks for traits comes back empty, Offsider reads once without them and leaves them off for the rest of the command, so `selected` is then `null`.
 - iOS `tap` let through a tap on a row centred just above a LogBox toast, where the toast took the touch.
 - `rn logbox dismiss` on Android exited 0 with `dismiss-button` when its clear tap opened the inspector, or when React Native left its LogBox dialog up and empty. It now takes the inspector path, and exits 5 with `emptyDialog` and sends nothing more if the empty dialog stays; `rn open` closes it.
 - iOS `logs` marks an entry the unified log cut at about 1 KB (ending `<…>`): `"truncated": true` in `--json`, with the message kept as stored, text lines ending `<…> [truncated]`, and a stderr line saying how many were cut and that `rn logbox open` shows the whole error in a debug build.
