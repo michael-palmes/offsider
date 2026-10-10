@@ -5,10 +5,10 @@ import { colours, fixtureLog, FullPage, iosValue, Readout, Screen, Target, useHa
 
 const tickMs = 1000;
 const openDetailMs = 1200;
-const basePriceCents = 12_995;
-const priceStepsCents = [0, 127, 41, 268, 155, -82, 19, 203, -37, 96];
-const baseOrders = 18_402;
-const ordersStep = 3;
+const baseTenths = 214;
+const tenthsSteps = [0, 13, 4, 27, 16, -8, 2, 20, -4, 10];
+const baseVisitors = 18_402;
+const visitorsStep = 3;
 const sizes = ['S', 'M'] as const;
 type Size = (typeof sizes)[number];
 
@@ -16,9 +16,9 @@ function grouped(value: number): string {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-function price(tick: number): string {
-  const cents = basePriceCents + priceStepsCents[tick % priceStepsCents.length];
-  return `$${grouped(Math.floor(cents / 100))}.${String(cents % 100).padStart(2, '0')}`;
+function reading(tick: number): string {
+  const tenths = baseTenths + tenthsSteps[tick % tenthsSteps.length];
+  return `${Math.floor(tenths / 10)}.${tenths % 10} °C`;
 }
 
 function onOff(value: boolean): string {
@@ -27,11 +27,11 @@ function onOff(value: boolean): string {
 
 export function LiveTickerTestScreen() {
   const [tick, setTick] = useState(0);
-  const [alerts, setAlerts] = useState(false);
+  const [notifications, setNotifications] = useState(false);
   const [selected, setSelected] = useState<Size>('S');
   const [detail, setDetail] = useState(false);
   const detailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const orders = grouped(baseOrders + tick * ordersStep);
+  const visitors = grouped(baseVisitors + tick * visitorsStep);
 
   useEffect(() => {
     const timer = setInterval(() => setTick((current) => current + 1), tickMs);
@@ -75,22 +75,22 @@ export function LiveTickerTestScreen() {
   return (
     <View style={styles.root}>
       <Screen route="live-ticker" style={styles.content}>
-        <Readout id="live-ticker-price" label={price(tick)} textStyle={styles.price} />
+        <Readout id="live-ticker-reading" label={reading(tick)} textStyle={styles.reading} />
         <View style={styles.row}>
           <View
-            testID="live-ticker-orders"
+            testID="live-ticker-visitors"
             accessible
             accessibilityRole="text"
-            accessibilityLabel="Orders (24h)"
-            accessibilityValue={iosValue(orders)}
+            accessibilityLabel="Visitors (24h)"
+            accessibilityValue={iosValue(visitors)}
           >
             <Text importantForAccessibility="no" style={styles.label}>
-              Orders (24h)
+              Visitors (24h)
             </Text>
           </View>
-          <Readout id="live-ticker-orders-count" label={orders} />
+          <Readout id="live-ticker-visitors-count" label={visitors} />
         </View>
-        <Readout id="live-ticker-inert" label="Chart Area" style={styles.inert} textStyle={styles.inertText} />
+        <Readout id="live-ticker-inert" label="Map Area" style={styles.inert} textStyle={styles.inertText} />
         <View style={styles.row}>
           <View style={styles.sizes}>
             {sizes.map((value) => (
@@ -120,18 +120,18 @@ export function LiveTickerTestScreen() {
         <View style={styles.row}>
           <Target
             id="live-ticker-toggle"
-            label="Price Alerts"
+            label="Notifications"
             role="switch"
-            state={{ checked: alerts }}
+            state={{ checked: notifications }}
             onPress={() => {
-              fixtureLog('live-ticker', `price alerts ${onOff(!alerts).toLowerCase()}`);
-              setAlerts((current) => !current);
+              fixtureLog('live-ticker', `notifications ${onOff(!notifications).toLowerCase()}`);
+              setNotifications((current) => !current);
             }}
-            style={[styles.track, alerts && styles.trackOn]}
+            style={[styles.track, notifications && styles.trackOn]}
           >
             <View style={styles.thumb} />
           </Target>
-          <Readout id="live-ticker-toggle-state" label={`Price Alerts: ${onOff(alerts)}`} value={onOff(alerts)} />
+          <Readout id="live-ticker-toggle-state" label={`Notifications: ${onOff(notifications)}`} value={onOff(notifications)} />
         </View>
         <View style={styles.row}>
           <Target
@@ -149,7 +149,7 @@ export function LiveTickerTestScreen() {
           id="live-ticker-detail-page"
           backId="live-ticker-detail-back"
           titleId="live-ticker-detail"
-          title="Price Detail"
+          title="Reading Detail"
           onBack={closeDetail}
         />
       )}
@@ -166,7 +166,7 @@ function emitTwoLogs() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { padding: 16, gap: 16 },
-  price: { fontSize: 34, fontWeight: '700' },
+  reading: { fontSize: 34, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   label: { fontSize: 17, color: colours.secondary },
   inert: {
