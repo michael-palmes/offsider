@@ -2,9 +2,9 @@
 
 ## Test credentials only
 
-`offsider credential set --device <DEVICE_ID>` saves a username or email and a password for the app in front. It asks for the username, then the password twice with typing hidden. `--stdin` reads those as two lines, so a password manager can pipe them in. The password is never printed, logged or put in an argument.
+`offsider credential set --device <DEVICE_ID>` saves a username or email and a password for the app in front. It asks for the username, then the password twice, showing only a dot for each character, and clears its prompts once saved. `--stdin` reads those as two lines, so a password manager can pipe them in. The password is never printed, logged or put in an argument.
 
-The first login saved for an app is the default. A tag such as `dev` or `qa` names another login for that same app: `offsider credential set qa --device <DEVICE_ID>`. When a login is already saved, a terminal asks whether to update one or create a new one and set a tag. Without a terminal, pass `--update` to replace the default, or a tag to add another. Pass `--update` with that tag to replace it. Nothing is overwritten by surprise.
+The first login saved for an app is the default. A tag such as `dev` or `qa` names another login for that same app: `offsider credential set qa --device <DEVICE_ID>`. When a login is already saved, a terminal shows a menu to update one or add a tagged one, and asks before replacing a saved tag. Without a terminal, pass `--update` to replace the default, or a tag to add another. Pass `--update` with that tag to replace it. Nothing is overwritten by surprise.
 
 Save test development credentials only. Anything that can run commands as you can then type them into this app.
 

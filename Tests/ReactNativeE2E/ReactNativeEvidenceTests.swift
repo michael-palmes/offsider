@@ -95,11 +95,11 @@ struct ReactNativeEvidenceTests {
         try await app.run("type --replace ''")
     }
 
-    @Test("logs --rn --app finds the interval line, on Android also after the app was stopped and started again", arguments: RNPlatform.enabled)
+    @Test("logs --rn --app finds the size line, on Android also after the app was stopped and started again", arguments: RNPlatform.enabled)
     func logsReactNativeAndApp(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("live-ticker")
-        try await app.run("tap --id live-ticker-interval-1w")
+        try await app.run("tap --id live-ticker-size-m")
         if platform == .android {
             try await AndroidE2E.shell("am force-stop \(AndroidE2E.package)")
             try await app.open("live-ticker")
@@ -108,11 +108,11 @@ struct ReactNativeEvidenceTests {
         var found = ""
         let deadline = Date().addingTimeInterval(15)
         repeat {
-            found = try await app.run("logs --rn --app \(IOSRNPlayground.bundleID) --last 2m --grep 'Range Selected'").stdout
-            if found.contains("OffsiderFixture Range Selected 1W") { break }
+            found = try await app.run("logs --rn --app \(IOSRNPlayground.bundleID) --last 2m --grep 'Size Selected'").stdout
+            if found.contains("OffsiderFixture Size Selected M") { break }
             try await Task.sleep(for: .seconds(1))
         } while Date() < deadline
-        #expect(found.contains("OffsiderFixture Range Selected 1W"), "\(found)")
+        #expect(found.contains("OffsiderFixture Size Selected M"), "\(found)")
     }
 
     @Test("logs --rn redacts the login's email and password by default, and --no-redact shows them", arguments: RNPlatform.enabled)

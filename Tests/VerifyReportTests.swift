@@ -32,13 +32,13 @@ struct VerifyReportTests {
     func timingAndIgnored() throws {
         let report = VerifyReport(
             command: "tap", target: "id=noop", dispatched: .yes, verified: false, attempts: 1, change: .none,
-            ignored: [VerifyIgnored(node: "live-ticker-price", reason: .live), VerifyIgnored(node: "LogBox toast", reason: .toast)],
+            ignored: [VerifyIgnored(node: "live-ticker-heart-rate", reason: .live), VerifyIgnored(node: "LogBox toast", reason: .toast)],
             elapsed: 2.3456,
             phases: VerifyPhases(settle: 0.4, resolve: 0.61, baseline: 0.05, dispatch: 0.1004, verify: 1.2)
         )
         let text = String(decoding: try report.jsonData(), as: UTF8.self)
         let json = try object(report)
-        #expect(json["ignored"] as? [[String: String]] == [["node": "live-ticker-price", "reason": "live"], ["node": "LogBox toast", "reason": "toast"]])
+        #expect(json["ignored"] as? [[String: String]] == [["node": "live-ticker-heart-rate", "reason": "live"], ["node": "LogBox toast", "reason": "toast"]])
         #expect(json["elapsedMs"] as? Int == 2346)
         let phases = try #require(json["phasesMs"] as? [String: Int])
         #expect(phases == ["settle": 400, "resolve": 610, "baseline": 50, "dispatch": 100, "verify": 1200])

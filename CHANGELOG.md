@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `credential set` and `unlock-code set` on a terminal open with a short header saying the secret stays in the login Keychain, show a dot for each password character, ask again in place when an answer cannot be saved or the two entries differ, and clear their prompts once saved, leaving a short summary and the next command. Escape or Control-C cancels with nothing saved (exit 130).
+- On a terminal, `credential set` picks the login to update, or adds a tagged one, from an arrow-key menu, and asks before replacing a saved tag instead of refusing without `--update`. `credential join` picks the app to share from a menu. Without a terminal, both still need `--update`, a tag or `--app`.
+- When standard output is a terminal, `credential` and `unlock-code` print a short summary with emoji, coloured unless `NO_COLOR` is set, and `credential` shows a spinner while it reads the app in front. Piped output and `--json` are unchanged.
+
+## [0.9.0] - 2026-10-08
+
 ### Added
 
 - `credential set`, `status`, `remove` and `join` save a test username and password in the login Keychain (service `com.mpalmes.offsider.login`, never synchronised). The first login for an app is the default, and a tag such as `dev` names another. A later `set` on a terminal asks whether to update one or add a tagged login. Without a terminal it requires `--update` or a tag. `credential join` links another bundle id or package to that app without a second password, so `login` on either id uses the same saved logins. `login` fills the sign-in form in front and taps the submit button once. With no tag it uses the default. Fields are detected, or pinned by `offsider.login.json`. An Android keyboard is never taken for the app in front, and when its keys hide the submit button, `login` taps above them first. It never presses Back. Exit 0 means the button was tapped, not that the server accepted the login. The password is never printed. A physical iPhone or iPad is refused. `offsider guide login` is the note.
@@ -419,6 +427,7 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/michael-palmes/offsider/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/michael-palmes/offsider/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/michael-palmes/offsider/releases/tag/v0.7.0

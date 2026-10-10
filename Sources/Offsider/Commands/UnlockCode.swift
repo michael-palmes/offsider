@@ -10,7 +10,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
         abstract: "Save, check or remove the lock screen PIN or password `wake --unlock` types on an Android device.",
         discussion: """
         The code is kept in your login Keychain under the phone's serial or the AVD's name, never in a file, an \
-        argument or Offsider's output. `set` asks for it twice with typing hidden, or reads one line with --stdin: \
+        argument or Offsider's output. `set` asks for it twice, showing a dot for each character, or reads one line with --stdin: \
         4 to 64 printable ASCII characters (a PIN is 4 to 16 digits). Save codes only for test devices: anything \
         that can run commands as you can then unlock them. A connected phone is named by its maker and model, read \
         with one `getprop`; nothing else is sent to the device.
@@ -54,12 +54,24 @@ struct UnlockCodeCommand: AsyncParsableCommand {
     }
 
     func run() async throws {
+        let parsed = try parsedAction()
         let device = try Self.deviceKey(deviceOption.id)
         let name = DeviceName.display(device, label: await AndroidPhoneLabel.label(serial: device, host: .cli()))
-        let readCode: () throws -> UnlockCode = stdin ? Self.readFromStandardInput : { try Self.ask(for: name) }
-        print(try Self.perform(try parsedAction(), device: device, name: name, json: json, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger(), readCode: readCode))
+        let styled: TerminalStyle? = json || isatty(STDOUT_FILENO) == 0 ? nil : .detect(isTerminal: true)
+        let store = KeychainUnlockCodeStore()
+        guard parsed == .set, !stdin, isatty(STDIN_FILENO) != 0 else {
+            let readCode: () throws -> UnlockCode = stdin ? Self.readFromStandardInput : {
+                throw CLIError(errorDescription: "unlock-code set asks for the code on a terminal; without one, pass --stdin and pipe the code in.", reason: .usage)
+            }
+            print(try Self.perform(parsed, device: device, name: name, json: json, styled: styled, store: store, ledger: UnlockAttemptLedger(), readCode: readCode))
+            return
+        }
+        print(try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
+            try Self.perform(.set, device: device, name: name, json: json, styled: styled, store: store, ledger: UnlockAttemptLedger()) {
+                try Self.ask(prompt, name: name)
+            }
+        })
     }
-
 
     /// A phone serial or an AVD name; emulator serials change between launches, so they are refused.
     static func deviceKey(_ raw: String) throws -> String {
@@ -81,18 +93,20 @@ struct UnlockCodeCommand: AsyncParsableCommand {
     }
 
     /// `device` is the Keychain key and goes in JSON; `name` is for people.
-    static func perform(_ action: Action, device: String, name: String? = nil, json: Bool, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger, readCode: () throws -> UnlockCode) throws -> String {
+    static func perform(_ action: Action, device: String, name: String? = nil, json: Bool, styled: TerminalStyle? = nil, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger, readCode: () throws -> UnlockCode) throws -> String {
         let name = name ?? device
         switch action {
         case .set:
             try store.save(try readCode(), for: device)
             ledger.clear(device)
             if json { return report("set", device: device, saved: true, lastAttemptFailed: false) }
+            if let styled { return UnlockCodeScreen.saved(name: name, device: device, style: styled) }
             return "Saved the unlock code for \(name) in the login Keychain. `offsider wake --unlock --device \(device)` types it when the lock screen asks."
         case .status:
             let saved = try store.hasCode(for: device)
             let failed = ledger.hasFailed(device)
             if json { return report("status", device: device, saved: saved, lastAttemptFailed: failed) }
+            if let styled { return UnlockCodeScreen.status(name: name, device: device, saved: saved, lastAttemptFailed: failed, style: styled) }
             guard saved else { return "\(name): no unlock code saved" }
             return failed
                 ? "\(name): unlock code saved, but it did not unlock the device last time, so Offsider will not type it until the device is unlocked by hand or the code is saved again"
@@ -101,6 +115,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
             let removed = try store.remove(for: device)
             ledger.clear(device)
             if json { return report("remove", device: device, saved: false, lastAttemptFailed: false) }
+            if let styled { return UnlockCodeScreen.removed(name: name, removed: removed, style: styled) }
             return removed ? "Removed the unlock code for \(name)" : "No unlock code was saved for \(name)"
         }
     }
@@ -118,23 +133,12 @@ struct UnlockCodeCommand: AsyncParsableCommand {
         return code
     }
 
-    /// Asks on the terminal twice with echo off; the buffers are wiped before returning.
-    static func ask(for name: String) throws -> UnlockCode {
-        let first = try prompt("Unlock code for \(name)\nPIN or password (typing is hidden): ")
-        guard let code = UnlockCode(first) else { throw CLIError(errorDescription: "\(formatMessage) Nothing was saved.", reason: .usage) }
-        guard try prompt("Type it again: ") == first else { throw CLIError(errorDescription: "The two entries differ. Nothing was saved.", reason: .usage) }
+    /// Asks twice on the terminal, showing a dot for each character.
+    static func ask(_ prompt: TerminalPrompt, name: String) throws -> UnlockCode {
+        prompt.lines(UnlockCodeScreen.header(name: name, style: prompt.style))
+        let labels = PromptScreen.labels([UnlockCodeScreen.codeLabel, UnlockCodeScreen.againLabel])
+        let text = try prompt.askSecret(labels[0], again: labels[1], check: UnlockCodeScreen.codeProblem)
+        guard let code = UnlockCode(text) else { throw CLIError(errorDescription: "\(formatMessage) Nothing was saved.", reason: .usage) }
         return code
-    }
-
-    private static func prompt(_ text: String) throws -> String {
-        var buffer = [CChar](repeating: 0, count: 128)
-        defer { buffer.withUnsafeMutableBytes { _ = memset_s($0.baseAddress, $0.count, 0, $0.count) } }
-        guard let line = readpassphrase(text, &buffer, buffer.count, RPP_REQUIRE_TTY) else {
-            let message = errno == ENOTTY
-                ? "unlock-code set asks for the code on a terminal; without one, pass --stdin and pipe the code in."
-                : "Could not read the code: \(String(cString: strerror(errno)))."
-            throw CLIError(errorDescription: message, reason: .usage)
-        }
-        return String(cString: line)
     }
 }

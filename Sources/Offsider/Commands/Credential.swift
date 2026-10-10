@@ -13,11 +13,11 @@ struct CredentialCommand: AsyncParsableCommand {
         or qa names another login for that same app. The same tag may be saved again for a different app, \
         and login types a credential only into an app it was saved for.
 
-        set asks for the username or email, then the password twice with typing hidden, or reads two lines \
-        with --stdin. Both must be characters the keyboard can type: the username 1 to 254, the password \
-        1 to 128. When a login is already saved, a terminal asks whether to update one or create a tagged \
-        one. Without a terminal, pass --update or a tag. Save test development credentials only. Anything \
-        that can run commands as you can then type them into this app.
+        set asks for the username or email, then the password twice, showing a dot for each character, or \
+        reads two lines with --stdin. Both must be characters the keyboard can type: the username 1 to 254, \
+        the password 1 to 128. When a login is already saved, a terminal shows a menu to update one or add a \
+        tagged one, and asks before replacing a saved tag. Without a terminal, pass --update or a tag. Save \
+        test development credentials only. Anything that can run commands as you can then type them into this app.
 
         join links the app in front to an app that already has saved logins, so both bundle ids share them. \
         It does not ask for the password. When only one app has logins, that is the one. When several do, \
@@ -87,15 +87,38 @@ struct CredentialCommand: AsyncParsableCommand {
         let parsed = try parsedAction()
         let key = key.map { LoginKey(rawValue: $0)?.rawValue ?? $0 }
         let store = KeychainLoginCredentialStore()
+        let person = isatty(STDIN_FILENO) != 0 && isatty(STDERR_FILENO) != 0
+        let styled = json || isatty(STDOUT_FILENO) == 0 ? nil : TerminalOutput(style: .detect(isTerminal: true), device: suggestedDevice)
         if parsed == .join {
-            let foreground = try await resolveForeground()
-            print(try Self.join(foreground: foreground, requested: app.flatMap(Self.appID), interactive: isatty(STDIN_FILENO) != 0, json: json, store: store, choose: Self.readAnswer))
+            let foreground = try await finding(person) { try await resolveForeground() }
+            let chooseApp: (([LoginAppGroup]) throws -> String)? = isatty(STDIN_FILENO) != 0 ? Self.chooseApp : nil
+            print(try Self.join(foreground: foreground, requested: app.flatMap(Self.appID), json: json, styled: styled, store: store, chooseApp: chooseApp))
             return
         }
-        let app = try await resolveApp()
-        let interactive = !stdin && isatty(STDIN_FILENO) != 0
-        let read = stdin ? Self.readFromStandardInput : { try Self.ask(app: app, key: key) }
-        print(try Self.perform(parsed, app: app, key: key, update: update, interactive: interactive, json: json, store: store, warn: { print(Self.warning, to: &standardError) }, choose: Self.readAnswer, readCredential: read))
+        let app = try await finding(person && app == nil) { try await resolveApp() }
+        guard parsed == .set, !stdin, isatty(STDIN_FILENO) != 0 else {
+            let read = stdin ? Self.readFromStandardInput : {
+                throw CLIError(errorDescription: "credential set asks for the username on a terminal. Without one, pass --stdin.", reason: .usage)
+            }
+            print(try Self.perform(parsed, app: app, key: key, update: update, json: json, styled: styled, store: store, warn: { print(Self.warning, to: &standardError) }, readCredential: read))
+            return
+        }
+        print(try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
+            prompt.lines(CredentialScreen.header(app: app, key: key, style: prompt.style))
+            let questions = TerminalCredentialQuestions(prompt: prompt)
+            return try Self.perform(.set, app: app, key: key, update: update, json: json, styled: styled, store: store, questions: questions, readCredential: questions.credential)
+        })
+    }
+
+    /// How a suggested command names this device: nothing when `OFFSIDER_DEVICE` already does.
+    var suggestedDevice: String {
+        guard let resolved = device.resolved else { return "--device <id>" }
+        return resolved.source == .environment ? "" : "--device \(resolved.id)"
+    }
+
+    private func finding<T>(_ spin: Bool, _ work: () async throws -> T) async throws -> T {
+        guard spin else { return try await work() }
+        return try await TerminalSpinner.run("Finding the app in front…", work)
     }
 
     static let keyMessage = "A credential tag is 1 to 32 characters from A-Z, a-z, 0-9, '.', '_' and '-', starting with a letter or digit, such as dev. The word default is reserved."
@@ -146,29 +169,32 @@ struct CredentialCommand: AsyncParsableCommand {
         app: String,
         key: String?,
         update: Bool = false,
-        interactive: Bool = false,
         json: Bool,
+        styled: TerminalOutput? = nil,
         store: any LoginCredentialStoring,
+        questions: (any CredentialQuestions)? = nil,
         warn: () -> Void = {},
-        choose: (String) throws -> String = { _ in
-            throw CLIError(errorDescription: "credential set asks for a choice on a terminal. Without one, pass --update or a tag.", reason: .usage)
-        },
         readCredential: () throws -> LoginCredential
     ) throws -> String {
+        func render(_ report: CredentialReport) -> String {
+            if json { return report.jsonLine() }
+            guard let styled else { return report.textLine() }
+            return report.styledText(style: styled.style, device: styled.device)
+        }
         let canonical = try store.canonical(of: app)
         let shared = try sharedIDs(app: app, canonical: canonical, store: store)
         switch action {
         case .set:
             let entries = try store.list(app: canonical)
-            let target = try writeTarget(entries: entries, tag: key, update: update, interactive: interactive, app: app, choose: choose)
+            let target = try writeTarget(entries: entries, tag: key, update: update, questions: questions)
             if let stamp = LoginDirectory.shouldStampDefault(entries, writing: target.key) {
                 try store.markDefault(app: canonical, key: stamp)
             }
-            warn()
+            if questions == nil { warn() }
             let credential = try readCredential()
             try store.save(credential, app: canonical, key: target.key, isDefault: target.makeDefault)
             let report = CredentialReport(action: "set", app: app, key: target.key, username: credential.username, saved: true, isDefault: target.makeDefault, also: shared)
-            return json ? report.jsonLine() : report.textLine()
+            return render(report)
         case .status:
             if let key {
                 let saved = try store.load(app: canonical, key: key)
@@ -180,17 +206,17 @@ struct CredentialCommand: AsyncParsableCommand {
                     sole = try store.keys(app: canonical).count == 1
                 }
                 let report = CredentialReport(action: "status", app: app, key: key, username: saved?.username, saved: saved != nil, isDefault: saved != nil && sole, also: shared)
-                return json ? report.jsonLine() : report.textLine()
+                return render(report)
             }
             var listed = try store.list(app: canonical)
             if listed.count == 1 { listed[0].isDefault = true }
             let report = CredentialReport(action: "status", app: app, saved: !listed.isEmpty, listed: listed, also: shared)
-            return json ? report.jsonLine() : report.textLine()
+            return render(report)
         case .remove:
             let removing = try removeTarget(entries: try store.list(app: canonical), tag: key)
             let removed = try store.remove(app: canonical, key: removing)
             let report = CredentialReport(action: "remove", app: app, key: removing, saved: false, removed: removed, also: shared)
-            return json ? report.jsonLine() : report.textLine()
+            return render(report)
         case .join:
             throw CLIError(errorDescription: "join is not a saved login.", reason: .usage)
         }
@@ -199,13 +225,13 @@ struct CredentialCommand: AsyncParsableCommand {
     static func join(
         foreground: String,
         requested: String?,
-        interactive: Bool,
         json: Bool,
+        styled: TerminalOutput? = nil,
         store: any LoginCredentialStoring,
-        choose: (String) throws -> String
+        chooseApp: (([LoginAppGroup]) throws -> String)? = nil
     ) throws -> String {
         let groups = try store.groups()
-        let intent = LoginDirectory.joinIntent(foreground: foreground, groups: groups, requested: requested, interactive: interactive)
+        let intent = LoginDirectory.joinIntent(foreground: foreground, groups: groups, requested: requested, interactive: chooseApp != nil)
         let canonical: String
         let already: Bool
         switch intent {
@@ -216,18 +242,24 @@ struct CredentialCommand: AsyncParsableCommand {
             canonical = target
             already = true
         case .choose:
-            let answer = try choose(LoginDirectory.joinMenu(groups: groups))
-            guard let target = LoginDirectory.interpretJoinChoice(answer, groups: groups) else {
-                throw CLIError(errorDescription: "Type the number of the saved app. Nothing was linked.", reason: .usage)
+            guard let chooseApp else {
+                throw CLIError(errorDescription: "Several apps have saved logins. Pass --app with the one to share. Nothing was linked.", reason: .usage)
             }
-            canonical = target
+            canonical = try chooseApp(groups)
             already = false
         case .refused(let message):
             throw CLIError(errorDescription: message, reason: message.contains("Pass --app") ? .usage : .commandFailed)
         }
         if !already { try store.join(member: foreground, canonical: canonical) }
         let report = CredentialReport(action: "join", app: foreground, saved: !already, linked: canonical)
-        return json ? report.jsonLine() : report.textLine()
+        if json { return report.jsonLine() }
+        return styled.map { report.styledText(style: $0.style, device: $0.device) } ?? report.textLine()
+    }
+
+    private static func chooseApp(_ groups: [LoginAppGroup]) throws -> String {
+        try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingLinked) { prompt in
+            groups[try prompt.choose(CredentialScreen.joinTitle, options: CredentialScreen.joinOptions(groups: groups))].canonical
+        }
     }
 
     private struct WriteTarget {
@@ -239,33 +271,30 @@ struct CredentialCommand: AsyncParsableCommand {
         entries: [LoginCredentialSummary],
         tag: String?,
         update: Bool,
-        interactive: Bool,
-        app: String,
-        choose: (String) throws -> String
+        questions: (any CredentialQuestions)?
     ) throws -> WriteTarget {
-        switch LoginDirectory.setIntent(entries: entries, tag: tag, update: update, interactive: interactive) {
+        switch LoginDirectory.setIntent(entries: entries, tag: tag, update: update, interactive: questions != nil) {
         case .write(let key, let makeDefault):
             return WriteTarget(key: key, makeDefault: makeDefault)
         case .refused(let message):
             throw CLIError(errorDescription: message, reason: .usage)
+        case .confirm(let key, let makeDefault):
+            guard let questions, let entry = entries.first(where: { $0.key == key }), try questions.replaces(entry) else { throw PromptCancelled() }
+            return WriteTarget(key: key, makeDefault: makeDefault)
         case .choose:
-            let answer = try choose(LoginDirectory.setMenu(app: app, entries: entries))
-            switch LoginDirectory.interpretSetChoice(answer, entries: entries) {
+            guard let questions else {
+                throw CLIError(errorDescription: "credential set asks for a choice on a terminal. Without one, pass --update or a tag.", reason: .usage)
+            }
+            switch try questions.loginToChange(entries: entries) {
             case .update(let key):
                 let marked = entries.first { $0.key == key }?.isDefault ?? (entries.count == 1)
                 return WriteTarget(key: key, makeDefault: marked)
             case .create:
-                let tag = try choose("Tag for the new login, such as qa: ")
-                guard let parsed = LoginKey(rawValue: tag) else {
+                let tag = try questions.newTag(taken: entries.map(\.key))
+                guard let parsed = LoginKey(rawValue: tag), !entries.contains(where: { $0.key == parsed.rawValue }) else {
                     throw CLIError(errorDescription: "\(keyMessage) Nothing was saved.", reason: .usage)
                 }
-                if entries.contains(where: { $0.key == parsed.rawValue }) {
-                    throw CLIError(errorDescription: "The tag \(parsed.rawValue) is already saved for this app. Nothing was saved.", reason: .usage)
-                }
                 return WriteTarget(key: parsed.rawValue, makeDefault: false)
-            case nil:
-                let hint = entries.count == 1 ? "Type u or n." : "Type a number or n."
-                throw CLIError(errorDescription: "\(hint) Nothing was saved.", reason: .usage)
             }
         }
     }
@@ -284,17 +313,6 @@ struct CredentialCommand: AsyncParsableCommand {
         var others = group?.members ?? []
         if canonical != app { others.append(canonical) }
         return others.filter { $0 != app }.sorted()
-    }
-
-    private static func readAnswer(_ prompt: String) throws -> String {
-        guard isatty(STDIN_FILENO) != 0 else {
-            throw CLIError(errorDescription: "credential set asks for a choice on a terminal. Without one, pass --update or a tag.", reason: .usage)
-        }
-        FileHandle.standardError.write(Data(prompt.utf8))
-        guard let line = readLine(strippingNewline: true) else {
-            throw CLIError(errorDescription: "Nothing was saved.", reason: .usage)
-        }
-        return line
     }
 
     /// A username and password `type` can send. The message names neither value.
@@ -318,35 +336,6 @@ struct CredentialCommand: AsyncParsableCommand {
         }
         return try credential(username: username, password: password)
     }
-
-    /// The username is visible. The password is asked twice with echo off, and the buffers are wiped.
-    static func ask(app: String, key: String?) throws -> LoginCredential {
-        guard isatty(STDIN_FILENO) != 0 else {
-            throw CLIError(errorDescription: "credential set asks for the username on a terminal. Without one, pass --stdin.", reason: .usage)
-        }
-        let which = key.map { " tag \(LoginCredential.displayKey($0))" } ?? ""
-        FileHandle.standardError.write(Data("Username or email for \(app)\(which): ".utf8))
-        guard let username = readLine(strippingNewline: true) else {
-            throw CLIError(errorDescription: "credential set asks for the username on a terminal. Without one, pass --stdin.", reason: .usage)
-        }
-        let password = try prompt("Password (typing is hidden): ")
-        guard try prompt("Type it again: ") == password else {
-            throw CLIError(errorDescription: "The two passwords differ. Nothing was saved.", reason: .usage)
-        }
-        return try credential(username: username, password: password)
-    }
-
-    private static func prompt(_ text: String) throws -> String {
-        var buffer = [CChar](repeating: 0, count: 512)
-        defer { buffer.withUnsafeMutableBytes { _ = memset_s($0.baseAddress, $0.count, 0, $0.count) } }
-        guard let line = readpassphrase(text, &buffer, buffer.count, RPP_REQUIRE_TTY) else {
-            let message = errno == ENOTTY
-                ? "credential set asks for the password on a terminal. Without one, pass --stdin."
-                : "Could not read the password: \(String(cString: strerror(errno))). Nothing was saved."
-            throw CLIError(errorDescription: message, reason: .usage)
-        }
-        return String(cString: line)
-    }
 }
 
 /// `--device` without `--wait-lock`. `credential` never holds the device lock itself.
@@ -355,4 +344,44 @@ struct CredentialDeviceOption: ParsableArguments {
     var explicitID: String?
 
     var resolved: (id: String, source: DeviceSource)? { DeviceDefault.resolve(explicit: explicitID) }
+}
+
+/// How a report looks to a person at a terminal, and how its next steps name the device.
+struct TerminalOutput {
+    var style: TerminalStyle
+    var device: String
+}
+
+/// What `credential set` asks a person at a terminal. Tests script the answers.
+protocol CredentialQuestions {
+    func loginToChange(entries: [LoginCredentialSummary]) throws -> LoginSetChoice
+    func replaces(_ entry: LoginCredentialSummary) throws -> Bool
+    func newTag(taken: [String]) throws -> String
+    func credential() throws -> LoginCredential
+}
+
+struct TerminalCredentialQuestions: CredentialQuestions {
+    let prompt: TerminalPrompt
+
+    func loginToChange(entries: [LoginCredentialSummary]) throws -> LoginSetChoice {
+        let index = try prompt.choose(CredentialScreen.menuTitle(entries: entries), options: CredentialScreen.menuOptions(entries: entries))
+        return LoginDirectory.setChoice(at: index, entries: entries)
+    }
+
+    func replaces(_ entry: LoginCredentialSummary) throws -> Bool {
+        try prompt.choose(CredentialScreen.replaceTitle(entry), options: CredentialScreen.replaceOptions) == 0
+    }
+
+    func newTag(taken: [String]) throws -> String {
+        let label = PromptScreen.labels([CredentialScreen.tagLabel])[0]
+        return try prompt.ask(label, placeholder: CredentialScreen.tagPlaceholder) { CredentialScreen.tagProblem($0, taken: taken) }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func credential() throws -> LoginCredential {
+        let labels = PromptScreen.labels([CredentialScreen.usernameLabel, CredentialScreen.passwordLabel, CredentialScreen.againLabel])
+        let username = try prompt.ask(labels[0], check: CredentialScreen.usernameProblem)
+        let password = try prompt.askSecret(labels[1], again: labels[2], check: CredentialScreen.passwordProblem)
+        return try CredentialCommand.credential(username: username, password: password)
+    }
 }

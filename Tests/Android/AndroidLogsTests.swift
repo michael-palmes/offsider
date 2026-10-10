@@ -21,7 +21,7 @@ struct AndroidLogsTests {
     nonisolated static let uidDump = """
     --------- beginning of main
              1790945238.399 10213  4100  4120 I ReactNativeJS: tapped save
-             1790945238.450 10213  4100  4121 I OffsiderPlayground: [CONSOLE] Range Selected 1D
+             1790945238.450 10213  4100  4121 I OffsiderPlayground: [CONSOLE] Size Selected S
              1790945238.500  1000   677   874 D WifiScoreCard: noise
              1790945238.600 10213  5200  5201 I ReactNativeJS: after restart
              1790945238.700 10099  6000  6001 I ReactNativeJS: another app
@@ -167,7 +167,7 @@ struct AndroidLogsTests {
         let entries = try await Self.read(LogQuery(source: .reactNative(app: "com.example.app"), window: .last(.seconds(120))), from: server)
 
         #expect(Self.shellCommands(server).count == 1)
-        #expect(entries.map(\.message) == ["tapped save", "[CONSOLE] Range Selected 1D", "after restart", "another app"])
+        #expect(entries.map(\.message) == ["tapped save", "[CONSOLE] Size Selected S", "after restart", "another app"])
         #expect(entries.map(\.process) == ["com.example.app", "com.example.app", "com.example.app", nil])
         #expect(entries.map(\.pid) == [4100, 4100, 5200, 6000])
     }

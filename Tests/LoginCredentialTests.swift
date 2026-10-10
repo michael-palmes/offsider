@@ -112,7 +112,7 @@ struct LoginCredentialTests {
         #expect(try store.defaultKey(app: "com.example.app") == "dev")
         #expect(try LoginCommand.resolveKey(nil, app: "com.example.app", canonical: "com.example.app", device: "DEVICE", store: store) == "dev")
 
-        let linked = try CredentialCommand.join(foreground: "com.example.android", requested: nil, interactive: false, json: false, store: store) { _ in "" }
+        let linked = try CredentialCommand.join(foreground: "com.example.android", requested: nil, json: false, store: store)
         #expect(linked.contains("com.example.android"))
         #expect(linked.contains("com.example.app"))
         #expect(!linked.contains(password))
@@ -140,7 +140,7 @@ struct LoginCredentialTests {
         try store.save(credential, app: "com.example.app", key: "dev", isDefault: true)
         var read = false
         do {
-            _ = try CredentialCommand.perform(.set, app: "com.example.app", key: nil, update: false, interactive: false, json: false, store: store) {
+            _ = try CredentialCommand.perform(.set, app: "com.example.app", key: nil, update: false, json: false, store: store) {
                 read = true
                 return credential
             }
@@ -153,11 +153,18 @@ struct LoginCredentialTests {
             #expect(!error.failureMessage.contains(username))
         }
         #expect(!read)
-        let menu = LoginDirectory.setMenu(app: "com.example.app", entries: try store.list(app: "com.example.app"))
-        #expect(menu.contains(username))
-        #expect(!menu.contains(password))
-        #expect(LoginDirectory.interpretSetChoice("u", entries: try store.list(app: "com.example.app")) == .update(key: "dev"))
-        #expect(LoginDirectory.interpretSetChoice("n", entries: try store.list(app: "com.example.app")) == .create)
+        let entries = try store.list(app: "com.example.app")
+        let menu = CredentialScreen.menuOptions(entries: entries)
+        #expect(menu.contains { $0.contains(username) })
+        #expect(!menu.contains { $0.contains(password) })
+        #expect(LoginDirectory.setChoice(at: 0, entries: entries) == .update(key: "dev"))
+        #expect(LoginDirectory.setChoice(at: entries.count, entries: entries) == .create)
+        #expect(LoginDirectory.setIntent(entries: entries, tag: "dev", update: false, interactive: true) == .confirm(key: "dev", makeDefault: true))
+        guard case .refused(let refusal) = LoginDirectory.setIntent(entries: entries, tag: "dev", update: false, interactive: false) else {
+            Issue.record("expected a saved tag to refuse without a terminal")
+            return
+        }
+        #expect(refusal.contains("--update"))
         #expect(LoginDirectory.setIntent(entries: [], tag: nil, update: false, interactive: false) == .write(key: LoginCredential.defaultAccountKey, makeDefault: true))
     }
 
@@ -224,7 +231,7 @@ struct LoginCredentialTests {
 
     private func refusalOfJoin(store: MemoryLoginCredentialStore, foreground: String) -> String {
         do {
-            return try CredentialCommand.join(foreground: foreground, requested: nil, interactive: false, json: false, store: store) { _ in "" }
+            return try CredentialCommand.join(foreground: foreground, requested: nil, json: false, store: store)
         } catch {
             return "\(error)"
         }
