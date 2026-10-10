@@ -669,8 +669,8 @@ struct VerifierLiveTests {
 
     private static func ticking(tick: Int, alerts: Bool = false, extra: [UINode] = []) -> UITree {
         FakeUI.tree([
-            FakeUI.node(.text, id: "live-ticker-price", label: "$\(129 + tick).95", frame: FakeUI.frame(16, 100, 370, 40)),
-            FakeUI.node(.switch, id: toggle, label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
+            FakeUI.node(.text, id: "live-ticker-heart-rate", label: "\(72 + tick) bpm", frame: FakeUI.frame(16, 100, 370, 40)),
+            FakeUI.node(.switch, id: toggle, label: "Goal Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
             FakeUI.node(.button, id: "live-ticker-noop", label: "Do Nothing", frame: FakeUI.frame(16, 260, 180, 44)),
         ] + extra)
     }
@@ -681,16 +681,16 @@ struct VerifierLiveTests {
         return (outcome, sent)
     }
 
-    @Test("a ticker learnt from the cache is not taken for the input's effect, the input is not retried, and the price is named as ignored")
+    @Test("a ticker learnt from the cache is not taken for the input's effect, the input is not retried, and the heart rate is named as ignored")
     func cachedTickerIsIgnored() async throws {
-        // The price ticks every other read, so the two reads before the input agree.
+        // The heart rate ticks every other read, so the two reads before the input agree.
         let ticks = (0..<40).map { Self.ticking(tick: 1 + $0 / 2) }
         let fake = FakeSimulator(trees: ticks)
         fake.cached = try LiveTextTests.record(Self.ticking(tick: 0))
         let (outcome, sent) = try await Self.run(fake)
         #expect(!outcome.verified && outcome.change == ChangeKind.none)
         #expect(sent == 1)
-        #expect(outcome.ignored.contains(VerifyIgnored(node: "live-ticker-price", reason: .live)))
+        #expect(outcome.ignored.contains(VerifyIgnored(node: "live-ticker-heart-rate", reason: .live)))
 
         let unlearnt = FakeSimulator(trees: ticks)
         #expect(try await Self.run(unlearnt).0.verified, "without the cache the first tick reads as the input's effect")
@@ -702,7 +702,7 @@ struct VerifierLiveTests {
         fake.cached = try LiveTextTests.record(Self.ticking(tick: 0))
         let (outcome, sent) = try await Self.run(fake)
         #expect(outcome.verified && outcome.attempts == 1 && sent == 1)
-        #expect(outcome.changes == [VerifyChange(kind: .changed, node: #"switch "Price Alerts" id=live-ticker-toggle"#, field: "checked", old: "false", new: "true")])
+        #expect(outcome.changes == [VerifyChange(kind: .changed, node: #"switch "Goal Alerts" id=live-ticker-toggle"#, field: "checked", old: "false", new: "true")])
     }
 
     @Test("a LogBox toast's count going up is no change, and the input is still retried")
@@ -720,7 +720,7 @@ struct VerifierLiveTests {
     private static func spinning(_ step: Int, alerts: Bool = false) -> UITree {
         FakeUI.tree([
             FakeUI.node(.other, id: "spinner", label: "Loading", frame: FakeUI.frame(Double(16 + step), 400, 40, 40)),
-            FakeUI.node(.switch, id: toggle, label: "Price Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
+            FakeUI.node(.switch, id: toggle, label: "Goal Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
         ])
     }
 
@@ -753,16 +753,16 @@ struct VerifierLiveTests {
 
     @Test("pixels under live text are left out of the screenshot check; a change elsewhere still verifies")
     func liveTilesExcluded() async throws {
-        func small(_ price: String) -> UITree {
+        func small(_ heartRate: String) -> UITree {
             FakeUI.tree(width: 64, height: 128, [
-                FakeUI.node(.text, id: "price", label: price, frame: FakeUI.frame(8, 80, 12, 8)),
+                FakeUI.node(.text, id: "heart-rate", label: heartRate, frame: FakeUI.frame(8, 80, 12, 8)),
                 FakeUI.node(.button, id: "noop", label: "Do Nothing", frame: FakeUI.frame(30, 100, 30, 10)),
             ])
         }
-        let ticks = (0..<40).map { small("$\($0 / 2 + 1)") }
+        let ticks = (0..<40).map { small("\($0 / 2 + 61) bpm") }
         for (after, verified) in [(screen(shade: 10, label: 90), false), (screen(shade: 200, label: 90), true)] {
             let fake = FakeSimulator(trees: ticks, screens: [screen(shade: 10, label: 60), after])
-            fake.cached = try LiveTextTests.record(small("$0"))
+            fake.cached = try LiveTextTests.record(small("60 bpm"))
             let (outcome, _) = try await Self.run(fake, styles: [nil])
             #expect(outcome.verified == verified)
             #expect(outcome.change == (verified ? .screenshot : ChangeKind.none))
@@ -832,9 +832,9 @@ struct VerifierLiveTests {
             == #"✓ Tap on id=x verified: accessibility tree changed (checked of switch id=a "false" to "true"; button "Save" added; text id=old removed; and 3 more), attempt 1 of 2, simulator style (settle 0.4 s, tap 0.1 s, verify 1.2 s)"#)
 
         var failed = Verifier.Outcome(verified: false, attempts: 1, change: .none, style: .simulator, summary: nil)
-        failed.ignored = [VerifyIgnored(node: "live-ticker-price", reason: .live), VerifyIgnored(node: "live-ticker-orders", reason: .live)]
+        failed.ignored = [VerifyIgnored(node: "live-ticker-heart-rate", reason: .live), VerifyIgnored(node: "live-ticker-steps", reason: .live)]
         let line = VerifyOutput.unverifiedLine(failed, for: request)
-        #expect(line.contains("Ignored live: live-ticker-price, live-ticker-orders, which changed without the input; not retried."))
+        #expect(line.contains("Ignored live: live-ticker-heart-rate, live-ticker-steps, which changed without the input; not retried."))
         failed.ignored = [VerifyIgnored(node: "spinner", reason: .volatile)]
         #expect(VerifyOutput.unverifiedLine(failed, for: request).contains("Ignored already changing before the input: spinner, which changed without the input. "))
     }

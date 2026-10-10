@@ -208,22 +208,22 @@ struct WaitLoopTests {
         #expect(outcome.elapsed == 0.75)
     }
 
-    private static func price(_ text: String, saveAt y: Double = 600) -> UITree {
+    private static func heartRate(_ text: String, saveAt y: Double = 600) -> UITree {
         var save = Self.save
         save.frame = FakeUI.frame(20, y, 350, 44)
-        return Self.screen([FakeUI.node(.text, id: "price", label: text, frame: FakeUI.frame(0, 100, 200, 30)), save])
+        return Self.screen([FakeUI.node(.text, id: "heart-rate", label: text, frame: FakeUI.frame(0, 100, 200, 30)), save])
     }
 
     @Test("with --ignore-values a ticking label lets the screen settle, resizing with its text or not, while a move still restarts the quiet window")
     func ignoreValuesSettlesOnTicker() async throws {
         let ticking = Script()
-        ticking.trees = (0..<20).map { .success(Self.price("$\($0)")) }
+        ticking.trees = (0..<20).map { .success(Self.heartRate("\($0) bpm")) }
         let settled = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true), timeout: 5, interval: 0.25, sources: ticking.sources)
         #expect(settled.met && settled.elapsed == 0.5)
 
         let resizing = Script()
         resizing.trees = (0..<20).map { tick in
-            var tree = Self.price("$\(tick)")
+            var tree = Self.heartRate("\(tick) bpm")
             tree.roots[0].children[1].frame = FakeUI.frame(Double(300 - tick), 100, Double(80 + tick), 30)
             return .success(tree)
         }
@@ -231,7 +231,7 @@ struct WaitLoopTests {
         #expect(resized.met && resized.elapsed == 0.5, "a right-aligned ticker's frame follows its text")
 
         let moving = Script()
-        moving.trees = [.success(Self.price("$1")), .success(Self.price("$2", saveAt: 300))]
+        moving.trees = [.success(Self.heartRate("61 bpm")), .success(Self.heartRate("62 bpm", saveAt: 300))]
         let moved = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true), timeout: 5, interval: 0.25, sources: moving.sources)
         #expect(moved.met && moved.elapsed == 0.75)
     }
@@ -239,12 +239,12 @@ struct WaitLoopTests {
     @Test("a ticking label without --ignore-values never settles, and the outcome says only text moved")
     func tickerTimesOutAsTextOnly() async throws {
         let ticking = Script()
-        ticking.trees = (0..<20).map { .success(Self.price("$\($0)")) }
+        ticking.trees = (0..<20).map { .success(Self.heartRate("\($0) bpm")) }
         let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 1, interval: 0.25, sources: ticking.sources)
         #expect(!outcome.met && outcome.onlyTextMoved)
 
         let moving = Script()
-        moving.trees = (0..<20).map { .success(Self.price("$\($0)", saveAt: 300 + Double($0))) }
+        moving.trees = (0..<20).map { .success(Self.heartRate("\($0) bpm", saveAt: 300 + Double($0))) }
         #expect(try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 1, interval: 0.25, sources: moving.sources).onlyTextMoved == false)
     }
 
