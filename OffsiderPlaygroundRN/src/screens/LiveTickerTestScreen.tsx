@@ -5,20 +5,19 @@ import { colours, fixtureLog, FullPage, iosValue, Readout, Screen, Target, useHa
 
 const tickMs = 1000;
 const openDetailMs = 1200;
-const basePriceCents = 12_995;
-const priceStepsCents = [0, 127, 41, 268, 155, -82, 19, 203, -37, 96];
-const baseOrders = 18_402;
-const ordersStep = 3;
-const intervals = ['1D', '1W'] as const;
-type Interval = (typeof intervals)[number];
+const baseHeartRate = 72;
+const heartRateSteps = [0, 3, 1, 5, 2, -2, 0, 4, -1, 2];
+const baseSteps = 18_402;
+const stepsPerTick = 3;
+const sizes = ['S', 'M'] as const;
+type Size = (typeof sizes)[number];
 
 function grouped(value: number): string {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-function price(tick: number): string {
-  const cents = basePriceCents + priceStepsCents[tick % priceStepsCents.length];
-  return `$${grouped(Math.floor(cents / 100))}.${String(cents % 100).padStart(2, '0')}`;
+function heartRate(tick: number): string {
+  return `${baseHeartRate + heartRateSteps[tick % heartRateSteps.length]} bpm`;
 }
 
 function onOff(value: boolean): string {
@@ -28,10 +27,10 @@ function onOff(value: boolean): string {
 export function LiveTickerTestScreen() {
   const [tick, setTick] = useState(0);
   const [alerts, setAlerts] = useState(false);
-  const [selected, setSelected] = useState<Interval>('1D');
+  const [selected, setSelected] = useState<Size>('S');
   const [detail, setDetail] = useState(false);
   const detailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const orders = grouped(baseOrders + tick * ordersStep);
+  const steps = grouped(baseSteps + tick * stepsPerTick);
 
   useEffect(() => {
     const timer = setInterval(() => setTick((current) => current + 1), tickMs);
@@ -66,72 +65,72 @@ export function LiveTickerTestScreen() {
     }, openDetailMs);
   };
 
-  const selectInterval = (value: Interval) => {
-    console.log(`OffsiderFixture Range Selected ${value}`);
-    fixtureLog('live-ticker', `interval ${value}`);
+  const selectSize = (value: Size) => {
+    console.log(`OffsiderFixture Size Selected ${value}`);
+    fixtureLog('live-ticker', `size ${value}`);
     setSelected(value);
   };
 
   return (
     <View style={styles.root}>
       <Screen route="live-ticker" style={styles.content}>
-        <Readout id="live-ticker-price" label={price(tick)} textStyle={styles.price} />
+        <Readout id="live-ticker-heart-rate" label={heartRate(tick)} textStyle={styles.heartRate} />
         <View style={styles.row}>
           <View
-            testID="live-ticker-orders"
+            testID="live-ticker-steps"
             accessible
             accessibilityRole="text"
-            accessibilityLabel="Orders (24h)"
-            accessibilityValue={iosValue(orders)}
+            accessibilityLabel="Steps (today)"
+            accessibilityValue={iosValue(steps)}
           >
             <Text importantForAccessibility="no" style={styles.label}>
-              Orders (24h)
+              Steps (today)
             </Text>
           </View>
-          <Readout id="live-ticker-orders-count" label={orders} />
+          <Readout id="live-ticker-steps-count" label={steps} />
         </View>
-        <Readout id="live-ticker-inert" label="Chart Area" style={styles.inert} textStyle={styles.inertText} />
+        <Readout id="live-ticker-inert" label="Map Area" style={styles.inert} textStyle={styles.inertText} />
         <View style={styles.row}>
-          <View style={styles.intervals}>
-            {intervals.map((value) => (
+          <View style={styles.sizes}>
+            {sizes.map((value) => (
               <Target
                 key={value}
-                id={`live-ticker-interval-${value.toLowerCase()}`}
+                id={`live-ticker-size-${value.toLowerCase()}`}
                 label={value}
                 state={{ selected: selected === value }}
-                onPress={() => selectInterval(value)}
-                style={[styles.interval, selected === value && styles.rangeSelected]}
-                textStyle={[styles.intervalText, selected === value && styles.intervalTextSelected]}
+                onPress={() => selectSize(value)}
+                style={[styles.size, selected === value && styles.sizeSelected]}
+                textStyle={[styles.sizeText, selected === value && styles.sizeTextSelected]}
               />
             ))}
           </View>
           <View
-            testID="live-ticker-interval"
+            testID="live-ticker-size"
             accessible
             accessibilityRole="text"
-            accessibilityLabel="Interval"
+            accessibilityLabel="Size"
             accessibilityValue={iosValue(selected)}
           >
             <Text importantForAccessibility="no" style={styles.label}>
-              {`Interval: ${selected}`}
+              {`Size: ${selected}`}
             </Text>
           </View>
         </View>
         <View style={styles.row}>
           <Target
             id="live-ticker-toggle"
-            label="Price Alerts"
+            label="Goal Alerts"
             role="switch"
             state={{ checked: alerts }}
             onPress={() => {
-              fixtureLog('live-ticker', `price alerts ${onOff(!alerts).toLowerCase()}`);
+              fixtureLog('live-ticker', `goal alerts ${onOff(!alerts).toLowerCase()}`);
               setAlerts((current) => !current);
             }}
             style={[styles.track, alerts && styles.trackOn]}
           >
             <View style={styles.thumb} />
           </Target>
-          <Readout id="live-ticker-toggle-state" label={`Price Alerts: ${onOff(alerts)}`} value={onOff(alerts)} />
+          <Readout id="live-ticker-toggle-state" label={`Goal Alerts: ${onOff(alerts)}`} value={onOff(alerts)} />
         </View>
         <View style={styles.row}>
           <Target
@@ -149,7 +148,7 @@ export function LiveTickerTestScreen() {
           id="live-ticker-detail-page"
           backId="live-ticker-detail-back"
           titleId="live-ticker-detail"
-          title="Price Detail"
+          title="Activity Detail"
           onBack={closeDetail}
         />
       )}
@@ -166,7 +165,7 @@ function emitTwoLogs() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { padding: 16, gap: 16 },
-  price: { fontSize: 34, fontWeight: '700' },
+  heartRate: { fontSize: 34, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   label: { fontSize: 17, color: colours.secondary },
   inert: {
@@ -180,11 +179,11 @@ const styles = StyleSheet.create({
     backgroundColor: colours.panel,
   },
   inertText: { color: colours.secondary },
-  intervals: { flexDirection: 'row', gap: 8 },
-  interval: { minWidth: 56, backgroundColor: colours.panel },
-  rangeSelected: { backgroundColor: colours.accent },
-  intervalText: { color: colours.accent },
-  intervalTextSelected: { color: '#FFFFFF' },
+  sizes: { flexDirection: 'row', gap: 8 },
+  size: { minWidth: 56, backgroundColor: colours.panel },
+  sizeSelected: { backgroundColor: colours.accent },
+  sizeText: { color: colours.accent },
+  sizeTextSelected: { color: '#FFFFFF' },
   track: {
     width: 52,
     minHeight: 32,

@@ -1,10 +1,10 @@
 import Foundation
 import Testing
 
-/// `--verify` and `wait --settled` on the live ticker: a price that ticks every second, a toggle and a push delayed 1.2 s.
+/// `--verify` and `wait --settled` on the live ticker: a heart rate that ticks every second, a toggle and a push delayed 1.2 s.
 @Suite("React Native live values", .serialized, .enabled(if: RNPlatform.anyEnabled))
 struct ReactNativeLiveTests {
-    /// Opens the ticker and reads it 2 s after the last input, then lets it tick, so the next command learns the price as live.
+    /// Opens the ticker and reads it 2 s after the last input, then lets it tick, so the next command learns the heart rate as live.
     static func openAndRead(_ app: RNApp) async throws {
         try await app.open("live-ticker")
         try await Task.sleep(for: .seconds(2))
@@ -20,7 +20,7 @@ struct ReactNativeLiveTests {
         (report["changes"] as? [[String: Any]] ?? []).compactMap { $0["node"] as? String }
     }
 
-    @Test("a toggle verifies on its first attempt, its changes leave the ticking price out, and the line ends with its timing", arguments: RNPlatform.enabled)
+    @Test("a toggle verifies on its first attempt, its changes leave the ticking heart rate out, and the line ends with its timing", arguments: RNPlatform.enabled)
     func toggleVerifies(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await Self.openAndRead(app)
@@ -30,14 +30,14 @@ struct ReactNativeLiveTests {
 
         #expect(result.exitCode == 0, "\(result.stderr)")
         #expect(report["attempts"] as? Int == 1)
-        #expect(!Self.changedNodes(report).contains { $0.contains("live-ticker-price") }, "\(Self.changedNodes(report))")
+        #expect(!Self.changedNodes(report).contains { $0.contains("live-ticker-heart-rate") }, "\(Self.changedNodes(report))")
         #expect(Self.changedNodes(report).contains { $0.contains("live-ticker-toggle") }, "\(Self.changedNodes(report))")
         #expect(report["phasesMs"] is [String: Any] && report["elapsedMs"] is Int)
         #expect(result.stderr.contains(#/verified: .*attempt 1 of 2.* \(settle [0-9.]+ s, tap [0-9.]+ s, verify [0-9.]+ s\)/#), "\(result.stderr)")
         try await app.run("tap --id live-ticker-toggle")
     }
 
-    @Test("a tap that changes nothing is not verified and not retried, and the price is named as live", arguments: RNPlatform.enabled)
+    @Test("a tap that changes nothing is not verified and not retried, and the heart rate is named as live", arguments: RNPlatform.enabled)
     func noOpNotVerified(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await Self.openAndRead(app)
@@ -48,7 +48,7 @@ struct ReactNativeLiveTests {
         #expect(result.exitCode == 5, "\(result.stderr)")
         #expect(report["attempts"] as? Int == 1)
         let ignored = (report["ignored"] as? [[String: Any]] ?? []).filter { $0["reason"] as? String == "live" }.compactMap { $0["node"] as? String }
-        #expect(ignored.contains("live-ticker-price"), "\(report["ignored"] ?? "none")")
+        #expect(ignored.contains("live-ticker-heart-rate"), "\(report["ignored"] ?? "none")")
         #expect(result.stderr.contains("Ignored live:"), "\(result.stderr)")
     }
 
@@ -80,7 +80,7 @@ struct ReactNativeLiveTests {
         try await app.run("tap --id live-ticker-detail-back")
     }
 
-    @Test("without --ignore-values the ticking price never lets the screen settle, and the timeout says to add it", arguments: RNPlatform.enabled)
+    @Test("without --ignore-values the ticking heart rate never lets the screen settle, and the timeout says to add it", arguments: RNPlatform.enabled)
     func tickerNeverSettles(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("live-ticker")

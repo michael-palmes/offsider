@@ -19,9 +19,9 @@ struct UITreeRendererTests {
                         native: .ios(IOSNativeAttributes(type: "ScrollView")),
                         children: [
                             UINode(
-                                role: .button, id: "one-d", label: "1D", value: "3",
+                                role: .button, id: "size-s", label: "S", value: "Small",
                                 frame: UIFrame(x: 16, y: 769, width: 85, height: 36), enabled: true,
-                                native: .ios(IOSNativeAttributes(type: "Button", customActions: ["Delete"], axFrame: "{{16, 769}, {85, 36}}"))
+                                native: .ios(IOSNativeAttributes(type: "Button", customActions: ["Size Guide"], axFrame: "{{16, 769}, {85, 36}}"))
                             ),
                             UINode(
                                 role: .text, label: "Far below",
@@ -121,7 +121,7 @@ struct UITreeRendererTests {
         # ios IOS-UDID 402x874 @3x portrait 0°
         application "Playground" (0,0 402x874)
           scrollView (0,0 402x2000)
-            button "1D" id=one-d value="3" (16,769 85x36)
+            button "S" id=size-s value="Small" (16,769 85x36)
             text "Far below" (16,1500 200x20)
 
         """)
@@ -175,7 +175,7 @@ struct UITreeRendererTests {
         #expect(output == """
         # ios IOS-UDID 402x874 @3x portrait 0°
         application "Playground" (0,0 402x874)
-          button "1D" id=one-d value="3" (16,769 85x36)
+          button "S" id=size-s value="Small" (16,769 85x36)
           [off-screen below] 1 item: "Far below"
 
         """)
@@ -205,7 +205,7 @@ struct UITreeRendererTests {
     func textFieldsKeepRole() {
         let output = string(Self.iosTree, UITreeRenderOptions(format: .text, fields: [.id]))
 
-        #expect(output.contains("\n    button id=one-d\n"))
+        #expect(output.contains("\n    button id=size-s\n"))
     }
 
     @Test("compact JSON parses to the same value as pretty JSON", arguments: [iosTree, androidTree])

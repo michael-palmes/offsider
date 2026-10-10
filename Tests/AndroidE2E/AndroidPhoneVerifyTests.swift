@@ -25,14 +25,14 @@ struct AndroidPhoneVerifyTests {
             #expect(result.exitCode == 0, "\(result.stderr)")
             #expect(report["attempts"] as? Int == 1)
             let changes = (report["changes"] as? [[String: Any]] ?? []).compactMap { $0["node"] as? String }
-            #expect(!changes.contains { $0.contains("live-ticker-price") || $0.contains("live-ticker-orders") }, "\(changes)")
+            #expect(!changes.contains { $0.contains("live-ticker-heart-rate") || $0.contains("live-ticker-steps") }, "\(changes)")
             #expect(!AndroidE2E.timingPhases(result.stderr).contains("baseline-capture"))
             #expect(Set(((report["phasesMs"] as? [String: Any]) ?? [:]).keys) == ["settle", "resolve", "baseline", "dispatch", "verify"])
             try await AndroidE2E.run("tap --id live-ticker-toggle")
         }
     }
 
-    @Test("a tap that changes nothing is unverified after one attempt, naming the ticking amount as live")
+    @Test("a tap that changes nothing is unverified after one attempt, naming the ticking heart rate as live")
     func noOp() async throws {
         try await AndroidE2E.onAwakePhone {
             try await Self.openAndRead()
@@ -42,7 +42,7 @@ struct AndroidPhoneVerifyTests {
             #expect(result.exitCode == 5, "\(result.stderr)")
             #expect(report["attempts"] as? Int == 1)
             let live = (report["ignored"] as? [[String: Any]] ?? []).filter { $0["reason"] as? String == "live" }.compactMap { $0["node"] as? String }
-            #expect(live.contains("live-ticker-price"), "\(live)")
+            #expect(live.contains("live-ticker-heart-rate"), "\(live)")
         }
     }
 
