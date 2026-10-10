@@ -161,52 +161,52 @@ struct ChangeDetectorLiveTests {
     private let detector = ChangeDetector()
 
     /// With `native`, each node carries the native type a fresh read has; without, it has only its role, as the cache keeps it.
-    private static func screen(reading: String, readingWidth: Double = 370, notifications: Bool = false, extra: [UINode] = [], native: Bool = true) -> AccessibilitySnapshot {
+    private static func screen(heartRate: String, heartRateWidth: Double = 370, alerts: Bool = false, extra: [UINode] = [], native: Bool = true) -> AccessibilitySnapshot {
         func typed(_ node: UINode, _ type: String) -> UINode {
             var node = node
             if native { node.native = .ios(IOSNativeAttributes(type: type)) }
             return node
         }
         let nodes = [
-            typed(FakeUI.node(.text, id: "reading", label: reading, frame: FakeUI.frame(16, 100, readingWidth, 40)), "StaticText"),
-            typed(FakeUI.node(.switch, id: "notifications", label: "Notifications", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: notifications)), "Switch"),
+            typed(FakeUI.node(.text, id: "heart-rate", label: heartRate, frame: FakeUI.frame(16, 100, heartRateWidth, 40)), "StaticText"),
+            typed(FakeUI.node(.switch, id: "alerts", label: "Goal Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)), "Switch"),
         ] + extra
         let root = typed(FakeUI.node(.application, label: "Playground", frame: FakeUI.frame(0, 0, 402, 874), children: nodes), "Application")
         return AccessibilitySnapshot(tree: UITree(platform: .ios, device: "fake", roots: [root]))
     }
 
-    @Test("a tree without native types, as the cache keeps it, lines up with a fresh read, so the ticking reading is learnt live")
+    @Test("a tree without native types, as the cache keeps it, lines up with a fresh read, so the ticking heart rate is learnt live")
     func cachedTreeLinesUp() {
-        let cached = Self.screen(reading: "1.0 °C", native: false)
-        let fresh = Self.screen(reading: "1.2 °C")
+        let cached = Self.screen(heartRate: "60 bpm", native: false)
+        let fresh = Self.screen(heartRate: "62 bpm")
         #expect(detector.sharedKeyFraction(cached, fresh) == 1)
         let live = detector.liveTextKeys(cached, fresh)
         #expect(live.count == 1)
-        #expect(detector.liveChanges(cached, fresh, live: live) == ["reading"])
+        #expect(detector.liveChanges(cached, fresh, live: live) == ["heart-rate"])
     }
 
     @Test("a live key's text and own frame never count, while its siblings' state and added elements still do")
     func liveKeysIgnoreTextOnly() {
-        let live = detector.liveTextKeys(Self.screen(reading: "1.0 °C"), Self.screen(reading: "1.2 °C"))
-        let baseline = Self.screen(reading: "1.2 °C")
-        let wider = Self.screen(reading: "10.2 °C", readingWidth: 390)
+        let live = detector.liveTextKeys(Self.screen(heartRate: "60 bpm"), Self.screen(heartRate: "62 bpm"))
+        let baseline = Self.screen(heartRate: "62 bpm")
+        let wider = Self.screen(heartRate: "102 bpm", heartRateWidth: 390)
         #expect(detector.compare(baseline, wider, live: live) == .unchanged)
         #expect(detector.compare(baseline, wider) != .unchanged)
-        let switched = Self.screen(reading: "1.3 °C", notifications: true)
-        #expect(detector.compare(baseline, switched, live: live) == .changed(summary: "checked state of notifications changed"))
-        let toast = Self.screen(reading: "1.4 °C", extra: [FakeUI.node(.text, id: "saved", label: "Saved", frame: FakeUI.frame(16, 300, 100, 20))])
+        let switched = Self.screen(heartRate: "63 bpm", alerts: true)
+        #expect(detector.compare(baseline, switched, live: live) == .changed(summary: "checked state of alerts changed"))
+        let toast = Self.screen(heartRate: "64 bpm", extra: [FakeUI.node(.text, id: "saved", label: "Saved", frame: FakeUI.frame(16, 300, 100, 20))])
         #expect(detector.compare(baseline, toast, live: live) == .changed(summary: "element added: text#saved"))
     }
 
     @Test("an element added to a flat screen beside the ticker still lets the ticker be learnt")
     func addedElementKeepsLearning() {
         let toast = FakeUI.node(.text, id: "saved", label: "Saved", frame: FakeUI.frame(16, 300, 100, 20))
-        let after = Self.screen(reading: "1.2 °C", extra: [toast])
+        let after = Self.screen(heartRate: "62 bpm", extra: [toast])
 
-        let live = detector.liveTextKeys(Self.screen(reading: "1.0 °C"), after)
+        let live = detector.liveTextKeys(Self.screen(heartRate: "60 bpm"), after)
 
         #expect(live.count == 1)
-        #expect(detector.liveChanges(after, Self.screen(reading: "1.3 °C", extra: [toast]), live: live) == ["reading"])
+        #expect(detector.liveChanges(after, Self.screen(heartRate: "63 bpm", extra: [toast]), live: live) == ["heart-rate"])
     }
 
     @Test("a row without an id added before a ticking text without one is lined up, so the ticker's key is the one later reads give it")
@@ -230,19 +230,19 @@ struct ChangeDetectorLiveTests {
     @Test("reads of different screens share few keys")
     func differentScreensShareFewKeys() {
         let other = AccessibilitySnapshot(tree: FakeUI.tree([FakeUI.node(.button, id: "back", label: "Back"), FakeUI.node(.text, id: "title", label: "Detail")]))
-        #expect(detector.sharedKeyFraction(Self.screen(reading: "1.0 °C"), other) < LiveText.minimumSharedKeys)
+        #expect(detector.sharedKeyFraction(Self.screen(heartRate: "60 bpm"), other) < LiveText.minimumSharedKeys)
     }
 
     @Test("masking live text gives every read of the ticker the same text, so the change list passes over it")
     func maskingLive() {
-        func tree(_ reading: String, notifications: Bool) -> UITree {
+        func tree(_ heartRate: String, alerts: Bool) -> UITree {
             FakeUI.tree([
-                FakeUI.node(.text, id: "reading", label: reading, frame: FakeUI.frame(16, 100, 370, 40)),
-                FakeUI.node(.switch, id: "notifications", label: "Notifications", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: notifications)),
+                FakeUI.node(.text, id: "heart-rate", label: heartRate, frame: FakeUI.frame(16, 100, 370, 40)),
+                FakeUI.node(.switch, id: "alerts", label: "Goal Alerts", frame: FakeUI.frame(16, 200, 52, 32), state: UIState(checked: alerts)),
             ])
         }
-        let live = detector.liveTextKeys(AccessibilitySnapshot(tree: tree("1.0 °C", notifications: false)), AccessibilitySnapshot(tree: tree("1.1 °C", notifications: false)))
-        let diff = TreeDiff.diff(old: detector.maskingLive(tree("1.1 °C", notifications: false), live: live), new: detector.maskingLive(tree("1.7 °C", notifications: true), live: live))
-        #expect(diff.entries.map(\.key) == ["#notifications"])
+        let live = detector.liveTextKeys(AccessibilitySnapshot(tree: tree("60 bpm", alerts: false)), AccessibilitySnapshot(tree: tree("61 bpm", alerts: false)))
+        let diff = TreeDiff.diff(old: detector.maskingLive(tree("61 bpm", alerts: false), live: live), new: detector.maskingLive(tree("67 bpm", alerts: true), live: live))
+        #expect(diff.entries.map(\.key) == ["#alerts"])
     }
 }

@@ -5,10 +5,10 @@ import { colours, fixtureLog, FullPage, iosValue, Readout, Screen, Target, useHa
 
 const tickMs = 1000;
 const openDetailMs = 1200;
-const baseTenths = 214;
-const tenthsSteps = [0, 13, 4, 27, 16, -8, 2, 20, -4, 10];
-const baseVisitors = 18_402;
-const visitorsStep = 3;
+const baseHeartRate = 72;
+const heartRateSteps = [0, 3, 1, 5, 2, -2, 0, 4, -1, 2];
+const baseSteps = 18_402;
+const stepsPerTick = 3;
 const sizes = ['S', 'M'] as const;
 type Size = (typeof sizes)[number];
 
@@ -16,9 +16,8 @@ function grouped(value: number): string {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-function reading(tick: number): string {
-  const tenths = baseTenths + tenthsSteps[tick % tenthsSteps.length];
-  return `${Math.floor(tenths / 10)}.${tenths % 10} °C`;
+function heartRate(tick: number): string {
+  return `${baseHeartRate + heartRateSteps[tick % heartRateSteps.length]} bpm`;
 }
 
 function onOff(value: boolean): string {
@@ -27,11 +26,11 @@ function onOff(value: boolean): string {
 
 export function LiveTickerTestScreen() {
   const [tick, setTick] = useState(0);
-  const [notifications, setNotifications] = useState(false);
+  const [alerts, setAlerts] = useState(false);
   const [selected, setSelected] = useState<Size>('S');
   const [detail, setDetail] = useState(false);
   const detailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const visitors = grouped(baseVisitors + tick * visitorsStep);
+  const steps = grouped(baseSteps + tick * stepsPerTick);
 
   useEffect(() => {
     const timer = setInterval(() => setTick((current) => current + 1), tickMs);
@@ -75,20 +74,20 @@ export function LiveTickerTestScreen() {
   return (
     <View style={styles.root}>
       <Screen route="live-ticker" style={styles.content}>
-        <Readout id="live-ticker-reading" label={reading(tick)} textStyle={styles.reading} />
+        <Readout id="live-ticker-heart-rate" label={heartRate(tick)} textStyle={styles.heartRate} />
         <View style={styles.row}>
           <View
-            testID="live-ticker-visitors"
+            testID="live-ticker-steps"
             accessible
             accessibilityRole="text"
-            accessibilityLabel="Visitors (24h)"
-            accessibilityValue={iosValue(visitors)}
+            accessibilityLabel="Steps (today)"
+            accessibilityValue={iosValue(steps)}
           >
             <Text importantForAccessibility="no" style={styles.label}>
-              Visitors (24h)
+              Steps (today)
             </Text>
           </View>
-          <Readout id="live-ticker-visitors-count" label={visitors} />
+          <Readout id="live-ticker-steps-count" label={steps} />
         </View>
         <Readout id="live-ticker-inert" label="Map Area" style={styles.inert} textStyle={styles.inertText} />
         <View style={styles.row}>
@@ -120,18 +119,18 @@ export function LiveTickerTestScreen() {
         <View style={styles.row}>
           <Target
             id="live-ticker-toggle"
-            label="Notifications"
+            label="Goal Alerts"
             role="switch"
-            state={{ checked: notifications }}
+            state={{ checked: alerts }}
             onPress={() => {
-              fixtureLog('live-ticker', `notifications ${onOff(!notifications).toLowerCase()}`);
-              setNotifications((current) => !current);
+              fixtureLog('live-ticker', `goal alerts ${onOff(!alerts).toLowerCase()}`);
+              setAlerts((current) => !current);
             }}
-            style={[styles.track, notifications && styles.trackOn]}
+            style={[styles.track, alerts && styles.trackOn]}
           >
             <View style={styles.thumb} />
           </Target>
-          <Readout id="live-ticker-toggle-state" label={`Notifications: ${onOff(notifications)}`} value={onOff(notifications)} />
+          <Readout id="live-ticker-toggle-state" label={`Goal Alerts: ${onOff(alerts)}`} value={onOff(alerts)} />
         </View>
         <View style={styles.row}>
           <Target
@@ -149,7 +148,7 @@ export function LiveTickerTestScreen() {
           id="live-ticker-detail-page"
           backId="live-ticker-detail-back"
           titleId="live-ticker-detail"
-          title="Reading Detail"
+          title="Activity Detail"
           onBack={closeDetail}
         />
       )}
@@ -166,7 +165,7 @@ function emitTwoLogs() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { padding: 16, gap: 16 },
-  reading: { fontSize: 34, fontWeight: '700' },
+  heartRate: { fontSize: 34, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   label: { fontSize: 17, color: colours.secondary },
   inert: {
