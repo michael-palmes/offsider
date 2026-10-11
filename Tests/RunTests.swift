@@ -115,6 +115,13 @@ struct RunTests {
         #expect(owner?.name == "node")
     }
 
+    @Test("a lock wrapper is not the owner, so a lease set under it belongs to the session", arguments: ["lockf", "flock"])
+    func ownerSkipsLockWrappers(wrapper: String) {
+        let processes = FakeProcesses()
+        processes.add(pid: 250, name: wrapper, parent: 200)
+        #expect(ProcessAncestry.owner(from: 250, in: processes.processTable)?.name == "node")
+    }
+
     @Test("a command joins the run its session started, and another session's command does not")
     func membership() async throws {
         let fixture = try RunFixture()

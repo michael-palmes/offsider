@@ -56,7 +56,7 @@ public struct ProcessTable: Sendable {
 public enum ProcessAncestry {
     /// Shells and wrappers between a session and the commands it runs; the owner is the first ancestor not among them.
     public static let wrappers: Set<String> = [
-        "sh", "bash", "zsh", "dash", "fish", "ksh", "tcsh", "csh", "env", "timeout", "nohup", "nice", "time", "xargs", "caffeinate", "sandbox-exec",
+        "sh", "bash", "zsh", "dash", "fish", "ksh", "tcsh", "csh", "env", "timeout", "nohup", "nice", "time", "xargs", "caffeinate", "sandbox-exec", "lockf", "flock",
     ]
     public static let maximumDepth = 64
 
