@@ -69,6 +69,11 @@ class FakeDeviceBackend: DeviceBackend {
     var metroHostAnswer = "127.0.0.1"
     private(set) var openedURLs: [String] = []
     private(set) var devMenuOpens = 0
+    /// Liveness reads in order, holding the last; empty answers unknown.
+    var livenessReadings: [AppLiveness] = []
+    private(set) var livenessReads: [(seen: AppProcess?, mayList: Bool)] = []
+    var crashReportAnswer: AppCrashReport?
+    private(set) var crashReportRequests: [AppProcess] = []
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
     init(
@@ -329,6 +334,19 @@ extension FakeDeviceBackend: ExpoDevClientOpening {
     func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String] { expoSchemes }
     func metroHost(port: Int, on id: DeviceID) async throws -> String { metroHostAnswer }
     func openURL(_ url: String, appID: String, on id: DeviceID) async throws { openedURLs.append(url) }
+}
+
+extension FakeDeviceBackend: AppLivenessReading {
+    func appLiveness(_ appID: String, seen: AppProcess?, tree: UITree?, mayList: Bool, on id: DeviceID) async -> AppLiveness {
+        livenessReads.append((seen, mayList))
+        guard !livenessReadings.isEmpty else { return .unknown }
+        return livenessReadings[min(livenessReads.count - 1, livenessReadings.count - 1)]
+    }
+
+    func crashReport(_ appID: String, process: AppProcess, since: Date, on id: DeviceID) async -> AppCrashReport? {
+        crashReportRequests.append(process)
+        return crashReportAnswer
+    }
 }
 
 extension FakeDeviceBackend: ReactNativeDevMenuOpening {

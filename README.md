@@ -618,6 +618,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `focus_mismatch` | 2 | `type --require-focus-id` found another field (or none) focused; no text was sent | Tap the field, or use `--into-id` |
 | `metro_not_running` | 9 | `rn open` found no Metro answering on 127.0.0.1 at `--port` | Start Metro on that port, then retry |
 | `rn_load_failed` | 1 | `rn open` saw the app's load error or red box | Read `logs --rn` and Metro's output |
+| `app_crashed` | 1 | `rn open` saw the app's process stop while it waited (the message names the crash report or the exception) | Read the report, or `logs --rn`, then open the app again |
 | `logbox_inspector_open` | 1 | A `wait` or `assert` selector matched nothing while React Native's LogBox inspector, open in its own window, hid the app (on Android), for 1.5 s or on the last read | Close the inspector with `tap --label Minimize` (or `rn logbox dismiss`), then retry |
 | `turnstile_challenge` | 1 | `turnstile` found a visual challenge, which a checkbox tap cannot complete | Hand back to a person; do not retry |
 | `verify_target_present` | 1 | The `--verify-id` element was already on screen before the input, so nothing was sent (with `type --into-id`, only the tap that focused the field, when that tap brought it on screen) | Pass an id only the next screen has, or use `--verify` |

@@ -1,4 +1,6 @@
 import Foundation
+@testable import Offsider
+@testable import OffsiderAndroid
 import OffsiderCore
 import Testing
 
@@ -217,5 +219,127 @@ struct ExpoDevClientOpeningTests {
         #expect(ExpoDevLauncher.loadError(in: tree(["There was a problem loading the project."])) != nil)
         #expect(ExpoDevLauncher.isLoading(tree(["Bundling 42%"])))
         #expect(!ExpoDevLauncher.isLoading(tree(["Home"])))
+    }
+}
+
+@Suite("App liveness")
+@MainActor
+struct AppLivenessTests {
+    static let bundleID = "com.example.app"
+
+    static func tree(pid: Int?) -> UITree {
+        UITree(platform: .ios, device: "D", roots: [UINode(role: .application, native: .ios(IOSNativeAttributes(pid: pid)))])
+    }
+
+    /// Records what the read looked at: bundle lookups, start reads and listings.
+    final class Probe {
+        var bundles: [Int: String] = [4100: AppLivenessTests.bundleID, 900: "com.apple.springboard"]
+        var starts: [Int: UInt64] = [4100: 7, 900: 3]
+        var listing: String?
+        var bundleLookups: [Int] = []
+        var startReads: [Int] = []
+        var listings = 0
+
+        func read(seen: AppProcess?, tree: UITree?, mayList: Bool) async -> AppLiveness {
+            await SimulatorAppLiveness.read(
+                AppLivenessTests.bundleID, seen: seen, tree: tree, mayList: mayList,
+                bundleOf: { self.bundleLookups.append($0); return self.bundles[$0] },
+                startOf: { self.startReads.append($0); return self.starts[$0] },
+                listing: { self.listings += 1; return self.listing }
+            )
+        }
+    }
+
+    @Test("an iOS app is found by the tree's application pid, and once seen it costs one start read and no bundle lookup")
+    func iosTreePidThenSysctl() async {
+        let probe = Probe()
+        #expect(await probe.read(seen: nil, tree: Self.tree(pid: 4100), mayList: true) == .running(AppProcess(pid: 4100, started: 7)))
+        #expect(probe.listings == 0)
+
+        let fresh = Probe()
+        #expect(await fresh.read(seen: AppProcess(pid: 4100, started: 7), tree: Self.tree(pid: 900), mayList: true) == .running(AppProcess(pid: 4100, started: 7)))
+        #expect(fresh.bundleLookups.isEmpty && fresh.startReads == [4100] && fresh.listings == 0)
+    }
+
+    @Test("a seen iOS process that is gone, or whose pid now has another start time, is not running; a new one for the bundle replaces it")
+    func iosGoneOrReplaced() async {
+        let gone = Probe()
+        gone.starts[4100] = nil
+        #expect(await gone.read(seen: AppProcess(pid: 4100, started: 7), tree: Self.tree(pid: 900), mayList: true) == .notRunning)
+
+        let reused = Probe()
+        reused.starts[4100] = 99
+        #expect(await reused.read(seen: AppProcess(pid: 4100, started: 7), tree: nil, mayList: false) == .notRunning)
+
+        let replaced = Probe()
+        replaced.starts[4100] = nil
+        replaced.bundles[4200] = Self.bundleID
+        replaced.starts[4200] = 8
+        #expect(await replaced.read(seen: AppProcess(pid: 4100, started: 7), tree: Self.tree(pid: 4200), mayList: false) == .running(AppProcess(pid: 4200, started: 8)))
+    }
+
+    @Test("before the iOS app is seen, launchctl runs only when the tree has no pid and a listing is allowed")
+    func iosListingOnlyWithoutATreePid() async {
+        let probe = Probe()
+        probe.listing = "PID\tStatus\tLabel\n4100\t0\tUIKitApplication:com.example.app[5f1e][rb-legacy]\n"
+        #expect(await probe.read(seen: nil, tree: Self.tree(pid: 900), mayList: true) == .unknown)
+        #expect(await probe.read(seen: nil, tree: Self.tree(pid: nil), mayList: false) == .unknown)
+        #expect(probe.listings == 0)
+        #expect(await probe.read(seen: nil, tree: Self.tree(pid: nil), mayList: true) == .running(AppProcess(pid: 4100, started: 7)))
+        probe.listing = "PID\tStatus\tLabel\n-\t0\tUIKitApplication:com.example.app[5f1e][rb-legacy]\n"
+        #expect(await probe.read(seen: nil, tree: nil, mayList: true) == .notRunning)
+        #expect(probe.listings == 2)
+    }
+
+    @Test("pidof's one pid is running, an empty answer with status 1 is not, and anything else is unknown")
+    func androidPidof() {
+        #expect(AndroidBackend.liveness(pidofOutput: "4100\n", status: 0) == .running(AppProcess(pid: 4100)))
+        #expect(AndroidBackend.liveness(pidofOutput: "", status: 1) == .notRunning)
+        #expect(AndroidBackend.liveness(pidofOutput: "pidof: not found", status: 127) == .unknown)
+    }
+
+    @Test("Android reads liveness with one pidof over adb, and the crash cause from the crash buffer of the seen pid")
+    func androidCommands() async throws {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(
+            ["emulator-5556"],
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang }
+        ) { _, service in
+            let command = String(service.dropFirst("shell,v2,raw:".count))
+            if command.hasPrefix("pidof") { return FakeAdbServer.shell(stdout: "4100\n") }
+            return FakeAdbServer.shell(stdout: "10-11 21:00:00.500  4100  4133 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 4133 (mqt_js), pid 4100 (com.example.app)\n")
+        })
+        let backend = AndroidBackend(host: AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: server)) { _, _ in }
+        let device = DeviceID(rawValue: "emulator-5556", platform: .android)
+
+        #expect(await backend.appLiveness(Self.bundleID, seen: nil, tree: nil, mayList: true, on: device) == .running(AppProcess(pid: 4100)))
+        #expect(await backend.crashReport(Self.bundleID, process: AppProcess(pid: 4100), since: Date(), on: device) == .cause("signal 6 (SIGABRT)"))
+        let commands = server.services.filter { $0.hasPrefix("shell,v2,raw:") }.map { String($0.dropFirst("shell,v2,raw:".count)) }
+        #expect(commands == ["pidof -s 'com.example.app'", "logcat -b crash -d -v threadtime --pid=4100"])
+    }
+
+    @Test("the crash buffer gives a Java crash's exception class only, never its message")
+    func javaCrashClassOnly() {
+        let buffer = """
+        --------- beginning of crash
+        10-11 21:00:00.123  4100  4100 E AndroidRuntime: FATAL EXCEPTION: main
+        10-11 21:00:00.123  4100  4100 E AndroidRuntime: Process: com.example.app, PID: 4100
+        10-11 21:00:00.123  4100  4100 E AndroidRuntime: java.lang.IllegalStateException: someone@example.com token=abc
+        10-11 21:00:00.123  4100  4100 E AndroidRuntime: \tat com.example.app.Screen.load(Screen.java:42)
+        10-11 21:00:00.124  4100  4100 E AndroidRuntime: Caused by: java.io.IOException: more detail
+        """
+        let cause = CrashBufferParser.cause(in: buffer)
+        #expect(cause == "java.lang.IllegalStateException")
+        let message = RNOpen.crashed(Self.bundleID, process: AppProcess(pid: 4100), report: cause.map(AppCrashReport.cause), metro: "10.0.2.2:8742", device: DeviceID(rawValue: "emulator-5554", platform: .android)).userFacingDescription
+        #expect(!message.contains("someone@example.com") && !message.contains("token") && !message.contains("abc"))
+    }
+
+    @Test("the crash buffer gives a native crash's signal, and nothing for a buffer with no crash")
+    func nativeCrashSignal() {
+        let buffer = """
+        10-11 21:00:00.500  4100  4133 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid 4133 (mqt_js), pid 4100 (com.example.app)
+        """
+        #expect(CrashBufferParser.cause(in: buffer) == "signal 11 (SIGSEGV)")
+        #expect(CrashBufferParser.cause(in: "--------- beginning of crash\n") == nil)
+        #expect(CrashBufferParser.command(pid: 4100) == "logcat -b crash -d -v threadtime --pid=4100")
     }
 }

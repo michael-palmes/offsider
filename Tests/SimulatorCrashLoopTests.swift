@@ -34,6 +34,55 @@ struct SimulatorCrashLoopTests {
         #expect(crash.timestamp == Date(timeIntervalSince1970: 1791085069))
     }
 
+    @Test("a simulator app's report also yields its numeric pid and bundle id")
+    func parsesPidAndBundleID() throws {
+        let text = """
+        {"app_name":"Playground","timestamp":"2026-10-04 14:07:49.00 +1030","bundleID":"com.example.app","bug_type":"309","name":"Playground"}
+        {
+          "uptime" : 150,
+          "pid" : 4100,
+          "procName" : "Playground",
+          "parentPid" : 1,
+          "coalitionName" : "com.apple.CoreSimulator.SimDevice.\(Self.udid)"
+        }
+        """
+        let crash = try #require(SimulatorCrashReports.parse(text, modified: Self.now))
+        #expect(crash.pid == 4100)
+        #expect(crash.bundleID == "com.example.app")
+    }
+
+    @Test("the crash report for an app is the newest from that simulator whose pid or bundle id matches")
+    func picksTheAppsReport() {
+        func file(_ path: String, udid: String = SimulatorCrashLoopTests.udid, pid: Int?, bundleID: String?, secondsAgo: TimeInterval) -> SimulatorCrashFile {
+            let modified = Self.now.addingTimeInterval(-secondsAgo)
+            return SimulatorCrashFile(path: path, modified: modified, crash: SimulatorCrash(udid: udid, process: "P", timestamp: modified, pid: pid, bundleID: bundleID))
+        }
+        let files = [
+            file("older.ips", pid: 4100, bundleID: "com.example.app", secondsAgo: 30),
+            file("newest.ips", pid: 4100, bundleID: nil, secondsAgo: 5),
+            file("other-sim.ips", udid: Self.other.uppercased(), pid: 4100, bundleID: "com.example.app", secondsAgo: 1),
+            file("other-app.ips", pid: 5000, bundleID: "com.example.other", secondsAgo: 2),
+        ]
+        #expect(SimulatorCrashReports.report(for: "com.example.app", pid: 4100, udid: Self.udid.lowercased(), in: files)?.path == "newest.ips")
+        #expect(SimulatorCrashReports.report(for: "com.example.app", pid: 9999, udid: Self.udid, in: Array(files.prefix(1)))?.path == "older.ips")
+        #expect(SimulatorCrashReports.report(for: "com.example.app", pid: 4100, udid: Self.udid, in: Array(files.suffix(2))) == nil)
+    }
+
+    @Test("scanning reports skips files modified before the first send")
+    func scanSkipsOlderReports() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-crash-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let coalition = "com.apple.CoreSimulator.SimDevice.\(Self.udid)"
+        let since = Date()
+        for (name, age) in [("before.ips", -60.0), ("after.ips", 1.0)] {
+            let url = directory.appendingPathComponent(name)
+            try Self.report(process: "Playground", coalition: coalition).write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.modificationDate: since.addingTimeInterval(age)], ofItemAtPath: url.path)
+        }
+        #expect(SimulatorCrashReports.scan(directory: directory.path, modifiedSince: since).map { ($0.path as NSString).lastPathComponent } == ["after.ips"])
+    }
+
     @Test("a macOS app's report is ignored")
     func ignoresHostReports() {
         let text = Self.report(process: "Safari", coalition: "com.apple.Safari")

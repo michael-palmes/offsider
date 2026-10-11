@@ -10,10 +10,12 @@ struct RNOpen: AsyncParsableCommand {
         Checks that Metro answers on 127.0.0.1:<port>, sends the dev client its own link to that Metro \
         (exp+<slug>://expo-development-client/?url=...), and waits until the launcher and the Bundling banner \
         are gone and --wait-id is on screen (without it, until the screen is still for a second). It resends \
-        the link at most every 10 s, three times, while the launcher shows. An Android emulator reaches Metro \
-        at 10.0.2.2 unless an adb reverse maps the port; a phone needs that reverse, which Offsider reads but \
-        never sets. Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) when the app \
-        shows a load error, and 5 at --timeout.
+        the link at most every 10 s, three times, while the launcher shows. Every 2 s it also checks the app's \
+        process: one seen running and then gone or replaced on two checks a second apart is a crash. An Android \
+        emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port; a phone needs that reverse, which \
+        Offsider reads but never sets. Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
+        when the app shows a load error, 1 (app_crashed) when its process stops, naming the iOS crash report or \
+        the Android exception class or signal, and 5 at --timeout.
 
         Example:
           offsider rn open --port 8081 --bundle-id com.example.app --wait-id home-screen --device DEVICE_ID
@@ -130,9 +132,12 @@ struct RNOpen: AsyncParsableCommand {
         let deadline = start + timeout
         var sends = 0
         var lastSend = start
+        var firstSend: Date?
         var launcherSeen = false
         var quietSince: TimeInterval?
         var previous: AccessibilitySnapshot?
+        let liveness = route.backend as? any AppLivenessReading
+        var watch = AppLivenessWatch()
         func send() async throws {
             do {
                 try await opener.openURL(url, appID: bundleID, on: device)
@@ -141,14 +146,26 @@ struct RNOpen: AsyncParsableCommand {
             }
             sends += 1
             lastSend = clock.now()
+            firstSend = firstSend ?? Date()
             quietSince = nil
             previous = nil
+        }
+        func watchApp(_ tree: UITree?, force: Bool = false) async throws {
+            guard let liveness else { return }
+            let now = clock.now()
+            guard force || watch.isDue(at: now) else { return }
+            let reading = await liveness.appLiveness(bundleID, seen: watch.seen, tree: tree, mayList: watch.takeListing(at: now), on: device)
+            guard case .crashed(let process) = watch.record(reading, at: now) else { return }
+            let report = await liveness.crashReport(bundleID, process: process, since: firstSend ?? Date(), on: device)
+            throw Self.crashed(bundleID, process: process, report: report, metro: "\(host):\(port)", device: device)
         }
         try await send()
 
         while clock.now() < deadline {
             try await clock.sleep(Self.poll)
-            guard let tree = try? await route.backend.accessibilityTree(for: device) else { continue }
+            let read = try? await route.backend.accessibilityTree(for: device)
+            try await watchApp(read)
+            guard let tree = read else { continue }
             if let failure = ExpoDevLauncher.loadError(in: tree) {
                 throw CLIError(
                     errorDescription: "\(bundleID) could not load its bundle from Metro on \(host):\(port): \(failure)",
@@ -184,6 +201,9 @@ struct RNOpen: AsyncParsableCommand {
                 }
                 previous = snapshot
                 guard let since = quietSince, now - since >= Self.quietFor else { continue }
+                // A screen gone still after a crash is the home screen, not the app.
+                if !watch.readRecently(at: now, within: Self.quietFor) { try await watchApp(tree, force: true) }
+                if watch.hasPendingMiss { continue }
             }
             return Report(
                 bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID,
@@ -194,6 +214,19 @@ struct RNOpen: AsyncParsableCommand {
             errorDescription: "\(bundleID) did not finish loading from Metro on \(host):\(port) within \(WaitLoop.seconds(timeout))\(launcherSeen ? "; the dev launcher was still showing" : "").",
             reason: .conditionNotMet,
             hint: "offsider describe-ui --summary --device \(device.rawValue)"
+        )
+    }
+
+    static func crashed(_ bundleID: String, process: AppProcess, report: AppCrashReport?, metro: String, device: DeviceID) -> CLIError {
+        let detail = switch report {
+        case .file(let path): " Crash report: \(path)"
+        case .cause(let cause): " It stopped with \(cause)."
+        case nil: ""
+        }
+        return CLIError(
+            errorDescription: "\(bundleID) crashed while loading from Metro on \(metro): its process \(process.pid) stopped.\(detail)",
+            reason: .appCrashed,
+            hint: "offsider logs --rn --device \(device.rawValue)"
         )
     }
 }
