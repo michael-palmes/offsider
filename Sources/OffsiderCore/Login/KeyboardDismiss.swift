@@ -1,32 +1,68 @@
 import Foundation
 
-/// A point that resigns the software keyboard without pressing a key or a control.
+/// Points that resign the software keyboard without pressing a key or a control.
 public enum KeyboardDismiss {
-    /// Empty space above the keys first, then inert text. Nil when there is no keyboard, or every point is a control.
+    /// How many points `login` tries before it gives up on the keyboard.
+    public static let attempts = 3
+    /// A tap this close to a form field can land in the field's own wrapper, which keeps focus.
+    static let fieldMargin: Double = 16
+    /// Two tries this close together would likely reach the same view.
+    static let spacing: Double = 44
+
+    /// The first point `points` offers when the form is unknown.
     public static func point(in tree: UITree) -> UIPoint? {
+        points(in: tree, limit: 1).first
+    }
+
+    /// A hide keyboard control, then space above the topmost field taking turns with space up from the keys, clear of every field and of `tried`.
+    public static func points(in tree: UITree, fields: [UIFrame] = [], tried: [UIPoint] = [], limit: Int = attempts) -> [UIPoint] {
         let nodes = tree.roots.flatMap { $0.flattened() }
-        let keyboards = nodes.filter { $0.role == .keyboard && ($0.frame?.height ?? 0) > 0 }
-        guard !keyboards.isEmpty else { return nil }
+        guard nodes.contains(where: { $0.role == .keyboard && ($0.frame?.height ?? 0) > 0 }) else { return [] }
+        var offered: [UIPoint] = []
         if let hide = nodes.first(where: isHideControl), let frame = hide.frame, frame.width > 0, frame.height > 0 {
-            return frame.center
+            offered.append(frame.center)
         }
-        guard let top = coverageFrames(in: tree).map(\.y).min(), let viewport = tree.viewport else { return nil }
+        let keys = coverageFrames(in: tree)
+        if let top = keys.map(\.y).min(), let viewport = tree.viewport {
+            let avoid = keys + fields.map { $0.outset(by: fieldMargin) }
+            let aboveForm = fields.map(\.y).min().map { scan(tree, from: $0 - fieldMargin - 8, viewport: viewport, avoiding: avoid) } ?? []
+            let nearKeys = scan(tree, from: top - 24, viewport: viewport, avoiding: avoid)
+            for index in 0..<max(aboveForm.count, nearKeys.count) {
+                if index < aboveForm.count { offered.append(aboveForm[index]) }
+                if index < nearKeys.count { offered.append(nearKeys[index]) }
+            }
+        }
+        var chosen: [UIPoint] = []
+        for point in offered where chosen.count < limit {
+            if (tried + chosen).allSatisfy({ distance($0, point) >= spacing }) { chosen.append(point) }
+        }
+        return chosen
+    }
+
+    /// One point per row outside `avoid`, from `start` up to the top of the screen: empty space first, then inert text.
+    private static func scan(_ tree: UITree, from start: Double, viewport: UIFrame, avoiding avoid: [UIFrame]) -> [UIPoint] {
         let xs = [viewport.x + viewport.width * 0.5, viewport.x + 40, viewport.x + viewport.width - 40]
             .filter { $0 >= viewport.x && $0 < viewport.x + viewport.width }
+        var found: [UIPoint] = []
         for backgroundOnly in [true, false] {
-            var y = top - 24
+            var y = start
             while y > viewport.y + 8 {
-                for x in xs {
-                    let point = UIPoint(x: x, y: y)
+                let row = xs.lazy.map { UIPoint(x: $0, y: y) }.first { point in
+                    guard !avoid.contains(where: { $0.contains(point) }) else { return false }
                     let chain = chain(in: tree.roots, at: point, viewport: viewport)
-                    guard let hit = chain.last, hit.role != .keyboard, !SignInHit.isHiddenByChrome(chain) else { continue }
-                    if chain.contains(where: \.isActionable) { continue }
-                    if backgroundOnly ? isBackground(hit) : isSafe(hit) { return point }
+                    guard let hit = chain.last, hit.role != .keyboard, !SignInHit.isHiddenByChrome(chain) else { return false }
+                    if chain.contains(where: \.isActionable) { return false }
+                    return backgroundOnly ? isBackground(hit) : isSafe(hit)
                 }
+                if let row { found.append(row) }
                 y -= 36
             }
         }
-        return nil
+        return found
+    }
+
+    private static func distance(_ lhs: UIPoint, _ rhs: UIPoint) -> Double {
+        ((lhs.x - rhs.x) * (lhs.x - rhs.x) + (lhs.y - rhs.y) * (lhs.y - rhs.y)).squareRoot()
     }
 
     /// The keys, not a keyboard window that spans the screen around them.
@@ -122,5 +158,11 @@ public enum KeyboardDismiss {
         default:
             return false
         }
+    }
+}
+
+private extension UIFrame {
+    func outset(by margin: Double) -> UIFrame {
+        UIFrame(x: x - margin, y: y - margin, width: width + 2 * margin, height: height + 2 * margin)
     }
 }

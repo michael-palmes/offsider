@@ -54,13 +54,25 @@ public enum CredentialScreen {
     public static let usernameLabel = "👤 Email or username"
     public static let passwordLabel = "🔑 Password"
     public static let againLabel = "🔁 Once more"
-    public static let tagLabel = "✨ Name it"
-    public static let tagPlaceholder = "like qa"
+    public static let nameLabel = "✨ Name it"
+    public static let namePlaceholder = "like qa"
+    public static let aboutLabel = "💬 What's it for"
+    public static let aboutPlaceholder = "optional, like Admin on staging"
+    public static let tagsLabel = "🔖 Tags"
+    public static let tagsPlaceholder = "optional, like role=admin env=staging"
     public static let addAnother = "➕ Add another login"
 
+    /// Every `credential set` question, so the answers line up across the whole block.
+    public static let promptLabels = [nameLabel, usernameLabel, passwordLabel, againLabel, aboutLabel, tagsLabel]
+
+    /// `label` padded to the widest of `promptLabels`.
+    public static func padded(_ label: String) -> String {
+        Dictionary(uniqueKeysWithValues: zip(promptLabels, PromptScreen.labels(promptLabels)))[label] ?? label
+    }
+
     public static func header(app: String, key: String?, style: TerminalStyle) -> [String] {
-        let tag = key.map { " · " + LoginCredential.displayKey($0) } ?? ""
-        return PromptScreen.header("🔐 Save a test login · \(app)\(tag)", [PromptScreen.keychainLine, "🧪 Use a test account, not your own"], style: style)
+        let name = key.map { " · " + LoginCredential.displayKey($0) } ?? ""
+        return PromptScreen.header("🔐 Save a test login · \(app)\(name)", [PromptScreen.keychainLine, "🧪 Use a test account, not your own"], style: style)
     }
 
     public static func menuTitle(entries: [LoginCredentialSummary]) -> String {
@@ -104,13 +116,43 @@ public enum CredentialScreen {
         return TextToHIDEvents.validateText(password) ? nil : PromptScreen.untypeable
     }
 
-    /// Why a typed tag cannot name a new login, or nil when it can.
-    public static func tagProblem(_ raw: String, taken: [String]) -> String? {
+    /// Why a typed name cannot name a new login, or nil when it can.
+    public static func nameProblem(_ raw: String, taken: [String]) -> String? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return "❗ Type a short name, like qa." }
         if text.lowercased() == "default" { return "❗ default is taken. Pick another name." }
         guard let key = LoginKey(rawValue: text) else { return "❗ Use up to 32 letters, digits, dots, dashes or underscores." }
         return taken.contains(key.rawValue) ? "❗ \(key.rawValue) is already saved. Pick another name." : nil
+    }
+
+    /// Why a typed about line cannot be saved, or nil when it can. An empty answer skips it.
+    public static func aboutProblem(_ raw: String) -> String? {
+        switch LoginContext.noteProblem(raw) {
+        case nil: return nil
+        case .control: return "❗ Keep it to one line."
+        case .bidi: return "❗ Leave out text direction characters."
+        case .tooLong: return "❗ That's too long: \(LoginContext.noteCharacters) characters at most."
+        case .email: return "❗ Leave out email addresses: anyone who runs status sees this."
+        }
+    }
+
+    /// Why typed tags cannot be saved, naming the rule, or nil when they can. An empty answer skips them.
+    public static func tagsProblem(_ raw: String) -> String? {
+        let words = raw.split(whereSeparator: \.isWhitespace).map(String.init)
+        if let bad = words.first(where: { LoginTag(rawValue: $0) == nil }) {
+            if bad.lowercased().hasPrefix(LoginTag.platformKey) { return "❗ \(PromptScreen.visible(bad)) is not a tag: platform takes ios or android, like platform=ios." }
+            return "❗ \(PromptScreen.visible(bad)) is not a tag: use a word or key=value, like credit or role=admin, from a-z, 0-9, '.', '_' and '-'."
+        }
+        return Set(words.compactMap(LoginTag.init(rawValue:))).count > LoginContext.maxTags ? "❗ \(LoginContext.maxTags) tags at most." : nil
+    }
+
+    /// The answers to the about and tags questions as an edit. Empty answers change nothing.
+    public static func contextEdit(about: String, tags: String) throws -> LoginContextEdit {
+        let about = about.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try LoginContextEdit.parse(
+            about: about.isEmpty ? nil : about, avoid: nil, state: nil,
+            tag: tags.split(whereSeparator: \.isWhitespace).map(String.init), untag: [], clearTags: false
+        )
     }
 }
 
@@ -131,35 +173,68 @@ extension CredentialReport {
         case "set":
             var details = ["👤 \(username ?? "")", "🔑 hidden", "🔒 Keychain"]
             if isDefault, key != nil, key != LoginCredential.defaultAccountKey { details.append("⭐ default") }
-            let tagArgument = key == nil || key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
-            return [
+            let nameArgument = key == nil || key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
+            return ([
                 style.green(style.bold("✅ Saved the \(named) for \(app)")),
                 "   " + style.dim((details + shared).joined(separator: "  ")),
-                PromptScreen.nextStep("Next", command: "offsider login\(tagArgument)\(deviceSuffix)", style: style),
-            ].joined(separator: "\n")
+            ] + Self.styledDetails(context ?? .empty, signIns: [], indent: "   ", style: style) + [
+                PromptScreen.nextStep("Next", command: "offsider login\(nameArgument)\(deviceSuffix)", style: style),
+            ]).joined(separator: "\n")
         case "remove":
             return removed ? style.bold("🧹 Removed the \(named) for \(app)") : style.bold("🤷 No \(named) to remove for \(app)")
+        case "signed-out":
+            let place = "\(app) on \(self.device ?? "")"
+            guard cleared == true, key != nil else { return style.bold("🤷 No sign-in recorded for \(place)") }
+            return [
+                style.bold("🧹 Cleared the sign-in of the \(named) for \(place)"),
+                PromptScreen.nextStep("Next", command: "offsider login\(deviceSuffix)", style: style),
+            ].joined(separator: "\n")
+        case "describe":
+            let head = changed == true ? style.green(style.bold("📝 Updated the \(named) for \(app)")) : style.bold("👌 Nothing to change for the \(named) of \(app)")
+            return ([head] + Self.styledDetails(context ?? .empty, signIns: [], indent: "   ", style: style)).joined(separator: "\n")
         default:
             if key == nil {
                 guard !listed.isEmpty else {
                     return [style.bold("🔐 No logins saved for \(app)"), PromptScreen.nextStep("Add one", command: "offsider credential set --app \(app)", style: style)].joined(separator: "\n")
                 }
                 let count = listed.count == 1 ? "1 login" : "\(listed.count) logins"
-                let names = listed.map { LoginCredential.displayKey($0.key) }
-                let widest = names.map(\.count).max() ?? 0
-                let rows = zip(listed, names).map { entry, name in
+                let widest = listed.map(\.name.count).max() ?? 0
+                let rows = listed.flatMap { entry in
                     let mark = entry.isDefault && entry.key != LoginCredential.defaultAccountKey ? "  " + style.yellow("⭐ default") : ""
-                    return "   👤 " + style.bold(name.padding(toLength: widest, withPad: " ", startingAt: 0)) + "  " + entry.username + mark
+                    let row = "   👤 " + style.bold(entry.name.padding(toLength: widest, withPad: " ", startingAt: 0)) + mark
+                    return [row] + Self.styledDetails(entry.context, signIns: signIns[entry.key] ?? [], indent: "      ", style: style)
                 }
-                return ([style.bold("🔐 \(app) · \(count)")] + rows + shared.map { "   " + style.dim($0) }).joined(separator: "\n")
+                return ([style.bold("🔐 \(app) · \(count)")] + rows + (shared + here).map { "   " + style.dim($0) }).joined(separator: "\n")
             }
-            guard saved, let username else {
-                let tagArgument = key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
-                return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set\(tagArgument) --app \(app)", style: style)].joined(separator: "\n")
+            guard saved else {
+                let nameArgument = key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
+                return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set\(nameArgument) --app \(app)", style: style)].joined(separator: "\n")
             }
-            let details = ["👤 \(username)"] + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
-            return [style.green(style.bold("✅ The \(named) is saved for \(app)")), "   " + style.dim(details.joined(separator: "  "))].joined(separator: "\n")
+            let details = (username.map { ["👤 \($0)"] } ?? []) + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
+            let rows = Self.styledDetails(context ?? .empty, signIns: key.flatMap { signIns[$0] } ?? [], indent: "   ", style: style)
+            let head = filter.isEmpty
+                ? style.green(style.bold("✅ The \(named) is saved for \(app)"))
+                : style.green(style.bold("🎯 The \(named) for \(app) matches --where \(filter.map(\.rawValue).joined(separator: " "))"))
+            let detailLine = details.isEmpty ? [] : ["   " + style.dim(details.joined(separator: "  "))]
+            return ([head] + detailLine + rows + here.map { "   " + style.dim($0) }).joined(separator: "\n")
         }
+    }
+
+    private var here: [String] {
+        signedInHere.map { ["📱 signed in here: \(LoginCredential.displayKey($0))"] } ?? []
+    }
+
+    /// Dim rows for tags, notes, the stamp and each sign-in. Every emoji draws as one without a variation selector.
+    static func styledDetails(_ context: LoginContext, signIns: [LoginSignIn], indent: String, style: TerminalStyle) -> [String] {
+        var rows: [String] = []
+        if !context.tags.isEmpty { rows.append("🔖 " + context.tags.map(\.rawValue).joined(separator: " ")) }
+        let marks: [LoginNote: String] = [.about: "💬", .avoid: "🚫", .state: "📊"]
+        for note in LoginNote.allCases {
+            if let text = context[note], let mark = marks[note] { rows.append("\(mark) \(text)") }
+        }
+        if let updated = context.updated { rows.append("🕒 updated \(ProcessStamp.timestamp(updated))") }
+        rows += signIns.map { "📱 signed in on " + signInText($0) }
+        return rows.map { indent + style.dim($0) }
     }
 }
 

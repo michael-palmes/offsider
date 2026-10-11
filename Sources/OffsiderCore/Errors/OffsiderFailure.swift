@@ -96,6 +96,31 @@ public struct CoverReport: Equatable, Sendable {
     }
 }
 
+/// A saved login a `--where` could have meant: its name, tags and about note, never a username.
+public struct FailureUser: Equatable, Sendable {
+    public let name: String
+    public let tags: [String]
+    public let about: String?
+
+    public init(name: String, tags: [String], about: String?) {
+        self.name = name
+        self.tags = tags
+        self.about = about
+    }
+
+    public init(_ entry: LoginEntry) {
+        self.init(name: entry.name, tags: entry.context.tags.map(\.rawValue), about: entry.context.about)
+    }
+
+    var jsonValue: OrderedJSON {
+        .object([
+            ("name", .string(name)),
+            ("tags", .array(tags.map { .string($0) })),
+            ("about", .optional(about, OrderedJSON.string)),
+        ])
+    }
+}
+
 /// A failure with a typed reason; `hint` is a command to run next and never echoes typed text.
 public protocol OffsiderFailure: Error {
     var reason: FailureReason { get }
@@ -103,11 +128,13 @@ public protocol OffsiderFailure: Error {
     var hint: String? { get }
     var candidates: [FailureCandidate] { get }
     var coveredBy: CoverReport? { get }
+    var users: [FailureUser] { get }
 }
 
 extension OffsiderFailure {
     public var hint: String? { nil }
     public var candidates: [FailureCandidate] { [] }
     public var coveredBy: CoverReport? { nil }
+    public var users: [FailureUser] { [] }
     public var exitCode: OffsiderExitCode { reason.exitCode }
 }

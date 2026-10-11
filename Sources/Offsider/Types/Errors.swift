@@ -18,13 +18,22 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
     let hint: String?
     let candidates: [FailureCandidate]
     let coveredBy: CoverReport?
+    let users: [FailureUser]
 
-    init(errorDescription: String, reason: FailureReason = .commandFailed, hint: String? = nil, candidates: [FailureCandidate] = [], coveredBy: CoverReport? = nil) {
+    init(
+        errorDescription: String,
+        reason: FailureReason = .commandFailed,
+        hint: String? = nil,
+        candidates: [FailureCandidate] = [],
+        coveredBy: CoverReport? = nil,
+        users: [FailureUser] = []
+    ) {
         userFacingDescription = errorDescription
         self.reason = reason
         self.hint = hint
         self.candidates = candidates
         self.coveredBy = coveredBy
+        self.users = users
     }
 
     static func deviceNotFound(id: String) -> CLIError {

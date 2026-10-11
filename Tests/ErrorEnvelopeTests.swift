@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 
 @Suite("Error envelope")
@@ -79,6 +80,22 @@ struct ErrorEnvelopeTests {
         let version = try await TestHelpers.runOffsiderCommandSeparated("--version")
         #expect(version.exitCode == 0)
         #expect(!version.stdout.contains("{"))
+    }
+
+    @Test("users appear only when present, at most 20, and survive a hint rewrite with coveredBy")
+    func usersInEnvelope() {
+        #expect(!ErrorEnvelope(command: "login", error: ErrorPayload(reason: .userNotFound, message: "m")).jsonLine().contains("users"))
+        let user = FailureUser(name: "qa-admin", tags: ["role=admin"], about: "Admin on staging")
+        let cover = CoverReport(role: "button", id: "close", label: nil, frame: nil, screen: nil, evidence: .hitTest)
+        let payload = ErrorPayload(reason: .userAmbiguous, message: "m", hint: "offsider login --device <DEVICE_ID>", coveredBy: cover, users: Array(repeating: user, count: 25))
+        #expect(payload.users.count == 20)
+        let rewritten = payload.replacingHint("offsider login --device emulator-5554")
+        #expect(rewritten.hint == "offsider login --device emulator-5554")
+        #expect(rewritten.users == payload.users)
+        #expect(rewritten.coveredBy == cover)
+        let line = ErrorEnvelope(command: "login", error: ErrorPayload(reason: .userAmbiguous, message: "m", users: [user])).jsonLine()
+        #expect(line.hasSuffix(#""candidates":[],"users":[{"name":"qa-admin","tags":["role=admin"],"about":"Admin on staging"}]}}"#))
+        #expect(line.contains(#""exitCode":6"#))
     }
 }
 

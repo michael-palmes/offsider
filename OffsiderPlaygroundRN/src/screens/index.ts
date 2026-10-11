@@ -31,6 +31,7 @@ import { TapTestScreen } from './TapTestScreen';
 import { TextInputScreen } from './TextInputScreen';
 import { ToolbarPickerTestScreen } from './ToolbarPickerTestScreen';
 import { TouchControlScreen } from './TouchControlScreen';
+import { UserSwitchTestScreen } from './UserSwitchTestScreen';
 
 export const screens: Record<RouteId, ComponentType> = {
   'tap-test': TapTestScreen,
@@ -63,4 +64,5 @@ export const screens: Record<RouteId, ComponentType> = {
   'environment-test': EnvironmentTestScreen,
   'permission-state': PermissionStateTestScreen,
   'live-ticker': LiveTickerTestScreen,
+  'user-switch-test': UserSwitchTestScreen,
 };

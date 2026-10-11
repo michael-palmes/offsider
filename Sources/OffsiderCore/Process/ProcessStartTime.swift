@@ -27,10 +27,13 @@ public struct ProcessStamp: Equatable, Sendable {
         self.startedAt = startedAt
     }
 
-    /// UTC to the second: `2026-10-05T03:12:44Z`.
+    /// UTC to the second, rounded down: `2026-10-05T03:12:44Z`.
     public static func timestamp(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)).formatted(.iso8601)
+    }
+
+    /// The date an ISO 8601 timestamp names, such as one `timestamp` wrote; nil for anything else.
+    public static func date(fromTimestamp text: String) -> Date? {
+        try? Date(text, strategy: .iso8601)
     }
 }

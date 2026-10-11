@@ -1,32 +1,76 @@
-# Sign in
+# Sign in and test users
 
-## Test credentials only
+A saved user is a test username and password for one app, in the login Keychain, with a name, tags and notes that say what it is for. Choose one from those, never by guessing.
 
-`offsider credential set --device <DEVICE_ID>` saves a username or email and a password for the app in front. It asks for the username, then the password twice, showing only a dot for each character, and clears its prompts once saved. `--stdin` reads those as two lines, so a password manager can pipe them in. The password is never printed, logged or put in an argument.
+## Choose a user
 
-The first login saved for an app is the default. A tag such as `dev` or `qa` names another login for that same app: `offsider credential set qa --device <DEVICE_ID>`. When a login is already saved, a terminal shows a menu to update one or add a tagged one, and asks before replacing a saved tag. Without a terminal, pass `--update` to replace the default, or a tag to add another. Pass `--update` with that tag to replace it. Nothing is overwritten by surprise.
+`offsider credential status --app com.example.app --json` lists the app's users with no macOS prompt and no usernames:
 
-Save test development credentials only. Anything that can run commands as you can then type them into this app.
+```json
+{"version":2,"action":"status","app":"com.example.app","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout tests: no store credit","state":"Cart holds 2 items","updated":"2026-10-11T09:30:00Z","signedIn":[]}]}
+```
 
-`login` types a credential only into an app it was saved for, or into an app linked to that one. The items live in your login Keychain (service `com.mpalmes.offsider.login`, never synchronised). macOS asks once before a new or rebuilt offsider reads one. `login` holds the device while that prompt waits and prints a note after 3 seconds. The wait does not count as a hung device, but after 5 minutes without an answer login exits 1 and types nothing. `offsider credential status --app <id>` raises the same prompt without holding a device.
+1. Work out what the test needs: role, environment, platform and starting data.
+2. Keep users whose `tags` and `about` cover it. Drop any whose `avoid` names the test: `avoid` wins.
+3. `state` was true at `updated`; it drifts.
+4. One fits: `offsider login qa-admin --device <DEVICE_ID>`, or select it by tags with `--where`.
+5. None fits: stop and tell the user what access the test needs. Never retag a user to make it fit.
 
-`offsider credential join --device <DEVICE_ID>` links the app in front to an app that already has saved logins. It does not ask for the password. When only one app has logins, that is the one. When several do, a terminal lists them, and otherwise pass `--app com.example.app`. A bundle id and a package can then share one set of logins, and `login` on either id uses them. An app that already has its own saved logins is not linked: remove those first. The link item stores no password.
+`--where <tag>` repeats, and a user must have every tag; a bare word such as `credit` matches only a bare tag. One match signs in. None exits 2 (`user_not_found`), several exit 6 (`user_ambiguous`), and nothing is typed; the JSON error's `users` lists each one's `name`, `tags` and `about`, never a username. The default never breaks a tie, and the `hint` adds `platform=` when that leaves one. `credential status --where <tag>` is a dry run. With no name and no `--where`, `login` uses the default; several users and none the default exit 6. A name with `--where` exits 64, and an unsaved name exits 1.
 
-`offsider credential status --device <DEVICE_ID>` prints the app, each tag and the username, never the password. The default is marked. With a tag it prints that one login. `offsider credential remove` deletes the default, and `offsider credential remove <tag>` deletes that tag. `--app com.example.app` addresses an app that is not in front for `set`, `status` and `remove`, and then `--device` is not required. `join` always reads the app in front. `--json` includes `username` and `saved`, and has no password field.
+## Check the user
+
+Exit 0 means `login` tapped submit, not that the app accepted the user. Trust the screen: `wait --any` for the signed-in screen or an error, then read which account it shows. `credential status <name>` reads that one Keychain item and adds its `username` to compare (macOS may ask first).
+
+## Switch users
+
+After `login` exits 0, Offsider records which user it submitted on that device and app. `status` shows each user's `signedIn` (`device`, `platform`, `since`), and with `--device` adds `signedInHere`. A record means Offsider submitted the form, not that the app accepted it, and selection ignores it.
+
+1. Sign out in the app, with taps or one `batch`. Offsider never signs out.
+2. `offsider credential signed-out --device <DEVICE_ID>` clears the record for the app in front (`--app` names another), and exits 0 even when there was none.
+3. `offsider login --where role=member --device <DEVICE_ID>`.
+
+The next `login` on that device and app replaces the record, and `credential remove` clears the user's records everywhere. A record stays after the device restarts, with `restarted: true`: the app may have kept or lost its session, so check the screen. When `login` finds no form and a record exists, the exit 2 message names the user last signed in and how to switch. An app that allows one session per account signs the user out elsewhere: put that in its `avoid`.
+
+## Record what changed
+
+When a test changes an account, record it: `offsider credential describe qa-admin --state 'Cart holds 3 items' --app com.example.app`, or `--untag credit` when a tag stops being true. `describe [name]` takes `--about` (access, and when to use the user), `--avoid` (tests it must not be used for), `--state` (what the account holds now, stamped `updated`), `--tag`, `--untag` and `--clear-tags`, and needs at least one. With no name it describes the default. It never reads the password and needs no terminal. If macOS asks (offsider was rebuilt), it prints `Waiting for macOS` after 3 seconds: ask the user to answer.
+
+Record only what you saw. Context is not secret: it sits in unencrypted Keychain attributes that any process running as you can read without a prompt. Never put a password, PIN, one-time code or anyone's personal details in it. A note is one line of at most 200 characters, and `""` clears it. A tag is a lowercase word or `key=value`, at most 16 per user, and `platform` takes only `ios` or `android`. Notes and tags refuse email-like text, control characters and bidi characters.
+
+## Save a user
+
+`offsider credential set --device <DEVICE_ID>` saves a username or email and a password for the app in front. On a terminal it asks for the username, the password twice (a dot per character), then a new user's "What's it for" and "Tags", both optional. `--stdin` reads the username and password as two lines, for a password manager. The password is never printed, logged or put in an argument. `set` takes the `describe` flags too.
+
+The first user for an app is the default; a name saves another (`credential set qa-member`). With users saved, a terminal shows a menu to update one or add another, and asks before replacing a name. Without a terminal, pass `--update` to replace the default, a name to add one, or both to replace that one. Save test development credentials only: anything that can run commands as you can then type them into this app.
+
+Items live in your login Keychain (service `com.mpalmes.offsider.login`, never synchronised). macOS asks once before a new or rebuilt offsider reads a password; `login` holds the device meanwhile, prints a note after 3 seconds, and after 5 minutes exits 1 with nothing typed. `credential status <name> --app <id>` raises that prompt without holding a device.
+
+`credential join --device <DEVICE_ID>` links the app in front to an app with saved users, without a password, so a bundle id and a package share them; with several such apps, a terminal lists them, or pass `--app`. An app with its own users is not linked. `credential remove [name]` deletes the default or that user. `--app <id>` names an app not in front for `set`, `status`, `describe` and `remove`, with no `--device` needed. `--json` is version 2: a user is named by `name`, only `set` and `status <name>` show `username`, and there is never a password field.
+
+## Tags in OFFSIDER.md
+
+Saved users live on each Mac. A repository's `OFFSIDER.md` maps flows to tags, never to accounts, and each person tags their own users to match:
+
+```markdown
+## Test users (com.example.app)
+- Checkout: offsider login --where role=member --where credit --device <DEVICE_ID>
+- Team settings: offsider login --where role=admin --where env=staging --device <DEVICE_ID>
+```
 
 ## What login does
 
-`offsider login --device <DEVICE_ID>` fills the email or username field, fills the password field, and taps the submit button once, using the default login. `offsider login <tag>` uses that tag. One saved login is the default, including one saved earlier under a tag such as `dev`. When several logins are saved and none is the default, login exits 6 and lists the tags, not the usernames or passwords.
+`login` fills the email or username field, then the password field, and taps the submit button once. It finds them itself, among elements in front (a point at the centre must land on it): the one text field whose label or id is an email or username, the one secure field, and a Log in, Sign in, Submit, Continue or Next button below the password, which may stay disabled until the fields are filled. Forgot, create, back, support and with (as in Continue with Google) are skipped. Words must be whole and ids split at capitals, so `signInButton` counts and Blog index does not. Zero matches exit 2, two exit 6, and nothing is typed.
 
-It finds the controls on its own. A candidate has to be in front: a point at its centre must land on it, so a screen mounted underneath does not count. The identity field is the one text field whose label or id is an email or a username. The password field is the one secure field. The submit button is a Log in, Sign in, Submit, Continue or Next button below the password, and it may be disabled until the fields are filled. Forgot, create, back, support and with (as in Continue with Google) are skipped. Words must be whole, and ids are split at capitals, so `signInButton` counts and Blog index or feedback do not. Zero matches exit 2 and two matches exit 6, and nothing is typed.
+It dismisses the software keyboard before submit with a tap on empty space (or on plain text), never a control: first above the topmost field, then up from the keys, and never on or just around a field. It tries up to three distinct points, reading the screen again after each. When the keys still cover the next control, it stops with `target_under_keyboard` and never presses Back.
 
-The software keyboard is dismissed before the submit button, by a tap on empty space above the keys, or on plain text when there is none, never on a control. When it still covers the next control, login stops (`target_under_keyboard`) and does not tap submit. It does not press Back.
+`--timeout` (default 15 seconds) is how long it waits for submit to enable. `--json` prints one object: `ok`, the user's `name` and `tags`, `where` when passed, `identity`, `password`, `submitted`, `exitCode` and `error`. `identity` and `password` are `filled` once login typed into the field and read it back, else `not_filled`, never the secret.
 
-`--timeout` (default 15 seconds) is how long login waits for the submit button to enable. `--wait-lock` waits while another command holds the device. `--json` prints one object. `identity` and `password` are the word `filled`, never the secret. `submitted` says whether the button was tapped.
+Once login reaches the email field, a failure still prints that object, with `ok: false`, `submitted: false` and the `error` object, even when the field never took focus (`identity: not_filled`), and the message ends "Both fields were filled." or "The email or username was filled." when that is so. A failure before then (no form, two matches, no saved user, `--where`) prints the standard error envelope instead, with `command` and no `identity`: nothing was touched. The exit code is the reason's either way.
 
 ## An app can pin its fields
 
-`offsider.login.json`, found the same way as `OFFSIDER.md`, overrides detection for one app. `--project <path>` names the directory to search. Without it, a missing file is not an error. The file names the app with `bundleId`, `package` or both, so one file serves an iOS bundle id and an Android package that differ. One of them must be the app in front, or nothing is typed. A pinned id is still hit-tested: a covered control is a refusal, not a tap on whatever is in front of it.
+`offsider.login.json`, found like `OFFSIDER.md` (`--project <path>` names where to search; a missing file is not an error), overrides detection for one app. It names the app with `bundleId`, `package` or both, and one must be the app in front, or nothing is typed. A pinned control is still hit-tested: covered is a refusal.
 
 ```json
 {
@@ -40,21 +84,20 @@ The software keyboard is dismissed before the submit button, by a tap on empty s
 
 ## What exit 0 means
 
-Exit 0 means the submit button was tapped. It does not mean the server accepted the login.
+Exit 0 means the submit button was tapped, not that the server accepted the login. Hand back on exit 1 or 5. Do not loop on it.
 
-Hand back on exit 1 or 5. Do not loop on it.
-
-On an iOS simulator, a system Save Password? sheet can appear over the app a few seconds after a successful login. It comes from iOS, not the app, so `describe-ui` does not list it and `tap --label` cannot find it. Take a screenshot, then tap Not Now by its coordinates (`tap -x <X> -y <Y>`). Never tap Save.
+On an iOS simulator, a system Save Password? sheet can appear a few seconds after a sign-in. `describe-ui` does not list it: take a screenshot, then tap Not Now by its coordinates (`tap -x <X> -y <Y>`). Never tap Save.
 
 ## Where it refuses
 
-A physical iPhone or iPad is refused. Use a simulator, or an Android emulator or a USB phone the user names. `login` does not take `--app`. `credential` is refused on a physical iPhone or iPad when it would read the device. Pass `--app` to save a credential without reading one.
+A physical iPhone or iPad is refused; use a simulator, an Android emulator or a USB phone the user names. `login` does not take `--app`. `credential` is refused on a physical iPhone or iPad when it would read the device: pass `--app` to save or describe a user without reading one.
 
 ```bash
-offsider credential set --device <DEVICE_ID>
-offsider credential set dev --device <DEVICE_ID>
-offsider credential join --device <DEVICE_ID>
 offsider credential status --app com.example.app --json
-offsider login --device <DEVICE_ID>
-offsider login dev --device <DEVICE_ID>
+offsider credential status --where role=admin --app com.example.app
+offsider login --where role=admin --where env=staging --device <DEVICE_ID>
+offsider credential signed-out --device <DEVICE_ID>
+offsider credential describe qa-admin --state 'Cart holds 3 items' --app com.example.app
+offsider credential set qa-member --device <DEVICE_ID>
+offsider credential join --device <DEVICE_ID>
 ```

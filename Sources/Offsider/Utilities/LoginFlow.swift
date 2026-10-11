@@ -15,6 +15,16 @@ enum LoginFlow {
         var clock: PollClock
     }
 
+    /// Who Offsider last signed in to this app on the device, for the note when no form is in front.
+    struct LastSignIn: Equatable {
+        var key: String
+        var since: Date
+        var restarted: Bool?
+        /// The id `credential signed-out --device` takes.
+        var deviceID: String
+    }
+
+    /// `lastSignIn` is read only when no sign-in form is in front.
     static func run(
         app: String,
         key: String,
@@ -22,7 +32,8 @@ enum LoginFlow {
         profile: LoginProfile?,
         turnstile: LoginTurnstileMode,
         timeout: TimeInterval,
-        services: Services
+        services: Services,
+        lastSignIn: () -> LastSignIn? = { nil }
     ) async throws -> LoginReport {
         if let profile, !profile.isFor(app) {
             throw CLIError(
@@ -32,58 +43,87 @@ enum LoginFlow {
         }
         var tree = try await services.readTree()
         tree = try await revealSubmit(in: tree, profile: profile, services: services)
-        let form = try detect(in: tree, profile: profile, afterTyping: false)
+        let form = try detect(in: tree, profile: profile, afterTyping: false, lastSignIn: lastSignIn)
         try requireName(form.identity, what: "email or username")
         try requireName(form.password, what: "password")
-        try await type(credential.username, into: form.identity, services: services)
-        tree = try await services.readTree()
-        guard let identity = LoginForm.match(form.identity, in: tree) else {
-            throw CLIError(
-                errorDescription: "The email or username field left the screen. The password was not typed.",
-                reason: .selectorNotFound
-            )
+        var identityProgress = LoginFieldProgress.notFilled
+        var passwordProgress = LoginFieldProgress.notFilled
+        do {
+            try await type(credential.username, into: form.identity, services: services)
+            tree = try await readUntil({ LoginForm.match(form.identity, in: $0)?.value == credential.username }, services: services)
+            guard let identity = LoginForm.match(form.identity, in: tree) else {
+                throw CLIError(
+                    errorDescription: "The email or username field left the screen. The password was not typed.",
+                    reason: .selectorNotFound
+                )
+            }
+            guard identity.value == credential.username else {
+                throw CLIError(
+                    errorDescription: "The email or username field did not keep the username that was typed. The password was not typed.",
+                    reason: .textNotAccepted
+                )
+            }
+            identityProgress = .filled
+            try await type(credential.password, into: form.password, services: services)
+            tree = try await readUntil({ LoginForm.match(form.password, in: $0).map { masked($0.value, length: credential.password.count) } == true }, services: services)
+            guard let password = LoginForm.match(form.password, in: tree) else {
+                throw CLIError(
+                    errorDescription: "The password field left the screen. The submit button was not tapped.",
+                    reason: .selectorNotFound
+                )
+            }
+            guard masked(password.value, length: credential.password.count) else {
+                throw CLIError(
+                    errorDescription: "The password field did not show one bullet per character. The submit button was not tapped.",
+                    reason: .textNotAccepted
+                )
+            }
+            passwordProgress = .filled
+            let submitNow = LoginForm.match(form.submit, in: tree) ?? form.submit
+            tree = try await dismissKeyboard(in: tree, submit: submitNow, shell: form.turnstileShell, fields: [form.identity, form.password], services: services)
+            if (try? LoginForm.detect(in: tree, profile: profile)) == nil {
+                // A read taken while the keyboard animates away can miss the form for a moment.
+                tree = try await readUntil({ (try? LoginForm.detect(in: $0, profile: profile)) != nil }, services: services)
+            }
+            let filled = try detect(in: tree, profile: profile, afterTyping: true)
+            let step = try await LoginTurnstileRunner.settle(mode: turnstile, read: services.readTurnstile, perform: services.performTurnstile)
+            return try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
+        } catch {
+            throw LoginFailure(report: .stopped(app: app, key: key, identity: identityProgress, password: passwordProgress), underlying: error)
         }
-        guard identity.value == credential.username else {
-            throw CLIError(
-                errorDescription: "The email or username field did not keep the username that was typed. The password was not typed.",
-                reason: .textNotAccepted
-            )
-        }
-        try await type(credential.password, into: form.password, services: services)
-        tree = try await services.readTree()
-        guard let password = LoginForm.match(form.password, in: tree) else {
-            throw CLIError(
-                errorDescription: "The password field left the screen. The submit button was not tapped.",
-                reason: .selectorNotFound
-            )
-        }
-        guard masked(password.value, length: credential.password.count) else {
-            throw CLIError(
-                errorDescription: "The password field did not show one bullet per character. The submit button was not tapped.",
-                reason: .textNotAccepted
-            )
-        }
-        let submitNow = LoginForm.match(form.submit, in: tree) ?? form.submit
-        tree = try await dismissKeyboard(in: tree, submit: submitNow, shell: form.turnstileShell, services: services)
-        let filled = try detect(in: tree, profile: profile, afterTyping: true)
-        let step = try await LoginTurnstileRunner.settle(mode: turnstile, read: services.readTurnstile, perform: services.performTurnstile)
-        return try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
     }
 
-    private static func detect(in tree: UITree, profile: LoginProfile?, afterTyping: Bool) throws -> LoginForm.Found {
+    /// Only `noForm` reads `lastSignIn`, to name who Offsider last signed in here.
+    private static func detect(
+        in tree: UITree, profile: LoginProfile?, afterTyping: Bool, lastSignIn: () -> LastSignIn? = { nil }
+    ) throws -> LoginForm.Found {
         do {
             return try LoginForm.detect(in: tree, profile: profile)
         } catch let error as LoginFormError {
+            let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
             if afterTyping {
-                let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
                 throw CLIError(
-                    errorDescription: "The form changed after the fields were filled. The submit button was not tapped.",
+                    errorDescription: "The form changed after typing. The submit button was not tapped.",
                     reason: reason
                 )
             }
-            let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
-            throw CLIError(errorDescription: error.message, reason: reason)
+            guard error.kind == .noForm, let last = lastSignIn() else {
+                throw CLIError(errorDescription: error.message, reason: reason)
+            }
+            throw CLIError(
+                errorDescription: "\(error.message) \(switchNote(last))",
+                reason: reason,
+                hint: "offsider credential signed-out --device \(last.deviceID)"
+            )
         }
+    }
+
+    /// Names who Offsider last signed in here, and how to switch users.
+    static func switchNote(_ last: LastSignIn) -> String {
+        let who = last.key == LoginCredential.defaultAccountKey ? "the default login" : last.key
+        let restart = last.restarted == true ? ", before the device restarted" : ""
+        return "Offsider last signed in as \(who) here (\(ProcessStamp.timestamp(last.since))\(restart)), so the app may still be signed in. "
+            + "To switch users, sign out in the app, run `offsider credential signed-out --device \(last.deviceID)`, then run login again."
     }
 
     private static func requireName(_ field: UINode, what: String) throws {
@@ -141,7 +181,8 @@ enum LoginFlow {
         tree.roots.flatMap { $0.flattened() }.filter { $0.role == .keyboard && ($0.frame?.height ?? 0) > 0 }
     }
 
-    private static func dismissKeyboard(in tree: UITree, submit: UINode, shell: UIFrame?, services: Services) async throws -> UITree {
+    /// Up to `KeyboardDismiss.attempts` taps on distinct safe points, reading again after each, until submit is clear.
+    private static func dismissKeyboard(in tree: UITree, submit: UINode, shell: UIFrame?, fields: [UINode], services: Services) async throws -> UITree {
         let keyboards = keyboards(in: tree)
         guard !keyboards.isEmpty else { return tree }
         let submitNow = LoginForm.match(submit, in: tree) ?? submit
@@ -151,16 +192,18 @@ enum LoginFlow {
         }
         var current = tree
         let clear: (UITree) -> Bool = { !covered($0, submit: LoginForm.match(submit, in: $0) ?? submitNow, shell: shell) }
-        if let point = KeyboardDismiss.point(in: tree) {
-            try await services.tap(point, tree)
+        var tried: [UIPoint] = []
+        while tried.count < KeyboardDismiss.attempts {
+            let frames = fields.compactMap { (LoginForm.match($0, in: current) ?? $0).frame }
+            guard let point = KeyboardDismiss.points(in: current, fields: frames, tried: tried, limit: 1).first else { break }
+            try await services.tap(point, current)
+            tried.append(point)
             current = try await readUntil(clear, services: services)
             if clear(current) { return current }
         }
-        if !clear(current) {
-            try await services.hideKeyboard()
-            current = try await readUntil(clear, services: services)
-            if !clear(current) { throw keyboardError() }
-        }
+        try await services.hideKeyboard()
+        current = try await readUntil(clear, services: services)
+        if !clear(current) { throw keyboardError() }
         return current
     }
 
@@ -191,14 +234,23 @@ enum LoginFlow {
         services: Services
     ) async throws -> LoginReport {
         let deadline = services.clock.now() + timeout
+        var missingUntil: TimeInterval?
         while true {
             let tree = try await services.readTree()
             guard let submit = LoginForm.match(sample, in: tree), let frame = submit.frame else {
+                let now = services.clock.now()
+                let until = missingUntil ?? now + keyboardSettle
+                missingUntil = until
+                if now < until {
+                    try await services.clock.sleep(.milliseconds(250))
+                    continue
+                }
                 throw CLIError(
-                    errorDescription: "The form changed after the fields were filled. The submit button was not tapped.",
+                    errorDescription: "The form changed after typing. The submit button was not tapped.",
                     reason: .selectorNotFound
                 )
             }
+            missingUntil = nil
             if submit.enabled != false {
                 try await services.tap(frame.center, tree)
                 let label = submit.label?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -220,6 +272,26 @@ enum LoginFlow {
         let text = rounded.rounded() == rounded ? String(Int(rounded)) : String(rounded)
         return "\(text) s"
     }
+}
+
+/// A login that stopped after it began typing: `report` says how far it got, and the message names the filled fields.
+struct LoginFailure: LocalizedError, UserFacingError, OffsiderFailure {
+    var report: LoginReport
+    let underlying: any Error
+
+    private var failure: (any OffsiderFailure)? { underlying as? any OffsiderFailure }
+
+    var reason: FailureReason { failure?.reason ?? ErrorReporter.payload(for: underlying).reason }
+    var failureMessage: String {
+        let message = failure?.failureMessage ?? OffsiderCommand.message(for: underlying)
+        return report.progressNote.map { "\(message) \($0)" } ?? message
+    }
+    var hint: String? { failure?.hint }
+    var candidates: [FailureCandidate] { failure?.candidates ?? [] }
+    var coveredBy: CoverReport? { failure?.coveredBy }
+    var users: [FailureUser] { failure?.users ?? [] }
+    var userFacingDescription: String { failureMessage }
+    var errorDescription: String? { failureMessage }
 }
 
 /// Applies `LoginTurnstile.plan` with one re-read, and one more checkbox tap when a reload put the box back.

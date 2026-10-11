@@ -34,7 +34,7 @@ enum SignInHit {
         let children = node.children.map(classify)
         let kind: Kind
         if children.contains(where: { $0.kind == .app }) {
-            kind = .app
+            kind = isKeyboardDock(children) ? .chrome : .app
         } else if children.contains(where: { $0.kind == .chrome }) {
             kind = .chrome
         } else if isStructural(node.role) {
@@ -43,6 +43,26 @@ enum SignInHit {
             kind = .app
         }
         return Classified(node: node, kind: kind, children: children)
+    }
+
+    /// Controls iOS draws below the keys, such as a disabled Dictate button, belong to the keyboard when none sits above its top.
+    private static func isKeyboardDock(_ children: [Classified]) -> Bool {
+        guard let top = children.compactMap(chromeTop).min() else { return false }
+        let content = children.flatMap(appFrames)
+        return !content.isEmpty && content.allSatisfy { $0.y >= top }
+    }
+
+    /// The top of the keyboard or assistant bar itself; a screen-wide keyboard frame from the top edge marks no band.
+    private static func chromeTop(_ item: Classified) -> Double? {
+        guard item.kind == .chrome else { return nil }
+        if isChrome(item.node) { return item.node.frame.flatMap { $0.y > 0 ? $0.y : nil } }
+        return item.children.compactMap(chromeTop).min()
+    }
+
+    private static func appFrames(_ item: Classified) -> [UIFrame] {
+        guard item.kind == .app else { return [] }
+        guard isStructural(item.node.role) else { return item.node.frame.map { [$0] } ?? [] }
+        return item.children.flatMap(appFrames)
     }
 
     /// The software keyboard, and the bar iOS draws above it (`SystemInputAssistantView`).

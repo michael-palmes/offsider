@@ -43,6 +43,7 @@ public enum OffsiderPrivateDirectory {
     public static let leasesDirectoryName = "leases"
     public static let orientationDirectoryName = "orientation"
     public static let runsDirectoryName = "runs"
+    public static let signInsDirectoryName = "signins"
 
     public static func rootName(uid: uid_t) -> String {
         "offsider-\(uid)"
@@ -87,14 +88,17 @@ public enum OffsiderPrivateDirectory {
         return path
     }
 
+    /// `root/name` when both exist and pass the checks `ensureSubdirectory` makes; nil when either is missing. Creates nothing.
+    public static func existingSubdirectory(_ name: String, root: String = OffsiderPrivateDirectory.root, uid: uid_t = getuid()) throws -> String? {
+        let path = (root as NSString).appendingPathComponent(name)
+        guard try existingPrivateDirectory(root, uid: uid), try existingPrivateDirectory(path, uid: uid) else { return nil }
+        return path
+    }
+
     /// Accepts or creates a real directory owned by `uid` with no group or other bits, re-checked with `lstat`.
     public static func ensurePrivateDirectory(_ path: String, uid: uid_t) throws {
+        if try existingPrivateDirectory(path, uid: uid) { return }
         var info = stat()
-        if lstat(path, &info) == 0 {
-            guard isPrivateDirectory(info, uid: uid) else { throw PrivateDirectoryError(.unsafeDirectory, path: path) }
-            return
-        }
-        guard errno == ENOENT else { throw systemError("lstat", path) }
         guard mkdir(path, S_IRWXU) == 0 || errno == EEXIST else { throw systemError("mkdir", path) }
         guard lstat(path, &info) == 0 else { throw systemError("lstat", path) }
         guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else {
@@ -197,6 +201,17 @@ public enum OffsiderPrivateDirectory {
 
     public static func removeFile(named name: String, in directory: String) {
         unlink((directory as NSString).appendingPathComponent(name))
+    }
+
+    /// False when nothing is at `path`; refuses a symlink, another user's directory or one with group or other bits.
+    private static func existingPrivateDirectory(_ path: String, uid: uid_t) throws -> Bool {
+        var info = stat()
+        guard lstat(path, &info) == 0 else {
+            if errno == ENOENT { return false }
+            throw systemError("lstat", path)
+        }
+        guard isPrivateDirectory(info, uid: uid) else { throw PrivateDirectoryError(.unsafeDirectory, path: path) }
+        return true
     }
 
     private static func isPrivateDirectory(_ info: stat, uid: uid_t) -> Bool {

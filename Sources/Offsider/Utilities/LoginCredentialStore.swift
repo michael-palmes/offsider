@@ -12,7 +12,12 @@ protocol LoginCredentialStoring {
     func keys(app: String) throws -> [String]
     /// The stored default mark, from item attributes. Nil when none is marked.
     func defaultKey(app: String) throws -> String?
-    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool) throws
+    /// Every saved login for one app from the item attributes alone, so no password is decrypted. Default first, then by key.
+    func entries(app: String) throws -> [LoginEntry]
+    /// A nil `context` keeps the stored one.
+    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool, context: LoginContext?) throws
+    /// Replaces the context without reading the password. False when no login is saved under `key`.
+    func setContext(_ context: LoginContext, app: String, key: String) throws -> Bool
     /// Marks one saved login as the default without reading its password.
     func markDefault(app: String, key: String) throws
     /// False when no credential was saved.
@@ -25,16 +30,28 @@ protocol LoginCredentialStoring {
     func join(member: String, canonical: String) throws
 }
 
-/// The login Keychain's generic passwords, one per app and key, never synchronised.
+extension LoginCredentialStoring {
+    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool) throws {
+        try save(credential, app: app, key: key, isDefault: isDefault, context: nil)
+    }
+}
+
+/// The login Keychain's generic passwords, one per app and key, never synchronised. The context sits in the unencrypted generic attribute.
 struct KeychainLoginCredentialStore: LoginCredentialStoring {
-    static let service = "com.mpalmes.offsider.login"
+    static let defaultService = "com.mpalmes.offsider.login"
+
+    let service: String
+
+    init(service: String = Self.defaultService) {
+        self.service = service
+    }
 
     func load(app: String, key: String) throws -> LoginCredential? {
-        var query = Self.query(app: app, key: key)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var request = query(app: app, key: key)
+        request[kSecReturnData as String] = true
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let status = SecItemCopyMatching(request as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = item as? Data else {
             throw LoginKeychainFailure(operation: "read", app: app, key: key, status: status)
@@ -60,7 +77,7 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
     }
 
     func keys(app: String) throws -> [String] {
-        try Self.items().compactMap { item in
+        try items().compactMap { item in
             guard let account = Self.account(item), let parsed = LoginCredential.parseAccount(account), parsed.app == app else {
                 return nil
             }
@@ -69,7 +86,7 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
     }
 
     func defaultKey(app: String) throws -> String? {
-        try Self.items().compactMap { item in
+        try items().compactMap { item in
             guard Self.isDefaultLabel(item[kSecAttrLabel as String] as? String), let account = Self.account(item), let parsed = LoginCredential.parseAccount(account), parsed.app == app else {
                 return nil
             }
@@ -77,25 +94,46 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
         }.sorted().first
     }
 
-    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool) throws {
+    func entries(app: String) throws -> [LoginEntry] {
+        try items().compactMap { item -> LoginEntry? in
+            guard let account = Self.account(item), let parsed = LoginCredential.parseAccount(account), parsed.app == app else {
+                return nil
+            }
+            let marked = Self.isDefaultLabel(item[kSecAttrLabel as String] as? String)
+            return LoginEntry(key: parsed.key, isDefault: marked, stored: LoginContext.read(item[kSecAttrGeneric as String] as? Data))
+        }.sorted { lhs, rhs in
+            if lhs.isDefault != rhs.isDefault { return lhs.isDefault }
+            return lhs.key < rhs.key
+        }
+    }
+
+    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool, context: LoginContext?) throws {
         let data = credential.storageData()
         guard LoginCredential(storageData: data) != nil else {
             throw LoginKeychainFailure(operation: "save", app: app, key: key, detail: Self.corrupt(key))
         }
-        let attributes = Self.secretAttributes(data, app: app, key: key, isDefault: isDefault)
-        let status = SecItemUpdate(Self.query(app: app, key: key) as CFDictionary, attributes as CFDictionary)
+        var attributes = Self.secretAttributes(data, app: app, key: key, isDefault: isDefault)
+        if let context { attributes[kSecAttrGeneric as String] = context.storageData() }
+        let status = SecItemUpdate(query(app: app, key: key) as CFDictionary, attributes as CFDictionary)
         if status == errSecSuccess { return }
         guard status == errSecItemNotFound else { throw LoginKeychainFailure(operation: "save", app: app, key: key, status: status) }
-        var item = Self.query(app: app, key: key)
+        var item = query(app: app, key: key)
         attributes.forEach { item[$0.key] = $0.value }
         item[kSecAttrDescription as String] = "Test sign-in credential"
         let added = SecItemAdd(item as CFDictionary, nil)
         guard added == errSecSuccess else { throw LoginKeychainFailure(operation: "save", app: app, key: key, status: added) }
     }
 
+    func setContext(_ context: LoginContext, app: String, key: String) throws -> Bool {
+        let status = SecItemUpdate(query(app: app, key: key) as CFDictionary, [kSecAttrGeneric as String: context.storageData()] as CFDictionary)
+        if status == errSecItemNotFound { return false }
+        guard status == errSecSuccess else { throw LoginKeychainFailure(operation: "update", app: app, key: key, status: status) }
+        return true
+    }
+
     func markDefault(app: String, key: String) throws {
         let status = SecItemUpdate(
-            Self.query(app: app, key: key) as CFDictionary,
+            query(app: app, key: key) as CFDictionary,
             Self.secretAttributes(Data(), app: app, key: key, isDefault: true).filter { $0.key != kSecValueData as String } as CFDictionary
         )
         if status == errSecItemNotFound { return }
@@ -103,7 +141,7 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
     }
 
     func remove(app: String, key: String) throws -> Bool {
-        let status = SecItemDelete(Self.query(app: app, key: key) as CFDictionary)
+        let status = SecItemDelete(query(app: app, key: key) as CFDictionary)
         if status == errSecItemNotFound { return false }
         guard status == errSecSuccess else { throw LoginKeychainFailure(operation: "remove", app: app, key: key, status: status) }
         if try keys(app: app).isEmpty { try deleteLinks(to: app) }
@@ -111,7 +149,7 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
     }
 
     func canonical(of app: String) throws -> String {
-        for item in try Self.items() {
+        for item in try items() {
             guard let account = Self.account(item), LoginCredential.linkedMember(account) == app else { continue }
             if let label = item[kSecAttrLabel as String] as? String, !label.isEmpty { return label }
         }
@@ -121,7 +159,7 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
     func groups() throws -> [LoginAppGroup] {
         var canonicals = Set<String>()
         var members: [String: [String]] = [:]
-        for item in try Self.items() {
+        for item in try items() {
             guard let account = Self.account(item) else { continue }
             if let member = LoginCredential.linkedMember(account) {
                 let canonical = item[kSecAttrLabel as String] as? String ?? ""
@@ -137,7 +175,7 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
 
     func join(member: String, canonical: String) throws {
         let account = LoginCredential.linkAccount(member: member)
-        let query = Self.accountQuery(account)
+        let query = accountQuery(account)
         let status = SecItemUpdate(query as CFDictionary, [kSecAttrLabel as String: canonical] as CFDictionary)
         if status == errSecSuccess { return }
         guard status == errSecItemNotFound else { throw LoginKeychainFailure(operation: "link", app: member, key: "", status: status) }
@@ -171,10 +209,10 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
     }
 
     private func deleteLinks(to canonical: String) throws {
-        for item in try Self.items() {
+        for item in try items() {
             guard let account = Self.account(item), LoginCredential.linkedMember(account) != nil else { continue }
             guard (item[kSecAttrLabel as String] as? String) == canonical else { continue }
-            let status = SecItemDelete(Self.accountQuery(account) as CFDictionary)
+            let status = SecItemDelete(accountQuery(account) as CFDictionary)
             if status == errSecItemNotFound || status == errSecSuccess { continue }
             throw LoginKeychainFailure(operation: "remove", app: canonical, key: "", status: status)
         }
@@ -184,7 +222,7 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
         "the saved item for \(key) is not a username and password Offsider can type. Remove it and save it again."
     }
 
-    private static func items() throws -> [[String: Any]] {
+    private func items() throws -> [[String: Any]] {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -202,11 +240,11 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
     }
 
     /// Security takes untyped dictionaries.
-    private static func query(app: String, key: String) -> [String: Any] {
+    private func query(app: String, key: String) -> [String: Any] {
         accountQuery(LoginCredential.account(app: app, key: key))
     }
 
-    private static func accountQuery(_ account: String) -> [String: Any] {
+    private func accountQuery(_ account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -231,11 +269,14 @@ struct LoginKeychainFailure: LocalizedError, UserFacingError, OffsiderFailure {
 
     init(operation: String, app: String, key: String, status: OSStatus) {
         let message = SecCopyErrorMessageString(status, nil).map { $0 as String } ?? "OSStatus \(status)"
-        let detail = status == errSecUserCanceled || status == errSecAuthFailed
+        let detail = Self.declined.contains(status)
             ? "Keychain access was declined (\(message)); allow it when macOS asks"
             : message
         self.init(operation: operation, app: app, key: key, detail: detail)
     }
+
+    /// errAuthorizationInternal (-60008) arrives while another Keychain prompt is still waiting.
+    static let declined: Set<OSStatus> = [errSecUserCanceled, errSecAuthFailed, -60008]
 
     var reason: FailureReason { .commandFailed }
 
