@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import OffsiderCore
 import Testing
 
 /// An evidence run on a real device: three captures numbered 001 to 003 with three manifest lines. Runs use an explicit
@@ -11,6 +13,9 @@ enum RunE2E {
             let command: String
             let step: Int?
             let exit: Int
+            let changed: Bool?
+            let expect: String?
+            let diff: String?
         }
         let dir: String
         let entries: [Entry]
@@ -64,5 +69,42 @@ struct RunE2ETests {
             }
         }
         try RunE2E.checkThreeCaptures(summary, folder: folder)
+    }
+
+    @Test("--expect unchanged passes a still screen and fails a changed one, and the run keeps a diff only for the change")
+    func expectUnchanged() async throws {
+        let udid = try TestHelpers.requireSimulatorUDID()
+        try await TestHelpers.launchPlaygroundApp(to: "tap-test", simulatorUDID: udid)
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-expect-e2e-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let baseline = scratch.appendingPathComponent("before.png").path
+        let painted = scratch.appendingPathComponent("painted.png").path
+        let shot = try await TestHelpers.runOffsiderCommandSeparated("screenshot --scale points --output '\(baseline)'", simulatorUDID: udid)
+        try #require(shot.exitCode == 0, "\(shot.stderr)")
+        let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: baseline)))
+        let block = CGRect(x: image.width / 4, y: image.height / 2, width: image.width / 2, height: 40)
+        try ScreenImage.encode(try ScreenImage.masked(image, pixelRects: [block]), as: .png).write(to: URL(fileURLWithPath: painted))
+
+        var exits: [Int32] = []
+        var lines: [String] = []
+        let (summary, folder) = try await RunE2E.record { environment in
+            for compare in [baseline, painted] {
+                let result = try await TestHelpers.runOffsiderCommandSeparated(
+                    "screenshot --scale points --json --compare '\(compare)' --expect unchanged", simulatorUDID: udid, environment: environment
+                )
+                exits.append(result.exitCode)
+                lines.append(result.stdout)
+            }
+        }
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        #expect(exits == [0, 5], "\(lines)")
+        #expect(lines.first?.contains(#""changed":false,"expected":"unchanged","met":true"#) == true)
+        #expect(lines.last?.contains(#""changed":true,"expected":"unchanged","met":false"#) == true)
+        #expect(summary.entries.map(\.changed) == [false, true])
+        #expect(summary.entries.map(\.expect) == ["unchanged", "unchanged"])
+        #expect(summary.entries.map { $0.diff != nil } == [false, true])
+        let diffs = try FileManager.default.contentsOfDirectory(atPath: folder).filter { $0.hasSuffix("-diff.png") }
+        #expect(diffs.count == 1)
     }
 }
