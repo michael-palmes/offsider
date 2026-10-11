@@ -20,8 +20,9 @@ struct Logs: AsyncParsableCommand {
         Reads the last 30 seconds by default. Choose a source (--rn, --app, both, or --process) and one window \
         (--last, --since, --duration or --follow). ANSI colour codes, including escaped forms such as \\u001b[32m, \
         are removed unless --raw. Passwords, tokens, keys, cookies, JWTs and email addresses are replaced with \
-        [redacted] unless --no-redact (or --raw alone); --grep matches the text before redaction. Exits 0 even when \
-        nothing matches. On iOS this reads the simulator's unified log; on Android, logcat.
+        [redacted] unless --no-redact (or --raw alone); --grep and --exclude match the text before redaction. Exits 0 \
+        even when nothing matches. On iOS this reads the simulator's unified log, which keeps about 1 KB of a message \
+        and ends a longer one <…> (marked [truncated], or "truncated": true in JSON); on Android, logcat.
 
         --rn reads React Native's own log (the com.facebook.react.log subsystem on iOS, the ReactNativeJS and \
         ReactNative tags on Android). An app's console output can also log outside it, so --rn --app reads both: \
@@ -56,6 +57,9 @@ struct Logs: AsyncParsableCommand {
 
     @Option(help: ArgumentHelp("Only entries whose message matches this case-insensitive regular expression, after ANSI codes are removed.", valueName: "regex"))
     var grep: String?
+
+    @Option(name: .customLong("exclude"), help: ArgumentHelp("Drop entries whose message matches this case-insensitive regular expression, as --grep matches; repeat for more. Dropped entries reach neither stdout nor an evidence run.", valueName: "regex"))
+    var exclude: [String] = []
 
     @Option(name: .customLong("max-lines"), help: ArgumentHelp("Keep the newest this many matching entries; older ones are dropped and stderr says how many. 0 keeps all. Ignored with --follow.", valueName: "n"))
     var maxLines: Int = 500
@@ -130,7 +134,7 @@ struct Logs: AsyncParsableCommand {
     }
 
     func collector() throws -> LogCollector {
-        try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, keepsANSI: raw, redacts: redacts, retainsEntries: !follow)
+        try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, exclude: exclude, keepsANSI: raw, redacts: redacts, retainsEntries: !follow)
     }
 
     /// `--redact` or `--no-redact` when given, else on unless `--raw`.
@@ -150,9 +154,13 @@ struct Logs: AsyncParsableCommand {
         fflush(stdout)
     }
 
-    /// `write` receives each line meant for stdout, without its newline.
+    static func printNote(_ line: String) {
+        print(line, to: &standardError)
+    }
+
+    /// `write` receives each line meant for stdout, and `note` each one meant for stderr, without its newline.
     @MainActor
-    func read(from route: DeviceRouter.Route, write: @escaping @MainActor (String) -> Void = Logs.printLine) async throws {
+    func read(from route: DeviceRouter.Route, note: @escaping @MainActor (String) -> Void = Logs.printNote, write: @escaping @MainActor (String) -> Void = Logs.printLine) async throws {
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
@@ -180,9 +188,9 @@ struct Logs: AsyncParsableCommand {
                 sink.retention.add(entry)
                 guard let shown = sink.collector.add(entry), follow else { return }
                 tee(json ? LogReport.jsonLine(shown) : LogText.format(shown, timeZone: zone))
-            }, onNote: { note in
-                switch note {
-                case .clockSkew(let seconds): print(LogClock.note(seconds, device: device), to: &standardError)
+            }, onNote: { logNote in
+                switch logNote {
+                case .clockSkew(let seconds): note(LogClock.note(seconds, device: device))
                 }
             })
         }
@@ -191,21 +199,21 @@ struct Logs: AsyncParsableCommand {
         }
         defer { signalObserver.invalidate() }
         if follow {
-            print("Following logs on \(booted.id.rawValue); press Ctrl+C to stop.", to: &standardError)
+            note("Following logs on \(booted.id.rawValue); press Ctrl+C to stop.")
         }
         let started = Date()
         try await reading.value
         if !follow {
-            Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, timeZone: zone, write: tee)
+            Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, timeZone: zone, write: tee, note: note)
         }
         if booted.id.platform == .ios, let cutoff = query.window.cutoff(now: started), let warning = sink.retention.warning(cutoff: cutoff, timeZone: zone) {
-            print(warning, to: &standardError)
+            note(warning)
         }
-        if let footer = Self.redactionFooter(sink.collector.redacted) {
-            print(footer, to: &standardError)
+        for footer in [Self.redactionFooter(sink.collector.redacted), Self.cutFooter(sink.collector.cut), Self.excludedFooter(sink.collector.excluded)] {
+            if let footer { note(footer) }
         }
         if !follow, let hint = Self.appHint(for: query.source, matched: sink.collector.matched, grepping: grep != nil, platform: booted.id.platform) {
-            print(hint, to: &standardError)
+            note(hint)
         }
         let collector = sink.collector
         recorder.update(token) { entry in
@@ -237,16 +245,30 @@ struct Logs: AsyncParsableCommand {
         return "Redacted \(count) \(count == 1 ? "value" : "values") (passwords, tokens, emails); --no-redact shows them."
     }
 
+    /// The stderr line after a read whose entries the device's log cut short; nil when none were.
+    static func cutFooter(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        let entries = count == 1 ? "1 entry was" : "\(count) entries were"
+        let ending = count == 1 ? "it ends" : "they end"
+        return "\(entries) cut by iOS's log, which keeps about 1 KB of a message (\(ending) \(LogText.iosTruncationMarker)); the rest was never stored. In a debug build, rn logbox open shows the whole error."
+    }
+
+    /// The stderr line after a read that `--exclude` dropped entries from; nil when it dropped none.
+    static func excludedFooter(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return "Excluded \(count) \(count == 1 ? "entry" : "entries") (--exclude)."
+    }
+
     @MainActor
-    static func emit(_ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool, timeZone: TimeZone = .current, write: (String) -> Void) {
+    static func emit(_ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool, timeZone: TimeZone = .current, write: (String) -> Void, note: (String) -> Void = Logs.printNote) {
         let entries = collector.entries
         if json {
-            write(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated, redacted: collector.redacted).jsonLine())
+            write(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated, redacted: collector.redacted, excluded: collector.excluded).jsonLine())
         } else if !entries.isEmpty {
             write(entries.map { LogText.format($0, timeZone: timeZone) }.joined(separator: "\n"))
         }
         if collector.truncated > 0 {
-            print("Showing the newest \(entries.count) of \(entries.count + collector.truncated) entries; raise --max-lines or narrow with --grep.", to: &standardError)
+            note("Showing the newest \(entries.count) of \(entries.count + collector.truncated) entries; raise --max-lines or narrow with --grep.")
         }
     }
 

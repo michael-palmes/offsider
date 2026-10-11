@@ -90,6 +90,36 @@ struct LogTextTests {
         #expect(entry.raw == "\u{1B}[32mLOG\u{1B}[39m  tapped save")
     }
 
+    /// A React Native `logEvent` line whose message is `message`, as `log --style ndjson` writes it.
+    static func reactNativeEvent(_ message: String) throws -> String {
+        let object: [String: Any] = [
+            "messageType": "Error", "eventType": "logEvent", "subsystem": "com.facebook.react.log", "category": "javascript",
+            "processImagePath": "/Applications/Playground.app/Playground", "timestamp": "2026-10-02 22:17:20.001000+0930",
+            "eventMessage": message, "processID": 4100,
+        ]
+        return String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+    }
+
+    @Test("a message iOS cut short (its first 1,015 bytes, then <…>) is marked truncated and kept byte for byte")
+    func marksTruncatedMessage() throws {
+        let cut = String(repeating: "Error: render failed ", count: 48).prefix(1015) + "<\u{2026}>"
+        let entry = try #require(LogText.parseIOSNDJSON(try Self.reactNativeEvent(String(cut))))
+        #expect(entry.truncated)
+        #expect(entry.message == String(cut))
+        #expect(entry.raw == String(cut))
+    }
+
+    @Test("a whole message, or one with <…> before its end, is not marked truncated", arguments: [
+        "tapped save",
+        "list: <\u{2026}> then more",
+        "ends with an ellipsis\u{2026}",
+        "ends <...>",
+    ])
+    func wholeMessageIsNotTruncated(message: String) throws {
+        let entry = try #require(LogText.parseIOSNDJSON(try Self.reactNativeEvent(message)))
+        #expect(!entry.truncated)
+    }
+
     @Test("activity events, the closing count and non-JSON lines are skipped", arguments: [
         activityLine,
         #"{"count":10549,"finished":1}"#,
@@ -150,6 +180,13 @@ struct LogTextTests {
         #expect(LogText.format(full, timeZone: utc) == "12:47:18.250Z Info    SpringBoard[1] javascript: hi")
         #expect(LogText.format(LogEntry(level: "Warning", pid: 7, tag: "ReactNativeJS", message: "careful"), timeZone: utc) == "Warning [7] ReactNativeJS: careful")
         #expect(LogText.format(LogEntry(message: "bare"), timeZone: utc) == "bare")
+    }
+
+    @Test("a cut message's line ends <…> [truncated], so a reader of the text, or of the run's copy, sees it was cut")
+    func formatsTruncated() throws {
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        let entry = LogEntry(level: "Error", tag: "javascript", message: "Error: render failed <\u{2026}>", truncated: true)
+        #expect(LogText.format(entry, timeZone: utc) == "Error   javascript: Error: render failed <\u{2026}> [truncated]")
     }
 
     @Test("text times carry the zone's offset at that moment: Adelaide in summer and in winter, and a negative zone", arguments: [

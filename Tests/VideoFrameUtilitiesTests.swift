@@ -8,10 +8,10 @@ import UniformTypeIdentifiers
 @Suite("Video Frame Utilities Tests")
 struct VideoFrameUtilitiesTests {
     @Test("Compressed stream scaling uses pixel dimensions")
-    func compressedStreamScalingUsesPixelDimensions() async throws {
-        let source = try makePNG(width: 1206, height: 2622)
+    func compressedStreamScalingUsesPixelDimensions() throws {
+        let source = try #require(VideoFrameUtilities.makeCGImage(from: try makePNG(width: 1206, height: 2622)))
 
-        let scaled = try await VideoFrameUtilities.processJPEGData(source, scale: 0.5, quality: 75)
+        let scaled = try VideoFrameUtilities.jpegData(from: source, scale: 0.5, quality: 75)
         let image = try #require(VideoFrameUtilities.makeCGImage(from: scaled))
 
         #expect(image.width == 603)
@@ -19,11 +19,11 @@ struct VideoFrameUtilitiesTests {
     }
 
     @Test("Compressed stream frames are JPEG at the default scale and quality")
-    func compressedStreamFramesAreJPEGAtDefaults() async throws {
+    func compressedStreamFramesAreJPEGAtDefaults() throws {
         let defaults = try StreamVideo.parse(["--device", "TEST-DEVICE"])
-        let source = try makePNG(width: 120, height: 260)
+        let source = try #require(VideoFrameUtilities.makeCGImage(from: try makePNG(width: 120, height: 260)))
 
-        let frame = try await VideoFrameUtilities.processJPEGData(source, scale: defaults.scale, quality: defaults.quality)
+        let frame = try VideoFrameUtilities.jpegData(from: source, scale: defaults.scale, quality: defaults.quality)
 
         #expect(frame.starts(with: [0xFF, 0xD8]))
     }

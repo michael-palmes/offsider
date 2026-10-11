@@ -1,4 +1,5 @@
 import ArgumentParser
+import CoreGraphics
 import Foundation
 import OffsiderCore
 
@@ -12,7 +13,15 @@ struct StreamVideo: AsyncParsableCommand {
 
     static let configuration = CommandConfiguration(
         commandName: "stream-video",
-        abstract: "Stream device frames to stdout using screenshot capture"
+        abstract: "Stream device frames to stdout using screenshot capture",
+        discussion: """
+        mjpeg, raw and ffmpeg send one JPEG per screenshot, upright as `screenshot` takes it; --mask-region paints \
+        a rectangle in points black on every one of them, and a frame that may have been taken in another orientation \
+        or size than the first is replaced by the last masked frame. bgra passes the device's own video stream through \
+        and takes no --mask-region. Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, \
+        --mask-label, --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and send nothing, as does a stream \
+        while the evidence run has masks or OFFSIDER_MASK_SECURE=1 is set; --unmasked streams anyway, with a warning.
+        """
     )
 
     @OptionGroup
@@ -30,6 +39,9 @@ struct StreamVideo: AsyncParsableCommand {
     @Option(help: "Scale factor (0.1-1.0, default: 1.0)")
     var scale: Double = 1.0
 
+    @OptionGroup
+    var masks: VideoMaskOptions
+
     func validate() throws {
         guard fps >= 1 && fps <= 30 else {
             throw ValidationError("FPS must be between 1 and 30")
@@ -42,9 +54,16 @@ struct StreamVideo: AsyncParsableCommand {
         guard scale >= 0.1 && scale <= 1.0 else {
             throw ValidationError("Scale must be between 0.1 and 1.0")
         }
+
+        if format == .bgra, !masks.maskRegions.isEmpty {
+            throw ValidationError("--mask-region paints screenshot frames, and --format bgra passes the device's own video through unpainted. Use --format mjpeg, raw or ffmpeg.")
+        }
     }
 
+    @MainActor
     func run() async throws {
+        try masks.requireMaskable(command: "stream-video")
+        let regions = try masks.regions()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
@@ -63,22 +82,27 @@ struct StreamVideo: AsyncParsableCommand {
         case .bgra:
             try await streamBGRA(from: backend, device: booted.id, cancellationFlag: cancellationFlag)
         default:
-            try await streamCompressedFrames(from: backend, device: booted.id, format: format, cancellationFlag: cancellationFlag)
+            let source = VideoFrameSource(backend: backend, device: booted.id, scale: scale, regions: regions)
+            try await streamCompressedFrames(from: source, format: format, cancellationFlag: cancellationFlag)
         }
     }
 
     // MARK: - Screenshot-based streaming
 
+    @MainActor
     private func streamCompressedFrames(
-        from backend: any DeviceBackend,
-        device: DeviceID,
+        from source: VideoFrameSource,
         format: OutputFormat,
         cancellationFlag: CancellationFlag
     ) async throws {
+        let device = source.device
         FileHandle.standardError.write(Data("Starting screenshot-based video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...\n".utf8))
         FileHandle.standardError.write(Data("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
+        var pending = try await source.firstFrame { error in
+            FileHandle.standardError.write(Data("Error capturing frame: \(error.localizedDescription)\n".utf8))
+        }
         let frameInterval = 1.0 / Double(fps)
         let mjpegBoundary = "--mjpegstream"
         let destination = FileHandle.standardOutput
@@ -89,6 +113,7 @@ struct StreamVideo: AsyncParsableCommand {
         }
 
         var frameCount: UInt64 = 0
+        var heldCount = 0
         let startTime = Date()
 
         while true {
@@ -102,14 +127,14 @@ struct StreamVideo: AsyncParsableCommand {
             let frameStartTime = Date()
 
             do {
-                let processedData: Data
-                if let capturer = backend as? any FrameCapturing {
-                    let image = try await capturer.captureFrame(for: device, scale: scale)
-                    processedData = try VideoFrameUtilities.jpegData(from: image, quality: quality)
+                let frame: VideoFrame
+                if let first = pending {
+                    frame = VideoFrame(image: first, held: false)
+                    pending = nil
                 } else {
-                    let screenshotData = try await backend.screenshotPNG(for: device)
-                    processedData = try await VideoFrameUtilities.processJPEGData(screenshotData, scale: scale, quality: quality)
+                    frame = try await source.next()
                 }
+                let processedData = try VideoFrameUtilities.jpegData(from: frame.image, scale: source.scalesItself ? 1 : scale, quality: quality)
 
                 switch format {
                 case .mjpeg:
@@ -128,6 +153,7 @@ struct StreamVideo: AsyncParsableCommand {
                 }
 
                 frameCount += 1
+                if frame.held { heldCount += 1 }
 
                 if frameCount % UInt64(max(1, fps)) == 0 {
                     let elapsed = Date().timeIntervalSince(startTime)
@@ -154,7 +180,9 @@ struct StreamVideo: AsyncParsableCommand {
         let elapsed = Date().timeIntervalSince(startTime)
         if frameCount > 0 && elapsed > 0 {
             let avgFPS = Double(frameCount) / elapsed
-            FileHandle.standardError.write(Data(String(format: "Streamed %llu frames in %.1f seconds (%.1f FPS average)\n", frameCount, elapsed, avgFPS).utf8))
+            let held = heldCount > 0 ? ", \(heldCount) held" : ""
+            let summary = String(format: "Streamed %llu frames in %.1f seconds (%.1f FPS average)", frameCount, elapsed, avgFPS)
+            FileHandle.standardError.write(Data("\(summary)\(held)\n".utf8))
         }
     }
 

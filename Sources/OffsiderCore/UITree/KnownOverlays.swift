@@ -12,10 +12,53 @@ public enum KnownOverlays {
         return isCount && separator.upperBound < trimmed.endIndex
     }
 
-    /// The area a LogBox banner swallows: from its top edge to the bottom of the viewport, across the full width.
-    public static func logBoxTouchArea(of frame: UIFrame, in viewport: UIFrame) -> UIFrame {
+    /// The area a LogBox banner swallows: from a point, plus `inset`, above its top edge to the bottom of the viewport, across the full width.
+    public static func logBoxTouchArea(of frame: UIFrame, in viewport: UIFrame, inset: Double = 0) -> UIFrame {
+        let top = frame.y - logBoxTouchMargin - inset
         let bottom = max(viewport.y + viewport.height, frame.y + frame.height)
-        return UIFrame(x: viewport.x, y: frame.y, width: viewport.width, height: bottom - frame.y)
+        return UIFrame(x: viewport.x, y: top, width: viewport.width, height: bottom - top)
+    }
+
+    /// A LogBox toast's touch area, grown by `inset` (`logBoxTopInset`); nil for anything else.
+    public static func logBoxTouchArea(of node: UINode, in viewport: UIFrame, inset: Double = 0) -> UIFrame? {
+        guard let frame = node.frame, logBoxToast(node, viewport: viewport) != nil else { return nil }
+        return logBoxTouchArea(of: frame, in: viewport, inset: inset)
+    }
+
+    /// How far above its frame a toast takes touches: its unlisted wrapper starts up to a point higher (0.67 on a 3x iOS simulator).
+    static let logBoxTouchMargin = 1.0
+
+    /// How much higher an edge-to-edge Android app's LogBox list takes touches: the status bar it pads by, shown by an app element drawn under a system bar; else 0.
+    public static func logBoxTopInset(in tree: UITree) -> Double {
+        guard tree.platform == .android, let windows = tree.windows,
+              let app = (windows.first { $0.kind == "application" && $0.active } ?? windows.first { $0.kind == "application" })?.bounds,
+              app.width > 0, app.height > 0 else { return 0 }
+        let bars = windows.filter { $0.kind == "system" }.compactMap(\.bounds).filter { bar in
+            bar.y <= app.y + 1 && bar.height > 0 && bar.height < app.height / 4 && bar.width >= 0.8 * app.width
+        }
+        guard let bottom = bars.map({ $0.y + $0.height }).max(), bottom > app.y + 1,
+              let root = tree.roots.first(where: { $0.role == .application }) else { return 0 }
+        let underBar = root.children.flatMap { $0.flattened() }.contains { node in
+            guard let frame = node.frame, frame.width > 0, frame.height > 0 else { return false }
+            return frame.y < bottom - 1 || frame.y + frame.height >= app.y + app.height - 1
+        }
+        return underBar ? bottom - app.y : 0
+    }
+
+    /// A screen-spanning modal with nothing labelled, named or actionable, as React Native's LogBox can leave on Android.
+    static func isEmptyDialog(_ tree: UITree) -> Bool {
+        let app = tree.roots.filter { $0.role != .keyboard }
+        guard app.count == 1, let frame = app[0].frame, let screen = screenFrame(of: tree), CoverJudge.spans(frame, screen) else { return false }
+        return !app[0].flattened().contains { $0.normalizedLabel != nil || $0.normalizedID != nil || $0.isActionable }
+    }
+
+    /// The screen in points, else every window together, as a dialog's own root is all the viewport knows.
+    private static func screenFrame(of tree: UITree) -> UIFrame? {
+        if let screen = tree.screen, screen.width > 0, screen.height > 0 {
+            return UIFrame(x: 0, y: 0, width: screen.width, height: screen.height)
+        }
+        let bounds = (tree.windows ?? []).compactMap(\.bounds).filter { $0.width > 0 && $0.height > 0 }
+        return bounds.dropFirst().reduce(bounds.first) { $0?.union($1) }
     }
 
     /// The text a LogBox banner shows after its `!, ` or `n, ` prefix, with line breaks and runs of spaces as one space.

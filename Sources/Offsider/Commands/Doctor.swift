@@ -141,10 +141,15 @@ struct Doctor: AsyncParsableCommand {
         platform: DevicePlatform, key: String, lockID: String,
         store: DeviceLeaseStore = DeviceLeaseStore(),
         sessionLabel: String? = ProcessInfo.processInfo.environment[DeviceLeaseRules.sessionVariable],
+        processes: ProcessTable = .live,
+        selfPID: Int32 = getpid(),
+        now: Date = Date(),
         holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
     ) -> DoctorCheckResult {
         let verdict = DeviceLeaseRules.lease(
-            store.lease(platform: platform, key: key), sessionLabel: sessionLabel, holder: holder(DeviceLockKey(platform: platform, id: lockID))
+            store.lease(platform: platform, key: key, now: now), device: key, sessionLabel: sessionLabel,
+            ancestors: ProcessAncestry.ancestors(of: selfPID, in: processes), processes: processes,
+            holder: holder(DeviceLockKey(platform: platform, id: lockID))
         )
         return DoctorCheckResult(id: .deviceLease, verdict: verdict)
     }

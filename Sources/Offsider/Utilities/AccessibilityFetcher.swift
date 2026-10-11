@@ -82,7 +82,7 @@ struct AccessibilityFetcher {
         try await retryingTransientPointFallback(at: point) {
             let accessibilityElement = try await target.accessibilityElement(at: point.cgPoint)
             defer { accessibilityElement.close() }
-            return try serializedAccessibilityData(from: accessibilityElement)
+            return try serializedAccessibilityData(from: accessibilityElement, keys: TraitsRequest.process.keys)
         }
     }
 
@@ -113,34 +113,51 @@ struct AccessibilityFetcher {
     }
 
     private static func fetchFrontmostAccessibilityInfoJSONData(from target: FBSimulator) async throws -> Data {
-        var latestData: Data?
-        for attempt in 0..<5 {
+        let data = try await readingFrontmostTree { keys in
             // IDB's former `accessibilityElements(withNestedFormat:)` API also serialized the
             // frontmost application internally. This explicit handle API preserves that scope.
             let accessibilityElement = try await target.accessibilityElementForFrontmostApplication()
-            let data: Data
-            do {
-                data = try serializedAccessibilityData(from: accessibilityElement)
-                accessibilityElement.close()
-            } catch {
-                accessibilityElement.close()
-                throw error
-            }
+            defer { accessibilityElement.close() }
+            return try serializedAccessibilityData(from: accessibilityElement, keys: keys)
+        }
+        if warnsWhenEmpty, try !containsAccessibilityDescendant(in: data),
+           let listing = await DoctorProbes.runningAppListing(udid: target.udid), let app = SimLaunchctl.likelyForeground(listing) {
+            FileHandle.standardError.write(Data("Warning: \(DoctorRules.emptyTreeDetail(app)). \(DoctorRules.emptyTreeHint(app, udid: target.udid))\n".utf8))
+        }
+        return data
+    }
+
+    /// Reads until the tree has a descendant, `attempts` times at most; when all asked for traits and came back empty, one read without them decides, once per process.
+    static func readingFrontmostTree(
+        attempts: Int = 5,
+        traits request: TraitsRequest? = nil,
+        fetch: @MainActor (_ keys: Set<FBAXKeys>) async throws -> Data,
+        wait: @MainActor (Duration) async throws -> Void = { duration in try await Task.sleep(for: duration) }
+    ) async throws -> Data {
+        let traits = request ?? .process
+        var latestData: Data?
+        for attempt in 0..<attempts {
+            let keys = traits.keys
+            let data = try await fetch(keys)
             latestData = data
             if try containsAccessibilityDescendant(in: data) {
+                traits.readFull(with: keys)
                 return data
             }
-            if attempt < 4 {
-                try await Task.sleep(for: .milliseconds(50 * (1 << attempt)))
+            if attempt < attempts - 1 {
+                try await wait(.milliseconds(50 * (1 << attempt)))
             }
         }
         guard let latestData else {
             throw CLIError(errorDescription: "Accessibility hierarchy could not be serialized.", reason: .treeReadFailed)
         }
-        if warnsWhenEmpty, let listing = await DoctorProbes.runningAppListing(udid: target.udid), let app = SimLaunchctl.likelyForeground(listing) {
-            FileHandle.standardError.write(Data("Warning: \(DoctorRules.emptyTreeDetail(app)). \(DoctorRules.emptyTreeHint(app, udid: target.udid))\n".utf8))
-        }
-        return latestData
+        guard traits.triesWithoutTraits else { return latestData }
+        let started = ProcessInfo.processInfo.systemUptime
+        let plain = try await fetch(accessibilityOutputKeys.subtracting([.traits]))
+        let full = try containsAccessibilityDescendant(in: plain)
+        traits.triedWithoutTraits(full: full)
+        Timings.record("accessibility-without-traits", seconds: ProcessInfo.processInfo.systemUptime - started)
+        return full ? plain : latestData
     }
 
     static func retryingAfterTestManagerRecovery<T>(
@@ -275,14 +292,14 @@ struct AccessibilityFetcher {
         process.waitUntilExit()
     }
 
-    private static func serializedAccessibilityData(from accessibilityElement: FBAccessibilityElement) throws -> Data {
+    private static func serializedAccessibilityData(from accessibilityElement: FBAccessibilityElement, keys: Set<FBAXKeys>) throws -> Data {
         let response = try accessibilityElement.serialize(
             with: FBAccessibilityRequestOptions(
                 nestedFormat: true,
-                keys: accessibilityRequestKeys
+                keys: keys
             )
         )
-        return try serializeAccessibilityInfo(addingCompatibilityDefaults(to: response.elements))
+        return try serializeAccessibilityInfo(response.elements)
     }
 
     static func containsAccessibilityDescendant(in data: Data) throws -> Bool {
@@ -380,22 +397,6 @@ struct AccessibilityFetcher {
         return try JSONSerialization.data(withJSONObject: accessibilityInfo, options: [.prettyPrinted])
     }
 
-    static func addingCompatibilityDefaults(to accessibilityInfo: Any) -> Any {
-        if let elements = accessibilityInfo as? [Any] {
-            return elements.map(addingCompatibilityDefaults)
-        }
-        guard var element = accessibilityInfo as? [String: Any] else {
-            return accessibilityInfo
-        }
-        for (key, value) in element {
-            element[key] = addingCompatibilityDefaults(to: value)
-        }
-        if element["type"] != nil, element["traits"] == nil {
-            element["traits"] = [String]()
-        }
-        return element
-    }
-
     // This key set preserves the legacy public JSON schema; update it only with explicit schema coverage.
     static let accessibilityOutputKeys: Set<FBAXKeys> = [
         .label,
@@ -415,9 +416,29 @@ struct AccessibilityFetcher {
         .pid,
         .traits,
     ]
+}
 
-    // The former IDB serializer did not return traits. Xcode 27's private nested serializer also
-    // returns an empty hierarchy when `.traits` is requested, so retain the existing public value
-    // as an empty compatibility placeholder after requesting the safe subset on every Xcode version.
-    static let accessibilityRequestKeys = accessibilityOutputKeys.subtracting([.traits])
+/// Whether simulator reads ask for traits (which carry Selected): some Xcode versions empty the tree for them, so a full read without them turns them off.
+@MainActor
+final class TraitsRequest {
+    static let process = TraitsRequest()
+
+    private(set) var skipsTraits = false
+    /// Set by a full read with traits, which proves them safe, or by the one read without them.
+    private var settled = false
+
+    var keys: Set<FBAXKeys> {
+        skipsTraits ? AccessibilityFetcher.accessibilityOutputKeys.subtracting([.traits]) : AccessibilityFetcher.accessibilityOutputKeys
+    }
+
+    var triesWithoutTraits: Bool { !settled }
+
+    func readFull(with keys: Set<FBAXKeys>) {
+        if keys.contains(.traits) { settled = true }
+    }
+
+    func triedWithoutTraits(full: Bool) {
+        settled = true
+        skipsTraits = full
+    }
 }

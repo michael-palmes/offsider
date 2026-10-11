@@ -8,7 +8,7 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
   checkbox "Select All" id=choice-test-checkbox-mixed value="2" (16,287 99.3x44)
   group id=choice-test-size (16,351 213.7x36)
   radioButton "Small" id=choice-test-radio-small value="0" (18,353 63.7x32)
-  radioButton "Medium" id=choice-test-radio-medium value="1" (81.7,353 81.3x32) checked
+  radioButton "Medium" id=choice-test-radio-medium value="1" (81.7,353 81.3x32) checked selected
   radioButton "Large" id=choice-test-radio-large value="0" (163,353 64.7x32)
   switch "Sync Contacts" id=choice-test-switch value="0" (16,407 52x32)
   other "Country" id=choice-test-combobox (16,447 90x44)

@@ -1,22 +1,27 @@
 import Foundation
 
-/// Applies `--raw`, `--grep`, redaction and `--max-lines` to entries as they arrive, keeping the newest.
+/// Applies `--raw`, `--grep`, `--exclude`, redaction and `--max-lines` to entries as they arrive, keeping the newest.
 public struct LogCollector {
     public let maxLines: Int
     public let keepsANSI: Bool
-    /// Masks sensitive values in `message` and `raw` after `--grep` has matched the unredacted text.
+    /// Masks sensitive values in `message` and `raw` after `--grep` and `--exclude` have matched the unredacted text.
     public let redacts: Bool
     /// False for `--follow`, which prints entries as they arrive and never reads them back.
     public let retainsEntries: Bool
     private let grep: NSRegularExpression?
+    private let excludes: [NSRegularExpression]
     private var kept: [LogEntry] = []
-    /// Entries that passed `--grep`, kept or not.
+    /// Entries that passed `--grep` and `--exclude`, kept or not.
     public private(set) var matched = 0
-    /// Values redacted in every entry that passed `--grep`, kept or not.
+    /// Values redacted in every entry that passed `--grep` and `--exclude`, kept or not.
     public private(set) var redacted = 0
+    /// Entries that passed `--grep` but matched an `--exclude`.
+    public private(set) var excluded = 0
+    /// Entries that passed `--grep` and `--exclude`, kept or not, whose message the device's log cut short.
+    public private(set) var cut = 0
 
-    /// `maxLines` 0 keeps everything; `grep` is a case-insensitive regular expression matched against the stripped message.
-    public init(maxLines: Int, grep: String?, keepsANSI: Bool, redacts: Bool = false, retainsEntries: Bool = true) throws {
+    /// `maxLines` 0 keeps everything; `grep` and each `exclude` are case-insensitive regular expressions matched against the stripped message.
+    public init(maxLines: Int, grep: String?, exclude: [String] = [], keepsANSI: Bool, redacts: Bool = false, retainsEntries: Bool = true) throws {
         guard maxLines >= 0 else {
             throw LogOptionError("--max-lines must be 0 (no limit) or more; got \(maxLines).")
         }
@@ -24,33 +29,45 @@ public struct LogCollector {
         self.keepsANSI = keepsANSI
         self.redacts = redacts
         self.retainsEntries = retainsEntries
-        self.grep = try grep.map(Self.compile)
+        self.grep = try grep.map { try Self.compile($0, option: "--grep") }
+        self.excludes = try exclude.map { try Self.compile($0, option: "--exclude") }
     }
 
-    public static func compile(_ pattern: String) throws -> NSRegularExpression {
+    public static func compile(_ pattern: String, option: String = "--grep") throws -> NSRegularExpression {
         do {
             return try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         } catch {
-            throw LogOptionError("Invalid --grep pattern: \(pattern). Use an ICU regular expression, and escape characters such as ( [ . * with a backslash to match them literally.")
+            throw LogOptionError("Invalid \(option) pattern: \(pattern). Use an ICU regular expression, and escape characters such as ( [ . * with a backslash to match them literally.")
         }
     }
 
-    /// The entry as it should be shown, or nil when `--grep` rejects it.
+    /// The entry as it should be shown, or nil when `--grep` or `--exclude` rejects it.
     public func filter(_ entry: LogEntry) -> LogEntry? {
-        shown(entry)?.entry
+        guard case .shown(let shown, _) = verdict(entry) else { return nil }
+        return shown
     }
 
-    /// The shown entry and how many values were redacted in it: the most in its message or its raw line, which usually hold the same values.
-    func shown(_ entry: LogEntry) -> (entry: LogEntry, redacted: Int)? {
+    enum Verdict {
+        case unmatched
+        case excluded
+        /// The entry as shown and how many values were redacted in it: the most in its message or its raw line, which usually hold the same values.
+        case shown(LogEntry, redacted: Int)
+    }
+
+    func verdict(_ entry: LogEntry) -> Verdict {
         let stripped = LogText.stripANSI(entry.message)
-        if let grep, grep.firstMatch(in: stripped, range: NSRange(stripped.startIndex..., in: stripped)) == nil {
-            return nil
+        let range = NSRange(stripped.startIndex..., in: stripped)
+        if let grep, grep.firstMatch(in: stripped, range: range) == nil {
+            return .unmatched
+        }
+        if excludes.contains(where: { $0.firstMatch(in: stripped, range: range) != nil }) {
+            return .excluded
         }
         var shown = entry
         if !keepsANSI {
             shown.message = stripped
         }
-        guard redacts else { return (shown, 0) }
+        guard redacts else { return .shown(shown, redacted: 0) }
         let message = LogRedactor.redact(shown.message)
         shown.message = message.text
         var count = message.count
@@ -59,15 +76,25 @@ public struct LogCollector {
             shown.raw = redactedRaw.text
             count = max(count, redactedRaw.count)
         }
-        return (shown, count)
+        return .shown(shown, redacted: count)
     }
 
-    /// Filters and keeps the entry; returns it when it passed `--grep`.
+    /// Filters and keeps the entry; returns it when it passed `--grep` and `--exclude`.
     @discardableResult
     public mutating func add(_ entry: LogEntry) -> LogEntry? {
-        guard let (shown, count) = shown(entry) else { return nil }
+        let shown: LogEntry
+        switch verdict(entry) {
+        case .unmatched:
+            return nil
+        case .excluded:
+            excluded += 1
+            return nil
+        case .shown(let entry, let count):
+            shown = entry
+            redacted += count
+        }
         matched += 1
-        redacted += count
+        if shown.truncated { cut += 1 }
         guard retainsEntries else { return shown }
         kept.append(shown)
         if maxLines > 0, kept.count >= maxLines * 2 {

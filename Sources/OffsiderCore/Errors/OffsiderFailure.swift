@@ -22,8 +22,10 @@ public struct FailureCandidate: Equatable, Sendable {
     public let screen: String?
     /// True when a page is drawn over its screen; nil when no page covers anything.
     public let beneath: Bool?
+    /// How close a near miss came to the selector's text; nil for an element the selector matched.
+    public var closeness: SelectorText.Closeness?
 
-    public init(id: String?, label: String?, role: String, frame: UIFrame?, onScreen: Bool?, index: Int? = nil, window: String? = nil, screen: String? = nil, beneath: Bool? = nil) {
+    public init(id: String?, label: String?, role: String, frame: UIFrame?, onScreen: Bool?, index: Int? = nil, window: String? = nil, screen: String? = nil, beneath: Bool? = nil, closeness: SelectorText.Closeness? = nil) {
         self.id = id
         self.label = label
         self.role = role
@@ -33,6 +35,7 @@ public struct FailureCandidate: Equatable, Sendable {
         self.window = window
         self.screen = screen
         self.beneath = beneath
+        self.closeness = closeness
     }
 
     var jsonValue: OrderedJSON {
@@ -46,6 +49,7 @@ public struct FailureCandidate: Equatable, Sendable {
             ("window", .optional(window, OrderedJSON.string)),
             ("screen", .optional(screen, OrderedJSON.string)),
             ("beneath", .optional(beneath, OrderedJSON.bool)),
+            ("closeness", .optional(closeness?.rawValue, OrderedJSON.string)),
         ])
     }
 }

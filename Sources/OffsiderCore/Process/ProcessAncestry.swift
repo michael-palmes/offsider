@@ -14,6 +14,15 @@ public struct ProcessIdentity: Codable, Equatable, Hashable, Sendable {
         self.startTime = startTime
         self.name = name
     }
+
+    public var startDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(startTime) / 1_000_000)
+    }
+
+    /// The same process as `other`: pid and start time match, whatever name was recorded.
+    public func isSameProcess(as other: ProcessIdentity) -> Bool {
+        pid == other.pid && startTime == other.startTime
+    }
 }
 
 /// Looks up a live process and its parent; a test scripts its own table.

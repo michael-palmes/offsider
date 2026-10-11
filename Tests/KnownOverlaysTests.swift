@@ -32,12 +32,65 @@ struct KnownOverlaysTests {
         #expect(!KnownOverlays.isLogBoxBanner(nil))
     }
 
-    @Test("the touch area runs from the banner's top edge to the viewport's bottom across its full width")
+    @Test("the touch area runs from a point above the banner's top edge to the viewport's bottom across its full width")
     func touchArea() {
         let viewport = UIFrame(x: 0, y: 0, width: 412, height: 915)
         let area = KnownOverlays.logBoxTouchArea(of: UIFrame(x: 8, y: 810, width: 396, height: 64), in: viewport)
 
-        #expect(area == UIFrame(x: 0, y: 810, width: 412, height: 105))
+        #expect(area == UIFrame(x: 0, y: 809, width: 412, height: 106))
+    }
+
+    @Test("only a toast has a touch area; an ordinary banner has its frame alone")
+    func touchAreaOfNode() {
+        let viewport = UIFrame(x: 0, y: 0, width: 402, height: 874)
+        #expect(KnownOverlays.logBoxTouchArea(of: LogBoxTrees.toast(1), in: viewport) == UIFrame(x: 0, y: 805, width: 402, height: 69))
+        let banner = FakeUI.node(.other, label: "Connection lost", frame: FakeUI.frame(10, 806, 382, 48))
+        #expect(KnownOverlays.logBoxTouchArea(of: banner, in: viewport) == nil)
+    }
+}
+
+@Suite("LogBox windows")
+struct LogBoxWindowTests {
+    @Test("the inspector hides the app only in its own modal window, as on Android; on iOS it is drawn over the app's nodes")
+    func inspectorHidesApp() {
+        func hides(_ tree: UITree) -> Bool {
+            LogBoxBlock.hiding(tree, inspector: KnownOverlays.logBoxInspector(in: tree.roots, viewport: tree.viewport), subject: "--id x") != nil
+        }
+        #expect(hides(LogBoxTrees.androidInspector()))
+        #expect(!hides(FakeUI.tree(LogBoxTrees.inspector())))
+        #expect(!hides(LogBoxTrees.androidTree(LogBoxTrees.inspector(platform: .android), title: "Playground")))
+        #expect(!hides(LogBoxTrees.androidTree([], title: nil)))
+    }
+
+    @Test("an untitled modal from the app with nothing labelled, named or actionable is an empty dialog, in the summary and JSON")
+    func emptyDialog() throws {
+        let context = LogBoxTrees.androidEmptyDialog().context
+        #expect(context.window?.empty == true)
+        #expect(context.headerLines == ["# window: \(LogBoxTrees.package) (modal, empty)"])
+
+        let json = String(decoding: LogBoxTrees.androidEmptyDialog().jsonData(), as: UTF8.self)
+        #expect(json.contains(#""kind": "modal","#) && json.contains(#""empty": true"#))
+        let decoded = try UITree(jsonData: Data(json.utf8))
+        #expect(decoded.context.window?.empty == true)
+    }
+
+    @Test("a dialog with a label, an id or a control, a titled window, the inspector or a dialog short of the screen is not empty", arguments: [
+        LogBoxTrees.androidTree([FakeUI.node(.text, label: "Loading", frame: FakeUI.frame(100, 400, 200, 20), platform: .android)], title: nil),
+        LogBoxTrees.androidTree([FakeUI.node(.group, id: "sheet", frame: FakeUI.frame(0, 0, 402, 874), platform: .android)], title: nil),
+        LogBoxTrees.androidTree([FakeUI.node(.button, frame: FakeUI.frame(100, 400, 200, 44), platform: .android)], title: nil),
+        LogBoxTrees.androidTree([], title: "Settings"),
+        LogBoxTrees.androidInspector(),
+    ])
+    func notEmpty(tree: UITree) {
+        #expect(tree.context.window?.empty == false)
+    }
+
+    @Test("a small dialog that does not span the screen is not empty")
+    func smallDialog() {
+        var tree = LogBoxTrees.androidTree([], title: nil)
+        tree.roots[0].frame = FakeUI.frame(40, 300, 320, 200)
+        #expect(tree.context.window?.kind == .modal)
+        #expect(tree.context.window?.empty == false)
     }
 }
 

@@ -75,8 +75,8 @@ public enum IOSAccessibilityMapping {
         }
         let raw = text(dictionary["AXValue"])
         var value = role == .secureTextField ? SecureText.masked(raw) : raw
-        let traits = (dictionary["traits"] as? [Any] ?? []).compactMap(text)
-        let selected: Bool? = traits.contains("Selected") ? true : nil
+        // Traits that could not be read (absent or null) leave selection unknown.
+        let selected = (dictionary["traits"] as? [Any])?.compactMap(text).contains("Selected")
         var checked: Bool?
         if role == .other, let parsed = ReactNativeAXValue.parse(raw) {
             role = parsed.role

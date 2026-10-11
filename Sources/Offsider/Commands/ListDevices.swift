@@ -33,12 +33,22 @@ struct ListDevices: AsyncParsableCommand {
         }
     }
 
-    /// Fills `lease` from each row's stable key, so an emulator's lease follows its AVD across serials.
-    static func withLeases(_ devices: [DeviceSummary], store: DeviceLeaseStore = DeviceLeaseStore(), now: Date = Date()) -> [DeviceSummary] {
-        devices.map { device in
+    /// Fills `lease` from each row's stable key, so an emulator's lease follows its AVD across serials, and whether it is this session's.
+    static func withLeases(
+        _ devices: [DeviceSummary], store: DeviceLeaseStore = DeviceLeaseStore(), now: Date = Date(),
+        sessionLabel: String? = ProcessInfo.processInfo.environment[DeviceLeaseRules.sessionVariable],
+        processes: ProcessTable = .live, selfPID: Int32 = getpid()
+    ) -> [DeviceSummary] {
+        var ancestors: [ProcessIdentity]?
+        return devices.map { device in
             guard let key = StableDeviceKey.of(device) else { return device }
             var device = device
             device.lease = store.lease(platform: device.platform, key: key, now: now)
+            if let lease = device.lease {
+                let chain = ancestors ?? ProcessAncestry.ancestors(of: selfPID, in: processes)
+                ancestors = chain
+                device.leaseIsMine = DeviceLeaseRules.ownership(of: lease, sessionLabel: sessionLabel, ancestors: chain, processes: processes) == .thisSession
+            }
             return device
         }
     }

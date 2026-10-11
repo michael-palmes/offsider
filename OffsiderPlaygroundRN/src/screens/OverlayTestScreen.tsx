@@ -1,5 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
-import { LogBox, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Component, type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  LogBox,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  type TurboModule,
+  TurboModuleRegistry,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colours, fixtureLog, Readout, Screen, Target } from '../fixtures';
@@ -16,6 +26,53 @@ const flickerCycles = 6;
 const bannerLabel = 'Connection lost. Can’t reach the server.';
 // clearAllLogs exists at runtime but is missing from React Native's LogBox typings.
 const logBox = LogBox as typeof LogBox & { clearAllLogs: () => void };
+// The lowest toast's top above the bottom inset; LogBox takes touches a point higher (on Android, the top inset more too).
+const toastTopAboveInset = Platform.OS === 'ios' ? 52.33 : 73.1;
+const edgeRowHeight = 44;
+const edgeRowLift = Platform.OS === 'ios' ? 0.5 : 30;
+const edgeRowBottom = toastTopAboveInset + edgeRowLift - edgeRowHeight / 2;
+// The row above the band ends this far above its top.
+const bandClearance = 8;
+
+interface NativeLogBoxSpec extends TurboModule {
+  show: () => void;
+  hide: () => void;
+}
+
+// Debug builds on Android only: LogBox's own dialog with no log selected, as React Native can leave it after its last log.
+const nativeLogBox = Platform.OS === 'android' ? TurboModuleRegistry.get<NativeLogBoxSpec>('LogBox') : null;
+
+class RenderErrorBoundary extends Component<{ children: ReactNode; onReset: () => void }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (!this.state.failed) {
+      return this.props.children;
+    }
+    return (
+      <Target
+        id="overlay-test-fallback"
+        label="Render Error Caught"
+        onPress={() => {
+          fixtureLog('overlay-test', 'reset render error');
+          this.setState({ failed: false });
+          this.props.onReset();
+        }}
+      />
+    );
+  }
+}
+
+function RenderErrorSource({ armed }: { armed: boolean }) {
+  if (armed) {
+    throw new Error('OffsiderFixture render error');
+  }
+  return null;
+}
 
 export function OverlayTestScreen() {
   const insets = useSafeAreaInsets();
@@ -27,6 +84,11 @@ export function OverlayTestScreen() {
   const [flickerHidden, setFlickerHidden] = useState(false);
   const [ticks, setTicks] = useState(0);
   const [clockRunning, setClockRunning] = useState(false);
+  const [renderError, setRenderError] = useState(false);
+  const [edgeRow, setEdgeRow] = useState(false);
+  const [edgeTaps, setEdgeTaps] = useState(0);
+  const [aboveTaps, setAboveTaps] = useState(0);
+  const touchBand = 1 + (Platform.OS === 'android' ? insets.top : 0);
   const flickerTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const warnings = useRef(0);
   const errors = useRef(0);
@@ -82,6 +144,9 @@ export function OverlayTestScreen() {
   return (
     <Screen route="overlay-test">
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body}>
+        <RenderErrorBoundary onReset={() => setRenderError(false)}>
+          <RenderErrorSource armed={renderError} />
+        </RenderErrorBoundary>
         <Readout id="overlay-test-tab" label={`Overlay Tab: ${tab}`} value={tab} />
         <Readout id="overlay-test-swallowed" label={`Swallowed Taps: ${swallowed}`} value={String(swallowed)} />
         <Readout id="overlay-test-scrim" label={`Scrim: ${scrim ? 'Shown' : 'Hidden'}`} />
@@ -170,6 +235,34 @@ export function OverlayTestScreen() {
             }}
           />
         </View>
+        <View style={styles.row}>
+          <Target
+            id="overlay-test-render-error"
+            label="Render Error"
+            onPress={() => {
+              fixtureLog('overlay-test', 'render error');
+              setRenderError(true);
+            }}
+          />
+          <Target
+            id="overlay-test-toggle-edge-row"
+            label={edgeRow ? 'Hide Edge Row' : 'Show Edge Row'}
+            onPress={() => {
+              fixtureLog('overlay-test', edgeRow ? 'hide edge row' : 'show edge row');
+              setEdgeRow((current) => !current);
+            }}
+          />
+          {nativeLogBox && (
+            <Target
+              id="overlay-test-empty-logbox"
+              label="Empty LogBox"
+              onPress={() => {
+                fixtureLog('overlay-test', 'empty logbox dialog');
+                nativeLogBox.show();
+              }}
+            />
+          )}
+        </View>
       </ScrollView>
       <View style={styles.amountRow}>
         <Target id="overlay-test-amount" label="10, pcs" style={styles.amount} />
@@ -208,6 +301,28 @@ export function OverlayTestScreen() {
             {bannerLabel}
           </Text>
         </View>
+      )}
+      {edgeRow && (
+        <Target
+          id="overlay-test-edge-row"
+          label={`Edge Row: ${edgeTaps}`}
+          onPress={() => {
+            fixtureLog('overlay-test', 'edge row tapped');
+            setEdgeTaps((current) => current + 1);
+          }}
+          style={[styles.edgeRow, { bottom: insets.bottom + edgeRowBottom }]}
+        />
+      )}
+      {edgeRow && (
+        <Target
+          id="overlay-test-above-row"
+          label={`Above Row: ${aboveTaps}`}
+          onPress={() => {
+            fixtureLog('overlay-test', 'above row tapped');
+            setAboveTaps((current) => current + 1);
+          }}
+          style={[styles.edgeRow, { bottom: insets.bottom + toastTopAboveInset + touchBand + bandClearance }]}
+        />
       )}
       {scrim && (
         <View
@@ -264,4 +379,5 @@ const styles = StyleSheet.create({
   },
   bannerText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF', textAlign: 'center' },
   scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.35)' },
+  edgeRow: { position: 'absolute', left: 0, right: 0, height: edgeRowHeight, borderRadius: 0 },
 });

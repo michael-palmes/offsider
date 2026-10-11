@@ -8,7 +8,8 @@ struct Assert: AsyncParsableCommand {
         abstract: "Check once that an element is on screen (optionally with a value) or gone; exits 5 when it is not",
         discussion: """
         Reads the accessibility tree once. Only on-screen matches count unless --allow-offscreen; several matches still pass. \
-        To wait for the state instead, use offsider wait with the same selector.
+        To wait for the state instead, use offsider wait with the same selector. Exits 1 (logbox_inspector_open) when \
+        React Native's LogBox inspector hides the app on Android.
         """
     )
 
@@ -58,7 +59,7 @@ struct Assert: AsyncParsableCommand {
         try await route.backend.prepare()
         onPrepared()
         return try await WaitLoop.run(
-            .element(probe: selector.probe(for: query), gone: gone),
+            .element(probe: selector.probe(for: query), gone: gone, explain: SelectorQuery.explain(query)),
             timeout: 0,
             interval: 0,
             sources: Wait.sources(on: route, tree: tree)
@@ -70,9 +71,10 @@ struct Assert: AsyncParsableCommand {
         "✓ \(subject) is \(gone ? "gone" : selector.presentState)"
     }
 
-    /// `✗ Assertion failed: --id 'count' has value '2', expected '3'.`
+    /// `✗ Assertion failed: --id 'count' has value '2', expected '3'.`, or for a miss `... was not found (nearest: ...).`
     func failureLine(_ outcome: WaitOutcome) -> String {
-        "✗ Assertion failed: \(subject) \(Self.predicate(outcome.reason))."
+        let nearest = outcome.nearMiss.map { " (nearest: \($0.summary))" } ?? ""
+        return "✗ Assertion failed: \(subject) \(Self.predicate(outcome.reason))\(nearest)."
     }
 
     private var subject: String {
@@ -81,7 +83,7 @@ struct Assert: AsyncParsableCommand {
 
     /// Turns a loop reason such as "not found" into the end of a sentence: "was not found".
     static func predicate(_ reason: String) -> String {
-        if reason == "not found" { return "was not found" }
+        if reason == "not found" || reason.hasPrefix("not found;") { return "was \(reason)" }
         if reason.hasPrefix("off screen") || reason.hasPrefix("still") { return "is \(reason)" }
         return reason
     }

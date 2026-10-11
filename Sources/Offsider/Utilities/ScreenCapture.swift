@@ -134,14 +134,13 @@ enum ScreenCapture {
             if plan.secure {
                 targets.frames[.secure] = tree.secureFrames
             }
-            for (kind, values) in [(MaskKind.id, plan.ids), (.label, plan.labels)] {
-                for value in values {
-                    let query: AccessibilityQuery = kind == .id ? .id(value) : .label(value)
-                    let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches
-                    targets.frames[kind, default: []] += matches.map(\.frame)
-                    if matches.isEmpty {
-                        targets.unmatched.append("--mask-\(kind.rawValue) \(value)")
-                    }
+            let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
+                + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
+            for (kind, query) in selectors {
+                let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches
+                targets.frames[kind, default: []] += matches.map(\.frame)
+                if matches.isEmpty {
+                    targets.unmatched.append("--mask-\(query.kind.dropFirst(2)) \(query.rawValue)")
                 }
             }
         }
@@ -175,6 +174,7 @@ enum ScreenCapture {
         case .secure: "A secure field"
         case .id: "An element --mask-id matched"
         case .label: "An element --mask-label matched"
+        case .labelContains: "An element --mask-label-contains matched"
         case .text: "An element --mask-text matched"
         case .emails: "An email address"
         case .region: "A --mask-region"

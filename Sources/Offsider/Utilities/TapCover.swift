@@ -30,16 +30,20 @@ struct TapCover {
         let stack = roots.count == tree.roots.count ? resolution.stack ?? ScreenStack.build(roots: roots, viewport: viewport) : ScreenStack.build(roots: roots, viewport: viewport)
         let matched = resolution.matched ?? target
         let beneath = stack.isBeneath(target, in: roots) || stack.isBeneath(matched, in: roots)
+        let point = UIPoint(x: resolution.point.x, y: resolution.point.y)
+        let logBoxInset = KnownOverlays.logBoxTopInset(in: tree)
+        if logBoxInset > 0 {
+            candidates += Self.logBoxToasts(reaching: target, at: point, inset: logBoxInset, roots: roots, viewport: viewport, stack: stack, besides: candidates)
+        }
         guard android || !candidates.isEmpty || beneath else {
             return
         }
-        let point = UIPoint(x: resolution.point.x, y: resolution.point.y)
         var hit: UINode?
         if !android, let hitTester = backend as? any PointHitTesting {
             hit = try? await hitTester.hitTest(at: point, on: device)
         }
         guard let verdict = CoverJudge.judge(
-            target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack, hit: hit
+            target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack, hit: hit, logBoxInset: logBoxInset
         ) else {
             return
         }
@@ -67,6 +71,17 @@ struct TapCover {
         print("Warning: \(message) Pass --fail-if-covered to stop instead.", to: &standardError)
     }
 
+    /// Toasts whose touch area, grown by `inset`, holds the point or reaches the target, beyond those the resolver found; never one holding the target or beneath a page.
+    static func logBoxToasts(reaching target: UINode, at point: UIPoint, inset: Double, roots: [UINode], viewport: UIFrame, stack: ScreenStack, besides found: [UINode]) -> [UINode] {
+        roots.flatMap { $0.flattened() }.filter { node in
+            guard let area = KnownOverlays.logBoxTouchArea(of: node, in: viewport, inset: inset),
+                  area.contains(point) || CoverJudge.reaches(area, target.frame),
+                  !found.contains(where: { $0.isSameElement(as: node) }),
+                  !node.flattened().contains(where: { $0.isSameElement(as: target) }) else { return false }
+            return !stack.isBeneath(node, in: roots)
+        }
+    }
+
     /// `button 'Buy' (197, 793) 189x45 on stack-test-full-page-1`.
     static func describe(_ verdict: CoverVerdict) -> String {
         var parts = [verdict.cover.role.rawValue]
@@ -87,6 +102,7 @@ struct TapCover {
         case .hitTest: return "a hit-test at the point found it"
         case .drawingOrder: return "Android draws it on top there"
         case .treeOrder: return "by tree order"
+        case .logBoxTouchArea: return "LogBox's toast takes touches beyond its frame there"
         }
     }
 

@@ -36,6 +36,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case appNotInstalled = "app_not_installed"
     case logStreamFailed = "log_stream_failed"
     case videoFailed = "video_failed"
+    case videoUnmasked = "video_unmasked"
     case helperFailed = "helper_failed"
     case helperTimedOut = "helper_timed_out"
     case adbCommandFailed = "adb_command_failed"
@@ -63,6 +64,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case textNotAccepted = "text_not_accepted"
     case metroNotRunning = "metro_not_running"
     case rnLoadFailed = "rn_load_failed"
+    case logBoxInspectorOpen = "logbox_inspector_open"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"

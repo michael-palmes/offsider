@@ -20,8 +20,8 @@ struct UITreeRendererTests {
                         children: [
                             UINode(
                                 role: .button, id: "size-s", label: "S", value: "Small",
-                                frame: UIFrame(x: 16, y: 769, width: 85, height: 36), enabled: true,
-                                native: .ios(IOSNativeAttributes(type: "Button", customActions: ["Size Guide"], axFrame: "{{16, 769}, {85, 36}}"))
+                                frame: UIFrame(x: 16, y: 640, width: 72, height: 40), enabled: true,
+                                native: .ios(IOSNativeAttributes(type: "Button", customActions: ["Size Guide"], axFrame: "{{16, 640}, {72, 40}}"))
                             ),
                             UINode(
                                 role: .text, label: "Far below",
@@ -121,7 +121,7 @@ struct UITreeRendererTests {
         # ios IOS-UDID 402x874 @3x portrait 0°
         application "Playground" (0,0 402x874)
           scrollView (0,0 402x2000)
-            button "S" id=size-s value="Small" (16,769 85x36)
+            button "S" id=size-s value="Small" (16,640 72x40)
             text "Far below" (16,1500 200x20)
 
         """)
@@ -175,7 +175,7 @@ struct UITreeRendererTests {
         #expect(output == """
         # ios IOS-UDID 402x874 @3x portrait 0°
         application "Playground" (0,0 402x874)
-          button "S" id=size-s value="Small" (16,769 85x36)
+          button "S" id=size-s value="Small" (16,640 72x40)
           [off-screen below] 1 item: "Far below"
 
         """)

@@ -1,5 +1,6 @@
-import Testing
+import AVFoundation
 import Foundation
+import Testing
 
 @Suite("Record Video Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct RecordVideoTests {
@@ -68,6 +69,34 @@ struct RecordVideoTests {
         #expect(errorOutput.contains("FPS must be between 1 and 30"))
     }
 
+    @Test("--mask-region paints the rectangle black on the recorded frames and reports it")
+    func recordVideoMaskRegion() async throws {
+        let udid = try TestHelpers.requireSimulatorUDID()
+        let shot = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-scale-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: shot) }
+        let report = try await TestHelpers.runOffsiderCommandSeparated("screenshot --json --output '\(shot.path)'", simulatorUDID: udid)
+        let pixelsPerPoint = try #require((try JSONSerialization.jsonObject(with: Data(report.stdout.utf8)) as? [String: Any])?["pixelsPerPoint"] as? Double)
+
+        let clip = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-region-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: clip) }
+        let result = try await invokeRecordVideo(duration: 2.5, outputPath: clip.path, extraArguments: ["--mask-region", "20,120,200,150", "--json"])
+
+        #expect(result.exitCode == 0, "\(result.stderr)")
+        let summary = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        #expect(summary["heldFrames"] as? Int == 0)
+        #expect((summary["maskedBy"] as? [String: Int])?["region"] == 1)
+        #expect(summary["unmasked"] as? Bool == false)
+
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: result.outputURL))
+        for seconds in [0.2, 1.5] {
+            let frame = try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
+            for (x, y) in [(25.0, 125.0), (120.0, 195.0), (215.0, 265.0)] {
+                let pixel = ScreenshotMaskTests.pixel(frame, Int(x * pixelsPerPoint), Int(y * pixelsPerPoint))
+                #expect(pixel.allSatisfy { $0 < 24 }, "point \(x),\(y) at \(seconds) s is \(pixel)")
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private struct RecordingResult {
@@ -83,7 +112,8 @@ struct RecordVideoTests {
         quality: Int = 80,
         scale: Double = 1.0,
         duration: TimeInterval = 2.0,
-        outputPath: String? = nil
+        outputPath: String? = nil,
+        extraArguments: [String] = []
     ) async throws -> RecordingResult {
         let udid = try TestHelpers.requireSimulatorUDID()
         let offsiderPath = try TestHelpers.getOffsiderPath()
@@ -101,7 +131,8 @@ struct RecordVideoTests {
             "--quality", "\(quality)",
             "--scale", "\(scale)",
             "--output", configuredOutputPath
-        ]
+        ] + extraArguments
+        process.environment = TestHelpers.childEnvironment()
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -122,7 +153,10 @@ struct RecordVideoTests {
         let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
 
-        let resolvedOutputPath = String(data: stdoutData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let printed = String(data: stdoutData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let resolvedOutputPath = extraArguments.contains("--json")
+            ? ((try? JSONSerialization.jsonObject(with: Data(printed.utf8))) as? [String: Any])?["path"] as? String ?? ""
+            : printed
         let resolvedURL = resolvedOutputPath.isEmpty ? defaultOutputURL : URL(fileURLWithPath: resolvedOutputPath)
 
         var fileSize = 0

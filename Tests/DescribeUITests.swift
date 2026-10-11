@@ -100,6 +100,22 @@ struct DescribeUITests {
         #expect(settingsTab?.frame != nil)
     }
 
+    @Test("Describe-ui marks the selected tab selected and the others not, and follows a tap")
+    func describeUIReportsSelectedTab() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "tab-view-test")
+
+        let before = try await TestHelpers.getUIState()
+        #expect(UIStateParser.findElementByLabel(in: before, label: "Home")?.state.selected == true)
+        #expect(UIStateParser.findElementByLabel(in: before, label: "Settings")?.state.selected == false)
+
+        try await TestHelpers.runOffsiderCommand("tap --label Settings --element-type radioButton", simulatorUDID: try TestHelpers.requireSimulatorUDID())
+        _ = try await TestHelpers.waitForLabel(containing: "Current Tab:", timeout: 3) { $0 == "Current Tab: Settings" }
+
+        let after = try await TestHelpers.getUIState()
+        #expect(UIStateParser.findElementByLabel(in: after, label: "Home")?.state.selected == false)
+        #expect(UIStateParser.findElementByLabel(in: after, label: "Settings")?.state.selected == true)
+    }
+
     @Test("Describe-ui exposes navigation searchable field")
     func describeUIExposesNavigationSearchableField() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "searchable-test")

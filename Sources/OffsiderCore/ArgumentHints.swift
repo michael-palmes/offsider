@@ -20,17 +20,27 @@ public enum ArgumentHints {
 
     /// Per command: an option it lacks, and what to use instead.
     static let misnamed: [String: [String: String]] = [
-        "wait": [
+        "wait": partialLabel("wait").merging([
             "--wait-timeout": "wait takes --timeout <seconds>, not --wait-timeout.",
             "--verify-timeout": "wait takes --timeout <seconds>, not --verify-timeout.",
-        ],
-        "assert": [
+        ]) { $1 },
+        "assert": partialLabel("assert").merging([
             "--timeout": "assert checks once and has no --timeout. To wait for the condition, run offsider wait with the same selector and --timeout <seconds>.",
-        ],
-        "tap": [
+        ]) { $1 },
+        "tap": partialLabel("tap").merging([
             "--timeout": "tap has no --timeout: --wait-timeout <seconds> waits for the element to appear, and --verify-timeout <seconds> (with --verify) waits for the tap's effect.",
+        ]) { $1 },
+        "slider": partialLabel("slider"),
+        "describe-ui": [
+            "--json": "describe-ui prints JSON by default and has no --json; --format chooses json, ndjson or text.",
         ],
     ]
+
+    /// `--label-prefix` and `--label-includes`, guesses at `--label-contains`.
+    private static func partialLabel(_ command: String) -> [String: String] {
+        let message = "\(command) takes --label-contains <text> for part of a label, in the same case."
+        return ["--label-prefix": message, "--label-includes": message]
+    }
 
     /// The hint for `arguments` (without the executable path), or nil to leave them to the parser.
     public static func hint(for arguments: [String]) -> Hint? {

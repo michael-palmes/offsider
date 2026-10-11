@@ -22,6 +22,6 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
   button "Open Flags" id=stack-test-full-next (16,738.7 370x44)
   button "Open Full Page" id=stack-test-open-full (16,738.7 370x44)
   group id=stack-test-tab-bar (0,790.7 402x83.3)
-  button "Home Tab" id=stack-test-tab-home (0,791 201x49)
+  button "Home Tab" id=stack-test-tab-home (0,791 201x49) selected
   button "Buy" id=stack-test-full-buy (197,793 189x45)
   button "Products Tab" id=stack-test-tab-products (201,791 201x49)

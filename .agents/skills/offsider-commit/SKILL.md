@@ -37,6 +37,7 @@ Reviews all uncommitted changes, validates them, groups them into logical conven
    - Rename leaks the gate cannot see: `axe` in user-facing strings built at runtime, `AXE_` variables read via string concatenation, `com.cameroncooke` identifiers.
    - Hard-coded simulator UDIDs: `grep -nE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}'` on added lines. Use `SIMULATOR_UDID` or `list-devices` output instead.
    - Private details the gate catches only when they are on its deny-list: device ids (serials, UDIDs, CoreDevice ids, panel ids), team IDs, simulator and AVD names from the maintainer's machine, personal device models, local paths, and anything from the private apps the maintainer tests on (names, bundle ids, screens, labels, testIDs, copy, data). The repo is public, so a leak means rewriting history. Use placeholders (`<udid>`, `<serial>`, `/Users/me`) and the playground's own ids instead.
+   - Work from a private-app issue: grep added lines and messages for that issue's own words, numbers, SDK log formats and device names, since the leak gate knows only its deny-list. Replace each hit with made-up or playground values.
    - `/Applications/Xcode` paths. Resolve via `xcode-select -p` or `DEVELOPER_DIR`.
    - Debug output: `debugPrint(`, `dump(`, stray `print("DEBUG`, `set -x`. Real CLI output goes through the command's output path.
    - Network or telemetry: new `URLSession`, `NWConnection` or `http` URLs in `Sources/`. Offsider stays local-only; flag it.

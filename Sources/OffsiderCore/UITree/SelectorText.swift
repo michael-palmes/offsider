@@ -22,14 +22,34 @@ public enum SelectorText {
         return String(text.prefix(limit - 1)) + "…"
     }
 
-    /// Up to `limit` candidates close to `query`, best first: a case difference, then containment, then a small edit distance.
-    public static func suggestions(for query: String, among candidates: [String], limit: Int = 3) -> [String] {
+    /// How a near miss relates to the text asked for, ignoring case: `prefix` and `contains` hold all of it.
+    public enum Closeness: String, Sendable {
+        case `case`
+        case prefix
+        case contains
+        case similar
+    }
+
+    /// A candidate close to the text asked for, and how close.
+    public struct NearMatch: Equatable, Sendable {
+        public let text: String
+        public let closeness: Closeness
+
+        public init(text: String, closeness: Closeness) {
+            self.text = text
+            self.closeness = closeness
+        }
+    }
+
+    /// Up to `limit` candidates close to `query`, best first: a case difference, then a prefix, containment, a candidate the query holds, then a small edit distance.
+    public static func nearMatches(for query: String, among candidates: [String], limit: Int = 3) -> [NearMatch] {
         let target = folded(query).lowercased()
         guard !target.isEmpty, limit > 0 else {
             return []
         }
         let maxDistance = max(1, min(3, target.count / 4))
-        var tiers: [[String]] = [[], [], []]
+        let closeness: [Closeness] = [.case, .prefix, .contains, .similar, .similar]
+        var tiers: [[String]] = Array(repeating: [], count: closeness.count)
         var seen = Set<String>()
 
         for candidate in candidates where seen.insert(candidate).inserted {
@@ -37,13 +57,33 @@ public enum SelectorText {
             guard !other.isEmpty else { continue }
             if other == target {
                 tiers[0].append(candidate)
-            } else if contains(other, target) {
+            } else if target.count >= 3, other.hasPrefix(target) {
                 tiers[1].append(candidate)
-            } else if editDistance(target, other, limit: maxDistance) != nil {
+            } else if target.count >= 3, other.contains(target) {
                 tiers[2].append(candidate)
+            } else if other.count >= 3, target.contains(other) {
+                tiers[3].append(candidate)
+            } else if editDistance(target, other, limit: maxDistance) != nil {
+                tiers[4].append(candidate)
             }
         }
-        return Array(tiers.joined().prefix(limit))
+        let ranked = tiers.enumerated().flatMap { tier, texts in texts.map { NearMatch(text: $0, closeness: closeness[tier]) } }
+        return Array(ranked.prefix(limit))
+    }
+
+    /// True when the folded `text` holds the folded `query`, in the same case; an empty query holds nothing.
+    public static func folded(_ text: String, contains query: String) -> Bool {
+        let wanted = folded(query)
+        return !wanted.isEmpty && folded(text).contains(wanted)
+    }
+
+    /// The text `--label-contains` should name to match `label`: `query` when the label holds it, else the label's own spelling of it in another case.
+    public static func containedText(of query: String, in label: String) -> String? {
+        let wanted = folded(query)
+        guard !wanted.isEmpty else { return nil }
+        let haystack = folded(label)
+        if haystack.contains(wanted) { return wanted }
+        return haystack.range(of: wanted, options: [.caseInsensitive]).map { String(haystack[$0]) }
     }
 
     private static func mapped(_ text: String) -> String {
@@ -71,12 +111,6 @@ public enum SelectorText {
         default:
             return false
         }
-    }
-
-    /// Either side contains the other, when the shorter one has at least 3 characters.
-    private static func contains(_ lhs: String, _ rhs: String) -> Bool {
-        let (shorter, longer) = lhs.count <= rhs.count ? (lhs, rhs) : (rhs, lhs)
-        return shorter.count >= 3 && longer.contains(shorter)
     }
 
     /// The Levenshtein distance when it is at most `limit`, else nil.

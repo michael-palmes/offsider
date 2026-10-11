@@ -31,7 +31,7 @@ extension UITreeContext {
     init(jsonObject object: [String: Any]) {
         let window = (object["window"] as? [String: Any]).flatMap { window -> Window? in
             guard let kind = (window["kind"] as? String).flatMap(Window.Kind.init(rawValue:)) else { return nil }
-            return Window(title: window["title"] as? String, kind: kind, package: window["package"] as? String)
+            return Window(title: window["title"] as? String, kind: kind, package: window["package"] as? String, empty: window["empty"] as? Bool ?? false)
         }
         let logBox = (object["logbox"] as? [String: Any]).map { logBox in
             LogBox(logs: (logBox["logs"] as? NSNumber)?.intValue ?? 0, inspector: logBox["inspector"] as? Bool ?? false)

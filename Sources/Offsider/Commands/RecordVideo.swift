@@ -6,7 +6,17 @@ import OffsiderCore
 struct RecordVideo: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "record-video",
-        abstract: "Record the device display to an MP4 file using H.264 encoding"
+        abstract: "Record the device display to an MP4 file using H.264 encoding",
+        discussion: """
+        Each frame is a screenshot, upright as `screenshot` takes it. --mask-region paints a rectangle in points \
+        black on every frame; Offsider reads the screen's orientation after every capture, and a frame that may have \
+        been taken in another orientation or size than the first is replaced by the last masked frame (heldFrames). \
+        Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, --mask-label, \
+        --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and write nothing, as does \
+        a recording while the evidence run has masks or OFFSIDER_MASK_SECURE=1 is set; --unmasked records anyway, \
+        with a warning. For masked evidence use \
+        `screenshot` or screenshot steps in a batch.
+        """
     )
 
     @OptionGroup
@@ -24,6 +34,12 @@ struct RecordVideo: AsyncParsableCommand {
     @Option(help: "Output MP4 file path. Defaults to offsider-video-<timestamp>.mp4 in the current directory.")
     var output: String?
 
+    @OptionGroup
+    var masks: VideoMaskOptions
+
+    @Flag(name: .customLong("json"), help: "When the recording ends, print one JSON object to stdout instead of the path.")
+    var json = false
+
     func validate() throws {
         guard fps >= 1 && fps <= 30 else {
             throw ValidationError("FPS must be between 1 and 30")
@@ -38,7 +54,10 @@ struct RecordVideo: AsyncParsableCommand {
         }
     }
 
+    @MainActor
     func run() async throws {
+        try masks.requireMaskable(command: "record-video")
+        let regions = try masks.regions()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
@@ -57,45 +76,43 @@ struct RecordVideo: AsyncParsableCommand {
         }
         defer { signalObserver.invalidate() }
 
+        let source = VideoFrameSource(backend: backend, device: booted.id, scale: scale, regions: regions)
+        let written: (frames: Int, held: Int)
         do {
-            try await recordVideo(
-                backend: backend,
-                device: booted.id,
+            written = try await recordVideo(
+                from: source,
                 outputURL: outputURL,
                 fps: fps,
                 quality: quality,
                 scale: scale,
                 cancellationFlag: cancellationFlag
             )
-            FileHandle.standardError.write(Data("Recording saved to \(outputURL.path)\n".utf8))
-            print(outputURL.path)
+        } catch let failure as CLIError where failure.reason == .maskUnproven {
+            throw failure
         } catch {
             throw CLIError(errorDescription: "Failed to record video: \(error.localizedDescription)", reason: .videoFailed)
         }
+        let held = written.held > 0 ? ", \(written.held) of \(written.frames) frames held" : ""
+        FileHandle.standardError.write(Data("Recording saved to \(outputURL.path)\(held)\n".utf8))
+        if json {
+            print(VideoRecordingReport(path: outputURL.path, frames: written.frames, heldFrames: written.held, regions: source.painted, unmasked: masks.unmasked).jsonLine())
+        } else {
+            print(outputURL.path)
+        }
     }
 
+    @MainActor
     private func recordVideo(
-        backend: any DeviceBackend,
-        device: DeviceID,
+        from source: VideoFrameSource,
         outputURL: URL,
         fps: Int,
         quality: Int,
         scale: Double,
         cancellationFlag: CancellationFlag
-    ) async throws {
-        let capturer = backend as? any FrameCapturing
-        let initialImage: CGImage
-        if let capturer {
-            initialImage = try await capturer.captureFrame(for: device, scale: scale)
-        } else {
-            let initialFrameData = try await backend.screenshotPNG(for: device)
-            guard let image = VideoFrameUtilities.makeCGImage(from: initialFrameData) else {
-                throw CLIError(errorDescription: "Failed to decode simulator screenshot", reason: .screenshotFailed)
-            }
-            initialImage = image
-        }
+    ) async throws -> (frames: Int, held: Int) {
+        let initialImage = try await source.start()
 
-        let dimensions = VideoFrameUtilities.computeDimensions(for: initialImage, scale: capturer == nil ? scale : 1.0)
+        let dimensions = VideoFrameUtilities.computeDimensions(for: initialImage, scale: source.scalesItself ? 1.0 : scale)
         let recorder = try H264StreamRecorder(
             outputURL: outputURL,
             width: dimensions.width,
@@ -107,6 +124,7 @@ struct RecordVideo: AsyncParsableCommand {
 
         let frameInterval = 1.0 / Double(fps)
         var frameCount: Int64 = 1
+        var heldCount = 0
         var lastLogFrame: Int64 = 0
         let startTime = Date()
         var lastPresentationTime = CMTime.zero
@@ -125,16 +143,7 @@ struct RecordVideo: AsyncParsableCommand {
             let frameStart = Date()
 
             do {
-                let decoded: CGImage?
-                if let capturer {
-                    decoded = try await capturer.captureFrame(for: device, scale: scale)
-                } else {
-                    decoded = VideoFrameUtilities.makeCGImage(from: try await backend.screenshotPNG(for: device))
-                }
-                guard let cgImage = decoded else {
-                    FileHandle.standardError.write(Data("Unable to decode screenshot frame\n".utf8))
-                    continue
-                }
+                let frame = try await source.next()
 
                 let now = Date()
                 var presentationTime = CMTime(seconds: now.timeIntervalSince(writerStartTime), preferredTimescale: 600)
@@ -142,9 +151,10 @@ struct RecordVideo: AsyncParsableCommand {
                     presentationTime = CMTimeAdd(lastPresentationTime, CMTime(value: 1, timescale: 600))
                 }
 
-                try recorder.append(image: cgImage, presentationTime: presentationTime)
+                try recorder.append(image: frame.image, presentationTime: presentationTime)
                 lastPresentationTime = presentationTime
                 frameCount += 1
+                if frame.held { heldCount += 1 }
 
                 if frameCount - lastLogFrame >= Int64(fps) {
                     lastLogFrame = frameCount
@@ -164,6 +174,7 @@ struct RecordVideo: AsyncParsableCommand {
         }
 
         try await recorder.finish()
+        return (Int(frameCount), heldCount)
     }
 
     private func prepareOutputURL() throws -> URL {

@@ -122,8 +122,10 @@ public struct LogEntry: Equatable, Sendable {
     public var message: String
     /// The source line as the device wrote it: a logcat line, or the iOS event message with its colour codes.
     public var raw: String?
+    /// True when the device's log kept only the start of the message: iOS ends it `<…>` past about 1 KB.
+    public var truncated: Bool
 
-    public init(timestamp: Date? = nil, level: String? = nil, process: String? = nil, pid: Int? = nil, tag: String? = nil, message: String, raw: String? = nil) {
+    public init(timestamp: Date? = nil, level: String? = nil, process: String? = nil, pid: Int? = nil, tag: String? = nil, message: String, raw: String? = nil, truncated: Bool = false) {
         self.timestamp = timestamp
         self.level = level
         self.process = process
@@ -131,6 +133,7 @@ public struct LogEntry: Equatable, Sendable {
         self.tag = tag
         self.message = message
         self.raw = raw
+        self.truncated = truncated
     }
 }
 

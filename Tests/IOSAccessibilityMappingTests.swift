@@ -33,7 +33,7 @@ struct IOSAccessibilityMappingTests {
         #expect(node.value == nil)
         #expect(node.frame == UIFrame(x: 16, y: 62, width: 44, height: 44))
         #expect(node.enabled == true)
-        #expect(node.state == UIState())
+        #expect(node.state == UIState(selected: false))
         #expect(node.native == .ios(IOSNativeAttributes(
             type: "Button", role: "AXButton", roleDescription: "back button", customActions: ["Delete"],
             contentRequired: false, pid: 4242, axFrame: "{{16, 62}, {44, 44}}"
@@ -165,8 +165,10 @@ struct IOSAccessibilityMappingTests {
 
 @Suite("iOS React Native Role Mapping Tests")
 struct IOSReactNativeRoleMappingTests {
-    private func node(_ type: String, value: String?, traits: [String] = []) throws -> UINode {
-        var element: [String: Any] = ["type": type, "traits": traits]
+    /// `traits` nil leaves the key out, as when they were not read; `NSNull` stands for a read that failed.
+    private func node(_ type: String, value: String?, traits: Any? = [String]()) throws -> UINode {
+        var element: [String: Any] = ["type": type]
+        element["traits"] = traits
         element["AXValue"] = value
         return IOSAccessibilityMapping.node(from: element)
     }
@@ -204,7 +206,7 @@ struct IOSReactNativeRoleMappingTests {
         #expect(box.state.checked == nil)
     }
 
-    @Test("a bare radio button is checked when it has the Selected trait, and unknown when it has not")
+    @Test("a bare radio button is checked with the Selected trait, unchecked without it, and unknown when its traits were not read")
     func bareRadioTakesTrait() throws {
         let on = try node("Other", value: "radio button", traits: ["Selected"])
         #expect(on.role == .radioButton)
@@ -213,9 +215,14 @@ struct IOSReactNativeRoleMappingTests {
         #expect(on.value == "1")
 
         let off = try node("Other", value: "radio button")
-        #expect(off.state.checked == nil)
-        #expect(off.state.selected == nil)
-        #expect(off.value == nil)
+        #expect(off.state.checked == false)
+        #expect(off.state.selected == false)
+        #expect(off.value == "0")
+
+        let unread = try node("Other", value: "radio button", traits: nil)
+        #expect(unread.state.checked == nil)
+        #expect(unread.state.selected == nil)
+        #expect(unread.value == nil)
     }
 
     @Test("a state word outranks the Selected trait")
@@ -225,10 +232,12 @@ struct IOSReactNativeRoleMappingTests {
         #expect(radio.state.selected == true)
     }
 
-    @Test("the Selected trait sets selected on any iOS node, and its absence leaves selected nil")
+    @Test("read traits make selected true or false on any iOS node; traits not read or unreadable leave it nil")
     func selectedTrait() throws {
         #expect(try node("Button", value: nil, traits: ["Button", "Selected"]).state.selected == true)
-        #expect(try node("Button", value: nil, traits: ["Button"]).state.selected == nil)
+        #expect(try node("Button", value: nil, traits: ["Button"]).state.selected == false)
+        #expect(try node("Button", value: nil, traits: nil).state.selected == nil)
+        #expect(try node("Button", value: nil, traits: NSNull()).state.selected == nil)
     }
 
     @Test("a native switch still reads its own 1 or 0")

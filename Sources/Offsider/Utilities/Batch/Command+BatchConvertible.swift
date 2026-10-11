@@ -73,14 +73,7 @@ extension Tap: BatchConvertible {
             resolvedTree = nil
             await Self.warnIfOffScreen(x: pointX, y: pointY, backend: context.backend, device: context.device)
         } else {
-            let query: AccessibilityQuery
-            if let elementID {
-                query = .id(elementID)
-            } else if let elementLabel {
-                query = .label(elementLabel)
-            } else if let elementValue {
-                query = .value(elementValue)
-            } else {
+            guard let query else {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.", reason: .internalError)
             }
 

@@ -120,7 +120,7 @@ struct LogsCommandTests {
         ]
         let line = LogReport(platform: .ios, device: "UDID", entries: entries, truncated: 2).jsonLine()
 
-        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\""},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null}],"truncated":2,"redacted":0}"#)
+        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\"","truncated":false},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null,"truncated":false}],"truncated":2,"redacted":0,"excluded":0}"#)
         let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         #expect((object["entries"] as? [Any])?.count == 2)
     }
@@ -150,8 +150,8 @@ struct LogsCommandTests {
             let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
             #expect(object.keys.contains("raw"))
         }
-        #expect(lines[0].hasSuffix(#""message":"one","raw":"1790945238.399  4100  4120 I ReactNativeJS: one"}"#))
-        #expect(lines[1].hasSuffix(#""raw":null}"#))
+        #expect(lines[0].hasSuffix(#""message":"one","raw":"1790945238.399  4100  4120 I ReactNativeJS: one","truncated":false}"#))
+        #expect(lines[1].hasSuffix(#""raw":null,"truncated":false}"#))
     }
 
     // MARK: Redaction
@@ -191,7 +191,7 @@ struct LogsCommandTests {
         lines = []
         try await Self.command(["--json", "--no-redact"]).read(from: DeviceRouter.Route(backend: backend, device: device)) { lines.append($0) }
         #expect(lines[0].contains("hunter22"))
-        #expect(lines[0].hasSuffix(#""redacted":0}"#))
+        #expect(lines[0].hasSuffix(#""redacted":0,"excluded":0}"#))
 
         #expect(Logs.redactionFooter(3) == "Redacted 3 values (passwords, tokens, emails); --no-redact shows them.")
         #expect(Logs.redactionFooter(0) == nil)
@@ -200,7 +200,121 @@ struct LogsCommandTests {
     @Test("an empty result is an empty entries array")
     func emptyReport() {
         #expect(LogReport(platform: .android, device: "emulator-5554", entries: [], truncated: 0).jsonLine()
-            == #"{"version":1,"platform":"android","device":"emulator-5554","entries":[],"truncated":0,"redacted":0}"#)
+            == #"{"version":1,"platform":"android","device":"emulator-5554","entries":[],"truncated":0,"redacted":0,"excluded":0}"#)
+    }
+
+    // MARK: Cut messages
+
+    /// Runs `logs` over scripted entries, returning what went to stdout and to stderr.
+    @MainActor
+    private static func read(_ arguments: [String], entries: [LogEntry], platform: DevicePlatform = .android) async throws -> (stdout: [String], notes: [String]) {
+        let backend = FakeLogBackend(platform: platform, entries: entries)
+        let device = DeviceID(rawValue: platform == .ios ? "fake-device" : "emulator-5554", platform: platform)
+        var stdout: [String] = []
+        var notes: [String] = []
+        try await command(arguments).read(from: DeviceRouter.Route(backend: backend, device: device), note: { notes.append($0) }, write: { stdout.append($0) })
+        return (stdout, notes)
+    }
+
+    private static func report(_ line: String?) throws -> [String: Any] {
+        let line = try #require(line)
+        return try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+    }
+
+    static let cutMessage = String(repeating: "x", count: 1015) + "<\u{2026}>"
+
+    @Test("an entry iOS cut short has truncated true in JSON with its message byte for byte; the report's own truncated still counts --max-lines drops")
+    @MainActor
+    func truncatedJSONField() async throws {
+        let lines = try [Self.cutMessage, "tapped save", "tapped cancel"].map(LogTextTests.reactNativeEvent)
+        let (stdout, _) = try await Self.read(["--json", "--max-lines", "2"], entries: lines.compactMap(LogText.parseIOSNDJSON), platform: .ios)
+        let object = try Self.report(stdout.first)
+        let entries = try #require(object["entries"] as? [[String: Any]])
+        #expect(entries.map { $0["truncated"] as? Bool } == [false, false])
+        #expect(object["truncated"] as? Int == 1)
+
+        let (all, _) = try await Self.read(["--json"], entries: lines.compactMap(LogText.parseIOSNDJSON), platform: .ios)
+        let first = try #require((try Self.report(all.first)["entries"] as? [[String: Any]])?.first)
+        #expect(first["truncated"] as? Bool == true)
+        #expect(first["message"] as? String == Self.cutMessage)
+        #expect(first["raw"] as? String == Self.cutMessage)
+    }
+
+    @Test("a cut entry's text line ends <…> [truncated], and stderr counts cut entries and points at rn logbox open")
+    @MainActor
+    func truncatedTextAndFooter() async throws {
+        let entries = [LogEntry(message: Self.cutMessage, truncated: true), LogEntry(message: "whole"), LogEntry(message: "y" + Self.cutMessage, truncated: true)]
+        let (stdout, notes) = try await Self.read([], entries: entries, platform: .ios)
+        #expect(try #require(stdout.first).components(separatedBy: "\n") == [Self.cutMessage + " [truncated]", "whole", "y" + Self.cutMessage + " [truncated]"])
+        #expect(notes.contains("2 entries were cut by iOS's log, which keeps about 1 KB of a message (they end <\u{2026}>); the rest was never stored. In a debug build, rn logbox open shows the whole error."))
+
+        let (_, one) = try await Self.read(["--follow"], entries: Array(entries.prefix(2)), platform: .ios)
+        #expect(one.contains { $0.hasPrefix("1 entry was cut by iOS's log") && $0.contains("(it ends <\u{2026}>)") })
+        let (_, none) = try await Self.read([], entries: [LogEntry(message: "whole")], platform: .ios)
+        #expect(!none.contains { $0.contains("cut by iOS's log") })
+    }
+
+    // MARK: Exclude
+
+    /// One `console.warn` twice, as React Native's and as a console-wrapping SDK's copy, then an unrelated line.
+    static let consoleCopies = [
+        LogEntry(tag: "javascript", message: "\u{1B}[33mWARN\u{1B}[39m slow render"),
+        LogEntry(tag: "com.example.monitor:copy", message: "Wrapper.m:41 [MIRROR] warn: slow render"),
+        LogEntry(tag: "javascript", message: "LOG tapped save"),
+    ]
+
+    @Test("--exclude drops what --grep kept, matching case-insensitively, and counts only those drops")
+    func excludeAfterGrep() throws {
+        var collector = try LogCollector(maxLines: 0, grep: "slow", exclude: [#"\[mirror\]"#], keepsANSI: false)
+        Self.consoleCopies.forEach { collector.add($0) }
+        #expect(collector.entries.map(\.message) == ["WARN slow render"])
+        #expect(collector.excluded == 1)
+        #expect(collector.matched == 1)
+    }
+
+    @Test("--exclude matches the message after colour codes are removed, real or escaped")
+    func excludeAfterStripping() throws {
+        var collector = try LogCollector(maxLines: 0, grep: nil, exclude: ["^warn slow"], keepsANSI: true)
+        collector.add(Self.consoleCopies[0])
+        collector.add(LogEntry(message: #"\u001b[33mWARN\u001b[39m slow list"#))
+        collector.add(Self.consoleCopies[2])
+        #expect(collector.entries.map(\.message) == ["LOG tapped save"])
+        #expect(collector.excluded == 2)
+    }
+
+    @Test("--exclude repeats, and an entry matching any of them is dropped")
+    func repeatedExclude() throws {
+        var collector = try Self.command(["--exclude", "MIRROR", "--exclude", "tapped"]).collector()
+        Self.consoleCopies.forEach { collector.add($0) }
+        #expect(collector.entries.map(\.message) == ["WARN slow render"])
+        #expect(collector.excluded == 2)
+    }
+
+    @Test("--follow never prints an excluded entry, and stderr counts the drops")
+    @MainActor
+    func excludeWhileFollowing() async throws {
+        let (stdout, notes) = try await Self.read(["--follow", "--exclude", #"\[MIRROR\]"#], entries: Self.consoleCopies)
+        #expect(stdout == ["WARN slow render", "LOG tapped save"].map { "javascript: \($0)" })
+        #expect(notes.contains("Excluded 1 entry (--exclude)."))
+    }
+
+    @Test("the JSON report counts excluded entries, and stderr says so only when there were some")
+    @MainActor
+    func excludedCount() async throws {
+        let (stdout, notes) = try await Self.read(["--json", "--exclude", "mirror", "--exclude", "TAPPED"], entries: Self.consoleCopies)
+        let object = try Self.report(stdout.first)
+        #expect(object["excluded"] as? Int == 2)
+        #expect((object["entries"] as? [Any])?.count == 1)
+        #expect(notes.contains("Excluded 2 entries (--exclude)."))
+
+        let (plain, quiet) = try await Self.read(["--json"], entries: Self.consoleCopies)
+        #expect(try Self.report(plain.first)["excluded"] as? Int == 0)
+        #expect(!quiet.contains { $0.hasPrefix("Excluded") })
+    }
+
+    @Test("an invalid --exclude pattern names --exclude, not --grep")
+    func invalidExclude() {
+        #expect(Self.validationMessage(["--grep", "ok", "--exclude", "("])?.hasPrefix("Invalid --exclude pattern: (.") == true)
     }
 
     // MARK: Flags

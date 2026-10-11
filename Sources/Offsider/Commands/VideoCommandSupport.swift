@@ -78,13 +78,6 @@ struct VideoFrameUtilities {
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
-    static func processJPEGData(_ data: Data, scale: Double, quality: Int) async throws -> Data {
-        if scale < 1.0 {
-            return try await scaleJPEGData(data, scale: scale, quality: quality)
-        }
-        return try await reencodeJPEGData(data, quality: quality)
-    }
-
     static func computeDimensions(for image: CGImage, scale: Double) -> (width: Int, height: Int) {
         let scaledWidth = max(2, Int(Double(image.width) * scale))
         let scaledHeight = max(2, Int(Double(image.height) * scale))
@@ -93,34 +86,12 @@ struct VideoFrameUtilities {
         return (max(evenWidth, 2), max(evenHeight, 2))
     }
 
-    private static func scaleJPEGData(_ data: Data, scale: Double, quality: Int) async throws -> Data {
-        #if os(macOS)
-        guard let image = makeCGImage(from: data) else {
-            throw VideoProcessingError.failedToDecodeImage
-        }
-        let width = max(1, Int(Double(image.width) * scale))
-        let height = max(1, Int(Double(image.height) * scale))
-        return try encodeJPEG(image, width: width, height: height, quality: quality)
-        #else
-        return data
-        #endif
-    }
-
-    private static func reencodeJPEGData(_ data: Data, quality: Int) async throws -> Data {
-        #if os(macOS)
-        guard let image = makeCGImage(from: data) else {
-            throw VideoProcessingError.failedToDecodeImage
-        }
-        return try encodeJPEG(image, width: image.width, height: image.height, quality: quality)
-        #else
-        return data
-        #endif
-    }
-
     #if os(macOS)
-    /// For frames a `FrameCapturing` device already scaled.
-    static func jpegData(from image: CGImage, quality: Int) throws -> Data {
-        try encodeJPEG(image, width: image.width, height: image.height, quality: quality)
+    /// `scale` of the frame's pixels; 1 for frames a `FrameCapturing` device already scaled.
+    static func jpegData(from image: CGImage, scale: Double = 1, quality: Int) throws -> Data {
+        let width = scale < 1 ? max(1, Int(Double(image.width) * scale)) : image.width
+        let height = scale < 1 ? max(1, Int(Double(image.height) * scale)) : image.height
+        return try encodeJPEG(image, width: width, height: height, quality: quality)
     }
 
     private static func encodeJPEG(

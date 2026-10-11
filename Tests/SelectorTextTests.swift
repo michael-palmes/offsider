@@ -43,27 +43,53 @@ struct SelectorTextTests {
 
     @Test("suggestions rank a case-only difference first, then containment")
     func suggestionRanking() {
-        let suggestions = SelectorText.suggestions(
+        let suggestions = SelectorText.nearMatches(
             for: "Sign in",
             among: ["Sign in with Apple", "Cancel", "Sign In"]
-        )
+        ).map(\.text)
         #expect(suggestions == ["Sign In", "Sign in with Apple"])
+    }
+
+    @Test("near matches rank case, then prefix, contains, a candidate the text holds, then a typo, each with its closeness")
+    func nearMatchTiers() {
+        let near = SelectorText.nearMatches(
+            for: "Choose a layout",
+            among: ["Chose a layut", "Layout", "Please choose a layout now", "Choose a layout. Rows can show as a list", "choose a LAYOUT", "Cancel"],
+            limit: 5
+        )
+        #expect(near == [
+            .init(text: "choose a LAYOUT", closeness: .case),
+            .init(text: "Choose a layout. Rows can show as a list", closeness: .prefix),
+            .init(text: "Please choose a layout now", closeness: .contains),
+            .init(text: "Layout", closeness: .similar),
+            .init(text: "Chose a layut", closeness: .similar),
+        ])
+    }
+
+    @Test("--label-contains holds folded text in the same case, and names the label's own spelling for another case")
+    func containment() {
+        #expect(SelectorText.folded("Don\u{2019}t allow tracking", contains: "Don't allow"))
+        #expect(!SelectorText.folded("Choose a layout", contains: "choose a layout"))
+        #expect(!SelectorText.folded("Anything", contains: " \u{200B} "))
+        #expect(SelectorText.containedText(of: "Choose a", in: "Choose a layout.") == "Choose a")
+        #expect(SelectorText.containedText(of: "choose A", in: "Choose a layout.") == "Choose a")
+        #expect(SelectorText.containedText(of: "Colour", in: "Choose a layout.") == nil)
     }
 
     @Test("a small typo is suggested")
     func typoSuggested() {
-        #expect(SelectorText.suggestions(for: "Setings", among: ["Settings", "Profile"]) == ["Settings"])
+        #expect(SelectorText.nearMatches(for: "Setings", among: ["Settings", "Profile"]).map(\.text) == ["Settings"])
     }
 
     @Test("the limit is respected")
     func limitRespected() {
-        let suggestions = SelectorText.suggestions(for: "Save", among: ["save", "SAVE", "Save draft", "Save all"], limit: 2)
+        let suggestions = SelectorText.nearMatches(for: "Save", among: ["save", "SAVE", "Save draft", "Save all"], limit: 2).map(\.text)
         #expect(suggestions == ["save", "SAVE"])
     }
 
     @Test("distant strings give no suggestion")
     func distantStrings() {
-        #expect(SelectorText.suggestions(for: "Delete account", among: ["Settings", "Profile", "OK"]).isEmpty)
+        #expect(SelectorText.nearMatches(for: "Delete account", among: ["Settings", "Profile", "OK"]).isEmpty)
     }
 
     @Test("text over the limit is cut to the limit with an ellipsis; text at the limit is kept")

@@ -26,6 +26,8 @@ public struct DeviceSummary: Equatable, Sendable {
     public var heldBy: DeviceLockHolder?
     /// The advisory lease on the device, from `offsider lease set`.
     public var lease: DeviceLease?
+    /// True when `lease` is this session's, as `doctor`'s `device.lease` decides.
+    public var leaseIsMine = false
 
     public init(
         id: String,
@@ -86,7 +88,7 @@ public enum DeviceListRenderer {
                 ("avd", device.avd.map(string) ?? "null"),
                 ("bootedBy", device.bootedBy.map(stamp) ?? "null"),
                 ("heldBy", device.heldBy.map(holder) ?? "null"),
-                ("lease", device.lease.map(lease) ?? "null"),
+                ("lease", device.lease.map { lease($0, mine: device.leaseIsMine) } ?? "null"),
             ]
             let body = fields.map { "      \(string($0.0)): \($0.1)" }.joined(separator: ",\n")
             return "    {\n\(body)\n    }"
@@ -105,11 +107,11 @@ public enum DeviceListRenderer {
         return "{\"pid\": \(holder.pid), \"command\": \(command), \"startedAt\": \(startedAt)}"
     }
 
-    static func lease(_ lease: DeviceLease) -> String {
+    static func lease(_ lease: DeviceLease, mine: Bool) -> String {
         let label: String = string(lease.label)
         let since: String = string(ProcessStamp.timestamp(lease.created))
         let expiresAt: String = string(ProcessStamp.timestamp(lease.expires))
-        return "{\"label\": \(label), \"since\": \(since), \"expiresAt\": \(expiresAt)}"
+        return "{\"label\": \(label), \"since\": \(since), \"expiresAt\": \(expiresAt), \"mine\": \(mine)}"
     }
 
     private static func string(_ value: String) -> String {

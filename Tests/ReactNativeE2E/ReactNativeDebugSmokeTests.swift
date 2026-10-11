@@ -132,6 +132,7 @@ struct ReactNativeDebugSmokeTests {
 
         let dismissed = try await app.run("rn logbox dismiss --json").stdout
         #expect(dismissed.contains(#""cleared":2,"remaining":0"#), "\(dismissed)")
+        try await Self.expectAppInFront(app)
         let after = try await app.run("rn logbox status --json").stdout
         #expect(after.contains(#""logs":0"#) && !after.contains("10, pcs"), "\(after)")
         try await app.run("tap --id overlay-test-tab-search --fail-if-covered")
@@ -168,7 +169,97 @@ struct ReactNativeDebugSmokeTests {
         #expect(opened.contains(#""of":2"#), "\(opened)")
         #expect(openElapsed < .seconds(10), "open took \(openElapsed)")
         let closed = try await app.run("rn logbox dismiss --json").stdout
-        #expect(closed.contains(#""cleared":2,"remaining":0,"method":"inspector""#), "\(closed)")
+        #expect(closed.contains(#""cleared":2,"remaining":0,"method":"inspector","emptyDialog":false"#), "\(closed)")
+        try await Self.expectAppInFront(app)
+    }
+
+    /// What a dismiss that exits 0 promises: the fixture screen is in the tree and no dialog is over it.
+    private static func expectAppInFront(_ app: RNApp) async throws {
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(summary.contains("id=overlay-test-screen"), "\(summary.prefix(400))")
+        #expect(!summary.contains("(modal"), "\(summary.prefix(400))")
+    }
+
+    @Test("a caught render error opens the inspector: on Android, which then hides the app, a wait for the fallback fails fast until Minimize; on iOS it passes at once", arguments: RNPlatform.enabled)
+    func renderErrorInspectorBlocksWait(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-clear-logs")
+        try await app.run("tap --id overlay-test-render-error")
+        _ = try await app.waitForNode(timeout: 10) { Self.label($0) == "Render Error" }
+
+        if platform == .android {
+            let started = ContinuousClock.now
+            let blocked = try await app.offsider("wait --id overlay-test-fallback --timeout 60 --json")
+            let elapsed = ContinuousClock.now - started
+            #expect(blocked.exitCode == 1, "\(blocked.stderr)")
+            #expect(blocked.stdout.contains(#""reason":"logbox_inspector_open""#), "\(blocked.stdout)")
+            #expect(blocked.stdout.contains(#""hint":"offsider tap --label Minimize --device "#), "\(blocked.stdout)")
+            #expect(elapsed < .seconds(10), "the blocked wait took \(elapsed)")
+            let batch = try await app.offsider("batch --json --step 'assert --id overlay-test-fallback'")
+            #expect(batch.exitCode == 1 && batch.stdout.contains(#""reason":"logbox_inspector_open""#), "\(batch.stdout)")
+            try await app.run("tap --label Minimize")
+        }
+        let met = try await app.offsider("wait --id overlay-test-fallback --timeout 10")
+        #expect(met.exitCode == 0, "\(met.stderr)")
+        try await app.run("rn logbox dismiss")
+        try await Self.expectAppInFront(app)
+    }
+
+    @Test("a row centred in the band above a toast (half a point on iOS, 30 dp on edge-to-edge Android) refuses a tap by the toast's touch area, --allow-covered lands on the toast, and a row above the band is tapped", arguments: RNPlatform.enabled)
+    func toastEdgeCoversRow(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-clear-logs")
+        try await app.run("tap --id overlay-test-toggle-edge-row")
+        try await app.run("tap --id overlay-test-log-error")
+        let banner = try await app.waitForNode { Self.label($0).contains("OffsiderFixture error") }
+        let toastTop = try #require((banner["frame"] as? [String: Double])?["y"])
+        let row = try await app.frame(of: "overlay-test-edge-row")
+        let lift = toastTop - (row.y + row.height / 2)
+        let expected = platform == .ios ? 0.0...1.0 : 28.0...32.0
+        #expect(expected.contains(lift), "row centre \(lift) above the toast top \(toastTop)")
+
+        let refused = try await app.offsider("tap --id overlay-test-edge-row --fail-if-covered")
+        #expect(refused.exitCode == 1, "\(refused.stderr)")
+        #expect(refused.stderr.contains("(LogBox's toast takes touches beyond its frame there)"), "\(refused.stderr)")
+        let through = try await app.offsider("tap --id overlay-test-edge-row --allow-covered")
+        #expect(through.exitCode == 0, "\(through.stderr)")
+        try await Task.sleep(for: .seconds(1))
+        #expect(try await app.label(of: "overlay-test-edge-row") == "Edge Row: 0")
+        #expect(try await !Self.hasNode(app) { Self.label($0) == "Minimize" })
+
+        let above = try await app.offsider("tap --id overlay-test-above-row --fail-if-covered")
+        #expect(above.exitCode == 0, "\(above.stderr)")
+        _ = try await app.waitForLabel(of: "overlay-test-above-row") { $0 == "Above Row: 1" }
+
+        if platform == .ios {
+            // iOS's toast takes touches under a point above its frame, so 2 points higher reaches the row.
+            try await app.run("tap -x \(Int(row.x + row.width / 2)) -y \(toastTop - 2)")
+            _ = try await app.waitForLabel(of: "overlay-test-edge-row") { $0 == "Edge Row: 1" }
+        }
+    }
+
+    @Test("React Native's empty LogBox dialog on Android: describe-ui and status name it, dismiss exits 5 with emptyDialog and leaves it, and a reload from Metro closes it", arguments: RNPlatform.enabled.filter { $0 == .android })
+    func emptyLogBoxDialog(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        try await app.run("tap --id overlay-test-empty-logbox")
+        try await Task.sleep(for: .seconds(1))
+
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(summary.contains("(modal, empty)\n"), "\(summary.prefix(400))")
+        let status = try await app.run("rn logbox status --json").stdout
+        #expect(status.contains(#""emptyDialog":true"#), "\(status)")
+        let dismissed = try await app.offsider("rn logbox dismiss --json")
+        #expect(dismissed.exitCode == 5, "\(dismissed.stderr)")
+        #expect(dismissed.stdout.contains(#""cleared":0,"remaining":0,"method":"none","emptyDialog":true"#), "\(dismissed.stdout)")
+        #expect(dismissed.stderr.contains("an empty dialog covers the app"), "\(dismissed.stderr)")
+        #expect(try await app.run("describe-ui --summary").stdout.contains("(modal, empty)\n"))
+
+        // Back would close the dialog but leave LogBox's view attached to it, so the next inspector would crash the app.
+        try await app.run("rn open --port \(RNMetro.port) --bundle-id \(IOSRNPlayground.bundleID) --wait-id menu-title", timeout: 240)
+        #expect(try await !app.run("describe-ui --summary").stdout.contains("(modal"))
     }
 
     @Test("rn devmenu close runs as a batch step, which opens the menu and leaves the app in front", arguments: RNPlatform.enabled)

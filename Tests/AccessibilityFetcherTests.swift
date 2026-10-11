@@ -1,5 +1,6 @@
 import Foundation
 import FBControlCore
+import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -29,7 +30,7 @@ struct AccessibilityFetcherTests {
         #expect(root["elements"] == nil)
     }
 
-    @Test("Requests the complete legacy accessibility compatibility key set")
+    @Test("Requests the complete legacy key set, traits included, so a Selected trait reaches state.selected")
     func requestsLegacyAccessibilityCompatibilityKeys() {
         #expect(AccessibilityFetcher.accessibilityOutputKeys == [
             .label,
@@ -49,31 +50,75 @@ struct AccessibilityFetcherTests {
             .pid,
             .traits,
         ])
-        #expect(!AccessibilityFetcher.accessibilityRequestKeys.contains(.traits))
-        #expect(
-            AccessibilityFetcher.accessibilityRequestKeys.union([.traits])
-                == AccessibilityFetcher.accessibilityOutputKeys
-        )
     }
 
-    @Test("Defaults unavailable traits recursively without changing non-element dictionaries")
-    func defaultsUnavailableTraitsRecursively() throws {
-        let hierarchy: [[String: Any]] = [[
-            "type": "Application",
-            "frame": ["x": 0, "y": 0, "width": 390, "height": 844],
-            "children": [["type": "Button", "traits": ["Button"]]],
-        ]]
+    // MARK: Traits fallback
 
-        let compatible = try #require(
-            AccessibilityFetcher.addingCompatibilityDefaults(to: hierarchy) as? [[String: Any]]
-        )
-        let root = try #require(compatible.first)
-        let frame = try #require(root["frame"] as? [String: Any])
-        let child = try #require((root["children"] as? [[String: Any]])?.first)
+    private static let emptyTree = Data(#"[{"type": "Application", "AXLabel": "App", "children": []}]"#.utf8)
+    private static let plainTree = Data(#"[{"type": "Application", "AXLabel": "App", "children": [{"type": "Button", "AXLabel": "Home"}]}]"#.utf8)
+    private static let tracedTree = Data(#"[{"type": "Application", "AXLabel": "App", "traits": ["None"], "children": [{"type": "Button", "AXLabel": "Home", "traits": ["Button", "Selected"]}]}]"#.utf8)
 
-        #expect(root["traits"] as? [String] == [])
-        #expect(frame["traits"] == nil)
-        #expect(child["traits"] as? [String] == ["Button"])
+    /// Serves `withTraits` to reads that ask for traits and `withoutTraits` to the rest, recording which asked.
+    private final class TraitsFetch {
+        var asked: [Bool] = []
+        let withTraits: Data
+        let withoutTraits: Data
+
+        init(withTraits: Data, withoutTraits: Data) {
+            self.withTraits = withTraits
+            self.withoutTraits = withoutTraits
+        }
+
+        @MainActor
+        func read(_ request: TraitsRequest) async throws -> Data {
+            try await AccessibilityFetcher.readingFrontmostTree(traits: request, fetch: { keys in
+                self.asked.append(keys.contains(.traits))
+                return keys.contains(.traits) ? self.withTraits : self.withoutTraits
+            }, wait: { _ in })
+        }
+    }
+
+    @Test("A tree that empties with traits is read once without them, used with selected unknown, and later reads skip traits")
+    func emptyWithTraitsFallsBack() async throws {
+        let fetch = TraitsFetch(withTraits: Self.emptyTree, withoutTraits: Self.plainTree)
+        let request = TraitsRequest()
+
+        let data = try await fetch.read(request)
+        let home = try #require(try IOSAccessibilityMapping.roots(fromJSON: data).first?.children.first)
+        #expect(home.label == "Home")
+        #expect(home.state.selected == nil)
+        #expect(fetch.asked == [true, true, true, true, true, false])
+
+        _ = try await fetch.read(request)
+        #expect(fetch.asked.dropFirst(6) == [false])
+        #expect(request.skipsTraits)
+    }
+
+    @Test("A tree empty with and without traits stays empty, costing one extra read for the whole process")
+    func emptyEitherWayStaysEmpty() async throws {
+        let fetch = TraitsFetch(withTraits: Self.emptyTree, withoutTraits: Self.emptyTree)
+        let request = TraitsRequest()
+
+        #expect(try await fetch.read(request) == Self.emptyTree)
+        #expect(fetch.asked == [true, true, true, true, true, false])
+
+        _ = try await fetch.read(request)
+        #expect(fetch.asked.dropFirst(6) == [true, true, true, true, true])
+        #expect(!request.skipsTraits)
+    }
+
+    @Test("A full tree with traits is never read again without them, even when a later screen is empty")
+    func fullWithTraitsNeverFallsBack() async throws {
+        let full = TraitsFetch(withTraits: Self.tracedTree, withoutTraits: Self.plainTree)
+        let request = TraitsRequest()
+
+        let data = try await full.read(request)
+        #expect(try IOSAccessibilityMapping.roots(fromJSON: data).first?.children.first?.state.selected == true)
+        #expect(full.asked == [true])
+
+        let empty = TraitsFetch(withTraits: Self.emptyTree, withoutTraits: Self.plainTree)
+        #expect(try await empty.read(request) == Self.emptyTree)
+        #expect(empty.asked == [true, true, true, true, true])
     }
 
     @Test("Distinguishes transient root-only responses from populated hierarchies")

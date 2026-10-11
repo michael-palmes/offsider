@@ -37,7 +37,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         • offsider type --into-id email-field --replace "a@b.c" --device DEVICE_ID taps the field, waits up to 2 s
           until it has focus (on an iOS simulator, until the keyboard shows), then types; no text is sent when it
           never does (exit 5, focus_not_confirmed), and nothing at all when the keyboard covers the field (exit 1,
-          target_under_keyboard). --into-label works the same by label. When the keyboard is
+          target_under_keyboard). --into-label works the same by label, and --into-label-contains by
+          part of a label. When the keyboard is
           already up for another field, a simulator cannot prove focus: Offsider taps, types and prints a warning.
         • --require-focus-id email-field types only when that field already has focus (exit 2, focus_mismatch,
           otherwise); the iOS simulator's tree does not report focus, so use --into-id there.
@@ -67,6 +68,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("into-label"), help: ArgumentHelp("Like --into-id, for the field with this label.", valueName: "text"))
     var intoLabel: String?
 
+    @Option(name: .customLong("into-label-contains"), help: ArgumentHelp("Like --into-id, for the field whose label holds this text, in the same case.", valueName: "text"))
+    var intoLabelContains: String?
+
     @Option(name: .customLong("require-focus-id"), help: ArgumentHelp("Type only when the field with this id already has focus; exit 2 otherwise. Not on iOS simulators.", valueName: "id"))
     var requireFocusID: String?
     
@@ -88,11 +92,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if sourceCount == 0 {
             throw ValidationError("No input provided. Provide text as argument, or use --stdin, or --file.")
         }
-        let focusOptions = [intoID != nil, intoLabel != nil, requireFocusID != nil].filter { $0 }.count
+        let focusOptions = [intoID != nil, intoLabel != nil, intoLabelContains != nil, requireFocusID != nil].filter { $0 }.count
         if focusOptions > 1 {
-            throw ValidationError("Use only one of --into-id, --into-label or --require-focus-id.")
+            throw ValidationError("Use only one of --into-id, --into-label, --into-label-contains or --require-focus-id.")
         }
-        for (name, value) in [("--into-id", intoID), ("--into-label", intoLabel), ("--require-focus-id", requireFocusID)] {
+        for (name, value) in [("--into-id", intoID), ("--into-label", intoLabel), ("--into-label-contains", intoLabelContains), ("--require-focus-id", requireFocusID)] {
             if let value, value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 throw ValidationError("\(name) must not be empty.")
             }
@@ -100,7 +104,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     }
 
     var intoQuery: AccessibilityQuery? {
-        SelectorQuery.make(id: intoID, label: intoLabel, value: nil)
+        SelectorQuery.make(id: intoID, label: intoLabel, labelContains: intoLabelContains, value: nil)
     }
 
     static let focusTimeout: TimeInterval = 2
