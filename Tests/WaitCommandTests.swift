@@ -168,11 +168,11 @@ struct WaitCommandTests {
 
     @Test("conflicting or incomplete conditions are rejected", arguments: [
         (["--id", "a", "--settled"], "Choose only one of a selector, --settled, --region or --seconds."),
-        (["--timeout", "5"], "Choose one of a selector (--id, --label or --value), --settled, --region or --seconds."),
+        (["--timeout", "5"], "Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region or --seconds."),
         (["--settled", "--changed"], "--changed and --stable need --region."),
         (["--region", "0,0,10,10"], "--region needs --changed or --stable."),
         (["--region", "0,0,10,10", "--changed", "--stable"], "Use only one of --changed or --stable."),
-        (["--settled", "--gone"], "--gone needs --id, --label or --value."),
+        (["--settled", "--gone"], "--gone needs --id, --label, --label-contains or --value."),
         (["--seconds", "1", "--settle-by", "screen"], "--settle-by applies to --settled only."),
         (["--id", "a", "--quiet-ms", "200"], "--quiet-ms applies to --settled and --region --stable only."),
         (["--settled", "--quiet-ms", "50"], "--quiet-ms must be from 100 to 10000; got 50."),
@@ -181,9 +181,9 @@ struct WaitCommandTests {
         (["--id", "a", "--timeout", "901"], "--timeout must be from 0 to 900 seconds; got 901.0."),
         (["--seconds", "901"], "--seconds must be from 0 to 900 seconds; got 901.0."),
         (["--id", "a", "--poll-interval", "0.01"], "--poll-interval must be from 0.05 to 5 seconds; got 0.01."),
-        (["--label", "a", "--value", "b"], "Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several."),
-        (["--id", "a", "--id", "b"], "Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several."),
-        (["--settled", "--has-value", "3"], "--has-value needs --id, --label or --value."),
+        (["--label", "a", "--value", "b"], "Use only one of --id, --label, --label-contains or --value, narrow one --id with a --label, --label-contains or --value, or pass --any to wait for the first of several."),
+        (["--id", "a", "--id", "b"], "Use only one of --id, --label, --label-contains or --value, narrow one --id with a --label, --label-contains or --value, or pass --any to wait for the first of several."),
+        (["--settled", "--has-value", "3"], "--has-value needs --id, --label, --label-contains or --value."),
         (["--id", "a", "--ignore-values"], "--ignore-values applies to --settled only."),
         (["--settled", "--settle-by", "screen", "--ignore-values"], "--ignore-values reads the accessibility tree, which --settle-by screen does not; use --settle-by tree or both."),
     ])
@@ -232,7 +232,7 @@ struct WaitCommandTests {
     @Test("--stable-for is checked against the condition and --timeout", arguments: [
         (["--settled", "--stable-for", "500"], "use --quiet-ms"),
         (["--region", "0,0,10,10", "--stable", "--stable-for", "500"], "use --quiet-ms"),
-        (["--seconds", "1", "--stable-for", "500"], "--stable-for needs --id, --label or --value"),
+        (["--seconds", "1", "--stable-for", "500"], "--stable-for needs --id, --label, --label-contains or --value"),
         (["--id", "x", "--stable-for", "60001"], "--stable-for must be from 0 to 60000"),
         (["--id", "x", "--gone", "--timeout", "1", "--stable-for", "1500"], "--stable-for is longer than --timeout"),
     ])

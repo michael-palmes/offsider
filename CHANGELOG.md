@@ -6,14 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-11
+
 ### Added
 
-- `--label-contains <text>` matches an element whose label holds the text, in the same case, such as the heading of a label React Native merged from a heading and its detail. It works on `tap`, `slider`, `wait` (repeatable with `--any`), `assert`, `type --into-label-contains` and `screenshot --mask-label-contains`, can narrow an `--id`, and is refused beside `--label`. `--label-prefix` and `--label-includes` point to it, and `describe-ui --json` says that `describe-ui` prints JSON by default.
+- `--label-contains <text>` matches an element whose label holds the text, in the same case, such as the heading of a label React Native merged from a heading and its detail. It works on `tap`, `slider`, `wait` (repeatable with `--any`), `assert`, `type --into-label-contains` and `screenshot --mask-label-contains`, can narrow an `--id`, and is refused beside `--label` except by `wait --any`. `--label-prefix` and `--label-includes` point to it, and `describe-ui --json` says that `describe-ui` prints JSON by default.
 - When a selector finds nothing, `wait` and `assert` name the nearest element and the selector that would match it, such as `nearest: header "Choose a layout. Rows can show as a list or…" starts with it, use --label-contains 'Choose a layout'`. `--json` and batch records carry `nearest`.
-- `wait` and `assert` stop with `logbox_inspector_open` (exit 1, nothing dispatched) when a selector matches nothing while React Native's LogBox inspector, in its own window on Android, hides the app: a wait after 1.5 s, `assert` and short timeouts on the last read. `--gone` stops rather than passing, and the `hint` is `tap --label Minimize`. A timeout's `last:` adds `LogBox inspector open` on either platform.
+- `wait` and `assert` stop with `logbox_inspector_open` (exit 1, nothing dispatched) when a selector matches nothing while React Native's LogBox inspector, in its own window on Android, hides the app: a wait after 1.5 s, `assert` and short timeouts on the last read. `--gone` stops rather than passing, and the `hint` is `tap --label Minimize`, or `rn logbox dismiss` when the inspector shows no Minimize button. A timeout's `last:` adds `LogBox inspector open` on either platform.
 - `describe-ui` marks an untitled Android dialog that spans the screen with nothing in it as `# window: <package> (modal, empty)`, with `context.window.empty` in JSON. `rn logbox status` and `rn logbox dismiss --json` add `emptyDialog`.
 - `logs --exclude <regex>` (repeatable) drops entries whose message matches, as `--grep` matches, on both platforms and in every mode, before stdout or an evidence run sees them, so a monitoring SDK's copy of each console line stays out of the run's log. `--json` adds `excluded`, stderr says how many, and the run manifest shows each pattern as `<N characters>`.
-- `record-video` and `stream-video` take `--mask-region x,y,w,h` (points, repeatable), painted black on every frame except with `stream-video --format bgra`. A frame the screen may have turned or resized during repeats the last masked frame. `record-video --json` prints `path`, `frames`, `heldFrames`, `maskedBy` and `unmasked`.
+- `record-video` and `stream-video` take `--mask-region x,y,w,h` (points, repeatable), painted black on every frame; `stream-video --format bgra` refuses it (exit 64). A frame the screen may have turned or resized during repeats the last masked frame, and when the first frame cannot place a region, nothing is recorded (`mask_unproven`, exit 1). `record-video --json` prints `path`, `frames`, `heldFrames`, `maskedBy` and `unmasked`.
 - `list-devices --json` lease objects add `mine`, and `lease --json` lease objects add `owner` (`{pid, name, startedAt}`).
 
 ### Changed
@@ -22,7 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On a terminal, `credential set` picks the login to update, or adds a tagged one, from an arrow-key menu, and asks before replacing a saved tag instead of refusing without `--update`. `credential join` picks the app to share from a menu. Without a terminal, both still need `--update`, a tag or `--app`.
 - When standard output is a terminal, `credential` and `unlock-code` print a short summary with emoji, coloured unless `NO_COLOR` is set, and `credential` shows a spinner while it reads the app in front. Piped output and `--json` are unchanged.
 - `lease set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes `device.lease` for any later command of that session without `OFFSIDER_LEASE`, and otherwise names the session holding the lease or says it has ended. `OFFSIDER_LEASE`, when set, still decides.
-- `record-video` and `stream-video` refuse `--mask-secure`, `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text` and `--mask-emails`, and refuse to run while the evidence run has masks or `OFFSIDER_MASK_SECURE=1` is set, with the new reason `video_unmasked` (exit 1), before the device is reached and with no file written. `--unmasked` records anyway, with a warning.
+- `record-video` and `stream-video` refuse `--mask-secure`, `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text` and `--mask-emails`, and refuse to run while the evidence run has masks or `OFFSIDER_MASK_SECURE=1` is set, with the new reason `video_unmasked` (exit 1), before the device is reached and with no file written. `--unmasked` records anyway, with a warning, and is a usage error (exit 64) beside a tree mask flag.
 - A React Native LogBox toast's touch area starts a point above its top edge, and on an edge-to-edge Android app higher still by the status bar's height, since LogBox's toast list pads itself by it. Covers by it report `evidence` `logBoxTouchArea`, and a target whose frame only reaches that area gets a warning that `--fail-if-covered` turns into a refusal.
 - Near-miss suggestions rank a case difference first, then labels that start with, contain or sit inside your text, then typos. Each `selector_not_found` candidate carries `closeness` (`case`, `prefix`, `contains` or `similar`), and the message says when `--label-contains` would match.
 
@@ -450,7 +452,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/michael-palmes/offsider/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/michael-palmes/offsider/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/michael-palmes/offsider/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/michael-palmes/offsider/releases/tag/v0.7.0

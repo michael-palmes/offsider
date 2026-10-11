@@ -25,7 +25,7 @@ The checkbox frame includes the words beside the square, so `tap --label "Verify
 
 `offsider logs --rn --device <DEVICE_ID>` prints `console.log`, `console.warn` and `console.error` output from the last 30 s, in release builds too, and is the best check that an action did something a screenshot cannot show, such as a request being sent. Prefer `logs --rn --app <bundle id or package>`: an app's own logger often writes outside React Native's log, and on Android it keeps lines from before a restart. Windows, filters, `--json` and redaction are in `offsider guide evidence`.
 
-- Every `console.warn` twice on iOS, once as `javascript:` and once as a copy under the app's process: a monitoring SDK that wraps `console` logs its own. Drop the copies with `logs --rn --app <bundle id> --exclude '<text only the copies carry>'`, which keeps them out of the evidence run too; a pipe through `grep -v` would not.
+- On iOS every `console.warn` can arrive twice, once as `javascript:` and once as a copy under the app's process, when a monitoring SDK that wraps `console` logs its own. Drop the copies with `logs --rn --app <bundle id> --exclude '<text only the copies carry>'`, which keeps them out of the evidence run too; a pipe through `grep -v` would not.
 - A long error ends `<…> [truncated]` (`"truncated": true` in `--json`) on iOS, which stores only about 1 KB of a message; the rest cannot be read from the log. In a debug build, `rn logbox open` and then `describe-ui` show the whole error. Otherwise log it in chunks under 1 KB from the app. On Android a message past about 4 KB loses its end with no marker, and each line of a multi-line message is its own entry.
 
 ## Debug builds

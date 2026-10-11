@@ -9,6 +9,8 @@ struct PromptCancelled: Error {}
 /// A block of questions on the terminal. Closing it erases every line it drew.
 final class TerminalPrompt {
     let style: TerminalStyle
+    /// The way round a terminal Offsider cannot use, for its errors.
+    private let instead: String
     private let descriptor: Int32
     private let ownsDescriptor: Bool
     private var original = termios()
@@ -23,7 +25,8 @@ final class TerminalPrompt {
     private var pending: [TerminalKey] = []
 
     /// Opens `/dev/tty`, or uses `descriptor` (a pseudo-terminal in tests).
-    init(descriptor: Int32? = nil, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+    init(descriptor: Int32? = nil, instead: String = TerminalPrompt.pipeInstead, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+        self.instead = instead
         if let descriptor {
             self.descriptor = descriptor
             ownsDescriptor = false
@@ -34,7 +37,7 @@ final class TerminalPrompt {
         guard self.descriptor >= 0, tcgetattr(self.descriptor, &original) == 0 else {
             let reason = String(cString: strerror(errno))
             if ownsDescriptor, self.descriptor >= 0 { Darwin.close(self.descriptor) }
-            throw CLIError(errorDescription: "Could not open the terminal: \(reason). Pass --stdin to pipe the answers in instead.", reason: .usage)
+            throw CLIError(errorDescription: "Could not open the terminal: \(reason). \(instead)", reason: .usage)
         }
         raw = original
         raw.c_lflag &= ~tcflag_t(ECHO | ICANON | ISIG | IEXTEN)
@@ -46,9 +49,11 @@ final class TerminalPrompt {
         style = TerminalStyle.detect(isTerminal: true, environment: environment)
     }
 
+    static let pipeInstead = "Pass --stdin to pipe the answers in instead."
+
     /// Runs `body` in a block that is erased afterwards. A cancel says `cancelled` and exits 130.
-    static func run<T>(cancelled: String, descriptor: Int32? = nil, _ body: (TerminalPrompt) throws -> T) throws -> T {
-        let prompt = try TerminalPrompt(descriptor: descriptor)
+    static func run<T>(cancelled: String, instead: String = pipeInstead, descriptor: Int32? = nil, _ body: (TerminalPrompt) throws -> T) throws -> T {
+        let prompt = try TerminalPrompt(descriptor: descriptor, instead: instead)
         do {
             let result = try body(prompt)
             prompt.close()
@@ -160,15 +165,17 @@ final class TerminalPrompt {
             var count = Darwin.read(descriptor, &buffer, buffer.count)
             if count < 0, errno == EINTR || errno == EAGAIN { continue }
             guard count > 0 else { throw PromptCancelled() }
-            if buffer[count - 1] == 0x1B, count < buffer.count {
-                count += readAfterEscape(into: &buffer, at: count)
+            while count < buffer.count, TerminalKey.endsMidSequence(buffer[..<count]) {
+                let more = readAfterEscape(into: &buffer, at: count)
+                guard more > 0 else { break }
+                count += more
             }
             pending = TerminalKey.parse(Array(buffer[..<count]))
         }
         return pending.removeFirst()
     }
 
-    /// Waits up to 100 ms for the rest of an arrow key. A termios timeout, since macOS `poll` does not support `/dev/tty`.
+    /// Waits up to 100 ms for more of an arrow key. A termios timeout, since macOS `poll` does not support `/dev/tty`.
     private func readAfterEscape(into buffer: inout [UInt8], at offset: Int) -> Int {
         var settings = termios()
         guard tcgetattr(descriptor, &settings) == 0 else { return 0 }
@@ -204,10 +211,10 @@ final class TerminalPrompt {
 
     private func enterRaw() throws {
         guard !isRaw else { return }
-        TerminalRestore.arm(descriptor: descriptor, original: original)
+        TerminalRestore.arm(descriptor: descriptor, original: original, raw: raw)
         guard tcsetattr(descriptor, flushedTypeahead ? TCSANOW : TCSAFLUSH, &raw) == 0 else {
             TerminalRestore.disarm()
-            throw CLIError(errorDescription: "Could not switch off echo on the terminal. Pass --stdin to pipe the answers in instead.", reason: .usage)
+            throw CLIError(errorDescription: "Could not switch off echo on the terminal. \(instead)", reason: .usage)
         }
         flushedTypeahead = true
         isRaw = true
@@ -252,38 +259,63 @@ final class TerminalPrompt {
     }
 }
 
-/// Puts the terminal back when another process stops Offsider mid-prompt, then lets the signal through.
+/// Puts the terminal back when another process ends or stops Offsider mid-prompt, and switches echo off again when it continues.
 private enum TerminalRestore {
     nonisolated(unsafe) static var descriptor: Int32 = -1
     nonisolated(unsafe) static let saved = UnsafeMutablePointer<termios>.allocate(capacity: 1)
+    nonisolated(unsafe) static let raw = UnsafeMutablePointer<termios>.allocate(capacity: 1)
     nonisolated(unsafe) static var previous: [(Int32, sigaction)] = []
-    static let signals = [SIGINT, SIGTERM, SIGHUP, SIGQUIT]
+    static let ending = [SIGINT, SIGTERM, SIGHUP, SIGQUIT]
 
-    static func arm(descriptor: Int32, original: termios) {
+    static func arm(descriptor: Int32, original: termios, raw settings: termios) {
         saved.pointee = original
+        raw.pointee = settings
         Self.descriptor = descriptor
-        var action = sigaction()
-        action.__sigaction_u.__sa_handler = { number in
-            if TerminalRestore.descriptor >= 0 {
-                let showCursor: StaticString = "\u{1B}[?25h"
-                _ = tcsetattr(TerminalRestore.descriptor, TCSANOW, TerminalRestore.saved)
-                _ = Darwin.write(TerminalRestore.descriptor, showCursor.utf8Start, showCursor.utf8CodeUnitCount)
-            }
+        previous = ending.map { install(for: $0) { number in
+            TerminalRestore.restore()
             Darwin.signal(number, SIG_DFL)
             raise(number)
-        }
-        sigemptyset(&action.sa_mask)
-        previous = signals.map { number in
-            var old = sigaction()
-            sigaction(number, &action, &old)
-            return (number, old)
-        }
+        } }
+        // Control-Z arrives as a key in raw mode, so this stop comes only from another process, such as kill -TSTP.
+        previous.append(install(for: SIGTSTP) { number in
+            TerminalRestore.restore()
+            var handler = sigaction()
+            var mask = sigset_t()
+            sigemptyset(&mask)
+            sigaddset(&mask, number)
+            sigaction(number, nil, &handler)
+            Darwin.signal(number, SIG_DFL)
+            pthread_sigmask(SIG_UNBLOCK, &mask, nil)
+            raise(number)
+            sigaction(number, &handler, nil)
+        })
+        // bash's fg hands the terminal back with echo on, as does a continue after SIGSTOP.
+        previous.append(install(for: SIGCONT) { _ in
+            if TerminalRestore.descriptor >= 0 { _ = tcsetattr(TerminalRestore.descriptor, TCSANOW, TerminalRestore.raw) }
+        })
     }
 
     static func disarm() {
         for (number, var old) in previous { sigaction(number, &old, nil) }
         previous = []
         descriptor = -1
+    }
+
+    /// Async-signal-safe: the settings from before the prompt, and the cursor shown.
+    private static func restore() {
+        guard descriptor >= 0 else { return }
+        let showCursor: StaticString = "\u{1B}[?25h"
+        _ = tcsetattr(descriptor, TCSANOW, saved)
+        _ = Darwin.write(descriptor, showCursor.utf8Start, showCursor.utf8CodeUnitCount)
+    }
+
+    private static func install(for number: Int32, _ handler: @convention(c) (Int32) -> Void) -> (Int32, sigaction) {
+        var action = sigaction()
+        action.__sigaction_u.__sa_handler = handler
+        sigemptyset(&action.sa_mask)
+        var old = sigaction()
+        sigaction(number, &action, &old)
+        return (number, old)
     }
 }
 

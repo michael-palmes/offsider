@@ -31,8 +31,7 @@ public struct CoverVerdict: Equatable, Sendable {
 
 /// Decides whether a selector tap's point reaches its target, from a hit-test, Android's drawing order or, failing both, tree order.
 public enum CoverJudge {
-    /// What a tap at `point` on `target` (from `matched`) would reach instead, given the simulator's `hit` if any; nil when it reaches the target.
-    /// `logBoxInset` grows a LogBox toast's touch area as `KnownOverlays.logBoxTopInset` says.
+    /// What a tap at `point` on `target` (from `matched`) would reach instead, given the simulator's `hit` if any and a LogBox toast grown by `logBoxInset`; nil when it reaches the target.
     public static func judge(
         target: UINode,
         matched: UINode,

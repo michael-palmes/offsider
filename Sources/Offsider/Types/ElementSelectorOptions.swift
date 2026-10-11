@@ -12,7 +12,7 @@ enum SelectorQuery {
         if label != nil, labelContains != nil { throw ValidationError(oneLabelRule) }
         let selectors = [("--id", id), ("--label", label), ("--label-contains", labelContains), ("--value", value)].filter { $0.1 != nil }
         if selectors.count > 1 {
-            guard refining else { throw ValidationError("Use only one of --id, --label, or --value.") }
+            guard refining else { throw ValidationError("Use only one of --id, --label, --label-contains or --value.") }
             guard id != nil else { throw ValidationError(refinementRule) }
         }
         for (name, text) in selectors where text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
@@ -24,7 +24,7 @@ enum SelectorQuery {
     static func validate(ids: [String], labels: [String], labelsContaining: [String] = [], values: [String], allowingSeveral: Bool) throws {
         let named = ids.map { ("--id", $0) } + labels.map { ("--label", $0) } + labelsContaining.map { ("--label-contains", $0) } + values.map { ("--value", $0) }
         if named.count > 1 && !allowingSeveral {
-            throw ValidationError("Use only one of --id, --label, or --value.")
+            throw ValidationError("Use only one of --id, --label, --label-contains or --value.")
         }
         for (name, text) in named where text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ValidationError("\(name) must not be empty.")
@@ -76,7 +76,7 @@ struct ElementSelectorOptions: ParsableArguments {
         try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, labelsContaining: elementLabelsContaining, values: elementValues, allowingSeveral: true)
         guard query == nil else { return }
         for (name, isSet) in [("--element-type", elementType != nil), ("--has-value", hasValue != nil), ("--allow-offscreen", allowOffscreen)] where isSet {
-            throw ValidationError("\(name) needs --id, --label or --value.")
+            throw ValidationError("\(name) needs --id, --label, --label-contains or --value.")
         }
     }
 

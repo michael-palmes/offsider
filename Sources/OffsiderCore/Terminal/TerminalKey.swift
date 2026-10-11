@@ -72,6 +72,18 @@ public enum TerminalKey: Equatable, Sendable {
         flush()
         return keys
     }
+
+    /// True when `bytes` stop inside an escape sequence, such as an arrow key split across two reads.
+    public static func endsMidSequence(_ bytes: some BidirectionalCollection<UInt8>) -> Bool {
+        guard let escape = bytes.lastIndex(of: 0x1B) else { return false }
+        let tail = bytes[bytes.index(after: escape)...]
+        switch tail.first {
+        case nil: return true
+        case UInt8(ascii: "["): return !tail.dropFirst().contains { (0x40...0x7E).contains($0) }
+        case UInt8(ascii: "O"): return tail.count == 1
+        default: return false
+        }
+    }
 }
 
 /// A one-line answer typed in raw mode. The bytes are wiped once read.

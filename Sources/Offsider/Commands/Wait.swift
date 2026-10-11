@@ -88,27 +88,27 @@ struct Wait: AsyncParsableCommand {
         } else if selector.mixesLabelSelectors {
             throw ValidationError(SelectorQuery.oneLabelRule)
         } else if selector.queries.count > 1, !selector.isConjunction {
-            throw ValidationError("Use only one of --id, --label, or --value, narrow one --id with a --label or --value, or pass --any to wait for the first of several.")
+            throw ValidationError("Use only one of --id, --label, --label-contains or --value, narrow one --id with a --label, --label-contains or --value, or pass --any to wait for the first of several.")
         }
         if (changed || stable) && region == nil {
             throw ValidationError("--changed and --stable need --region.")
         }
         let families = [selector.query != nil, settled, region != nil, seconds != nil].filter { $0 }.count
         if families == 0 {
-            throw ValidationError("Choose one of a selector (--id, --label or --value), --settled, --region or --seconds.")
+            throw ValidationError("Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region or --seconds.")
         }
         if families > 1 {
             throw ValidationError("Choose only one of a selector, --settled, --region or --seconds.")
         }
         if gone && selector.query == nil {
-            throw ValidationError("--gone needs --id, --label or --value.")
+            throw ValidationError("--gone needs --id, --label, --label-contains or --value.")
         }
         if let stableForMs {
             if settled || stable {
                 throw ValidationError("--stable-for applies to selector waits; for --settled and --region --stable use --quiet-ms.")
             }
             guard selector.query != nil else {
-                throw ValidationError("--stable-for needs --id, --label or --value.")
+                throw ValidationError("--stable-for needs --id, --label, --label-contains or --value.")
             }
             guard (0...60_000).contains(stableForMs) else {
                 throw ValidationError("--stable-for must be from 0 to 60000 ms; got \(stableForMs).")
