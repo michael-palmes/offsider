@@ -132,34 +132,56 @@ extension CredentialReport {
             var details = ["👤 \(username ?? "")", "🔑 hidden", "🔒 Keychain"]
             if isDefault, key != nil, key != LoginCredential.defaultAccountKey { details.append("⭐ default") }
             let nameArgument = key == nil || key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
-            return [
+            return ([
                 style.green(style.bold("✅ Saved the \(named) for \(app)")),
                 "   " + style.dim((details + shared).joined(separator: "  ")),
+            ] + Self.styledDetails(context ?? .empty, signIns: [], indent: "   ", style: style) + [
                 PromptScreen.nextStep("Next", command: "offsider login\(nameArgument)\(deviceSuffix)", style: style),
-            ].joined(separator: "\n")
+            ]).joined(separator: "\n")
         case "remove":
             return removed ? style.bold("🧹 Removed the \(named) for \(app)") : style.bold("🤷 No \(named) to remove for \(app)")
+        case "describe":
+            let head = changed == true ? style.green(style.bold("📝 Updated the \(named) for \(app)")) : style.bold("👌 Nothing to change for the \(named) of \(app)")
+            return ([head] + Self.styledDetails(context ?? .empty, signIns: [], indent: "   ", style: style)).joined(separator: "\n")
         default:
             if key == nil {
                 guard !listed.isEmpty else {
                     return [style.bold("🔐 No logins saved for \(app)"), PromptScreen.nextStep("Add one", command: "offsider credential set --app \(app)", style: style)].joined(separator: "\n")
                 }
                 let count = listed.count == 1 ? "1 login" : "\(listed.count) logins"
-                let names = listed.map { LoginCredential.displayKey($0.key) }
-                let widest = names.map(\.count).max() ?? 0
-                let rows = zip(listed, names).map { entry, name in
+                let widest = listed.map(\.name.count).max() ?? 0
+                let rows = listed.flatMap { entry in
                     let mark = entry.isDefault && entry.key != LoginCredential.defaultAccountKey ? "  " + style.yellow("⭐ default") : ""
-                    return "   👤 " + style.bold(name.padding(toLength: widest, withPad: " ", startingAt: 0)) + "  " + entry.username + mark
+                    let row = "   👤 " + style.bold(entry.name.padding(toLength: widest, withPad: " ", startingAt: 0)) + mark
+                    return [row] + Self.styledDetails(entry.context, signIns: signIns[entry.key] ?? [], indent: "      ", style: style)
                 }
-                return ([style.bold("🔐 \(app) · \(count)")] + rows + shared.map { "   " + style.dim($0) }).joined(separator: "\n")
+                return ([style.bold("🔐 \(app) · \(count)")] + rows + (shared + here).map { "   " + style.dim($0) }).joined(separator: "\n")
             }
             guard saved, let username else {
                 let nameArgument = key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
                 return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set\(nameArgument) --app \(app)", style: style)].joined(separator: "\n")
             }
             let details = ["👤 \(username)"] + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
-            return [style.green(style.bold("✅ The \(named) is saved for \(app)")), "   " + style.dim(details.joined(separator: "  "))].joined(separator: "\n")
+            let rows = Self.styledDetails(context ?? .empty, signIns: key.flatMap { signIns[$0] } ?? [], indent: "   ", style: style)
+            return ([style.green(style.bold("✅ The \(named) is saved for \(app)")), "   " + style.dim(details.joined(separator: "  "))] + rows + here.map { "   " + style.dim($0) }).joined(separator: "\n")
         }
+    }
+
+    private var here: [String] {
+        signedInHere.map { ["📱 signed in here: \(LoginCredential.displayKey($0))"] } ?? []
+    }
+
+    /// Dim rows for tags, notes, the stamp and each sign-in. Every emoji draws as one without a variation selector.
+    static func styledDetails(_ context: LoginContext, signIns: [LoginSignIn], indent: String, style: TerminalStyle) -> [String] {
+        var rows: [String] = []
+        if !context.tags.isEmpty { rows.append("🔖 " + context.tags.map(\.rawValue).joined(separator: " ")) }
+        let marks: [LoginNote: String] = [.about: "💬", .avoid: "🚫", .state: "📊"]
+        for note in LoginNote.allCases {
+            if let text = context[note], let mark = marks[note] { rows.append("\(mark) \(text)") }
+        }
+        if let updated = context.updated { rows.append("🕒 updated \(LoginContext.timestamp(updated))") }
+        rows += signIns.map { "📱 signed in on " + signInText($0) }
+        return rows.map { indent + style.dim($0) }
     }
 }
 

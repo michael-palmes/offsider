@@ -1,7 +1,9 @@
 import Foundation
 
-/// What `credential` prints. The username may be shown. The password never is, and the JSON has no password field.
+/// What `credential` prints. Only `set` and `status <name>` show a username. The password never is, and the JSON has no password field.
 public struct CredentialReport: Equatable, Sendable {
+    public static let version = 2
+
     public var action: String
     public var app: String
     public var key: String?
@@ -10,14 +12,22 @@ public struct CredentialReport: Equatable, Sendable {
     public var saved: Bool
     /// True when `remove` deleted an item. The password is not involved.
     public var removed: Bool
-    /// Every credential for the app, when `status` was asked with no key.
-    public var listed: [LoginCredentialSummary]
+    /// Every saved login for the app, when `status` lists them. Read from attributes, so no usernames.
+    public var listed: [LoginEntry]
     /// True when the saved or shown login is the one `login` uses with no name.
     public var isDefault: Bool
     /// Other bundle ids that share this app's logins.
     public var also: [String]
     /// The app a `join` attached this id to.
     public var linked: String?
+    /// The notes and tags of the one login saved, described or shown.
+    public var context: LoginContext?
+    /// Whether `describe` changed the context.
+    public var changed: Bool?
+    /// Where each login was last signed in, by raw key.
+    public var signIns: [String: [LoginSignIn]]
+    /// The raw key last signed in on the device in hand.
+    public var signedInHere: String?
 
     public init(
         action: String,
@@ -26,10 +36,14 @@ public struct CredentialReport: Equatable, Sendable {
         username: String? = nil,
         saved: Bool,
         removed: Bool = false,
-        listed: [LoginCredentialSummary] = [],
+        listed: [LoginEntry] = [],
         isDefault: Bool = false,
         also: [String] = [],
-        linked: String? = nil
+        linked: String? = nil,
+        context: LoginContext? = nil,
+        changed: Bool? = nil,
+        signIns: [String: [LoginSignIn]] = [:],
+        signedInHere: String? = nil
     ) {
         self.action = action
         self.app = app
@@ -41,7 +55,13 @@ public struct CredentialReport: Equatable, Sendable {
         self.isDefault = isDefault
         self.also = also
         self.linked = linked
+        self.context = context
+        self.changed = changed
+        self.signIns = signIns
+        self.signedInHere = signedInHere
     }
+
+    var isList: Bool { action == "status" && key == nil }
 
     public func textLine() -> String {
         if action == "join" {
@@ -51,13 +71,15 @@ public struct CredentialReport: Equatable, Sendable {
             }
             return "\(app) already shares logins with \(linked)."
         }
-        if action == "status", key == nil {
+        if isList {
             guard !listed.isEmpty else { return "\(heading): no login credential saved" }
-            let lines = listed.map { entry in
+            var lines = ["\(heading):"]
+            for entry in listed {
                 let mark = entry.isDefault && entry.key != LoginCredential.defaultAccountKey ? " (default)" : ""
-                return "\(LoginCredential.displayKey(entry.key))\(mark) \(entry.username)"
+                lines.append("\(entry.name)\(mark)")
+                lines += Self.textDetails(entry.context, signIns: signIns[entry.key] ?? [])
             }
-            return "\(heading):\n" + lines.joined(separator: "\n")
+            return (lines + hereLine).joined(separator: "\n")
         }
         let shown = key.map(LoginCredential.displayKey) ?? ""
         switch action {
@@ -70,48 +92,111 @@ public struct CredentialReport: Equatable, Sendable {
         case "remove":
             let name = key == LoginCredential.defaultAccountKey ? "default login" : "login credential \(shown)"
             return removed ? "Removed the \(name) for \(app)" : "No \(name) was saved for \(app)"
+        case "describe":
+            let head = changed == true
+                ? "Updated the notes and tags of \(shown) for \(app)."
+                : "Nothing changed: \(shown) for \(app) already has these notes and tags."
+            return ([head] + Self.textDetails(context ?? .empty, signIns: [])).joined(separator: "\n")
         default:
             guard saved, let username else { return "No login credential \(shown) is saved for \(app)." }
+            let first: String
             if key == LoginCredential.defaultAccountKey {
-                return "\(heading) default: \(username)"
+                first = "\(heading) default: \(username)"
+            } else {
+                first = "\(heading) \(shown)\(isDefault ? " (default)" : ""): \(username)"
             }
-            let mark = isDefault ? " (default)" : ""
-            return "\(heading) \(shown)\(mark): \(username)"
+            return ([first] + Self.textDetails(context ?? .empty, signIns: key.flatMap { signIns[$0] } ?? []) + hereLine).joined(separator: "\n")
         }
     }
 
     public func jsonLine() -> String {
         var fields: [(String, OrderedJSON)] = [
-            ("version", .integer(1)),
+            ("version", .integer(Self.version)),
             ("action", .string(action)),
             ("app", .string(app)),
         ]
         if !also.isEmpty {
             fields.append(("also", .array(also.map { .string($0) })))
         }
-        if let linked { fields.append(("linked", .string(linked))) }
         if action == "join" {
+            if let linked { fields.append(("linked", .string(linked))) }
             fields.append(("saved", .bool(saved)))
-        } else if key == nil, action == "status" {
-            fields.append(("credentials", .array(listed.map { entry in
-                .object([
-                    ("key", .string(LoginCredential.displayKey(entry.key))),
-                    ("default", .bool(entry.isDefault)),
-                    ("username", .string(entry.username)),
-                    ("saved", .bool(true)),
-                ])
+            return OrderedJSON.object(fields).rendered(compact: true)
+        }
+        if action == "status", let signedInHere {
+            fields.append(("signedInHere", .string(LoginCredential.displayKey(signedInHere))))
+        }
+        if isList {
+            fields.append(("users", .array(listed.map { entry in
+                var user: [(String, OrderedJSON)] = [("name", .string(entry.name)), ("default", .bool(entry.isDefault))]
+                user += Self.contextFields(entry.context)
+                user.append(("signedIn", Self.signInsJSON(signIns[entry.key] ?? [])))
+                return .object(user)
             })))
-        } else if action != "join" {
-            if let key { fields.append(("key", .string(LoginCredential.displayKey(key)))) }
-            if isDefault { fields.append(("default", .bool(true))) }
-            if let username { fields.append(("username", .string(username))) }
-            fields.append(("saved", .bool(saved)))
+            return OrderedJSON.object(fields).rendered(compact: true)
+        }
+        if let key { fields.append(("name", .string(LoginCredential.displayKey(key)))) }
+        fields.append(("saved", .bool(saved)))
+        if action == "remove" {
+            fields.append(("removed", .bool(removed)))
+            return OrderedJSON.object(fields).rendered(compact: true)
+        }
+        if let changed { fields.append(("changed", .bool(changed))) }
+        guard saved else { return OrderedJSON.object(fields).rendered(compact: true) }
+        fields.append(("default", .bool(isDefault)))
+        if let username { fields.append(("username", .string(username))) }
+        if let context { fields += Self.contextFields(context) }
+        if action == "status" {
+            fields.append(("signedIn", Self.signInsJSON(key.flatMap { signIns[$0] } ?? [])))
         }
         return OrderedJSON.object(fields).rendered(compact: true)
     }
 
-    private var heading: String {
+    var heading: String {
         guard !also.isEmpty else { return app }
         return "\(app) (also \(also.joined(separator: ", ")))"
+    }
+
+    private var hereLine: [String] {
+        signedInHere.map { ["Signed in here: \(LoginCredential.displayKey($0))"] } ?? []
+    }
+
+    /// `tags` always, then each note and `updated` only when set.
+    static func contextFields(_ context: LoginContext) -> [(String, OrderedJSON)] {
+        var fields: [(String, OrderedJSON)] = [("tags", .array(context.tags.map { .string($0.rawValue) }))]
+        for note in LoginNote.allCases {
+            if let text = context[note] { fields.append((note.rawValue, .string(text))) }
+        }
+        if let updated = context.updated { fields.append(("updated", .string(LoginContext.timestamp(updated)))) }
+        return fields
+    }
+
+    static func signInsJSON(_ signIns: [LoginSignIn]) -> OrderedJSON {
+        .array(signIns.map { signIn in
+            var fields: [(String, OrderedJSON)] = [
+                ("device", .string(signIn.device)),
+                ("platform", .string(signIn.platform.rawValue)),
+                ("since", .string(LoginContext.timestamp(signIn.since))),
+            ]
+            if let restarted = signIn.restarted { fields.append(("restarted", .bool(restarted))) }
+            return .object(fields)
+        })
+    }
+
+    /// One indented line per tag list, note, stamp and sign-in.
+    static func textDetails(_ context: LoginContext, signIns: [LoginSignIn]) -> [String] {
+        var lines: [String] = []
+        if !context.tags.isEmpty { lines.append("  tags: " + context.tags.map(\.rawValue).joined(separator: " ")) }
+        for note in LoginNote.allCases {
+            if let text = context[note] { lines.append("  \(note.rawValue): \(text)") }
+        }
+        if let updated = context.updated { lines.append("  updated: \(LoginContext.timestamp(updated))") }
+        lines += signIns.map { "  signed in on " + signInText($0) }
+        return lines
+    }
+
+    static func signInText(_ signIn: LoginSignIn) -> String {
+        let restart = signIn.restarted == true ? ", before the device restarted" : ""
+        return "\(signIn.device) (\(signIn.platform.rawValue)) since \(LoginContext.timestamp(signIn.since))\(restart)"
     }
 }

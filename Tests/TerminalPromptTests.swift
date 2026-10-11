@@ -118,6 +118,21 @@ struct TerminalPromptTests {
         #expect(UnlockCodeScreen.status(name: "Pixel", device: "SERIAL", saved: true, lastAttemptFailed: true, style: .plain).contains("unlock-code set --device SERIAL"))
     }
 
+    @Test("the styled status lists tags, notes and where each login is signed in, and no username")
+    func styledStatusList() throws {
+        let admin = LoginEntry(key: "qa-admin", isDefault: true, context: LoginContext(
+            about: "Admin on staging", avoid: "Checkout", state: "3 items in the cart", tags: [try #require(LoginTag(rawValue: "role=admin"))]
+        ))
+        let signIn = LoginSignIn(device: "emulator-5554", platform: .android, since: Date(timeIntervalSince1970: 1_791_712_931), restarted: true)
+        let report = CredentialReport(action: "status", app: "com.example.app", saved: true, listed: [admin, LoginEntry(key: "qa-member")], signIns: ["qa-admin": [signIn]], signedInHere: "qa-admin")
+        let text = report.styledText(style: .plain, device: "")
+        for expected in ["👤 qa-admin", "⭐ default", "🔖 role=admin", "💬 Admin on staging", "🚫 Checkout", "📊 3 items in the cart", "👤 qa-member", "signed in here: qa-admin"] {
+            #expect(text.contains(expected), "missing \(expected)")
+        }
+        #expect(text.contains("📱 signed in on emulator-5554 (android) since 2026-10-11T10:02:11Z, before the device restarted"))
+        #expect(!text.unicodeScalars.contains("\u{FE0F}"))
+    }
+
     @Test("credential set adds a new name from the menu, and keeping a saved name reads no password")
     func scriptedChoices() throws {
         let store = MemoryLoginCredentialStore()
@@ -126,7 +141,7 @@ struct TerminalPromptTests {
 
         let adding = ScriptedQuestions(choice: .create, name: "qa", credential: try #require(LoginCredential(username: "bea@example.com", password: "s3cret-token")))
         let added = try CredentialCommand.perform(.set, app: "com.example.app", key: nil, json: true, store: store, questions: adding, readCredential: adding.credential)
-        #expect(added.contains("\"key\":\"qa\""))
+        #expect(added.contains("\"name\":\"qa\""))
         #expect(try store.load(app: "com.example.app", key: "qa")?.username == "bea@example.com")
         #expect(try store.defaultKey(app: "com.example.app") == "dev")
 

@@ -197,6 +197,139 @@ struct LoginCredentialTests {
         #expect(store.context(app: "com.example.app", key: "qa-admin") == .saved(.empty))
     }
 
+    private static let stamp = Date(timeIntervalSince1970: 1_791_711_000)
+
+    private func savedPair() throws -> MemoryLoginCredentialStore {
+        let store = MemoryLoginCredentialStore()
+        try store.save(try #require(LoginCredential(username: username, password: password)), app: "com.example.app", key: "qa-admin", isDefault: true)
+        try store.save(try #require(LoginCredential(username: "bea@example.com", password: password)), app: "com.example.app", key: "qa-member", isDefault: false)
+        return store
+    }
+
+    private func describe(_ store: MemoryLoginCredentialStore, _ key: String?, _ edit: LoginContextEdit, app: String = "com.example.app", wrote: (() -> Void, () -> Void) = ({}, {})) throws -> String {
+        try CredentialCommand.perform(.describe, app: app, key: key, edit: edit, json: true, store: store, now: Self.stamp, keychainWillWrite: wrote.0, keychainDidWrite: wrote.1) {
+            Issue.record("describe must not ask for a password")
+            return try #require(LoginCredential(username: "x", password: "x"))
+        }
+    }
+
+    @Test("describe sets notes and tags without decrypting, reports only a change, and a password update keeps them")
+    func describeWritesContext() throws {
+        let store = try savedPair()
+        let edit = try LoginContextEdit.parse(about: "Admin on staging", avoid: nil, state: nil, tag: ["role=admin", "env=staging"], untag: [], clearTags: false)
+        var writing = false
+        var writesInsideNotice = 0
+        var writes = 0
+        store.onWrite = {
+            writes += 1
+            if writing { writesInsideNotice += 1 }
+        }
+        let first = try describe(store, nil, edit, wrote: ({ writing = true }, { writing = false }))
+        #expect(first == #"{"version":2,"action":"describe","app":"com.example.app","name":"qa-admin","saved":true,"changed":true,"default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging","updated":"2026-10-11T09:30:00Z"}"#)
+        let again = try describe(store, "qa-admin", edit, wrote: ({ writing = true }, { writing = false }))
+        #expect(again.contains(#""changed":false"#))
+        #expect(writes == 1)
+        #expect(writesInsideNotice == 1)
+        #expect(!writing)
+        #expect(store.decrypts == 0)
+
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-admin", update: true, json: true, store: store) {
+            try #require(LoginCredential(username: "ada.new@example.com", password: password))
+        }
+        guard case .saved(let kept) = store.context(app: "com.example.app", key: "qa-admin") else {
+            Issue.record("expected the context to survive a password update")
+            return
+        }
+        #expect(kept.about == "Admin on staging")
+        #expect(kept.tags.map(\.rawValue) == ["env=staging", "role=admin"])
+    }
+
+    @Test("describe refuses a missing name with a set hint, several logins with no default, and never overwrites a newer context")
+    func describeRefusals() throws {
+        let store = try savedPair()
+        let edit = LoginContextEdit(state: "3 items in the cart")
+        let missing = #expect(throws: CLIError.self) { try describe(store, "qa-owner", edit) }
+        #expect(missing?.exitCode == .failure)
+        #expect(missing?.hint == "offsider credential set qa-owner --app com.example.app")
+
+        store.markDefaultOff(app: "com.example.app")
+        let several = #expect(throws: CLIError.self) { try describe(store, nil, edit) }
+        #expect(several?.reason == .usage)
+        #expect(several?.failureMessage.contains("qa-admin, qa-member") == true)
+
+        let newer = Data(#"{"v":2,"about":"Kept"}"#.utf8)
+        store.slots[LoginCredential.account(app: "com.example.app", key: "qa-member")]?.context = newer
+        let refused = #expect(throws: CLIError.self) { try describe(store, "qa-member", edit) }
+        #expect(refused?.exitCode == .failure)
+        #expect(refused?.failureMessage.contains("newer Offsider") == true)
+        #expect(store.slots[LoginCredential.account(app: "com.example.app", key: "qa-member")]?.context == newer)
+
+        let tooMany = LoginContextEdit(tag: try (1...17).map { try #require(LoginTag(rawValue: "t\($0)")) })
+        let capped = #expect(throws: CLIError.self) { try describe(store, "qa-admin", tooMany) }
+        #expect(capped?.exitCode == .usage)
+    }
+
+    @Test("the version 2 status list reads no password and shows no username; status with a name decrypts and adds it")
+    func statusVersionTwo() throws {
+        let store = try savedPair()
+        let context = LoginContext(
+            about: "Admin on staging, can change team settings", avoid: "Checkout: no store credit", state: "3 items in the cart",
+            tags: [try #require(LoginTag(rawValue: "role=admin")), try #require(LoginTag(rawValue: "env=staging"))], updated: Self.stamp
+        )
+        #expect(try store.setContext(context, app: "com.example.app", key: "qa-admin"))
+        #expect(try store.setContext(LoginContext(tags: [try #require(LoginTag(rawValue: "role=member"))]), app: "com.example.app", key: "qa-member"))
+        let signIn = LoginSignIn(device: "emulator-5554", platform: .android, since: Self.stamp.addingTimeInterval(1931), restarted: false)
+        var asked: [String] = []
+        func status(_ key: String?, json: Bool = true, app: String = "com.example.app") throws -> String {
+            try CredentialCommand.perform(
+                .status, app: app, key: key, json: json, store: store,
+                signIns: { asked.append($0); return ["qa-admin": [signIn]] }, signedInHere: { _ in "qa-admin" }
+            ) { try #require(LoginCredential(username: "x", password: "x")) }
+        }
+
+        let list = try status(nil)
+        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"emulator-5554","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}]},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[]}]}"#)
+        let text = try status(nil, json: false)
+        #expect(text.contains("role=admin"))
+        #expect(text.contains("Admin on staging"))
+        #expect(!text.contains("@example.com"))
+        #expect(store.decrypts == 0)
+
+        let one = try status("qa-admin")
+        #expect(one.contains(#""name":"qa-admin","saved":true,"default":true,"username":"\#(username)","tags":["env=staging","role=admin"]"#))
+        #expect(one.contains(#""signedIn":[{"device":"emulator-5554""#))
+        #expect(!one.contains(password))
+        #expect(store.decrypts == 1)
+        #expect(try status("qa-owner") == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","name":"qa-owner","saved":false}"#)
+
+        _ = try CredentialCommand.join(foreground: "com.example.android", requested: nil, json: true, store: store)
+        let joined = try status(nil, app: "com.example.android")
+        #expect(joined.contains(#""app":"com.example.android","also":["com.example.app"]"#))
+        #expect(joined.contains(#""about":"Admin on staging, can change team settings""#))
+        #expect(Set(asked) == ["com.example.app"])
+    }
+
+    @Test("context flags go only with set or describe, describe needs one, and a bad tag or note states the rule")
+    func contextFlagUsage() throws {
+        let app = ["--app", "com.example.app"]
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["status", "--tag", "role=admin"] + app) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["remove", "qa", "--about", "x"] + app) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["join", "--clear-tags", "--device", "DEVICE"]) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["describe", "qa"] + app) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["describe", "qa", "--stdin", "--state", "x"] + app) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["describe", "qa", "--about", "ada@example.com"] + app) }
+        do {
+            _ = try CredentialCommand.parse(["describe", "qa", "--tag", "Role Admin"] + app)
+            Issue.record("expected a bad tag to be refused")
+        } catch {
+            #expect(CredentialCommand.message(for: error).contains(LoginTag.rule))
+            #expect(CredentialCommand.exitCode(for: error) == .validationFailure)
+        }
+        let describe = try CredentialCommand.parse(["describe", "qa", "--tag", "role=admin", "--tag", "credit", "--untag", "beta", "--state", ""] + app)
+        #expect(try describe.contextEdit() == LoginContextEdit(state: "", tag: [try #require(LoginTag(rawValue: "role=admin")), try #require(LoginTag(rawValue: "credit"))], untag: [try #require(LoginTag(rawValue: "beta"))]))
+        _ = try CredentialCommand.parse(["set", "qa", "--stdin", "--about", "Member on staging"] + app)
+    }
+
     @Test("credential takes --device, and --app does not require one")
     func parsing() throws {
         #expect(throws: (any Error).self) { try CredentialCommand.parse(["set", "dev"]) }
@@ -284,6 +417,8 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
     var links: [String: String] = [:]
     /// Called on each read that `login` makes before it types.
     var onRead: () -> Void = {}
+    /// Called on each context write, which macOS may hold for a prompt.
+    var onWrite: () -> Void = {}
     /// Passwords decrypted so far.
     private(set) var decrypts = 0
 
@@ -329,10 +464,18 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
     }
 
     func setContext(_ context: LoginContext, app: String, key: String) throws -> Bool {
+        onWrite()
         let account = LoginCredential.account(app: app, key: key)
         guard slots[account] != nil else { return false }
         slots[account]?.context = context.storageData()
         return true
+    }
+
+    /// Leaves every login for `app` unmarked, as a 0.9.0 Keychain could.
+    func markDefaultOff(app: String) {
+        for key in mine(app).map(\.key) {
+            slots[LoginCredential.account(app: app, key: key)]?.isDefault = false
+        }
     }
 
     /// The stored context, read as `entries` reads it.
