@@ -62,7 +62,7 @@ offsider session stop --device <UDID>
 
 ## Refused on a device
 
-`permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, `wake`, `stay-awake`, `unlock-code`, `login` and `credential` (when it would read the device) and a `touch --down` without `--up` exit 1 with `not_supported`, most naming an alternative; `boot` and `button apple-pay` exit 64. Use an iOS simulator for permissions, the status bar, biometrics, logs and sign-in, and install and launch apps with `xcrun devicectl`. `record-video` and the other `stream-video` formats build each frame from a screenshot, so their frame rate is low. `credential --app <bundle-id>` saves or describes a test user without reading the device.
+`permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, `wake`, `stay-awake`, `unlock-code`, `login` and `credential` (when it would read the device) and a `touch --down` without `--up` exit 1 with `not_supported`, most naming an alternative; `boot`, `button apple-pay` and `button app-switch` exit 64. Use an iOS simulator for permissions, the status bar, biometrics, logs and sign-in, and install and launch apps with `xcrun devicectl`. `record-video` and the other `stream-video` formats build each frame from a screenshot, so their frame rate is low. `credential --app <bundle-id>` saves or describes a test user without reading the device.
 
 ## Errors
 

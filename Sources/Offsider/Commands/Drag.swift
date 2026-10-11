@@ -46,7 +46,7 @@ struct Drag: AsyncParsableCommand {
     @Option(name: .customLong("hold-ms"), help: ArgumentHelp("Milliseconds to hold at the start before moving, from 0 to 10000; 500 or more starts a long-press drag.", valueName: "ms"))
     var holdMs: Int = Self.defaultHoldMilliseconds
 
-    @Option(name: .customLong("hold-end"), help: ArgumentHelp("Milliseconds to hold still at the end before lifting, from 0 to 10000 (default 50).", valueName: "ms"))
+    @Option(name: .customLong("hold-end"), help: ArgumentHelp("Milliseconds to hold still at the end before lifting, from 0 to 10000.", valueName: "ms"))
     var holdEnd: Int = Self.defaultHoldEndMilliseconds
 
     @Option(name: .customLong("pre-delay"), help: "Delay before starting the drag in seconds.")
