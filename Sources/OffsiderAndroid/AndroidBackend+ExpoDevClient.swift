@@ -63,6 +63,12 @@ extension AndroidBackend: ExpoDevClientOpening {
         return host
     }
 
+    public func stopApp(_ appID: String, on id: DeviceID) async throws {
+        let package = try ExpoDevClient.validate(appID: appID)
+        try await prepare()
+        _ = try await requireClient().shell(ExpoDevClient.androidForceStopCommand(package: package), on: id.rawValue, label: "am force-stop")
+    }
+
     public func openURL(_ url: String, appID: String, on id: DeviceID) async throws {
         let package = try ExpoDevClient.validate(appID: appID)
         try await prepare()

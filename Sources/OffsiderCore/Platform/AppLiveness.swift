@@ -56,6 +56,8 @@ public struct AppLivenessWatch: Sendable {
     }
 
     public private(set) var seen: AppProcess?
+    /// The process `--restart` stopped: a read made while it still exits must not take it for the app.
+    public var stopped: AppProcess?
     private var missSince: TimeInterval?
     private var lastRead: TimeInterval?
     private var lastListing: TimeInterval?
@@ -84,7 +86,7 @@ public struct AppLivenessWatch: Sendable {
     public mutating func record(_ reading: AppLiveness, at now: TimeInterval) -> Verdict {
         lastRead = now
         guard let seen else {
-            if case .running(let process) = reading {
+            if case .running(let process) = reading, !(stopped.map(process.isSame) ?? false) {
                 self.seen = process
                 return .alive
             }

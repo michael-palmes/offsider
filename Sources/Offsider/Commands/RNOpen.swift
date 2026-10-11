@@ -15,7 +15,8 @@ struct RNOpen: AsyncParsableCommand {
         emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port; a phone needs that reverse, which \
         Offsider reads but never sets. Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
         when the app shows a load error, 1 (app_crashed) when its process stops, naming the iOS crash report or \
-        the Android exception class or signal, and 5 at --timeout.
+        the Android exception class or signal, and 5 at --timeout. --restart stops the app first (simctl \
+        terminate or am force-stop), so the link opens it fresh; use it when a timeout reports a blank screen.
 
         Example:
           offsider rn open --port 8081 --bundle-id com.example.app --wait-id home-screen --device DEVICE_ID
@@ -36,6 +37,9 @@ struct RNOpen: AsyncParsableCommand {
 
     @Option(help: ArgumentHelp("Give up after this many seconds, from 10 to 900 (default 180); a first bundle can take minutes.", valueName: "seconds"))
     var timeout: Double = 180
+
+    @Flag(help: "Stop the app before sending the link, so it opens fresh.")
+    var restart = false
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
@@ -136,6 +140,7 @@ struct RNOpen: AsyncParsableCommand {
         var launcherSeen = false
         var quietSince: TimeInterval?
         var previous: AccessibilitySnapshot?
+        var blank = false
         let liveness = route.backend as? any AppLivenessReading
         var watch = AppLivenessWatch()
         func send() async throws {
@@ -159,6 +164,16 @@ struct RNOpen: AsyncParsableCommand {
             let report = await liveness.crashReport(bundleID, process: process, since: firstSend ?? Date(), on: device)
             throw Self.crashed(bundleID, process: process, report: report, metro: "\(host):\(port)", device: device)
         }
+        if restart {
+            if case .running(let process) = await liveness?.appLiveness(bundleID, seen: nil, tree: nil, mayList: true, on: device) {
+                watch.stopped = process
+            }
+            do {
+                try await opener.stopApp(bundleID, on: device)
+            } catch let error as ExpoDevClientError {
+                throw CLIError(errorDescription: error.message, reason: .expoDevClientFailed)
+            }
+        }
         try await send()
 
         while clock.now() < deadline {
@@ -166,6 +181,7 @@ struct RNOpen: AsyncParsableCommand {
             let read = try? await route.backend.accessibilityTree(for: device)
             try await watchApp(read)
             guard let tree = read else { continue }
+            blank = ExpoDevLauncher.isBlank(tree)
             if let failure = ExpoDevLauncher.loadError(in: tree) {
                 throw CLIError(
                     errorDescription: "\(bundleID) could not load its bundle from Metro on \(host):\(port): \(failure)",
@@ -210,11 +226,22 @@ struct RNOpen: AsyncParsableCommand {
                 elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded())
             )
         }
+        if blank {
+            throw CLIError(
+                errorDescription: "\(bundleID) did not finish loading from Metro on \(host):\(port) within \(WaitLoop.seconds(timeout)): the app showed a blank screen. Run rn open again with --restart to stop the app and open it fresh.",
+                reason: .conditionNotMet,
+                hint: "offsider rn open --port \(port) --bundle-id \(bundleID)\(waitID.map { " --wait-id \(Self.shellWord($0))" } ?? "") --restart --device \(device.rawValue)"
+            )
+        }
         throw CLIError(
             errorDescription: "\(bundleID) did not finish loading from Metro on \(host):\(port) within \(WaitLoop.seconds(timeout))\(launcherSeen ? "; the dev launcher was still showing" : "").",
             reason: .conditionNotMet,
             hint: "offsider describe-ui --summary --device \(device.rawValue)"
         )
+    }
+
+    static func shellWord(_ text: String) -> String {
+        text.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil ? text : ExpoDevClient.shellQuote(text)
     }
 
     static func crashed(_ bundleID: String, process: AppProcess, report: AppCrashReport?, metro: String, device: DeviceID) -> CLIError {

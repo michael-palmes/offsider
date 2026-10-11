@@ -68,6 +68,8 @@ class FakeDeviceBackend: DeviceBackend {
     var expoSchemes = ["exp+playground"]
     var metroHostAnswer = "127.0.0.1"
     private(set) var openedURLs: [String] = []
+    /// `rn open`'s stops and links in order, as `stop <app>` and `open <url>`.
+    private(set) var devClientCalls: [String] = []
     private(set) var devMenuOpens = 0
     /// Liveness reads in order, holding the last; empty answers unknown.
     var livenessReadings: [AppLiveness] = []
@@ -333,7 +335,12 @@ extension FakeDeviceBackend: AwakeControlling {
 extension FakeDeviceBackend: ExpoDevClientOpening {
     func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String] { expoSchemes }
     func metroHost(port: Int, on id: DeviceID) async throws -> String { metroHostAnswer }
-    func openURL(_ url: String, appID: String, on id: DeviceID) async throws { openedURLs.append(url) }
+    func openURL(_ url: String, appID: String, on id: DeviceID) async throws {
+        openedURLs.append(url)
+        devClientCalls.append("open \(url)")
+    }
+
+    func stopApp(_ appID: String, on id: DeviceID) async throws { devClientCalls.append("stop \(appID)") }
 }
 
 extension FakeDeviceBackend: AppLivenessReading {

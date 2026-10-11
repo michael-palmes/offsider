@@ -159,6 +159,47 @@ struct RNOpenCommandTests {
         #expect(backend.livenessReads.count == 4)
     }
 
+    @Test("with --restart, the stopped process still exiting when the first read runs is not taken for the app, so its exit is no crash")
+    func restartIgnoresStoppedProcess() async throws {
+        let fresh = AppProcess(pid: 4200, started: 2)
+        let (result, backend) = try await Self.watch(
+            ["--restart", "--wait-id", "menu-title"], trees: Array(repeating: Self.bundling, count: 8) + [Self.app],
+            liveness: [.running(Self.playground), .running(Self.playground), .running(fresh)]
+        )
+        #expect(try result.get().sends == 1)
+        #expect(backend.crashReportRequests.isEmpty)
+        #expect(!backend.livenessReads.contains { $0.seen == Self.playground })
+    }
+
+    @Test("--restart stops the app before the first link, and without it nothing is stopped")
+    func restartStopsFirst() async throws {
+        let url = "open exp+playground://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742"
+        let (_, restarted) = try await Self.open(["--restart", "--wait-id", "menu-title"], trees: [Self.bundling, Self.app])
+        #expect(restarted.devClientCalls == ["stop com.example.app", url])
+
+        let (_, plain) = try await Self.open(["--wait-id", "menu-title"], trees: [Self.bundling, Self.app])
+        #expect(plain.devClientCalls == [url])
+    }
+
+    @Test("a timeout on a blank screen says so and hints --restart, never restarting by itself")
+    func blankScreenHint() async throws {
+        let blank = FakeUI.tree([FakeUI.node(.other, frame: FakeUI.frame(0, 0, 402, 874), children: [FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874))])])
+        let (result, backend) = try await Self.watch(["--wait-id", "menu title", "--timeout", "10"], trees: [blank], liveness: [])
+        guard case .failure(let error) = result else { Issue.record("expected a timeout"); return }
+        #expect(error.reason == .conditionNotMet)
+        #expect(error.userFacingDescription.contains("blank screen") && error.userFacingDescription.contains("--restart"))
+        #expect(error.hint == "offsider rn open --port 8742 --bundle-id com.example.app --wait-id 'menu title' --restart --device \(Self.device.rawValue)")
+        #expect(!backend.devClientCalls.contains { $0.hasPrefix("stop") })
+
+        let (labelled, _) = try await Self.watch(["--wait-id", "never-there", "--timeout", "10"], trees: [Self.app], liveness: [])
+        guard case .failure(let other) = labelled else { Issue.record("expected a timeout"); return }
+        #expect(!other.userFacingDescription.contains("blank screen"))
+
+        let (bare, _) = try await Self.watch(["--wait-id", "never-there", "--timeout", "10"], trees: [FakeUI.tree([])], liveness: [])
+        guard case .failure(let launching) = bare else { Issue.record("expected a timeout"); return }
+        #expect(!launching.userFacingDescription.contains("blank screen"))
+    }
+
     @Test("--port and --timeout are checked", arguments: [["--port", "0"], ["--timeout", "5"], ["--scheme", "not a scheme"]])
     func validation(extra: [String]) {
         #expect(throws: (any Error).self) { try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app"] + extra + ["--device", Self.device.rawValue]) }
