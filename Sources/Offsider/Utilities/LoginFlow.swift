@@ -47,7 +47,7 @@ enum LoginFlow {
         try requireName(form.identity, what: "email or username")
         try requireName(form.password, what: "password")
         try await type(credential.username, into: form.identity, services: services)
-        tree = try await services.readTree()
+        tree = try await readUntil({ LoginForm.match(form.identity, in: $0)?.value == credential.username }, services: services)
         guard let identity = LoginForm.match(form.identity, in: tree) else {
             throw CLIError(
                 errorDescription: "The email or username field left the screen. The password was not typed.",
@@ -61,7 +61,7 @@ enum LoginFlow {
             )
         }
         try await type(credential.password, into: form.password, services: services)
-        tree = try await services.readTree()
+        tree = try await readUntil({ LoginForm.match(form.password, in: $0).map { masked($0.value, length: credential.password.count) } == true }, services: services)
         guard let password = LoginForm.match(form.password, in: tree) else {
             throw CLIError(
                 errorDescription: "The password field left the screen. The submit button was not tapped.",
@@ -76,6 +76,10 @@ enum LoginFlow {
         }
         let submitNow = LoginForm.match(form.submit, in: tree) ?? form.submit
         tree = try await dismissKeyboard(in: tree, submit: submitNow, shell: form.turnstileShell, services: services)
+        if (try? LoginForm.detect(in: tree, profile: profile)) == nil {
+            // A read taken while the keyboard animates away can miss the form for a moment.
+            tree = try await readUntil({ (try? LoginForm.detect(in: $0, profile: profile)) != nil }, services: services)
+        }
         let filled = try detect(in: tree, profile: profile, afterTyping: true)
         let step = try await LoginTurnstileRunner.settle(mode: turnstile, read: services.readTurnstile, perform: services.performTurnstile)
         return try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
@@ -219,14 +223,23 @@ enum LoginFlow {
         services: Services
     ) async throws -> LoginReport {
         let deadline = services.clock.now() + timeout
+        var missingUntil: TimeInterval?
         while true {
             let tree = try await services.readTree()
             guard let submit = LoginForm.match(sample, in: tree), let frame = submit.frame else {
+                let now = services.clock.now()
+                let until = missingUntil ?? now + keyboardSettle
+                missingUntil = until
+                if now < until {
+                    try await services.clock.sleep(.milliseconds(250))
+                    continue
+                }
                 throw CLIError(
                     errorDescription: "The form changed after the fields were filled. The submit button was not tapped.",
                     reason: .selectorNotFound
                 )
             }
+            missingUntil = nil
             if submit.enabled != false {
                 try await services.tap(frame.center, tree)
                 let label = submit.label?.trimmingCharacters(in: .whitespacesAndNewlines)

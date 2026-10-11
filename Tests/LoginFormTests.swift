@@ -67,6 +67,23 @@ struct LoginFormTests {
         }
     }
 
+    @Test("a keyboard window holding a Dictate button below its keys does not hide the form, but one with a control above them does")
+    func keyboardDockDoesNotHideTheForm() throws {
+        func withKeyboardWindow(_ extra: UINode) -> UITree {
+            let assistant = FakeUI.node(.group, id: "SystemInputAssistantView", frame: FakeUI.frame(0, 800, 402, 30))
+            let keys = FakeUI.node(.keyboard, id: "UIKeyboardLayoutStar Preview", frame: FakeUI.frame(0, 830, 402, 40))
+            let holder = FakeUI.node(.group, frame: FakeUI.frame(0, 800, 402, 74), children: [assistant, keys, extra])
+            let window = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [holder])
+            return FakeUI.tree(SignInFixture.tree().roots[0].children + [window])
+        }
+        let dictate = FakeUI.node(.button, id: "dictation", label: "Dictate", frame: FakeUI.frame(325, 850, 40, 20), enabled: false)
+        let found = try LoginForm.detect(in: withKeyboardWindow(dictate))
+        #expect(found.identity.id == "email-field")
+        #expect(found.submit.id == "login-button")
+        let banner = FakeUI.node(.button, label: "Banner", frame: FakeUI.frame(16, 300, 370, 44))
+        #expect(throws: LoginFormError.self) { try LoginForm.detect(in: withKeyboardWindow(banner)) }
+    }
+
     @Test("a pinned id that is covered is a refusal, not a tap on what is in front")
     func pinnedCoverRefuses() {
         let profile = LoginProfile(bundleID: "com.example.app", password: LoginField(id: "password-field"))

@@ -134,6 +134,55 @@ struct LoginFlowTests {
         #expect(report.submitLabel == "Log in")
     }
 
+    @Test("a username the field shows a read late is waited for, not refused")
+    func usernameShowsLate() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnSleep = true
+        let report = try await run(script, mode: .off)
+        #expect(script.typed == [username, password])
+        #expect(script.taps.count == 1)
+        #expect(report.submitLabel == "Log in")
+    }
+
+    @Test("a read with no form while the keyboard animates away is read again, not taken for a changed form")
+    func formMissingForAMomentAfterDismiss() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
+            FakeUI.tree([]),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnTap = true
+        script.advanceOnSleep = true
+        let report = try await run(script, mode: .off)
+        #expect(script.taps.count == 2)
+        #expect(report.submitLabel == "Log in")
+    }
+
+    @Test("a read that misses the submit button while it waits to be enabled is read again, not taken for a changed form")
+    func submitMissingForAMoment() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets),
+            FakeUI.tree([]),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnSleep = true
+        let report = try await run(script, mode: .off)
+        #expect(script.taps.count == 1)
+        #expect(report.submitLabel == "Log in")
+    }
+
     @Test("a keyboard with no safe point does not reach Turnstile or submit")
     func keyboardCoversSubmit() async {
         let script = script(buttonEnabled: true, keyboard: true)
@@ -252,6 +301,7 @@ final class LoginScript {
     var hides = 0
     var advanceOnHide = false
     var advanceOnSleep = false
+    var advanceOnTap = false
     var time: TimeInterval = 0
 
     init(trees: [UITree]) {
@@ -274,7 +324,10 @@ final class LoginScript {
         LoginFlow.Services(
             readTree: { self.read() },
             typeText: { text, field in self.type(text, field) },
-            tap: { point, _ in self.taps.append(point) },
+            tap: { point, _ in
+                self.taps.append(point)
+                if self.advanceOnTap, self.index + 1 < self.trees.count { self.index += 1 }
+            },
             readTurnstile: {
                 let phase = self.phases[min(self.phaseIndex, self.phases.count - 1)]
                 self.phaseIndex += 1

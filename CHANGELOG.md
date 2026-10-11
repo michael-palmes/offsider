@@ -21,6 +21,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Several saved users with none the default exit 6 with `user_ambiguous` instead of `selector_ambiguous`, and list the users.
 - `credential --json` is version 2 for every action. `key` is now `name`, and the status list's `credentials` is now `users`, without `username` or `saved`.
 
+### Fixed
+
+- `login` on an iOS simulator no longer fails with "The form changed after the fields were filled" when the keyboard stays up: the keyboard's dictation bar no longer counts as covering the form, and a read taken while the keyboard moves is read again for up to 1.5 seconds, as is a field that shows its text a moment late.
+
 ## [0.10.0] - 2026-10-11
 
 ### Added
