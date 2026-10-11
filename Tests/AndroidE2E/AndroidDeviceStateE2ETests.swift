@@ -87,7 +87,7 @@ struct AndroidDeviceStateE2ETests {
             #expect(try await AndroidE2E.shell("settings get global stay_on_while_plugged_in").trimmingCharacters(in: .whitespacesAndNewlines) == "15")
 
             let off = try await AndroidE2E.run("stay-awake off")
-            #expect(off.stdout.hasPrefix("Stay awake: off (was on)"))
+            #expect(off.stdout.contains(": stay awake off (was on"))
         }
     }
 
@@ -100,7 +100,8 @@ struct AndroidDeviceStateE2ETests {
         try await Self.restoring({ _ = try? await AndroidE2E.shell("input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard") }) {
             try await AndroidE2E.shell("input keyevent KEYCODE_SLEEP")
             let asleep = try await AndroidE2E.run("stay-awake --json")
-            #expect(asleep.stdout.contains(#""current":{"screen":"off""#))
+            // With stay-awake on for AC power, the emulator dozes rather than turning the screen off.
+            #expect(asleep.stdout.contains(#""current":{"screen":"off""#) || asleep.stdout.contains(#""current":{"screen":"dozing""#))
 
             let woken = try await AndroidE2E.run("wake --json")
             #expect(woken.stdout.contains(#""sent":["KEYCODE_WAKEUP""#))
