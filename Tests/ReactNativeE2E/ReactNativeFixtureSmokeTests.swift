@@ -3,7 +3,7 @@ import Testing
 
 @Suite("React Native fixtures", .serialized, .enabled(if: RNPlatform.anyEnabled))
 struct ReactNativeFixtureSmokeTests {
-    static let routes = ["parked-sheet-test", "stack-test", "overlay-test", "rows-test", "environment-test", "live-ticker"]
+    static let routes = ["parked-sheet-test", "stack-test", "overlay-test", "rows-test", "environment-test", "live-ticker", "sticky-footer-test"]
 
     @Test("each fixture route opens on its marker", arguments: RNPlatform.enabled, routes)
     func routeOpens(platform: RNPlatform, route: String) async throws {

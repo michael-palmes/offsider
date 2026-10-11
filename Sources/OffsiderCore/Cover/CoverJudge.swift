@@ -60,7 +60,11 @@ public enum CoverJudge {
     /// The verdict from a hit-test, Android's drawing order or tree order alone; nil when the point is clear.
     private static func judged(_ context: Context, hit: UINode?) -> CoverVerdict? {
         if let hit {
-            switch context.judge(hit: hit) {
+            let judgement = context.judge(hit: hit)
+            if case .clear = judgement, let outside = context.candidateOutsideScrollView() {
+                return context.verdict(outside, .treeOrder, confident: false)
+            }
+            switch judgement {
             case .clear: return nil
             case .cover(let node, let confident): return context.verdict(node, .hitTest, confident: confident)
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
@@ -294,6 +298,33 @@ public enum CoverJudge {
                 return .cover(placed, confident: false)
             }
             return .undecided
+        }
+
+        /// The nearest scroll view or list holding the target or the matched element.
+        private var scrollAncestor: UINode? {
+            for node in [target, matched] {
+                guard let path = UITree.indexPath(to: node, in: roots) else { continue }
+                var chain = [roots[path[0]]]
+                for index in path.dropFirst() {
+                    chain.append(chain[chain.count - 1].children[index])
+                }
+                if let scroll = chain.dropLast().last(where: { [.scrollView, .list].contains($0.role) }) {
+                    return scroll
+                }
+            }
+            return nil
+        }
+
+        /// The smallest candidate at the point outside the target's scroll view, such as a footer floating over it: a hit-test may answer with what the scroll view holds beneath it.
+        func candidateOutsideScrollView() -> UINode? {
+            guard let scroll = scrollAncestor else { return nil }
+            let inside = scroll.flattened()
+            return candidates.filter { candidate in
+                guard !isOwn(candidate), let frame = candidate.frame, frame.contains(point), !CoverJudge.spans(frame, viewport),
+                      !inside.contains(where: { $0.isSameElement(as: candidate) }),
+                      !candidate.flattened().contains(where: { $0.isSameElement(as: scroll) }) else { return false }
+                return scroll.frame.map { !frame.encloses($0, tolerance: 0) } ?? true
+            }.min { $0.area < $1.area }
         }
 
         /// The first control over the point that is neither the target's own, inside its frame, nor a backdrop: a root hit says nothing, so it is only a guess.

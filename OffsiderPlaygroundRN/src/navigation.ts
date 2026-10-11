@@ -141,6 +141,12 @@ export const routeInfo = {
     menuTitle: 'Long Scroll Test',
     subtitle: 'Dedicated long scroll coverage',
   },
+  'sticky-footer-test': {
+    section: 'Presentation',
+    title: 'Sticky Footer',
+    menuTitle: 'Sticky Footer Test',
+    subtitle: 'Rows below the fold and a footer over them',
+  },
   'parked-sheet-test': {
     section: 'Real-world RN',
     title: 'Parked Sheet',

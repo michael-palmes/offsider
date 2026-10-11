@@ -3,6 +3,16 @@ import Foundation
 /// Where an off-screen node lies against the visible rect.
 public enum OffScreenSide: String, Sendable {
     case above, below, left, right
+
+    /// The edge `frame` lies wholly past; nil for an empty frame, or one that overlaps `rect`.
+    public static func of(_ frame: UIFrame, in rect: UIFrame) -> OffScreenSide? {
+        guard frame.width > 0, frame.height > 0 else { return nil }
+        if frame.y >= rect.y + rect.height { return .below }
+        if frame.y + frame.height <= rect.y { return .above }
+        if frame.x >= rect.x + rect.width { return .right }
+        if frame.x + frame.width <= rect.x { return .left }
+        return nil
+    }
 }
 
 /// One line of text output before the byte budget: a node, or a run of off-screen nodes.
@@ -154,7 +164,7 @@ public enum UITreeEconomy {
                     childLabel = node.label
                 }
             } else if summarisesRuns, passesOthers, ancestor != .offScreen,
-                      let frame = node.frame, let rect, let side = Self.side(of: frame, in: rect) {
+                      let frame = node.frame, let rect, let side = OffScreenSide.of(frame, in: rect) {
                 addToRun(node, side: side, depth: depth)
             }
             let childAncestor: Ancestor = passesOthers ? (matches ? .onScreen : .offScreen) : ancestor
@@ -203,16 +213,6 @@ public enum UITreeEconomy {
             var text = "[off-screen \(current.side.rawValue)] \(current.count) item\(current.count == 1 ? "" : "s"): \(current.first)"
             if current.count > 1 { text += " to \(current.last)" }
             lines.append(UITextLine(depth: current.depth, text: text, nodes: current.count))
-        }
-
-        /// The edge the frame lies wholly past; nil for an empty frame, or one inside the rect that is too small to see.
-        static func side(of frame: UIFrame, in rect: UIFrame) -> OffScreenSide? {
-            guard frame.width > 0, frame.height > 0 else { return nil }
-            if frame.y >= rect.y + rect.height { return .below }
-            if frame.y + frame.height <= rect.y { return .above }
-            if frame.x >= rect.x + rect.width { return .right }
-            if frame.x + frame.width <= rect.x { return .left }
-            return nil
         }
 
         /// `id=<id>`, else the quoted label, else the role, each cut to 40 characters.
