@@ -392,7 +392,7 @@ struct TapCommandTests {
     }
 
     @Test("--nth and --topmost need a selector, exclude each other and count from 1", arguments: [
-        (["-x", "1", "-y", "1", "--nth", "1"], "use them with --id, --label or --value"),
+        (["-x", "1", "-y", "1", "--nth", "1"], "use them with --id, --label, --label-contains or --value"),
         (["--id", "a", "--nth", "1", "--topmost"], "Use only one of --nth or --topmost."),
         (["--id", "a", "--nth", "0"], "--nth must be 1 or more"),
     ])

@@ -25,7 +25,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: [.customLong("value")], help: "Tap the activation point of the element whose describe-ui value matches (the current value of a control); with --id, the element must match both. Ignored if -x and -y are provided.")
     var elementValue: String?
 
-    @Option(name: [.customLong("element-type")], help: "Filter matches to this describe-ui role in any case (e.g. button, textField, switch) or exact native type (e.g. TextEditor). Narrows --id/--label/--value results when multiple elements match.")
+    @Option(name: [.customLong("element-type")], help: "Filter matches to this describe-ui role in any case (e.g. button, textField, switch) or exact native type (e.g. TextEditor). Narrows --id/--label/--label-contains/--value results when multiple elements match.")
     var elementType: String?
 
     @Option(name: .customLong("pre-delay"), help: "Delay before tapping in seconds.")
@@ -37,7 +37,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("tap-style"), help: "Tap event style: automatic uses physical touch for switches and a single tap event for other targets; simulator always sends a single tap event; physical uses touch down and up.")
     var tapStyle: TapStyle?
 
-    @Option(name: .customLong("wait-timeout"), help: "Maximum seconds to poll for the element before failing (0 = no waiting, default). Only applies to --id/--label/--value targeting.")
+    @Option(name: .customLong("wait-timeout"), help: "Maximum seconds to poll for the element before failing (0 = no waiting, default). Only applies to --id/--label/--label-contains/--value targeting.")
     var waitTimeout: Double?
 
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active (default: 0.25).")
@@ -82,13 +82,13 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         } else {
             try SelectorQuery.validate(id: elementID, label: elementLabel, labelContains: elementLabelContains, value: elementValue, refining: true)
             if query == nil {
-                throw ValidationError("Either provide both -x/-y, or use --id/--label/--value to tap an element.")
+                throw ValidationError("Either provide both -x/-y, or use --id/--label/--label-contains/--value to tap an element.")
             }
         }
 
         if nth != nil || topmost {
             guard query != nil, pointX == nil else {
-                throw ValidationError("--nth and --topmost choose among selector matches; use them with --id, --label or --value.")
+                throw ValidationError("--nth and --topmost choose among selector matches; use them with --id, --label, --label-contains or --value.")
             }
             guard nth == nil || !topmost else {
                 throw ValidationError("Use only one of --nth or --topmost.")

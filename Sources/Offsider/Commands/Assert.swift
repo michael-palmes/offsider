@@ -31,7 +31,7 @@ struct Assert: AsyncParsableCommand {
     func validate() throws {
         try selector.validateCount(allowingSeveral: false)
         guard selector.query != nil else {
-            throw ValidationError("Provide --id, --label or --value to choose the element to check.")
+            throw ValidationError("Provide --id, --label, --label-contains or --value to choose the element to check.")
         }
     }
 
