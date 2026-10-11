@@ -70,7 +70,7 @@ public struct UITreeContext: Equatable, Sendable {
     }
 
     public init(tree: UITree) {
-        var window = tree.windows.flatMap(Self.window(in:))
+        var window = tree.windows.flatMap(Self.window(in:)) ?? tree.systemPrompt?.window
         let logBox = KnownOverlays.logBox(in: tree)
         if let found = window, found.kind == .modal, found.package != nil, logBox == nil,
            found.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {

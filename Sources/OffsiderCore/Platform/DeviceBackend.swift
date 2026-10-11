@@ -73,7 +73,16 @@ extension DeviceBackend {
 @MainActor
 public protocol PointHitTesting: DeviceBackend {
     /// The element a touch at `point` reaches, as the platform reports it; nil when nothing answers there.
-    func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode?
+    /// An empty screen-sized group from a process outside a non-empty `appPIDs`, such as a prompt's backdrop, is answered at once.
+    func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode?
+    /// The name of the process a hit's `pid` belongs to, such as `SafariViewService`; nil when it cannot tell.
+    func processName(of pid: Int, on id: DeviceID) async -> String?
+}
+
+extension PointHitTesting {
+    public func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        try await hitTest(at: point, on: id, appPIDs: [])
+    }
 }
 
 /// Optional capability: the platform's own tree reply before mapping, for the committed tree goldens.

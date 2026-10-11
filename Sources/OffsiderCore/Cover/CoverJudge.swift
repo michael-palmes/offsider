@@ -10,6 +10,8 @@ public enum CoverEvidence: String, Sendable {
     case treeOrder
     /// A LogBox toast's touch area, which reaches beyond the frame the tree gives it.
     case logBoxTouchArea
+    /// The iOS simulator's hit-test found a view another process draws over the app, such as a system prompt.
+    case otherProcess
 }
 
 /// What a selector tap would land on instead of its target.
@@ -32,6 +34,7 @@ public struct CoverVerdict: Equatable, Sendable {
 /// Decides whether a selector tap's point reaches its target, from a hit-test, Android's drawing order or, failing both, tree order.
 public enum CoverJudge {
     /// What a tap at `point` on `target` (from `matched`) would reach instead, given the simulator's `hit` if any and a LogBox toast grown by `logBoxInset`; nil when it reaches the target.
+    /// With `otherProcessCovers`, set while the tree shows a prompt's host, a hit from a process the tree does not hold covers.
     public static func judge(
         target: UINode,
         matched: UINode,
@@ -41,10 +44,12 @@ public enum CoverJudge {
         viewport: UIFrame,
         stack: ScreenStack,
         hit: UINode?,
-        logBoxInset: Double = 0
+        logBoxInset: Double = 0,
+        otherProcessCovers: Bool = false
     ) -> CoverVerdict? {
         var context = Context(target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack)
         context.logBoxInset = logBoxInset
+        context.otherProcessCovers = otherProcessCovers
         let judged = judged(context, hit: hit)
         if judged?.isConfident == true {
             return judged
@@ -59,6 +64,9 @@ public enum CoverJudge {
 
     /// The verdict from a hit-test, Android's drawing order or tree order alone; nil when the point is clear.
     private static func judged(_ context: Context, hit: UINode?) -> CoverVerdict? {
+        if context.otherProcessCovers, let hit, SystemPrompt.isForeign(hit, in: context.roots) {
+            return context.verdict(hit, .otherProcess, confident: true)
+        }
         if let hit {
             switch context.judge(hit: hit) {
             case .clear: return nil
@@ -155,6 +163,7 @@ public enum CoverJudge {
         /// The target and the matched element with everything inside them.
         let own: [UINode]
         var logBoxInset = 0.0
+        var otherProcessCovers = false
 
         init(target: UINode, matched: UINode, point: UIPoint, candidates: [UINode], roots: [UINode], viewport: UIFrame, stack: ScreenStack) {
             self.target = target

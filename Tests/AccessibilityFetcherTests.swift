@@ -287,6 +287,33 @@ struct AccessibilityFetcherTests {
         #expect(waitCount == 4)
     }
 
+    @Test("an empty screen-sized group from a process outside the app's is an answer, not a fallback; the app's own still is one")
+    func otherProcessGroupIsNotFallback() async throws {
+        func group(pid: Int) throws -> Data {
+            try JSONSerialization.data(withJSONObject: [
+                "type": "Group", "role": "AXGroup", "pid": pid, "frame": ["x": 0, "y": 0, "width": 402, "height": 874],
+            ])
+        }
+        let point = AccessibilityPoint(x: 201, y: 241)
+        #expect(try !AccessibilityFetcher.isTransientPointFallback(in: try group(pid: 4200), at: point, appPIDs: [4100]))
+        #expect(try AccessibilityFetcher.isTransientPointFallback(in: try group(pid: 4100), at: point, appPIDs: [4100]))
+        #expect(try AccessibilityFetcher.isTransientPointFallback(in: try group(pid: 4200), at: point))
+
+        var fetchCount = 0
+        let backdrop = try group(pid: 4200)
+        let result = try await AccessibilityFetcher.retryingTransientPointFallback(
+            at: point,
+            appPIDs: [4100],
+            fetch: {
+                fetchCount += 1
+                return backdrop
+            },
+            wait: { _ in Issue.record("another process's view should not wait") }
+        )
+        #expect(result == backdrop)
+        #expect(fetchCount == 1)
+    }
+
     @Test("Returns point targets without retrying")
     func returnsPointTargetWithoutRetrying() async throws {
         let button = try JSONSerialization.data(withJSONObject: [

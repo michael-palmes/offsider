@@ -86,7 +86,7 @@ Once login reaches the email field, a failure still prints that object, with `ok
 
 Exit 0 means the submit button was tapped, not that the server accepted the login. Hand back on exit 1 or 5. Do not loop on it.
 
-On an iOS simulator, a system Save Password? sheet can appear a few seconds after a sign-in. `describe-ui` does not list it: take a screenshot, then tap Not Now by its coordinates (`tap -x <X> -y <Y>`). Never tap Save.
+On an iOS simulator, iOS can offer to save the password a second or more after a sign-in. `describe-ui` then shows `# window: Save Password? (system)` without its buttons, and a selector `tap` under it refuses with `target_covered` (`evidence` `otherProcess`) rather than spend the tap dismissing it. Take a screenshot and tap Not Now by its coordinates (`tap -x <X> -y <Y>`), or tap its backdrop as the refusal says, then wait until the header has gone. Never tap Save.
 
 ## Where it refuses
 

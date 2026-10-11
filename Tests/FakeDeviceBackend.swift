@@ -192,10 +192,24 @@ extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeContro
 @MainActor
 final class HitTestingFakeBackend: FakeDeviceBackend, PointHitTesting {
     private(set) var hitTests = 0
+    private(set) var hitPoints: [UIPoint] = []
+    /// The app pids each hit-test passed.
+    private(set) var hitAppPIDs: [Set<Int>] = []
+    /// When set, answers hit-tests in place of the next tree, as another process's view the tree does not hold.
+    var hits: ((UIPoint) -> UINode?)?
+    /// What `processName(of:on:)` serves.
+    var processNames: [Int: String] = [:]
 
-    func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+    func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
         hitTests += 1
+        hitPoints.append(point)
+        hitAppPIDs.append(appPIDs)
+        if let hits { return hits(point) }
         return try await accessibilityTree(for: id, point: point).roots.first
+    }
+
+    func processName(of pid: Int, on id: DeviceID) async -> String? {
+        processNames[pid]
     }
 }
 
@@ -214,10 +228,11 @@ enum FakeUI {
         state: UIState = UIState(),
         platform: DevicePlatform = .ios,
         drawingOrder: Int? = nil,
+        pid: Int? = nil,
         children: [UINode] = []
     ) -> UINode {
         let native: UINative = platform == .ios
-            ? .ios(IOSNativeAttributes())
+            ? .ios(IOSNativeAttributes(pid: pid))
             : .android(AndroidNativeAttributes(resourceId: id, drawingOrder: drawingOrder))
         return UINode(
             role: role, id: id, label: label, value: value, frame: frame,

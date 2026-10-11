@@ -81,11 +81,16 @@ final class IOSBackend: DeviceBackend {
     }
 
     func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+        try await accessibilityTree(for: id, point: point, appPIDs: [])
+    }
+
+    private func accessibilityTree(for id: DeviceID, point: UIPoint?, appPIDs: Set<Int>) async throws -> UITree {
         let startedAt = Date()
         let simulator = try await simulator(for: id)
         let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
             from: simulator,
             point: point.map { AccessibilityPoint(x: $0.x, y: $0.y) },
+            appPIDs: appPIDs,
             logger: logger
         )
         var tree = UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
@@ -260,8 +265,16 @@ final class IOSBackend: DeviceBackend {
 }
 
 extension IOSBackend: PointHitTesting {
-    func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
-        try await accessibilityTree(for: id, point: point).roots.first
+    func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
+        try await accessibilityTree(for: id, point: point, appPIDs: appPIDs).roots.first
+    }
+
+    /// A simulator's processes run on the Mac, so the pid the tree gives is a Mac pid.
+    func processName(of pid: Int, on id: DeviceID) async -> String? {
+        var path = [CChar](repeating: 0, count: Int(4 * MAXPATHLEN))
+        guard pid > 0, proc_pidpath(Int32(pid), &path, UInt32(path.count)) > 0 else { return nil }
+        let name = URL(fileURLWithPath: String(cString: path)).lastPathComponent
+        return name.isEmpty ? nil : name
     }
 }
 

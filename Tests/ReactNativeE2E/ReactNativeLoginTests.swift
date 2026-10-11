@@ -362,8 +362,17 @@ enum RNLogin {
         #expect(DescribeUITree.node(id: "user-switch-test-state", in: tree)?["label"] as? String == "Session: Signed out")
     }
 
+    /// On iOS the Save Password? prompt can come up over the screen after a sign-in, so a refusal under it dismisses it first.
     static func signOutInApp(_ app: RNApp) async throws {
-        try await app.run("tap --id user-switch-test-sign-out --verify-id user-switch-test-email --retries 2")
+        let tap = "tap --id user-switch-test-sign-out --verify-id user-switch-test-email --retries 2 --json"
+        var output = try await app.offsider(tap)
+        if output.exitCode != 0, SavePasswordPrompt.refused(output) {
+            try await SavePasswordPrompt.dismiss(on: app, at: "user-switch-test-sign-out")
+            output = try await app.offsider(tap)
+        }
+        guard output.exitCode == 0 else {
+            throw DescribeUIError(description: "offsider \(tap) on \(app.platform.rawValue) exited \(output.exitCode): \(output.stderr)")
+        }
         _ = try await app.waitForLabel(of: "user-switch-test-state") { $0 == "Session: Signed out" }
     }
 

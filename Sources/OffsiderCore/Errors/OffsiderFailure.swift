@@ -63,24 +63,28 @@ public struct CoverReport: Equatable, Sendable {
     /// The page or covered screen it is on.
     public let screen: String?
     public let evidence: CoverEvidence
+    /// The process that draws it, when that is not the app (`evidence` `otherProcess`).
+    public let process: String?
 
-    public init(role: String, id: String?, label: String?, frame: UIFrame?, screen: String?, evidence: CoverEvidence) {
+    public init(role: String, id: String?, label: String?, frame: UIFrame?, screen: String?, evidence: CoverEvidence, process: String? = nil) {
         self.role = role
         self.id = id
         self.label = label
         self.frame = frame
         self.screen = screen
         self.evidence = evidence
+        self.process = process
     }
 
-    public init(_ verdict: CoverVerdict) {
+    public init(_ verdict: CoverVerdict, process: String? = nil) {
         self.init(
             role: verdict.cover.role.rawValue,
             id: verdict.cover.normalizedID,
             label: verdict.cover.normalizedLabel.map { SelectorText.truncated($0) },
             frame: verdict.cover.frame,
             screen: verdict.screen.map { SelectorText.truncated($0) },
-            evidence: verdict.evidence
+            evidence: verdict.evidence,
+            process: process
         )
     }
 
@@ -92,6 +96,7 @@ public struct CoverReport: Equatable, Sendable {
             ("frame", frame.map(\.jsonValue) ?? .null),
             ("screen", .optional(screen, OrderedJSON.string)),
             ("evidence", .string(evidence.rawValue)),
+            ("process", .optional(process, OrderedJSON.string)),
         ])
     }
 }

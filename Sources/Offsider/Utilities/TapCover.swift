@@ -35,16 +35,25 @@ struct TapCover {
         if logBoxInset > 0 {
             candidates += Self.logBoxToasts(reaching: target, at: point, inset: logBoxInset, roots: roots, viewport: viewport, stack: stack, besides: candidates)
         }
-        guard android || !candidates.isEmpty || beneath else {
+        // Empty containers never cover, but the empty host of another process's prompt is worth a hit-test.
+        let promptHost = !android && SystemPrompt.hasHost(over: target, in: tree)
+        guard android || !candidates.isEmpty || beneath || promptHost else {
             return
         }
         var hit: UINode?
-        if !android, let hitTester = backend as? any PointHitTesting {
-            hit = try? await hitTester.hitTest(at: point, on: device)
+        let hitTester = android ? nil : backend as? any PointHitTesting
+        if let hitTester {
+            hit = try? await hitTester.hitTest(at: point, on: device, appPIDs: promptHost ? SystemPrompt.pids(in: roots) : [])
         }
         guard let verdict = CoverJudge.judge(
-            target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack, hit: hit, logBoxInset: logBoxInset
+            target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack, hit: hit,
+            logBoxInset: logBoxInset, otherProcessCovers: promptHost
         ) else {
+            return
+        }
+        if verdict.evidence == .otherProcess, let hitTester, let pid = verdict.cover.iosPID {
+            let prompt = await SystemPromptProbe.prompt(of: verdict.cover, pid: pid, in: tree, hitTester: hitTester, device: device)
+            try refuse(under: prompt, verdict: verdict, selector: selector, at: point, viewport: viewport, device: device)
             return
         }
         if AccessibilityTargetResolver.isUnderKeyboard(verdict.cover, in: roots) {
@@ -69,6 +78,35 @@ struct TapCover {
             throw CLIError(errorDescription: message, reason: .targetCovered, hint: "offsider describe-ui --device \(device.rawValue) --summary", coveredBy: CoverReport(verdict))
         }
         print("Warning: \(message) Pass --fail-if-covered to stop instead.", to: &standardError)
+    }
+
+    /// A prompt another process draws over the app takes the tap, so it refuses unless `--allow-covered`.
+    private func refuse(under prompt: SystemPrompt, verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID) throws {
+        if allowCovered {
+            let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+            print("Warning: \(selector) at \(pointText) is under \(prompt.summary); tapping anyway because of --allow-covered.", to: &standardError)
+            return
+        }
+        throw CLIError(
+            errorDescription: Self.promptRefusal(selector: selector, at: point, prompt: prompt, hit: verdict.cover, viewport: viewport, device: device, override: override),
+            reason: .targetCovered,
+            hint: "offsider screenshot --device \(device.rawValue)",
+            coveredBy: CoverReport(CoverVerdict(cover: verdict.cover, evidence: .otherProcess, isConfident: true, screen: prompt.title), process: prompt.process)
+        )
+    }
+
+    /// Says what the tap would reach on the prompt: its backdrop, which a tap dismisses, or one of its controls.
+    static func promptRefusal(selector: String, at point: UIPoint, prompt: SystemPrompt, hit: UINode, viewport: UIFrame, device: DeviceID, override: String) -> String {
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+        let lead = "\(selector) at \(pointText) is under \(prompt.summary)"
+        let answer = "Answer the prompt (its buttons are not in describe-ui, so take a screenshot to find them)"
+        let isBackdrop = !hit.isActionable && hit.normalizedLabel == nil && hit.frame.map { AccessibilityTargetResolver.isBackdrop($0, in: viewport) } == true
+        guard isBackdrop else {
+            let control = describe(CoverVerdict(cover: hit, evidence: .otherProcess, isConfident: true))
+            return "\(lead), so the tap would land on its \(control). Nothing was sent. \(answer), then retry; or \(override)."
+        }
+        let dismiss = "offsider tap -x \(VerifyOutput.number(point.x)) -y \(VerifyOutput.number(point.y)) --device \(device.rawValue)"
+        return "\(lead), so the tap would land on its backdrop and only dismiss it. Nothing was sent. \(answer) or dismiss it with a tap on its backdrop (`\(dismiss)`), then retry; or \(override)."
     }
 
     /// Toasts whose touch area, grown by `inset`, holds the point or reaches the target, beyond those the resolver found; never one holding the target or beneath a page.
@@ -103,6 +141,7 @@ struct TapCover {
         case .drawingOrder: return "Android draws it on top there"
         case .treeOrder: return "by tree order"
         case .logBoxTouchArea: return "LogBox's toast takes touches beyond its frame there"
+        case .otherProcess: return "a hit-test at the point found another process's view"
         }
     }
 
