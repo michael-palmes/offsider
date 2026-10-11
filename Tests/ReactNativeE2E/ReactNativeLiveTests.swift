@@ -33,7 +33,7 @@ struct ReactNativeLiveTests {
         #expect(!Self.changedNodes(report).contains { $0.contains("live-ticker-heart-rate") }, "\(Self.changedNodes(report))")
         #expect(Self.changedNodes(report).contains { $0.contains("live-ticker-toggle") }, "\(Self.changedNodes(report))")
         #expect(report["phasesMs"] is [String: Any] && report["elapsedMs"] is Int)
-        #expect(result.stderr.contains(#/verified: .*attempt 1 of 2.* \(settle [0-9.]+ s, tap [0-9.]+ s, verify [0-9.]+ s\)/#), "\(result.stderr)")
+        #expect(result.stderr.contains(#/verified: .*attempt 1 of 1.* \(settle [0-9.]+ s, tap [0-9.]+ s, verify [0-9.]+ s\)/#), "\(result.stderr)")
         try await app.run("tap --id live-ticker-toggle")
     }
 

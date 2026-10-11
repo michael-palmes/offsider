@@ -212,6 +212,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         if let progress {
             let initial: TapDeliveryStyle = style == .physical ? .physical : .simulator
             let subject = pointX != nil ? "Tap at \(verifyTarget)" : "Tap on \(verifyTarget)"
+            let targetNode = resolution.target ?? resolution.matched
             let request = VerifyRequest(
                 command: "tap",
                 subject: subject,
@@ -219,9 +220,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 backend: backend,
                 device: device,
                 options: verification,
-                styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries),
+                styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries(target: targetNode)),
                 initialTree: resolvedTree,
-                targetNode: resolution.target ?? resolution.matched,
+                targetNode: targetNode,
                 beforeAction: { tree in
                     let pick: MatchPick? = await picker?(tree.roots) ?? nil
                     guard let query, let moved = try? AccessibilityTargetResolver.resolveTap(

@@ -7,9 +7,13 @@ function onOff(value: boolean): string {
   return value ? 'On' : 'Off';
 }
 
+/** How long the slow switch waits before it flips, as one that waits for a server would; longer than a verify window. */
+const slowCommitDelay = 4000;
+
 export function SwitchTestScreen() {
   const [nativeOn, setNativeOn] = useState(false);
   const [customOn, setCustomOn] = useState(false);
+  const [slow, setSlow] = useState({ on: false, presses: 0, shownPresses: 0 });
 
   return (
     <Screen route="switch-test" style={styles.content}>
@@ -50,6 +54,28 @@ export function SwitchTestScreen() {
           id="uikit-weather-alerts-state"
           label={`UIKit Weather Alerts: ${onOff(customOn)}`}
           value={onOff(customOn)}
+        />
+      </View>
+
+      <View style={styles.group}>
+        <View style={styles.row}>
+          <Note style={styles.rowLabel}>Slow Commit Alerts</Note>
+          <Switch
+            testID="slow-commit-switch"
+            accessibilityLabel="Slow Commit Alerts"
+            value={slow.on}
+            onValueChange={() => {
+              setSlow((current) => ({ ...current, presses: current.presses + 1 }));
+              setTimeout(
+                () => setSlow((current) => ({ ...current, on: !current.on, shownPresses: current.presses })),
+                slowCommitDelay,
+              );
+            }}
+          />
+        </View>
+        <Readout
+          id="slow-commit-state"
+          label={`Slow Commit Alerts: ${onOff(slow.on)}, presses ${slow.shownPresses}`}
         />
       </View>
     </Screen>

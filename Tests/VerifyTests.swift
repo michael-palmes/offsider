@@ -160,4 +160,21 @@ struct VerifyTests {
         let uiState = try await TestHelpers.getUIState()
         #expect(UIStateParser.findElement(in: uiState, withIdentifier: "button-test-screen") == nil)
     }
+
+    @Test("A switch that flips after the verify window is tapped once, so its late change stands")
+    func slowSwitchTapsOnce() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "switch-test")
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated(
+            "tap --label 'Slow Commit Alerts' --verify --json",
+            simulatorUDID: defaultSimulatorUDID
+        )
+        let json = try report(result.stdout)
+
+        #expect(result.exitCode == 5)
+        #expect(json["attempts"] as? Int == 1)
+        #expect(result.stderr.contains("a second tap would undo the first"))
+        let state = try await TestHelpers.waitForLabel(containing: "Slow Commit Alerts:", timeout: 8) { $0.hasPrefix("Slow Commit Alerts: On") }
+        #expect(state == "Slow Commit Alerts: On, presses 1")
+    }
 }
