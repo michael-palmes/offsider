@@ -12,10 +12,18 @@ struct TerminalPromptTests {
         #expect(TerminalKey.parse(Array("ada\rpw\r".utf8)) == [.text(Array("ada".utf8)), .enter, .text(Array("pw".utf8)), .enter])
         #expect(TerminalKey.parse([0x1B, 0x5B, 0x42, 0x0D]) == [.down, .enter])
         #expect(TerminalKey.parse([0x1B, 0x4F, 0x41]) == [.up])
-        #expect(TerminalKey.parse([0x1B, 0x5B, 0x43]) == [.ignored])
+        #expect(TerminalKey.parse([0x1B, 0x5B, 0x33, 0x7E]) == [.ignored])
         #expect(TerminalKey.parse(Array("qa".utf8) + [0x1B]) == [.text(Array("qa".utf8)), .cancel])
         #expect(TerminalKey.parse([0x03]) == [.cancel])
         #expect(TerminalKey.parse([0x1B, 0x1B]) == [.cancel, .cancel])
+    }
+
+    @Test("Left and Right parse whole in CSI and SS3 form, with or without modifiers, and Control-W is its own key")
+    func editingKeyParsing() {
+        #expect(TerminalKey.parse(Array("\u{1B}[D\u{1B}[C".utf8)) == [.left, .right])
+        #expect(TerminalKey.parse(Array("\u{1B}OD\u{1B}OC".utf8)) == [.left, .right])
+        #expect(TerminalKey.parse(Array("\u{1B}[1;5Dqa".utf8)) == [.left, .text(Array("qa".utf8))])
+        #expect(TerminalKey.parse(Array("qa admin\u{17}x".utf8)) == [.text(Array("qa admin".utf8)), .deleteWord, .text(Array("x".utf8))])
     }
 
     @Test("a read that stops inside an escape sequence waits for the rest, and a finished one does not")
@@ -53,6 +61,75 @@ struct TerminalPromptTests {
         _ = bounded.apply(.text(Array("abcdef".utf8)))
         #expect(bounded.text == "abcd")
         #expect(bounded.apply(.enter) == .submitted)
+    }
+
+    @Test("Left and Right move by whole characters, typing inserts at the cursor, and Control-W deletes back over spaces, then a word")
+    func lineEditorCursor() {
+        let editor = LineEditor()
+        _ = editor.apply(.text(Array("admn".utf8)))
+        _ = editor.apply(.left)
+        _ = editor.apply(.text(Array("i".utf8)))
+        #expect(editor.text == "admin")
+        #expect(editor.textBeforeCursor == "admi")
+        _ = editor.apply(.right)
+        _ = editor.apply(.right)
+        #expect(editor.textBeforeCursor == "admin")
+
+        _ = editor.apply(.text(Array(" env  ".utf8)))
+        #expect(editor.apply(.deleteWord) == .editing)
+        #expect(editor.text == "admin ")
+        _ = editor.apply(.deleteWord)
+        #expect(editor.isEmpty)
+
+        _ = editor.apply(.text(Array("qa admin env".utf8)))
+        for _ in 0..<4 { _ = editor.apply(.left) }
+        _ = editor.apply(.deleteWord)
+        #expect(editor.text == "qa  env")
+        #expect(editor.textBeforeCursor == "qa ")
+        _ = editor.apply(.backspace)
+        #expect(editor.text == "qa env")
+        for _ in 0..<5 { _ = editor.apply(.left) }
+        _ = editor.apply(.backspace)
+        _ = editor.apply(.deleteWord)
+        #expect(editor.text == "qa env")
+        #expect(editor.textBeforeCursor.isEmpty)
+
+        let accented = LineEditor()
+        _ = accented.apply(.text(Array("pé".utf8)))
+        _ = accented.apply(.left)
+        #expect(accented.textBeforeCursor == "p")
+        _ = accented.apply(.right)
+        #expect(accented.textBeforeCursor == "pé")
+    }
+
+    @Test("a masked editor ignores Left and Right, and its Control-W deletes everything before the cursor")
+    func maskedLineEditor() {
+        let editor = LineEditor(masked: true)
+        _ = editor.apply(.text(Array("qwz kvx".utf8)))
+        _ = editor.apply(.left)
+        _ = editor.apply(.text(Array("!".utf8)))
+        #expect(editor.text == "qwz kvx!")
+        #expect(editor.apply(.deleteWord) == .editing)
+        #expect(editor.isEmpty)
+    }
+
+    @Test("the cursor goes back to its column, up a row when the line wrapped, and stays put at the end")
+    func cursorPlacement() {
+        let short = TerminalText.cursorMove(width: 10, to: 7, columns: 80)
+        #expect(short.sequence == "\u{1B}[8G")
+        #expect(short.row == 0)
+        let wrapped = TerminalText.cursorMove(width: 25, to: 5, columns: 20)
+        #expect(wrapped.sequence == "\u{1B}[1A\u{1B}[6G")
+        #expect(wrapped.row == 0)
+        let secondRow = TerminalText.cursorMove(width: 25, to: 22, columns: 20)
+        #expect(secondRow.sequence == "\u{1B}[3G")
+        #expect(secondRow.row == 1)
+        let full = TerminalText.cursorMove(width: 20, to: 19, columns: 20)
+        #expect(full.sequence == "\u{1B}[20G")
+        #expect(full.row == 0)
+        let atEnd = TerminalText.cursorMove(width: 40, to: 40, columns: 20)
+        #expect(atEnd.sequence.isEmpty)
+        #expect(atEnd.row == 1)
     }
 
     @Test("the menu wraps, chooses by Enter or number, and cancels on Escape or q")
@@ -317,6 +394,63 @@ struct TerminalPromptTests {
         #expect(answer == "ab")
     }
 
+    @Test("a Left split across two reads moves the cursor instead of adding a letter to the answer")
+    func splitLeftKey() throws {
+        let terminal = try PseudoTerminal()
+        Thread.detachNewThread {
+            guard terminal.wait(until: { $0.c_lflag & tcflag_t(ECHO) == 0 }) else { return }
+            terminal.send("ab\u{1B}[")
+            _ = terminal.wait(until: { settings in withUnsafeBytes(of: settings.c_cc) { $0[Int(VTIME)] } > 0 })
+            terminal.send("Dc\r")
+        }
+        let answer = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+            try prompt.ask("👤 ") { _ in nil }
+        }
+        _ = terminal.finish()
+        #expect(answer == "acb")
+    }
+
+    @Test("Left puts the cursor back over the typed text, and typing there inserts")
+    func cursorOnATerminal() throws {
+        let terminal = try PseudoTerminal()
+        let placed = Recorded<Bool>()
+        Thread.detachNewThread {
+            guard terminal.wait(until: { $0.c_lflag & tcflag_t(ECHO) == 0 }) else { return }
+            terminal.send("qa-amn\u{1B}[D")
+            placed.append(terminal.wait(forOutput: "qa-amn\u{1B}[9G"))
+            terminal.send("i\u{1B}OC\r")
+        }
+        let answer = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+            try prompt.ask("👤 ") { _ in nil }
+        }
+        _ = terminal.finish()
+        #expect(answer == "qa-amin")
+        #expect(placed.values == [true])
+    }
+
+    @Test("a secret prompt draws only dots through Control-W, Left and Right, and never a typed character")
+    func secretEditingKeys() throws {
+        let terminal = try PseudoTerminal()
+        let drawn = Recorded<Bool>()
+        Thread.detachNewThread {
+            guard terminal.wait(until: { $0.c_lflag & tcflag_t(ECHO) == 0 }) else { return }
+            terminal.send("qwz kvx")
+            drawn.append(terminal.wait(forDots: 7))
+            terminal.send("\u{17}")
+            drawn.append(terminal.wait(forDots: 0))
+            terminal.send("vvq\u{1B}[D\u{1B}OD")
+            drawn.append(terminal.wait(forDots: 3))
+            terminal.send("\u{1B}[Cz\rvvqz\r")
+        }
+        let answer = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+            try prompt.askSecret("🔑 ", again: "🔁 ") { _ in nil }
+        }
+        let output = terminal.finish()
+        #expect(answer == "vvqz")
+        #expect(drawn.values == [true, true, true])
+        #expect(!output.contains { "qwzkvx".contains($0) })
+    }
+
     @Test("a continue after a stop switches echo off again, so a password typed after bash's fg never shows")
     func continueSwitchesEchoOff() throws {
         let terminal = try PseudoTerminal()
@@ -384,6 +518,18 @@ private final class ScriptedQuestions: CredentialQuestions {
     }
 }
 
+/// Values a sender thread records for the test to check.
+private final class Recorded<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Value] = []
+
+    func append(_ value: Value) {
+        lock.withLock { stored.append(value) }
+    }
+
+    var values: [Value] { lock.withLock { stored } }
+}
+
 /// Every `SecretBytes` made, by capacity, and each one's allocation as it was freed.
 private final class SecretAudit: @unchecked Sendable {
     private let lock = NSLock()
@@ -440,6 +586,24 @@ private final class PseudoTerminal: @unchecked Sendable {
         var settings = termios()
         for _ in 0..<5000 {
             if tcgetattr(secondary, &settings) == 0, ready(settings) { return true }
+            usleep(1000)
+        }
+        return false
+    }
+
+    /// Waits up to 5 s for `text` to appear in what the prompt drew, and says whether it did.
+    func wait(forOutput text: String) -> Bool {
+        poll { $0.contains(text) }
+    }
+
+    /// Waits up to 5 s for the latest draw to end in exactly `count` dots, and says whether it did.
+    func wait(forDots count: Int) -> Bool {
+        poll { !$0.isEmpty && $0.reversed().prefix { $0 == "•" }.count == count }
+    }
+
+    private func poll(_ ready: (String) -> Bool) -> Bool {
+        for _ in 0..<5000 {
+            if ready(lock.withLock { String(decoding: output, as: UTF8.self) }) { return true }
             usleep(1000)
         }
         return false

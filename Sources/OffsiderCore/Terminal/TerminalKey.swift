@@ -7,8 +7,12 @@ public enum TerminalKey: Equatable, Sendable {
     case enter
     case backspace
     case clearLine
+    /// Control-W.
+    case deleteWord
     case up
     case down
+    case left
+    case right
     /// Escape, Control-C or Control-backslash.
     case cancel
     /// Control-D, or the terminal closing.
@@ -36,6 +40,8 @@ public enum TerminalKey: Equatable, Sendable {
                 flush(here); keys.append(.backspace)
             case 0x15:
                 flush(here); keys.append(.clearLine)
+            case 0x17:
+                flush(here); keys.append(.deleteWord)
             case 0x03, 0x1C:
                 flush(here); keys.append(.cancel)
             case 0x04:
@@ -65,7 +71,7 @@ public enum TerminalKey: Equatable, Sendable {
                 }
                 let final = bytes[index]
                 bytes.formIndex(after: &index)
-                keys.append(final == UInt8(ascii: "A") ? .up : final == UInt8(ascii: "B") ? .down : .ignored)
+                keys.append(arrows[final] ?? .ignored)
             default:
                 if runStart == nil { runStart = here }
             }
@@ -73,6 +79,11 @@ public enum TerminalKey: Equatable, Sendable {
         flush(bytes.endIndex)
         return keys
     }
+
+    /// The final byte of a CSI or SS3 arrow, whatever modifiers come before it.
+    private static let arrows: [UInt8: TerminalKey] = [
+        UInt8(ascii: "A"): .up, UInt8(ascii: "B"): .down, UInt8(ascii: "C"): .right, UInt8(ascii: "D"): .left,
+    ]
 
     /// Zeroes the typed bytes this key holds, leaving it `.ignored`.
     public mutating func wipe() {
@@ -104,10 +115,15 @@ public final class LineEditor {
 
     /// Bytes kept at most, so a stuck key cannot grow the answer without end.
     public static let defaultCapacity = 1024
+    /// Masked input ignores Left and Right, and its Control-W deletes everything before the cursor, so the dots never show a word break.
+    public let masked: Bool
     private let storage: SecretBytes
+    /// Byte offset of the cursor, always at the start of a character or the end.
+    public private(set) var cursor = 0
 
-    public init(capacity: Int = LineEditor.defaultCapacity) {
+    public init(capacity: Int = LineEditor.defaultCapacity, masked: Bool = false) {
         storage = SecretBytes(capacity: capacity)
+        self.masked = masked
     }
 
     public var capacity: Int { storage.capacity }
@@ -119,6 +135,11 @@ public final class LineEditor {
     /// Swift cannot wipe a `String`, so a secret becomes one only here, once, at the hand-off.
     public var text: String { storage.withBytes { String(decoding: $0, as: UTF8.self) } }
 
+    /// The text before the cursor, to place it. Never read for a masked answer.
+    public var textBeforeCursor: String {
+        storage.withBytes { String(decoding: UnsafeBufferPointer(rebasing: $0[..<cursor]), as: UTF8.self) }
+    }
+
     /// True when `text` is exactly the bytes typed, compared without copying them.
     public func matches(_ text: String) -> Bool {
         storage.withBytes { text.utf8.elementsEqual($0) }
@@ -127,9 +148,15 @@ public final class LineEditor {
     public func apply(_ key: TerminalKey) -> Outcome {
         switch key {
         case .text(let typed):
-            storage.insert(typed, at: storage.count)
+            cursor += storage.insert(typed, at: cursor)
         case .backspace:
-            storage.remove(characterStart(before: storage.count)..<storage.count)
+            delete(from: characterStart(before: cursor))
+        case .deleteWord:
+            delete(from: masked ? 0 : wordStart(before: cursor))
+        case .left where !masked:
+            cursor = characterStart(before: cursor)
+        case .right where !masked:
+            cursor = characterEnd(after: cursor)
         case .clearLine:
             wipe()
         case .enter:
@@ -138,7 +165,7 @@ public final class LineEditor {
             return .cancelled
         case .endOfInput:
             return isEmpty ? .cancelled : .editing
-        case .up, .down, .ignored:
+        case .up, .down, .left, .right, .ignored:
             break
         }
         return .editing
@@ -146,6 +173,32 @@ public final class LineEditor {
 
     public func wipe() {
         storage.removeAll()
+        cursor = 0
+    }
+
+    private func delete(from start: Int) {
+        storage.remove(start..<cursor)
+        cursor = start
+    }
+
+    private func characterEnd(after start: Int) -> Int {
+        storage.withBytes { bytes in
+            guard start < bytes.count else { return start }
+            var index = start + 1
+            while index < bytes.count, bytes[index] & 0xC0 == 0x80 { index += 1 }
+            return index
+        }
+    }
+
+    /// Where Control-W stops: back over spaces, then back over the word before them.
+    private func wordStart(before end: Int) -> Int {
+        storage.withBytes { bytes in
+            let space: (UInt8) -> Bool = { $0 == 0x20 || $0 == 0x09 }
+            var index = end
+            while index > 0, space(bytes[index - 1]) { index -= 1 }
+            while index > 0, !space(bytes[index - 1]) { index -= 1 }
+            return index
+        }
     }
 
     private func characterStart(before end: Int) -> Int {
@@ -197,7 +250,7 @@ public struct ChoiceMenu: Sendable {
                 default: break
                 }
             }
-        case .backspace, .clearLine, .ignored:
+        case .backspace, .clearLine, .deleteWord, .left, .right, .ignored:
             break
         }
         return .moving

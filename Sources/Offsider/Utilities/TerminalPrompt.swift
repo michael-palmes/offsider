@@ -22,6 +22,8 @@ final class TerminalPrompt {
     private var rows = 0
     /// Rows of the line or menu still being edited.
     private var liveRows = 0
+    /// The row of that live region the cursor is on.
+    private var cursorRow = 0
     private var pending: [TerminalKey] = []
 
     /// Opens `/dev/tty`, or uses `descriptor` (a pseudo-terminal in tests).
@@ -81,8 +83,8 @@ final class TerminalPrompt {
         while true {
             erase(to: start)
             if let message { lines([style.yellow(message)]) }
-            let editor = LineEditor()
-            let shown = try read(label, masked: masked, placeholder: placeholder, into: editor)
+            let editor = LineEditor(masked: masked)
+            let shown = try read(label, placeholder: placeholder, into: editor)
             let answer = editor.text
             guard let problem = check(answer) else {
                 if message != nil {
@@ -102,8 +104,8 @@ final class TerminalPrompt {
         while true {
             erase(to: start)
             let first = try ask(label, masked: true, notice: notice, check: check)
-            let confirmation = LineEditor()
-            _ = try read(again, masked: true, placeholder: nil, into: confirmation)
+            let confirmation = LineEditor(masked: true)
+            _ = try read(again, placeholder: nil, into: confirmation)
             if confirmation.matches(first) { return first }
             notice = PromptScreen.mismatch
         }
@@ -131,17 +133,19 @@ final class TerminalPrompt {
         }
     }
 
-    /// Reads one answer into `editor`, and returns its line as drawn: dots when `masked`.
-    private func read(_ label: String, masked: Bool, placeholder: String?, into editor: LineEditor) throws -> String {
+    /// Reads one answer into `editor`, and returns its line as drawn: dots when masked.
+    private func read(_ label: String, placeholder: String?, into editor: LineEditor) throws -> String {
         try enterRaw()
         defer { leaveRaw() }
         let prefix = style.cyan(label)
-        func line() -> String { prefix + (masked ? PromptScreen.dots(editor.length) : PromptScreen.visible(editor.text)) }
+        func line() -> String { prefix + (editor.masked ? PromptScreen.dots(editor.length) : PromptScreen.visible(editor.text)) }
         func render() {
             if editor.isEmpty, let placeholder {
-                draw(prefix + style.dim(placeholder) + "\u{1B}[\(TerminalText.width(placeholder))D")
-            } else {
+                draw(prefix + style.dim(placeholder), cursor: TerminalText.width(prefix))
+            } else if editor.masked {
                 draw(line())
+            } else {
+                draw(line(), cursor: TerminalText.width(prefix + PromptScreen.visible(editor.textBeforeCursor)))
             }
         }
         render()
@@ -194,24 +198,30 @@ final class TerminalPrompt {
         return buffer.append { Darwin.read(descriptor, $0.baseAddress, $0.count) }
     }
 
-    /// Replaces the live region with `text`, moving back over every row the last draw took.
-    private func draw(_ text: String) {
-        let up = liveRows > 1 ? "\u{1B}[\(liveRows - 1)A" : ""
-        write(up + "\r\u{1B}[J" + text)
+    /// Replaces the live region with `text`, moving back up from the cursor's row. `cursor` leaves it that many columns into a one-line `text`.
+    private func draw(_ text: String, cursor: Int? = nil) {
+        let columns = self.columns
+        let up = cursorRow > 0 ? "\u{1B}[\(cursorRow)A" : ""
+        let move = cursor.map { TerminalText.cursorMove(width: TerminalText.width(text), to: $0, columns: columns) }
+        write(up + "\r\u{1B}[J" + text + (move?.sequence ?? ""))
         liveRows = TerminalText.rows(text, columns: columns)
+        cursorRow = move?.row ?? liveRows - 1
     }
 
+    /// Ends the live region. The cursor must be on its last row, as a draw without `cursor` leaves it.
     private func commit() {
         write("\n")
         rows += liveRows
         liveRows = 0
+        cursorRow = 0
     }
 
     private func erase(to mark: Int) {
-        let up = rows - mark + max(liveRows - 1, 0)
+        let up = rows - mark + cursorRow
         write((up > 0 ? "\u{1B}[\(up)A" : "") + "\r\u{1B}[J")
         rows = mark
         liveRows = 0
+        cursorRow = 0
     }
 
     private func enterRaw() throws {
