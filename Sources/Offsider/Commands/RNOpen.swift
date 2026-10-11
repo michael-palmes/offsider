@@ -248,6 +248,7 @@ struct RNOpen: AsyncParsableCommand {
         let detail = switch report {
         case .file(let path): " Crash report: \(path)"
         case .cause(let cause): " It stopped with \(cause)."
+        case .pending(let directory): " Its crash report is not written yet; look in \(directory) for the newest one from pid \(process.pid)."
         case nil: ""
         }
         return CLIError(

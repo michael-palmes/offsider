@@ -17,7 +17,7 @@ extension IOSBackend: AppLivenessReading {
         )
     }
 
-    /// ReportCrash writes the report a moment after the process dies, so this looks for up to 5 s.
+    /// ReportCrash writes the report after the process dies, sometimes 10 s or more later, so this looks for 5 s and then names the folder.
     func crashReport(_ appID: String, process: AppProcess, since: Date, on id: DeviceID) async -> AppCrashReport? {
         for attempt in 0..<10 {
             if attempt > 0 { try? await Task.sleep(for: .milliseconds(500)) }
@@ -26,6 +26,6 @@ extension IOSBackend: AppLivenessReading {
                 return .file(file.path)
             }
         }
-        return nil
+        return .pending(directory: DoctorProbes.diagnosticReportsPath)
     }
 }

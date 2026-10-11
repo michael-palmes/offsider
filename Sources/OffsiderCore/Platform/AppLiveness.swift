@@ -29,6 +29,8 @@ public enum AppLiveness: Equatable, Sendable {
 public enum AppCrashReport: Equatable, Sendable {
     case file(String)
     case cause(String)
+    /// No report yet in this folder, where macOS can take many seconds to write one.
+    case pending(directory: String)
 }
 
 /// Optional capability: whether an app's process runs, so a wait can tell an app that crashed from one still loading.

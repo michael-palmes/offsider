@@ -131,6 +131,15 @@ struct RNOpenCommandTests {
         #expect(error.userFacingDescription.hasSuffix("its process 4100 stopped. It stopped with signal 11 (SIGSEGV)."))
     }
 
+    @Test("an iOS crash report not written yet is named by its folder and the pid to look for")
+    func pendingCrashReport() async throws {
+        let (result, _) = try await Self.watch(
+            [], trees: [Self.bundling], liveness: [.running(Self.playground), .notRunning, .notRunning], report: .pending(directory: "/Users/me/Library/Logs/DiagnosticReports")
+        )
+        guard case .failure(let error) = result else { Issue.record("expected app_crashed"); return }
+        #expect(error.userFacingDescription.hasSuffix("Its crash report is not written yet; look in /Users/me/Library/Logs/DiagnosticReports for the newest one from pid 4100."))
+    }
+
     @Test("an app never seen running is never a crash: the wait ends at --timeout with exit 5")
     func neverSeenIsNotACrash() async throws {
         let (result, backend) = try await Self.watch(["--timeout", "10"], trees: [Self.bundling], liveness: [.notRunning])
