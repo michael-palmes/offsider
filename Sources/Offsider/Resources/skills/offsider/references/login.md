@@ -62,7 +62,7 @@ Saved users live on each Mac. A repository's `OFFSIDER.md` maps flows to tags, n
 
 `login` fills the email or username field, then the password field, and taps the submit button once. It finds them itself, among elements in front (a point at the centre must land on it): the one text field whose label or id is an email or username, the one secure field, and a Log in, Sign in, Submit, Continue or Next button below the password, which may stay disabled until the fields are filled. Forgot, create, back, support and with (as in Continue with Google) are skipped. Words must be whole and ids split at capitals, so `signInButton` counts and Blog index does not. Zero matches exit 2, two exit 6, and nothing is typed.
 
-It dismisses the software keyboard before submit with a tap on empty space above the keys (or on plain text), never a control. When the keys still cover the next control, it stops with `target_under_keyboard` and never presses Back.
+It dismisses the software keyboard before submit with a tap on empty space (or on plain text), never a control: first above the topmost field, then up from the keys, and never on or just around a field. It tries up to three distinct points, reading the screen again after each. When the keys still cover the next control, it stops with `target_under_keyboard` and never presses Back.
 
 `--timeout` (default 15 seconds) is how long it waits for submit to enable. `--json` prints one object with the user's `name` and `tags`, `where` when passed, and `submitted`; `identity` and `password` are the word `filled`, never the secret.
 

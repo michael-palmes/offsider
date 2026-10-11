@@ -183,6 +183,44 @@ struct LoginFlowTests {
         #expect(report.submitLabel == "Log in")
     }
 
+    @Test("a keyboard that stays after the first dismiss tap is tapped away at a second point, then submit is tapped")
+    func keyboardLeavesAfterSecondTap() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let raised = SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            raised,
+            raised,
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnTap = true
+        let report = try await run(script, mode: .off)
+        try #require(script.taps.count == 3)
+        #expect(script.taps[0] != script.taps[1])
+        #expect(script.taps[0].y < 212)
+        #expect(script.hides == 0)
+        #expect(report.submitLabel == "Log in")
+    }
+
+    @Test("a keyboard no dismiss tap clears gets three distinct taps, then target_under_keyboard and no submit")
+    func keyboardStaysAfterThreeTaps() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
+        ])
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script, mode: .auto) })
+        #expect(error.reason == .targetUnderKeyboard)
+        try #require(script.taps.count == 3)
+        #expect(script.taps[0] != script.taps[1] && script.taps[1] != script.taps[2] && script.taps[0] != script.taps[2])
+        #expect(script.taps.allSatisfy { $0.y < 560 })
+        #expect(script.hides == 1)
+        #expect(script.performs == 0)
+        #expect(script.phaseIndex == 0)
+    }
+
     @Test("a keyboard with no safe point does not reach Turnstile or submit")
     func keyboardCoversSubmit() async {
         let script = script(buttonEnabled: true, keyboard: true)

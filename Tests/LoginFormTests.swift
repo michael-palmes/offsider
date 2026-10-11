@@ -146,6 +146,29 @@ struct KeyboardDismissTests {
         #expect(header.frame?.contains(point!) == true)
     }
 
+    @Test("on a form raised above the keys, the first try is above the topmost field and no try lands in a field's wrapper")
+    func firstTryAboveTheForm() throws {
+        let form = RaisedForm()
+        let points = KeyboardDismiss.points(in: form.tree, fields: form.fields)
+        let first = try #require(points.first)
+        #expect(form.fields.allSatisfy { first.y < $0.y })
+        #expect(points.allSatisfy { point in form.wrappers.allSatisfy { !$0.contains(point) } })
+        #expect(points.allSatisfy { !KeyboardDismiss.covers($0, in: form.tree) })
+    }
+
+    @Test("at most three distinct points, and never one already tried")
+    func distinctPoints() throws {
+        let form = RaisedForm()
+        let points = KeyboardDismiss.points(in: form.tree, fields: form.fields)
+        #expect(points.count == 3)
+        for (index, point) in points.enumerated() {
+            #expect(!points[(index + 1)...].contains(point))
+        }
+        let next = KeyboardDismiss.points(in: form.tree, fields: form.fields, tried: [points[0]])
+        #expect(!next.contains(points[0]))
+        #expect(next.first == points[1])
+    }
+
     @Test("a keyboard frame covers the point inside it")
     func covers() {
         let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 400, 402, 474))
@@ -166,6 +189,28 @@ struct KeyboardDismissTests {
         #expect(point != nil)
         #expect((point?.y ?? 900) < key.frame!.y)
         #expect(KeyboardDismiss.covers(point!, in: tree) == false)
+    }
+}
+
+/// A sign-in form a keyboard-avoiding screen has raised to sit on the keys, each field in an unlabelled wrapper.
+private struct RaisedForm {
+    let identity = FakeUI.frame(17, 390, 367, 45)
+    let password = FakeUI.frame(17, 462, 367, 45)
+    let wrappers = [FakeUI.frame(0, 380, 402, 64), FakeUI.frame(0, 450, 402, 76)]
+    var fields: [UIFrame] { [identity, password] }
+
+    var tree: UITree {
+        FakeUI.tree([
+            FakeUI.node(.header, label: "Welcome back", frame: FakeUI.frame(16, 120, 370, 32)),
+            FakeUI.node(.group, frame: wrappers[0], children: [
+                FakeUI.node(.textField, id: "email-field", label: "Email", frame: identity),
+            ]),
+            FakeUI.node(.group, frame: wrappers[1], children: [
+                FakeUI.node(.secureTextField, id: "password-field", label: "Password", frame: password),
+            ]),
+            FakeUI.node(.button, id: "login-button", label: "Log in", frame: FakeUI.frame(16, 600, 370, 44)),
+            FakeUI.node(.keyboard, frame: FakeUI.frame(0, 540, 402, 334)),
+        ])
     }
 }
 

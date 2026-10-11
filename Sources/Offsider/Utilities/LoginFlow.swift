@@ -75,7 +75,7 @@ enum LoginFlow {
             )
         }
         let submitNow = LoginForm.match(form.submit, in: tree) ?? form.submit
-        tree = try await dismissKeyboard(in: tree, submit: submitNow, shell: form.turnstileShell, services: services)
+        tree = try await dismissKeyboard(in: tree, submit: submitNow, shell: form.turnstileShell, fields: [form.identity, form.password], services: services)
         if (try? LoginForm.detect(in: tree, profile: profile)) == nil {
             // A read taken while the keyboard animates away can miss the form for a moment.
             tree = try await readUntil({ (try? LoginForm.detect(in: $0, profile: profile)) != nil }, services: services)
@@ -173,7 +173,8 @@ enum LoginFlow {
         tree.roots.flatMap { $0.flattened() }.filter { $0.role == .keyboard && ($0.frame?.height ?? 0) > 0 }
     }
 
-    private static func dismissKeyboard(in tree: UITree, submit: UINode, shell: UIFrame?, services: Services) async throws -> UITree {
+    /// Up to `KeyboardDismiss.attempts` taps on distinct safe points, reading again after each, until submit is clear.
+    private static func dismissKeyboard(in tree: UITree, submit: UINode, shell: UIFrame?, fields: [UINode], services: Services) async throws -> UITree {
         let keyboards = keyboards(in: tree)
         guard !keyboards.isEmpty else { return tree }
         let submitNow = LoginForm.match(submit, in: tree) ?? submit
@@ -183,16 +184,18 @@ enum LoginFlow {
         }
         var current = tree
         let clear: (UITree) -> Bool = { !covered($0, submit: LoginForm.match(submit, in: $0) ?? submitNow, shell: shell) }
-        if let point = KeyboardDismiss.point(in: tree) {
-            try await services.tap(point, tree)
+        var tried: [UIPoint] = []
+        while tried.count < KeyboardDismiss.attempts {
+            let frames = fields.compactMap { (LoginForm.match($0, in: current) ?? $0).frame }
+            guard let point = KeyboardDismiss.points(in: current, fields: frames, tried: tried, limit: 1).first else { break }
+            try await services.tap(point, current)
+            tried.append(point)
             current = try await readUntil(clear, services: services)
             if clear(current) { return current }
         }
-        if !clear(current) {
-            try await services.hideKeyboard()
-            current = try await readUntil(clear, services: services)
-            if !clear(current) { throw keyboardError() }
-        }
+        try await services.hideKeyboard()
+        current = try await readUntil(clear, services: services)
+        if !clear(current) { throw keyboardError() }
         return current
     }
 
