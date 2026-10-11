@@ -151,4 +151,27 @@ struct ButtonTests {
         #expect(duration >= .seconds(2), "Command should hold the button for at least 2 seconds")
         try await rebootSimulator()
     }
+
+    @Test("app-switch opens the app switcher on a simulator, and home leaves it")
+    func appSwitchOpensSwitcher() async throws {
+        try await prepareUnlockedSimulator()
+        try await TestHelpers.launchPlaygroundApp(to: "tap-test")
+
+        try await TestHelpers.runOffsiderCommand("button app-switch", simulatorUDID: defaultSimulatorUDID)
+
+        let deadline = Date().addingTimeInterval(4)
+        var roots: [UIElement] = []
+        func playgroundInFront() -> Bool { roots.contains { $0.role == "application" && $0.label == "OffsiderPlayground" } }
+        while Date() < deadline {
+            let result = try await TestHelpers.runOffsiderCommand("describe-ui", simulatorUDID: defaultSimulatorUDID)
+            roots = try UIStateParser.parseDescribeUIRoots(result.output)
+            if UIStateParser.findElement(in: roots, withIdentifier: "AppSwitcherContentView") != nil, !playgroundInFront() {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(200))
+        }
+        #expect(UIStateParser.findElement(in: roots, withIdentifier: "AppSwitcherContentView") != nil)
+        #expect(!playgroundInFront(), "the app should leave the front for the switcher")
+        try await TestHelpers.runOffsiderCommand("button home", simulatorUDID: defaultSimulatorUDID)
+    }
 }

@@ -33,7 +33,7 @@
 | `key`, `key-sequence`, `key-combo`, `touch`, `gesture`, `drag`, `lock`, `side-button`, `siri` | broker | refused | `xcode_too_old` |
 
 - `xcode_too_old` exits 9; its hint is to install Xcode 27 for HID input. The device can run iOS or iPadOS 26 or 27.
-- `apple-pay` is refused on a device: press `button side-button` twice instead.
+- `apple-pay` is refused on a device: press `button side-button` twice instead. `app-switch` is refused too.
 
 ## The runner and `--app`
 

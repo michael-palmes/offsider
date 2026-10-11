@@ -44,23 +44,42 @@ enum ButtonType: String, CaseIterable, ExpressibleByArgument {
         }
     }
 
+    /// Where the button can be pressed; an iOS simulator has no app switcher button, so app-switch presses Home twice there.
+    var platforms: Set<DevicePlatform> {
+        self == .appSwitch ? [.ios, .android] : hardwareButton.platforms
+    }
+
+    /// Whether a physical iPhone or iPad can press it: it has no Apple Pay button, and its app switcher needs a gesture.
+    var isOnIOSDevice: Bool {
+        platforms.contains(.ios) && self != .applePay && self != .appSwitch
+    }
+
+    /// The buttons an iOS simulator or an Android device has.
     static func names(on platform: DevicePlatform) -> String {
         switch platform {
-        case .ios: return "apple-pay, home, lock, side-button, siri"
+        case .ios: return "apple-pay, app-switch, home, lock, side-button, siri"
         case .android: return "back, app-switch, home, lock, menu, volume-up, volume-down"
         }
     }
+
+    static let iosDeviceNames = "home, lock, side-button, siri"
 }
 
 struct Button: AsyncParsableCommand, VerifiableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Press a hardware button on the device.",
         discussion: """
-        iOS buttons: apple-pay, home, lock, side-button, siri
+        iOS simulator buttons: apple-pay, app-switch, home, lock, side-button, siri
+        iPhone and iPad buttons: home, lock, side-button, siri
         Android buttons: back, app-switch, home, lock (the power key), menu, volume-up, volume-down
+
+        app-switch opens the app switcher: on an iOS simulator it presses Home twice, \(Button.appSwitchGapMilliseconds) ms apart, \
+        so it takes no --duration there. A physical iPhone or iPad refuses it. With --verify it is not retried by \
+        default, since a second press closes the switcher.
 
         Examples:
           offsider button home --device DEVICE_ID
+          offsider button app-switch --device DEVICE_ID
           offsider button lock --duration 2.0 --device DEVICE_ID
           offsider button back --device emulator-5554
           offsider button menu --device emulator-5554    # opens a React Native debug build's dev menu
@@ -95,25 +114,66 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         }
         let classification = DeviceIDClassifier.classify(deviceOption.id)
         if let platform = classification.platform {
-            try Self.checkAvailability(buttonType, on: platform, device: deviceOption.id)
+            var physicalIOS = false
+            if case .iosDevice = classification { physicalIOS = true }
+            try Self.checkAvailability(buttonType, on: platform, device: deviceOption.id, physicalIOS: physicalIOS)
+            try Self.checkDuration(buttonType, duration: duration, on: platform)
         }
         if classification.platform == .android, Self.isShortHome(buttonType, duration: duration), verification.verifyID != nil || verification.ignoreText {
             throw ValidationError("button home on Android verifies by the foreground activity (the launcher coming to the front), so it does not take --verify-id or --verify-ignore-text. Use --verify.")
         }
-        if case .iosDevice(let udid) = classification, buttonType == .applePay {
-            throw ValidationError("The apple-pay button needs an iOS simulator, and \(udid) is a physical iPhone or iPad. iPhone buttons: home, lock, side-button, siri.")
-        }
     }
 
-    /// A usage error (exit 64) when the device's platform has no such button.
-    static func checkAvailability(_ button: ButtonType, on platform: DevicePlatform, device: String) throws {
-        guard !button.hardwareButton.platforms.contains(platform) else { return }
+    /// A usage error (exit 64) when the device has no such button.
+    static func checkAvailability(_ button: ButtonType, on platform: DevicePlatform, device: String, physicalIOS: Bool = false) throws {
+        if platform == .ios, physicalIOS, !button.isOnIOSDevice {
+            throw ValidationError(physicalIOSRefusal(button, device: device))
+        }
+        guard !button.platforms.contains(platform) else { return }
         switch platform {
         case .android:
             throw ValidationError("The \(button.rawValue) button is iOS only, and \(device) is an Android emulator. Android buttons: \(ButtonType.names(on: .android)).")
         case .ios:
             throw ValidationError("The \(button.rawValue) button is Android only, and \(device) is an iOS simulator. iOS buttons: \(ButtonType.names(on: .ios)).")
         }
+    }
+
+    private static func physicalIOSRefusal(_ button: ButtonType, device: String) -> String {
+        let listed = "iPhone and iPad buttons: \(ButtonType.iosDeviceNames)."
+        switch button {
+        case .applePay:
+            return "The apple-pay button needs an iOS simulator, and \(device) is a physical iPhone or iPad. \(listed)"
+        case .appSwitch:
+            return "The app-switch button needs an iOS simulator or an Android device, and \(device) is a physical iPhone or iPad. \(listed)"
+        default:
+            return "The \(button.rawValue) button is Android only, and \(device) is a physical iPhone or iPad. \(listed)"
+        }
+    }
+
+    /// app-switch on an iOS simulator is two Home presses, which cannot be held.
+    static func checkDuration(_ button: ButtonType, duration: Double?, on platform: DevicePlatform) throws {
+        guard button == .appSwitch, platform == .ios, duration != nil else { return }
+        throw ValidationError("app-switch on an iOS simulator presses Home twice, so it does not take --duration. Leave out --duration.")
+    }
+
+    static let appSwitchGapMilliseconds = 180
+
+    /// A second app-switch press closes the switcher the first one opened.
+    static func verifyRetries(_ button: ButtonType, _ verification: VerificationOptions) -> Int {
+        verification.retries ?? (button == .appSwitch ? 0 : verification.resolvedRetries)
+    }
+
+    /// The press as one event: down, the hold and up with --duration; on an iOS simulator app-switch is two Home presses.
+    static func pressEvent(_ button: ButtonType, duration: Double?, on platform: DevicePlatform) -> InputEvent {
+        if button == .appSwitch, platform == .ios {
+            return .composite([.shortButtonPress(.home), .delay(Double(appSwitchGapMilliseconds) / 1000), .shortButtonPress(.home)])
+        }
+        guard let duration else { return .shortButtonPress(button.hardwareButton) }
+        return .composite([
+            .button(direction: .down, button: button.hardwareButton),
+            .delay(duration),
+            .button(direction: .up, button: button.hardwareButton)
+        ])
     }
 
     /// A short Android `home` press checks the foreground activity instead of the tree.
@@ -215,9 +275,16 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        try await execute(on: route, progress: progress, logger: logger)
+    }
+
+    /// Presses the button on `route`; tests pass a fake backend here.
+    @MainActor
+    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger) async throws {
         let backend = route.backend
         let device = route.device
-        try Self.checkAvailability(buttonType, on: device.platform, device: deviceOption.id)
+        try Self.checkAvailability(buttonType, on: device.platform, device: deviceOption.id, physicalIOS: device.isPhysicalIOSDevice)
+        try Self.checkDuration(buttonType, duration: duration, on: device.platform)
         try await backend.prepare()
 
         logger.info().log("Pressing \(buttonType.description)")
@@ -225,16 +292,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
             logger.info().log("Duration: \(duration) seconds")
         }
 
-        let buttonEvent: InputEvent
-        if let duration = duration {
-            buttonEvent = .composite([
-                .button(direction: .down, button: buttonType.hardwareButton),
-                .delay(duration),
-                .button(direction: .up, button: buttonType.hardwareButton)
-            ])
-        } else {
-            buttonEvent = .shortButtonPress(buttonType.hardwareButton)
-        }
+        let buttonEvent = Self.pressEvent(buttonType, duration: duration, on: device.platform)
 
         if let progress {
             let request = VerifyRequest(
@@ -244,7 +302,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
                 backend: backend,
                 device: device,
                 options: verification,
-                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
+                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: Self.verifyRetries(buttonType, verification)))
             )
             try await VerifyOutput.perform(request, progress: progress) { _, session in
                 try await session.perform(buttonEvent)

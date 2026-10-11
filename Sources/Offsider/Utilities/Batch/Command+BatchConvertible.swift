@@ -192,17 +192,10 @@ extension Touch: BatchConvertible {
 
 extension Button: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        try Self.checkAvailability(buttonType, on: context.backend.platform, device: context.device.rawValue)
-        if let duration {
-            let composite = InputEvent.composite([
-                .button(direction: .down, button: buttonType.hardwareButton),
-                .delay(duration),
-                .button(direction: .up, button: buttonType.hardwareButton)
-            ])
-            return [.hidMergeable(composite)]
-        }
-
-        return [.hidMergeable(.shortButtonPress(buttonType.hardwareButton))]
+        let platform = context.backend.platform
+        try Self.checkAvailability(buttonType, on: platform, device: context.device.rawValue, physicalIOS: context.device.isPhysicalIOSDevice)
+        try Self.checkDuration(buttonType, duration: duration, on: platform)
+        return [.hidMergeable(Self.pressEvent(buttonType, duration: duration, on: platform))]
     }
 }
 
