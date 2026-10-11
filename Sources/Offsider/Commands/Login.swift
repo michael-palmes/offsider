@@ -50,7 +50,7 @@ struct LoginCommand: AsyncParsableCommand {
     @Option(name: .customLong("project"), help: ArgumentHelp("Directory to search for offsider.login.json. Without it, the search starts at the current directory.", valueName: "path"))
     var project: String?
 
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout. identity and password are the word filled, never the secret.")
+    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout, also on a failure after typing began. identity and password are filled or not_filled, never the secret.")
     var json = false
 
     @OptionGroup
@@ -85,27 +85,43 @@ struct LoginCommand: AsyncParsableCommand {
         let filter = try Self.whereTags(filters, named: key != nil)
         let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWaitNotice.utf8)) }
         var giveUp: DispatchWorkItem?
-        let report = try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
-            try await Self.perform(
-                on: route, profile: profile, mode: mode, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
-                onPrepared: ready,
-                keychainWillRead: { app in
-                    watchdog.disarm()
-                    let limit = DispatchWorkItem {
-                        ErrorReporter.exitFromTimer(reason: .commandFailed, message: Self.keychainTimeoutMessage, hint: "offsider credential status --app \(app)")
+        let report: LoginReport
+        do {
+            report = try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
+                try await Self.perform(
+                    on: route, profile: profile, mode: mode, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
+                    onPrepared: ready,
+                    keychainWillRead: { app in
+                        watchdog.disarm()
+                        let limit = DispatchWorkItem {
+                            ErrorReporter.exitFromTimer(reason: .commandFailed, message: Self.keychainTimeoutMessage, hint: "offsider credential status --app \(app)")
+                        }
+                        giveUp = limit
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice)
+                        DispatchQueue.global().asyncAfter(deadline: .now() + Self.keychainWaitLimit, execute: limit)
+                    },
+                    keychainDidRead: {
+                        notice.cancel()
+                        giveUp?.cancel()
+                        ready()
                     }
-                    giveUp = limit
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice)
-                    DispatchQueue.global().asyncAfter(deadline: .now() + Self.keychainWaitLimit, execute: limit)
-                },
-                keychainDidRead: {
-                    notice.cancel()
-                    giveUp?.cancel()
-                    ready()
-                }
-            )
+                )
+            }
+        } catch {
+            throw await Self.failure(error, json: json)
         }
         print(json ? report.jsonLine() : report.textLine())
+    }
+
+    /// Under --json, a login that began typing prints its own report of how far it got; an earlier failure keeps the error envelope.
+    @MainActor
+    static func failure(_ error: any Error, json: Bool, scope: CommandScope = .current, write: (String) -> Void = { print($0) }) async -> any Error {
+        guard json, let stopped = error as? LoginFailure else { return error }
+        let annotated = await scope.screenHint(for: stopped)
+        var report = stopped.report
+        report.error = ErrorReporter.payload(for: annotated)
+        write(report.jsonLine())
+        return ReportedFailure(underlying: annotated, exitCode: report.exitCode)
     }
 
     static let keychainWaitNotice = "Waiting for macOS to let offsider read the saved login. Answer the Keychain prompt.\n"
@@ -163,14 +179,21 @@ struct LoginCommand: AsyncParsableCommand {
             clock: .live
         )
         let deviceID = route.device.rawValue
-        var report = try await LoginFlow.run(
-            app: app, key: entry.key, credential: credential, profile: profile, turnstile: mode, timeout: timeout, services: services,
-            lastSignIn: {
-                tracker?.last(app: canonical, deviceID: deviceID).map {
-                    LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
+        var report: LoginReport
+        do {
+            report = try await LoginFlow.run(
+                app: app, key: entry.key, credential: credential, profile: profile, turnstile: mode, timeout: timeout, services: services,
+                lastSignIn: {
+                    tracker?.last(app: canonical, deviceID: deviceID).map {
+                        LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
+                    }
                 }
-            }
-        )
+            )
+        } catch var failure as LoginFailure {
+            failure.report.tags = entry.context.tags
+            failure.report.filter = filter
+            throw failure
+        }
         tracker?.record(app: canonical, foreground: app, key: entry.key, deviceID: deviceID)
         report.tags = entry.context.tags
         report.filter = filter

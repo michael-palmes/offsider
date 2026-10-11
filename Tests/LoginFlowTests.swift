@@ -52,7 +52,7 @@ struct LoginFlowTests {
     func challengeStops() async {
         let script = script(buttonEnabled: true)
         script.phases = [.visualChallenge]
-        await #expect(throws: CLIError.self) { try await self.run(script, mode: .auto) }
+        await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .auto) }
         #expect(script.typed == [username, password])
         #expect(script.performs == 0)
         #expect(script.taps.isEmpty)
@@ -79,7 +79,7 @@ struct LoginFlowTests {
     @Test("a disabled submit button is not tapped")
     func disabledSubmit() async {
         let script = script(buttonEnabled: false)
-        await #expect(throws: CLIError.self) { try await self.run(script, mode: .off, timeout: 0) }
+        await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .off, timeout: 0) }
         #expect(script.sleeps == 0)
         #expect(script.taps.isEmpty)
         #expect(script.performs == 0)
@@ -211,7 +211,7 @@ struct LoginFlowTests {
             SignInFixture.tree(emailValue: username),
             SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
         ])
-        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script, mode: .auto) })
+        let error = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .auto) })
         #expect(error.reason == .targetUnderKeyboard)
         try #require(script.taps.count == 3)
         #expect(script.taps[0] != script.taps[1] && script.taps[1] != script.taps[2] && script.taps[0] != script.taps[2])
@@ -224,10 +224,87 @@ struct LoginFlowTests {
     @Test("a keyboard with no safe point does not reach Turnstile or submit")
     func keyboardCoversSubmit() async {
         let script = script(buttonEnabled: true, keyboard: true)
-        await #expect(throws: CLIError.self) { try await self.run(script, mode: .auto) }
+        await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .auto) }
         #expect(script.taps.isEmpty)
         #expect(script.performs == 0)
         #expect(script.phaseIndex == 0)
+    }
+
+    @Test("under --json, a login that stops after both fields were filled prints its report with submitted false, and keeps exit 1")
+    func stoppedAfterBothFields() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
+        ])
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .off) })
+        var written: [String] = []
+        let thrown = await LoginCommand.failure(stopped, json: true, scope: CommandScope(), write: { written.append($0) })
+
+        let message = "The keyboard covers the next control, so Turnstile was not checked and the submit button was not tapped. Both fields were filled."
+        #expect(written == [
+            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"filled","submitted":false,"name":"dev","tags":[],"exitCode":1,"#
+                + #""error":{"reason":"target_under_keyboard","message":"\#(message)","hint":null,"dispatched":null,"candidates":[]}}"#,
+        ])
+        #expect((thrown as? ReportedFailure)?.exitCode.rawValue == 1)
+        #expect(!written.joined().contains(username))
+        #expect(!written.joined().contains(password))
+
+        let text = await LoginCommand.failure(stopped, json: false, scope: CommandScope(), write: { written.append($0) })
+        #expect(written.count == 1)
+        #expect((text as? LoginFailure)?.userFacingDescription == message)
+    }
+
+    @Test("a login that stops after the email or username says so, and reports the password not_filled")
+    func stoppedAfterIdentity() async throws {
+        let script = LoginScript(trees: [SignInFixture.tree(), SignInFixture.tree(emailValue: username)])
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .off) })
+        var written: [String] = []
+        let thrown = await LoginCommand.failure(stopped, json: true, scope: CommandScope(), write: { written.append($0) })
+
+        #expect(written == [
+            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"not_filled","submitted":false,"name":"dev","tags":[],"exitCode":5,"#
+                + #""error":{"reason":"text_not_accepted","message":"The password field did not show one bullet per character. The submit button was not tapped. The email or username was filled.","hint":null,"dispatched":null,"candidates":[]}}"#,
+        ])
+        #expect((thrown as? ReportedFailure)?.exitCode.rawValue == 5)
+    }
+
+    @Test("a failure before typing prints no login report under --json and keeps the error envelope")
+    func failureBeforeTypingKeepsTheEnvelope() async throws {
+        let script = LoginScript(trees: [FakeUI.tree([])])
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script, mode: .off) })
+        var written: [String] = []
+        let thrown = await LoginCommand.failure(error, json: true, scope: CommandScope(), write: { written.append($0) })
+
+        #expect(written.isEmpty)
+        #expect(script.typed.isEmpty)
+        #expect(ErrorEnvelope(command: "login", error: ErrorReporter.payload(for: thrown)).jsonLine()
+            == #"{"version":1,"ok":false,"command":"login","exitCode":2,"error":{"reason":"selector_not_found","message":"No email or username field is in front. Nothing was typed.","hint":null,"dispatched":null,"candidates":[]}}"#)
+    }
+
+    @Test("a login that stops after typing exits with the code and reason of what stopped it, with or without --json")
+    func stoppedKeepsExitCodes() async {
+        let causes: [any Error] = [
+            CLIError(errorDescription: "Keys over submit.", reason: .targetUnderKeyboard),
+            CLIError(errorDescription: "No bullets.", reason: .textNotAccepted),
+            CLIError(errorDescription: "Form gone.", reason: .selectorNotFound),
+            CLIError(errorDescription: "Two boxes.", reason: .selectorAmbiguous),
+            CLIError(errorDescription: "Still disabled.", reason: .conditionNotMet),
+            CLIError(errorDescription: "A challenge.", reason: .turnstileChallenge),
+            CocoaError(.fileNoSuchFile),
+        ]
+        for cause in causes {
+            let stopped = LoginFailure(report: .stopped(app: "com.example.app", key: "dev", identity: .filled, password: .filled), underlying: cause)
+            let before = ErrorReporter.status(for: cause)
+            let after = ErrorReporter.status(for: stopped)
+            #expect(after.exit == before.exit)
+            #expect(after.reason == before.reason)
+            let reported = await LoginCommand.failure(stopped, json: true, scope: CommandScope(), write: { _ in })
+            #expect((reported as? ReportedFailure)?.exitCode.rawValue == before.exit)
+        }
+        #expect(ErrorReporter.status(for: causes[0]).exit == 1)
+        #expect(ErrorReporter.status(for: causes[1]).exit == 5)
     }
 
     @Test("with no form in front, the error names who Offsider last signed in here and how to switch; with no record it is unchanged")

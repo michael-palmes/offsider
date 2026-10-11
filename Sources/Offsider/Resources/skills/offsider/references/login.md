@@ -64,7 +64,9 @@ Saved users live on each Mac. A repository's `OFFSIDER.md` maps flows to tags, n
 
 It dismisses the software keyboard before submit with a tap on empty space (or on plain text), never a control: first above the topmost field, then up from the keys, and never on or just around a field. It tries up to three distinct points, reading the screen again after each. When the keys still cover the next control, it stops with `target_under_keyboard` and never presses Back.
 
-`--timeout` (default 15 seconds) is how long it waits for submit to enable. `--json` prints one object with the user's `name` and `tags`, `where` when passed, and `submitted`; `identity` and `password` are the word `filled`, never the secret.
+`--timeout` (default 15 seconds) is how long it waits for submit to enable. `--json` prints one object: `ok`, the user's `name` and `tags`, `where` when passed, `identity`, `password`, `submitted`, `exitCode` and `error`. `identity` and `password` are `filled` once login typed into the field and read it back, else `not_filled`, never the secret.
+
+Once login reaches the email field, a failure still prints that object, with `ok: false`, `submitted: false` and the `error` object, even when the field never took focus (`identity: not_filled`), and the message ends "Both fields were filled." or "The email or username was filled." when that is so. A failure before then (no form, two matches, no saved user, `--where`) prints the standard error envelope instead, with `command` and no `identity`: nothing was touched. The exit code is the reason's either way.
 
 ## An app can pin its fields
 
