@@ -280,14 +280,14 @@ struct CredentialCommand: AsyncParsableCommand {
             let target = try writeTarget(entries: entries, name: key, update: update, questions: questions) { try store.list(app: canonical) }
             let existing = entries.first { $0.key == target.key }
             var context = edit.isEmpty ? nil : try edited(existing?.stored ?? .saved(.empty), with: edit, key: target.key, app: app, now: now)
-            if let stamp = LoginDirectory.shouldStampDefault(entries, writing: target.key) {
-                try store.markDefault(app: canonical, key: stamp)
-            }
             if questions == nil { warn() }
             let credential = try readCredential()
             if let questions, existing == nil, edit.isEmpty {
                 let asked = try questions.context()
                 if !asked.isEmpty { context = try edited(.saved(.empty), with: asked, key: target.key, app: app, now: now) }
+            }
+            if let stamp = LoginDirectory.shouldStampDefault(entries, writing: target.key) {
+                try store.markDefault(app: canonical, key: stamp)
             }
             try store.save(credential, app: canonical, key: target.key, isDefault: target.makeDefault, context: context)
             let report = CredentialReport(

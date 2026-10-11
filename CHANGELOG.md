@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `credential set` and `unlock-code set` on a terminal now zero every copy of a typed secret they hold before freeing it: each read from the terminal, each decoded key, the line being edited and the second entry, which is compared without becoming a string. Swift cannot wipe a string, so the first entry becomes one only once, to be checked and handed over.
+- `credential set` marks a sole saved user as the default only once every question is answered, just before it saves, so a set cancelled with Escape or "Keep it", or refused, leaves the default mark as it was.
 - `login` on an iOS simulator no longer fails with "The form changed after the fields were filled" when the keyboard stays up: the keyboard's dictation bar no longer counts as covering the form, and a read taken while the keyboard moves is read again for up to 1.5 seconds, as is a field that shows its text a moment late.
 
 ## [0.10.0] - 2026-10-11

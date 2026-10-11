@@ -262,6 +262,31 @@ struct TerminalPromptTests {
         #expect(try store.load(app: "com.example.app", key: "qa-owner") == nil)
     }
 
+    @Test("set marks a sole unmarked login as the default only once every answer is in, so a cancelled or refused set leaves it alone")
+    func defaultStampedAfterAnswers() throws {
+        let store = MemoryLoginCredentialStore()
+        let admin = try #require(LoginCredential(username: "admin@example.com", password: "s3cret-token"))
+        try store.save(admin, app: "com.example.app", key: "qa-admin", isDefault: false)
+        func set(_ questions: ScriptedQuestions, key: String? = "qa-member", reading: () throws -> LoginCredential) throws {
+            _ = try CredentialCommand.perform(.set, app: "com.example.app", key: key, json: true, store: store, questions: questions, readCredential: reading)
+        }
+
+        let escapingContext = ScriptedQuestions(credential: admin)
+        escapingContext.contextAnswer = nil
+        #expect(throws: PromptCancelled.self) { try set(escapingContext, reading: escapingContext.credential) }
+        let escapingPassword = ScriptedQuestions(choice: .create, name: "qa-member", credential: admin)
+        #expect(throws: PromptCancelled.self) { try set(escapingPassword, key: nil) { throw PromptCancelled() } }
+        let refused = ScriptedQuestions(credential: admin)
+        #expect(throws: CLIError.self) { try set(refused) { try CredentialCommand.credential(username: "admin@example.com", password: "pass\tword") } }
+        #expect(try store.defaultKey(app: "com.example.app") == nil)
+        #expect(try store.load(app: "com.example.app", key: "qa-member") == nil)
+
+        let completing = ScriptedQuestions(credential: admin)
+        try set(completing, reading: completing.credential)
+        #expect(try store.defaultKey(app: "com.example.app") == "qa-admin")
+        #expect(try store.load(app: "com.example.app", key: "qa-member") != nil)
+    }
+
     @Test("the about and tags answers are optional, a bad tag states the rule, and every label lines up")
     func contextAnswers() throws {
         #expect(CredentialScreen.aboutProblem("") == nil)
