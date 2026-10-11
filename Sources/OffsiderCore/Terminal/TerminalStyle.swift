@@ -56,6 +56,16 @@ public enum TerminalText {
         }
     }
 
+    /// Moves the cursor from the end of a one-line draw `width` columns wide back to column `target` of it, and says which row it lands on.
+    public static func cursorMove(width: Int, to target: Int, columns: Int) -> (sequence: String, row: Int) {
+        let columns = max(columns, 1)
+        let lastRow = max(0, (width + columns - 1) / columns - 1)
+        guard target >= 0, target < width else { return ("", lastRow) }
+        let row = target / columns
+        let up = lastRow - row
+        return ((up > 0 ? "\u{1B}[\(up)A" : "") + "\u{1B}[\(target % columns + 1)G", row)
+    }
+
     private static func cells(_ scalar: Unicode.Scalar) -> Int {
         let value = scalar.value
         if value < 0x20 || (0x7F..<0xA0).contains(value) { return 0 }

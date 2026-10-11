@@ -189,6 +189,12 @@ export const routeInfo = {
     menuTitle: 'Live Ticker Test',
     subtitle: 'Ticking values, a delayed push and two log toasts',
   },
+  'user-switch-test': {
+    section: 'Real-world RN',
+    title: 'User Switch',
+    menuTitle: 'User Switch Test',
+    subtitle: 'Sign in, sign out and switch test users',
+  },
 } satisfies Record<string, RouteInfo>;
 
 export type RouteId = keyof typeof routeInfo;

@@ -1,14 +1,14 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox", "log in with a saved test credential", "number and mask screenshots for a report", "redact logs", "React Native dev menu or LogBox", or "interact with an iOS, Android or React Native app (Expo dev client, debug or release build)".
+description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "tick a Cloudflare Turnstile checkbox", "log in or switch test users", "number and mask screenshots for a report", "redact logs", "React Native dev menu or LogBox", or "interact with an iOS, Android or React Native app (Expo dev client, debug or release build)".
 ---
 # Offsider
 
-Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from the terminal: it reads the screen as an accessibility tree, then taps, types, swipes and captures, all on this Mac. This file is the core. `offsider guide <topic>` prints version-matched depth for each topic in the table at the end; read a topic before guessing.
+Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from the terminal: it reads the screen as an accessibility tree, then taps, types, swipes and captures, all on this Mac. `offsider guide <topic>` prints version-matched depth for each topic below; read a topic before guessing.
 
 ## Every session
 
-1. Find the device with `offsider list-devices`: iOS simulators, USB iPhones and iPads by UDID, running Android emulators and USB phones by serial, and shut-down AVDs by name (watchOS, tvOS and visionOS are not listed). `--json` adds each device's `kind` and `connection` (`guide android`); `--platform ios|android` filters. Simulator IDs are case-insensitive UDIDs; Android IDs are serials (`emulator-5554`) or a running AVD's name. Never choose a `physical` device yourself: drive a phone only when the user names its serial or UDID (`guide android`, `guide ios-device`).
+1. Find the device with `offsider list-devices`: iOS simulators, USB iPhones and iPads by UDID, running Android emulators and USB phones by serial, and shut-down AVDs by name. `--json` adds each device's `kind` and `connection` (`guide android`); `--platform ios|android` filters. Simulator IDs are case-insensitive UDIDs; Android IDs are serials (`emulator-5554`) or a running AVD's name. Never choose a `physical` device yourself: drive a phone only when the user names its serial or UDID (`guide android`, `guide ios-device`).
 2. Start an Android emulator with `DEVICE=$(offsider boot <AVD>)` (`--headless` hides the window): it waits until Android has booted, prints the serial and never starts a second instance of a running AVD. Never start emulators with `emulator -port` or `-grpc` yourself: Offsider then falls back to slower adb-only input.
 3. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and whenever input seems ignored or screen reads fail. Exit 0 means every check passed, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint` (`guide errors`).
 4. Pass `--device <DEVICE_ID>` to every device command, or `export OFFSIDER_DEVICE=<DEVICE_ID>` once (`--device` wins). `list-devices`, `boot`, `init`, `guide` and `doctor` do not need it.
@@ -17,7 +17,7 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from 
 ## The loop: look, act, verify
 
 1. **Look.** `offsider describe-ui --summary --device <DEVICE_ID>` prints one line per on-screen node with a label, id or value, such as `button "Save" id=save-button (170.7,313.3 61x34.3)`. Copy `--id` and `--label` values from it, or part of a label with `--label-contains` (`guide describe-ui`).
-2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors prefer on-screen matches and wait with `--wait-timeout`; or use `tap -x <X> -y <Y>` from `describe-ui` (`guide selectors`). `login` fills a saved test login (`guide login`); exit 0 is the tap, not a server login. If something is drawn over the target, `tap` exits 1 `target_covered` naming it: close it or wait, and pass `--allow-covered` only to tap it anyway.
+2. **Act with a selector.** `tap --id`, `tap --label`, `slider --id <id> --value <0-100>`. Selectors prefer on-screen matches and wait with `--wait-timeout`; or use `tap -x <X> -y <Y>` from `describe-ui` (`guide selectors`). `credential status --json` lists saved test users with their tags; `login <name>` or `login --where <tag>` signs one in (`guide login`); exit 0 is the tap, not a server login. If something is drawn over the target, `tap` exits 1 `target_covered` naming it: close it or wait, and pass `--allow-covered` only to tap it anyway.
 3. **Verify.** Most input is fire-and-forget. Add `--verify` to `tap`, `type`, `key` or `button` (exit 5 when nothing changed; `--verify-id <id>` for navigation), or check with `wait` (`--any` for either outcome), `assert` or `describe-ui --diff`, which prints only what changed since the previous command's tree (`guide verify`). On a live screen, run `describe-ui` first so `--verify` learns the live text.
 4. **Batch.** For three or more steps, run one `offsider batch` call (`guide batch`).
 
@@ -66,7 +66,7 @@ Run `offsider guide <topic>` to print one; `offsider guide` lists them.
 | `ios-device` | The device is a physical iPhone or iPad, named by its UDID |
 | `react-native` | The app is React Native or Expo, debug or release |
 | `turnstile` | You need to tick a Cloudflare Turnstile checkbox, or to know the tap does not bypass the check |
-| `login` | You are filling a sign-in form, or saving the test username and password it types |
+| `login` | You sign in, choose or switch test users, or save or describe one |
 | `foldables` | The device folds or has more than one display |
 | `batch` | A flow has three or more steps |
 | `screenshots` | You need pixels: charts, maps, web views, masked secure fields or video |

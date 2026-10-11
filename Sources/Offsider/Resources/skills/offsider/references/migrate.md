@@ -59,7 +59,7 @@ Status: **same** (same name and meaning), **renamed** (exists under another name
 | `fill` | `tap` on the field, then `type --replace '<text>'` | renamed |
 | `screenshot` | `screenshot` | same |
 | `doctor` | `doctor` | same |
-| `@e` element refs | `--id`, `--label` and `--value` selectors: Offsider keeps no session state | by design |
+| `@e` element refs | `--id`, `--label` and `--value` selectors: Offsider keeps no element refs between commands | by design |
 | `mcp` | none: Offsider is a CLI any agent runs through its shell | by design |
 | `device status`, `release` | none: the device lock is taken and released automatically | by design |
 | iOS device runner over usbmux | `runner status`, `runner stop`: Offsider builds and signs its own runner, USB only | renamed |

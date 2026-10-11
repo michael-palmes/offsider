@@ -45,13 +45,7 @@ enum ErrorReporter {
             payload = ErrorPayload(reason: .commandFailed, message: OffsiderCommand.message(for: error), dispatched: dispatched)
         }
         guard let device = context.device, let hint = payload.hint, hint.contains("<DEVICE_ID>") else { return payload }
-        return ErrorPayload(
-            reason: payload.reason,
-            message: payload.message,
-            hint: hint.replacingOccurrences(of: "<DEVICE_ID>", with: device),
-            dispatched: payload.dispatched,
-            candidates: payload.candidates
-        )
+        return payload.replacingHint(hint.replacingOccurrences(of: "<DEVICE_ID>", with: device))
     }
 
     /// The exit code and reason a failure ends with, for an evidence run's manifest.

@@ -155,6 +155,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 - Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
 - The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
 - `permission`, `status-bar` and `biometric` change state that outlives the command on both platforms, as `stay-awake` does on Android; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).
+- React Native E2E saves test users only for the RN playground's app id, refuses to start when that id already has saved users, and removes them and their sign-in records afterwards.
 - Never type, pipe or ask for a device's unlock code: the user saves it with `offsider unlock-code set` in their own terminal. `wake --unlock` types a saved code once; never loop on it.
 - The helper holds Android's single UiAutomation slot only while one command runs, and `accessibility_enabled` reads 1 until it exits. Keep its reflection to the four UiAutomation members and the display probe with its public fallback; never implement a hidden Binder interface.
 

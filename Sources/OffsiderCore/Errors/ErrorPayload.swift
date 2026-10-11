@@ -1,8 +1,9 @@
 import Foundation
 
-/// The JSON `error` object: `reason`, `message`, `hint`, `dispatched`, `candidates`.
+/// The JSON `error` object: `reason`, `message`, `hint`, `dispatched`, `candidates`, then `coveredBy` and `users` when present.
 public struct ErrorPayload: Equatable, Sendable {
     public static let maxCandidates = 5
+    public static let maxUsers = 20
 
     public let reason: FailureReason
     public let message: String
@@ -12,25 +13,44 @@ public struct ErrorPayload: Equatable, Sendable {
     public let candidates: [FailureCandidate]
     /// What a refused tap would have landed on; only `target_covered` carries it.
     public let coveredBy: CoverReport?
+    /// Saved logins a `--where` could have meant; only `user_not_found` and `user_ambiguous` carry them.
+    public let users: [FailureUser]
 
-    public init(reason: FailureReason, message: String, hint: String? = nil, dispatched: DispatchState? = nil, candidates: [FailureCandidate] = [], coveredBy: CoverReport? = nil) {
+    public init(
+        reason: FailureReason,
+        message: String,
+        hint: String? = nil,
+        dispatched: DispatchState? = nil,
+        candidates: [FailureCandidate] = [],
+        coveredBy: CoverReport? = nil,
+        users: [FailureUser] = []
+    ) {
         self.reason = reason
         self.message = message
         self.hint = hint
         self.dispatched = dispatched
         self.candidates = Array(candidates.prefix(Self.maxCandidates))
         self.coveredBy = coveredBy
+        self.users = Array(users.prefix(Self.maxUsers))
     }
 
     public init(_ failure: any OffsiderFailure, dispatched: DispatchState? = nil) {
-        self.init(reason: failure.reason, message: failure.failureMessage, hint: failure.hint, dispatched: dispatched, candidates: failure.candidates, coveredBy: failure.coveredBy)
+        self.init(
+            reason: failure.reason, message: failure.failureMessage, hint: failure.hint, dispatched: dispatched,
+            candidates: failure.candidates, coveredBy: failure.coveredBy, users: failure.users
+        )
     }
 
     public var exitCode: OffsiderExitCode { reason.exitCode }
 
     /// The same payload with `scrub` applied to the message and hint.
     public func scrubbed(_ scrub: (String) -> String) -> ErrorPayload {
-        ErrorPayload(reason: reason, message: scrub(message), hint: hint.map(scrub), dispatched: dispatched, candidates: candidates, coveredBy: coveredBy)
+        ErrorPayload(reason: reason, message: scrub(message), hint: hint.map(scrub), dispatched: dispatched, candidates: candidates, coveredBy: coveredBy, users: users)
+    }
+
+    /// The same payload with another hint and nothing else changed.
+    public func replacingHint(_ hint: String?) -> ErrorPayload {
+        ErrorPayload(reason: reason, message: message, hint: hint, dispatched: dispatched, candidates: candidates, coveredBy: coveredBy, users: users)
     }
 
     var jsonValue: OrderedJSON {
@@ -43,6 +63,9 @@ public struct ErrorPayload: Equatable, Sendable {
         ]
         if let coveredBy {
             members.append(("coveredBy", coveredBy.jsonValue))
+        }
+        if !users.isEmpty {
+            members.append(("users", .array(users.map(\.jsonValue))))
         }
         return .object(members)
     }
