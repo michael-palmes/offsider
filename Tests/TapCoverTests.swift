@@ -263,12 +263,12 @@ struct TapCoverTests {
         #expect(verdict.evidence == .drawingOrder && verdict.isConfident)
     }
 
-    @Test("a coveredBy report names role, id, label, frame, screen and evidence, and its JSON keeps that order")
+    @Test("a coveredBy report names role, id, label, frame, screen, evidence and process, and its JSON keeps that order")
     func coverReportJSON() {
         let verdict = CoverVerdict(cover: FakeUI.node(.button, id: "buy", label: "Buy", frame: FakeUI.frame(1, 2, 3, 4)), evidence: .drawingOrder, isConfident: true, screen: "product-page")
         let payload = ErrorPayload(reason: .targetCovered, message: "m", dispatched: .no, coveredBy: CoverReport(verdict))
 
-        #expect(payload.jsonLine().hasSuffix(#""candidates":[],"coveredBy":{"role":"button","id":"buy","label":"Buy","frame":{"x":1,"y":2,"width":3,"height":4},"screen":"product-page","evidence":"drawingOrder"}}"#))
+        #expect(payload.jsonLine().hasSuffix(#""candidates":[],"coveredBy":{"role":"button","id":"buy","label":"Buy","frame":{"x":1,"y":2,"width":3,"height":4},"screen":"product-page","evidence":"drawingOrder","process":null}}"#))
         #expect(!ErrorPayload(reason: .targetCovered, message: "m").jsonLine().contains("coveredBy"))
     }
 }

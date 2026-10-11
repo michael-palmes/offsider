@@ -80,9 +80,10 @@ struct DescribeUI: AsyncParsableCommand {
     func describe(on route: DeviceRouter.Route) async throws -> String {
         let base = diff ? await TreeCache.load(for: route.device, backend: route.backend) : nil
         (route.backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: route.device)
-        let tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
+        var tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
         if point == nil {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)
+            tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: route.backend, device: route.device)
         }
         guard diff else {
             return String(decoding: try output.render(tree), as: UTF8.self)

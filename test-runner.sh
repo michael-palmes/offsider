@@ -189,6 +189,7 @@ RN_SUITES=(
     "ReactNativeLiveTests"
     "ReactNativeStackCoverTests"
     "ReactNativeLoginTests"
+    "ReactNativeSystemPromptTests"
 )
 RN_DEBUG_SUITES=(
     "ReactNativeDebugSmokeTests"
