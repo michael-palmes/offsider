@@ -28,8 +28,15 @@ public struct CredentialReport: Equatable, Sendable {
     public var signIns: [String: [LoginSignIn]]
     /// The raw key last signed in on the device in hand.
     public var signedInHere: String?
+    /// Whether `status` had a device in hand, so its JSON carries `signedInHere` even when nobody is recorded.
+    public var deviceInHand: Bool
     /// The `--where` tags `status` chose by, empty when none were passed.
     public var filter: [LoginTag]
+    /// The device `signed-out` cleared, by its stable key, and its platform.
+    public var device: String?
+    public var platform: DevicePlatform?
+    /// Whether `signed-out` found a record to clear; `key` names the login it held.
+    public var cleared: Bool?
 
     public init(
         action: String,
@@ -46,7 +53,11 @@ public struct CredentialReport: Equatable, Sendable {
         changed: Bool? = nil,
         signIns: [String: [LoginSignIn]] = [:],
         signedInHere: String? = nil,
-        filter: [LoginTag] = []
+        deviceInHand: Bool = false,
+        filter: [LoginTag] = [],
+        device: String? = nil,
+        platform: DevicePlatform? = nil,
+        cleared: Bool? = nil
     ) {
         self.action = action
         self.app = app
@@ -62,7 +73,11 @@ public struct CredentialReport: Equatable, Sendable {
         self.changed = changed
         self.signIns = signIns
         self.signedInHere = signedInHere
+        self.deviceInHand = deviceInHand
         self.filter = filter
+        self.device = device
+        self.platform = platform
+        self.cleared = cleared
     }
 
     var isList: Bool { action == "status" && key == nil }
@@ -74,6 +89,12 @@ public struct CredentialReport: Equatable, Sendable {
                 return "Linked \(app) to \(linked). login on either id uses the same saved logins."
             }
             return "\(app) already shares logins with \(linked)."
+        }
+        if action == "signed-out" {
+            let place = "\(app) on \(device ?? "")"
+            guard cleared == true, let key else { return "No sign-in was recorded for \(place). Nothing was cleared." }
+            let who = key == LoginCredential.defaultAccountKey ? "the default login" : key
+            return "Cleared the sign-in record of \(who) for \(place). Offsider no longer counts it as signed in there."
         }
         if isList {
             guard !listed.isEmpty else { return "\(heading): no login credential saved" }
@@ -129,8 +150,17 @@ public struct CredentialReport: Equatable, Sendable {
             fields.append(("saved", .bool(saved)))
             return OrderedJSON.object(fields).rendered(compact: true)
         }
-        if action == "status", let signedInHere {
-            fields.append(("signedInHere", .string(LoginCredential.displayKey(signedInHere))))
+        if action == "signed-out" {
+            fields += [
+                ("device", .optional(device, OrderedJSON.string)),
+                ("platform", .optional(platform?.rawValue, OrderedJSON.string)),
+                ("name", .optional(key.map(LoginCredential.displayKey), OrderedJSON.string)),
+                ("cleared", .bool(cleared == true)),
+            ]
+            return OrderedJSON.object(fields).rendered(compact: true)
+        }
+        if action == "status", deviceInHand || signedInHere != nil {
+            fields.append(("signedInHere", .optional(signedInHere.map(LoginCredential.displayKey), OrderedJSON.string)))
         }
         if !filter.isEmpty {
             fields.append(("where", .array(filter.map { .string($0.rawValue) })))
@@ -176,7 +206,7 @@ public struct CredentialReport: Equatable, Sendable {
         for note in LoginNote.allCases {
             if let text = context[note] { fields.append((note.rawValue, .string(text))) }
         }
-        if let updated = context.updated { fields.append(("updated", .string(LoginContext.timestamp(updated)))) }
+        if let updated = context.updated { fields.append(("updated", .string(ProcessStamp.timestamp(updated)))) }
         return fields
     }
 
@@ -185,7 +215,7 @@ public struct CredentialReport: Equatable, Sendable {
             var fields: [(String, OrderedJSON)] = [
                 ("device", .string(signIn.device)),
                 ("platform", .string(signIn.platform.rawValue)),
-                ("since", .string(LoginContext.timestamp(signIn.since))),
+                ("since", .string(ProcessStamp.timestamp(signIn.since))),
             ]
             if let restarted = signIn.restarted { fields.append(("restarted", .bool(restarted))) }
             return .object(fields)
@@ -199,13 +229,13 @@ public struct CredentialReport: Equatable, Sendable {
         for note in LoginNote.allCases {
             if let text = context[note] { lines.append("  \(note.rawValue): \(text)") }
         }
-        if let updated = context.updated { lines.append("  updated: \(LoginContext.timestamp(updated))") }
+        if let updated = context.updated { lines.append("  updated: \(ProcessStamp.timestamp(updated))") }
         lines += signIns.map { "  signed in on " + signInText($0) }
         return lines
     }
 
     static func signInText(_ signIn: LoginSignIn) -> String {
         let restart = signIn.restarted == true ? ", before the device restarted" : ""
-        return "\(signIn.device) (\(signIn.platform.rawValue)) since \(LoginContext.timestamp(signIn.since))\(restart)"
+        return "\(signIn.device) (\(signIn.platform.rawValue)) since \(ProcessStamp.timestamp(signIn.since))\(restart)"
     }
 }

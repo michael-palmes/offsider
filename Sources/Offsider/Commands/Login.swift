@@ -24,6 +24,10 @@ struct LoginCommand: AsyncParsableCommand {
         default. Both list each login's name, tags and about note, never a username, and the default never \
         breaks a tie. A name and --where do not go together.
 
+        After the tap, login records which saved login it signed in on this device (credential status shows \
+        it). When no form is in front, the error names that login and how to switch users: sign out in the \
+        app, run credential signed-out, then login again.
+
         Examples:
           offsider login dev --device DEVICE_ID
           offsider login --where role=admin --where env=staging --device DEVICE_ID
@@ -83,7 +87,7 @@ struct LoginCommand: AsyncParsableCommand {
         var giveUp: DispatchWorkItem?
         let report = try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
             try await Self.perform(
-                on: route, profile: profile, mode: mode, key: key, where: filter, timeout: timeout, logger: logger,
+                on: route, profile: profile, mode: mode, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
                 onPrepared: ready,
                 keychainWillRead: { app in
                     watchdog.disarm()
@@ -119,6 +123,7 @@ struct LoginCommand: AsyncParsableCommand {
         timeout: TimeInterval,
         logger: OffsiderLogger,
         store: any LoginCredentialStoring = KeychainLoginCredentialStore(),
+        tracker: SignInTracker? = nil,
         onPrepared: @Sendable () -> Void = {},
         keychainWillRead: (_ app: String) -> Void = { _ in },
         keychainDidRead: () -> Void = {}
@@ -127,12 +132,13 @@ struct LoginCommand: AsyncParsableCommand {
         onPrepared()
         let tree = try await route.backend.accessibilityTree(for: route.device)
         let app = try ForegroundAppLookup.identifier(in: tree, forLogin: true)
+        let canonical: String
         let entry: LoginEntry
         let credential: LoginCredential
         do {
             keychainWillRead(app)
             defer { keychainDidRead() }
-            let canonical = try store.canonical(of: app)
+            canonical = try store.canonical(of: app)
             entry = try resolveLogin(requestedKey, where: filter, app: app, entries: try store.entries(app: canonical), device: route.device)
             credential = try stored(app: canonical, key: entry.key, foreground: app, store: store)
         }
@@ -156,7 +162,16 @@ struct LoginCommand: AsyncParsableCommand {
             },
             clock: .live
         )
-        var report = try await LoginFlow.run(app: app, key: entry.key, credential: credential, profile: profile, turnstile: mode, timeout: timeout, services: services)
+        let deviceID = route.device.rawValue
+        var report = try await LoginFlow.run(
+            app: app, key: entry.key, credential: credential, profile: profile, turnstile: mode, timeout: timeout, services: services,
+            lastSignIn: {
+                tracker?.last(app: canonical, deviceID: deviceID).map {
+                    LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
+                }
+            }
+        )
+        tracker?.record(app: canonical, foreground: app, key: entry.key, deviceID: deviceID)
         report.tags = entry.context.tags
         report.filter = filter
         return report

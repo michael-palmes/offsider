@@ -1,10 +1,12 @@
 import Foundation
 
-/// Why a sign-in screen could not be read. `ambiguous` is exit 6. `missing` is exit 2.
+/// Why a sign-in screen could not be read. `ambiguous` is exit 6. `missing` and `noForm` are exit 2.
 public struct LoginFormError: Equatable, Error, Sendable, CustomStringConvertible {
     public enum Kind: Equatable, Sendable {
         case missing
         case ambiguous
+        /// No sign-in form is in front: nothing is an email or username field, and none was pinned.
+        case noForm
     }
 
     public var kind: Kind
@@ -44,7 +46,8 @@ public enum LoginForm {
             named: isIdentityName,
             in: tree,
             what: "email or username field",
-            missing: "No email or username field is in front."
+            missing: "No email or username field is in front.",
+            noneKind: .noForm
         )
         let password = try resolve(
             profile?.password,
@@ -117,7 +120,8 @@ public enum LoginForm {
         below limit: UIFrame? = nil,
         in tree: UITree,
         what: String,
-        missing: String
+        missing: String,
+        noneKind: LoginFormError.Kind = .missing
     ) throws -> UINode {
         if let pinned {
             return try pinnedField(pinned, roles: roles, allowDisabled: allowDisabled, in: tree, what: what)
@@ -130,7 +134,7 @@ public enum LoginForm {
         }
         guard let only = matches.first, matches.count == 1 else {
             if matches.isEmpty {
-                throw LoginFormError(kind: .missing, message: "\(missing) Nothing was typed.")
+                throw LoginFormError(kind: noneKind, message: "\(missing) Nothing was typed.")
             }
             let listed = matches.map(name).joined(separator: ", ")
             throw LoginFormError(kind: .ambiguous, message: "\(matches.count) \(what)s are in front (\(listed)). Nothing was typed.")

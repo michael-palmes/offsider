@@ -6,7 +6,7 @@ import OffsiderCore
 struct CredentialCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "credential",
-        abstract: "Save, describe, check, remove or share a test username and password for one app.",
+        abstract: "Save, describe, check, remove or share a test username and password for one app, and track who is signed in.",
         discussion: """
         The password is kept in your login Keychain, never in a file, an argument or Offsider's output. \
         The first login saved for an app is the default, so login with no name uses it. A name such as dev \
@@ -36,10 +36,15 @@ struct CredentialCommand: AsyncParsableCommand {
         --where shows the one login that login --where would choose, without its username: no match exits 2 \
         (user_not_found) and several exit 6 (user_ambiguous).
 
-        Without --app, set, status, describe and remove use the app in front on --device (or OFFSIDER_DEVICE). \
-        --app names a bundle id or package when that app is not in front, and then --device is not required. \
-        join always reads the app in front. A physical iPhone or iPad is refused when the command would \
-        read it. login fills the form.
+        login records which saved login it last signed in on each device. status shows where each login was \
+        last signed in, and which one is signed in on --device. signed-out clears that record for the app on \
+        --device after you sign out in the app itself, and exits 0 even when nothing was recorded. It needs \
+        --device and takes no name. remove also clears the login's records on every device.
+
+        Without --app, set, status, describe, remove and signed-out use the app in front on --device (or \
+        OFFSIDER_DEVICE). --app names a bundle id or package when that app is not in front, and then --device \
+        is not required, except by signed-out. join always reads the app in front. A physical iPhone or iPad \
+        is refused when the command would read it, and by signed-out. login fills the form.
 
         Examples:
           offsider credential set --device DEVICE_ID
@@ -48,6 +53,7 @@ struct CredentialCommand: AsyncParsableCommand {
           offsider credential describe qa-admin --tag role=admin --app com.example.app
           offsider credential join --device DEVICE_ID
           offsider credential status --json --app com.example.app
+          offsider credential signed-out --device DEVICE_ID
         """
     )
 
@@ -57,12 +63,13 @@ struct CredentialCommand: AsyncParsableCommand {
         case describe
         case remove
         case join
+        case signedOut = "signed-out"
     }
 
-    @Argument(help: ArgumentHelp("set, status, describe, remove or join.", valueName: "action"))
+    @Argument(help: ArgumentHelp("set, status, describe, remove, join or signed-out.", valueName: "action"))
     var action: String
 
-    @Argument(help: ArgumentHelp("The saved login's name, such as dev. Omit it to use the default login. join does not take one.", valueName: "name"))
+    @Argument(help: ArgumentHelp("The saved login's name, such as dev. Omit it to use the default login. join and signed-out do not take one.", valueName: "name"))
     var key: String?
 
     @Flag(name: .customLong("stdin"), help: "With set: read the username, then the password, from two lines of standard input.")
@@ -74,7 +81,7 @@ struct CredentialCommand: AsyncParsableCommand {
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout. It never includes the password.")
     var json = false
 
-    @Option(name: .customLong("app"), help: ArgumentHelp("For set, status, describe and remove: the bundle id or package, when that app is not in front. For join: which saved app to share with.", valueName: "id"))
+    @Option(name: .customLong("app"), help: ArgumentHelp("For set, status, describe, remove and signed-out: the bundle id or package, when that app is not in front. For join: which saved app to share with.", valueName: "id"))
     var app: String?
 
     @Option(name: .customLong("about"), help: ArgumentHelp("With set or describe: what the login can do, and when to use it. \"\" clears it.", valueName: "text"))
@@ -115,13 +122,13 @@ struct CredentialCommand: AsyncParsableCommand {
         if !filters.isEmpty, parsed != .status { throw ValidationError("--where goes with status or login, not credential \(parsed.rawValue).") }
         _ = try LoginCommand.whereTags(filters, named: key != nil)
         if let key {
-            guard parsed != .join else { throw ValidationError("join does not take a name.") }
+            guard parsed != .join, parsed != .signedOut else { throw ValidationError("\(parsed.rawValue) does not take a name.") }
             guard LoginKey(rawValue: key) != nil else { throw ValidationError(Self.keyMessage) }
         }
         if let app, Self.appID(app) == nil {
             throw ValidationError("--app must be a bundle id or package, such as com.example.app.")
         }
-        if parsed == .join {
+        if parsed == .join || parsed == .signedOut {
             if device.resolved == nil { throw ValidationError(DeviceDefault.missingMessage) }
         } else if app == nil, device.resolved == nil {
             throw ValidationError(DeviceDefault.missingMessage)
@@ -140,6 +147,8 @@ struct CredentialCommand: AsyncParsableCommand {
             print(try Self.join(foreground: foreground, requested: app.flatMap(Self.appID), json: json, styled: styled, store: store, chooseApp: chooseApp))
             return
         }
+        let deviceID = device.resolved?.id
+        if parsed == .signedOut { try Self.refuseSignedOutOnPhone(deviceID ?? "") }
         let app = try await finding(person && app == nil) { try await resolveApp() }
         let edit = try contextEdit()
         let filter = try LoginCommand.whereTags(filters, named: key != nil)
@@ -150,6 +159,7 @@ struct CredentialCommand: AsyncParsableCommand {
             let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWriteNotice.utf8)) }
             print(try Self.perform(
                 parsed, app: app, key: key, update: update, edit: edit, where: filter, json: json, styled: styled, store: store,
+                tracker: .live(), deviceID: deviceID,
                 keychainWillWrite: { DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice) },
                 keychainDidWrite: { notice.cancel() },
                 warn: { print(Self.warning, to: &standardError) },
@@ -205,7 +215,7 @@ struct CredentialCommand: AsyncParsableCommand {
 
     func parsedAction() throws -> Action {
         guard let parsed = Action(rawValue: action.trimmingCharacters(in: .whitespaces).lowercased()) else {
-            throw ValidationError("Unknown action '\(action)'. Use set, status, describe, remove or join.")
+            throw ValidationError("Unknown action '\(action)'. Use set, status, describe, remove, join or signed-out.")
         }
         return parsed
     }
@@ -237,7 +247,7 @@ struct CredentialCommand: AsyncParsableCommand {
         }
     }
 
-    /// `signIns` and `signedInHere` take the canonical app id and answer by raw login key.
+    /// `tracker` reads sign-ins for status and clears them for remove and signed-out; nil means nothing is recorded. `deviceID` is the device in hand.
     static func perform(
         _ action: Action,
         app: String,
@@ -249,8 +259,8 @@ struct CredentialCommand: AsyncParsableCommand {
         styled: TerminalOutput? = nil,
         store: any LoginCredentialStoring,
         questions: (any CredentialQuestions)? = nil,
-        signIns: (String) -> [String: [LoginSignIn]] = { _ in [:] },
-        signedInHere: (String) -> String? = { _ in nil },
+        tracker: SignInTracker? = nil,
+        deviceID: String? = nil,
         now: Date = Date(),
         keychainWillWrite: () -> Void = {},
         keychainDidWrite: () -> Void = {},
@@ -287,29 +297,32 @@ struct CredentialCommand: AsyncParsableCommand {
             return render(report)
         case .status:
             let entries = try store.entries(app: canonical)
-            let recorded = signIns(canonical)
-            let here = signedInHere(canonical)
+            let recorded = tracker?.signIns(app: canonical) ?? [:]
+            let here = deviceID.flatMap { tracker?.signedInHere(app: canonical, deviceID: $0) }
+            let inHand = deviceID != nil
             if !filter.isEmpty {
                 let entry = try LoginCommand.resolveLogin(nil, where: filter, app: app, entries: entries, device: nil)
                 let report = CredentialReport(
                     action: "status", app: app, key: entry.key, saved: true, isDefault: entry.isDefault || entries.count == 1,
-                    also: shared, context: entry.context, signIns: recorded, signedInHere: here, filter: filter
+                    also: shared, context: entry.context, signIns: recorded, signedInHere: here, deviceInHand: inHand, filter: filter
                 )
                 return render(report)
             }
             if let key {
                 guard let entry = entries.first(where: { $0.key == key }), let saved = try store.load(app: canonical, key: key) else {
-                    return render(CredentialReport(action: "status", app: app, key: key, saved: false, also: shared, signedInHere: here))
+                    return render(CredentialReport(action: "status", app: app, key: key, saved: false, also: shared, signedInHere: here, deviceInHand: inHand))
                 }
                 let report = CredentialReport(
                     action: "status", app: app, key: key, username: saved.username, saved: true, isDefault: entry.isDefault || entries.count == 1,
-                    also: shared, context: entry.context, signIns: recorded, signedInHere: here
+                    also: shared, context: entry.context, signIns: recorded, signedInHere: here, deviceInHand: inHand
                 )
                 return render(report)
             }
             var listed = entries
             if listed.count == 1 { listed[0].isDefault = true }
-            let report = CredentialReport(action: "status", app: app, saved: !listed.isEmpty, listed: listed, also: shared, signIns: recorded, signedInHere: here)
+            let report = CredentialReport(
+                action: "status", app: app, saved: !listed.isEmpty, listed: listed, also: shared, signIns: recorded, signedInHere: here, deviceInHand: inHand
+            )
             return render(report)
         case .describe:
             let entries = try store.entries(app: canonical)
@@ -330,11 +343,26 @@ struct CredentialCommand: AsyncParsableCommand {
         case .remove:
             let removing = try removeTarget(entries: try store.entries(app: canonical), name: key)
             let removed = try store.remove(app: canonical, key: removing)
+            tracker?.ledger.clear(app: canonical, key: removing)
             let report = CredentialReport(action: "remove", app: app, key: removing, saved: false, removed: removed, also: shared)
+            return render(report)
+        case .signedOut:
+            guard let tracker, let deviceID else { throw CLIError(errorDescription: DeviceDefault.missingMessage, reason: .usage) }
+            try refuseSignedOutOnPhone(deviceID)
+            let signedOut = try tracker.signOut(app: canonical, deviceID: deviceID)
+            let report = CredentialReport(
+                action: "signed-out", app: app, key: signedOut.cleared?.key, saved: false, also: shared,
+                device: signedOut.device, platform: signedOut.platform, cleared: signedOut.cleared != nil
+            )
             return render(report)
         case .join:
             throw CLIError(errorDescription: "join is not a saved login.", reason: .usage)
         }
+    }
+
+    /// login never runs on a physical iPhone or iPad, so nothing is recorded there to clear.
+    static func refuseSignedOutOnPhone(_ deviceID: String) throws {
+        try CLIError.refuseOnPhone(deviceID, command: "credential signed-out", alternative: "login does not run there, so Offsider records no sign-in on it.")
     }
 
     static func join(

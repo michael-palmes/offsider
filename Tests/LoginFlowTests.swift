@@ -143,6 +143,66 @@ struct LoginFlowTests {
         #expect(script.phaseIndex == 0)
     }
 
+    @Test("with no form in front, the error names who Offsider last signed in here and how to switch; with no record it is unchanged")
+    func missingFormNote() async throws {
+        let since = Date(timeIntervalSince1970: 1_791_712_931)
+        func failure(_ last: LoginFlow.LastSignIn?) async -> CLIError? {
+            let script = LoginScript(trees: [FakeUI.tree([])])
+            return await #expect(throws: CLIError.self) { try await self.run(script, mode: .off, lastSignIn: { last }) }
+        }
+        let plain = try #require(await failure(nil))
+        let noted = try #require(await failure(LoginFlow.LastSignIn(key: "qa-admin", since: since, restarted: true, deviceID: "emulator-5554")))
+        let fresh = try #require(await failure(LoginFlow.LastSignIn(key: "*", since: since, restarted: false, deviceID: "emulator-5554")))
+
+        #expect(plain.reason == .selectorNotFound)
+        #expect(noted.exitCode == .selectorNotFound)
+        #expect(plain.hint == nil)
+        #expect(!plain.userFacingDescription.contains("Offsider last signed in"))
+        #expect(noted.reason == plain.reason)
+        #expect(noted.userFacingDescription == plain.userFacingDescription
+            + " Offsider last signed in as qa-admin here (2026-10-11T10:02:11Z, before the device restarted), so the app may still be signed in."
+            + " To switch users, sign out in the app, run `offsider credential signed-out --device emulator-5554`, then run login again.")
+        #expect(noted.hint == "offsider credential signed-out --device emulator-5554")
+        #expect(fresh.userFacingDescription.contains("Offsider last signed in as the default login here (2026-10-11T10:02:11Z), so the app"))
+
+        var reads = 0
+        _ = try await run(script(buttonEnabled: true), mode: .off, lastSignIn: {
+            reads += 1
+            return nil
+        })
+        #expect(reads == 0)
+    }
+
+    @Test("a covered or unmatched pinned field, or a missing password field, is not a missing form: no switch note and no record read")
+    func otherFailuresHaveNoNote() async throws {
+        let last = LoginFlow.LastSignIn(key: "qa-admin", since: Date(timeIntervalSince1970: 1_791_712_931), restarted: false, deviceID: "emulator-5554")
+        let emailOnly = FakeUI.tree([FakeUI.node(.textField, id: "email-field", label: "Email", frame: FakeUI.frame(17, 212, 367, 45))])
+        let cases: [(UITree, LoginProfile?)] = [
+            (SignInFixture.tree(coverPassword: true), LoginProfile(bundleID: "com.example.app", password: LoginField(id: "password-field"))),
+            (SignInFixture.tree(), LoginProfile(bundleID: "com.example.app", identity: LoginField(id: "account-field"))),
+            (FakeUI.tree([]), LoginProfile(bundleID: "com.example.app", identity: LoginField(id: "email-field"))),
+            (emailOnly, nil),
+        ]
+        for (tree, profile) in cases {
+            var reads = 0
+            var failure: CLIError?
+            do {
+                _ = try await run(LoginScript(trees: [tree]), mode: .off, profile: profile, lastSignIn: {
+                    reads += 1
+                    return last
+                })
+            } catch let error as CLIError {
+                failure = error
+            }
+            let error = try #require(failure)
+            #expect(error.reason == .selectorNotFound)
+            #expect(error.exitCode == .selectorNotFound)
+            #expect(error.hint == nil)
+            #expect(!error.userFacingDescription.contains("Offsider last signed in"), "\(error.userFacingDescription)")
+            #expect(reads == 0)
+        }
+    }
+
     private var square: TurnstileTarget {
         TurnstileTarget(frame: UIFrame(x: 18, y: 400, width: 30, height: 30), logoOnRight: true)
     }
@@ -161,7 +221,10 @@ struct LoginFlowTests {
         return LoginScript(trees: [empty, email, filled])
     }
 
-    private func run(_ script: LoginScript, mode: LoginTurnstileMode, profile: LoginProfile? = nil, timeout: TimeInterval = 15) async throws -> LoginReport {
+    private func run(
+        _ script: LoginScript, mode: LoginTurnstileMode, profile: LoginProfile? = nil, timeout: TimeInterval = 15,
+        lastSignIn: () -> LoginFlow.LastSignIn? = { nil }
+    ) async throws -> LoginReport {
         let credential = try #require(LoginCredential(username: username, password: password))
         return try await LoginFlow.run(
             app: "com.example.app",
@@ -170,7 +233,8 @@ struct LoginFlowTests {
             profile: profile,
             turnstile: mode,
             timeout: timeout,
-            services: script.services
+            services: script.services,
+            lastSignIn: lastSignIn
         )
     }
 }

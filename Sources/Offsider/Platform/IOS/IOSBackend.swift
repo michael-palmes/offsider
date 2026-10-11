@@ -343,9 +343,14 @@ extension IOSBackend: BootMarking {
     /// The device's `launchd_sim` start time, read once per command.
     func bootMarker(for id: DeviceID) async -> String? {
         if let marker = bootMarkers[id.rawValue] { return marker }
-        guard let identity = try? HIDBroker.currentBootIdentity(simulatorUDID: id.rawValue) else { return nil }
-        let marker = "launchd_sim \(identity.startSeconds).\(String(format: "%06d", identity.startMicroseconds))"
+        guard let marker = Self.bootMarker(simulatorUDID: id.rawValue) else { return nil }
         bootMarkers[id.rawValue] = marker
         return marker
+    }
+
+    /// `launchd_sim <seconds>.<microseconds>` from the local process table; nil when the simulator is not booted.
+    nonisolated static func bootMarker(simulatorUDID: String) -> String? {
+        guard let identity = try? HIDBroker.currentBootIdentity(simulatorUDID: simulatorUDID) else { return nil }
+        return "launchd_sim \(identity.startSeconds).\(String(format: "%06d", identity.startMicroseconds))"
     }
 }

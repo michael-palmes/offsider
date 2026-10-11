@@ -352,17 +352,17 @@ struct LoginCredentialTests {
         )
         #expect(try store.setContext(context, app: "com.example.app", key: "qa-admin"))
         #expect(try store.setContext(LoginContext(tags: [try #require(LoginTag(rawValue: "role=member"))]), app: "com.example.app", key: "qa-member"))
-        let signIn = LoginSignIn(device: "emulator-5554", platform: .android, since: Self.stamp.addingTimeInterval(1931), restarted: false)
-        var asked: [String] = []
+        let fixture = try SignInTrackerFixture(now: Self.stamp.addingTimeInterval(1931.9996))
+        defer { fixture.remove() }
+        fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
         func status(_ key: String?, json: Bool = true, app: String = "com.example.app") throws -> String {
-            try CredentialCommand.perform(
-                .status, app: app, key: key, json: json, store: store,
-                signIns: { asked.append($0); return ["qa-admin": [signIn]] }, signedInHere: { _ in "qa-admin" }
-            ) { try #require(LoginCredential(username: "x", password: "x")) }
+            try CredentialCommand.perform(.status, app: app, key: key, json: json, store: store, tracker: fixture.tracker, deviceID: "emulator-5554") {
+                try #require(LoginCredential(username: "x", password: "x"))
+            }
         }
 
         let list = try status(nil)
-        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"emulator-5554","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}]},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[]}]}"#)
+        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"Test_AVD","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}]},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[]}]}"#)
         let text = try status(nil, json: false)
         #expect(text.contains("role=admin"))
         #expect(text.contains("Admin on staging"))
@@ -371,7 +371,7 @@ struct LoginCredentialTests {
 
         let one = try status("qa-admin")
         #expect(one.contains(#""name":"qa-admin","saved":true,"default":true,"username":"\#(username)","tags":["env=staging","role=admin"]"#))
-        #expect(one.contains(#""signedIn":[{"device":"emulator-5554""#))
+        #expect(one.contains(#""signedIn":[{"device":"Test_AVD""#))
         #expect(!one.contains(password))
         #expect(store.decrypts == 1)
         #expect(try status("qa-owner") == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","name":"qa-owner","saved":false}"#)
@@ -380,7 +380,8 @@ struct LoginCredentialTests {
         let joined = try status(nil, app: "com.example.android")
         #expect(joined.contains(#""app":"com.example.android","also":["com.example.app"]"#))
         #expect(joined.contains(#""about":"Admin on staging, can change team settings""#))
-        #expect(Set(asked) == ["com.example.app"])
+        #expect(joined.contains(#""signedInHere":"qa-admin""#))
+        #expect(joined.contains(#""signedIn":[{"device":"Test_AVD""#))
     }
 
     @Test("context flags go only with set or describe, describe needs one, and a bad tag or note states the rule")
@@ -454,6 +455,160 @@ struct LoginCredentialTests {
         #expect(reads > 0)
         #expect(readsWhileArmed == 0)
         #expect(!paused)
+    }
+
+    @Test("status shows where each login was last signed in, and who is signed in on the device in hand")
+    func statusShowsSignIns() throws {
+        var fixture = try SignInTrackerFixture(now: Self.stamp)
+        defer { fixture.remove() }
+        let store = try savedPair()
+        fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
+        fixture.tracker.now = { Self.stamp + 60 }
+        fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "ZY22FAKE01")
+        let tracker = fixture.tracker
+        func status(_ deviceID: String?) throws -> String {
+            try CredentialCommand.perform(.status, app: "com.example.app", key: nil, json: true, store: store, tracker: tracker, deviceID: deviceID) {
+                try #require(LoginCredential(username: "x", password: "x"))
+            }
+        }
+
+        #expect(try status("emulator-5554") == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":[],"signedIn":[{"device":"ZY22FAKE01","platform":"android","since":"2026-10-11T09:31:00Z"},{"device":"Test_AVD","platform":"android","since":"2026-10-11T09:30:00Z","restarted":false}]},{"name":"qa-member","default":false,"tags":[],"signedIn":[]}]}"#)
+        #expect(try status("ZY22FAKE02").hasPrefix(#"{"version":2,"action":"status","app":"com.example.app","signedInHere":null,"users":["#))
+        #expect(!(try status(nil)).contains("signedInHere"))
+        #expect(store.decrypts == 0)
+    }
+
+    @Test("with a device in hand every status form prints signedInHere, null when nobody is recorded; with none it leaves the key out")
+    func signedInHereNeedsOnlyADevice() throws {
+        let fixture = try SignInTrackerFixture()
+        defer { fixture.remove() }
+        let store = try savedPair()
+        #expect(try store.setContext(LoginContext(tags: [try #require(LoginTag(rawValue: "role=admin"))]), app: "com.example.app", key: "qa-admin"))
+        func status(_ key: String?, where filter: [LoginTag] = [], deviceID: String?) throws -> [String: Any] {
+            let line = try CredentialCommand.perform(
+                .status, app: "com.example.app", key: key, where: filter, json: true, store: store, tracker: fixture.tracker, deviceID: deviceID
+            ) { try #require(LoginCredential(username: "x", password: "x")) }
+            return try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+        let admin = [try #require(LoginTag(rawValue: "role=admin"))]
+
+        for deviceID in ["emulator-5554", "ZY22FAKE02"] {
+            for report in [try status(nil, deviceID: deviceID), try status("qa-member", deviceID: deviceID), try status("qa-owner", deviceID: deviceID), try status(nil, where: admin, deviceID: deviceID)] {
+                #expect(report["signedInHere"] is NSNull, "\(report)")
+            }
+        }
+        for report in [try status(nil, deviceID: nil), try status("qa-member", deviceID: nil), try status(nil, where: admin, deviceID: nil)] {
+            #expect(report.keys.contains("signedInHere") == false, "\(report)")
+        }
+        let signinsPath = (fixture.root as NSString).appendingPathComponent(OffsiderPrivateDirectory.signInsDirectoryName)
+        #expect(!FileManager.default.fileExists(atPath: signinsPath))
+
+        fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
+        #expect(try status("qa-member", deviceID: "emulator-5554")["signedInHere"] as? String == "qa-admin")
+        #expect(try status(nil, where: admin, deviceID: "Test_AVD")["signedInHere"] as? String == "qa-admin")
+    }
+
+    @Test("signed-out clears only this device's record for the app, names who it was, and exits 0 when nothing was recorded")
+    func signedOut() throws {
+        let fixture = try SignInTrackerFixture()
+        defer { fixture.remove() }
+        let store = try savedPair()
+        let tracker = fixture.tracker
+        tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
+        tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-member", deviceID: "ZY22FAKE01")
+        tracker.record(app: "com.example.other", foreground: "com.example.other", key: "qa-admin", deviceID: "emulator-5554")
+        func signOut(_ deviceID: String, app: String = "com.example.app", json: Bool = true) throws -> String {
+            try CredentialCommand.perform(.signedOut, app: app, key: nil, json: json, store: store, tracker: tracker, deviceID: deviceID) {
+                try #require(LoginCredential(username: "x", password: "x"))
+            }
+        }
+
+        #expect(try signOut("emulator-5554") == #"{"version":2,"action":"signed-out","app":"com.example.app","device":"Test_AVD","platform":"android","name":"qa-admin","cleared":true}"#)
+        #expect(try signOut("Test_AVD") == #"{"version":2,"action":"signed-out","app":"com.example.app","device":"Test_AVD","platform":"android","name":null,"cleared":false}"#)
+        #expect(tracker.signedInHere(app: "com.example.app", deviceID: "ZY22FAKE01") == "qa-member")
+        #expect(tracker.signedInHere(app: "com.example.other", deviceID: "emulator-5554") == "qa-admin")
+        #expect(try signOut("ZY22FAKE01", json: false) == "Cleared the sign-in record of qa-member for com.example.app on ZY22FAKE01. Offsider no longer counts it as signed in there.")
+        #expect(try signOut("ZY22FAKE01", json: false) == "No sign-in was recorded for com.example.app on ZY22FAKE01. Nothing was cleared.")
+        #expect(store.decrypts == 0)
+
+        _ = try CredentialCommand.join(foreground: "com.example.android", requested: nil, json: true, store: store)
+        tracker.record(app: "com.example.app", foreground: "com.example.android", key: LoginCredential.defaultAccountKey, deviceID: "emulator-5554")
+        let joined = try signOut("emulator-5554", app: "com.example.android")
+        #expect(joined.contains(#""name":"default","cleared":true"#))
+
+        let phone = #expect(throws: CLIError.self) { try signOut("00008130-0000000000000ABC") }
+        #expect(phone?.reason == .notSupported)
+    }
+
+    @Test("signed-out needs a device, and takes no name, --where or context flags")
+    func signedOutUsage() throws {
+        let refused = [
+            ["signed-out", "qa-admin", "--device", "emulator-5554"],
+            ["signed-out", "--app", "com.example.app"],
+            ["signed-out", "--where", "role=admin", "--device", "emulator-5554"],
+            ["signed-out", "--tag", "role=admin", "--device", "emulator-5554"],
+            ["signed-out", "--stdin", "--device", "emulator-5554"],
+        ]
+        try DeviceDefault.$environment.withValue({ nil }) {
+            for arguments in refused {
+                do {
+                    _ = try CredentialCommand.parse(arguments)
+                    Issue.record("expected \(arguments) to be refused")
+                } catch {
+                    #expect(CredentialCommand.exitCode(for: error) == .validationFailure)
+                }
+            }
+            let parsed = try CredentialCommand.parse(["signed-out", "--app", "com.example.app", "--device", "emulator-5554"])
+            #expect(try parsed.parsedAction() == .signedOut)
+        }
+    }
+
+    @Test("remove clears the login's sign-in records on every device, and leaves other logins and apps alone")
+    func removeClearsSignIns() throws {
+        let fixture = try SignInTrackerFixture()
+        defer { fixture.remove() }
+        let store = try savedPair()
+        let tracker = fixture.tracker
+        tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
+        tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "ZY22FAKE01")
+        tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-member", deviceID: "ZY22FAKE02")
+        tracker.record(app: "com.example.other", foreground: "com.example.other", key: "qa-admin", deviceID: "emulator-5554")
+
+        _ = try CredentialCommand.perform(.remove, app: "com.example.app", key: "qa-admin", json: true, store: store, tracker: tracker) {
+            try #require(LoginCredential(username: "x", password: "x"))
+        }
+
+        #expect(tracker.signIns(app: "com.example.app").keys.sorted() == ["qa-member"])
+        #expect(tracker.signedInHere(app: "com.example.other", deviceID: "emulator-5554") == "qa-admin")
+    }
+
+    @Test("a login that finds no form records nothing, and names who Offsider last signed in here and how to switch")
+    @MainActor
+    func failedLoginRecordsNothing() async throws {
+        let fixture = try SignInTrackerFixture()
+        defer { fixture.remove() }
+        fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        let app = UINode(
+            role: .application,
+            frame: UIFrame(x: 0, y: 0, width: 400, height: 800),
+            native: .android(AndroidNativeAttributes(package: "com.example.app"))
+        )
+        let backend = FakeDeviceBackend(platform: .android, trees: [UITree(platform: .android, device: device.rawValue, roots: [app])])
+        let store = try savedPair()
+        let restarted = try fixture.restarted()
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await LoginCommand.perform(
+                on: DeviceRouter.Route(backend: backend, device: device), profile: nil, mode: .off, key: "qa-member",
+                timeout: 5, logger: OffsiderLogger(), store: store, tracker: restarted
+            )
+        }
+
+        #expect(error?.reason == .selectorNotFound)
+        #expect(error?.userFacingDescription.contains("Offsider last signed in as qa-admin here (2025-10-09T08:53:20Z, before the device restarted)") == true)
+        #expect(error?.hint == "offsider credential signed-out --device emulator-5554")
+        #expect(fixture.tracker.signedInHere(app: "com.example.app", deviceID: "emulator-5554") == "qa-admin")
     }
 
     private func refusal(username: String, password: String) -> String {

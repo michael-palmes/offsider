@@ -170,7 +170,7 @@ public struct LoginContext: Equatable, Sendable {
             if let text = self[note] { fields.append((note.rawValue, .string(text))) }
         }
         if !tags.isEmpty { fields.append(("tags", .array(tags.map { .string($0.rawValue) }))) }
-        if let updated { fields.append(("updated", .string(Self.timestamp(updated)))) }
+        if let updated { fields.append(("updated", .string(ProcessStamp.timestamp(updated)))) }
         return Data(OrderedJSON.object(fields).rendered(compact: true).utf8)
     }
 
@@ -195,15 +195,10 @@ public struct LoginContext: Equatable, Sendable {
             context.tags = Set(tags).sorted()
         }
         if let value = object["updated"] {
-            guard let text = value as? String, let date = try? Date(text, strategy: .iso8601) else { return .damaged }
+            guard let text = value as? String, let date = ProcessStamp.date(fromTimestamp: text) else { return .damaged }
             context.updated = date
         }
         return .saved(context)
-    }
-
-    /// ISO 8601 in UTC, to the second.
-    public static func timestamp(_ date: Date) -> String {
-        Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)).formatted(.iso8601)
     }
 
     private static let bidiControls: Set<UInt32> = [0x061C, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069]

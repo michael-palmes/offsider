@@ -15,6 +15,16 @@ enum LoginFlow {
         var clock: PollClock
     }
 
+    /// Who Offsider last signed in to this app on the device, for the note when no form is in front.
+    struct LastSignIn: Equatable {
+        var key: String
+        var since: Date
+        var restarted: Bool?
+        /// The id `credential signed-out --device` takes.
+        var deviceID: String
+    }
+
+    /// `lastSignIn` is read only when no sign-in form is in front.
     static func run(
         app: String,
         key: String,
@@ -22,7 +32,8 @@ enum LoginFlow {
         profile: LoginProfile?,
         turnstile: LoginTurnstileMode,
         timeout: TimeInterval,
-        services: Services
+        services: Services,
+        lastSignIn: () -> LastSignIn? = { nil }
     ) async throws -> LoginReport {
         if let profile, !profile.isFor(app) {
             throw CLIError(
@@ -32,7 +43,7 @@ enum LoginFlow {
         }
         var tree = try await services.readTree()
         tree = try await revealSubmit(in: tree, profile: profile, services: services)
-        let form = try detect(in: tree, profile: profile, afterTyping: false)
+        let form = try detect(in: tree, profile: profile, afterTyping: false, lastSignIn: lastSignIn)
         try requireName(form.identity, what: "email or username")
         try requireName(form.password, what: "password")
         try await type(credential.username, into: form.identity, services: services)
@@ -70,20 +81,37 @@ enum LoginFlow {
         return try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
     }
 
-    private static func detect(in tree: UITree, profile: LoginProfile?, afterTyping: Bool) throws -> LoginForm.Found {
+    /// Only `noForm` reads `lastSignIn`, to name who Offsider last signed in here.
+    private static func detect(
+        in tree: UITree, profile: LoginProfile?, afterTyping: Bool, lastSignIn: () -> LastSignIn? = { nil }
+    ) throws -> LoginForm.Found {
         do {
             return try LoginForm.detect(in: tree, profile: profile)
         } catch let error as LoginFormError {
+            let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
             if afterTyping {
-                let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
                 throw CLIError(
                     errorDescription: "The form changed after the fields were filled. The submit button was not tapped.",
                     reason: reason
                 )
             }
-            let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
-            throw CLIError(errorDescription: error.message, reason: reason)
+            guard error.kind == .noForm, let last = lastSignIn() else {
+                throw CLIError(errorDescription: error.message, reason: reason)
+            }
+            throw CLIError(
+                errorDescription: "\(error.message) \(switchNote(last))",
+                reason: reason,
+                hint: "offsider credential signed-out --device \(last.deviceID)"
+            )
         }
+    }
+
+    /// Names who Offsider last signed in here, and how to switch users.
+    static func switchNote(_ last: LastSignIn) -> String {
+        let who = last.key == LoginCredential.defaultAccountKey ? "the default login" : last.key
+        let restart = last.restarted == true ? ", before the device restarted" : ""
+        return "Offsider last signed in as \(who) here (\(ProcessStamp.timestamp(last.since))\(restart)), so the app may still be signed in. "
+            + "To switch users, sign out in the app, run `offsider credential signed-out --device \(last.deviceID)`, then run login again."
     }
 
     private static func requireName(_ field: UINode, what: String) throws {
