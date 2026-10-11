@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-11
+
 ### Added
 
 - `--label-contains <text>` matches an element whose label holds the text, in the same case, such as the heading of a label React Native merged from a heading and its detail. It works on `tap`, `slider`, `wait` (repeatable with `--any`), `assert`, `type --into-label-contains` and `screenshot --mask-label-contains`, can narrow an `--id`, and is refused beside `--label` except by `wait --any`. `--label-prefix` and `--label-includes` point to it, and `describe-ui --json` says that `describe-ui` prints JSON by default.
@@ -450,7 +452,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/michael-palmes/offsider/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/michael-palmes/offsider/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/michael-palmes/offsider/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/michael-palmes/offsider/releases/tag/v0.7.0
