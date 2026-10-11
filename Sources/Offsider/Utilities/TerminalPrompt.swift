@@ -81,7 +81,9 @@ final class TerminalPrompt {
         while true {
             erase(to: start)
             if let message { lines([style.yellow(message)]) }
-            let (answer, shown) = try read(label, masked: masked, placeholder: placeholder)
+            let editor = LineEditor()
+            let shown = try read(label, masked: masked, placeholder: placeholder, into: editor)
+            let answer = editor.text
             guard let problem = check(answer) else {
                 if message != nil {
                     erase(to: start)
@@ -93,15 +95,16 @@ final class TerminalPrompt {
         }
     }
 
-    /// Asks for a secret, then for it again. A mismatch clears both and starts over.
+    /// Asks for a secret, then for it again. A mismatch clears both and starts over. The second entry never becomes a `String`.
     func askSecret(_ label: String, again: String, check: (String) -> String?) throws -> String {
         let start = rows
         var notice: String?
         while true {
             erase(to: start)
             let first = try ask(label, masked: true, notice: notice, check: check)
-            let (second, _) = try read(again, masked: true, placeholder: nil)
-            if first == second { return first }
+            let confirmation = LineEditor()
+            _ = try read(again, masked: true, placeholder: nil, into: confirmation)
+            if confirmation.matches(first) { return first }
             notice = PromptScreen.mismatch
         }
     }
@@ -115,7 +118,7 @@ final class TerminalPrompt {
         defer { write("\u{1B}[?25h") }
         draw(PromptScreen.menu(title, options: options, selected: menu.selected, style: style))
         while true {
-            switch menu.apply(try nextKey()) {
+            switch try nextKey({ menu.apply($0) }) {
             case .chosen(let index):
                 erase(to: rows)
                 lines([PromptScreen.chosen(options[index], style: style)])
@@ -128,16 +131,14 @@ final class TerminalPrompt {
         }
     }
 
-    /// The answer, and its line as drawn: dots when `masked`.
-    private func read(_ label: String, masked: Bool, placeholder: String?) throws -> (String, String) {
+    /// Reads one answer into `editor`, and returns its line as drawn: dots when `masked`.
+    private func read(_ label: String, masked: Bool, placeholder: String?, into editor: LineEditor) throws -> String {
         try enterRaw()
         defer { leaveRaw() }
-        var editor = LineEditor()
-        defer { editor.wipe() }
         let prefix = style.cyan(label)
         func line() -> String { prefix + (masked ? PromptScreen.dots(editor.length) : PromptScreen.visible(editor.text)) }
         func render() {
-            if editor.bytes.isEmpty, let placeholder {
+            if editor.isEmpty, let placeholder {
                 draw(prefix + style.dim(placeholder) + "\u{1B}[\(TerminalText.width(placeholder))D")
             } else {
                 draw(line())
@@ -145,11 +146,11 @@ final class TerminalPrompt {
         }
         render()
         while true {
-            switch editor.apply(try nextKey()) {
+            switch try nextKey(editor.apply) {
             case .submitted:
                 draw(line())
                 commit()
-                return (editor.text, line())
+                return line()
             case .cancelled:
                 throw PromptCancelled()
             case .editing:
@@ -158,25 +159,29 @@ final class TerminalPrompt {
         }
     }
 
-    private func nextKey() throws -> TerminalKey {
+    /// Bytes read from the terminal at a time.
+    static let readSize = 256
+
+    /// Hands the next key to `use`, then zeroes any typed bytes it held.
+    private func nextKey<T>(_ use: (TerminalKey) -> T) throws -> T {
         while pending.isEmpty {
-            var buffer = [UInt8](repeating: 0, count: 256)
-            defer { Self.wipe(&buffer) }
-            var count = Darwin.read(descriptor, &buffer, buffer.count)
-            if count < 0, errno == EINTR || errno == EAGAIN { continue }
-            guard count > 0 else { throw PromptCancelled() }
-            while count < buffer.count, TerminalKey.endsMidSequence(buffer[..<count]) {
-                let more = readAfterEscape(into: &buffer, at: count)
-                guard more > 0 else { break }
-                count += more
+            let buffer = SecretBytes(capacity: Self.readSize)
+            var result = 0
+            buffer.append { result = Darwin.read(descriptor, $0.baseAddress, $0.count); return result }
+            if result < 0, errno == EINTR || errno == EAGAIN { continue }
+            guard result > 0 else { throw PromptCancelled() }
+            while buffer.count < buffer.capacity, buffer.withBytes({ TerminalKey.endsMidSequence($0) }) {
+                guard readAfterEscape(into: buffer) > 0 else { break }
             }
-            pending = TerminalKey.parse(Array(buffer[..<count]))
+            pending = buffer.withBytes { TerminalKey.parse($0) }
         }
-        return pending.removeFirst()
+        var key = pending.removeFirst()
+        defer { key.wipe() }
+        return use(key)
     }
 
     /// Waits up to 100 ms for more of an arrow key. A termios timeout, since macOS `poll` does not support `/dev/tty`.
-    private func readAfterEscape(into buffer: inout [UInt8], at offset: Int) -> Int {
+    private func readAfterEscape(into buffer: SecretBytes) -> Int {
         var settings = termios()
         guard tcgetattr(descriptor, &settings) == 0 else { return 0 }
         var timed = settings
@@ -186,7 +191,7 @@ final class TerminalPrompt {
         }
         guard tcsetattr(descriptor, TCSANOW, &timed) == 0 else { return 0 }
         defer { _ = tcsetattr(descriptor, TCSANOW, &settings) }
-        return max(0, buffer.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress! + offset, $0.count - offset) })
+        return buffer.append { Darwin.read(descriptor, $0.baseAddress, $0.count) }
     }
 
     /// Replaces the live region with `text`, moving back over every row the last draw took.
@@ -231,6 +236,7 @@ final class TerminalPrompt {
         erase(to: 0)
         if let message { write(message + "\n") }
         write("\u{1B}[?25h")
+        for index in pending.indices { pending[index].wipe() }
         pending.removeAll()
         leaveRaw()
         _ = tcflush(descriptor, TCIFLUSH)
@@ -252,10 +258,6 @@ final class TerminalPrompt {
             guard written > 0 else { return }
             offset += written
         }
-    }
-
-    private static func wipe(_ buffer: inout [UInt8]) {
-        buffer.withUnsafeMutableBytes { _ = memset_s($0.baseAddress, $0.count, 0, $0.count) }
     }
 }
 

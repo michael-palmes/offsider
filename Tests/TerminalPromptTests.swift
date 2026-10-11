@@ -1,9 +1,9 @@
 import ArgumentParser
 import Darwin
 import Foundation
-import OffsiderCore
 import Testing
 @testable import Offsider
+@testable import OffsiderCore
 
 @Suite("Terminal prompt", .serialized)
 struct TerminalPromptTests {
@@ -39,17 +39,17 @@ struct TerminalPromptTests {
 
     @Test("the editor deletes whole characters, clears on Control-U and cancels on Control-D only when empty")
     func lineEditor() {
-        var editor = LineEditor()
+        let editor = LineEditor()
         #expect(editor.apply(.text(Array("pé".utf8))) == .editing)
         #expect(editor.length == 2)
         #expect(editor.apply(.backspace) == .editing)
         #expect(editor.text == "p")
         #expect(editor.apply(.endOfInput) == .editing)
         #expect(editor.apply(.clearLine) == .editing)
-        #expect(editor.bytes.isEmpty)
+        #expect(editor.isEmpty)
         #expect(editor.apply(.endOfInput) == .cancelled)
 
-        var bounded = LineEditor(capacity: 4)
+        let bounded = LineEditor(capacity: 4)
         _ = bounded.apply(.text(Array("abcdef".utf8)))
         #expect(bounded.text == "abcd")
         #expect(bounded.apply(.enter) == .submitted)
@@ -228,6 +228,52 @@ struct TerminalPromptTests {
         #expect(output.contains("ada@example.com"))
     }
 
+    @Test("the read buffer and every line editor are zeroed and freed after a secret is read, mismatched or cancelled")
+    func secretBuffersAreZeroed() throws {
+        let read = try auditingSecrets(typing: "s3cret-one\rs3cret-two\rs3cret-one\rs3cret-one\r")
+        #expect(read.answer == "s3cret-one")
+        #expect(read.audit.made.filter { $0 == LineEditor.defaultCapacity }.count == 4)
+        #expect(read.audit.made.contains(TerminalPrompt.readSize))
+        #expect(read.audit.released.count == read.audit.made.count)
+        #expect(read.audit.released.allSatisfy { $0.allSatisfy { $0 == 0 } })
+
+        let cancelled = try auditingSecrets(typing: "s3cret-one\rs3cr\u{1B}")
+        #expect(cancelled.exit == 130)
+        #expect(cancelled.audit.made.filter { $0 == LineEditor.defaultCapacity }.count == 2)
+        #expect(cancelled.audit.made.contains(TerminalPrompt.readSize))
+        #expect(cancelled.audit.released.count == cancelled.audit.made.count)
+        #expect(cancelled.audit.released.allSatisfy { $0.allSatisfy { $0 == 0 } })
+    }
+
+    @Test("a wiped key holds no typed bytes, and other keys are left alone")
+    func keyWipe() {
+        var typed = TerminalKey.text(Array("s3cret".utf8))
+        typed.wipe()
+        #expect(typed == .ignored)
+        var enter = TerminalKey.enter
+        enter.wipe()
+        #expect(enter == .enter)
+    }
+
+    /// Types `keys` into a secret prompt while recording every `SecretBytes` made and freed.
+    private func auditingSecrets(typing keys: String) throws -> (answer: String?, exit: Int32?, audit: SecretAudit) {
+        let audit = SecretAudit()
+        SecretBytes.audit = audit.record
+        defer { SecretBytes.audit = nil }
+        let terminal = try PseudoTerminal()
+        terminal.type(keys)
+        do {
+            let answer = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+                try prompt.askSecret("🔑 ", again: "🔁 ") { _ in nil }
+            }
+            _ = terminal.finish()
+            return (answer, nil, audit)
+        } catch let exit as ExitCode {
+            _ = terminal.finish()
+            return (nil, exit.rawValue, audit)
+        }
+    }
+
     @Test("echo and Control-C stay on while no question waits, so a slow Keychain read can still be stopped")
     func normalTerminalBetweenQuestions() throws {
         let terminal = try PseudoTerminal()
@@ -335,6 +381,24 @@ private final class ScriptedQuestions: CredentialQuestions {
         contextAsks += 1
         guard let contextAnswer else { throw PromptCancelled() }
         return contextAnswer
+    }
+}
+
+/// Every `SecretBytes` made, by capacity, and each one's allocation as it was freed.
+private final class SecretAudit: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [SecretBytes.AuditEvent] = []
+
+    func record(_ event: SecretBytes.AuditEvent) {
+        lock.withLock { events.append(event) }
+    }
+
+    var made: [Int] {
+        lock.withLock { events.compactMap { if case .made(let capacity) = $0 { capacity } else { nil } } }
+    }
+
+    var released: [[UInt8]] {
+        lock.withLock { events.compactMap { if case .released(let bytes) = $0 { bytes } else { nil } } }
     }
 }
 
