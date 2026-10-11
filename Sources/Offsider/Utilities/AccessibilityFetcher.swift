@@ -86,6 +86,13 @@ struct AccessibilityFetcher {
         }
     }
 
+    /// One point read with no retry and no recovery, for describe-ui's probe, which must stay quick.
+    static func probeAccessibilityJSONData(from target: FBSimulator, at point: AccessibilityPoint) async throws -> Data {
+        let accessibilityElement = try await target.accessibilityElement(at: point.cgPoint)
+        defer { accessibilityElement.close() }
+        return try serializedAccessibilityData(from: accessibilityElement, keys: TraitsRequest.process.keys)
+    }
+
     static func retryingTransientPointFallback(
         at point: AccessibilityPoint,
         maximumAttempts: Int = 5,

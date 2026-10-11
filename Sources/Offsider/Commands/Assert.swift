@@ -42,15 +42,15 @@ struct Assert: AsyncParsableCommand {
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
         let outcome = try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
-            try await evaluate(on: route, logger: logger, onPrepared: ready)
+            try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
         }
         try Wait.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
     }
 
-    /// One read on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree read.
+    /// One read on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree read; `probesOnMiss` reads the screen's centre once when the check fails.
     @MainActor
     func evaluate(
-        on route: DeviceRouter.Route, logger: OffsiderLogger, tree: Wait.TreeSource? = nil, onPrepared: @Sendable () -> Void = {}
+        on route: DeviceRouter.Route, logger: OffsiderLogger, tree: Wait.TreeSource? = nil, probesOnMiss: Bool = false, onPrepared: @Sendable () -> Void = {}
     ) async throws -> WaitOutcome {
         guard let query = selector.query else {
             throw CLIError(errorDescription: "Unexpected state: no element query.", reason: .internalError)
@@ -58,11 +58,15 @@ struct Assert: AsyncParsableCommand {
         appOption.apply(to: route)
         try await route.backend.prepare()
         onPrepared()
+        var sources = Wait.sources(on: route, tree: tree)
+        if probesOnMiss {
+            sources.probe = Wait.presentationProbe(on: route)
+        }
         return try await WaitLoop.run(
             .element(probe: selector.probe(for: query), gone: gone, explain: SelectorQuery.explain(query)),
             timeout: 0,
             interval: 0,
-            sources: Wait.sources(on: route, tree: tree)
+            sources: sources
         )
     }
 

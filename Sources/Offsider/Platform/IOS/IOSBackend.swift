@@ -265,6 +265,13 @@ extension IOSBackend: PointHitTesting {
     }
 }
 
+extension IOSBackend: PresentationProbing {
+    func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        let data = try await AccessibilityFetcher.probeAccessibilityJSONData(from: try await simulator(for: id), at: AccessibilityPoint(x: point.x, y: point.y))
+        return try IOSAccessibilityMapping.roots(fromJSON: data).first
+    }
+}
+
 extension IOSBackend: RawAccessibilitySource {
     func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
         try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(from: try await simulator(for: id), logger: logger)

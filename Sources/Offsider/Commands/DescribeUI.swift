@@ -9,7 +9,10 @@ struct DescribeUI: AsyncParsableCommand {
         The envelope's screen gives width and height in points (dp on Android), orientation (the shape, portrait \
         or landscape), rotation (degrees anticlockwise from the display's natural orientation), display ({id, \
         platformId}: main, or cover or inner on a foldable) and posture (null unless the device folds). Only the \
-        active display is described; --display checks that it is the one you expect.
+        active display is described; --display checks that it is the one you expect. On an iOS simulator it also reads the \
+        element at the screen's centre once, so context names a view another process presents over the app (presented) and \
+        a screen-sized view listed off screen that the centre lands in (staleFrame); on Android, context.hidden counts \
+        branches the helper left out as not visible to the user.
         """
     )
 
@@ -80,11 +83,15 @@ struct DescribeUI: AsyncParsableCommand {
     func describe(on route: DeviceRouter.Route) async throws -> String {
         let base = diff ? await TreeCache.load(for: route.device, backend: route.backend) : nil
         (route.backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: route.device)
-        let tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
+        let probe = point == nil && !diff ? await PresentationCheck.start(backend: route.backend, device: route.device) : nil
+        var tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
         if point == nil {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)
         }
         guard diff else {
+            if let finding = await probe?.finding(for: tree) {
+                tree.apply(finding)
+            }
             return String(decoding: try output.render(tree), as: UTF8.self)
         }
         let usable = base.flatMap { $0.matches(appFrame: tree.applicationFrame, screen: tree.screen) ? $0 : nil }

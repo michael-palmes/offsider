@@ -100,7 +100,7 @@ struct UITreeEconomyTests {
         #expect(!output.contains("parked-sheet-test-sheet-body"))
     }
 
-    @Test("runs above, below, left and right are kept apart, and a row's own texts are not counted")
+    @Test("runs above, below, left and right are kept apart, and a row's own texts count as inside, not as items")
     func runsBySide() {
         var below = Self.row(4, y: 900)
         below.children = [Self.node(role: .text, label: "Inside", frame: Self.frame(0, 900))]
@@ -114,7 +114,7 @@ struct UITreeEconomyTests {
         ]))
 
         #expect(output.contains("  [off-screen above] 2 items: id=row-1 to id=row-2\n  button \"Row 3\""))
-        #expect(output.contains("  [off-screen below] 2 items: id=row-4 to id=row-5\n"))
+        #expect(output.contains("  [off-screen below] 2 items (+1 inside): id=row-4 to id=row-5\n"))
         #expect(output.contains("  [off-screen right] 1 item: id=row-6\n  [off-screen left] 1 item: id=row-7\n"))
         #expect(!output.contains("Empty"))
     }

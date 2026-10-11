@@ -150,6 +150,7 @@ extension TestHelpers {
         case "modal-navigation-test": return .identifier("modal-navigation-test-open")
         case "long-scroll-test": return .identifier("long-scroll-test-scroll-view")
         case "parked-sheet-test": return .identifier("parked-sheet-test-open")
+        case "presented-sheet-test": return .identifier("presented-sheet-test-open")
         case "environment-test": return .identifier("environment-test-scheme")
         case "device-state": return .identifier("device-state-contacts")
         case "text-input": return .identifier("text-input-screen")
