@@ -102,6 +102,33 @@ public struct LoginCredentialSummary: Equatable, Sendable {
     }
 }
 
+/// A saved login as its Keychain attributes describe it: the key, the default mark and the context, never the username.
+public struct LoginEntry: Equatable, Sendable {
+    public var key: String
+    /// The stored mark only. A sole unmarked login is still the default at login time.
+    public var isDefault: Bool
+    public var stored: LoginContextRead
+
+    public init(key: String, isDefault: Bool = false, stored: LoginContextRead = .saved(.empty)) {
+        self.key = key
+        self.isDefault = isDefault
+        self.stored = stored
+    }
+
+    public init(key: String, isDefault: Bool = false, context: LoginContext) {
+        self.init(key: key, isDefault: isDefault, stored: .saved(context))
+    }
+
+    /// Empty when the stored context is damaged or from a newer Offsider.
+    public var context: LoginContext {
+        if case .saved(let context) = stored { return context }
+        return .empty
+    }
+
+    /// The word a person passes, and `default` for the unnamed slot.
+    public var name: String { LoginCredential.displayKey(key) }
+}
+
 /// One app's saved logins, and the other bundle ids that share them.
 public struct LoginAppGroup: Equatable, Sendable {
     public var canonical: String
