@@ -107,6 +107,39 @@ struct GestureTests {
         }
     }
     
+    /// Polls every root describe-ui lists, system windows included, until one holds a match.
+    private func waitForSystemUI(_ description: String, timeout: TimeInterval = 4, _ predicate: (UIElement) -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let result = try await TestHelpers.runOffsiderCommand("describe-ui", simulatorUDID: defaultSimulatorUDID)
+            if UIStateParser.findElement(in: try UIStateParser.parseDescribeUIRoots(result.output), matching: predicate) != nil {
+                return
+            }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        Issue.record("timed out waiting for \(description)")
+    }
+
+    @Test("Swipe from the top edge opens Notification Centre, past a Dynamic Island")
+    func swipeFromTopEdgeOpensNotificationCentre() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "tap-test")
+
+        try await TestHelpers.runOffsiderCommand("gesture swipe-from-top-edge", simulatorUDID: defaultSimulatorUDID)
+
+        try await waitForSystemUI("Notification Centre") { $0.id == "SBCoverSheetWindow" }
+        try await TestHelpers.runOffsiderCommand("button home", simulatorUDID: defaultSimulatorUDID)
+    }
+
+    @Test("Swipe from the top right edge opens Control Centre")
+    func swipeFromTopRightEdgeOpensControlCentre() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "tap-test")
+
+        try await TestHelpers.runOffsiderCommand("gesture swipe-from-top-right-edge", simulatorUDID: defaultSimulatorUDID)
+
+        try await waitForSystemUI("Control Centre") { $0.id == "cc-root-folder-view" }
+        try await TestHelpers.runOffsiderCommand("button home", simulatorUDID: defaultSimulatorUDID)
+    }
+
     @Test("Gesture with custom speed")
     func gestureWithCustomSpeed() async throws {
         // Arrange
