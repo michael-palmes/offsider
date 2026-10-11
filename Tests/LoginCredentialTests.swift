@@ -168,6 +168,35 @@ struct LoginCredentialTests {
         #expect(LoginDirectory.setIntent(entries: [], name: nil, update: false, interactive: false) == .write(key: LoginCredential.defaultAccountKey, makeDefault: true))
     }
 
+    @Test("set and remove without a terminal read only item attributes, so no other user's password is decrypted")
+    func nonInteractiveWritesDecryptNothing() throws {
+        let store = MemoryLoginCredentialStore()
+        let credential = try #require(LoginCredential(username: username, password: password))
+        try store.save(credential, app: "com.example.app", key: "qa-admin", isDefault: true)
+        try store.save(credential, app: "com.example.app", key: "qa-member", isDefault: false)
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-owner", json: true, store: store) { credential }
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-member", update: true, json: true, store: store) { credential }
+        #expect(throws: CLIError.self) {
+            try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-admin", json: true, store: store) { credential }
+        }
+        _ = try CredentialCommand.perform(.remove, app: "com.example.app", key: nil, json: true, store: store) { credential }
+        #expect(store.decrypts == 0)
+        #expect(try store.keys(app: "com.example.app") == ["qa-member", "qa-owner"])
+    }
+
+    @Test("a password update keeps the stored context, and remove drops it with the login")
+    func contextFollowsTheItem() throws {
+        let store = MemoryLoginCredentialStore()
+        let credential = try #require(LoginCredential(username: username, password: password))
+        let context = LoginContext(about: "Admin on staging", tags: [try #require(LoginTag(rawValue: "role=admin"))])
+        try store.save(credential, app: "com.example.app", key: "qa-admin", isDefault: true, context: context)
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-admin", update: true, json: true, store: store) { credential }
+        #expect(store.context(app: "com.example.app", key: "qa-admin") == .saved(context))
+        _ = try CredentialCommand.perform(.remove, app: "com.example.app", key: "qa-admin", json: true, store: store) { credential }
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-admin", json: true, store: store) { credential }
+        #expect(store.context(app: "com.example.app", key: "qa-admin") == .saved(.empty))
+    }
+
     @Test("credential takes --device, and --app does not require one")
     func parsing() throws {
         #expect(throws: (any Error).self) { try CredentialCommand.parse(["set", "dev"]) }
@@ -247,35 +276,46 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
     struct Slot {
         var credential: LoginCredential
         var isDefault: Bool
+        /// The generic attribute's bytes, as the Keychain holds them.
+        var context: Data? = nil
     }
 
     var slots: [String: Slot] = [:]
     var links: [String: String] = [:]
     /// Called on each read that `login` makes before it types.
     var onRead: () -> Void = {}
+    /// Passwords decrypted so far.
+    private(set) var decrypts = 0
 
     func load(app: String, key: String) throws -> LoginCredential? {
         onRead()
-        return slots[LoginCredential.account(app: app, key: key)]?.credential
+        guard let slot = slots[LoginCredential.account(app: app, key: key)] else { return nil }
+        decrypts += 1
+        return slot.credential
     }
 
     func list(app: String) throws -> [LoginCredentialSummary] {
-        slots.compactMap { account, slot in
-            guard let parsed = LoginCredential.parseAccount(account), parsed.app == app else { return nil }
-            return LoginCredentialSummary(key: parsed.key, username: slot.credential.username, isDefault: slot.isDefault)
-        }.sorted { $0.key < $1.key }
+        let found = mine(app)
+        decrypts += found.count
+        return found.map { key, slot in LoginCredentialSummary(key: key, username: slot.credential.username, isDefault: slot.isDefault) }
     }
 
     func keys(app: String) throws -> [String] {
-        try list(app: app).map(\.key)
+        mine(app).map(\.key)
     }
 
     func defaultKey(app: String) throws -> String? {
         onRead()
-        return try list(app: app).first { $0.isDefault }?.key
+        return mine(app).first { $0.slot.isDefault }?.key
     }
 
-    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool) throws {
+    func entries(app: String) throws -> [LoginEntry] {
+        onRead()
+        return mine(app).map { key, slot in LoginEntry(key: key, isDefault: slot.isDefault, stored: LoginContext.read(slot.context)) }
+            .sorted { lhs, rhs in lhs.isDefault != rhs.isDefault ? lhs.isDefault : lhs.key < rhs.key }
+    }
+
+    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool, context: LoginContext?) throws {
         if isDefault {
             for (account, var slot) in slots {
                 guard LoginCredential.parseAccount(account)?.app == app else { continue }
@@ -283,7 +323,28 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
                 slots[account] = slot
             }
         }
-        slots[LoginCredential.account(app: app, key: key)] = Slot(credential: credential, isDefault: isDefault)
+        let account = LoginCredential.account(app: app, key: key)
+        let kept = slots[account]?.context
+        slots[account] = Slot(credential: credential, isDefault: isDefault, context: context.map { $0.storageData() } ?? kept)
+    }
+
+    func setContext(_ context: LoginContext, app: String, key: String) throws -> Bool {
+        let account = LoginCredential.account(app: app, key: key)
+        guard slots[account] != nil else { return false }
+        slots[account]?.context = context.storageData()
+        return true
+    }
+
+    /// The stored context, read as `entries` reads it.
+    func context(app: String, key: String) -> LoginContextRead? {
+        slots[LoginCredential.account(app: app, key: key)].map { LoginContext.read($0.context) }
+    }
+
+    private func mine(_ app: String) -> [(key: String, slot: Slot)] {
+        slots.compactMap { account, slot in
+            guard let parsed = LoginCredential.parseAccount(account), parsed.app == app else { return nil }
+            return (parsed.key, slot)
+        }.sorted { $0.key < $1.key }
     }
 
     func markDefault(app: String, key: String) throws {

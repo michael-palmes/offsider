@@ -102,6 +102,15 @@ public struct LoginCredentialSummary: Equatable, Sendable {
     }
 }
 
+/// A saved login's key and default mark, which is all `credential set` weighs before it asks for a password.
+public protocol LoginMark {
+    var key: String { get }
+    var isDefault: Bool { get }
+}
+
+extension LoginCredentialSummary: LoginMark {}
+extension LoginEntry: LoginMark {}
+
 /// A saved login as its Keychain attributes describe it: the key, the default mark and the context, never the username.
 public struct LoginEntry: Equatable, Sendable {
     public var key: String

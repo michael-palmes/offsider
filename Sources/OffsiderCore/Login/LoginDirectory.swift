@@ -28,7 +28,7 @@ public enum LoginSetChoice: Equatable, Sendable {
 
 /// The rules for the default login, names, and sharing one app across bundle ids.
 public enum LoginDirectory {
-    public static func setIntent(entries: [LoginCredentialSummary], name: String?, update: Bool, interactive: Bool) -> LoginSetIntent {
+    public static func setIntent(entries: [any LoginMark], name: String?, update: Bool, interactive: Bool) -> LoginSetIntent {
         if entries.isEmpty {
             if let name { return .write(key: name, makeDefault: true) }
             return .write(key: LoginCredential.defaultAccountKey, makeDefault: true)
@@ -58,7 +58,7 @@ public enum LoginDirectory {
     }
 
     /// True when adding another login should mark the sole existing one as the default.
-    public static func shouldStampDefault(_ entries: [LoginCredentialSummary], writing key: String) -> String? {
+    public static func shouldStampDefault(_ entries: [any LoginMark], writing key: String) -> String? {
         guard entries.count == 1, let only = entries.first, only.key != key, !only.isDefault else { return nil }
         return only.key
     }

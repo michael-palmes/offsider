@@ -185,8 +185,8 @@ struct CredentialCommand: AsyncParsableCommand {
         let shared = try sharedIDs(app: app, canonical: canonical, store: store)
         switch action {
         case .set:
-            let entries = try store.list(app: canonical)
-            let target = try writeTarget(entries: entries, name: key, update: update, questions: questions)
+            let entries = try store.entries(app: canonical)
+            let target = try writeTarget(entries: entries, name: key, update: update, questions: questions) { try store.list(app: canonical) }
             if let stamp = LoginDirectory.shouldStampDefault(entries, writing: target.key) {
                 try store.markDefault(app: canonical, key: stamp)
             }
@@ -213,7 +213,7 @@ struct CredentialCommand: AsyncParsableCommand {
             let report = CredentialReport(action: "status", app: app, saved: !listed.isEmpty, listed: listed, also: shared)
             return render(report)
         case .remove:
-            let removing = try removeTarget(entries: try store.list(app: canonical), name: key)
+            let removing = try removeTarget(entries: try store.entries(app: canonical), name: key)
             let removed = try store.remove(app: canonical, key: removing)
             let report = CredentialReport(action: "remove", app: app, key: removing, saved: false, removed: removed, also: shared)
             return render(report)
@@ -267,11 +267,13 @@ struct CredentialCommand: AsyncParsableCommand {
         var makeDefault: Bool
     }
 
+    /// `summaries` decrypts every login for its usernames, so only a person at a terminal reaches it.
     private static func writeTarget(
-        entries: [LoginCredentialSummary],
+        entries: [LoginEntry],
         name: String?,
         update: Bool,
-        questions: (any CredentialQuestions)?
+        questions: (any CredentialQuestions)?,
+        summaries: () throws -> [LoginCredentialSummary]
     ) throws -> WriteTarget {
         switch LoginDirectory.setIntent(entries: entries, name: name, update: update, interactive: questions != nil) {
         case .write(let key, let makeDefault):
@@ -279,19 +281,20 @@ struct CredentialCommand: AsyncParsableCommand {
         case .refused(let message):
             throw CLIError(errorDescription: message, reason: .usage)
         case .confirm(let key, let makeDefault):
-            guard let questions, let entry = entries.first(where: { $0.key == key }), try questions.replaces(entry) else { throw PromptCancelled() }
+            guard let questions, let entry = try summaries().first(where: { $0.key == key }), try questions.replaces(entry) else { throw PromptCancelled() }
             return WriteTarget(key: key, makeDefault: makeDefault)
         case .choose:
             guard let questions else {
                 throw CLIError(errorDescription: "credential set asks for a choice on a terminal. Without one, pass --update or a name.", reason: .usage)
             }
-            switch try questions.loginToChange(entries: entries) {
+            let listed = try summaries()
+            switch try questions.loginToChange(entries: listed) {
             case .update(let key):
-                let marked = entries.first { $0.key == key }?.isDefault ?? (entries.count == 1)
+                let marked = listed.first { $0.key == key }?.isDefault ?? (listed.count == 1)
                 return WriteTarget(key: key, makeDefault: marked)
             case .create:
-                let name = try questions.newName(taken: entries.map(\.key))
-                guard let parsed = LoginKey(rawValue: name), !entries.contains(where: { $0.key == parsed.rawValue }) else {
+                let name = try questions.newName(taken: listed.map(\.key))
+                guard let parsed = LoginKey(rawValue: name), !listed.contains(where: { $0.key == parsed.rawValue }) else {
                     throw CLIError(errorDescription: "\(keyMessage) Nothing was saved.", reason: .usage)
                 }
                 return WriteTarget(key: parsed.rawValue, makeDefault: false)
@@ -299,7 +302,7 @@ struct CredentialCommand: AsyncParsableCommand {
         }
     }
 
-    private static func removeTarget(entries: [LoginCredentialSummary], name: String?) throws -> String {
+    private static func removeTarget(entries: [LoginEntry], name: String?) throws -> String {
         if let name { return name }
         if let marked = entries.first(where: \.isDefault) { return marked.key }
         if entries.count == 1, let only = entries.first { return only.key }
