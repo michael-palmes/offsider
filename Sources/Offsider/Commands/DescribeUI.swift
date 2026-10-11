@@ -85,13 +85,14 @@ struct DescribeUI: AsyncParsableCommand {
         (route.backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: route.device)
         let probe = point == nil && !diff ? await PresentationCheck.start(backend: route.backend, device: route.device) : nil
         var tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
+        let centre = await probe?.centre()
         if point == nil {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)
-            tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: route.backend, device: route.device)
+            tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: route.backend, device: route.device, centre: centre)
         }
         guard diff else {
-            if let finding = await probe?.finding(for: tree) {
-                tree.apply(finding)
+            if let centre {
+                tree.apply(PresentationCheck.finding(for: tree, hit: centre.hit))
             }
             return String(decoding: try output.render(tree), as: UTF8.self)
         }

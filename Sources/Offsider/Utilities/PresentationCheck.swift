@@ -24,18 +24,19 @@ enum PresentationCheck {
         let read = Task { @MainActor in (try? await prober.probe(at: point, on: device)) ?? nil }
         // Lets the read send its request before the tree read takes the main actor.
         await Task.yield()
-        return Pending(read: read)
+        return Pending(point: point, read: read)
     }
 
     /// A read started with `start`; the `probe` phase is how long the command waits for it once the tree is in.
     struct Pending {
+        let point: UIPoint
         let read: Task<UINode?, Never>
 
+        /// Where the read looked and what answered; nil when it failed or took longer than `limit`.
         @MainActor
-        func finding(for tree: UITree) async -> PresentationFinding? {
+        func centre() async -> (point: UIPoint, hit: UINode)? {
             defer { read.cancel() }
-            guard let hit = await PresentationCheck.bounded({ await read.value }) else { return nil }
-            return PresentationCheck.finding(for: tree, hit: hit)
+            return await PresentationCheck.bounded({ await read.value }).map { (point, $0) }
         }
     }
 
@@ -47,7 +48,7 @@ enum PresentationCheck {
         }
     }
 
-    private static func finding(for tree: UITree, hit: UINode) -> PresentationFinding {
+    static func finding(for tree: UITree, hit: UINode) -> PresentationFinding {
         PresentationProbe.finding(in: tree, hit: hit) { pid in Int32(exactly: pid).flatMap(ProcessPath.of(pid:)) }
     }
 }

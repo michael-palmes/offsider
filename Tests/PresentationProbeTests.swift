@@ -219,6 +219,18 @@ struct PresentationProbeTests {
         #expect(output.contains("\n# presented: \"Cancel\"\n"))
     }
 
+    @Test("under a system prompt, describe-ui names it from the one probe at the centre and makes no second read there")
+    func describeReusesProbeForSystemPrompt() async throws {
+        let backend = ProbingFakeBackend(trees: [SystemPromptCoverTests.signedIn(prompt: true)], screen: Self.screenInfo)
+        backend.probeHit = SystemPromptCoverTests.title
+
+        let output = try await Self.describe(["--summary"], on: backend)
+
+        #expect(backend.probes + backend.hitTests == 1)
+        #expect(output.contains("\n# window: Save Password? (system)\n"), "\(output)")
+        #expect(!output.contains("# presented"))
+    }
+
     @Test("describe-ui drops a probe that stalls instead of holding its output")
     func describeDropsStalledProbe() async throws {
         let backend = ProbingFakeBackend(trees: [Self.home], screen: Self.screenInfo)
