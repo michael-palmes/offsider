@@ -330,6 +330,42 @@ struct ScreenshotCompareTests {
         }
     }
 
+    @Test("--expect unchanged passes only a compare that found no change, and the JSON says what was expected and whether it was met")
+    @MainActor
+    func expectUnchanged() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-expect-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let baselinePath = directory.appendingPathComponent("before.png").path
+        try ScreenImage.encode(TestImages.make(width: 1206, height: 2622), as: .png).write(to: URL(fileURLWithPath: baselinePath))
+        let device = DeviceID(rawValue: "fake-device", platform: .ios)
+        func compare(marked: [(x: Int, y: Int)], _ extra: [String]) async throws -> ScreenshotReport {
+            let png = try ScreenImage.encode(TestImages.make(width: 1206, height: 2622, marked: marked), as: .png)
+            let backend = FakeDeviceBackend(trees: [], screenshots: [png], screen: portrait)
+            let command = try Screenshot.parse(["--compare", baselinePath, "--device", device.rawValue] + extra)
+            return try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: .none)
+        }
+
+        let still = try await compare(marked: [], ["--expect", "unchanged"])
+        #expect(still.comparison?.met == true)
+        #expect(still.jsonLine().contains(#""changed":false,"expected":"unchanged","met":true,"#))
+
+        let moved = try await compare(marked: [(600, 1500)], ["--expect", "unchanged"])
+        #expect(moved.comparison?.met == false)
+        #expect(moved.comparison?.summary.hasSuffix(", 1 pixel, expected unchanged") == true)
+
+        let byDefault = try await compare(marked: [], [])
+        #expect(byDefault.comparison?.met == false)
+        #expect(byDefault.jsonLine().contains(#""changed":false,"expected":"changed","met":false,"#))
+    }
+
+    @Test("--expect needs --compare and takes changed or unchanged", arguments: ["--expect unchanged", "--compare b.png --expect same"])
+    func expectUsage(arguments: String) async throws {
+        let result = try await TestHelpers.runOffsiderCommandSeparated("screenshot \(arguments) --device \(UUID().uuidString)")
+        #expect(result.exitCode == 64)
+        #expect(result.stderr.contains("--expect"))
+    }
+
     @Test("a baseline of another size writes no diff")
     @MainActor
     func mismatchWritesNoDiff() async throws {

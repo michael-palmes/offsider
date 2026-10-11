@@ -2,6 +2,8 @@ import ArgumentParser
 import Foundation
 import OffsiderCore
 
+extension ScreenCompare.Outcome: ExpressibleByArgument {}
+
 struct Screenshot: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "screenshot",
@@ -10,15 +12,17 @@ struct Screenshot: AsyncParsableCommand {
         --scale points makes one image pixel one point, so image coordinates are tap coordinates. \
         --region takes points as describe-ui prints them; the crop happens before scaling. \
         --compare captures, applies the same --region and --scale, and exits 0 when more than \
-        --threshold of the screen's tiles changed, or 5 when not; it also counts the changed pixels, and \
-        --diff-output writes an image of where they are. \
+        --threshold of the screen's tiles changed, or 5 when not; --expect unchanged turns that round, exiting 0 \
+        only when nothing beyond the threshold changed. It also counts the changed pixels, and \
+        --diff-output writes an image of where they are; an evidence run keeps a diff only when pixels changed. \
         --display captures one display of a foldable (see `offsider displays`); a display that is not active \
         is captured as it is, often dark. \
         --mask-secure (or OFFSIDER_MASK_SECURE=1) reads the accessibility tree first and paints every password field \
         opaque black before the image is written or compared; when a password field cannot be located, the image is \
         withheld and no file is written. --mask-id, --mask-label, --mask-label-contains, --mask-text and --mask-emails paint the elements \
-        they match the same way; --mask-region paints a rectangle in points before any --region crop and reads no \
-        tree. A selector that matches nothing is named in maskUnmatched and on stderr, and the image is still written. \
+        they match the same way, even on a screen beneath a page (counted in maskedBeneath); --mask-region paints a rectangle \
+        in points before any --region crop and reads no tree. A selector that matches nothing is named in maskUnmatched \
+        and on stderr, and the image is still written. \
         Masks cover what the tree describes: web views, canvases, images and text drawn after the tree read can \
         still show. Video is never masked.
         """
@@ -53,6 +57,9 @@ struct Screenshot: AsyncParsableCommand {
 
     @Option(help: ArgumentHelp("With --compare, the fraction of tiles that may change and still count as unchanged (0 to 1, default 0).", valueName: "0-1"))
     var threshold: Double?
+
+    @Option(help: ArgumentHelp("With --compare, the outcome that passes: changed (the default) or unchanged. Exit 5 when the capture does not match it.", valueName: "changed|unchanged"))
+    var expect: ScreenCompare.Outcome?
 
     @Flag(name: .customLong("mask-secure"), help: "Paint password fields black before writing the image; withhold it when one cannot be located. OFFSIDER_MASK_SECURE=1 turns this on by default.")
     var maskSecure = false
@@ -102,6 +109,9 @@ struct Screenshot: AsyncParsableCommand {
             guard pathExtension != "jpg", pathExtension != "jpeg" else {
                 throw ValidationError("--diff-output writes a PNG; use a .png path or a directory.")
             }
+        }
+        if expect != nil, compare == nil {
+            throw ValidationError("--expect applies to --compare only.")
         }
         if let threshold {
             guard compare != nil else { throw ValidationError("--threshold applies to --compare only.") }
@@ -153,7 +163,7 @@ struct Screenshot: AsyncParsableCommand {
         } else {
             print(comparison.summary)
         }
-        if comparison.outcome == .unchanged {
+        if !comparison.met {
             throw ExitCode(OffsiderExitCode.unverified.rawValue)
         }
     }
@@ -223,6 +233,10 @@ struct Screenshot: AsyncParsableCommand {
             if !result.unmatched.isEmpty {
                 Self.writeError("Warning: nothing matched \(result.unmatched.joined(separator: ", ")), so nothing was painted for it.")
             }
+            let beneath = result.beneath.values.reduce(0, +)
+            if beneath > 0 {
+                Self.writeError("Note: \(beneath == 1 ? "1 mask was" : "\(beneath) masks were") painted for elements on a screen beneath a page, so black boxes can sit over the page on top (maskedBeneath).")
+            }
         }
         let rendered = try ScreenCapture.render(capture, request: request)
 
@@ -257,19 +271,23 @@ struct Screenshot: AsyncParsableCommand {
             Self.writeError("Warning: JPEG baselines can read as changed because of compression artefacts; prefer PNG.")
         }
         let bands = await backend.volatileScreenBands(for: booted.id)
-        let (result, diffImage) = try ScreenCapture.comparison(
+        var (result, diffImage) = try ScreenCapture.comparison(
             rendered, capture: capture, baseline: baseline, baselinePath: compare, bands: bands, threshold: threshold ?? 0
         )
+        result.expected = expect ?? .changed
         var report = rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masks: masked)
         report.runFile = runFile
-        recorder.update(token) { $0.changed = result.outcome == .changed }
+        recorder.update(token) { entry in
+            entry.changed = result.outcome == .changed
+            entry.expect = result.expected.rawValue
+        }
         if diffOutput != nil {
             let url = try ScreenCapture.outputURL(path: diffOutput, prefix: "Screenshot Diff", deviceName: booted.name, format: .png)
             try ScreenImage.encode(diffImage, as: .png).write(to: url)
             report.diffPath = url.path
             Self.writeError("Diff saved to \(url.path)")
         }
-        if let token, runFile != nil, let diffPath = try recorder.diffPath(token) {
+        if let token, runFile != nil, (result.pixels?.changedPixels ?? 0) > 0, let diffPath = try recorder.diffPath(token) {
             do {
                 try RunFolder.writeNew(ScreenImage.encode(diffImage, as: .png), toPath: diffPath)
             } catch {

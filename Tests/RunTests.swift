@@ -96,6 +96,13 @@ struct RunTests {
         return try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: masks)
     }
 
+    /// A baseline one pixel off the backend's white capture, so a compare finds a change.
+    static func differingBaseline() throws -> String {
+        let path = ScreenshotMaskTests.temporaryPath()
+        try ScreenImage.encode(TestImages.make(width: 1170, height: 2532, marked: [(40, 400)], background: 255), as: .png).write(to: URL(fileURLWithPath: path))
+        return path
+    }
+
     // MARK: - Ownership
 
     @Test("the owner is the first ancestor that is not a shell or wrapper")
@@ -426,15 +433,14 @@ struct RunTests {
         let fixture = try RunFixture()
         _ = try fixture.start()
         let backend = try Self.screenshotBackend()
-        let baseline = ScreenshotMaskTests.temporaryPath()
+        let baseline = try Self.differingBaseline()
         defer { try? FileManager.default.removeItem(atPath: baseline) }
-        try ScreenshotMaskTests.whitePNG().write(to: URL(fileURLWithPath: baseline))
         let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
         let output = BatchOutput(json: true, write: { _ in }, writeError: { _ in })
 
         _ = try? await fixture.command(fixture.recorder("batch", arguments: ["--step", "type secret"])) {
             try await Batch.runSteps(
-                ["type secret", "screenshot", "screenshot --compare \(baseline)"], context: context, session: backend.session,
+                ["type secret", "screenshot", "screenshot --compare \(baseline) --expect unchanged"], context: context, session: backend.session,
                 continueOnError: true, output: output, logger: OffsiderLogger()
             )
         }
@@ -443,7 +449,8 @@ struct RunTests {
         #expect(lines.map(\.step) == [2, 3])
         #expect(lines.map(\.exit) == [0, 5])
         #expect(lines[1].reason == "condition_not_met")
-        #expect(lines[1].changed == false)
+        #expect(lines[1].changed == true)
+        #expect(lines[1].expect == "unchanged")
         #expect(lines[1].diff == "002-screenshot-15.11.07-diff.png")
         #expect(lines.allSatisfy { $0.args == nil })
         #expect(!String(decoding: try Data(contentsOf: URL(fileURLWithPath: fixture.folder() + "/manifest.ndjson")), as: UTF8.self).contains("secret"))
@@ -489,9 +496,8 @@ struct RunTests {
         let fixture = try RunFixture()
         _ = try fixture.start()
         let backend = try Self.screenshotBackend()
-        let baseline = ScreenshotMaskTests.temporaryPath()
+        let baseline = try Self.differingBaseline()
         defer { try? FileManager.default.removeItem(atPath: baseline) }
-        try ScreenshotMaskTests.whitePNG().write(to: URL(fileURLWithPath: baseline))
         let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
         let output = BatchOutput(json: true, write: { _ in }, writeError: { _ in })
 
@@ -507,6 +513,30 @@ struct RunTests {
             let mode = try FileManager.default.attributesOfItem(atPath: fixture.folder() + "/" + name)[.posixPermissions] as? Int
             #expect(mode == 0o600, "\(name)")
         }
+    }
+
+    @Test("a run keeps a compare's diff only when pixels changed, while an explicit --diff-output is always written")
+    func runDiffOnlyOnChange() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let same = ScreenshotMaskTests.temporaryPath()
+        let differing = try Self.differingBaseline()
+        let explicit = ScreenshotMaskTests.temporaryPath()
+        defer { [same, differing, explicit].forEach { try? FileManager.default.removeItem(atPath: $0) } }
+        try ScreenshotMaskTests.whitePNG().write(to: URL(fileURLWithPath: same))
+
+        for arguments in [["--compare", same], ["--compare", differing], ["--compare", same, "--diff-output", explicit]] {
+            try? await fixture.command(fixture.recorder("screenshot", arguments: arguments)) {
+                _ = try await Self.screenshot(arguments, on: try Self.screenshotBackend())
+            }
+        }
+        let lines = fixture.manifest()
+        #expect(lines.map(\.changed) == [false, true, false])
+        #expect(lines.map { $0.diff != nil } == [false, true, false])
+        #expect(lines.map(\.expect) == ["changed", "changed", "changed"])
+        #expect(FileManager.default.fileExists(atPath: explicit))
+        let files = try FileManager.default.contentsOfDirectory(atPath: fixture.folder())
+        #expect(files.filter { $0.hasSuffix("-diff.png") }.count == 1)
     }
 
     @Test("a logs run file holds exactly what went to stdout, and the line counts entries and redactions")

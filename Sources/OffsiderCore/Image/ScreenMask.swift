@@ -96,14 +96,14 @@ public struct MaskPlan: Equatable, Sendable {
     public func textTargets(in tree: UITree) throws -> MaskTargets {
         var targets = MaskTargets()
         for pattern in texts {
-            let frames = Self.leafMostMatches(in: tree.roots, regex: try Self.compile(pattern)).map(\.frame)
-            targets.frames[.text, default: []] += frames
-            if frames.isEmpty {
+            let nodes = Self.leafMostMatches(in: tree.roots, regex: try Self.compile(pattern))
+            targets.add(nodes, as: .text)
+            if nodes.isEmpty {
                 targets.unmatched.append("--mask-text \(pattern)")
             }
         }
         if emails {
-            targets.frames[.emails] = Self.leafMostMatches(in: tree.roots, regex: try Self.compile(PersonalData.emailPattern)).map(\.frame)
+            targets.add(Self.leafMostMatches(in: tree.roots, regex: try Self.compile(PersonalData.emailPattern)), as: .emails)
         }
         return targets
     }
@@ -124,10 +124,30 @@ public struct MaskPlan: Equatable, Sendable {
 public struct MaskTargets: Equatable, Sendable {
     public var frames: [MaskKind: [UIFrame?]]
     public var unmatched: [String]
+    /// The elements behind `frames`, for the kinds read from the tree.
+    public var nodes: [MaskKind: [UINode]]
 
-    public init(frames: [MaskKind: [UIFrame?]] = [:], unmatched: [String] = []) {
+    public init(frames: [MaskKind: [UIFrame?]] = [:], unmatched: [String] = [], nodes: [MaskKind: [UINode]] = [:]) {
         self.frames = frames
         self.unmatched = unmatched
+        self.nodes = nodes
+    }
+
+    public mutating func add(_ matches: [UINode], as kind: MaskKind) {
+        frames[kind, default: []] += matches.map(\.frame)
+        nodes[kind, default: []] += matches
+    }
+
+    /// The frames of matched elements on a screen beneath a page, by kind; the stack is built only when something matched.
+    public func framesBeneathPages(in tree: UITree) -> [MaskKind: [UIFrame?]] {
+        guard nodes.values.contains(where: { !$0.isEmpty }) else { return [:] }
+        let stack = ScreenStack.build(roots: tree.roots, viewport: tree.viewport)
+        guard !stack.beneath.isEmpty else { return [:] }
+        let flat = tree.roots.flatMap { $0.flattened() }
+        let covered = stack.beneath.flatMap(\.indexes).map { flat[$0] }
+        return nodes.mapValues { matches in
+            matches.filter { match in covered.contains { $0.isSameElement(as: match) } }.map(\.frame)
+        }
     }
 }
 
