@@ -29,7 +29,7 @@ struct VerificationOptions: ParsableArguments {
     @Option(name: .customLong("verify-timeout"), help: "Seconds to wait for a change per attempt (default: 2).")
     var verifyTimeout: Double?
 
-    @Option(name: .customLong("retries"), help: "Extra attempts when nothing changes, 0 to 3 (default: 1). Tap retries switch the tap style.")
+    @Option(name: .customLong("retries"), help: "Extra attempts when nothing changes, 0 to 3 (default: 1, or 0 for a tap on a switch, checkbox or radio button and for button app-switch). Tap retries switch the tap style.")
     var retries: Int?
 
     @Flag(name: .customLong("json"), help: "Print one JSON result to stdout; human text goes to stderr. Requires --verify.")
@@ -59,6 +59,15 @@ struct VerificationOptions: ParsableArguments {
 
     var resolvedTimeout: Double { verifyTimeout ?? (verifyID != nil ? Self.defaultAppearingTimeout : Self.defaultTimeout) }
     var resolvedRetries: Int { retries ?? (verifyID != nil ? 0 : RetryPolicy.defaultRetries) }
+
+    /// No default retry for a switch, checkbox or radio button: one that changes late would be flipped back by a second tap.
+    func resolvedRetries(target: UINode?) -> Int {
+        retries ?? (Self.retriesUndo(target) ? 0 : resolvedRetries)
+    }
+
+    static func retriesUndo(_ target: UINode?) -> Bool {
+        target.map { Verifier.stateRoles.contains($0.role) } ?? false
+    }
 }
 
 protocol VerifiableCommand {

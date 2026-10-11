@@ -81,6 +81,12 @@ extension IOSBackend: ExpoDevClientOpening {
         ExpoDevClient.loopback
     }
 
+    /// simctl fails harmlessly when the app is not running, so its status is not checked.
+    func stopApp(_ appID: String, on id: DeviceID) async throws {
+        let bundleID = try ExpoDevClient.validate(appID: appID)
+        _ = try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: ExpoDevClient.iosTerminateArguments(udid: id.rawValue, bundleID: bundleID), timeout: 15)
+    }
+
     func openURL(_ url: String, appID: String, on id: DeviceID) async throws {
         let result = try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: ExpoDevClient.iosOpenURLArguments(udid: id.rawValue, url: url), timeout: 30)
         guard result.status == 0 else {

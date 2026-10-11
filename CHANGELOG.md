@@ -16,6 +16,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The `credential set` and `unlock-code set` prompts take Left and Right to move the cursor, and Control-W to delete back over spaces and the word before them. A password or unlock code still shows only dots: there Left and Right do nothing, and Control-W deletes everything before the cursor, so the dots never show where a word ends.
 - On an iOS simulator, `describe-ui` names a prompt another process draws over the app, such as AutoFill's Save Password? after a sign-in, as `# window: Save Password? (system)` and in `context.window` (`kind` `system`, `package` the process, such as `SafariViewService`). The app's tree holds only the prompt's empty host, so it reads the middle of the screen once, and only while that host is there; the prompt's buttons are not listed.
 - `coveredBy` adds `process`, and `evidence` can be `otherProcess`: a view from a process the app's tree does not hold.
+- `screenshot --compare --expect changed|unchanged`: `--expect unchanged` passes only when the screen did not change (exit 5 otherwise), for before and after regression checks. `--json` adds `expected` and `met`, and an evidence run's manifest line adds `expect`.
+- `screenshot --json` reports `maskedBeneath`, the masks painted for elements on a screen beneath a page, with a note on stderr; they are still painted.
+- `rn open` checks the app's process every 2 s and stops with `app_crashed` (exit 1) when it crashes, naming the newest iOS crash report (or its folder while macOS is still writing it) or the Android exception class or signal, never the exception's message.
+- `rn open --restart` stops the app before sending the link, as `rn prepare` does. A timeout on a blank screen says so and suggests it; `rn open` never restarts the app on its own.
+- `lease check --device <id>` (`--label`, `--json`), a read-only snapshot for scripts: exit 0 when the device is free or this session's, and 8 (`device_leased`) while another session's lease is live, even after that session ended (`ownerEnded`).
+- `gesture swipe-from-top-right-edge` opens Control Centre on iOS and the notification shade on Android.
+- `button app-switch` on iOS simulators presses Home twice in one event and opens the app switcher; it takes no `--duration` there, and a physical iPhone or iPad refuses it.
+- `describe-ui` on an iOS simulator names a view another process presents over the app (`# presented: "Cancel" from PickerService`, `context.presented`) and flags a screen-sized view whose off-screen frame is likely stale (`# stale frame: …`, `context.staleFrame`), from one read at the screen's centre that runs alongside the tree read; a system prompt named in `# window: … (system)` is not named again. A `wait` or `assert` that misses adds the same to its reason.
+- `describe-ui` on Android counts the branches the helper left out as not visible to the user (`# hidden: N branches not visible to the user`, `context.hidden`).
+- Off-screen runs say how many listed elements their items hide: `[off-screen below] 1 item (+12 inside): id=sheet-host`.
+- `--hold-end <ms>` on `drag` (replacing the fixed 50 ms hold) and on `swipe` and batch swipe steps holds the finger still at the end before it lifts, so a list stops without a fling.
 
 ### Changed
 
@@ -23,6 +34,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `credential status` with no name reads only the Keychain attributes, so it raises no macOS prompt and shows no usernames.
 - Several saved users with none the default exit 6 with `user_ambiguous` instead of `selector_ambiguous`, and list the users.
 - `credential --json` is version 2 for every action. `key` is now `name`, and the status list's `credentials` is now `users`, without `username` or `saved`.
+- Top and bottom edge presets start 2 points inside the screen's edge, sized to the screen rather than the app. The top preset starts a quarter of the way across, clear of a Dynamic Island, and ends at 70% of the height; the bottom preset ends at 30%.
+- A selector tap clips its target to the top and bottom of every scroll view or list around it (never the sides, where a carousel may draw peeking cards): a row below the fold, under a footer pinned beneath the list, fails with `target_off_screen` ("below the fold of its scroll view; scroll first") instead of tapping the footer, and a row partly showing is tapped in the middle of the part its scroll view shows.
+- Edge presets run faster: 0.1 s for top and bottom, 0.2 s for left and right (was 0.3 s).
+- `tap --verify` makes one attempt by default on a switch, checkbox or radio button, and `button app-switch --verify` presses once, since a second press would undo a change that lands late. The failure suggests a `wait` for the new state, and `--retries` still sets the count.
+- An evidence run keeps a compare's `-diff.png` only when pixels changed; `--diff-output` still always writes.
 
 ### Fixed
 
@@ -32,6 +48,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A `login` that fails after it began typing now says how far it got: the message ends "Both fields were filled." or "The email or username was filled.", and `--json` prints the login report with `ok: false`, `identity` and `password` as `filled` or `not_filled`, `submitted: false`, `exitCode` and the `error` object, instead of the error envelope a failure before typing still prints. Exit codes are unchanged. The report stays version 1 and adds `ok`, `exitCode` and `error`, also on success.
 - A selector `tap`, batch tap step or `type --into-id` on an iOS simulator no longer spends its tap dismissing a prompt another process draws over the app, such as Save Password? after a sign-in, and `tap --verify` no longer reports that as success ("element removed: Group"). The prompt's empty host in the tree now triggers a hit-test, and a hit from another process refuses with `target_covered` (exit 1, nothing sent), naming the prompt and its process, and on its backdrop the tap that dismisses it. Empty containers still never cover on their own.
 - `login` on an iOS simulator no longer fails with "The form changed after the fields were filled" when the keyboard stays up: the keyboard's dictation bar no longer counts as covering the form, and a read taken while the keyboard moves is read again for up to 1.5 seconds, as is a field that shows its text a moment late.
+- A system scroll indicator over a tab bar button is no longer taken for a cover, so `tap --fail-if-covered` taps the button.
+- On an iOS simulator, a hit-test that answers with a row while a control outside its scroll view, such as a floating footer, holds the point is only a guess, so `--fail-if-covered` refuses.
+- `gesture swipe-from-top-edge` opens Notification Centre on a Dynamic Island iPhone; it used to start on the island.
+- `button` on a physical iPhone or iPad no longer calls it an iOS simulator when it refuses a button.
+- `rn open` without `--wait-id` no longer takes a home screen gone still after a crash for the app having loaded.
+- `offsider --version` follows new commits and tags in a long-lived checkout or worktree, and a build with nothing changed no longer recompiles for it.
+- A lease set under `lockf` or `flock` belongs to the session that ran it, not to the lock wrapper.
 
 ## [0.10.0] - 2026-10-11
 

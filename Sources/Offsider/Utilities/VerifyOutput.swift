@@ -215,10 +215,36 @@ enum VerifyOutput {
         if let id = request.options.verifyID {
             return "✗ \(request.subject) was dispatched but --verify-id '\(id)' did not come on screen within \(request.options.resolvedTimeout.formatted()) s after \(outcome.attempts) \(plural). Check the screen with describe-ui --summary."
         }
+        if request.command == "tap", VerificationOptions.retriesUndo(request.targetNode), let node = request.targetNode {
+            return "✗ \(request.subject) was dispatched but nothing observable changed after \(outcome.attempts) \(plural)\(styleText).\(ignoredText(outcome.ignored)) "
+                + lateStateHint(node, selector: request.target, device: request.device, retried: outcome.attempts > 1)
+        }
         return "✗ \(request.subject) was dispatched but nothing observable changed after \(outcome.attempts) \(plural)\(styleText).\(ignoredText(outcome.ignored)) "
             + (request.device.platform == .ios
                 ? "Check the target with describe-ui, or run offsider doctor --device \(request.device.rawValue)."
                 : "Check the target with describe-ui.")
+    }
+
+    /// A switch, checkbox or radio button may change late, after the app hears back, and another tap would undo the first.
+    static func lateStateHint(_ node: UINode, selector: String, device: DeviceID, retried: Bool) -> String {
+        let kind = node.role == .switch ? "switch" : node.role == .checkbox ? "checkbox" : "radio button"
+        let flipped = ["0": "1", "1": "0"][node.value ?? ""] ?? "<new value>"
+        let wait = waitSelector(selector, node: node).map { "offsider wait \($0) --has-value \(flipped) --timeout 10 --device \(device.rawValue)" }
+            ?? "offsider wait with its selector and --has-value \(flipped)"
+        let retry = retried ? "Later taps may have undone the first." : "Offsider did not tap again: a second tap would undo the first."
+        return "A \(kind) may change late, after the app hears back. \(retry) Wait for its new state with \(wait) before tapping again."
+    }
+
+    /// The tap's own selector as `wait` flags; a value selector stops matching once the value changes, so the element's label stands in.
+    private static func waitSelector(_ selector: String, node: UINode) -> String? {
+        for flag in ["id", "label", "label-contains"] where selector.hasPrefix(flag + "=") {
+            return "--\(flag) \(shellWord(String(selector.dropFirst(flag.count + 1))))"
+        }
+        return node.label.map { "--label \(shellWord($0))" }
+    }
+
+    private static func shellWord(_ text: String) -> String {
+        text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._-:/".contains($0)) } ? text : DeviceLeaseRules.shellQuoted(text)
     }
 
     static func retryLine(failed: Verifier.Attempt, next: Verifier.Attempt) -> String {

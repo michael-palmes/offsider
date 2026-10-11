@@ -85,6 +85,13 @@ extension PointHitTesting {
     }
 }
 
+/// Optional capability: one read of the element at a point, never retried, so describe-ui and a missed wait can tell what the screen shows that the tree does not; only the iOS simulator has one.
+@MainActor
+public protocol PresentationProbing: DeviceBackend {
+    /// The element at `point` with its process id; nil when nothing answers there.
+    func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode?
+}
+
 /// Optional capability: the platform's own tree reply before mapping, for the committed tree goldens.
 @MainActor
 public protocol RawAccessibilitySource: DeviceBackend {

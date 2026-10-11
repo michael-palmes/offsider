@@ -72,7 +72,7 @@ struct Verifier {
     /// After-shots one attempt may take while a transition is still moving; a lagging stream may show it only from the second.
     static let maxScreenshots = 6
     /// Targets whose effect the tree always shows as a state change, so no baseline screenshot is taken for them.
-    static let stateRoles: Set<UIRole> = [.switch, .checkbox, .radioButton]
+    nonisolated static let stateRoles: Set<UIRole> = [.switch, .checkbox, .radioButton]
 
     /// True while the oldest and newest of `prints` differ on more than `ScreenChange.movingFraction` of their tiles.
     static func isMoving(_ prints: [ImageFingerprint]) -> Bool {

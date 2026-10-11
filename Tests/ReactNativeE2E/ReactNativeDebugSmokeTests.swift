@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 
 /// Debug builds of the playground with JavaScript from Metro on 8742 (`./test-runner.sh --rn-debug`).
@@ -343,5 +344,68 @@ struct ReactNativeDebugSmokeTests {
         #expect(gone.exitCode == 0, "\(gone.stderr)")
         try await app.run("tap --id overlay-test-tab-profile --fail-if-covered")
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Profile" }
+    }
+
+    /// The playground's process: on iOS its host pid from the simulator's launchctl, checked against the app's own bundle id; on Android from pidof.
+    private static func appPID(_ platform: RNPlatform) async throws -> Int? {
+        switch platform {
+        case .ios:
+            let listing = try await CommandRunner.runSeparated("xcrun simctl spawn \(try IOSRNPlayground.udid()) launchctl list", timeout: 30)
+            guard let app = SimLaunchctl.runningApps(listing.stdout).first(where: { $0.bundleID == IOSRNPlayground.bundleID }),
+                  let path = ProcessPath.of(pid: Int32(app.pid)), ForegroundApp.bundleIdentifier(atExecutable: path) == IOSRNPlayground.bundleID else { return nil }
+            return app.pid
+        case .android:
+            let pidof = try await AndroidE2E.shell("pidof " + AndroidE2E.package + " || true")
+            return pidof.split(separator: " ").first.flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        }
+    }
+
+    private static func waitForPID(_ platform: RNPlatform, timeout: TimeInterval = 60) async throws -> Int {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let pid = try await appPID(platform) { return pid }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        throw DescribeUIError(description: "the playground's process never appeared on \(platform.rawValue)")
+    }
+
+    @Test("rn open fails fast with app_crashed when the app's process dies while it waits", arguments: RNPlatform.enabled)
+    func rnOpenDetectsCrash(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        let pid = try await Self.waitForPID(platform)
+        let started = Date()
+        async let opened = app.offsider("rn open --port \(RNMetro.port) --bundle-id \(IOSRNPlayground.bundleID) --wait-id offsider-never-shown --timeout 120 --json", timeout: 180)
+        try await Task.sleep(for: .seconds(4))
+        switch platform {
+        case .ios:
+            #expect(try await Self.appPID(platform) == pid, "the pid to signal must still be the playground's")
+            _ = try await CommandRunner.runSeparated("/bin/kill -SEGV \(pid)", timeout: 10)
+        case .android:
+            try await AndroidE2E.shell("am crash \(AndroidE2E.package)")
+        }
+        let result = try await opened
+        #expect(result.exitCode == 1, "\(result.stderr)")
+        #expect(result.stdout.contains(#""reason":"app_crashed""#), "\(result.stdout)")
+        #expect(Date().timeIntervalSince(started) < 60, "crash detection should not wait out --timeout")
+        switch platform {
+        case .ios:
+            #expect(result.stderr.contains("Crash report: ") || result.stderr.contains("crash report is not written yet"), "\(result.stderr)")
+        case .android:
+            #expect(result.stderr.contains("It stopped with "), "\(result.stderr)")
+        }
+        try await app.open("overlay-test")
+    }
+
+    @Test("rn open --restart stops the running app and opens it fresh from Metro", arguments: RNPlatform.enabled)
+    func rnOpenRestart(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+        let before = try await Self.waitForPID(platform)
+
+        try await app.run("rn open --port \(RNMetro.port) --bundle-id \(IOSRNPlayground.bundleID) --wait-id menu-title --restart", timeout: 240)
+        let after = try await Self.waitForPID(platform)
+        #expect(after != before)
+        _ = try await app.waitForNode { $0["id"] as? String == "menu-title" }
     }
 }

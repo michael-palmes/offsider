@@ -88,6 +88,11 @@ public struct UITree: Equatable, Sendable {
     public var sourceTruncated = false
     /// Every window Android's accessibility service lists; nil on iOS and with the uiautomator fallback.
     public var windows: [UIWindowInfo]?
+    /// What describe-ui's read at the screen's centre found; nil when it did not read or found nothing.
+    public var presented: UITreeContext.Presented?
+    public var staleFrame: UITreeContext.StaleFrame?
+    /// Subtrees Android's helper left out as not visible to the user; nil on iOS, with uiautomator and with an older helper.
+    public var hiddenBranches: Int?
     /// A prompt another process draws over an iOS app, which `describe-ui` found with a point read; JSON carries it only in `context`.
     public var systemPrompt: SystemPrompt?
     /// The context a decoded describe-ui JSON carried, which its windows no longer can.

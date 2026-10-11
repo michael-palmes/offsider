@@ -35,12 +35,12 @@ offsider describe-ui --diff --device <DEVICE_ID>
 - `type` adds to the focused field. Tap the field (or pass `--into-id <id>`), then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
 - Secure fields read as bullets, one per character: find them by `--id` or `--label` (`--value` never matches them). To type a secret, tap the field and run `type`: Offsider never logs or echoes the text. Add `--mask-secure` to `screenshot` before sharing an image of a screen with a password field (`guide evidence`).
 - For a report, `run start <dir>` numbers screenshots and logs into one folder; mask personal data with `--mask-emails`; video refuses tree masks (`guide evidence`).
-- Use `--retries 0` with `--verify` for submit, send or delete, so a late effect plus a retry cannot act twice.
+- Use `--retries 0` with `--verify` for submit, send or delete: a late effect plus a retry would act twice.
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop, never kill the holder (`guide errors`).
-- Screenshots are in pixels; taps and frames are in points (dp on Android). Capture with `screenshot --scale points` when you will tap what you see.
+- Screenshots are in pixels; taps and frames are in points (dp on Android). Capture with `screenshot --scale points` to tap what you see.
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric` and `stay-awake` change the device and stay changed: read the current value first, and set it back when done (`guide device-state`).
 - A physical iPhone or iPad works over USB only, unlocked, with Settings > Developer > UI Automation on (ask the user; `ui_automation_off` or `device_locked` means it is not, and a device showing `Enter Passcode for "XCTest"` needs the user to type the passcode there). Input needs Xcode 27 on the Mac and starts a background session: run `offsider session stop --device <UDID>` when done. `describe-ui`, `tap`, `type`, `wait` and `assert` take `--app <bundle-id>` to read that app (`guide ios-device`).
-- React Native debug builds: `rn open` (Metro), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`).
+- React Native debug builds: `rn open` (Metro, `--restart`), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`).
 - When an Android error says the screen is off or locked, run `offsider wake --device <DEVICE_ID>`. Exit 7 `device_locked` means a PIN, pattern or password lock screen: ask the user to unlock it, or run `wake --unlock` if they saved a code. Never ask for or handle a lock screen code; the user saves it with `unlock-code set` in their own terminal.
 
 ## Exit codes

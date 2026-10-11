@@ -5,11 +5,28 @@ public struct SimulatorCrash: Equatable, Sendable {
     public let udid: String
     public let process: String
     public let timestamp: Date
+    public let pid: Int?
+    public let bundleID: String?
 
-    public init(udid: String, process: String, timestamp: Date) {
+    public init(udid: String, process: String, timestamp: Date, pid: Int? = nil, bundleID: String? = nil) {
         self.udid = udid
         self.process = process
         self.timestamp = timestamp
+        self.pid = pid
+        self.bundleID = bundleID
+    }
+}
+
+/// A crash report file and what its first few kilobytes say.
+public struct SimulatorCrashFile: Equatable, Sendable {
+    public let path: String
+    public let modified: Date
+    public let crash: SimulatorCrash
+
+    public init(path: String, modified: Date, crash: SimulatorCrash) {
+        self.path = path
+        self.modified = modified
+        self.crash = crash
     }
 }
 
@@ -34,7 +51,38 @@ public enum SimulatorCrashReports {
         let udid = String(coalition.dropFirst(coalitionPrefix.count)).uppercased()
         guard UUID(uuidString: udid) != nil else { return nil }
         let timestamp = (header?["timestamp"] as? String).flatMap(parseTimestamp) ?? modified
-        return SimulatorCrash(udid: udid, process: process, timestamp: timestamp)
+        let bundleID = header?["bundleID"] as? String ?? topLevelString("CFBundleIdentifier", in: body)
+        return SimulatorCrash(udid: udid, process: process, timestamp: timestamp, pid: topLevelInteger("pid", in: body), bundleID: bundleID)
+    }
+
+    /// Simulator reports in `directory` modified at or after `since`, reading only each file's first few kilobytes.
+    public static func scan(directory: String, modifiedSince since: Date) -> [SimulatorCrashFile] {
+        let url = URL(fileURLWithPath: directory, isDirectory: true)
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
+            return []
+        }
+        return entries.compactMap { entry -> SimulatorCrashFile? in
+            guard
+                entry.pathExtension == "ips",
+                let values = try? entry.resourceValues(forKeys: Set(keys)),
+                values.isRegularFile == true,
+                let modified = values.contentModificationDate,
+                modified >= since,
+                let handle = try? FileHandle(forReadingFrom: entry)
+            else { return nil }
+            defer { try? handle.close() }
+            guard let data = try? handle.read(upToCount: prefixBytes),
+                  let crash = parse(String(decoding: data, as: UTF8.self), modified: modified) else { return nil }
+            return SimulatorCrashFile(path: entry.path, modified: modified, crash: crash)
+        }
+    }
+
+    /// The newest report from simulator `udid` whose pid or bundle id is the app's.
+    public static func report(for bundleID: String, pid: Int, udid: String, in files: [SimulatorCrashFile]) -> SimulatorCrashFile? {
+        files
+            .filter { $0.crash.udid == udid.uppercased() && ($0.crash.pid == pid || $0.crash.bundleID == bundleID) }
+            .max { $0.modified < $1.modified }
     }
 
     /// Crashes within `window` of `now`, so stale or future-dated reports never count.
@@ -57,6 +105,14 @@ public enum SimulatorCrashReports {
         guard rest.first == "\"" else { return nil }
         let value = rest.dropFirst().prefix { $0 != "\"" && $0 != "\n" }
         return value.isEmpty ? nil : String(value)
+    }
+
+    static func topLevelInteger(_ key: String, in body: String) -> Int? {
+        guard let keyRange = body.range(of: "\"\(key)\"") else { return nil }
+        var rest = body[keyRange.upperBound...].drop { $0 == " " }
+        guard rest.first == ":" else { return nil }
+        rest = rest.dropFirst().drop { $0 == " " }
+        return Int(rest.prefix { $0.isASCII && $0.isNumber })
     }
 
     static func parseTimestamp(_ text: String) -> Date? {

@@ -36,7 +36,18 @@ extension UITreeContext {
         let logBox = (object["logbox"] as? [String: Any]).map { logBox in
             LogBox(logs: (logBox["logs"] as? NSNumber)?.intValue ?? 0, inspector: logBox["inspector"] as? Bool ?? false)
         }
-        self.init(window: window, keyboard: object["keyboard"] as? Bool ?? false, logBox: logBox)
+        let presented = (object["presented"] as? [String: Any]).flatMap { presented -> Presented? in
+            guard let role = (presented["role"] as? String).flatMap(UIRole.init(rawValue:)) else { return nil }
+            return Presented(label: presented["label"] as? String, role: role, process: presented["process"] as? String)
+        }
+        let staleFrame = (object["staleFrame"] as? [String: Any]).flatMap { stale -> StaleFrame? in
+            guard let frame = (stale["frame"] as? [String: Any]).flatMap(UIFrame.init(jsonObject:)) else { return nil }
+            return StaleFrame(id: stale["id"] as? String, label: stale["label"] as? String, frame: frame)
+        }
+        self.init(
+            window: window, keyboard: object["keyboard"] as? Bool ?? false, logBox: logBox, presented: presented, staleFrame: staleFrame,
+            hidden: (object["hidden"] as? NSNumber)?.intValue
+        )
     }
 }
 

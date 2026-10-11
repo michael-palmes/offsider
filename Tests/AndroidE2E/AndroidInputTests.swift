@@ -55,6 +55,32 @@ struct AndroidSwipeGestureTests {
         #expect(try await AndroidE2E.label(of: "last-swipe-start") == "Start: (200, 700)")
     }
 
+    @Test("both top presets open the notification shade", arguments: ["swipe-from-top-edge", "swipe-from-top-right-edge"])
+    func topPresetsOpenShade(preset: String) async throws {
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await AndroidE2E.run("gesture \(preset)")
+        let deadline = Date().addingTimeInterval(5)
+        var focus = ""
+        while Date() < deadline {
+            focus = try await AndroidE2E.shell("dumpsys window | grep -m1 mCurrentFocus")
+            if focus.contains("NotificationShade") { break }
+            try await Task.sleep(for: .milliseconds(300))
+        }
+        #expect(focus.contains("NotificationShade"))
+        try await AndroidE2E.shell("cmd statusbar collapse")
+    }
+
+    @Test("--hold-end on swipe and drag stops the finger before it lifts", arguments: [
+        ("swipe --start-x 200 --start-y 700 --end-x 200 --end-y 300 --duration 0.2", "Release: moving"),
+        ("swipe --start-x 200 --start-y 700 --end-x 200 --end-y 300 --duration 0.2 --hold-end 800", "Release: still"),
+        ("drag --start-x 200 --start-y 700 --end-x 200 --end-y 300 --duration 0.3 --steps 10 --hold-end 800", "Release: still"),
+    ])
+    func holdEnd(command: String, expected: String) async throws {
+        try await AndroidE2E.open("swipe-test", waitingFor: "swipe-test-area")
+        try await AndroidE2E.run(command)
+        _ = try await AndroidE2E.waitForLabel(of: "last-swipe-release") { $0 == expected }
+    }
+
     @Test("the scroll-up preset is classified as scroll-up")
     func scrollUpPreset() async throws {
         try await AndroidE2E.open("gesture-presets", waitingFor: "gesture-detection-area")

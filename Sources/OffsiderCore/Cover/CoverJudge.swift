@@ -68,7 +68,11 @@ public enum CoverJudge {
             return context.verdict(hit, .otherProcess, confident: true)
         }
         if let hit {
-            switch context.judge(hit: hit) {
+            let judgement = context.judge(hit: hit)
+            if case .clear = judgement, let outside = context.candidateOutsideScrollView() {
+                return context.verdict(outside, .treeOrder, confident: false)
+            }
+            switch judgement {
             case .clear: return nil
             case .cover(let node, let confident): return context.verdict(node, .hitTest, confident: confident)
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
@@ -162,17 +166,21 @@ public enum CoverJudge {
         let flat: [UINode]
         /// The target and the matched element with everything inside them.
         let own: [UINode]
+        /// Scroll indicators, which take no taps.
+        let indicators: [UINode]
         var logBoxInset = 0.0
         var otherProcessCovers = false
 
         init(target: UINode, matched: UINode, point: UIPoint, candidates: [UINode], roots: [UINode], viewport: UIFrame, stack: ScreenStack) {
+            let indicators = ScrollIndicator.all(in: roots)
             self.target = target
             self.matched = matched
             self.point = point
-            self.candidates = candidates
+            self.candidates = candidates.filter { candidate in !indicators.contains { $0.isSameElement(as: candidate) } }
             self.roots = roots
             self.viewport = viewport
             self.stack = stack
+            self.indicators = indicators
             flat = roots.flatMap { $0.flattened() }
             own = target.flattened() + matched.flattened()
         }
@@ -199,7 +207,7 @@ public enum CoverJudge {
         private func cover(on page: ScreenStack.Page) -> UINode {
             let onPage = page.content.sorted().compactMap { $0 < flat.count ? flat[$0] : nil }
             let atPoint = onPage.filter { node in
-                node.frame?.contains(point) == true && CoverJudge.isPlausibleOccluder(node)
+                node.frame?.contains(point) == true && CoverJudge.isPlausibleOccluder(node) && !indicators.contains { $0.isSameElement(as: node) }
             }
             return atPoint.min { $0.area < $1.area } ?? flat[page.index]
         }
@@ -244,10 +252,19 @@ public enum CoverJudge {
             return rootRoles.contains(placed.role) || placed.frame.map { CoverJudge.spans($0, viewport) } == true
         }
 
+        /// A hit on a scroll indicator, placed in the tree or lying along one of its scroll views.
+        private func isIndicator(_ hit: UINode, placed: UINode?) -> Bool {
+            guard let placed else { return ScrollIndicator.isIndicator(hit, alongAnyScrollViewIn: roots) }
+            return indicators.contains { $0.isSameElement(as: placed) }
+        }
+
         func judge(hit: UINode) -> HitJudgement {
             let placed = placed(hit)
             if isOwn(hit) || isOwnHit(hit, placed: placed) {
                 return .clear
+            }
+            if isIndicator(hit, placed: placed) {
+                return .undecided
             }
             if isScreenRoot(hit, placed: placed) {
                 if let page = pageOverTarget {
@@ -290,6 +307,33 @@ public enum CoverJudge {
                 return .cover(placed, confident: false)
             }
             return .undecided
+        }
+
+        /// The nearest scroll view or list holding the target or the matched element.
+        private var scrollAncestor: UINode? {
+            for node in [target, matched] {
+                guard let path = UITree.indexPath(to: node, in: roots) else { continue }
+                var chain = [roots[path[0]]]
+                for index in path.dropFirst() {
+                    chain.append(chain[chain.count - 1].children[index])
+                }
+                if let scroll = chain.dropLast().last(where: { [.scrollView, .list].contains($0.role) }) {
+                    return scroll
+                }
+            }
+            return nil
+        }
+
+        /// The smallest candidate at the point outside the target's scroll view, such as a footer floating over it: a hit-test may answer with what the scroll view holds beneath it.
+        func candidateOutsideScrollView() -> UINode? {
+            guard let scroll = scrollAncestor else { return nil }
+            let inside = scroll.flattened()
+            return candidates.filter { candidate in
+                guard !isOwn(candidate), let frame = candidate.frame, frame.contains(point), !CoverJudge.spans(frame, viewport),
+                      !inside.contains(where: { $0.isSameElement(as: candidate) }),
+                      !candidate.flattened().contains(where: { $0.isSameElement(as: scroll) }) else { return false }
+                return scroll.frame.map { !frame.encloses($0, tolerance: 0) } ?? true
+            }.min { $0.area < $1.area }
         }
 
         /// The first control over the point that is neither the target's own, inside its frame, nor a backdrop: a root hit says nothing, so it is only a guess.

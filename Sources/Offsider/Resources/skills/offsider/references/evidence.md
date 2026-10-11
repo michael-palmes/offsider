@@ -27,7 +27,7 @@ Masks paint opaque black boxes over the image before it is written or compared, 
 - `--mask-text <regex>` paints the innermost elements whose label, value, title, text, content description or hint matches, case-insensitively; a secure field's value is never searched. `--mask-emails` does the same for email addresses.
 - `--mask-region <x,y,w,h>` paints a rectangle in points before any `--region` crop, and reads no tree. Use it for content the tree cannot see.
 - Each mask flag takes several values and can repeat. `batch` screenshot steps take the same flags and reuse the batch's tree.
-- `--json` adds `masked` (rectangles painted), `maskedBy` (rectangles per kind you asked for) and `maskUnmatched` (selectors that matched nothing, also warned on stderr; the image is still written).
+- `--json` adds `masked` (rectangles painted), `maskedBy` (rectangles per kind you asked for), `maskedBeneath` (those painted for elements on a screen beneath a page, which still get painted, so a black box can sit over the page on top; also noted on stderr) and `maskUnmatched` (selectors that matched nothing, also warned on stderr; the image is still written).
 - An element to mask without a frame withholds the image (`mask_unproven`): retry when the screen is still.
 - Masks cover what the accessibility tree describes. Web views, canvases, images, and text that appears between the tree read and the capture can still show: check the image before sharing it, and add `--mask-region` for what is left.
 - Video takes no tree masks: with masks in the run, or `OFFSIDER_MASK_SECURE=1`, `record-video` and `stream-video` exit 1 with `video_unmasked` and write nothing. Capture the steps with `screenshot` instead, or pass `--unmasked` only when the screen shows nothing private. Their `--mask-region` paints a fixed rectangle on every frame (`guide screenshots`). Video files are not numbered into the run.
@@ -55,7 +55,7 @@ Redaction is on by default for every source: `message` and `raw` read `[redacted
 
 ## Pixel diffs
 
-`screenshot --compare before.png` counts which pixels changed as well as its tile verdict (by 8 by 8 block on a physical iPhone or iPad, `guide screenshots`): `--json` adds `changedPixels`, `comparedPixels` and `changedBounds` (`{x,y,width,height}` in the image's pixels, or null). `--diff-output <png>` (a file, or a directory for a generated name) writes the capture faded to white with every changed pixel magenta and the status bar band grey, so a report can show what moved. The exit code still follows the tiles and `--threshold`: 0 changed, 5 not. A baseline of another size writes no diff.
+`screenshot --compare before.png` counts which pixels changed as well as its tile verdict (by 8 by 8 block on a physical iPhone or iPad, `guide screenshots`): `--json` adds `changedPixels`, `comparedPixels` and `changedBounds` (`{x,y,width,height}` in the image's pixels, or null). `--diff-output <png>` (a file, or a directory for a generated name) writes the capture faded to white with every changed pixel magenta and the status bar band grey, so a report can show what moved. The exit code still follows the tiles and `--threshold`: 0 changed, 5 not, or the reverse with `--expect unchanged` (to prove a step left the screen alone); `--json` adds `expected` and `met`, and the manifest line `expect`. A baseline of another size writes no diff, and a run keeps its own `-diff.png` only when pixels changed (`--diff-output` always writes).
 
 ```bash
 offsider screenshot --compare before.png --diff-output diff.png --json --device <DEVICE_ID>

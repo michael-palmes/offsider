@@ -7,17 +7,21 @@ public struct WaitSources {
     public var fingerprint: @MainActor () async throws -> ImageFingerprint
     public var sleep: @MainActor (Duration) async throws -> Void
     public var now: @MainActor () -> TimeInterval
+    /// Read once when an element condition is not met, on the last tree, to explain the miss; nil never reads.
+    public var probe: (@MainActor (UITree) async -> PresentationFinding?)?
 
     public init(
         tree: @escaping @MainActor () async throws -> UITree,
         fingerprint: @escaping @MainActor () async throws -> ImageFingerprint,
         sleep: @escaping @MainActor (Duration) async throws -> Void,
-        now: @escaping @MainActor () -> TimeInterval
+        now: @escaping @MainActor () -> TimeInterval,
+        probe: (@MainActor (UITree) async -> PresentationFinding?)? = nil
     ) {
         self.tree = tree
         self.fingerprint = fingerprint
         self.sleep = sleep
         self.now = now
+        self.probe = probe
     }
 }
 
@@ -62,6 +66,13 @@ extension ElementProbe {
 }
 
 extension WaitCondition {
+    var looksForElements: Bool {
+        switch self {
+        case .element, .anyElement: true
+        case .settled, .region, .duration: false
+        }
+    }
+
     var explain: ((UITree) -> WaitNearMiss?)? {
         switch self {
         case .element(_, _, _, let explain), .anyElement(_, _, let explain): explain
@@ -226,7 +237,11 @@ public enum WaitLoop {
         if state.treeReads >= 2, !state.readableTree {
             throw WaitUnreadableError.settledTree
         }
-        var outcome = WaitOutcome(met: false, elapsed: sources.now() - start, reason: lastReason)
+        let elapsed = sources.now() - start
+        if condition.looksForElements, let probe = sources.probe, let tree = state.lastTree, let finding = await probe(tree) {
+            lastReason = finding.explaining(lastReason)
+        }
+        var outcome = WaitOutcome(met: false, elapsed: elapsed, reason: lastReason)
         outcome.onlyTextMoved = state.treeChanges > 0 && !state.structureMoved
         if state.missed, let tree = state.lastTree {
             outcome.nearMiss = condition.explain?(tree)

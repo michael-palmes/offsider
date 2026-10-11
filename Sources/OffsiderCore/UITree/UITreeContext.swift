@@ -59,14 +59,56 @@ public struct UITreeContext: Equatable, Sendable {
         }
     }
 
+    /// What a read at the screen's centre found that the tree does not list, such as a view another process draws over the app.
+    public struct Presented: Equatable, Sendable {
+        /// Redacted and cut to 40 characters; nil for a secure field or an element with no label.
+        public var label: String?
+        public var role: UIRole
+        /// The executable's file name, never its path.
+        public var process: String?
+
+        public init(label: String?, role: UIRole, process: String?) {
+            self.label = label
+            self.role = role
+            self.process = process
+        }
+    }
+
+    /// A screen-sized node the tree places off screen, though a read at the screen's centre lands inside it: its frame is likely stale.
+    public struct StaleFrame: Equatable, Sendable {
+        public var id: String?
+        public var label: String?
+        public var frame: UIFrame
+
+        public init(id: String?, label: String?, frame: UIFrame) {
+            self.id = id
+            self.label = label
+            self.frame = frame
+        }
+
+        /// `id=sheet-host`, else the quoted label, else `a screen-sized node`.
+        public var name: String {
+            if let id { return "id=" + UITreeRenderer.token(SelectorText.truncated(id, limit: 40)) }
+            if let label { return UITreeRenderer.quoted(SelectorText.truncated(label, limit: 40)) }
+            return "a screen-sized node"
+        }
+    }
+
     public var window: Window?
     public var keyboard: Bool
     public var logBox: LogBox?
+    public var presented: Presented?
+    public var staleFrame: StaleFrame?
+    /// Branches Android's helper left out as not visible to the user, such as a panel slid off screen; nil when the source cannot say.
+    public var hidden: Int?
 
-    public init(window: Window? = nil, keyboard: Bool = false, logBox: LogBox? = nil) {
+    public init(window: Window? = nil, keyboard: Bool = false, logBox: LogBox? = nil, presented: Presented? = nil, staleFrame: StaleFrame? = nil, hidden: Int? = nil) {
         self.window = window
         self.keyboard = keyboard
         self.logBox = logBox
+        self.presented = presented
+        self.staleFrame = staleFrame
+        self.hidden = hidden
     }
 
     public init(tree: UITree) {
@@ -79,7 +121,10 @@ public struct UITreeContext: Equatable, Sendable {
         self.init(
             window: window,
             keyboard: tree.roots.contains { $0.flattened().contains { $0.role == .keyboard } },
-            logBox: logBox
+            logBox: logBox,
+            presented: tree.presented,
+            staleFrame: tree.staleFrame,
+            hidden: tree.hiddenBranches
         )
     }
 
@@ -102,7 +147,7 @@ public struct UITreeContext: Equatable, Sendable {
         return Window(title: top.title, kind: kind, package: top.package)
     }
 
-    /// `# window: Lab Toggles (modal)` (`(modal, empty)` for an empty dialog), `# keyboard shown` and `# logbox: 2 logs`, each only when it applies.
+    /// `# window: Lab Toggles (modal)` (`(modal, empty)` for an empty dialog), `# keyboard shown`, `# logbox: 2 logs`, `# presented: "Cancel" from PhotosPicker`, `# stale frame: ...` and `# hidden: 2 branches not visible to the user`, each only when it applies.
     public var headerLines: [String] {
         var lines: [String] = []
         if let window, window.kind != .app {
@@ -113,6 +158,15 @@ public struct UITreeContext: Equatable, Sendable {
         }
         if let logBox {
             lines.append(logBox.inspector ? "# logbox: inspector open" : "# logbox: \(logBox.logs) log\(logBox.logs == 1 ? "" : "s")")
+        }
+        if let presented {
+            lines.append("# presented: \(presented.summary)")
+        }
+        if let staleFrame {
+            lines.append("# stale frame: \(staleFrame.name) is listed off screen at \(staleFrame.frame.summary), but the screen's centre is inside it; check a screenshot")
+        }
+        if let hidden, hidden > 0 {
+            lines.append("# hidden: \(hidden) branch\(hidden == 1 ? "" : "es") not visible to the user")
         }
         return lines
     }
@@ -129,6 +183,29 @@ public struct UITreeContext: Equatable, Sendable {
             } ?? .null),
             ("keyboard", .bool(keyboard)),
             ("logbox", logBox.map { .object([("logs", .integer($0.logs)), ("inspector", .bool($0.inspector))]) } ?? .null),
+            ("presented", presented.map { presented in
+                .object([
+                    ("label", .optional(presented.label, OrderedJSON.string)),
+                    ("role", .string(presented.role.rawValue)),
+                    ("process", .optional(presented.process, OrderedJSON.string)),
+                ])
+            } ?? .null),
+            ("staleFrame", staleFrame.map { stale in
+                .object([
+                    ("id", .optional(stale.id, OrderedJSON.string)),
+                    ("label", .optional(stale.label, OrderedJSON.string)),
+                    ("frame", stale.frame.jsonValue),
+                ])
+            } ?? .null),
+            ("hidden", .optional(hidden, OrderedJSON.integer)),
         ])
+    }
+}
+
+extension UITreeContext.Presented {
+    /// `"Cancel" from PhotosPicker`, the role for an element with no label, and no process when it could not be read.
+    public var summary: String {
+        let shown = label.map(UITreeRenderer.quoted) ?? role.rawValue
+        return process.map { "\(shown) from \($0)" } ?? shown
     }
 }

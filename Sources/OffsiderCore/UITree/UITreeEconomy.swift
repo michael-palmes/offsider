@@ -3,6 +3,16 @@ import Foundation
 /// Where an off-screen node lies against the visible rect.
 public enum OffScreenSide: String, Sendable {
     case above, below, left, right
+
+    /// The edge `frame` lies wholly past; nil for an empty frame, or one that overlaps `rect`.
+    public static func of(_ frame: UIFrame, in rect: UIFrame) -> OffScreenSide? {
+        guard frame.width > 0, frame.height > 0 else { return nil }
+        if frame.y >= rect.y + rect.height { return .below }
+        if frame.y + frame.height <= rect.y { return .above }
+        if frame.x >= rect.x + rect.width { return .right }
+        if frame.x + frame.width <= rect.x { return .left }
+        return nil
+    }
 }
 
 /// One line of text output before the byte budget: a node, or a run of off-screen nodes.
@@ -89,6 +99,10 @@ public enum UITreeEconomy {
         var count: Int
         var first: String
         var last: String
+        /// Tells runs apart, so only nodes inside this run's items count toward `inside`.
+        var serial: Int
+        /// Nodes inside its items that would be listed, which the run hides.
+        var inside = 0
     }
 
     struct Walker {
@@ -107,6 +121,7 @@ public enum UITreeEconomy {
         var lines: [UITextLine] = []
         var folded = 0
         var run: Run?
+        var runsStarted = 0
 
         init(tree: UITree, options: UITreeRenderOptions, fields: Set<UIField>, render: @escaping (UINode, String?, String?) -> String) {
             self.options = options
@@ -137,7 +152,8 @@ public enum UITreeEconomy {
             return any
         }
 
-        mutating func visit(_ node: UINode, depth: Int, ancestorLabel: String?, ancestor: Ancestor) {
+        /// `owner` is the serial of the run an off-screen ancestor of the node joined.
+        mutating func visit(_ node: UINode, depth: Int, ancestorLabel: String?, ancestor: Ancestor, owner: Int? = nil) {
             let position = index
             index += 1
             let isCovered = covered.contains(position)
@@ -146,6 +162,7 @@ public enum UITreeEconomy {
             let passesOthers = !isCovered && otherFilters.matches(node, visibleRect: rect)
             var childDepth = depth
             var childLabel = ancestorLabel
+            var childOwner = shown ? nil : owner
             if shown {
                 flushRun()
                 if let text = shownLine(node, ancestorLabel: ancestorLabel) {
@@ -154,12 +171,15 @@ public enum UITreeEconomy {
                     childLabel = node.label
                 }
             } else if summarisesRuns, passesOthers, ancestor != .offScreen,
-                      let frame = node.frame, let rect, let side = Self.side(of: frame, in: rect) {
+                      let frame = node.frame, let rect, let side = OffScreenSide.of(frame, in: rect) {
                 addToRun(node, side: side, depth: depth)
+                childOwner = run?.serial
+            } else if passesOthers, let owner, run?.serial == owner {
+                run?.inside += 1
             }
             let childAncestor: Ancestor = passesOthers ? (matches ? .onScreen : .offScreen) : ancestor
             for child in node.children {
-                visit(child, depth: childDepth, ancestorLabel: childLabel, ancestor: childAncestor)
+                visit(child, depth: childDepth, ancestorLabel: childLabel, ancestor: childAncestor, owner: childOwner)
             }
         }
 
@@ -194,25 +214,17 @@ public enum UITreeEconomy {
                 return
             }
             flushRun()
-            run = Run(side: side, depth: depth, count: 1, first: name, last: name)
+            run = Run(side: side, depth: depth, count: 1, first: name, last: name, serial: runsStarted)
+            runsStarted += 1
         }
 
         mutating func flushRun() {
             guard let current = run else { return }
             run = nil
-            var text = "[off-screen \(current.side.rawValue)] \(current.count) item\(current.count == 1 ? "" : "s"): \(current.first)"
+            let inside = current.inside > 0 ? " (+\(current.inside) inside)" : ""
+            var text = "[off-screen \(current.side.rawValue)] \(current.count) item\(current.count == 1 ? "" : "s")\(inside): \(current.first)"
             if current.count > 1 { text += " to \(current.last)" }
             lines.append(UITextLine(depth: current.depth, text: text, nodes: current.count))
-        }
-
-        /// The edge the frame lies wholly past; nil for an empty frame, or one inside the rect that is too small to see.
-        static func side(of frame: UIFrame, in rect: UIFrame) -> OffScreenSide? {
-            guard frame.width > 0, frame.height > 0 else { return nil }
-            if frame.y >= rect.y + rect.height { return .below }
-            if frame.y + frame.height <= rect.y { return .above }
-            if frame.x >= rect.x + rect.width { return .right }
-            if frame.x + frame.width <= rect.x { return .left }
-            return nil
         }
 
         /// `id=<id>`, else the quoted label, else the role, each cut to 40 characters.

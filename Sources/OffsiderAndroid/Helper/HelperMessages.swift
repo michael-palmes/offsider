@@ -351,6 +351,8 @@ struct HelperDump: Decodable, Equatable, Sendable {
     let windows: [HelperWindow]
     /// The helper stopped at 20,000 nodes or depth 200.
     let truncated: Bool
+    /// Subtrees the walk left out as not visible to the user; nil when the helper did not say.
+    let skippedInvisible: Int?
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -360,11 +362,17 @@ struct HelperDump: Decodable, Equatable, Sendable {
         display = try c.decode(HelperDisplay.self, forKey: .display)
         windows = try c.decodeIfPresent([HelperWindow].self, forKey: .windows) ?? []
         truncated = try c.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
+        skippedInvisible = try c.decodeIfPresent(HelperDumpStats.self, forKey: .stats)?.skippedInvisible
     }
 
     private enum CodingKeys: String, CodingKey {
-        case generation, idle, eventSeq, display, windows, truncated
+        case generation, idle, eventSeq, display, windows, truncated, stats
     }
+}
+
+/// The counts a dump reports beside its windows; only what Offsider reads.
+struct HelperDumpStats: Decodable, Equatable, Sendable {
+    let skippedInvisible: Int?
 }
 
 /// The `setProgress` reply: the range as the node reads after the action, nil when it no longer reports one.

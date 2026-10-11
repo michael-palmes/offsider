@@ -73,6 +73,7 @@ struct RenderedScreenshot {
             format: format,
             comparison: comparison,
             maskedBy: masks?.painted,
+            maskedBeneath: masks?.beneath ?? [:],
             maskUnmatched: masks?.unmatched ?? []
         )
     }
@@ -119,10 +120,11 @@ enum ScreenCapture {
         )
     }
 
-    /// What masking painted: rectangles per kind asked for, and the selectors that matched nothing.
+    /// What masking painted: rectangles per kind asked for, those on a screen beneath a page, and the selectors that matched nothing.
     struct MaskResult {
         let capture: CapturedScreen
         let painted: [MaskKind: Int]
+        var beneath: [MaskKind: Int] = [:]
         let unmatched: [String]
     }
 
@@ -132,41 +134,50 @@ enum ScreenCapture {
         if let tree {
             targets = try plan.textTargets(in: tree)
             if plan.secure {
-                targets.frames[.secure] = tree.secureFrames
+                targets.add(tree.roots.flatMap { $0.flattened() }.filter(\.isSecure), as: .secure)
             }
             let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
                 + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
             for (kind, query) in selectors {
                 let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches
-                targets.frames[kind, default: []] += matches.map(\.frame)
+                targets.add(matches, as: kind)
                 if matches.isEmpty {
                     targets.unmatched.append("--mask-\(query.kind.dropFirst(2)) \(query.rawValue)")
                 }
             }
         }
         targets.frames[.region] = plan.regions.map { UIFrame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
+        let beneathFrames = tree.map { targets.framesBeneathPages(in: $0) } ?? [:]
 
         var image = capture.image
         var painted: [MaskKind: Int] = [:]
+        var beneath: [MaskKind: Int] = [:]
         for kind in plan.kinds {
-            let rects = try SecureMask.pixelRects(
-                frames: targets.frames[kind] ?? [],
-                subject: subject(of: kind),
-                pixelsPerPoint: capture.upright ? capture.pixelsPerPoint : nil,
-                imageWidth: capture.image.width,
-                imageHeight: capture.image.height
-            )
-            painted[kind] = rects.count
-            if !rects.isEmpty {
-                image = try ScreenImage.masked(image, pixelRects: rects)
+            let rects = { (frames: [UIFrame?]) in
+                try SecureMask.pixelRects(
+                    frames: frames,
+                    subject: subject(of: kind),
+                    pixelsPerPoint: capture.upright ? capture.pixelsPerPoint : nil,
+                    imageWidth: capture.image.width,
+                    imageHeight: capture.image.height
+                )
+            }
+            let all = try rects(targets.frames[kind] ?? [])
+            painted[kind] = all.count
+            if let covered = beneathFrames[kind], !covered.isEmpty {
+                beneath[kind] = try rects(covered).count
+            }
+            if !all.isEmpty {
+                image = try ScreenImage.masked(image, pixelRects: all)
             }
         }
-        guard image !== capture.image else { return MaskResult(capture: capture, painted: painted, unmatched: targets.unmatched) }
+        beneath = beneath.filter { $0.value > 0 }
+        guard image !== capture.image else { return MaskResult(capture: capture, painted: painted, beneath: beneath, unmatched: targets.unmatched) }
         let masked = CapturedScreen(
             image: image, platform: capture.platform, screen: capture.screen, pixelsPerPoint: capture.pixelsPerPoint,
             upright: capture.upright, untouchedPNG: nil
         )
-        return MaskResult(capture: masked, painted: painted, unmatched: targets.unmatched)
+        return MaskResult(capture: masked, painted: painted, beneath: beneath, unmatched: targets.unmatched)
     }
 
     nonisolated private static func subject(of kind: MaskKind) -> String {

@@ -43,6 +43,7 @@ public struct RunTimeline: Equatable, Sendable {
         var notes: [String] = []
         if let masked = entry.masked, masked > 0 { notes.append("masked \(masked)") }
         if let changed = entry.changed { notes.append(changed ? "changed" : "unchanged") }
+        if let expect = entry.expect, expect != "changed" { notes.append("expected \(expect)") }
         if let entries = entry.entries { notes.append(Self.count(entries, "entry", plural: "entries")) }
         if let redacted = entry.redacted, redacted > 0 { notes.append("redacted \(redacted)") }
         if let diff = entry.diff { notes.append("diff \(diff)") }

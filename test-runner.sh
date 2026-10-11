@@ -133,6 +133,7 @@ show_usage() {
     echo "  GestureTests        Run only gesture tests"
     echo "  ListDevicesTests    Run only list devices tests"
     echo "  PresentationFixtureTests Run only presentation fixture tests"
+    echo "  PresentedSheetTests Run only the presented-by-another-process tests"
     echo "  RecordVideoTests    Run only record video tests"
     echo "  StreamVideoDebugTests Run only stream video debug tests"
     echo "  StreamVideoTests    Run only stream video tests"
@@ -188,6 +189,7 @@ RN_SUITES=(
     "ReactNativeEvidenceTests"
     "ReactNativeLiveTests"
     "ReactNativeStackCoverTests"
+    "ReactNativeStickyFooterTests"
     "ReactNativeLoginTests"
     "ReactNativeSystemPromptTests"
 )
@@ -266,7 +268,7 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
-        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DeviceControlTests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListDevicesTests|LogsTests|ParkedSheetTests|PresentationFixtureTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests|VerifyTests)
+        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DeviceControlTests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListDevicesTests|LogsTests|ParkedSheetTests|PresentationFixtureTests|PresentedSheetTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests|VerifyTests)
             TEST_FILTER="$1"
             shift
             ;;
@@ -1026,6 +1028,7 @@ run_tests() {
             "LogsTests"
             "ParkedSheetTests"
             "PresentationFixtureTests"
+            "PresentedSheetTests"
             "RecordVideoTests"
             "RunE2ETests"
             "StreamVideoDebugTests"

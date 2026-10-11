@@ -90,7 +90,7 @@ extension Screenshot: BatchReadable {
         guard let comparison = report.comparison else {
             return BatchReadResult(detail: .screenshot(report), output: report.path.map { $0 + "\n" })
         }
-        if comparison.outcome == .unchanged {
+        if !comparison.met {
             return BatchReadResult(detail: .screenshot(report), unmet: comparison.summary)
         }
         return BatchReadResult(detail: .screenshot(report), note: comparison.summary)

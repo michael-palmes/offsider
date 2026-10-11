@@ -79,6 +79,8 @@ struct ContentView: View {
             LongScrollTestView()
         case "parked-sheet-test":
             ParkedSheetTestView()
+        case "presented-sheet-test":
+            PresentedSheetTestView()
         case "environment-test":
             EnvironmentTestView()
         case "device-state":
@@ -145,7 +147,8 @@ struct MainMenuView: View {
             ("context-menu-test", "Context Menu Test", "Long press menu targeting"),
             ("modal-navigation-test", "Modal Navigation Test", "Modal route and nested navigation refresh"),
             ("long-scroll-test", "Long Scroll Test", "Dedicated long scroll coverage"),
-            ("parked-sheet-test", "Parked Sheet Test", "Closed sheet parked off screen")
+            ("parked-sheet-test", "Parked Sheet Test", "Closed sheet parked off screen"),
+            ("presented-sheet-test", "Presented Sheet Test", "Photo picker drawn by another process")
         ])
     ]
     

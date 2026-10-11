@@ -190,6 +190,8 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     case notFound(kind: String, value: String, suggestions: [SelectorText.NearMatch] = [], candidates: [MatchSummary] = [])
     case filteredByElementType(kind: String, value: String, elementType: String, roles: [UIRole], candidates: [MatchSummary] = [])
     case offScreen(selector: String, frames: [UIFrame], viewport: UIFrame)
+    /// On screen, but past an edge of the scroll view or list around it, where something outside it may take the tap.
+    case beyondScrollView(selector: String, frame: UIFrame, visible: UIFrame, side: OffScreenSide)
     case multipleMatches(count: Int, kind: String, value: String, hasUniqueIDs: Bool, candidates: [MatchSummary] = [], onScreenOnly: Bool = false, offScreenIgnored: Int = 0)
     case invalidFrame(reason: String)
     case multipleSwitchDescendants(count: Int, selectorDescription: String)
@@ -225,6 +227,8 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
             }
             let listed = Self.listed(frames.map(\.summary), separator: ", ")
             return "All \(frames.count) matches for \(selector) are off screen: \(listed) (the screen is \(viewport.sizeSummary)), for example on a hidden sheet or below the fold. \(advice) \(tip)"
+        case .beyondScrollView(let selector, let frame, let visible, let side):
+            return "Matched \(selector) is \(Self.place(side)); scroll first: its frame \(frame.summary) is outside the \(visible.summary) the scroll view shows, so a tap there would land on what lies outside it, such as a footer. Scroll it into view, wait with --wait-timeout, or pass --allow-offscreen to tap it anyway. \(tip)"
         case .multipleMatches(let count, let kind, let value, let hasUniqueIDs, let candidates, let onScreenOnly, let offScreenIgnored):
             var head = "Multiple (\(count)) accessibility elements matched \(kind) '\(value)'"
             if onScreenOnly { head += " on screen" }
@@ -256,7 +260,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     /// Missing, filtered out or off screen: a later tree may show the element, so `--wait-timeout` polls again.
     var isRetryable: Bool {
         switch self {
-        case .notFound, .filteredByElementType, .offScreen, .nthOutOfRange, .refinedOut, .inLogBoxToast:
+        case .notFound, .filteredByElementType, .offScreen, .beyondScrollView, .nthOutOfRange, .refinedOut, .inLogBoxToast:
             return true
         case .multipleMatches, .invalidFrame, .multipleSwitchDescendants:
             return false
@@ -264,8 +268,10 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     }
 
     var isOffScreen: Bool {
-        if case .offScreen = self { return true }
-        return false
+        switch self {
+        case .offScreen, .beyondScrollView: return true
+        default: return false
+        }
     }
 
     var userFacingDescription: String {
@@ -276,7 +282,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
         switch self {
         case .notFound, .nthOutOfRange, .refinedOut, .inLogBoxToast: return .selectorNotFound
         case .filteredByElementType: return .selectorFilteredByType
-        case .offScreen: return .targetOffScreen
+        case .offScreen, .beyondScrollView: return .targetOffScreen
         case .multipleMatches: return .selectorAmbiguous
         case .multipleSwitchDescendants: return .selectorAmbiguousSwitch
         case .invalidFrame: return .targetHasNoFrame
@@ -295,8 +301,18 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
         case .notFound(_, _, _, let candidates), .filteredByElementType(_, _, _, _, let candidates),
              .multipleMatches(_, _, _, _, let candidates, _, _), .refinedOut(_, let candidates):
             return candidates.prefix(Self.maxListed).map(\.failureCandidate)
-        case .offScreen, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange, .inLogBoxToast:
+        case .offScreen, .beyondScrollView, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange, .inLogBoxToast:
             return []
+        }
+    }
+
+    /// `below the fold of its scroll view`, or the edge it lies past.
+    private static func place(_ side: OffScreenSide) -> String {
+        switch side {
+        case .below: return "below the fold of its scroll view"
+        case .above: return "above the top of its scroll view"
+        case .left: return "past the left edge of its scroll view"
+        case .right: return "past the right edge of its scroll view"
         }
     }
 
@@ -473,11 +489,8 @@ struct AccessibilityTargetResolver {
         }
 
         var point = activationPoint(for: activationElement, frame: frame)
-        if !allowOffscreen, let viewport = UITree.viewport(in: roots), !viewport.contains(UIPoint(x: point.x, y: point.y)) {
-            guard frame.isVisible(in: viewport), let visible = frame.intersection(viewport) else {
-                throw ElementResolutionError.offScreen(selector: match.selectorDescription, frames: [frame], viewport: viewport)
-            }
-            point = (x: visible.center.x, y: visible.center.y)
+        if !allowOffscreen, let viewport = UITree.viewport(in: roots) {
+            point = try visiblePoint(point, of: activationElement, frame: frame, viewport: viewport, roots: roots, selector: match.selectorDescription)
         }
 
         var candidates: [UINode] = []
@@ -500,6 +513,42 @@ struct AccessibilityTargetResolver {
         )
     }
 
+    /// Less than this much of an element showing on either axis inside its scroll view is too little to tap safely.
+    static let minimumVisibleExtent = 8.0
+
+    /// `point`, or when it lies outside them the centre of what the screen and the top and bottom of every scroll view or list around the element show of `frame`; too little showing is off screen.
+    static func visiblePoint(
+        _ point: (x: Double, y: Double), of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode], selector: String
+    ) throws -> (x: Double, y: Double) {
+        guard frame.isVisible(in: viewport), var visible = frame.intersection(viewport) else {
+            throw ElementResolutionError.offScreen(selector: selector, frames: [frame], viewport: viewport)
+        }
+        let scrollRoles: Set<UIRole> = [.scrollView, .list]
+        for ancestor in ancestors(of: element, in: roots).reversed() where scrollRoles.contains(ancestor.role) && ancestor.hasPositiveFrame {
+            guard let shown = ancestor.frame?.intersection(viewport) else { continue }
+            // Only the top and bottom clip: a carousel may draw peeking cards past its sides.
+            let band = UIFrame(x: visible.x, y: shown.y, width: visible.width, height: shown.height)
+            let clipped = visible.intersection(band)
+            if clipped == visible { continue }
+            guard let clipped, clipped.height >= min(Self.minimumVisibleExtent, frame.height) else {
+                throw ElementResolutionError.beyondScrollView(selector: selector, frame: frame, visible: shown, side: side(of: frame, past: band))
+            }
+            visible = clipped
+        }
+        if visible.contains(UIPoint(x: point.x, y: point.y)) {
+            return point
+        }
+        return (x: visible.center.x, y: visible.center.y)
+    }
+
+    /// The edge of `shown` that `frame` lies or reaches past.
+    private static func side(of frame: UIFrame, past shown: UIFrame) -> OffScreenSide {
+        if let side = OffScreenSide.of(frame, in: shown) { return side }
+        if frame.y + frame.height > shown.y + shown.height { return .below }
+        if frame.y < shown.y { return .above }
+        return frame.x + frame.width > shown.x + shown.width ? .right : .left
+    }
+
     /// Drops candidates on a screen beneath a page, and on Android those its drawing order puts below the target.
     static func onTopCandidates(_ candidates: [UINode], over target: UINode, roots: [UINode], stack: ScreenStack) -> [UINode] {
         candidates.filter { candidate in
@@ -511,7 +560,7 @@ struct AccessibilityTargetResolver {
 
     /// Plausible occluders whose frame holds `point`; tree order is not z-order on either platform, so a real hit-test must confirm one.
     /// On Android a node in a lower window (the app beneath a keyboard) or not visible to the user cannot cover the target;
-    /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top.
+    /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top. A scroll indicator takes no taps, so it is never one.
     static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, roots: [UINode]) -> [UINode] {
         let related = family(of: target, in: roots) + family(of: matched, in: roots)
         let android = target.isAndroid
@@ -523,20 +572,21 @@ struct AccessibilityTargetResolver {
             return area.contains(point) || CoverJudge.reaches(area, target.frame)
         }
         var found: [UINode] = []
-        func visit(_ node: UINode, root: Int, underKeyboard: Bool) {
+        func visit(_ node: UINode, parent: UINode?, root: Int, underKeyboard: Bool) {
             let underKeyboard = underKeyboard || node.role == .keyboard
             let beneath = android && (root < targetRoot || node.androidVisibleToUser == false)
             if !beneath, reaches(node),
                isPlausibleOccluder(node, underKeyboard: underKeyboard),
+               !ScrollIndicator.isIndicator(node, parent: parent),
                !related.contains(where: { $0.isSameElement(as: node) }) {
                 found.append(node)
             }
             for child in node.children {
-                visit(child, root: root, underKeyboard: underKeyboard)
+                visit(child, parent: node, root: root, underKeyboard: underKeyboard)
             }
         }
         for (index, root) in roots.enumerated() {
-            visit(root, root: index, underKeyboard: false)
+            visit(root, parent: nil, root: index, underKeyboard: false)
         }
         return found
     }

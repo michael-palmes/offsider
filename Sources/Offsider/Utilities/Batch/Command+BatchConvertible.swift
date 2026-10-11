@@ -121,25 +121,13 @@ extension Tap: BatchConvertible {
 
 extension Swipe: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let swipeDuration = duration ?? 1.0
-        let swipeDelta = delta ?? 50.0
         let physicalPoints = try await context.backend.deviceCoordinates(
             for: [(x: startX, y: startY), (x: endX, y: endY)],
             tree: nil,
             on: context.device
         )
-        let physicalStart = physicalPoints[0]
-        let physicalEnd = physicalPoints[1]
-
-        let swipeEvent = InputEvent.swipe(
-            physicalStart.x,
-            yStart: physicalStart.y,
-            xEnd: physicalEnd.x,
-            yEnd: physicalEnd.y,
-            delta: swipeDelta,
-            duration: swipeDuration
-        )
-        return [.hidMergeable(InputEvent.delayed(swipeEvent, pre: preDelay, post: postDelay))]
+        let event = try swipeEvent(from: physicalPoints[0], to: physicalPoints[1])
+        return [.hidMergeable(InputEvent.delayed(event, pre: preDelay, post: postDelay))]
     }
 }
 
@@ -192,17 +180,10 @@ extension Touch: BatchConvertible {
 
 extension Button: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        try Self.checkAvailability(buttonType, on: context.backend.platform, device: context.device.rawValue)
-        if let duration {
-            let composite = InputEvent.composite([
-                .button(direction: .down, button: buttonType.hardwareButton),
-                .delay(duration),
-                .button(direction: .up, button: buttonType.hardwareButton)
-            ])
-            return [.hidMergeable(composite)]
-        }
-
-        return [.hidMergeable(.shortButtonPress(buttonType.hardwareButton))]
+        let platform = context.backend.platform
+        try Self.checkAvailability(buttonType, on: platform, device: context.device.rawValue, physicalIOS: context.device.isPhysicalIOSDevice)
+        try Self.checkDuration(buttonType, duration: duration, on: platform)
+        return [.hidMergeable(Self.pressEvent(buttonType, duration: duration, on: platform))]
     }
 }
 

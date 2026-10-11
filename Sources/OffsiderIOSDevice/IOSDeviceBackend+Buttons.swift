@@ -26,6 +26,9 @@ extension HardwareButton {
         if self == .applePay {
             throw IOSDeviceError.notSupportedOnDevice("The apple-pay button", instead: "Press the side button twice with `offsider button side-button` instead.")
         }
+        if self == .appSwitch {
+            throw IOSDeviceError.notSupportedOnDevice("The app-switch button", instead: "iOS buttons: home, lock, side-button, siri.")
+        }
         throw IOSDeviceError(.unsupportedButton, "The \(rawValue) button is Android only. iOS buttons: home, lock, side-button, siri.")
     }
 }

@@ -24,6 +24,7 @@ import { SearchableTestScreen } from './SearchableTestScreen';
 import { SheetTestScreen } from './SheetTestScreen';
 import { SliderValueTestScreen } from './SliderValueTestScreen';
 import { StackTestScreen } from './StackTestScreen';
+import { StickyFooterTestScreen } from './StickyFooterTestScreen';
 import { SwipeTestScreen } from './SwipeTestScreen';
 import { SwitchTestScreen } from './SwitchTestScreen';
 import { TabViewTestScreen } from './TabViewTestScreen';
@@ -57,6 +58,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'context-menu-test': ContextMenuTestScreen,
   'modal-navigation-test': ModalNavigationTestScreen,
   'long-scroll-test': LongScrollTestScreen,
+  'sticky-footer-test': StickyFooterTestScreen,
   'parked-sheet-test': ParkedSheetTestScreen,
   'stack-test': StackTestScreen,
   'overlay-test': OverlayTestScreen,

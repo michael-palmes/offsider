@@ -22,13 +22,15 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
     public var diff: String?
     public var masked: Int?
     public var changed: Bool?
+    /// The outcome a compare expected, `changed` or `unchanged`.
+    public var expect: String?
     public var entries: Int?
     public var redacted: Int?
 
     public init(
         n: Int? = nil, file: String? = nil, command: String, step: Int? = nil, line: String? = nil, device: String? = nil, platform: String? = nil,
         time: Date, ms: Int, exit: Int, reason: String? = nil, args: [String]? = nil, output: String? = nil, diff: String? = nil,
-        masked: Int? = nil, changed: Bool? = nil, entries: Int? = nil, redacted: Int? = nil
+        masked: Int? = nil, changed: Bool? = nil, expect: String? = nil, entries: Int? = nil, redacted: Int? = nil
     ) {
         self.n = n
         self.file = file
@@ -46,6 +48,7 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
         self.diff = diff
         self.masked = masked
         self.changed = changed
+        self.expect = expect
         self.entries = entries
         self.redacted = redacted
     }
@@ -72,6 +75,7 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
             ("diff", .optional(diff, OrderedJSON.string)),
             ("masked", .optional(masked, OrderedJSON.integer)),
             ("changed", .optional(changed, OrderedJSON.bool)),
+            ("expect", .optional(expect, OrderedJSON.string)),
             ("entries", .optional(entries, OrderedJSON.integer)),
             ("redacted", .optional(redacted, OrderedJSON.integer)),
         ])

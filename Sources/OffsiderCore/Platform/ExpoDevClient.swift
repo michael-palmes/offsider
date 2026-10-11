@@ -14,6 +14,8 @@ public protocol ExpoDevClientOpening: DeviceBackend {
     /// The host the device reaches Metro on: loopback, or the emulator's alias for the Mac.
     func metroHost(port: Int, on id: DeviceID) async throws -> String
     func openURL(_ url: String, appID: String, on id: DeviceID) async throws
+    /// Stops the app, as `rn prepare` does, so the next link opens it fresh; an app that is not running is no error.
+    func stopApp(_ appID: String, on id: DeviceID) async throws
 }
 
 public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError, Equatable, Sendable {
@@ -189,7 +191,8 @@ public enum ExpoDevClient {
         return nil
     }
 
-    static func shellQuote(_ text: String) -> String {
+    /// One single-quoted shell word.
+    public static func shellQuote(_ text: String) -> String {
         "'" + text.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 
@@ -285,6 +288,16 @@ public enum ExpoDevLauncher {
         return nodes.first { node in
             guard node.role == .button, node.label == "Open", let frame = node.frame else { return false }
             return box.contains(frame.center)
+        }
+    }
+
+    /// An application holding only unlabelled containers, as a dev client shows when its JavaScript never drew; a bare application element is still launching.
+    public static func isBlank(_ tree: UITree) -> Bool {
+        guard let app = tree.roots.flatMap({ $0.flattened() }).first(where: { $0.role == .application }) else { return false }
+        let containers: Set<UIRole> = [.window, .group, .other, .scrollView, .list]
+        let inside = app.flattened().dropFirst()
+        return !inside.isEmpty && inside.allSatisfy { node in
+            containers.contains(node.role) && [node.label, node.value].allSatisfy { ($0 ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         }
     }
 

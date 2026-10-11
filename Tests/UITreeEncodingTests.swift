@@ -32,7 +32,10 @@ struct UITreeEncodingTests {
           "context": {
             "window": null,
             "keyboard": false,
-            "logbox": null
+            "logbox": null,
+            "presented": null,
+            "staleFrame": null,
+            "hidden": null
           },
           "roots": []
         }

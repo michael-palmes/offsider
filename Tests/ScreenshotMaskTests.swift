@@ -184,6 +184,44 @@ struct ScreenshotMaskTests {
         }
     }
 
+    @Test("a label on both a covered screen and the page over it is painted on both, and the covered one is counted in maskedBeneath")
+    func masksBeneathAPage() async throws {
+        func relabel(_ node: UINode) -> UINode {
+            var copy = node
+            if node.id == "stack-test-full-close-later" { copy.label = "Stack Depth: 1" }
+            copy.children = node.children.map(relabel)
+            return copy
+        }
+        var tree = try TreeGoldens.tree(of: TreeGoldens.Golden(platform: .android, screen: "stack-test@full"))
+        tree.roots = tree.roots.map(relabel)
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        let backend = FakeDeviceBackend(
+            platform: .android, trees: [tree],
+            screenshots: [try ScreenImage.encode(TestImages.make(width: 1080, height: 2424, background: 255), as: .png)],
+            screen: UIScreenInfo(width: 411.4, height: 923.4, scale: 2.625, rotation: .portrait)
+        )
+        let path = Self.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let command = try Screenshot.parse(["--mask-label", "Stack Depth: 1", "--output", path, "--device", device.rawValue])
+        let report = try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: try command.maskPlan(environment: [:]))
+        let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
+
+        #expect(report.maskedBy == [.label: 2])
+        #expect(report.maskedBeneath == [.label: 1])
+        #expect(report.jsonLine().contains(#""masked":2,"maskedBy":{"label":2},"maskedBeneath":{"label":1}"#))
+        #expect(Self.pixel(image, 79, 433) == Self.black)
+        #expect(Self.pixel(image, 394, 315) == Self.black)
+        #expect(Self.pixel(image, 538, 1575) == Self.white)
+    }
+
+    @Test("masks on a tree with no covered screen report no maskedBeneath")
+    func noMaskedBeneathWithoutAStack() async throws {
+        let result = try await Self.capture(["--mask-secure"], on: try Self.backend([SecureTextTests.passwordField()]))
+        defer { try? FileManager.default.removeItem(atPath: result.path) }
+        #expect(result.report.maskedBeneath.isEmpty)
+        #expect(!result.report.jsonLine().contains("maskedBeneath"))
+    }
+
     @Test("a plain screenshot reads no tree and reports no masks")
     func plainReadsNoTree() async throws {
         let backend = try Self.backend([SecureTextTests.passwordField()])

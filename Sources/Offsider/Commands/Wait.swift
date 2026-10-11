@@ -166,7 +166,7 @@ struct Wait: AsyncParsableCommand {
         let locking = readsTree && DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
         let outcome = try await watchdog.guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
-            try await evaluate(on: route, logger: logger, onPrepared: ready)
+            try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
         }
         try Self.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
     }
@@ -178,19 +178,23 @@ struct Wait: AsyncParsableCommand {
     /// The longest this wait may legitimately take before the watchdog's grace.
     var watchdogBound: TimeInterval { seconds ?? timeout }
 
-    /// Waits on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree reads.
+    /// Waits on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree reads; `probesOnMiss` reads the screen's centre once when a selector is not met.
     @MainActor
     func evaluate(
         on route: DeviceRouter.Route,
         logger: OffsiderLogger,
         tree: TreeSource? = nil,
         clock: PollClock = .live,
+        probesOnMiss: Bool = false,
         onPrepared: @Sendable () -> Void = {}
     ) async throws -> WaitOutcome {
         appOption.apply(to: route)
         try await route.backend.prepare()
         onPrepared()
-        let sources = try await liveSources(on: route, tree: tree, clock: clock)
+        var sources = try await liveSources(on: route, tree: tree, clock: clock)
+        if probesOnMiss {
+            sources.probe = Self.presentationProbe(on: route)
+        }
         logger.info().log("Waiting for \(target)")
         let gate = settled ? await Self.settleGate(for: route) : nil
         return try await WaitLoop.run(condition(gate: gate), timeout: timeout, interval: pollInterval, sources: sources)
@@ -292,6 +296,12 @@ struct Wait: AsyncParsableCommand {
     }
 
     typealias TreeSource = @MainActor () async throws -> UITree
+
+    /// The one read at the screen's centre that explains a missed selector, for the standalone command only.
+    @MainActor
+    static func presentationProbe(on route: DeviceRouter.Route) -> @MainActor (UITree) async -> PresentationFinding? {
+        { tree in await PresentationCheck.finding(for: tree, backend: route.backend, device: route.device) }
+    }
 
     @MainActor
     private func liveSources(on route: DeviceRouter.Route, tree: TreeSource?, clock: PollClock) async throws -> WaitSources {

@@ -20,8 +20,28 @@ struct SimulatorOrientationReader {
         }
     }
 
+    /// Readings one scope shares, such as a gesture preset sizing itself to the screen and then mapping its points; nil reads every time.
+    @TaskLocal static var sharedReadings: SharedReadings?
+
+    @MainActor
+    final class SharedReadings {
+        fileprivate var values: [String: SimulatorOrientation] = [:]
+    }
+
     /// `screenID` is the active display's, from the device type profile; 1 on a device with one display.
     static func currentOrientation(of simulator: FBSimulator, screenID: Int = 1, logger: OffsiderLogger) async -> SimulatorOrientation? {
+        let key = "\(simulator.udid)#\(screenID)"
+        if let known = sharedReadings?.values[key] {
+            return known
+        }
+        let read = await probeOrientation(of: simulator, screenID: screenID, logger: logger)
+        if let read {
+            sharedReadings?.values[key] = read
+        }
+        return read
+    }
+
+    private static func probeOrientation(of simulator: FBSimulator, screenID: Int, logger: OffsiderLogger) async -> SimulatorOrientation? {
         await Timings.measure("orientation") {
             do {
                 try FBSimulatorControlFrameworkLoader.xcodeFrameworks.loadPrivateFrameworks(logger)

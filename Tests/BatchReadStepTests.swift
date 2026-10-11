@@ -324,6 +324,28 @@ struct BatchReadStepTests {
         #expect(((record["error"] as? [String: Any])?["message"] as? String)?.hasPrefix("Unchanged: ") == true)
     }
 
+    @Test("a screenshot --compare --expect unchanged step passes an unchanged screen and fails a changed one with exit 5")
+    func expectUnchangedCompare() async throws {
+        let directory = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let baseline = directory.appendingPathComponent("baseline.png")
+        try Self.png().write(to: baseline)
+        let step = "screenshot --compare '\(baseline.path)' --expect unchanged"
+
+        let still = Captured()
+        try await Self.run([step], on: FakeDeviceBackend(trees: [], screenshots: [try Self.png()]), json: true, captured: still)
+        let passed = try still.records()[0]
+        #expect(passed["changed"] as? Bool == false && passed["expected"] as? String == "unchanged" && passed["met"] as? Bool == true)
+
+        let moved = Captured()
+        let changedPNG = try ScreenImage.encode(TestImages.make(width: 40, height: 40, marked: [(5, 5)]), as: .png)
+        let code = try await Self.exitCode([step], on: FakeDeviceBackend(trees: [], screenshots: [changedPNG]), json: true, captured: moved)
+        #expect(code == 5)
+        let failed = try moved.records()[0]
+        #expect(failed["changed"] as? Bool == true && failed["met"] as? Bool == false)
+        #expect(((failed["error"] as? [String: Any])?["message"] as? String)?.hasSuffix(", expected unchanged") == true)
+    }
+
     @Test("a tap step's own --wait-timeout overrides the batch-level value")
     func stepWaitTimeoutOverrides() async throws {
         let trees = [FakeUI.tree([]), FakeUI.tree([]), Self.closed]

@@ -26,7 +26,11 @@ extension HardwareButton {
 
     func requireHIDButton() throws -> FBSimulatorHIDButton {
         guard let hidButton else {
-            let name = ButtonType.allCases.first { $0.hardwareButton == self }?.rawValue ?? rawValue
+            let button = ButtonType.allCases.first { $0.hardwareButton == self }
+            let name = button?.rawValue ?? rawValue
+            if button?.platforms.contains(.ios) == true {
+                throw CLIError(errorDescription: "The \(name) button has no simulator HID button of its own. Run `offsider button \(name)`, which presses Home twice.", reason: .unsupportedButton)
+            }
             throw CLIError(errorDescription: "The \(name) button is Android only. iOS buttons: \(ButtonType.names(on: .ios)).", reason: .unsupportedButton)
         }
         return hidButton

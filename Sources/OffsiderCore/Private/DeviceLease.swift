@@ -212,6 +212,24 @@ extension DeviceStateReport {
         ]).rendered(compact: true)
     }
 
+    /// `lease check`: whether this session may use the device, the lease that decides it, and the error when it may not.
+    public static func leaseCheck(platform: DevicePlatform, device: String, lease: DeviceLease?, mine: Bool, ownerEnded: Bool, error: ErrorPayload?) -> String {
+        var members: [(String, OrderedJSON)] = [
+            ("version", .integer(1)),
+            ("action", .string("check")),
+            ("platform", .string(platform.rawValue)),
+            ("device", .string(device)),
+            ("available", .bool(error == nil)),
+            ("mine", .bool(mine)),
+            ("ownerEnded", .bool(ownerEnded)),
+            ("lease", .optional(lease) { leaseObject($0) }),
+        ]
+        if let error {
+            members.append(("error", error.jsonValue))
+        }
+        return OrderedJSON.object(members).rendered(compact: true)
+    }
+
     public static func leases(_ leases: [LeasedDevice]) -> String {
         OrderedJSON.object([
             ("version", .integer(1)),

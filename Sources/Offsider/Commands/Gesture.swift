@@ -13,7 +13,9 @@ struct Gesture: AsyncParsableCommand {
         Available presets:
           scroll-up, scroll-down, scroll-left, scroll-right
           swipe-from-left-edge, swipe-from-right-edge
-          swipe-from-top-edge, swipe-from-bottom-edge
+          swipe-from-top-edge (Notification Centre, Android's notification shade)
+          swipe-from-top-right-edge (Control Centre)
+          swipe-from-bottom-edge (home on Android)
           long-press-drag (needs --x, --y, --to-x and --to-y)
 
         Scroll presets are named for the finger's direction, not the content's:
@@ -22,10 +24,15 @@ struct Gesture: AsyncParsableCommand {
           scroll-left: swipe left, moving content left to reveal what is to the right
           scroll-right: swipe right, moving content right to reveal what is to the left
 
-        Presets are sized to the foreground app's frame from the accessibility
-        tree and follow the device's orientation, like swipe coordinates.
+        Top and bottom swipes start 2 points inside the screen's edge, clear of a
+        Dynamic Island; left and right swipes start 20 points inside the foreground
+        app's frame, where its back swipe begins, and scrolls run through its middle.
+        All follow the device's orientation, like swipe coordinates.
         --screen-width and --screen-height override that size, in points
         (dp on Android) as the screen is currently oriented.
+
+        On an iOS simulator a swipe up from the bottom edge reaches the app, not the
+        system: use `button home` or `button app-switch` to leave the app.
 
         long-press-drag presses at --x,--y, holds for --hold-ms (default 800), then drags to --to-x,--to-y \
         over --duration (default 0.6 s), for lists that reorder or tiles that move only after a long press.
@@ -34,6 +41,7 @@ struct Gesture: AsyncParsableCommand {
           offsider gesture scroll-up --device DEVICE_ID
           offsider gesture long-press-drag --x 200 --y 300 --to-x 200 --to-y 600 --device DEVICE_ID
           offsider gesture scroll-down --duration 1.5 --device DEVICE_ID
+          offsider gesture swipe-from-top-right-edge --device DEVICE_ID
           offsider gesture swipe-from-left-edge --screen-width 430 --screen-height 932 --device DEVICE_ID
         """
     )
@@ -41,10 +49,10 @@ struct Gesture: AsyncParsableCommand {
     @Argument(help: "The gesture preset to perform; scroll presets name the finger's direction (scroll-up reveals what is below).")
     var preset: GesturePreset
 
-    @Option(name: .customLong("screen-width"), help: "Screen width in points (dp on Android) in the current orientation (default: the app's frame width).")
+    @Option(name: .customLong("screen-width"), help: "Screen width in points (dp on Android) in the current orientation (default: the screen's for top and bottom swipes, else the app frame's).")
     var screenWidth: Double?
 
-    @Option(name: .customLong("screen-height"), help: "Screen height in points (dp on Android) in the current orientation (default: the app's frame height).")
+    @Option(name: .customLong("screen-height"), help: "Screen height in points (dp on Android) in the current orientation (default: the screen's for top and bottom swipes, else the app frame's).")
     var screenHeight: Double?
     
     @Option(name: .customLong("duration"), help: "Duration of the gesture in seconds (uses preset default if not specified).")
@@ -151,7 +159,10 @@ struct Gesture: AsyncParsableCommand {
     @MainActor
     func presetEvent(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID, logger: OffsiderLogger) async throws -> InputEvent {
         guard preset.kind == .longPressDrag else {
-            return try await presetSwipe(tree: try await tree(), backend: backend, device: device, logger: logger)
+            // Sizing to the screen and mapping the points then read the simulator's orientation once.
+            return try await SimulatorOrientationReader.$sharedReadings.withValue(SimulatorOrientationReader.SharedReadings()) {
+                try await presetSwipe(tree: try await tree(), backend: backend, device: device, logger: logger)
+            }
         }
         return try await presetDrag(backend: backend, device: device)
     }
@@ -197,7 +208,7 @@ struct Gesture: AsyncParsableCommand {
         logger.info().log("Gesture completed successfully")
     }
 
-    /// The preset as a swipe in the backend's input space, sized to the app frame in `tree`.
+    /// The preset as a swipe in the backend's input space: top and bottom swipes sized to the screen, the rest to the app frame in `tree`.
     @MainActor
     func presetSwipe(
         tree: UITree,
@@ -205,13 +216,15 @@ struct Gesture: AsyncParsableCommand {
         device: DeviceID,
         logger: OffsiderLogger
     ) async throws -> InputEvent {
-        guard let applicationFrame = tree.applicationFrame else {
+        let screenSize = preset.spansScreen && (screenWidth == nil || screenHeight == nil)
+            ? await Timings.measure("screen-size") { try? await backend.screenSize(for: device) }
+            : nil
+        guard let screen = preset.frame(screen: screenSize, viewport: tree.viewport, applicationFrame: tree.applicationFrame, width: screenWidth, height: screenHeight) else {
             throw CLIError(
                 errorDescription: "Unable to size the \(preset.rawValue) gesture because the accessibility tree has no application frame. Check an app is in the foreground, or run `offsider doctor --device \(device.rawValue)`.",
                 reason: .treeReadFailed
             )
         }
-        let screen = GesturePreset.screen(applicationFrame: applicationFrame, width: screenWidth, height: screenHeight)
         let (start, end) = preset.endpoints(in: screen)
         let gestureDuration = duration ?? preset.defaultDuration
         let gestureDelta = delta ?? preset.defaultDelta

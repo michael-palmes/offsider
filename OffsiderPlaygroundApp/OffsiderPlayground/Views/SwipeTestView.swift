@@ -11,6 +11,7 @@ struct SwipeTestView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var swipePaths: [SwipePath] = []
     @State private var currentPath: [CGPoint] = []
+    @State private var moves: [(time: Date, point: CGPoint)] = []
     @State private var swipeCount = 0
     
     var body: some View {
@@ -35,6 +36,7 @@ struct SwipeTestView: View {
                                 
                                 // Using global coordinate space, location is already in screen coordinates
                                 currentPath.append(value.location)
+                                moves.append((value.time, value.location))
                             }
                             .onEnded { value in
                                 if currentPath.count > 1 {
@@ -47,12 +49,14 @@ struct SwipeTestView: View {
                                         endPoint: endPoint,
                                         pathPoints: currentPath,
                                         duration: 0.5,
-                                        direction: calculateDirection(from: startPoint, to: endPoint)
+                                        direction: calculateDirection(from: startPoint, to: endPoint),
+                                        release: Self.release(moves: moves, end: value.location, at: value.time)
                                     )
                                     swipePaths.append(path)
                                     swipeCount += 1
                                 }
                                 currentPath.removeAll()
+                                moves.removeAll()
                             }
                     )
                 
@@ -129,6 +133,12 @@ struct SwipeTestView: View {
                                     .font(.subheadline)
                                     .foregroundColor(.green)
                                     .accessibilityIdentifier("last-swipe-direction")
+
+                                Text("Release: \(lastSwipe.release)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .accessibilityIdentifier("last-swipe-release")
+                                    .accessibilityValue(lastSwipe.release)
                             }
                         } else {
                             Text("No swipes yet - draw with your finger")
@@ -166,6 +176,12 @@ struct SwipeTestView: View {
         .accessibilityIdentifier("swipe-test-screen")
     }
     
+    /// "still" when the finger moved under 5 points in the 100 ms before it lifted, else "moving".
+    static func release(moves: [(time: Date, point: CGPoint)], end: CGPoint, at time: Date) -> String {
+        let before = moves.last { $0.time <= time.addingTimeInterval(-0.1) }?.point ?? moves.first?.point ?? end
+        return hypot(end.x - before.x, end.y - before.y) < 5 ? "still" : "moving"
+    }
+
     private func calculateDirection(from start: CGPoint, to end: CGPoint) -> String {
         let deltaX = end.x - start.x
         let deltaY = end.y - start.y
@@ -198,6 +214,7 @@ struct SwipePath: Identifiable {
     let pathPoints: [CGPoint]
     let duration: Double
     let direction: String
+    let release: String
     let timestamp = Date()
 }
 

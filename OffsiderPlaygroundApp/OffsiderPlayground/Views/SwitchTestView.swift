@@ -4,6 +4,12 @@ import UIKit
 struct SwitchTestView: View {
     @State private var swiftUIWeatherAlertsEnabled = false
     @State private var uiKitWeatherAlertsEnabled = false
+    @State private var slowCommitOn = false
+    @State private var slowCommitPresses = 0
+    @State private var slowCommitState = "Slow Commit Alerts: Off, presses 0"
+
+    /// How long the slow switch waits before it flips, as one that waits for a server would; longer than a verify window.
+    static let slowCommitDelay: TimeInterval = 4
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -41,12 +47,31 @@ struct SwitchTestView: View {
                     .accessibilityValue(uiKitWeatherAlertsEnabled ? "On" : "Off")
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Slow Commit Alerts", isOn: Binding(get: { slowCommitOn }, set: { _ in pressSlowCommit() }))
+                    .accessibilityIdentifier("slow-commit-switch")
+                    .accessibilityLabel("Slow Commit Alerts")
+
+                Text(slowCommitState)
+                    .font(.headline)
+                    .accessibilityIdentifier("slow-commit-state")
+            }
+
             Spacer()
         }
         .padding()
         .navigationTitle("Switch Test")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("switch-test-screen")
+    }
+
+    /// Each press flips the switch only after the delay, and the readout names the presses so far, so a second press shows.
+    private func pressSlowCommit() {
+        slowCommitPresses += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.slowCommitDelay) {
+            slowCommitOn.toggle()
+            slowCommitState = "Slow Commit Alerts: \(slowCommitOn ? "On" : "Off"), presses \(slowCommitPresses)"
+        }
     }
 }
 
