@@ -157,13 +157,17 @@ extension CredentialReport {
                 }
                 return ([style.bold("🔐 \(app) · \(count)")] + rows + (shared + here).map { "   " + style.dim($0) }).joined(separator: "\n")
             }
-            guard saved, let username else {
+            guard saved else {
                 let nameArgument = key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
                 return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set\(nameArgument) --app \(app)", style: style)].joined(separator: "\n")
             }
-            let details = ["👤 \(username)"] + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
+            let details = (username.map { ["👤 \($0)"] } ?? []) + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
             let rows = Self.styledDetails(context ?? .empty, signIns: key.flatMap { signIns[$0] } ?? [], indent: "   ", style: style)
-            return ([style.green(style.bold("✅ The \(named) is saved for \(app)")), "   " + style.dim(details.joined(separator: "  "))] + rows + here.map { "   " + style.dim($0) }).joined(separator: "\n")
+            let head = filter.isEmpty
+                ? style.green(style.bold("✅ The \(named) is saved for \(app)"))
+                : style.green(style.bold("🎯 The \(named) for \(app) matches --where \(filter.map(\.rawValue).joined(separator: " "))"))
+            let detailLine = details.isEmpty ? [] : ["   " + style.dim(details.joined(separator: "  "))]
+            return ([head] + detailLine + rows + here.map { "   " + style.dim($0) }).joined(separator: "\n")
         }
     }
 

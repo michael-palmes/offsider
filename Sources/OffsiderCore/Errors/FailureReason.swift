@@ -69,12 +69,14 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"
     case targetOffScreen = "target_off_screen"
+    case userNotFound = "user_not_found"
 
     case notVerified = "not_verified"
     case conditionNotMet = "condition_not_met"
 
     case selectorAmbiguous = "selector_ambiguous"
     case selectorAmbiguousSwitch = "selector_ambiguous_switch"
+    case userAmbiguous = "user_ambiguous"
 
     case deviceNotFound = "device_not_found"
     case deviceNotBooted = "device_not_booted"
@@ -115,11 +117,11 @@ public enum FailureReason: String, CaseIterable, Sendable {
 
     public var exitCode: OffsiderExitCode {
         switch self {
-        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch:
+        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch, .userNotFound:
             return .selectorNotFound
         case .notVerified, .conditionNotMet, .focusNotConfirmed, .textNotAccepted:
             return .unverified
-        case .selectorAmbiguous, .selectorAmbiguousSwitch:
+        case .selectorAmbiguous, .selectorAmbiguousSwitch, .userAmbiguous:
             return .ambiguousSelector
         case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
              .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff:

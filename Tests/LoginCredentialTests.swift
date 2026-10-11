@@ -76,23 +76,97 @@ struct LoginCredentialTests {
         #expect(!set.contains(password))
     }
 
-    @Test("login with several keys lists the keys and not the usernames")
+    /// The key `login` would pick, from attributes only, as on a device of `platform`.
+    private func chosen(_ store: MemoryLoginCredentialStore, app: String = "com.example.app", name: String? = nil, where filter: [String] = [], platform: DevicePlatform = .ios) throws -> String {
+        let tags = try filter.map { try #require(LoginTag(rawValue: $0)) }
+        let entries = try store.entries(app: try store.canonical(of: app))
+        return try LoginCommand.resolveLogin(name, where: tags, app: app, entries: entries, device: DeviceID(rawValue: "DEVICE", platform: platform)).key
+    }
+
+    @Test("login with several keys and no default lists the names and not the usernames")
     func severalKeys() throws {
         let store = MemoryLoginCredentialStore()
         try store.save(try #require(LoginCredential(username: username, password: password)), app: "com.example.app", key: "dev", isDefault: false)
         try store.save(try #require(LoginCredential(username: "bea@example.com", password: password)), app: "com.example.app", key: "qa", isDefault: false)
         do {
-            _ = try LoginCommand.resolveKey(nil, app: "com.example.app", canonical: "com.example.app", device: "DEVICE", store: store)
+            _ = try chosen(store)
             Issue.record("expected the keys to be listed")
         } catch let error as CLIError {
-            #expect(error.reason == .selectorAmbiguous)
+            #expect(error.reason == .userAmbiguous)
+            #expect(error.exitCode == .ambiguousSelector)
             #expect(error.failureMessage.contains("dev"))
             #expect(error.failureMessage.contains("qa"))
+            #expect(error.users.map(\.name) == ["dev", "qa"])
             #expect(!error.failureMessage.contains(username))
             #expect(!error.failureMessage.contains(password))
             #expect(!error.failureMessage.contains("login default"))
         }
-        #expect(try LoginCommand.resolveKey(nil, app: "com.example.app", canonical: "com.example.app", device: "DEVICE", store: one(store)) == "dev")
+        #expect(store.decrypts == 0)
+        #expect(try chosen(one(store)) == "dev")
+    }
+
+    @Test("login --where picks the one login with every tag, and none or several name the logins but never a username")
+    func whereSelection() throws {
+        let store = try savedPair()
+        let tag = { (raw: String) in try #require(LoginTag(rawValue: raw)) }
+        #expect(try store.setContext(LoginContext(about: "Admin on staging", tags: [try tag("role=admin"), try tag("env=staging"), try tag("platform=ios")]), app: "com.example.app", key: "qa-admin"))
+        #expect(try store.setContext(LoginContext(tags: [try tag("role=member"), try tag("env=staging"), try tag("platform=android")]), app: "com.example.app", key: "qa-member"))
+        #expect(try chosen(store, where: ["role=member"]) == "qa-member")
+        #expect(try chosen(store, where: ["Role=Admin", "env=staging"]) == "qa-admin")
+
+        let none = #expect(throws: CLIError.self) { try chosen(store, where: ["role=owner"]) }
+        #expect(none?.reason == .userNotFound)
+        #expect(none?.exitCode == .selectorNotFound)
+        #expect(none?.users.count == 2)
+        #expect(none?.hint == "offsider credential status --app com.example.app --json")
+
+        let several = #expect(throws: CLIError.self) { try chosen(store, where: ["env=staging"], platform: .android) }
+        #expect(several?.reason == .userAmbiguous)
+        #expect(several?.hint == "offsider login --where env=staging --where platform=android --device DEVICE")
+        #expect(several?.users == [FailureUser(name: "qa-admin", tags: ["env=staging", "platform=ios", "role=admin"], about: "Admin on staging"), FailureUser(name: "qa-member", tags: ["env=staging", "platform=android", "role=member"], about: nil)])
+        for failure in [none, several].compactMap({ $0 }) {
+            let envelope = ErrorEnvelope(command: "login", error: ErrorPayload(failure)).jsonLine()
+            #expect(!envelope.contains("@example.com"))
+            #expect(!envelope.contains(password))
+        }
+
+        #expect(try store.setContext(LoginContext(tags: [try tag("env=staging")]), app: "com.example.app", key: "qa-member"))
+        let noRefinement = #expect(throws: CLIError.self) { try chosen(store, where: ["env=staging"], platform: .android) }
+        #expect(noRefinement?.hint == "offsider credential status --app com.example.app --json")
+        #expect(store.decrypts == 0)
+    }
+
+    @Test("--where goes with login or credential status and never beside a name, and login's version 1 JSON gains name, tags and where")
+    func whereUsageAndReport() throws {
+        let app = ["--app", "com.example.app"]
+        #expect(throws: (any Error).self) { try LoginCommand.parse(["qa", "--where", "role=admin", "--device", "DEVICE"]) }
+        #expect(throws: (any Error).self) { try LoginCommand.parse(["--where", "Role Admin", "--device", "DEVICE"]) }
+        #expect(try LoginCommand.parse(["--where", "role=admin", "--where", "credit", "--device", "DEVICE"]).filters == ["role=admin", "credit"])
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["status", "qa", "--where", "role=admin"] + app) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["set", "qa", "--where", "role=admin"] + app) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["describe", "qa", "--state", "x", "--where", "role=admin"] + app) }
+        _ = try CredentialCommand.parse(["status", "--where", "role=admin"] + app)
+
+        let admin = try #require(LoginTag(rawValue: "role=admin"))
+        let report = LoginReport(app: "com.example.app", key: "qa-admin", turnstile: .absent, submitLabel: "Sign in", tags: [admin], filter: [admin])
+        #expect(report.jsonLine() == #"{"version":1,"app":"com.example.app","key":"qa-admin","identity":"filled","password":"filled","submitted":true,"name":"qa-admin","tags":["role=admin"],"where":["role=admin"]}"#)
+        #expect(report.textLine().hasPrefix("com.example.app as qa-admin (chosen by --where role=admin): "))
+        let unnamed = LoginReport(app: "com.example.app", key: LoginCredential.defaultAccountKey, turnstile: .off, submitLabel: nil).jsonLine()
+        #expect(unnamed.hasSuffix(#""key":"*","identity":"filled","password":"filled","submitted":true,"name":"default","tags":[]}"#))
+    }
+
+    @Test("status --where is a dry run of login --where: one match prints it without a username")
+    func statusWhere() throws {
+        let store = try savedPair()
+        #expect(try store.setContext(LoginContext(tags: [try #require(LoginTag(rawValue: "role=member"))]), app: "com.example.app", key: "qa-member"))
+        let filter = [try #require(LoginTag(rawValue: "role=member"))]
+        func status(_ filter: [LoginTag]) throws -> String {
+            try CredentialCommand.perform(.status, app: "com.example.app", key: nil, where: filter, json: true, store: store) { try #require(LoginCredential(username: "x", password: "x")) }
+        }
+        #expect(try status(filter) == #"{"version":2,"action":"status","app":"com.example.app","where":["role=member"],"name":"qa-member","saved":true,"default":false,"tags":["role=member"],"signedIn":[]}"#)
+        let none = #expect(throws: CLIError.self) { try status([try #require(LoginTag(rawValue: "role=owner"))]) }
+        #expect(none?.exitCode == .selectorNotFound)
+        #expect(store.decrypts == 0)
     }
 
     @Test("the first saved login is the default, and a joined bundle id uses it")
@@ -102,7 +176,7 @@ struct LoginCredentialTests {
         let saved = try CredentialCommand.perform(.set, app: "com.example.app", key: "dev", json: false, store: store) { credential }
         #expect(saved.contains("default"))
         #expect(!saved.contains(password))
-        #expect(try LoginCommand.resolveKey(nil, app: "com.example.app", canonical: "com.example.app", device: "DEVICE", store: store) == "dev")
+        #expect(try chosen(store) == "dev")
 
         let added = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa", json: false, store: store) {
             try #require(LoginCredential(username: "bea@example.com", password: password))
@@ -110,7 +184,7 @@ struct LoginCredentialTests {
         #expect(added.contains("qa"))
         #expect(!added.contains("default login"))
         #expect(try store.defaultKey(app: "com.example.app") == "dev")
-        #expect(try LoginCommand.resolveKey(nil, app: "com.example.app", canonical: "com.example.app", device: "DEVICE", store: store) == "dev")
+        #expect(try chosen(store) == "dev")
 
         let linked = try CredentialCommand.join(foreground: "com.example.android", requested: nil, json: false, store: store)
         #expect(linked.contains("com.example.android"))
@@ -119,7 +193,7 @@ struct LoginCredentialTests {
         #expect(!linked.contains(username))
         let canonical = try store.canonical(of: "com.example.android")
         #expect(canonical == "com.example.app")
-        #expect(try LoginCommand.resolveKey(nil, app: "com.example.android", canonical: canonical, device: "DEVICE", store: store) == "dev")
+        #expect(try chosen(store, app: "com.example.android") == "dev")
         #expect(try store.load(app: canonical, key: "dev")?.username == username)
         #expect(try store.load(app: "com.example.android", key: "dev") == nil)
 

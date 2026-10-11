@@ -28,6 +28,8 @@ public struct CredentialReport: Equatable, Sendable {
     public var signIns: [String: [LoginSignIn]]
     /// The raw key last signed in on the device in hand.
     public var signedInHere: String?
+    /// The `--where` tags `status` chose by, empty when none were passed.
+    public var filter: [LoginTag]
 
     public init(
         action: String,
@@ -43,7 +45,8 @@ public struct CredentialReport: Equatable, Sendable {
         context: LoginContext? = nil,
         changed: Bool? = nil,
         signIns: [String: [LoginSignIn]] = [:],
-        signedInHere: String? = nil
+        signedInHere: String? = nil,
+        filter: [LoginTag] = []
     ) {
         self.action = action
         self.app = app
@@ -59,6 +62,7 @@ public struct CredentialReport: Equatable, Sendable {
         self.changed = changed
         self.signIns = signIns
         self.signedInHere = signedInHere
+        self.filter = filter
     }
 
     var isList: Bool { action == "status" && key == nil }
@@ -98,12 +102,14 @@ public struct CredentialReport: Equatable, Sendable {
                 : "Nothing changed: \(shown) for \(app) already has these notes and tags."
             return ([head] + Self.textDetails(context ?? .empty, signIns: [])).joined(separator: "\n")
         default:
-            guard saved, let username else { return "No login credential \(shown) is saved for \(app)." }
+            guard saved else { return "No login credential \(shown) is saved for \(app)." }
             let first: String
-            if key == LoginCredential.defaultAccountKey {
-                first = "\(heading) default: \(username)"
+            if !filter.isEmpty {
+                first = "\(heading) \(shown)\(isDefault ? " (default)" : "") matches --where \(filter.map(\.rawValue).joined(separator: " "))"
+            } else if key == LoginCredential.defaultAccountKey {
+                first = "\(heading) default: \(username ?? "")"
             } else {
-                first = "\(heading) \(shown)\(isDefault ? " (default)" : ""): \(username)"
+                first = "\(heading) \(shown)\(isDefault ? " (default)" : ""): \(username ?? "")"
             }
             return ([first] + Self.textDetails(context ?? .empty, signIns: key.flatMap { signIns[$0] } ?? []) + hereLine).joined(separator: "\n")
         }
@@ -125,6 +131,9 @@ public struct CredentialReport: Equatable, Sendable {
         }
         if action == "status", let signedInHere {
             fields.append(("signedInHere", .string(LoginCredential.displayKey(signedInHere))))
+        }
+        if !filter.isEmpty {
+            fields.append(("where", .array(filter.map { .string($0.rawValue) })))
         }
         if isList {
             fields.append(("users", .array(listed.map { entry in

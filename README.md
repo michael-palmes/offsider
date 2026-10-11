@@ -490,11 +490,11 @@ Installing and launching apps stays with `xcrun simctl` and `adb`, and Offsider 
 | --- | --- |
 | 0 | Success; for `doctor`, every check passed or was skipped |
 | 1 | The command failed for any other reason; the error is printed to stderr |
-| 2 | The selector matched nothing, or only elements off screen |
+| 2 | The selector matched nothing, or only elements off screen, or no saved login has every `--where` tag |
 | 3 | `doctor` found warnings |
 | 4 | `doctor` found failures |
 | 5 | A condition was not met: `--verify` saw no change after the input, `wait` timed out, `assert` failed, `turnstile` left the checkbox on screen, `screenshot --compare` found no change, or a `batch` had only such failures |
-| 6 | The selector matched more than one element |
+| 6 | The selector matched more than one element, or several saved logins match `--where`, or several are saved and none is the default |
 | 7 | The device was not found or is not booted, or its lock screen stayed up |
 | 8 | The device is busy: another Offsider command holds it (see [Device lock](#device-lock)), or another UiAutomation client holds an Android emulator |
 | 9 | Xcode, adb or the Android SDK is missing or unusable |
@@ -521,8 +521,10 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `selector_not_found` | 2 | No element matched the selector | Read `candidates` (each with its `closeness`: `case`, `prefix`, `contains` or `similar`), fix the selector (the message names the `--label-contains` text that matches a `prefix` or `contains` label), or wait with `--wait-timeout` |
 | `selector_filtered_by_type` | 2 | Elements matched, but none of the `--element-type` | Drop or change `--element-type`; `candidates` shows the roles |
 | `target_off_screen` | 2 | Every match is off screen | Scroll it into view, wait, or pass `--allow-offscreen` |
+| `user_not_found` | 2 | `login --where` or `credential status --where` found no saved login with every tag; nothing was typed | Read `users` (each saved login's `name`, `tags` and `about`, never a username), then pass another `--where` or a name |
 | `selector_ambiguous` | 6 | Several elements matched | Pick from `candidates`: use `--id`, add `--element-type` or tap by coordinates |
 | `selector_ambiguous_switch` | 6 | The match holds several switches | Target the switch with `--id` or coordinates |
+| `user_ambiguous` | 6 | Several saved logins match `--where`, or several are saved and none is the default; nothing was typed | Read `users`, then add a `--where` tag only one has (the `hint` adds `platform=` when that is enough) or pass its name |
 | `device_not_found` | 7 | No device has that ID | `offsider list-devices` |
 | `device_not_booted` | 7 | The device exists but is not running | Boot it (`xcrun simctl boot`, `offsider boot`) |
 | `device_not_ready` | 7 | The emulator is offline or still booting | Wait, or `offsider boot <AVD>` |

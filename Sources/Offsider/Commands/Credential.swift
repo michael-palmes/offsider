@@ -30,7 +30,9 @@ struct CredentialCommand: AsyncParsableCommand {
         holds at most 16. set takes the same flags. Notes and tags are not secret: status shows them.
 
         status with no name lists every saved login with its tags and notes, read without decrypting \
-        anything, so it shows no username. status with a name also shows that login's username.
+        anything, so it shows no username. status with a name also shows that login's username. status \
+        --where shows the one login that login --where would choose, without its username: no match exits 2 \
+        (user_not_found) and several exit 6 (user_ambiguous).
 
         Without --app, set, status, describe and remove use the app in front on --device (or OFFSIDER_DEVICE). \
         --app names a bundle id or package when that app is not in front, and then --device is not required. \
@@ -91,6 +93,9 @@ struct CredentialCommand: AsyncParsableCommand {
     @Flag(name: .customLong("clear-tags"), help: "With set or describe: remove every tag before --tag adds any.")
     var clearTags = false
 
+    @Option(name: .customLong("where"), help: ArgumentHelp("With status: show the one saved login with this tag, as login --where would choose it. Repeatable. Not with a name.", valueName: "tag"))
+    var filters: [String] = []
+
     @OptionGroup
     var device: CredentialDeviceOption
 
@@ -105,6 +110,8 @@ struct CredentialCommand: AsyncParsableCommand {
             throw ValidationError("describe needs at least one of --about, --avoid, --state, --tag, --untag or --clear-tags.")
         }
         _ = try contextEdit()
+        if !filters.isEmpty, parsed != .status { throw ValidationError("--where goes with status or login, not credential \(parsed.rawValue).") }
+        _ = try LoginCommand.whereTags(filters, named: key != nil)
         if let key {
             guard parsed != .join else { throw ValidationError("join does not take a name.") }
             guard LoginKey(rawValue: key) != nil else { throw ValidationError(Self.keyMessage) }
@@ -133,13 +140,14 @@ struct CredentialCommand: AsyncParsableCommand {
         }
         let app = try await finding(person && app == nil) { try await resolveApp() }
         let edit = try contextEdit()
+        let filter = try LoginCommand.whereTags(filters, named: key != nil)
         guard parsed == .set, !stdin, isatty(STDIN_FILENO) != 0 else {
             let read = stdin ? Self.readFromStandardInput : {
                 throw CLIError(errorDescription: "credential set asks for the username on a terminal. Without one, pass --stdin.", reason: .usage)
             }
             let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWriteNotice.utf8)) }
             print(try Self.perform(
-                parsed, app: app, key: key, update: update, edit: edit, json: json, styled: styled, store: store,
+                parsed, app: app, key: key, update: update, edit: edit, where: filter, json: json, styled: styled, store: store,
                 keychainWillWrite: { DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice) },
                 keychainDidWrite: { notice.cancel() },
                 warn: { print(Self.warning, to: &standardError) },
@@ -234,6 +242,7 @@ struct CredentialCommand: AsyncParsableCommand {
         key: String?,
         update: Bool = false,
         edit: LoginContextEdit = LoginContextEdit(),
+        where filter: [LoginTag] = [],
         json: Bool,
         styled: TerminalOutput? = nil,
         store: any LoginCredentialStoring,
@@ -274,6 +283,14 @@ struct CredentialCommand: AsyncParsableCommand {
             let entries = try store.entries(app: canonical)
             let recorded = signIns(canonical)
             let here = signedInHere(canonical)
+            if !filter.isEmpty {
+                let entry = try LoginCommand.resolveLogin(nil, where: filter, app: app, entries: entries, device: nil)
+                let report = CredentialReport(
+                    action: "status", app: app, key: entry.key, saved: true, isDefault: entry.isDefault || entries.count == 1,
+                    also: shared, context: entry.context, signIns: recorded, signedInHere: here, filter: filter
+                )
+                return render(report)
+            }
             if let key {
                 guard let entry = entries.first(where: { $0.key == key }), let saved = try store.load(app: canonical, key: key) else {
                     return render(CredentialReport(action: "status", app: app, key: key, saved: false, also: shared, signedInHere: here))

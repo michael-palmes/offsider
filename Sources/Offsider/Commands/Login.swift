@@ -19,14 +19,23 @@ struct LoginCommand: AsyncParsableCommand {
 
         With no name, login uses the default. One saved login is the default, including one saved earlier under a name such as dev.
 
+        --where picks the saved login with every tag given (credential describe sets tags). One match is used. \
+        None exits 2 (user_not_found), and several exit 6 (user_ambiguous), as do several saved logins with no \
+        default. Both list each login's name, tags and about note, never a username, and the default never \
+        breaks a tie. A name and --where do not go together.
+
         Examples:
           offsider login dev --device DEVICE_ID
+          offsider login --where role=admin --where env=staging --device DEVICE_ID
           offsider login dev --project . --json --device DEVICE_ID
         """
     )
 
     @Argument(help: ArgumentHelp("The saved login's name, such as dev. Omit it to use the default login.", valueName: "name"))
     var key: String?
+
+    @Option(name: .customLong("where"), help: ArgumentHelp("Use the saved login with this tag, such as role=admin. Repeat to require more tags. Not with a name.", valueName: "tag"))
+    var filters: [String] = []
 
     @Option(name: .customLong("turnstile"), help: ArgumentHelp("auto (default), required or off. auto handles a widget already on screen.", valueName: "mode"))
     var turnstile: LoginTurnstileMode?
@@ -49,6 +58,7 @@ struct LoginCommand: AsyncParsableCommand {
 
     func validate() throws {
         if let key, LoginKey(rawValue: key) == nil { throw ValidationError(CredentialCommand.keyMessage) }
+        _ = try Self.whereTags(filters, named: key != nil)
         guard timeout.isFinite, (1...60).contains(timeout) else {
             throw ValidationError("--timeout must be from 1 to 60 seconds.")
         }
@@ -68,11 +78,12 @@ struct LoginCommand: AsyncParsableCommand {
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         let profile = try LoginProfiles.load(project: project)
         let mode = LoginProfiles.mode(flag: turnstile, profile: profile)
+        let filter = try Self.whereTags(filters, named: key != nil)
         let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWaitNotice.utf8)) }
         var giveUp: DispatchWorkItem?
         let report = try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
             try await Self.perform(
-                on: route, profile: profile, mode: mode, key: key, timeout: timeout, logger: logger,
+                on: route, profile: profile, mode: mode, key: key, where: filter, timeout: timeout, logger: logger,
                 onPrepared: ready,
                 keychainWillRead: { app in
                     watchdog.disarm()
@@ -104,6 +115,7 @@ struct LoginCommand: AsyncParsableCommand {
         profile: LoginProfile?,
         mode: LoginTurnstileMode,
         key requestedKey: String?,
+        where filter: [LoginTag] = [],
         timeout: TimeInterval,
         logger: OffsiderLogger,
         store: any LoginCredentialStoring = KeychainLoginCredentialStore(),
@@ -115,14 +127,14 @@ struct LoginCommand: AsyncParsableCommand {
         onPrepared()
         let tree = try await route.backend.accessibilityTree(for: route.device)
         let app = try ForegroundAppLookup.identifier(in: tree, forLogin: true)
-        let key: String
+        let entry: LoginEntry
         let credential: LoginCredential
         do {
             keychainWillRead(app)
             defer { keychainDidRead() }
             let canonical = try store.canonical(of: app)
-            key = try resolveKey(requestedKey, app: app, canonical: canonical, device: route.device.rawValue, store: store)
-            credential = try stored(app: canonical, key: key, foreground: app, store: store)
+            entry = try resolveLogin(requestedKey, where: filter, app: app, entries: try store.entries(app: canonical), device: route.device)
+            credential = try stored(app: canonical, key: entry.key, foreground: app, store: store)
         }
         let services = LoginFlow.Services(
             readTree: { try await route.backend.accessibilityTree(for: route.device) },
@@ -144,28 +156,74 @@ struct LoginCommand: AsyncParsableCommand {
             },
             clock: .live
         )
-        return try await LoginFlow.run(app: app, key: key, credential: credential, profile: profile, turnstile: mode, timeout: timeout, services: services)
+        var report = try await LoginFlow.run(app: app, key: entry.key, credential: credential, profile: profile, turnstile: mode, timeout: timeout, services: services)
+        report.tags = entry.context.tags
+        report.filter = filter
+        return report
     }
 
-    static func resolveKey(_ key: String?, app: String, canonical: String, device: String, store: any LoginCredentialStoring) throws -> String {
-        if let key, let parsed = LoginKey(rawValue: key) { return parsed.rawValue }
-        if let marked = try store.defaultKey(app: canonical) { return marked }
-        let keys = try store.keys(app: canonical)
-        if keys.count == 1, let only = keys.first { return only }
-        if keys.isEmpty {
+    /// The parsed `--where` tags. The usage error states the tag rule, or the clash with a name.
+    static func whereTags(_ raw: [String], named: Bool) throws -> [LoginTag] {
+        if named, !raw.isEmpty { throw ValidationError("Pass a name or --where, not both.") }
+        return try raw.map { text in
+            guard let tag = LoginTag(rawValue: text) else { throw ValidationError("--where \(LoginTag.problem(text) ?? LoginTag.rule)") }
+            return tag
+        }
+    }
+
+    /// The login a name, `--where` or the default picks; errors never show a username. `device` is nil for `credential status`.
+    static func resolveLogin(_ name: String?, where filter: [LoginTag], app: String, entries: [LoginEntry], device: DeviceID?) throws -> LoginEntry {
+        let requested = name.map { LoginKey(rawValue: $0)?.rawValue ?? $0 }
+        let deviceArgument = device.map { "--device \($0.rawValue)" } ?? "--device <id>"
+        let wanted = filter.map(\.rawValue).joined(separator: " ")
+        switch LoginSelection.resolve(entries: entries, name: requested, where: filter) {
+        case .chosen(let entry):
+            return entry
+        case .missing(let key):
+            throw CLIError(
+                errorDescription: "No login named \(LoginCredential.displayKey(key)) is saved for \(app).",
+                reason: .commandFailed,
+                hint: "offsider credential status --app \(app)"
+            )
+        case .noneSaved:
             throw CLIError(
                 errorDescription: "No login credential is saved for \(app).",
                 reason: .commandFailed,
-                hint: "offsider credential set --device \(device)"
+                hint: device.map { "offsider credential set --device \($0.rawValue)" } ?? "offsider credential set --app \(app)"
+            )
+        case .noMatch(let all):
+            throw CLIError(
+                errorDescription: "No saved login for \(app) has every tag in --where \(wanted). Saved: \(listed(all)).",
+                reason: .userNotFound,
+                hint: "offsider credential status --app \(app) --json",
+                users: all.map(FailureUser.init)
+            )
+        case .ambiguous(let matches):
+            var hint = "offsider credential status --app \(app) --json"
+            if let device, let refinement = LoginSelection.platformRefinement(matches, where: filter, platform: device.platform) {
+                hint = "offsider login " + (filter + [refinement]).map { "--where \($0.rawValue)" }.joined(separator: " ") + " --device \(device.rawValue)"
+            }
+            throw CLIError(
+                errorDescription: "\(matches.count) saved logins for \(app) have every tag in --where \(wanted): \(listed(matches)). Add a --where tag only one of them has, or pass its name.",
+                reason: .userAmbiguous,
+                hint: hint,
+                users: matches.map(FailureUser.init)
+            )
+        case .noDefault(let all):
+            let example = all.first { $0.key != LoginCredential.defaultAccountKey }?.name ?? "dev"
+            throw CLIError(
+                errorDescription: "Several logins are saved for \(app) (\(listed(all))) and none is the default. Pass the name or --where, for example offsider login \(example) \(deviceArgument).",
+                reason: .userAmbiguous,
+                hint: "offsider credential status --app \(app) --json",
+                users: all.map(FailureUser.init)
             )
         }
-        let shown = keys.map(LoginCredential.displayKey).joined(separator: ", ")
-        let example = keys.first { $0 != LoginCredential.defaultAccountKey } ?? "dev"
-        throw CLIError(
-            errorDescription: "Several login credentials are saved for \(app) (\(shown)) and none is the default. Pass the name, for example offsider login \(example) --device \(device).",
-            reason: .selectorAmbiguous,
-            hint: "offsider credential status --device \(device)"
-        )
+    }
+
+    /// Up to five logins as `name (tags · about)`, then how many more.
+    private static func listed(_ entries: [LoginEntry]) -> String {
+        let shown = entries.prefix(5).map(LoginSelection.line).joined(separator: "; ")
+        return entries.count > 5 ? "\(shown); and \(entries.count - 5) more" : shown
     }
 
     /// A parsed `type` command. The placeholder `x` is replaced before anything is typed, so the secret never enters the argument list.
