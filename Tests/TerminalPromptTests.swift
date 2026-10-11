@@ -18,6 +18,18 @@ struct TerminalPromptTests {
         #expect(TerminalKey.parse([0x1B, 0x1B]) == [.cancel, .cancel])
     }
 
+    @Test("a read that stops inside an escape sequence waits for the rest, and a finished one does not")
+    func partialEscapeSequences() {
+        #expect(TerminalKey.endsMidSequence(Array("ab".utf8) + [0x1B]))
+        #expect(TerminalKey.endsMidSequence(Array("ab".utf8) + [0x1B, 0x5B]))
+        #expect(TerminalKey.endsMidSequence([0x1B, 0x5B, 0x31, 0x3B]))
+        #expect(TerminalKey.endsMidSequence([0x1B, 0x4F]))
+        #expect(!TerminalKey.endsMidSequence([0x1B, 0x5B, 0x41, 0x61]))
+        #expect(!TerminalKey.endsMidSequence([0x1B, 0x4F, 0x41]))
+        #expect(!TerminalKey.endsMidSequence([0x1B, 0x78]))
+        #expect(!TerminalKey.endsMidSequence(Array("ab".utf8)))
+    }
+
     @Test("a pasted tab stays in the answer, so the password is refused instead of saved without it")
     func controlCharactersAreKept() {
         #expect(TerminalKey.parse(Array("pass\tword\r".utf8)) == [.text(Array("pass\tword".utf8)), .enter])
@@ -175,6 +187,44 @@ struct TerminalPromptTests {
         #expect(terminal.finish().contains(PromptScreen.cancelledNothingSaved))
     }
 
+    @Test("an arrow key split across two reads moves the cursor instead of adding a letter to the answer")
+    func splitArrowKey() throws {
+        let terminal = try PseudoTerminal()
+        Thread.detachNewThread {
+            guard terminal.wait(until: { $0.c_lflag & tcflag_t(ECHO) == 0 }) else { return }
+            terminal.send("ab\u{1B}[")
+            _ = terminal.wait(until: { settings in withUnsafeBytes(of: settings.c_cc) { $0[Int(VTIME)] } > 0 })
+            terminal.send("A\r")
+        }
+        let answer = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+            try prompt.ask("👤 ") { _ in nil }
+        }
+        _ = terminal.finish()
+        #expect(answer == "ab")
+    }
+
+    @Test("a continue after a stop switches echo off again, so a password typed after bash's fg never shows")
+    func continueSwitchesEchoOff() throws {
+        let terminal = try PseudoTerminal()
+        Thread.detachNewThread {
+            guard terminal.wait(until: { $0.c_lflag & tcflag_t(ECHO) == 0 }) else { return }
+            var cooked = termios()
+            _ = tcgetattr(terminal.secondary, &cooked)
+            cooked.c_lflag |= tcflag_t(ECHO | ICANON)
+            _ = tcsetattr(terminal.secondary, TCSANOW, &cooked)
+            kill(getpid(), SIGCONT)
+            _ = terminal.wait(until: { $0.c_lflag & tcflag_t(ECHO) == 0 })
+            terminal.send("s3cret\n")
+        }
+        let answer = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+            try prompt.ask("🔑 ", masked: true) { _ in nil }
+        }
+        let output = terminal.finish()
+        #expect(answer == "s3cret")
+        #expect(!output.contains("s3cret"))
+        #expect(output.contains(PromptScreen.dots(6)))
+    }
+
     @Test("Down then Enter chooses the second row")
     func menuOnATerminal() throws {
         let terminal = try PseudoTerminal()
@@ -238,14 +288,24 @@ private final class PseudoTerminal: @unchecked Sendable {
     /// Types `keys` in one burst once the prompt has switched echo off.
     func type(_ keys: String) {
         Thread.detachNewThread { [self] in
-            var settings = termios()
-            for _ in 0..<500 {
-                if tcgetattr(secondary, &settings) == 0, settings.c_lflag & tcflag_t(ECHO) == 0 { break }
-                usleep(10_000)
-            }
-            let bytes = Array(keys.utf8)
-            _ = bytes.withUnsafeBytes { write(primary, $0.baseAddress, $0.count) }
+            _ = wait(until: { $0.c_lflag & tcflag_t(ECHO) == 0 })
+            send(keys)
         }
+    }
+
+    /// Waits up to 5 s for the prompt's terminal settings to pass `ready`, and says whether they did.
+    func wait(until ready: (termios) -> Bool) -> Bool {
+        var settings = termios()
+        for _ in 0..<5000 {
+            if tcgetattr(secondary, &settings) == 0, ready(settings) { return true }
+            usleep(1000)
+        }
+        return false
+    }
+
+    func send(_ keys: String) {
+        let bytes = Array(keys.utf8)
+        _ = bytes.withUnsafeBytes { write(primary, $0.baseAddress, $0.count) }
     }
 
     /// True while Control-C raises a signal rather than arriving as a key.

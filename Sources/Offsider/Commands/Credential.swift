@@ -257,7 +257,7 @@ struct CredentialCommand: AsyncParsableCommand {
     }
 
     private static func chooseApp(_ groups: [LoginAppGroup]) throws -> String {
-        try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingLinked) { prompt in
+        try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingLinked, instead: "Pass --app with the one to share instead.") { prompt in
             groups[try prompt.choose(CredentialScreen.joinTitle, options: CredentialScreen.joinOptions(groups: groups))].canonical
         }
     }
