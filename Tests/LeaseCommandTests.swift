@@ -124,9 +124,11 @@ struct LeaseCommandTests {
         (["lease", "set", "--device", "Pixel_9", "--label", String(repeating: "x", count: 81)], "--label must be 1 to 80 printable characters."),
         (["lease", "set", "--device", "Pixel_9", "--label", "x", "--ttl", "0"], "--ttl must be from 1 to 1440 minutes; got 0."),
         (["lease", "set", "--device", "Pixel_9", "--label", "x", "--ttl", "1441"], "--ttl must be from 1 to 1440 minutes; got 1441."),
-        (["lease", "show", "--label", "x"], "--label goes with set, not show."),
+        (["lease", "show", "--label", "x"], "--label goes with set or check, not show."),
+        (["lease", "check", "--device", "Pixel_9", "--ttl", "5"], "--ttl goes with set, not check."),
+        (["lease", "check", "--device", "Pixel_9", "--label", ""], "--label must be 1 to 80 printable characters."),
         (["lease", "release", "--force", "--device", "Pixel_9"], "--force goes with set, not release."),
-        (["lease", "grab", "--device", "Pixel_9"], "Unknown action 'grab'. Use set, release or show."),
+        (["lease", "grab", "--device", "Pixel_9"], "Unknown action 'grab'. Use set, release, show or check."),
     ])
     func usage(arguments: [String], message: String) {
         do {
@@ -315,6 +317,131 @@ struct LeaseCommandTests {
         #expect(check.status == .warn)
         #expect(check.detail.hasPrefix("Leased to another session: 'PR 123' since "))
         #expect(Self.doctor(store, processes: processes, selfPID: 300, sessionLabel: "PR 123").status == .pass)
+    }
+
+    // MARK: Check
+
+    /// `lease check` as a command running at `selfPID` sees it, with what it wrote and the error it ended with.
+    static func check(
+        _ store: DeviceLeaseStore, processes: FakeProcesses, selfPID: Int32 = 300, label: String? = nil, environment: [String: String] = [:],
+        json: Bool = false, at now: Date = now
+    ) -> (output: [String], error: (any Error)?) {
+        var output: [String] = []
+        do {
+            try LeaseCommand.runCheck(
+                avd, label: label, environment: environment, json: json, store: store, now: now, selfPID: selfPID, processes: processes.processTable
+            ) { output.append($0) }
+            return (output, nil)
+        } catch {
+            return (output, error)
+        }
+    }
+
+    @Test("check passes a free device and an expired lease, writing one line")
+    func checkFree() throws {
+        let store = try Self.store()
+        let processes = FakeProcesses()
+        let free = Self.check(store, processes: processes)
+        #expect(free.error == nil && free.output == ["Offsider_E2E is free."])
+
+        _ = try Self.set("PR 123", store: store, minutes: 1)
+        let expired = Self.check(store, processes: processes, at: Self.now.addingTimeInterval(61))
+        #expect(expired.error == nil && expired.output == ["Offsider_E2E is free."])
+    }
+
+    @Test("check passes this session's lease: by the session that set it, by --label, or by OFFSIDER_LEASE")
+    func checkMine() throws {
+        let store = try Self.store()
+        let processes = FakeProcesses()
+        processes.add(pid: 500, name: "claude", parent: 1)
+        processes.add(pid: 600, name: "zsh", parent: 500)
+        processes.add(pid: 700, name: "offsider", parent: 600)
+        _ = try Self.setBySession(store: store, processes: processes)
+
+        let bySession = Self.check(store, processes: processes, selfPID: 300)
+        #expect(bySession.error == nil)
+        #expect(bySession.output.first?.hasPrefix("Offsider_E2E is this session's: 'PR 123' until ") == true)
+        #expect(Self.check(store, processes: processes, selfPID: 700, label: "PR 123").error == nil)
+        #expect(Self.check(store, processes: processes, selfPID: 700, environment: ["OFFSIDER_LEASE": "PR 123"]).error == nil)
+        #expect(Self.check(store, processes: processes, selfPID: 300, label: "PR 456", environment: ["OFFSIDER_LEASE": "PR 123"]).error != nil)
+    }
+
+    @Test("check with a label other than the lease's names the mismatch, not another session, even for the session that set it")
+    func checkOtherLabel() throws {
+        let store = try Self.store()
+        let processes = FakeProcesses()
+        _ = try Self.setBySession(store: store, processes: processes)
+
+        let result = Self.check(store, processes: processes, selfPID: 300, environment: ["OFFSIDER_LEASE": "PR 456"])
+        let error = try #require(result.error as? CLIError)
+        #expect(error.reason == .deviceLeased)
+        #expect(error.userFacingDescription.hasPrefix("Offsider_E2E is leased to 'PR 123' under another label than 'PR 456' (--label or OFFSIDER_LEASE) since "))
+        #expect(error.userFacingDescription.contains("pass its label with --label or set OFFSIDER_LEASE to it"))
+        #expect(!error.userFacingDescription.contains("another session"))
+    }
+
+    @Test("check fails with device_leased (exit 8) for another live session's lease, and names it")
+    func checkOtherSession() throws {
+        let store = try Self.store()
+        let processes = FakeProcesses()
+        processes.add(pid: 500, name: "claude", parent: 1)
+        processes.add(pid: 600, name: "zsh", parent: 500)
+        processes.add(pid: 700, name: "offsider", parent: 600)
+        _ = try Self.setBySession(store: store, processes: processes)
+
+        let result = Self.check(store, processes: processes, selfPID: 700)
+        let error = try #require(result.error as? CLIError)
+        #expect(error.reason == .deviceLeased && error.exitCode == .deviceBusy)
+        #expect(error.userFacingDescription.hasPrefix("Offsider_E2E is leased to 'PR 123' by another session (node, pid 100) since "))
+        #expect(result.output.isEmpty)
+    }
+
+    @Test("check fails for a lease whose session has ended while the lease is still within its time, and --json says ownerEnded")
+    func checkEndedSession() throws {
+        let store = try Self.store()
+        let processes = FakeProcesses()
+        _ = try Self.setBySession(store: store, processes: processes)
+        processes.remove(pid: 100)
+        processes.add(pid: 500, name: "claude", parent: 1)
+        processes.add(pid: 600, name: "zsh", parent: 500)
+
+        let text = Self.check(store, processes: processes, selfPID: 600)
+        let error = try #require(text.error as? CLIError)
+        #expect(error.reason == .deviceLeased)
+        #expect(error.userFacingDescription.contains("by a session that has ended (node, pid 100)"))
+        #expect(error.userFacingDescription.contains("`offsider lease set --device Offsider_E2E --label 'PR 123'` renews it"))
+
+        let json = Self.check(store, processes: processes, selfPID: 600, json: true)
+        let line = try #require(json.output.first)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        #expect(object["available"] as? Bool == false && object["ownerEnded"] as? Bool == true && object["mine"] as? Bool == false)
+        #expect((object["error"] as? [String: Any])?["reason"] as? String == "device_leased")
+    }
+
+    @Test("check --json writes exactly one object, and a refusal ends with only the exit code, so no error envelope follows")
+    func checkJSONOneObject() throws {
+        let store = try Self.store()
+        let processes = FakeProcesses()
+        let free = Self.check(store, processes: processes, json: true)
+        #expect(free.output == [#"{"version":1,"action":"check","platform":"android","device":"Offsider_E2E","available":true,"mine":false,"ownerEnded":false,"lease":null}"#])
+
+        processes.add(pid: 500, name: "claude", parent: 1)
+        processes.add(pid: 600, name: "zsh", parent: 500)
+        _ = try Self.setBySession(store: store, processes: processes)
+        let refused = Self.check(store, processes: processes, selfPID: 600, json: true)
+        #expect(refused.output.count == 1)
+        let reported = try #require(refused.error as? ReportedFailure)
+        #expect(reported.exitCode == .deviceBusy)
+    }
+
+    @Test("check by UDID or AVD name reads only the lease file: a device no simulator or emulator has is free, exit 0, with no device query")
+    func checkTouchesNoDevice() async throws {
+        for device in [UUID().uuidString, "No_Such_AVD_\(UInt32.random(in: 0...UInt32.max))"] {
+            let result = try await TestHelpers.runOffsiderCommandSeparated("lease check --device \(device) --json")
+            #expect(result.exitCode == 0, "\(result.stderr)")
+            #expect(result.stdout.split(separator: "\n").count == 1)
+            #expect(result.stdout.contains(#""available":true"#))
+        }
     }
 
     @Test("list-devices --json marks a lease mine only for the session that holds it")
