@@ -63,4 +63,4 @@ offsider screenshot --compare before.png --diff-output diff.png --json --device 
 
 ## Project guide
 
-A repository can keep its own recipes for agents in `OFFSIDER.md`: test accounts, how to reach a screen, which elements to mask in a report. `offsider guide --project .` prints it, searching the path and its parents up to the repository root, your home directory or `/`, and exits 1 when there is none. Read it at the start of a session, before these generic topics.
+A repository can keep its own recipes for agents in `OFFSIDER.md`: the test user tags each flow needs (never accounts, `guide login`), how to reach a screen, which elements to mask in a report. `offsider guide --project .` prints it, searching the path and its parents up to the repository root, your home directory or `/`, and exits 1 when there is none. Read it at the start of a session, before these generic topics.

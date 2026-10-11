@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `credential describe [name]` sets a saved user's context without reading its password or needing a terminal: `--about` (access, and when to use the user), `--avoid` (tests it must not be used for), `--state` (what the account holds now, stamped `updated`), `--tag` and `--untag` (both repeatable) and `--clear-tags`. It needs at least one of them, and with no name describes the default. `credential set` takes the same flags, and on a terminal also asks a new user "What's it for" and "Tags", both optional. A tag is a lowercase word or `key=value`, such as `credit` or `role=admin`, at most 16 per user, and `platform` takes only `ios` or `android`; a note is one line of at most 200 characters, and `""` clears it. Notes and tags refuse email-like text, control characters and bidi characters. They sit in the Keychain item's attributes, which are not encrypted, so they must never hold secrets or personal details.
+- `credential status` with no name lists every saved user as `{"version":2,"action":"status","app","users":[{"name","default","tags","about","avoid","state","updated","signedIn"}]}`, with notes and `updated` only when set. `status <name>` still reads that one item and adds `username`.
+- `login --where <tag>` (repeatable) signs in the one saved user with every tag given; a bare word matches only a bare tag. `credential status --where` is a dry run of that choice. No match exits 2 with the new reason `user_not_found`, and several exit 6 with the new reason `user_ambiguous`; both type nothing, and the JSON error gains `users` (each user's `name`, `tags` and `about`, never a username). The `hint` adds `--where platform=ios` or `platform=android` when that leaves one user. A name with `--where` is a usage error. `login --json` adds `name`, `tags` and `where`.
+- After `login` exits 0, Offsider records which user it submitted on that device and app, under the private directory's `signins/` (one 0600 file per device and app, never a username or password). `credential status` shows each user's `signedIn` (`device`, `platform`, `since`, and `restarted: true` once the device has restarted) and, with `--device`, `signedInHere`. A record means Offsider submitted the form, not that the app accepted it, and selection ignores it. `credential signed-out --device <id> [--app <id>]` clears it after you sign out in the app, and exits 0 even when nothing was recorded (`{"version":2,"action":"signed-out","app","device","platform","name","cleared"}`); `credential remove` clears the user's records on every device. When `login` finds no form and a record exists, its message names the user last signed in and how to switch.
+- The React Native playground's `user-switch-test` screen, a sign-in form that keeps its session in memory, for E2E suites that save test users only for the playground's app id and remove them afterwards.
+
+### Changed
+
+- What `credential` and `login` called a tag, such as `dev` or `qa`, is now a saved user's name in help, messages and docs, and tags are the new labels. Arguments are unchanged.
+- `credential status` with no name reads only the Keychain attributes, so it raises no macOS prompt and shows no usernames.
+- Several saved users with none the default exit 6 with `user_ambiguous` instead of `selector_ambiguous`, and list the users.
+- `credential --json` is version 2 for every action. `key` is now `name`, and the status list's `credentials` is now `users`, without `username` or `saved`.
+
 ## [0.10.0] - 2026-10-11
 
 ### Added
