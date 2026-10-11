@@ -58,6 +58,7 @@ struct AccessibilityFetcher {
     static func fetchAccessibilityInfoJSONData(
         from target: FBSimulator,
         point: AccessibilityPoint? = nil,
+        appPIDs: Set<Int> = [],
         logger: OffsiderLogger,
         recoveryDependencies: AccessibilityRecoveryDependencies = .live
     ) async throws -> Data {
@@ -68,7 +69,7 @@ struct AccessibilityFetcher {
                 dependencies: recoveryDependencies
             ) {
                 if let point {
-                    return try await fetchAccessibilityInfoJSONData(from: target, at: point)
+                    return try await fetchAccessibilityInfoJSONData(from: target, at: point, appPIDs: appPIDs)
                 }
                 return try await fetchFrontmostAccessibilityInfoJSONData(from: target)
             }
@@ -77,9 +78,10 @@ struct AccessibilityFetcher {
 
     private static func fetchAccessibilityInfoJSONData(
         from target: FBSimulator,
-        at point: AccessibilityPoint
+        at point: AccessibilityPoint,
+        appPIDs: Set<Int>
     ) async throws -> Data {
-        try await retryingTransientPointFallback(at: point) {
+        try await retryingTransientPointFallback(at: point, appPIDs: appPIDs) {
             let accessibilityElement = try await target.accessibilityElement(at: point.cgPoint)
             defer { accessibilityElement.close() }
             return try serializedAccessibilityData(from: accessibilityElement, keys: TraitsRequest.process.keys)
@@ -93,8 +95,10 @@ struct AccessibilityFetcher {
         return try serializedAccessibilityData(from: accessibilityElement, keys: TraitsRequest.process.keys)
     }
 
+    /// Reads `point` again while it answers with an empty screen-sized group; one from a process outside `appPIDs` is that process's view, so it is the answer.
     static func retryingTransientPointFallback(
         at point: AccessibilityPoint,
+        appPIDs: Set<Int> = [],
         maximumAttempts: Int = 5,
         fetch: @MainActor () async throws -> Data,
         wait: @MainActor (Duration) async throws -> Void = { duration in
@@ -106,7 +110,7 @@ struct AccessibilityFetcher {
         for attempt in 0..<maximumAttempts {
             let data = try await fetch()
             latestData = data
-            if try !isTransientPointFallback(in: data, at: point) {
+            if try !isTransientPointFallback(in: data, at: point, appPIDs: appPIDs) {
                 return data
             }
             if attempt < maximumAttempts - 1 {
@@ -325,7 +329,7 @@ struct AccessibilityFetcher {
         }
     }
 
-    static func isTransientPointFallback(in data: Data, at point: AccessibilityPoint) throws -> Bool {
+    static func isTransientPointFallback(in data: Data, at point: AccessibilityPoint, appPIDs: Set<Int> = []) throws -> Bool {
         let object = try JSONSerialization.jsonObject(with: data)
         let root: [String: Any]?
         if let dictionary = object as? [String: Any] {
@@ -347,6 +351,9 @@ struct AccessibilityFetcher {
         ]
         guard let root,
               !meaningfulKeys.contains(where: { hasMeaningfulValue(root[$0]) }) else {
+            return false
+        }
+        if !appPIDs.isEmpty, let pid = (root["pid"] as? NSNumber)?.intValue, !appPIDs.contains(pid) {
             return false
         }
 

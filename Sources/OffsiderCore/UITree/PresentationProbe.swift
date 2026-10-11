@@ -24,9 +24,9 @@ public struct PresentationFinding: Equatable, Sendable {
 }
 
 extension UITree {
-    /// The tree with what describe-ui's read at the screen's centre found.
+    /// The tree with what describe-ui's read at the screen's centre found; a system prompt found at the same middle already names what is over the app, so it is not named twice.
     public mutating func apply(_ finding: PresentationFinding) {
-        presented = finding.presented
+        presented = systemPrompt == nil ? finding.presented : nil
         staleFrame = finding.staleFrame
     }
 }
@@ -93,13 +93,5 @@ public enum PresentationProbe {
         }
         guard let chosen = stale.first(where: { $0.normalizedID != nil }) ?? stale.first, let frame = chosen.frame else { return nil }
         return UITreeContext.StaleFrame(id: chosen.normalizedID, label: chosen.normalizedLabel.map { SelectorText.truncated(LogRedactor.redact($0).text, limit: labelLimit) }, frame: frame)
-    }
-}
-
-extension UINode {
-    /// The process an iOS element belongs to; nil on Android.
-    var iosPID: Int? {
-        if case .ios(let attributes) = native { return attributes.pid }
-        return nil
     }
 }

@@ -15,10 +15,12 @@ final class ProbingFakeBackend: FakeDeviceBackend, PointHitTesting, Presentation
     /// How many trees had been read when the first probe began.
     private(set) var treeReadsAtFirstProbe: Int?
 
-    func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+    func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
         hitTests += 1
         return try await accessibilityTree(for: id, point: point).roots.first
     }
+
+    func processName(of pid: Int, on id: DeviceID) async -> String? { nil }
 
     func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
         probes += 1
@@ -80,6 +82,19 @@ struct PresentationProbeTests {
         let hit = Self.node(.button, id: "sheet-done", label: "Done", frame: FakeUI.frame(300, 60, 80, 44))
 
         #expect(Self.finding(Self.home, hit: hit).presented == UITreeContext.Presented(label: "Done", role: .button, process: nil))
+    }
+
+    @Test("a system prompt found at the same middle names what is over the app, so presented is not named twice, while a stale frame still is")
+    func systemPromptWins() {
+        var tree = Self.home
+        tree.systemPrompt = SystemPrompt(title: "Save Password?", process: "PickerService", pid: Self.foreignPID)
+        let stale = UITreeContext.StaleFrame(id: "sheet-host", label: nil, frame: FakeUI.frame(0, 10000, 402, 874))
+
+        tree.apply(PresentationFinding(presented: UITreeContext.Presented(label: "Save Password?", role: .button, process: "PickerService"), staleFrame: stale))
+
+        #expect(tree.presented == nil && tree.staleFrame == stale)
+        #expect(tree.context.headerLines.contains("# window: Save Password? (system)"))
+        #expect(!tree.context.headerLines.contains { $0.hasPrefix("# presented:") })
     }
 
     @Test("from the app's own process, an unlabelled container or a row that scrolled between the two reads presents nothing")

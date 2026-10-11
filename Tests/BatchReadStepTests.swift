@@ -181,6 +181,16 @@ struct BatchReadStepTests {
         #expect(FileManager.default.fileExists(atPath: shot))
     }
 
+    @Test("a describe-ui step names a prompt another process draws over an iOS app, as describe-ui does")
+    func describeStepNamesSystemPrompt() async throws {
+        let backend = SystemPromptCoverTests.prompting([SystemPromptCoverTests.signedIn(prompt: true)])
+        let captured = Captured()
+
+        try await Self.run(["describe-ui --summary"], on: backend, captured: captured)
+
+        #expect(captured.out.contains("\n# window: Save Password? (system)\n"), "\(captured.out)")
+    }
+
     @Test("a failed assert under --continue-on-error runs later steps and exits 5")
     func failedAssertExitsFive() async throws {
         let backend = FakeDeviceBackend(trees: [Self.closed])

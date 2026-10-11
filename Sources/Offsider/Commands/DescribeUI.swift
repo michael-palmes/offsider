@@ -87,6 +87,7 @@ struct DescribeUI: AsyncParsableCommand {
         var tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
         if point == nil {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)
+            tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: route.backend, device: route.device)
         }
         guard diff else {
             if let finding = await probe?.finding(for: tree) {

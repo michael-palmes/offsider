@@ -70,11 +70,12 @@ extension DescribeUI: BatchReadable {
             throw ValidationError("Batch describe-ui steps do not take --diff. Run describe-ui --diff after the batch.")
         }
         try await Self.requireActive(displayOption, on: context.route, deviceName: context.device.rawValue)
-        let tree: UITree
+        var tree: UITree
         if let point = try parsedPoint() {
             tree = try await context.backend.accessibilityTree(for: context.device, point: point)
         } else {
             tree = try await context.accessibilityTree()
+            tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: context.backend, device: context.device)
         }
         let described = await Self.withScreen(tree, on: context.route)
         let rendered = String(decoding: try output.render(described), as: UTF8.self)
