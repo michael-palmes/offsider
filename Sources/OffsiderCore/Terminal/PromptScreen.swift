@@ -56,7 +56,19 @@ public enum CredentialScreen {
     public static let againLabel = "🔁 Once more"
     public static let nameLabel = "✨ Name it"
     public static let namePlaceholder = "like qa"
+    public static let aboutLabel = "💬 What's it for"
+    public static let aboutPlaceholder = "optional, like Admin on staging"
+    public static let tagsLabel = "🔖 Tags"
+    public static let tagsPlaceholder = "optional, like role=admin env=staging"
     public static let addAnother = "➕ Add another login"
+
+    /// Every `credential set` question, so the answers line up across the whole block.
+    public static let promptLabels = [nameLabel, usernameLabel, passwordLabel, againLabel, aboutLabel, tagsLabel]
+
+    /// `label` padded to the widest of `promptLabels`.
+    public static func padded(_ label: String) -> String {
+        Dictionary(uniqueKeysWithValues: zip(promptLabels, PromptScreen.labels(promptLabels)))[label] ?? label
+    }
 
     public static func header(app: String, key: String?, style: TerminalStyle) -> [String] {
         let name = key.map { " · " + LoginCredential.displayKey($0) } ?? ""
@@ -111,6 +123,36 @@ public enum CredentialScreen {
         if text.lowercased() == "default" { return "❗ default is taken. Pick another name." }
         guard let key = LoginKey(rawValue: text) else { return "❗ Use up to 32 letters, digits, dots, dashes or underscores." }
         return taken.contains(key.rawValue) ? "❗ \(key.rawValue) is already saved. Pick another name." : nil
+    }
+
+    /// Why a typed about line cannot be saved, or nil when it can. An empty answer skips it.
+    public static func aboutProblem(_ raw: String) -> String? {
+        switch LoginContext.noteProblem(raw) {
+        case nil: return nil
+        case .control: return "❗ Keep it to one line."
+        case .bidi: return "❗ Leave out text direction characters."
+        case .tooLong: return "❗ That's too long: \(LoginContext.noteCharacters) characters at most."
+        case .email: return "❗ Leave out email addresses: anyone who runs status sees this."
+        }
+    }
+
+    /// Why typed tags cannot be saved, naming the rule, or nil when they can. An empty answer skips them.
+    public static func tagsProblem(_ raw: String) -> String? {
+        let words = raw.split(whereSeparator: \.isWhitespace).map(String.init)
+        if let bad = words.first(where: { LoginTag(rawValue: $0) == nil }) {
+            if bad.lowercased().hasPrefix(LoginTag.platformKey) { return "❗ \(PromptScreen.visible(bad)) is not a tag: platform takes ios or android, like platform=ios." }
+            return "❗ \(PromptScreen.visible(bad)) is not a tag: use a word or key=value, like credit or role=admin, from a-z, 0-9, '.', '_' and '-'."
+        }
+        return Set(words.compactMap(LoginTag.init(rawValue:))).count > LoginContext.maxTags ? "❗ \(LoginContext.maxTags) tags at most." : nil
+    }
+
+    /// The answers to the about and tags questions as an edit. Empty answers change nothing.
+    public static func contextEdit(about: String, tags: String) throws -> LoginContextEdit {
+        let about = about.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try LoginContextEdit.parse(
+            about: about.isEmpty ? nil : about, avoid: nil, state: nil,
+            tag: tags.split(whereSeparator: \.isWhitespace).map(String.init), untag: [], clearTags: false
+        )
     }
 }
 

@@ -16,8 +16,10 @@ struct CredentialCommand: AsyncParsableCommand {
         set asks for the username or email, then the password twice, showing a dot for each character, or \
         reads two lines with --stdin. Both must be characters the keyboard can type: the username 1 to 254, \
         the password 1 to 128. When a login is already saved, a terminal shows a menu to update one or add a \
-        named one, and asks before replacing a saved name. Without a terminal, pass --update or a name. Save \
-        test development credentials only. Anything that can run commands as you can then type them into this app.
+        named one, and asks before replacing a saved name. For a new login and no describe flags, it then \
+        asks what the login is for and its tags, and both may be left empty. Without a terminal, pass --update \
+        or a name. Save test development credentials only. Anything that can run commands as you can then \
+        type them into this app.
 
         join links the app in front to an app that already has saved logins, so both bundle ids share them. \
         It does not ask for the password. When only one app has logins, that is the one. When several do, \
@@ -267,12 +269,16 @@ struct CredentialCommand: AsyncParsableCommand {
             let entries = try store.entries(app: canonical)
             let target = try writeTarget(entries: entries, name: key, update: update, questions: questions) { try store.list(app: canonical) }
             let existing = entries.first { $0.key == target.key }
-            let context = edit.isEmpty ? nil : try edited(existing?.stored ?? .saved(.empty), with: edit, key: target.key, app: app, now: now)
+            var context = edit.isEmpty ? nil : try edited(existing?.stored ?? .saved(.empty), with: edit, key: target.key, app: app, now: now)
             if let stamp = LoginDirectory.shouldStampDefault(entries, writing: target.key) {
                 try store.markDefault(app: canonical, key: stamp)
             }
             if questions == nil { warn() }
             let credential = try readCredential()
+            if let questions, existing == nil, edit.isEmpty {
+                let asked = try questions.context()
+                if !asked.isEmpty { context = try edited(.saved(.empty), with: asked, key: target.key, app: app, now: now) }
+            }
             try store.save(credential, app: canonical, key: target.key, isDefault: target.makeDefault, context: context)
             let report = CredentialReport(
                 action: "set", app: app, key: target.key, username: credential.username, saved: true, isDefault: target.makeDefault, also: shared,
@@ -511,6 +517,8 @@ protocol CredentialQuestions {
     func replaces(_ entry: LoginCredentialSummary) throws -> Bool
     func newName(taken: [String]) throws -> String
     func credential() throws -> LoginCredential
+    /// The optional about line and tags for a new login, asked after the password.
+    func context() throws -> LoginContextEdit
 }
 
 struct TerminalCredentialQuestions: CredentialQuestions {
@@ -526,15 +534,25 @@ struct TerminalCredentialQuestions: CredentialQuestions {
     }
 
     func newName(taken: [String]) throws -> String {
-        let label = PromptScreen.labels([CredentialScreen.nameLabel])[0]
-        return try prompt.ask(label, placeholder: CredentialScreen.namePlaceholder) { CredentialScreen.nameProblem($0, taken: taken) }
+        try prompt.ask(CredentialScreen.padded(CredentialScreen.nameLabel), placeholder: CredentialScreen.namePlaceholder) { CredentialScreen.nameProblem($0, taken: taken) }
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func credential() throws -> LoginCredential {
-        let labels = PromptScreen.labels([CredentialScreen.usernameLabel, CredentialScreen.passwordLabel, CredentialScreen.againLabel])
-        let username = try prompt.ask(labels[0], check: CredentialScreen.usernameProblem)
-        let password = try prompt.askSecret(labels[1], again: labels[2], check: CredentialScreen.passwordProblem)
+        let username = try prompt.ask(CredentialScreen.padded(CredentialScreen.usernameLabel), check: CredentialScreen.usernameProblem)
+        let password = try prompt.askSecret(
+            CredentialScreen.padded(CredentialScreen.passwordLabel), again: CredentialScreen.padded(CredentialScreen.againLabel), check: CredentialScreen.passwordProblem
+        )
         return try CredentialCommand.credential(username: username, password: password)
+    }
+
+    func context() throws -> LoginContextEdit {
+        let about = try prompt.ask(CredentialScreen.padded(CredentialScreen.aboutLabel), placeholder: CredentialScreen.aboutPlaceholder, check: CredentialScreen.aboutProblem)
+        let tags = try prompt.ask(CredentialScreen.padded(CredentialScreen.tagsLabel), placeholder: CredentialScreen.tagsPlaceholder, check: CredentialScreen.tagsProblem)
+        do {
+            return try CredentialScreen.contextEdit(about: about, tags: tags)
+        } catch let problem as LoginContextProblem {
+            throw CLIError(errorDescription: "\(problem.message) Nothing was saved.", reason: .usage)
+        }
     }
 }

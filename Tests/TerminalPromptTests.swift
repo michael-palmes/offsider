@@ -157,6 +157,59 @@ struct TerminalPromptTests {
         #expect(try store.load(app: "com.example.app", key: "qa")?.username == "ada@example.com")
     }
 
+    @Test("a new login is asked what it is for and its tags after the password; an update, context flags or Escape change that")
+    func newLoginContextQuestions() throws {
+        let store = MemoryLoginCredentialStore()
+        let credential = try #require(LoginCredential(username: "ada@example.com", password: "s3cret-token"))
+        let tagged = ScriptedQuestions(credential: credential)
+        tagged.contextAnswer = try CredentialScreen.contextEdit(about: " Admin on staging ", tags: "role=admin  env=staging")
+        let saved = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-admin", json: true, store: store, questions: tagged, readCredential: tagged.credential)
+        #expect(tagged.contextAsks == 1)
+        #expect(saved.contains(#""tags":["env=staging","role=admin"],"about":"Admin on staging""#))
+
+        let updating = ScriptedQuestions(credential: credential)
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-admin", update: true, json: true, store: store, questions: updating, readCredential: updating.credential)
+        #expect(updating.contextAsks == 0)
+        let kept = LoginEntry(key: "qa-admin", stored: try #require(store.context(app: "com.example.app", key: "qa-admin")))
+        #expect(kept.context.about == "Admin on staging")
+
+        let flagged = ScriptedQuestions(credential: credential)
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-member", edit: LoginContextEdit(about: "Member"), json: true, store: store, questions: flagged, readCredential: flagged.credential)
+        #expect(flagged.contextAsks == 0)
+
+        let escaping = ScriptedQuestions(credential: credential)
+        escaping.contextAnswer = nil
+        #expect(throws: PromptCancelled.self) {
+            try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-owner", json: true, store: store, questions: escaping, readCredential: escaping.credential)
+        }
+        #expect(try store.load(app: "com.example.app", key: "qa-owner") == nil)
+    }
+
+    @Test("the about and tags answers are optional, a bad tag states the rule, and every label lines up")
+    func contextAnswers() throws {
+        #expect(CredentialScreen.aboutProblem("") == nil)
+        #expect(CredentialScreen.aboutProblem("Signs in as qa@example.com")?.contains("email") == true)
+        #expect(CredentialScreen.tagsProblem("") == nil)
+        #expect(CredentialScreen.tagsProblem("role=admin credit") == nil)
+        #expect(CredentialScreen.tagsProblem("role=admin Bad=Tag!")?.contains("word or key=value") == true)
+        #expect(CredentialScreen.tagsProblem("platform=web")?.contains("ios or android") == true)
+        #expect(CredentialScreen.tagsProblem((1...17).map { "t\($0)" }.joined(separator: " ")) != nil)
+        #expect(try CredentialScreen.contextEdit(about: "  ", tags: " ").isEmpty)
+        let widths = Set(CredentialScreen.promptLabels.map { TerminalText.width(CredentialScreen.padded($0)) })
+        #expect(widths.count == 1)
+        #expect(!CredentialScreen.promptLabels.joined().unicodeScalars.contains("\u{FE0F}"))
+
+        let terminal = try PseudoTerminal()
+        terminal.type("Admin on staging\rrole=admin Bad!\rrole=admin env=staging\r")
+        let edit = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+            try TerminalCredentialQuestions(prompt: prompt).context()
+        }
+        let output = terminal.finish()
+        #expect(edit.about == "Admin on staging")
+        #expect(edit.tag.map(\.rawValue) == ["role=admin", "env=staging"])
+        #expect(output.contains("Bad! is not a tag"))
+    }
+
     @Test("a typed password reaches the terminal only as dots, and a mismatch asks again")
     func passwordShowsDots() throws {
         let terminal = try PseudoTerminal()
@@ -272,6 +325,16 @@ private final class ScriptedQuestions: CredentialQuestions {
     func credential() throws -> LoginCredential {
         reads.append(answer)
         return answer
+    }
+
+    /// The about and tags answers; nil cancels as Escape does.
+    var contextAnswer: LoginContextEdit? = LoginContextEdit()
+    private(set) var contextAsks = 0
+
+    func context() throws -> LoginContextEdit {
+        contextAsks += 1
+        guard let contextAnswer else { throw PromptCancelled() }
+        return contextAnswer
     }
 }
 
