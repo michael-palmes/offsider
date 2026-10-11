@@ -154,16 +154,20 @@ public enum CoverJudge {
         let flat: [UINode]
         /// The target and the matched element with everything inside them.
         let own: [UINode]
+        /// Scroll indicators, which take no taps.
+        let indicators: [UINode]
         var logBoxInset = 0.0
 
         init(target: UINode, matched: UINode, point: UIPoint, candidates: [UINode], roots: [UINode], viewport: UIFrame, stack: ScreenStack) {
+            let indicators = ScrollIndicator.all(in: roots)
             self.target = target
             self.matched = matched
             self.point = point
-            self.candidates = candidates
+            self.candidates = candidates.filter { candidate in !indicators.contains { $0.isSameElement(as: candidate) } }
             self.roots = roots
             self.viewport = viewport
             self.stack = stack
+            self.indicators = indicators
             flat = roots.flatMap { $0.flattened() }
             own = target.flattened() + matched.flattened()
         }
@@ -190,7 +194,7 @@ public enum CoverJudge {
         private func cover(on page: ScreenStack.Page) -> UINode {
             let onPage = page.content.sorted().compactMap { $0 < flat.count ? flat[$0] : nil }
             let atPoint = onPage.filter { node in
-                node.frame?.contains(point) == true && CoverJudge.isPlausibleOccluder(node)
+                node.frame?.contains(point) == true && CoverJudge.isPlausibleOccluder(node) && !indicators.contains { $0.isSameElement(as: node) }
             }
             return atPoint.min { $0.area < $1.area } ?? flat[page.index]
         }
@@ -235,10 +239,19 @@ public enum CoverJudge {
             return rootRoles.contains(placed.role) || placed.frame.map { CoverJudge.spans($0, viewport) } == true
         }
 
+        /// A hit on a scroll indicator, placed in the tree or lying along one of its scroll views.
+        private func isIndicator(_ hit: UINode, placed: UINode?) -> Bool {
+            guard let placed else { return ScrollIndicator.isIndicator(hit, alongAnyScrollViewIn: roots) }
+            return indicators.contains { $0.isSameElement(as: placed) }
+        }
+
         func judge(hit: UINode) -> HitJudgement {
             let placed = placed(hit)
             if isOwn(hit) || isOwnHit(hit, placed: placed) {
                 return .clear
+            }
+            if isIndicator(hit, placed: placed) {
+                return .undecided
             }
             if isScreenRoot(hit, placed: placed) {
                 if let page = pageOverTarget {

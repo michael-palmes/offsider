@@ -511,7 +511,7 @@ struct AccessibilityTargetResolver {
 
     /// Plausible occluders whose frame holds `point`; tree order is not z-order on either platform, so a real hit-test must confirm one.
     /// On Android a node in a lower window (the app beneath a keyboard) or not visible to the user cannot cover the target;
-    /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top.
+    /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top. A scroll indicator takes no taps, so it is never one.
     static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, roots: [UINode]) -> [UINode] {
         let related = family(of: target, in: roots) + family(of: matched, in: roots)
         let android = target.isAndroid
@@ -523,20 +523,21 @@ struct AccessibilityTargetResolver {
             return area.contains(point) || CoverJudge.reaches(area, target.frame)
         }
         var found: [UINode] = []
-        func visit(_ node: UINode, root: Int, underKeyboard: Bool) {
+        func visit(_ node: UINode, parent: UINode?, root: Int, underKeyboard: Bool) {
             let underKeyboard = underKeyboard || node.role == .keyboard
             let beneath = android && (root < targetRoot || node.androidVisibleToUser == false)
             if !beneath, reaches(node),
                isPlausibleOccluder(node, underKeyboard: underKeyboard),
+               !ScrollIndicator.isIndicator(node, parent: parent),
                !related.contains(where: { $0.isSameElement(as: node) }) {
                 found.append(node)
             }
             for child in node.children {
-                visit(child, root: root, underKeyboard: underKeyboard)
+                visit(child, parent: node, root: root, underKeyboard: underKeyboard)
             }
         }
         for (index, root) in roots.enumerated() {
-            visit(root, root: index, underKeyboard: false)
+            visit(root, parent: nil, root: index, underKeyboard: false)
         }
         return found
     }
