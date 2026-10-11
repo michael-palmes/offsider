@@ -5,7 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colours, formatPoint, Note, pagePoint, type Point, Readout, Target } from '../fixtures';
 import { useNavigation } from '../navigation';
 
-type Swipe = { start: Point; end: Point; direction: 'Right' | 'Left' | 'Down' | 'Up' };
+type Swipe = {
+  start: Point;
+  end: Point;
+  direction: 'Right' | 'Left' | 'Down' | 'Up';
+  release: 'still' | 'moving';
+};
+type Move = { time: number; point: Point };
 
 function direction(start: Point, end: Point): Swipe['direction'] {
   const dx = end.x - start.x;
@@ -16,12 +22,19 @@ function direction(start: Point, end: Point): Swipe['direction'] {
   return dy > 0 ? 'Down' : 'Up';
 }
 
+/** 'still' when the finger moved under 5 points in the 100 ms before it lifted, else 'moving'. */
+function release(moves: Move[], end: Point, time: number): Swipe['release'] {
+  const before = [...moves].reverse().find((move) => move.time <= time - 100)?.point ?? moves[0]?.point ?? end;
+  return Math.hypot(end.x - before.x, end.y - before.y) < 5 ? 'still' : 'moving';
+}
+
 export function SwipeTestScreen() {
   const insets = useSafeAreaInsets();
   const { pop } = useNavigation();
   const [count, setCount] = useState(0);
   const [last, setLast] = useState<Swipe | null>(null);
   const start = useRef<Point | null>(null);
+  const moves = useRef<Move[]>([]);
 
   return (
     <View style={styles.screen}>
@@ -32,6 +45,10 @@ export function SwipeTestScreen() {
         onResponderTerminationRequest={() => false}
         onResponderGrant={(event) => {
           start.current = pagePoint(event);
+          moves.current = [{ time: event.nativeEvent.timestamp, point: start.current }];
+        }}
+        onResponderMove={(event) => {
+          moves.current.push({ time: event.nativeEvent.timestamp, point: pagePoint(event) });
         }}
         onResponderRelease={(event) => {
           const from = start.current;
@@ -40,7 +57,12 @@ export function SwipeTestScreen() {
           if (!from || (Math.abs(to.x - from.x) < 1 && Math.abs(to.y - from.y) < 1)) {
             return;
           }
-          setLast({ start: from, end: to, direction: direction(from, to) });
+          setLast({
+            start: from,
+            end: to,
+            direction: direction(from, to),
+            release: release(moves.current, to, event.nativeEvent.timestamp),
+          });
           setCount((current) => current + 1);
         }}
       />
@@ -53,6 +75,7 @@ export function SwipeTestScreen() {
             <Readout id="last-swipe-start" label={`Start: ${formatPoint(last.start)}`} />
             <Readout id="last-swipe-end" label={`End: ${formatPoint(last.end)}`} />
             <Readout id="last-swipe-direction" label={`Direction: ${last.direction}`} value={last.direction} />
+            <Readout id="last-swipe-release" label={`Release: ${last.release}`} value={last.release} />
           </>
         ) : (
           <Note>No swipes yet, draw with your finger</Note>

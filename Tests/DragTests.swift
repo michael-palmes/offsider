@@ -76,6 +76,20 @@ struct DragHoldTests {
         let error = #expect(throws: (any Error).self) { try Self.holds(["--hold-ms=\(value)"]) }
         #expect(error.map { Drag.message(for: $0).contains("--hold-ms must be from 0 to 10000") } == true)
     }
+
+    @Test("the finger holds still 50 ms at the end before it lifts by default, and --hold-end sets that hold")
+    func holdAtEnd() throws {
+        #expect(try Self.holds([]).last == 0.05)
+        #expect(try Self.holds(["--hold-end", "500"]).last == 0.5)
+        #expect(try Self.holds(["--hold-end", "0"]).last == 0)
+        #expect(try Self.holds(["--hold-end", "500"]).first == 0.05)
+    }
+
+    @Test("--hold-end outside 0 to 10000 is a usage error", arguments: ["-1", "10001"])
+    func holdEndRange(value: String) {
+        let error = #expect(throws: (any Error).self) { try Self.holds(["--hold-end=\(value)"]) }
+        #expect(error.map { Drag.message(for: $0).contains("--hold-end must be from 0 to 10000") } == true)
+    }
 }
 
 @Suite("Drag Command Tests", .serialized, .enabled(if: isE2EEnabled))
@@ -97,6 +111,19 @@ struct DragTests {
         )
 
         try await waitForRecordedDrag(start: start, end: end, timeout: 3)
+    }
+
+    @Test("--hold-end holds the finger still before it lifts", arguments: [("0", "Release: moving"), ("800", "Release: still")])
+    func holdEnd(milliseconds: String, expected: String) async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "swipe-test")
+
+        try await TestHelpers.runOffsiderCommand(
+            "drag --start-x 100 --start-y 400 --end-x 300 --end-y 400 --duration 0.3 --steps 10 --hold-end \(milliseconds)",
+            simulatorUDID: defaultSimulatorUDID
+        )
+
+        let release = try await TestHelpers.waitForLabel(containing: "Release:", timeout: 3) { _ in true }
+        #expect(release == expected)
     }
 
     private func waitForRecordedDrag(

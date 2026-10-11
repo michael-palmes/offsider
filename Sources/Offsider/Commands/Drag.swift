@@ -7,20 +7,23 @@ struct Drag: AsyncParsableCommand {
         abstract: "Perform a low-level point-to-point drag using explicit touch move events.",
         discussion: """
         The finger goes down at the start, holds for --hold-ms, moves in --steps even steps over --duration, \
-        then lifts at the end. Raise --hold-ms past an app's long-press delay (often 500 ms) to pick up \
-        something that drags only after a long press; `gesture long-press-drag` is the same with an 800 ms hold.
+        holds still at the end for --hold-end, then lifts. Raise --hold-ms past an app's long-press delay \
+        (often 500 ms) to pick up something that drags only after a long press; `gesture long-press-drag` is \
+        the same with an 800 ms hold. Raise --hold-end so a list stops without a fling, or a dragged item \
+        settles over its drop target before the release.
 
         Examples:
           offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --device DEVICE_ID
           offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-ms 800 --device DEVICE_ID
+          offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-end 500 --device DEVICE_ID
         """
     )
 
     private static let defaultDuration: TimeInterval = 0.6
     private static let defaultSteps = 60
-    private static let maxSteps = 1_000
+    static let maxSteps = 1_000
     static let defaultHoldMilliseconds = 50
-    private static let finalHold: TimeInterval = 0.05
+    static let defaultHoldEndMilliseconds = 50
 
     @Option(name: .customLong("start-x"), help: "The X coordinate of the starting point.")
     var startX: Double
@@ -42,6 +45,9 @@ struct Drag: AsyncParsableCommand {
 
     @Option(name: .customLong("hold-ms"), help: ArgumentHelp("Milliseconds to hold at the start before moving, from 0 to 10000; 500 or more starts a long-press drag.", valueName: "ms"))
     var holdMs: Int = Self.defaultHoldMilliseconds
+
+    @Option(name: .customLong("hold-end"), help: ArgumentHelp("Milliseconds to hold still at the end before lifting, from 0 to 10000 (default 50).", valueName: "ms"))
+    var holdEnd: Int = Self.defaultHoldEndMilliseconds
 
     @Option(name: .customLong("pre-delay"), help: "Delay before starting the drag in seconds.")
     var preDelay: Double?
@@ -67,6 +73,9 @@ struct Drag: AsyncParsableCommand {
         }
         guard (0...10_000).contains(holdMs) else {
             throw ValidationError("--hold-ms must be from 0 to 10000; got \(holdMs).")
+        }
+        guard (0...10_000).contains(holdEnd) else {
+            throw ValidationError("--hold-end must be from 0 to 10000; got \(holdEnd).")
         }
         if let preDelay {
             guard preDelay >= 0 && preDelay <= 10.0 else {
@@ -112,7 +121,7 @@ struct Drag: AsyncParsableCommand {
         logger.info().log("Low-level drag completed successfully")
     }
 
-    /// Down, the --hold-ms hold, the moves, a short hold, up.
+    /// Down, the --hold-ms hold, the moves, the --hold-end hold, up.
     func dragEvent(from start: (x: Double, y: Double), to end: (x: Double, y: Double)) throws -> InputEvent {
         try InputEvent.compositeDrag(
             from: start,
@@ -120,7 +129,7 @@ struct Drag: AsyncParsableCommand {
             duration: duration,
             steps: steps,
             initialHold: Double(holdMs) / 1000,
-            finalHold: Self.finalHold
+            finalHold: Double(holdEnd) / 1000
         )
     }
 }

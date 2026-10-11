@@ -1,5 +1,72 @@
-import Testing
 import Foundation
+import OffsiderCore
+import Testing
+@testable import Offsider
+
+@Suite("Swipe hold at the end")
+@MainActor
+struct SwipeHoldEndTests {
+    private static func swipe(_ arguments: [String]) throws -> Swipe {
+        try Swipe.parse(["--start-x", "200", "--start-y", "800", "--end-x", "200", "--end-y", "400"] + arguments + ["--device", "emulator-5554"])
+    }
+
+    @Test("without --hold-end a swipe stays one swipe event, which lifts while moving")
+    func plainSwipeStaysSwipe() throws {
+        let event = try Self.swipe(["--duration", "0.4"]).swipeEvent(from: (x: 200, y: 800), to: (x: 200, y: 400))
+
+        #expect(event == .swipe(200, yStart: 800, xEnd: 200, yEnd: 400, delta: 50, duration: 0.4))
+    }
+
+    @Test("--hold-end sends a drag: down at the start with no hold, moves over --duration, the hold at the end point, then up there")
+    func holdEndIsDrag() throws {
+        let event = try Self.swipe(["--duration", "0.4", "--hold-end", "500"]).swipeEvent(from: (x: 200, y: 800), to: (x: 200, y: 400))
+
+        guard case .composite(let events) = event else {
+            Issue.record("expected a composite drag, got \(event)")
+            return
+        }
+        #expect(events.first == .touch(direction: .down, x: 200, y: 800))
+        #expect(events.suffix(3) == [.touch(direction: .down, x: 200, y: 400), .delay(0.5), .touch(direction: .up, x: 200, y: 400)])
+        let delays = events.compactMap { if case .delay(let seconds) = $0 { return seconds } else { return nil } }
+        #expect(delays.first == 0)
+        #expect(abs(delays.dropFirst().dropLast().reduce(0, +) - 0.4) < 1e-9)
+        #expect(events.filter { if case .touch(.down, _, _) = $0 { return true } else { return false } }.count > 2)
+    }
+
+    @Test("--hold-end with a tiny --delta moves in at most drag's 1000 steps, not one per fraction of a point")
+    func holdEndCapsSteps() throws {
+        let event = try Self.swipe(["--delta", "0.01", "--hold-end", "100"]).swipeEvent(from: (x: 200, y: 800), to: (x: 200, y: 400))
+
+        guard case .composite(let events) = event else {
+            Issue.record("expected a composite drag, got \(event)")
+            return
+        }
+        let moves = events.filter { if case .touch(.down, _, _) = $0 { return true } else { return false } }.count
+        #expect(moves <= Drag.maxSteps + 2)
+    }
+
+    @Test("--hold-end outside 0 to 10000 is a usage error", arguments: ["-1", "10001"])
+    func holdEndRange(value: String) {
+        let error = #expect(throws: (any Error).self) { try Self.swipe(["--hold-end=\(value)"]) }
+        #expect(error.map { Swipe.message(for: $0).contains("--hold-end must be from 0 to 10000") } == true)
+    }
+
+    @Test("a batch swipe step sends the command's event, with and without --hold-end", arguments: [[], ["--hold-end", "300"]])
+    func batchMatchesCommand(extra: [String]) async throws {
+        let device = DeviceID(rawValue: "STUB", platform: .ios)
+        let context = BatchContext(backend: StubBackend(session: RecordingInputSession()), device: device, axCachePolicy: .perBatch, typeSubmissionMode: .composite, typeChunkSize: 1)
+        let step = try Self.swipe(extra)
+
+        let primitives = try await step.toBatchPrimitives(context: context, logger: OffsiderLogger())
+
+        #expect(primitives.count == 1)
+        guard case .hidMergeable(let event) = primitives.first else {
+            Issue.record("expected a mergeable event, got \(primitives)")
+            return
+        }
+        #expect(event == (try step.swipeEvent(from: (x: 200, y: 800), to: (x: 200, y: 400))))
+    }
+}
 
 @Suite("Swipe Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct SwipeTests {
@@ -24,6 +91,17 @@ struct SwipeTests {
         #expect(endElement?.label == "End: (300, 400)")
     }
     
+    @Test("A fast swipe lifts while moving, and --hold-end stops the finger before it lifts", arguments: [("", "Release: moving"), (" --hold-end 800", "Release: still")])
+    func holdEndReleasesStill(extra: String, expected: String) async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "swipe-test")
+
+        try await TestHelpers.runOffsiderCommand("swipe --start-x 100 --start-y 400 --end-x 300 --end-y 400 --duration 0.2 --delta 10\(extra)", simulatorUDID: defaultSimulatorUDID)
+
+        let release = try await TestHelpers.waitForLabel(containing: "Release:", timeout: 3) { _ in true }
+        #expect(release == expected)
+        #expect(UIStateParser.findElementContainingLabel(in: try await TestHelpers.getUIState(), containing: "End:")?.label == "End: (300, 400)")
+    }
+
     @Test("Landscape coordinate swipe preserves translated start and end", .enabled(if: isLandscapeE2EEnabled))
     func landscapeCoordinateSwipePreservesTranslatedStartAndEnd() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "landscape-coordinate-test")
