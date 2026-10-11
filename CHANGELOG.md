@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-12
+
 ### Added
 
 - `credential describe [name]` sets a saved user's context without reading its password or needing a terminal: `--about` (access, and when to use the user), `--avoid` (tests it must not be used for), `--state` (what the account holds now, stamped `updated`), `--tag` and `--untag` (both repeatable) and `--clear-tags`. It needs at least one of them, and with no name describes the default. `credential set` takes the same flags, and on a terminal also asks a new user "What's it for" and "Tags", both optional. A tag is a lowercase word or `key=value`, such as `credit` or `role=admin`, at most 16 per user, and `platform` takes only `ios` or `android`; a note is one line of at most 200 characters, and `""` clears it. Notes and tags refuse email-like text, control characters and bidi characters. They sit in the Keychain item's attributes, which are not encrypted, so they must never hold secrets or personal details.
@@ -501,7 +503,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/michael-palmes/offsider/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/michael-palmes/offsider/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/michael-palmes/offsider/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/michael-palmes/offsider/compare/v0.7.0...v0.8.0
