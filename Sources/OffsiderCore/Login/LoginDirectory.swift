@@ -2,11 +2,11 @@ import Foundation
 
 /// What `credential set` should do before it asks for a password.
 public enum LoginSetIntent: Equatable, Sendable {
-    /// Write this key. `makeDefault` is true when this login is the one `login` uses with no tag.
+    /// Write this key. `makeDefault` is true when this login is the one `login` uses with no name.
     case write(key: String, makeDefault: Bool)
     /// Saved logins already exist and the terminal should ask.
     case choose
-    /// The tag is already saved and the terminal should ask before replacing it.
+    /// The name is already saved and the terminal should ask before replacing it.
     case confirm(key: String, makeDefault: Bool)
     /// A message for the user. Nothing is saved.
     case refused(String)
@@ -20,28 +20,28 @@ public enum LoginJoinIntent: Equatable, Sendable {
     case refused(String)
 }
 
-/// An answer to the set menu: update one saved login, or create a tagged one.
+/// An answer to the set menu: update one saved login, or create a named one.
 public enum LoginSetChoice: Equatable, Sendable {
     case update(key: String)
     case create
 }
 
-/// The rules for the default login, tags, and sharing one app across bundle ids.
+/// The rules for the default login, names, and sharing one app across bundle ids.
 public enum LoginDirectory {
-    public static func setIntent(entries: [LoginCredentialSummary], tag: String?, update: Bool, interactive: Bool) -> LoginSetIntent {
+    public static func setIntent(entries: [LoginCredentialSummary], name: String?, update: Bool, interactive: Bool) -> LoginSetIntent {
         if entries.isEmpty {
-            if let tag { return .write(key: tag, makeDefault: true) }
+            if let name { return .write(key: name, makeDefault: true) }
             return .write(key: LoginCredential.defaultAccountKey, makeDefault: true)
         }
-        if let tag {
-            if let existing = entries.first(where: { $0.key == tag }) {
+        if let name {
+            if let existing = entries.first(where: { $0.key == name }) {
                 guard update else {
-                    if interactive { return .confirm(key: tag, makeDefault: existing.isDefault) }
-                    return .refused("The tag \(tag) is already saved for this app. Pass --update to replace it. Nothing was saved.")
+                    if interactive { return .confirm(key: name, makeDefault: existing.isDefault) }
+                    return .refused("The name \(name) is already saved for this app. Pass --update to replace it. Nothing was saved.")
                 }
-                return .write(key: tag, makeDefault: existing.isDefault)
+                return .write(key: name, makeDefault: existing.isDefault)
             }
-            return .write(key: tag, makeDefault: false)
+            return .write(key: name, makeDefault: false)
         }
         if update {
             if let marked = entries.first(where: \.isDefault) {
@@ -50,11 +50,11 @@ public enum LoginDirectory {
             if entries.count == 1, let only = entries.first {
                 return .write(key: only.key, makeDefault: true)
             }
-            let tags = entries.map { LoginCredential.displayKey($0.key) }.joined(separator: ", ")
-            return .refused("Several logins are saved for this app (\(tags)) and none is the default. Pass the tag to update. Nothing was saved.")
+            let names = entries.map { LoginCredential.displayKey($0.key) }.joined(separator: ", ")
+            return .refused("Several logins are saved for this app (\(names)) and none is the default. Pass the name to update. Nothing was saved.")
         }
         if interactive { return .choose }
-        return .refused("This app already has a saved login. Pass --update to replace the default, or a tag such as qa to add another. Nothing was saved.")
+        return .refused("This app already has a saved login. Pass --update to replace the default, or a name such as qa to add another. Nothing was saved.")
     }
 
     /// True when adding another login should mark the sole existing one as the default.

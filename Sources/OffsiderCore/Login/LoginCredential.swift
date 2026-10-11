@@ -23,7 +23,7 @@ public struct LoginCredential: Equatable, Sendable, CustomStringConvertible, Cus
     public static let passwordLengths = 1...128
     /// Splits the Keychain account into the app id and the key. Neither id uses this character.
     public static let accountSeparator: Character = "\u{1}"
-    /// Account key of the untagged default login. It is not a tag a person can pass.
+    /// Account key of the unnamed default login. It is not a name a person can pass.
     public static let defaultAccountKey = "*"
     /// First character of a Keychain account that links another bundle id to an app. It stores no password.
     public static let linkMark: Character = "\u{2}"
@@ -52,7 +52,7 @@ public struct LoginCredential: Equatable, Sendable, CustomStringConvertible, Cus
         String(linkMark) + member
     }
 
-    /// The word shown for a stored key. The untagged slot is `default`.
+    /// The word shown for a stored key. The unnamed slot is `default`.
     public static func displayKey(_ key: String) -> String {
         key == defaultAccountKey ? "default" : key
     }
@@ -92,7 +92,7 @@ public struct LoginCredential: Equatable, Sendable, CustomStringConvertible, Cus
 public struct LoginCredentialSummary: Equatable, Sendable {
     public var key: String
     public var username: String
-    /// True for the login `login` uses when no tag is passed.
+    /// True for the login `login` uses when no name is passed.
     public var isDefault: Bool
 
     public init(key: String, username: String, isDefault: Bool = false) {

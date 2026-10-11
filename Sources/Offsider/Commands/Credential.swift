@@ -9,14 +9,14 @@ struct CredentialCommand: AsyncParsableCommand {
         abstract: "Save, check, remove or share a test username and password for one app.",
         discussion: """
         The password is kept in your login Keychain, never in a file, an argument or Offsider's output. \
-        The first login saved for an app is the default, so login with no tag uses it. A tag such as dev \
-        or qa names another login for that same app. The same tag may be saved again for a different app, \
+        The first login saved for an app is the default, so login with no name uses it. A name such as dev \
+        or qa saves another login for that same app. The same name may be saved again for a different app, \
         and login types a credential only into an app it was saved for.
 
         set asks for the username or email, then the password twice, showing a dot for each character, or \
         reads two lines with --stdin. Both must be characters the keyboard can type: the username 1 to 254, \
         the password 1 to 128. When a login is already saved, a terminal shows a menu to update one or add a \
-        tagged one, and asks before replacing a saved tag. Without a terminal, pass --update or a tag. Save \
+        named one, and asks before replacing a saved name. Without a terminal, pass --update or a name. Save \
         test development credentials only. Anything that can run commands as you can then type them into this app.
 
         join links the app in front to an app that already has saved logins, so both bundle ids share them. \
@@ -47,13 +47,13 @@ struct CredentialCommand: AsyncParsableCommand {
     @Argument(help: ArgumentHelp("set, status, remove or join.", valueName: "action"))
     var action: String
 
-    @Argument(help: ArgumentHelp("A tag such as dev. Omit it to use the default login. join does not take one.", valueName: "tag"))
+    @Argument(help: ArgumentHelp("The saved login's name, such as dev. Omit it to use the default login. join does not take one.", valueName: "name"))
     var key: String?
 
     @Flag(name: .customLong("stdin"), help: "With set: read the username, then the password, from two lines of standard input.")
     var stdin = false
 
-    @Flag(name: .customLong("update"), help: "With set: replace the default login, or the tagged one, instead of adding a login.")
+    @Flag(name: .customLong("update"), help: "With set: replace the default login, or the named one, instead of adding a login.")
     var update = false
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout. It never includes the password.")
@@ -70,7 +70,7 @@ struct CredentialCommand: AsyncParsableCommand {
         if stdin, parsed != .set { throw ValidationError("--stdin goes with set, not \(parsed.rawValue).") }
         if update, parsed != .set { throw ValidationError("--update goes with set, not \(parsed.rawValue).") }
         if let key {
-            guard parsed != .join else { throw ValidationError("join does not take a tag.") }
+            guard parsed != .join else { throw ValidationError("join does not take a name.") }
             guard LoginKey(rawValue: key) != nil else { throw ValidationError(Self.keyMessage) }
         }
         if let app, Self.appID(app) == nil {
@@ -121,7 +121,7 @@ struct CredentialCommand: AsyncParsableCommand {
         return try await TerminalSpinner.run("Finding the app in front…", work)
     }
 
-    static let keyMessage = "A credential tag is 1 to 32 characters from A-Z, a-z, 0-9, '.', '_' and '-', starting with a letter or digit, such as dev. The word default is reserved."
+    static let keyMessage = "A saved login's name is 1 to 32 characters from A-Z, a-z, 0-9, '.', '_' and '-', starting with a letter or digit, such as dev. The word default is reserved."
     static let warning = "Save test development credentials only. Anything that can run commands as you can then type them into this app. The password is never printed."
 
     static func appID(_ raw: String) -> String? {
@@ -186,7 +186,7 @@ struct CredentialCommand: AsyncParsableCommand {
         switch action {
         case .set:
             let entries = try store.list(app: canonical)
-            let target = try writeTarget(entries: entries, tag: key, update: update, questions: questions)
+            let target = try writeTarget(entries: entries, name: key, update: update, questions: questions)
             if let stamp = LoginDirectory.shouldStampDefault(entries, writing: target.key) {
                 try store.markDefault(app: canonical, key: stamp)
             }
@@ -213,7 +213,7 @@ struct CredentialCommand: AsyncParsableCommand {
             let report = CredentialReport(action: "status", app: app, saved: !listed.isEmpty, listed: listed, also: shared)
             return render(report)
         case .remove:
-            let removing = try removeTarget(entries: try store.list(app: canonical), tag: key)
+            let removing = try removeTarget(entries: try store.list(app: canonical), name: key)
             let removed = try store.remove(app: canonical, key: removing)
             let report = CredentialReport(action: "remove", app: app, key: removing, saved: false, removed: removed, also: shared)
             return render(report)
@@ -269,11 +269,11 @@ struct CredentialCommand: AsyncParsableCommand {
 
     private static func writeTarget(
         entries: [LoginCredentialSummary],
-        tag: String?,
+        name: String?,
         update: Bool,
         questions: (any CredentialQuestions)?
     ) throws -> WriteTarget {
-        switch LoginDirectory.setIntent(entries: entries, tag: tag, update: update, interactive: questions != nil) {
+        switch LoginDirectory.setIntent(entries: entries, name: name, update: update, interactive: questions != nil) {
         case .write(let key, let makeDefault):
             return WriteTarget(key: key, makeDefault: makeDefault)
         case .refused(let message):
@@ -283,15 +283,15 @@ struct CredentialCommand: AsyncParsableCommand {
             return WriteTarget(key: key, makeDefault: makeDefault)
         case .choose:
             guard let questions else {
-                throw CLIError(errorDescription: "credential set asks for a choice on a terminal. Without one, pass --update or a tag.", reason: .usage)
+                throw CLIError(errorDescription: "credential set asks for a choice on a terminal. Without one, pass --update or a name.", reason: .usage)
             }
             switch try questions.loginToChange(entries: entries) {
             case .update(let key):
                 let marked = entries.first { $0.key == key }?.isDefault ?? (entries.count == 1)
                 return WriteTarget(key: key, makeDefault: marked)
             case .create:
-                let tag = try questions.newTag(taken: entries.map(\.key))
-                guard let parsed = LoginKey(rawValue: tag), !entries.contains(where: { $0.key == parsed.rawValue }) else {
+                let name = try questions.newName(taken: entries.map(\.key))
+                guard let parsed = LoginKey(rawValue: name), !entries.contains(where: { $0.key == parsed.rawValue }) else {
                     throw CLIError(errorDescription: "\(keyMessage) Nothing was saved.", reason: .usage)
                 }
                 return WriteTarget(key: parsed.rawValue, makeDefault: false)
@@ -299,13 +299,13 @@ struct CredentialCommand: AsyncParsableCommand {
         }
     }
 
-    private static func removeTarget(entries: [LoginCredentialSummary], tag: String?) throws -> String {
-        if let tag { return tag }
+    private static func removeTarget(entries: [LoginCredentialSummary], name: String?) throws -> String {
+        if let name { return name }
         if let marked = entries.first(where: \.isDefault) { return marked.key }
         if entries.count == 1, let only = entries.first { return only.key }
         if entries.isEmpty { return LoginCredential.defaultAccountKey }
-        let tags = entries.map { LoginCredential.displayKey($0.key) }.joined(separator: ", ")
-        throw CLIError(errorDescription: "Several logins are saved (\(tags)). Pass the tag to remove. Nothing was removed.", reason: .usage)
+        let names = entries.map { LoginCredential.displayKey($0.key) }.joined(separator: ", ")
+        throw CLIError(errorDescription: "Several logins are saved (\(names)). Pass the name to remove. Nothing was removed.", reason: .usage)
     }
 
     private static func sharedIDs(app: String, canonical: String, store: any LoginCredentialStoring) throws -> [String] {
@@ -356,7 +356,7 @@ struct TerminalOutput {
 protocol CredentialQuestions {
     func loginToChange(entries: [LoginCredentialSummary]) throws -> LoginSetChoice
     func replaces(_ entry: LoginCredentialSummary) throws -> Bool
-    func newTag(taken: [String]) throws -> String
+    func newName(taken: [String]) throws -> String
     func credential() throws -> LoginCredential
 }
 
@@ -372,9 +372,9 @@ struct TerminalCredentialQuestions: CredentialQuestions {
         try prompt.choose(CredentialScreen.replaceTitle(entry), options: CredentialScreen.replaceOptions) == 0
     }
 
-    func newTag(taken: [String]) throws -> String {
-        let label = PromptScreen.labels([CredentialScreen.tagLabel])[0]
-        return try prompt.ask(label, placeholder: CredentialScreen.tagPlaceholder) { CredentialScreen.tagProblem($0, taken: taken) }
+    func newName(taken: [String]) throws -> String {
+        let label = PromptScreen.labels([CredentialScreen.nameLabel])[0]
+        return try prompt.ask(label, placeholder: CredentialScreen.namePlaceholder) { CredentialScreen.nameProblem($0, taken: taken) }
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

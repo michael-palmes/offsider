@@ -159,13 +159,13 @@ struct LoginCredentialTests {
         #expect(!menu.contains { $0.contains(password) })
         #expect(LoginDirectory.setChoice(at: 0, entries: entries) == .update(key: "dev"))
         #expect(LoginDirectory.setChoice(at: entries.count, entries: entries) == .create)
-        #expect(LoginDirectory.setIntent(entries: entries, tag: "dev", update: false, interactive: true) == .confirm(key: "dev", makeDefault: true))
-        guard case .refused(let refusal) = LoginDirectory.setIntent(entries: entries, tag: "dev", update: false, interactive: false) else {
-            Issue.record("expected a saved tag to refuse without a terminal")
+        #expect(LoginDirectory.setIntent(entries: entries, name: "dev", update: false, interactive: true) == .confirm(key: "dev", makeDefault: true))
+        guard case .refused(let refusal) = LoginDirectory.setIntent(entries: entries, name: "dev", update: false, interactive: false) else {
+            Issue.record("expected a saved name to refuse without a terminal")
             return
         }
         #expect(refusal.contains("--update"))
-        #expect(LoginDirectory.setIntent(entries: [], tag: nil, update: false, interactive: false) == .write(key: LoginCredential.defaultAccountKey, makeDefault: true))
+        #expect(LoginDirectory.setIntent(entries: [], name: nil, update: false, interactive: false) == .write(key: LoginCredential.defaultAccountKey, makeDefault: true))
     }
 
     @Test("credential takes --device, and --app does not require one")

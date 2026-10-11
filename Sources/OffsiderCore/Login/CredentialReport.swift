@@ -12,7 +12,7 @@ public struct CredentialReport: Equatable, Sendable {
     public var removed: Bool
     /// Every credential for the app, when `status` was asked with no key.
     public var listed: [LoginCredentialSummary]
-    /// True when the saved or shown login is the one `login` uses with no tag.
+    /// True when the saved or shown login is the one `login` uses with no name.
     public var isDefault: Bool
     /// Other bundle ids that share this app's logins.
     public var also: [String]
@@ -66,7 +66,7 @@ public struct CredentialReport: Equatable, Sendable {
                 return "Saved the default login for \(app) (\(username ?? "")). The password is not shown."
             }
             let role = isDefault ? " It is the default login." : ""
-            return "Saved tag \(shown) for \(app) (\(username ?? "")).\(role) The password is not shown."
+            return "Saved the login named \(shown) for \(app) (\(username ?? "")).\(role) The password is not shown."
         case "remove":
             let name = key == LoginCredential.defaultAccountKey ? "default login" : "login credential \(shown)"
             return removed ? "Removed the \(name) for \(app)" : "No \(name) was saved for \(app)"
@@ -76,7 +76,7 @@ public struct CredentialReport: Equatable, Sendable {
                 return "\(heading) default: \(username)"
             }
             let mark = isDefault ? " (default)" : ""
-            return "\(heading) tag \(shown)\(mark): \(username)"
+            return "\(heading) \(shown)\(mark): \(username)"
         }
     }
 

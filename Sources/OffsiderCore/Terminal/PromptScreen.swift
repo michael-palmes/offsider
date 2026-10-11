@@ -54,13 +54,13 @@ public enum CredentialScreen {
     public static let usernameLabel = "👤 Email or username"
     public static let passwordLabel = "🔑 Password"
     public static let againLabel = "🔁 Once more"
-    public static let tagLabel = "✨ Name it"
-    public static let tagPlaceholder = "like qa"
+    public static let nameLabel = "✨ Name it"
+    public static let namePlaceholder = "like qa"
     public static let addAnother = "➕ Add another login"
 
     public static func header(app: String, key: String?, style: TerminalStyle) -> [String] {
-        let tag = key.map { " · " + LoginCredential.displayKey($0) } ?? ""
-        return PromptScreen.header("🔐 Save a test login · \(app)\(tag)", [PromptScreen.keychainLine, "🧪 Use a test account, not your own"], style: style)
+        let name = key.map { " · " + LoginCredential.displayKey($0) } ?? ""
+        return PromptScreen.header("🔐 Save a test login · \(app)\(name)", [PromptScreen.keychainLine, "🧪 Use a test account, not your own"], style: style)
     }
 
     public static func menuTitle(entries: [LoginCredentialSummary]) -> String {
@@ -104,8 +104,8 @@ public enum CredentialScreen {
         return TextToHIDEvents.validateText(password) ? nil : PromptScreen.untypeable
     }
 
-    /// Why a typed tag cannot name a new login, or nil when it can.
-    public static func tagProblem(_ raw: String, taken: [String]) -> String? {
+    /// Why a typed name cannot name a new login, or nil when it can.
+    public static func nameProblem(_ raw: String, taken: [String]) -> String? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return "❗ Type a short name, like qa." }
         if text.lowercased() == "default" { return "❗ default is taken. Pick another name." }
@@ -131,11 +131,11 @@ extension CredentialReport {
         case "set":
             var details = ["👤 \(username ?? "")", "🔑 hidden", "🔒 Keychain"]
             if isDefault, key != nil, key != LoginCredential.defaultAccountKey { details.append("⭐ default") }
-            let tagArgument = key == nil || key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
+            let nameArgument = key == nil || key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
             return [
                 style.green(style.bold("✅ Saved the \(named) for \(app)")),
                 "   " + style.dim((details + shared).joined(separator: "  ")),
-                PromptScreen.nextStep("Next", command: "offsider login\(tagArgument)\(deviceSuffix)", style: style),
+                PromptScreen.nextStep("Next", command: "offsider login\(nameArgument)\(deviceSuffix)", style: style),
             ].joined(separator: "\n")
         case "remove":
             return removed ? style.bold("🧹 Removed the \(named) for \(app)") : style.bold("🤷 No \(named) to remove for \(app)")
@@ -154,8 +154,8 @@ extension CredentialReport {
                 return ([style.bold("🔐 \(app) · \(count)")] + rows + shared.map { "   " + style.dim($0) }).joined(separator: "\n")
             }
             guard saved, let username else {
-                let tagArgument = key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
-                return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set\(tagArgument) --app \(app)", style: style)].joined(separator: "\n")
+                let nameArgument = key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
+                return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set\(nameArgument) --app \(app)", style: style)].joined(separator: "\n")
             }
             let details = ["👤 \(username)"] + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
             return [style.green(style.bold("✅ The \(named) is saved for \(app)")), "   " + style.dim(details.joined(separator: "  "))].joined(separator: "\n")

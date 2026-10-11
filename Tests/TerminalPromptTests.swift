@@ -95,10 +95,10 @@ struct TerminalPromptTests {
         let long = String(repeating: "x", count: 129)
         #expect(CredentialScreen.passwordProblem(long)?.contains(long) == false)
         #expect(CredentialScreen.passwordProblem("s3cret token") == nil)
-        #expect(CredentialScreen.tagProblem("dev", taken: ["dev"])?.contains("already saved") == true)
-        #expect(CredentialScreen.tagProblem("Default", taken: []) != nil)
-        #expect(CredentialScreen.tagProblem("bad tag", taken: []) != nil)
-        #expect(CredentialScreen.tagProblem(" qa ", taken: ["dev"]) == nil)
+        #expect(CredentialScreen.nameProblem("dev", taken: ["dev"])?.contains("already saved") == true)
+        #expect(CredentialScreen.nameProblem("Default", taken: []) != nil)
+        #expect(CredentialScreen.nameProblem("bad name", taken: []) != nil)
+        #expect(CredentialScreen.nameProblem(" qa ", taken: ["dev"]) == nil)
         #expect(UnlockCodeScreen.codeProblem("123") != nil)
         #expect(UnlockCodeScreen.codeProblem("1234") == nil)
     }
@@ -118,13 +118,13 @@ struct TerminalPromptTests {
         #expect(UnlockCodeScreen.status(name: "Pixel", device: "SERIAL", saved: true, lastAttemptFailed: true, style: .plain).contains("unlock-code set --device SERIAL"))
     }
 
-    @Test("credential set adds a new tag from the menu, and keeping a saved tag reads no password")
+    @Test("credential set adds a new name from the menu, and keeping a saved name reads no password")
     func scriptedChoices() throws {
         let store = MemoryLoginCredentialStore()
         let first = try #require(LoginCredential(username: "ada@example.com", password: "s3cret-token"))
         try store.save(first, app: "com.example.app", key: "dev", isDefault: true)
 
-        let adding = ScriptedQuestions(choice: .create, tag: "qa", credential: try #require(LoginCredential(username: "bea@example.com", password: "s3cret-token")))
+        let adding = ScriptedQuestions(choice: .create, name: "qa", credential: try #require(LoginCredential(username: "bea@example.com", password: "s3cret-token")))
         let added = try CredentialCommand.perform(.set, app: "com.example.app", key: nil, json: true, store: store, questions: adding, readCredential: adding.credential)
         #expect(added.contains("\"key\":\"qa\""))
         #expect(try store.load(app: "com.example.app", key: "qa")?.username == "bea@example.com")
@@ -239,21 +239,21 @@ struct TerminalPromptTests {
 
 private final class ScriptedQuestions: CredentialQuestions {
     var choice: LoginSetChoice = .create
-    var tag = "qa"
+    var name = "qa"
     var replace = false
     let answer: LoginCredential
     private(set) var reads: [LoginCredential] = []
 
-    init(choice: LoginSetChoice = .create, tag: String = "qa", replace: Bool = false, credential: LoginCredential) {
+    init(choice: LoginSetChoice = .create, name: String = "qa", replace: Bool = false, credential: LoginCredential) {
         self.choice = choice
-        self.tag = tag
+        self.name = name
         self.replace = replace
         answer = credential
     }
 
     func loginToChange(entries: [LoginCredentialSummary]) throws -> LoginSetChoice { choice }
     func replaces(_ entry: LoginCredentialSummary) throws -> Bool { replace }
-    func newTag(taken: [String]) throws -> String { tag }
+    func newName(taken: [String]) throws -> String { name }
     func credential() throws -> LoginCredential {
         reads.append(answer)
         return answer

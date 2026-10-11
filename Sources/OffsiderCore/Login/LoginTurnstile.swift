@@ -50,7 +50,7 @@ public struct LoginReport: Equatable, Sendable {
 
     public func textLine() -> String {
         let button = submitLabel.map { "tapped \($0)" } ?? "tapped the submit button"
-        return "\(app) key \(key): filled the email or username field, filled the password field, \(button). The submit button was tapped. This does not mean the server accepted the login."
+        return "\(app) as \(LoginCredential.displayKey(key)): filled the email or username field, filled the password field, \(button). The submit button was tapped. This does not mean the server accepted the login."
     }
 
     public func jsonLine() -> String {

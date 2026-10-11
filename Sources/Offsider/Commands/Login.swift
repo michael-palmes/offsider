@@ -17,7 +17,7 @@ struct LoginCommand: AsyncParsableCommand {
         Exit 0 means the submit button was tapped. It does not mean the server accepted the login. The \
         password is never printed. A physical iPhone or iPad is refused.
 
-        With no tag, login uses the default. One saved login is the default, including one saved earlier under a tag such as dev.
+        With no name, login uses the default. One saved login is the default, including one saved earlier under a name such as dev.
 
         Examples:
           offsider login dev --device DEVICE_ID
@@ -25,7 +25,7 @@ struct LoginCommand: AsyncParsableCommand {
         """
     )
 
-    @Argument(help: ArgumentHelp("The credential tag, such as dev. Omit it to use the default login.", valueName: "tag"))
+    @Argument(help: ArgumentHelp("The saved login's name, such as dev. Omit it to use the default login.", valueName: "name"))
     var key: String?
 
     @Option(name: .customLong("turnstile"), help: ArgumentHelp("auto (default), required or off. auto handles a widget already on screen.", valueName: "mode"))
@@ -162,7 +162,7 @@ struct LoginCommand: AsyncParsableCommand {
         let shown = keys.map(LoginCredential.displayKey).joined(separator: ", ")
         let example = keys.first { $0 != LoginCredential.defaultAccountKey } ?? "dev"
         throw CLIError(
-            errorDescription: "Several login credentials are saved for \(app) (\(shown)) and none is the default. Pass the tag, for example offsider login \(example) --device \(device).",
+            errorDescription: "Several login credentials are saved for \(app) (\(shown)) and none is the default. Pass the name, for example offsider login \(example) --device \(device).",
             reason: .selectorAmbiguous,
             hint: "offsider credential status --device \(device)"
         )
