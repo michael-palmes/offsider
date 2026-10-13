@@ -152,10 +152,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         var truncated = false
         var windows: [UIWindowInfo]?
         var hidden: Int?
+        var namedHidden: [UITreeContext.HiddenBranch]?
         switch try await treeSource(for: serial) {
         case .helper(let session):
             let read = try await helperRoots(serial, session: session)
-            (roots, truncated, windows, hidden) = (read.roots, read.truncated, read.windows, read.hidden)
+            (roots, truncated, windows, hidden, namedHidden) = (read.roots, read.truncated, read.windows, read.hidden, read.namedHidden)
         case .uiautomator:
             roots = try await uiautomatorRoots(serial)
         }
@@ -163,6 +164,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         tree.sourceTruncated = truncated
         tree.windows = windows
         tree.hiddenBranches = hidden
+        tree.namedHiddenBranches = namedHidden
         guard let point else {
             DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
             return tree

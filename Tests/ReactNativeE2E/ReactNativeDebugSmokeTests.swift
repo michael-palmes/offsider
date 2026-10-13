@@ -273,6 +273,38 @@ struct ReactNativeDebugSmokeTests {
         #expect(result.stdout.contains(#""dispatched":"yes""#), "\(result.stdout)")
     }
 
+    @Test("on Android rn devmenu close presses Back on React Native's own menu, which has no close control", arguments: RNPlatform.enabled.filter { $0 == .android })
+    func reactNativeMenuClosesWithBack(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+
+        try await app.run("rn devmenu --label 'Open React Native dev menu'")
+        _ = try await app.waitForNode(timeout: 10) { Self.label($0) == "React Native Dev Menu" }
+        let closed = try await app.run("rn devmenu close --json")
+
+        #expect(closed.stdout.contains(#""menu":"react-native","item":"close","label":"Back","closed":true"#), "\(closed.stdout)")
+        _ = try await app.waitForNode(timeout: 10) { $0["id"] as? String == "overlay-test-screen" }
+    }
+
+    @Test("on Android a menu key a focused text field keeps from Expo's menu says so, and the Tools button still opens the menu", arguments: RNPlatform.enabled.filter { $0 == .android })
+    func focusedFieldKeepsMenuKey(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("text-input")
+        try await app.run("tap --id text-input-field")
+        _ = try await app.waitForNode(timeout: 10) { $0["id"] as? String == "typing-active-indicator" }
+
+        let refused = try await app.offsider("rn devmenu")
+        #expect(refused.exitCode == 1, "\(refused.stderr)")
+        #expect(refused.stderr.contains("A text field has focus"), "\(refused.stderr)")
+
+        // Back hides the keyboard; the field keeps its focus.
+        try await app.run("button back")
+        try await app.run("tap --label Tools --element-type image --wait-timeout 5")
+        let listed = try await app.run("rn devmenu --json")
+        #expect(listed.stdout.contains(#""menu":"expo""#), "\(listed.stdout)")
+        try await app.run("rn devmenu close")
+    }
+
     @Test("a full-width 10, pcs button near the bottom is never read as LogBox", arguments: RNPlatform.enabled)
     func amountIsNotLogBox(platform: RNPlatform) async throws {
         let app = RNApp(platform)

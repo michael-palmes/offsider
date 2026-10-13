@@ -24,6 +24,7 @@ final class EvidenceRecorder {
         var output: String?
         var diff: String?
         var masked: Int?
+        var skippedBeneath: Int?
         var changed: Bool?
         var expect: String?
         var entries: Int?
@@ -119,7 +120,7 @@ final class EvidenceRecorder {
             n: entry.number, file: entry.file, command: command, step: step, line: line, device: entry.device, platform: entry.platform,
             time: entry.reservedAt ?? entry.start, ms: Int((now.timeIntervalSince(entry.start) * 1000).rounded()), exit: Int(exit), reason: reason,
             args: step == nil ? SelectorRedaction.redacted(arguments).map { LogRedactor.redact($0).text } : nil,
-            output: entry.output, diff: entry.diff, masked: entry.masked, changed: entry.changed, expect: entry.expect, entries: entry.entries, redacted: entry.redacted
+            output: entry.output, diff: entry.diff, masked: entry.masked, skippedBeneath: entry.skippedBeneath, changed: entry.changed, expect: entry.expect, entries: entry.entries, redacted: entry.redacted
         )
         do {
             try run.folder.append(manifestLine)

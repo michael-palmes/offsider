@@ -21,6 +21,7 @@ final class Connection {
     private boolean configured;
     private boolean includesNotImportant;
     int serviceFlags;
+    private int refreshedWindow = -1;
     boolean dontSuppress;
 
     UiAutomation automation() {
@@ -114,6 +115,33 @@ final class Connection {
             automation.clearCache();
         } else {
             automation.setServiceInfo(automation.getServiceInfo());
+        }
+    }
+
+    /** True once per unlisted window, so a window Android never lists does not reconfigure the service on every read. */
+    boolean shouldRefreshFor(int windowId) {
+        if (windowId < 0 || windowId == refreshedWindow) {
+            return false;
+        }
+        refreshedWindow = windowId;
+        return true;
+    }
+
+    /** Turns window retrieval off and on, so Android lists the windows afresh; false when the service could not be reconfigured. */
+    boolean refreshWindows() {
+        try {
+            AccessibilityServiceInfo info = automation.getServiceInfo();
+            if (info == null) {
+                return false;
+            }
+            int flags = info.flags;
+            info.flags = flags & ~AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+            automation.setServiceInfo(info);
+            info.flags = flags;
+            automation.setServiceInfo(info);
+            return true;
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 

@@ -9,7 +9,8 @@ struct RNOpen: AsyncParsableCommand {
         discussion: """
         Checks that Metro answers on 127.0.0.1:<port>, sends the dev client its own link to that Metro \
         (exp+<slug>://expo-development-client/?url=...), and waits until the launcher and the Bundling banner \
-        are gone and --wait-id is on screen (without it, until the screen is still for a second). It resends \
+        are gone and --wait-id is on screen (without it, until the screen shows something and is still for a \
+        second; an empty app window, as while the bundle loads, never counts). It resends \
         the link at most every 10 s, three times, while the launcher shows. Every 2 s it also checks the app's \
         process: one seen running and then gone or replaced on two checks a second apart is a crash. An Android \
         emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port; a phone needs that reverse, which \
@@ -141,6 +142,8 @@ struct RNOpen: AsyncParsableCommand {
         var quietSince: TimeInterval?
         var previous: AccessibilitySnapshot?
         var blank = false
+        var bare = false
+        var loading = false
         let liveness = route.backend as? any AppLivenessReading
         var watch = AppLivenessWatch()
         func send() async throws {
@@ -182,6 +185,8 @@ struct RNOpen: AsyncParsableCommand {
             try await watchApp(read)
             guard let tree = read else { continue }
             blank = ExpoDevLauncher.isBlank(tree)
+            bare = ExpoDevLauncher.isBare(tree)
+            loading = ExpoDevLauncher.isLoading(tree)
             if let failure = ExpoDevLauncher.loadError(in: tree) {
                 throw CLIError(
                     errorDescription: "\(bundleID) could not load its bundle from Metro on \(host):\(port): \(failure)",
@@ -201,7 +206,7 @@ struct RNOpen: AsyncParsableCommand {
                 }
                 continue
             }
-            if ExpoDevLauncher.isLoading(tree) {
+            if loading {
                 quietSince = nil
                 continue
             }
@@ -209,6 +214,11 @@ struct RNOpen: AsyncParsableCommand {
             if let waitID {
                 guard Verifier.isOnScreen(waitID, in: tree) else { continue }
             } else {
+                guard !bare else {
+                    quietSince = nil
+                    previous = nil
+                    continue
+                }
                 let snapshot = AccessibilitySnapshot(tree: tree)
                 if let previous, ChangeDetector().compare(previous, snapshot) == .unchanged {
                     quietSince = quietSince ?? now
@@ -224,6 +234,16 @@ struct RNOpen: AsyncParsableCommand {
             return Report(
                 bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID,
                 elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded())
+            )
+        }
+        if loading || bare {
+            let seen = loading
+                ? "the Bundling banner was still showing, so the bundle is still loading. Try a longer --timeout."
+                : "the app's window stayed empty, as it does while its bundle loads. Try a longer --timeout\(waitID == nil ? ", or pass --wait-id with an element of its first screen" : ""); if it never loads, run rn open again with --restart."
+            throw CLIError(
+                errorDescription: "\(bundleID) did not finish loading from Metro on \(host):\(port) within \(WaitLoop.seconds(timeout)): \(seen)",
+                reason: .conditionNotMet,
+                hint: "offsider describe-ui --summary --device \(device.rawValue)"
             )
         }
         if blank {

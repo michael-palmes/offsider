@@ -21,3 +21,4 @@ application "OffsiderPlaygroundRN" (0,0 402x874)
     slider "Horizontal scroll bar, 1 page" value="0%" (62,841 278x30)
     slider "Vertical scroll bar, 8 pages" value="0%" (369,159 30x653)
     slider "Horizontal scroll bar, 1 page" value="0%" (62,841 278x30)
+# off-screen: 70 elements folded into runs; check one with assert --label-contains <text> --allow-offscreen

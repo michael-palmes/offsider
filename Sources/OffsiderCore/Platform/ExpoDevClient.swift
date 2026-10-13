@@ -301,6 +301,27 @@ public enum ExpoDevLauncher {
         }
     }
 
+    /// No roots, an application holding nothing, or one holding only Expo's dev menu button (`Tools`, in its Compose host) and the unlabelled views around it, as while its bundle loads.
+    public static func isBare(_ tree: UITree) -> Bool {
+        guard !tree.roots.isEmpty else { return true }
+        guard let app = tree.roots.flatMap({ $0.flattened() }).first(where: { $0.role == .application }) else { return false }
+        let inside = app.flattened().dropFirst()
+        guard !inside.isEmpty else { return true }
+        let containers: Set<UIRole> = [.window, .group, .other]
+        let hosts = inside.filter { $0.androidClassName == composeHostClass }
+        let devMenuButton = hosts.flatMap { $0.flattened() }.filter { $0.id == nil && shownText($0) == ["Tools"] }
+        return (1...3).contains(devMenuButton.count) && inside.allSatisfy { node in
+            node.id == nil && (devMenuButton.contains { $0 == node } || (shownText(node).isEmpty && containers.contains(node.role)))
+        }
+    }
+
+    /// The class of the full-window view Expo's dev menu draws its `Tools` button in on Android.
+    public static let composeHostClass = "androidx.compose.ui.platform.ComposeView"
+
+    private static func shownText(_ node: UINode) -> [String] {
+        [node.label, node.value].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+
     /// The `Bundling` or `Downloading` banner while Metro sends the bundle.
     public static func isLoading(_ tree: UITree) -> Bool {
         texts(in: tree).contains { $0.hasPrefix("Bundling") || $0.hasPrefix("Downloading") }

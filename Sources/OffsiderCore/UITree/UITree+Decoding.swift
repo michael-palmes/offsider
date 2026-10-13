@@ -44,9 +44,17 @@ extension UITreeContext {
             guard let frame = (stale["frame"] as? [String: Any]).flatMap(UIFrame.init(jsonObject:)) else { return nil }
             return StaleFrame(id: stale["id"] as? String, label: stale["label"] as? String, frame: frame)
         }
+        let hiddenBranches = (object["hiddenBranches"] as? [[String: Any]]).map { branches in
+            branches.map { branch in
+                HiddenBranch(
+                    id: branch["id"] as? String, label: branch["label"] as? String, className: branch["className"] as? String,
+                    frame: (branch["frame"] as? [String: Any]).flatMap(UIFrame.init(jsonObject:))
+                )
+            }
+        }
         self.init(
             window: window, keyboard: object["keyboard"] as? Bool ?? false, logBox: logBox, presented: presented, staleFrame: staleFrame,
-            hidden: (object["hidden"] as? NSNumber)?.intValue
+            hidden: (object["hidden"] as? NSNumber)?.intValue, hiddenBranches: hiddenBranches
         )
     }
 }

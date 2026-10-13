@@ -18,6 +18,7 @@ struct ReactNativeLoginTests {
         #expect(report["action"] as? String == "status")
         #expect(report["app"] as? String == Users.app)
         #expect(report["signedInHere"] == nil, "signedInHere needs a device")
+        #expect(RNLogin.users(report).allSatisfy { $0["signedInHere"] == nil }, "a user's signedInHere needs a device")
         #expect(RNLogin.names(in: report).sorted() == Users.all.map(\.name).sorted())
         for user in Users.all {
             let listed = try #require(RNLogin.user(user.name, in: report))
@@ -32,6 +33,7 @@ struct ReactNativeLoginTests {
 
         let here = try await RNLogin.status(on: app)
         #expect(here["signedInHere"] is NSNull, "with a device, signedInHere is null while nobody is signed in")
+        #expect(RNLogin.users(here).allSatisfy { $0["signedInHere"] as? Bool == false }, "with a device, every user's signedInHere is false while nobody is signed in")
 
         let named = try await RNLogin.offsider("credential status \(Users.admin.name) --app \(Users.app) --json")
         #expect(named.exitCode == 0, "\(named.stderr)")
@@ -311,8 +313,15 @@ enum RNLogin {
         report["username"] as? String ?? users(report).first?["username"] as? String
     }
 
+    /// The top-level name, after checking each listed user's boolean agrees with it.
     static func signedInHere(_ report: [String: Any]) -> String? {
-        report["signedInHere"] as? String
+        let top = report["signedInHere"] as? String
+        if report["signedInHere"] != nil {
+            for user in users(report) {
+                #expect(user["signedInHere"] as? Bool == (user["name"] as? String == top), "\(user["name"] ?? "")")
+            }
+        }
+        return top
     }
 
     /// The user's sign-in records on this platform's device; each run drives one device per platform.

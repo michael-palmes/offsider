@@ -99,5 +99,19 @@ struct ReactNativeStackCoverTests {
             #expect(summary.contains("id=stack-test-tab-products") && !summary.contains("# beneath:"), "\(summary)")
         }
     }
+
+    @Test("--mask-skip-beneath leaves the depth readout beneath the page unpainted on Android; iOS finds no page, so it skips nothing", arguments: RNPlatform.enabled)
+    func maskSkipBeneath(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await Self.openFullPage(app)
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-skip-beneath-\(UUID().uuidString).png").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        let output = try await app.run("screenshot --mask-id stack-test-depth --mask-skip-beneath --json --output \(path)").stdout
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any], "\(output)")
+        let skipped = try #require(report["skippedBeneath"] as? [String: Int], "\(output)")
+
+        #expect(skipped == ["id": platform == .android ? 1 : 0], "\(output)")
+    }
 }
 

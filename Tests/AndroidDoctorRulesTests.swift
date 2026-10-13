@@ -240,6 +240,21 @@ struct AndroidDoctorRulesTests {
         #expect(Self.check(.androidDeviceLock, in: unknown)?.status == .skip)
     }
 
+    @Test("without a credential type, the keyguard's secure line still decides the lock check")
+    func lockFromKeyguard() {
+        let secure = AndroidDoctorRules.deviceChecks(Self.booted {
+            $0.awake?.credential = nil
+            $0.awake?.keyguardSecure = true
+            $0.awake?.userUnlocked = false
+        }, hostBlocker: nil)
+        let check = Self.check(.androidDeviceLock, in: secure)
+        #expect(check?.status == .fail)
+        #expect(check?.detail.hasPrefix("PIN, pattern or password set; waiting for its first unlock since boot") == true)
+        let open = AwakeReading(screen: .on, lockScreen: .hidden, credential: "none", keyguardSecure: false)
+        #expect(AndroidDoctorRules.lock(open, unlockCode: nil, deviceID: "x") == (.pass, "No PIN, pattern or password", nil))
+        #expect(LockReport(AwakeReading(screen: .on, lockScreen: .hidden, keyguardSecure: true), savedCode: false, lastAttemptFailed: false).type == nil)
+    }
+
     @Test("a screen that is off or locked warns and names the command that helps")
     func screenVerdicts() {
         let off = AndroidDoctorRules.screen(AwakeReading(screen: .off, lockScreen: .secure, credential: "pin"), deviceID: "ZY22FAKE01")

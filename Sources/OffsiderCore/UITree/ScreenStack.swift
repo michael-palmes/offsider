@@ -41,6 +41,11 @@ public struct ScreenStack: Equatable, Sendable {
         topSealer[index].flatMap { sealer in pages.first { $0.index == sealer } }
     }
 
+    /// The topmost page the element is drawn on, when no page covers it; nil otherwise.
+    public func page(holding index: Int) -> Page? {
+        isBeneath(index: index) ? nil : pages.last { $0.content.contains(index) }
+    }
+
     /// The name of the screen the element is on: its covered screen, else the topmost page it is drawn on; nil off every page.
     public func screenName(of index: Int) -> String? {
         if let covered = beneath.first(where: { $0.indexes.contains(index) }) {

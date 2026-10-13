@@ -145,7 +145,7 @@ struct UITreeRendererTests {
         #expect(context["keyboard"] as? Bool == true)
         #expect((context["logbox"] as? [String: Any])?["logs"] as? Int == 2)
 
-        #expect(!string(Self.iosTree, .summary).contains("\n# "))
+        #expect(string(Self.iosTree, .summary).split(separator: "\n").dropFirst().first?.hasPrefix("application") == true, "no context line follows the device line")
     }
 
     @Test("text escapes strings, rounds fractions, and shows disabled, state and missing frames")
@@ -177,6 +177,7 @@ struct UITreeRendererTests {
         application "Playground" (0,0 402x874)
           button "S" id=size-s value="Small" (16,640 72x40)
           [off-screen below] 1 item: "Far below"
+        # off-screen: 1 element folded into runs; check one with assert --label-contains <text> --allow-offscreen
 
         """)
     }

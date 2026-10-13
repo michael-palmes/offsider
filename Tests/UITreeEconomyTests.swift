@@ -170,7 +170,45 @@ struct UITreeEconomyTests {
 
         let output = Self.rendered(Self.tree(visible + hidden), options)
 
-        #expect(output.hasSuffix("# truncated: 33 more nodes past the 512-byte budget; pass --max-bytes 0 for all, or narrow with --actionable\n"))
+        #expect(output.contains("\n# truncated: 33 more nodes past the 512-byte budget; pass --max-bytes 0 for all, or narrow with --actionable\n"))
+    }
+
+    @Test("on-screen text closes with how many elements its runs hide, items and what is inside them alike")
+    func offScreenLineCounts() {
+        var below = Self.row(4, y: 900)
+        below.children = [Self.node(role: .text, label: "Inside", frame: Self.frame(0, 900))]
+        let output = Self.rendered(Self.tree([Self.row(1, y: -100), Self.row(2, y: -50), Self.row(3, y: 100), below, Self.row(5, y: 950)]))
+        let single = Self.rendered(Self.tree([Self.row(1, y: 100), Self.row(2, y: 900)]))
+
+        #expect(output.hasSuffix("\n# off-screen: 5 elements folded into runs; check one with assert --label-contains <text> --allow-offscreen\n"))
+        #expect(single.hasSuffix("\n# off-screen: 1 element folded into runs; check one with assert --label-contains <text> --allow-offscreen\n"))
+    }
+
+    @Test("the off-screen line survives a byte budget that cuts the run lines it counts")
+    func offScreenLineSurvivesBudget() {
+        let label = String(repeating: "y", count: 200)
+        let visible = (0..<4).map { Self.node(role: .button, label: "\(label) \($0)", frame: Self.frame(0, 100 + Double($0) * 50)) }
+        let hidden = (0..<30).map { Self.row($0, y: 900 + Double($0) * 50) }
+        var options = UITreeRenderOptions.summary
+        options.maxBytes = 512
+
+        let output = Self.rendered(Self.tree(visible + hidden), options)
+
+        #expect(output.contains("\n# truncated: "))
+        #expect(!output.contains("[off-screen below]"))
+        #expect(output.hasSuffix("\n" + UITreeEconomy.offScreenLine(30) + "\n"))
+        #expect(output.utf8.count <= 512)
+    }
+
+    @Test("no run, no off-screen line: Android leaves unseen nodes out, and text without --on-screen lists them")
+    func noRunsNoOffScreenLine() throws {
+        for golden in TreeGoldens.all() where golden.platform == .android {
+            #expect(!Self.rendered(try TreeGoldens.tree(of: golden)).contains("# off-screen:"), "\(golden.name)")
+        }
+        let tree = try Self.golden(.ios, "rows-test")
+        #expect(Self.rendered(tree).contains("\n# off-screen: "))
+        #expect(!Self.rendered(tree, UITreeRenderOptions(format: .text)).contains("# off-screen:"))
+        #expect(!Self.rendered(Self.tree([Self.row(1, y: 100)])).contains("# off-screen:"))
     }
 
     @Test("a device-truncated tree gets the device marker, distinct from the budget marker")

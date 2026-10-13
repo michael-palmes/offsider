@@ -1109,5 +1109,90 @@ struct StackedScreenTests {
         #expect(buy.coverCandidates.isEmpty)
         #expect(tab.coverCandidates.map(\.id) == ["stack-test-full-buy"])
     }
+
+    /// A React Native page pushed over Details on Android, flat with no container for either page, its full-width Continue drawn over Details' half-width one.
+    static func pushedContinue(sideBySide: Bool = false) -> UITree {
+        func button(_ id: String, _ label: String, x: Double, width: Double) -> UINode {
+            FakeUI.node(.button, id: id, label: label, frame: FakeUI.frame(x, 700, width, 50), platform: .android)
+        }
+        let details = FakeUI.node(.header, label: "Details", frame: FakeUI.frame(16, 40, 368, 30), platform: .android)
+        let review = FakeUI.node(.header, label: "Review", frame: FakeUI.frame(16, 40, 368, 30), platform: .android)
+        let nodes = sideBySide
+            ? [details, button("details-continue", "Continue", x: 16, width: 176), review, button("review-continue", "Continue", x: 208, width: 176)]
+            : [details, button("details-continue", "Continue", x: 16, width: 176), button("details-edit", "Edit", x: 208, width: 176), review,
+               button("review-continue", "Continue", x: 16, width: 368)]
+        let drawn = nodes.enumerated().map { order, node in
+            var copy = node
+            if case .android(var attributes) = node.native {
+                attributes.drawingOrder = order + 1
+                copy.native = .android(attributes)
+            }
+            return copy
+        }
+        return FakeUI.tree(platform: .android, width: 400, height: 800, drawn)
+    }
+
+    @Test("on Android a pushed page's full-width button drawn over the same label beneath is taken, though nothing marks the page")
+    func drawnOverMatchPassedOver() throws {
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: Self.pushedContinue().roots, query: .label("Continue"), elementType: "button")
+
+        #expect(resolution.matched?.id == "review-continue")
+        #expect(resolution.point.x == 200 && resolution.point.y == 725)
+    }
+
+    @Test("on Android matches side by side, each reaching its own point, stay ambiguous")
+    func sideBySideStaysAmbiguous() {
+        let error = #expect(throws: ElementResolutionError.self) {
+            try AccessibilityTargetResolver.resolveTap(roots: Self.pushedContinue(sideBySide: true).roots, query: .label("Continue"), elementType: "button")
+        }
+        #expect(error?.candidates.count == 2)
+    }
+
+    @Test("the match the pick passes over is the one the tap's cover check refuses, and the one it takes is let through")
+    func pickAgreesWithCoverCheck() throws {
+        let roots = Self.pushedContinue().roots
+        let viewport = try #require(UITree.viewport(in: roots))
+        func verdict(nth: Int) throws -> CoverVerdict? {
+            let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Continue"), elementType: "button", pick: .nth(nth))
+            let target = try #require(resolution.target)
+            return CoverJudge.judge(
+                target: target, matched: try #require(resolution.matched), point: UIPoint(x: resolution.point.x, y: resolution.point.y),
+                candidates: resolution.coverCandidates, roots: roots, viewport: viewport, stack: ScreenStack.build(roots: roots, viewport: viewport), hit: nil
+            )
+        }
+
+        let passedOver = try #require(try verdict(nth: 1))
+        #expect(passedOver.cover.id == "review-continue" && passedOver.isConfident)
+        #expect(try verdict(nth: 2) == nil)
+    }
+
+    @Test("on Android the pick looks past a keyboard root that spans the screen, as the cover check does")
+    func pickWithKeyboardUp() throws {
+        func layered(_ root: UINode, _ layer: Int) -> UINode {
+            var copy = root
+            if case .android(var attributes) = root.native {
+                attributes.windowLayer = layer
+                copy.native = .android(attributes)
+            }
+            return copy
+        }
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 0, 400, 800), platform: .android, children: [
+            FakeUI.node(.button, label: "q", frame: FakeUI.frame(0, 300, 400, 150), platform: .android),
+        ])
+        let roots = [layered(Self.pushedContinue().roots[0], 0), layered(keyboard, 1)]
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Continue"), elementType: "button")
+
+        #expect(resolution.matched?.id == "review-continue")
+    }
+
+    @Test("on Android the pick sees past an empty React Native view on the matches' own page, so the Save drawn on top is taken")
+    func pickBeneathEmptyReactView() throws {
+        let roots = TapCoverTests.settingsOverHome(draftSave: true).roots
+
+        let resolution = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Save"), elementType: "button")
+
+        #expect(resolution.matched?.id == "settings-save")
+    }
 }
 

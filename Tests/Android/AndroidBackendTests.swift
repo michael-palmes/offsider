@@ -130,6 +130,38 @@ struct AndroidBackendTests {
         #expect(server.services.filter { $0.hasSuffix(AndroidDisplayGeometry.probeScript) }.count == 1)
     }
 
+    @Test("on Android 9 a coordinate tap maps through the listed viewport, probing the display once")
+    func android9Coordinates() async throws {
+        let server = Self.server(geometry: Android9Fixtures.portraitProbe)
+        let backend = try Self.backend(server)
+        let point = try await backend.deviceCoordinates(for: [(x: 100, y: 100)], tree: nil, on: Self.device)
+        let size = try await backend.screenSize(for: Self.device)
+
+        #expect(point.map(\.x) == [275])
+        #expect(point.map(\.y) == [275])
+        #expect(size == UISize(width: 392.73, height: 829.09))
+        #expect(server.services.filter { $0.hasSuffix(AndroidDisplayGeometry.probeScript) }.count == 1)
+    }
+
+    @Test("on Android 9 screen info reads the turn from the same status call")
+    func android9ScreenInfo() async throws {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(
+            ["emulator-5556"],
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            device: { _, service in
+                service.hasSuffix(AndroidDisplayStatus.scriptWithProbe)
+                    ? FakeAdbServer.shell(stdout: Android9Fixtures.status(probe: Android9Fixtures.turnedProbe))
+                    : FakeAdbServer.shell(stdout: "")
+            }
+        ))
+        let info = try #require(try await Self.backend(server).screenInfo(for: Self.device))
+
+        #expect(info.width == 829.09)
+        #expect(info.height == 392.73)
+        #expect(info.rotation == DeviceOrientation.landscapeLeft.coordinateOrientation)
+        #expect(!server.services.contains("shell,v2,raw:" + AndroidDisplayGeometry.probeScript))
+    }
+
     @Test("list-devices rows come from adb and the AVD folder")
     func listDevices() async throws {
         let rows = try await Self.backend(Self.server()).listDevices()

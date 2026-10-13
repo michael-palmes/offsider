@@ -53,6 +53,29 @@ struct RNOpenCommandTests {
         #expect(report.elapsedMs >= 1000)
     }
 
+    @Test("without --wait-id an empty app window never ends the wait, and the timeout says it stayed empty", arguments: [
+        FakeUI.tree([]), ExpoDevClientOpeningTests.devMenuOnly(),
+    ])
+    func bareNeverUp(bare: UITree) async throws {
+        let (result, _) = try await Self.watch(["--timeout", "10"], trees: [bare], liveness: [])
+        guard case .failure(let error) = result else { Issue.record("an empty window counted as up"); return }
+        #expect(error.reason == .conditionNotMet && error.exitCode == .unverified)
+        #expect(error.userFacingDescription.hasSuffix("within 10 s: the app's window stayed empty, as it does while its bundle loads. Try a longer --timeout, or pass --wait-id with an element of its first screen; if it never loads, run rn open again with --restart."))
+    }
+
+    @Test("an empty window that then shows the app is up once the app holds still for a second")
+    func bareThenApp() async throws {
+        let (report, _) = try await Self.open([], trees: Array(repeating: FakeUI.tree([]), count: 5) + [Self.app])
+        #expect(report.elapsedMs >= 4000)
+    }
+
+    @Test("a timeout while the Bundling banner shows says the bundle is still loading")
+    func bundlingAtTimeout() async throws {
+        let (result, _) = try await Self.watch(["--wait-id", "menu-title", "--timeout", "10"], trees: [Self.bundling], liveness: [])
+        guard case .failure(let error) = result else { Issue.record("expected a timeout"); return }
+        #expect(error.userFacingDescription.hasSuffix("the Bundling banner was still showing, so the bundle is still loading. Try a longer --timeout."))
+    }
+
     @Test("an app that never shows --wait-id times out with exit 5")
     func timeout() async throws {
         let error = await #expect(throws: CLIError.self) {

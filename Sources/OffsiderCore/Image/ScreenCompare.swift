@@ -98,6 +98,8 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var maskedBy: [MaskKind: Int]?
     /// Of those, the rectangles painted for elements on a screen beneath a page; empty when none were.
     public var maskedBeneath: [MaskKind: Int]
+    /// Matches `--mask-skip-beneath` left unpainted beneath a page, per skippable kind asked for; nil without the flag.
+    public var skippedBeneath: [MaskKind: Int]?
     /// Where `--diff-output` wrote the diff image.
     public var diffPath: String?
     /// The mask selectors that matched nothing, such as `--mask-id profile-email`.
@@ -118,6 +120,7 @@ public struct ScreenshotReport: Equatable, Sendable {
         comparison: ScreenCompare.Result? = nil,
         maskedBy: [MaskKind: Int]? = nil,
         maskedBeneath: [MaskKind: Int] = [:],
+        skippedBeneath: [MaskKind: Int]? = nil,
         maskUnmatched: [String] = [],
         diffPath: String? = nil
     ) {
@@ -135,6 +138,7 @@ public struct ScreenshotReport: Equatable, Sendable {
         self.comparison = comparison
         self.maskedBy = maskedBy
         self.maskedBeneath = maskedBeneath
+        self.skippedBeneath = skippedBeneath
         self.maskUnmatched = maskUnmatched
         self.diffPath = diffPath
     }
@@ -175,6 +179,10 @@ public struct ScreenshotReport: Equatable, Sendable {
             if !maskedBeneath.isEmpty {
                 let beneath = MaskKind.allCases.compactMap { kind in maskedBeneath[kind].map { (kind.rawValue, OrderedJSON.integer($0)) } }
                 members.append(("maskedBeneath", .object(beneath)))
+            }
+            if let skippedBeneath {
+                let skipped = MaskKind.allCases.compactMap { kind in skippedBeneath[kind].map { (kind.rawValue, OrderedJSON.integer($0)) } }
+                members.append(("skippedBeneath", .object(skipped)))
             }
             if !maskUnmatched.isEmpty {
                 members.append(("maskUnmatched", .array(maskUnmatched.map(OrderedJSON.string))))

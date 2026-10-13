@@ -130,7 +130,7 @@ final class Requests {
         DisplayProbe.write(json);
         long displayed = System.nanoTime();
         TreeDumper dumper = new TreeDumper(json, options, table);
-        dumper.dump(connection.automation());
+        dumper.dump(connection);
         long walked = System.nanoTime();
         json.field("truncated", dumper.truncated);
         json.field("source", dumper.source);
@@ -142,6 +142,13 @@ final class Requests {
         json.field("skippedInvisible", dumper.skippedInvisible);
         json.field("testTags", dumper.testTagsFound);
         json.field("testTagRefreshes", dumper.testTagRefreshes);
+        if (dumper.windowRefreshes > 0) {
+            json.field("windowRefreshes", dumper.windowRefreshes);
+        }
+        if (options.visibleOnly) {
+            dumper.hidden.write(json, options.testTags);
+        }
+        long named = System.nanoTime();
         json.endObject();
         json.name("timings").beginObject();
         json.field("configureMs", ms(configured - start));
@@ -149,7 +156,8 @@ final class Requests {
         json.field("idleMs", ms(settled - cleared));
         json.field("displayMs", ms(displayed - settled));
         json.field("walkMs", ms(walked - displayed));
-        json.field("totalMs", ms(walked - start));
+        json.field("hiddenMs", ms(named - walked));
+        json.field("totalMs", ms(named - start));
         json.endObject();
         return seq;
     }

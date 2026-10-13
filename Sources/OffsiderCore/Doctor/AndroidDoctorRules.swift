@@ -383,7 +383,7 @@ public enum AndroidDoctorRules {
         }
         if let awake = facts.awake {
             checks.append(DoctorCheckResult(id: .androidDeviceScreen, verdict: screen(awake, deviceID: facts.id)))
-            if awake.credential == nil {
+            if awake.credential == nil, awake.keyguardSecure == nil {
                 checks.append(.skipped(.androidDeviceLock, "could not read the lock settings"))
             } else {
                 checks.append(DoctorCheckResult(id: .androidDeviceLock, verdict: lock(awake, unlockCode: facts.unlockCode, deviceID: facts.id)))

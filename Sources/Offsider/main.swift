@@ -13,7 +13,7 @@ struct OffsiderCommand: AsyncParsableCommand {
 
     static let configuration = CommandConfiguration(
         commandName: "offsider",
-        abstract: "A utility to interact with iOS Simulators and Android Emulators and extract accessibility information.",
+        abstract: "A hand for your agent on iOS and Android, simulated or real: read and drive iOS Simulators, Android Emulators and USB iPhones, iPads and Android phones.",
         version: VERSION,
         subcommands: [
             DescribeUI.self,

@@ -61,6 +61,7 @@ enum TreeGoldens {
         var truncated = false
         var windows: [UIWindowInfo]?
         var hidden: Int?
+        var namedHidden: [UITreeContext.HiddenBranch]?
         switch capture.platform {
         case .ios:
             roots = try IOSAccessibilityMapping.roots(fromJSON: capture.source)
@@ -71,11 +72,13 @@ enum TreeGoldens {
             truncated = dump.truncated
             windows = HelperTreeMapping.windows(from: dump, scale: scale)
             hidden = dump.skippedInvisible
+            namedHidden = HelperTreeMapping.hiddenBranches(from: dump, scale: scale)
         }
         var tree = UITree(platform: capture.platform, device: placeholder(for: capture.platform), screen: capture.screen, roots: roots)
         tree.sourceTruncated = truncated
         tree.windows = windows
         tree.hiddenBranches = hidden
+        tree.namedHiddenBranches = namedHidden
         return tree
     }
 
