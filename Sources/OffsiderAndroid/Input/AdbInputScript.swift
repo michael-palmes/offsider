@@ -14,8 +14,7 @@ enum AdbInputScript {
     /// Scripts stay well under the 64 KB adb request limit.
     static let maxScriptLength = 8_000
 
-    /// Modifier downs, a press and their ups become `input keycombination`; a held key becomes `--longpress`.
-    /// Before Android 10 a held tap becomes a swipe that stays put, and other touch phases or a key combination `input` lacks throw.
+    /// Combinations become `input keycombination`, a held key `--longpress`, and before Android 10 a held tap a swipe that stays put.
     static func scripts(for steps: [AndroidInputStep], apiLevel: Int? = nil) throws -> [String] {
         var commands: [String] = []
         var index = 0
@@ -27,8 +26,7 @@ enum AdbInputScript {
         return pack(commands)
     }
 
-    /// Android 10 (API 29) added `input motionevent` and Android 12 (API 31) `input keycombination`;
-    /// before them, `input` prints its usage for one and exits 0.
+    /// Android 10 (API 29) added `input motionevent` and Android 12 (API 31) `input keycombination`; before, `input` ignores them.
     static let motionEventAPILevel = 29
     static let keyCombinationAPILevel = 31
 
@@ -75,7 +73,7 @@ enum AdbInputScript {
     private static func command(at index: Int, in steps: [AndroidInputStep], apiLevel: Int?) throws -> (String, Int) {
         if !sendsMotionEvents(apiLevel: apiLevel), case .touch = steps[index] {
             guard let tap = heldTap(at: index, in: steps) else {
-                throw AndroidError.notSupported("A drag or a touch held across other steps through `input` before Android 10 (API 29)")
+                throw AndroidError.inputLacks(.motionEvent, apiLevel: apiLevel ?? motionEventAPILevel)
             }
             let point = pixels(tap.point)
             let ms = Int((tap.hold * 1000).rounded())
@@ -100,7 +98,7 @@ enum AdbInputScript {
         case .key(.down, _), .button(.down, _):
             if let combination = try keyCombination(at: index, in: steps) {
                 guard sendsKeyCombinations(apiLevel: apiLevel) else {
-                    throw AndroidError.notSupported("A key combination through `input` before Android 12 (API 31)")
+                    throw AndroidError.inputLacks(.keyCombination, apiLevel: apiLevel ?? keyCombinationAPILevel)
                 }
                 return combination
             }
@@ -133,7 +131,7 @@ enum AdbInputScript {
         return ("input keycombination " + codes.joined(separator: " "), cursor - index)
     }
 
-    /// `touch down(p)`, optional pauses, `touch up(p)`: one finger pressed and lifted where it went down.
+    /// `touch down(p)`, optional pauses, `touch up(p)`: one finger lifted on the pixel `input` pressed.
     private static func heldTap(at index: Int, in steps: [AndroidInputStep]) -> (point: AndroidPoint, hold: TimeInterval, used: Int)? {
         guard case .touch(.down, let point) = steps[index] else { return nil }
         var cursor = index + 1
@@ -142,7 +140,7 @@ enum AdbInputScript {
             hold += seconds
             cursor += 1
         }
-        guard cursor < steps.count, case .touch(.up, point) = steps[cursor] else { return nil }
+        guard cursor < steps.count, case .touch(.up, let up) = steps[cursor], pixels(up) == pixels(point) else { return nil }
         return (point, hold, cursor + 1 - index)
     }
 

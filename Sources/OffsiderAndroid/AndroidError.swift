@@ -376,6 +376,15 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         }
     }
 
+    /// A script `input` on this API level would ignore; the session sends such steps through the helper first, so this is a last check.
+    static func inputLacks(_ gap: AdbInputGap, apiLevel: Int) -> AndroidError {
+        let lacking = gap == .motionEvent ? "motionevent (Android 10, API 29, added it)" : "keycombination (Android 12, API 31, added it)"
+        return AndroidError(
+            .notSupported,
+            "`input` on API \(apiLevel) has no \(lacking), so Offsider sent nothing. These steps need the UiAutomation helper there: unset OFFSIDER_ANDROID_INPUT and OFFSIDER_ANDROID_TREE, then retry."
+        )
+    }
+
     /// Before Android 10 only the helper holds a finger down, and it ends with the command.
     static func detachedTouchNeedsMotionEvent(_ serial: String, apiLevel: Int) -> AndroidError {
         AndroidError(

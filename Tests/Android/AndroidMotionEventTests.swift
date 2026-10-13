@@ -1,6 +1,7 @@
 import Foundation
 import OffsiderCore
 import Testing
+@testable import Offsider
 @testable import OffsiderAndroid
 
 /// Touch phases on an `input` route: Android added `input motionevent` in 10 (API 29), and earlier `input` drops one silently.
@@ -86,6 +87,50 @@ struct AndroidMotionEventTests {
             "input motionevent UP 100 200",
             "input motionevent DOWN 100 500 && sleep 0.05 && input motionevent MOVE 100 600 && input motionevent UP 100 600",
         ])
+        #expect(rig.startShells == 0)
+    }
+
+    @Test("an API level the display probe already read needs no `getprop` of its own")
+    func levelFromProbe() async throws {
+        let rig = try AndroidKeyCombinationTests.rig(apiLevel: "28")
+        let other = rig.device.other
+        rig.device.other = { service in
+            service.hasSuffix(AndroidDisplayGeometry.probeScript)
+                ? FakeAdbServer.shell(stdout: AndroidBackendTests.geometryOutput + "\nAPI level: 28\n") : other(service)
+        }
+        try await Self.physicalTap(on: rig)
+        await rig.backend.close()
+
+        #expect(AndroidHelperInputTests.inputScripts(rig) == ["input swipe 100 200 100 200 100"])
+        #expect(AndroidKeyCombinationTests.apiLevelReads(rig) == 0)
+    }
+
+    @Test("on API 28 a touch a failed swipe may leave down is reported, not lifted with a motionevent `input` would ignore")
+    func api28CloseWarns() async throws {
+        let rig = try AndroidKeyCombinationTests.rig(apiLevel: "28")
+        let other = rig.device.other
+        rig.device.other = { service in
+            service.contains(":input swipe") ? FakeAdbServer.shell(stderr: "Error: injection failed\n", status: 1) : other(service)
+        }
+        let session = try #require(try await rig.backend.openInputSession(for: Self.device) as? AndroidInputSession)
+        await #expect(throws: AndroidError.self) { try await session.performPhysicalTap(at: (x: 100, y: 200), preDelay: nil, postDelay: nil) }
+        await session.close()
+        await rig.backend.close()
+
+        #expect(AndroidHelperInputTests.inputScripts(rig) == ["input swipe 100 200 100 200 100"])
+        #expect(rig.log.warnings.contains { $0.hasPrefix("Could not lift the touch left down on emulator-5556: `input` there has no motionevent") })
+    }
+
+    @Test("a batch touch --down --up is one held touch: a swipe in place on API 28, one motionevent script from API 29", arguments: [
+        ("28", "input swipe 263 525 263 525 800"), ("36", "input motionevent DOWN 263 525 && sleep 0.8 && input motionevent UP 263 525"),
+    ])
+    func batchHeldTouch(apiLevel: String, script: String) async throws {
+        let rig = try AndroidKeyCombinationTests.rig(apiLevel: apiLevel)
+        let batch = try Batch.parse(["--device", "emulator-5556", "--step", "touch -x 100 -y 200 --down --up --delay 0.8"])
+        try await batch.run(on: DeviceRouter.Route(backend: rig.backend, device: Self.device), logger: OffsiderLogger())
+        await rig.backend.close()
+
+        #expect(AndroidHelperInputTests.inputScripts(rig) == [script])
         #expect(rig.startShells == 0)
     }
 

@@ -144,8 +144,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
-    /// Through the helper, down, hold and up are one `inject`, and before Android 10 one `input swipe` that stays put;
-    /// elsewhere, the shared timed down and up.
+    /// One step through the helper (`inject`) or before Android 10 (`input swipe` in place); elsewhere a timed down and up.
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
         guard try await tapsInOneStep() else {
             try await separatePhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
@@ -212,8 +211,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         touchIsDown = down
     }
 
-    /// Steps `input` cannot send go through the helper: several fingers, touch phases before Android 10 other than a held tap,
-    /// and a key combination before Android 12, wherever keys go.
+    /// What `input` cannot send goes through the helper: several fingers, older Android's drags, and its key combinations wherever keys go.
     private func rerouted(_ route: AndroidInputRoute, for steps: [AndroidInputStep]) async throws -> AndroidInputRoute {
         var route = route
         if case .adb = route.executor, let helper = try await touchHelper(for: steps) {
@@ -377,6 +375,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
         do {
             switch route.executor {
             case .adb(let shell):
+                guard AdbInputScript.sendsMotionEvents(apiLevel: knownAPILevel) else {
+                    log(.warning, "Could not lift the touch left down on \(device.rawValue): `input` there has no motionevent (Android 10, API 29, added it), so it stays down until the next touch.")
+                    return
+                }
                 try await shell.run("input motionevent UP \(Int(point.x.rounded())) \(Int(point.y.rounded()))")
             case .grpc(let driver):
                 try await driver.touch(point, down: false)

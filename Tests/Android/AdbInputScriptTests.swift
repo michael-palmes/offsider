@@ -67,12 +67,20 @@ struct AdbInputScriptTests {
         ])
     }
 
+    @Test("a lift on the pixel `input` pressed is a held tap, though its fractions differ")
+    func heldTapSamePixel() throws {
+        let steps: [AndroidInputStep] = [.touch(.down, AndroidPoint(x: 100.2, y: 200)), .pause(0.1), .touch(.up, AndroidPoint(x: 100.4, y: 199.8))]
+        #expect(!AdbInputScript.needsMotionEvent(steps))
+        #expect(try AdbInputScript.scripts(for: steps, apiLevel: 28) == ["input swipe 100 200 100 200 100"])
+    }
+
     @Test("before API 29 a drag or a lone touch phase is refused, never sent as a motionevent `input` would ignore")
     func dragRefusedBeforeAPI29() {
         let p = AndroidPoint(x: 10, y: 20)
         for steps: [AndroidInputStep] in [[.touch(.down, p), .touch(.move, AndroidPoint(x: 10, y: 90)), .touch(.up, p)], [.touch(.down, p)], [.touch(.up, p)]] {
             let error = #expect(throws: AndroidError.self) { try AdbInputScript.scripts(for: steps, apiLevel: 28) }
             #expect(error?.kind == .notSupported)
+            #expect(error?.message == "`input` on API 28 has no motionevent (Android 10, API 29, added it), so Offsider sent nothing. These steps need the UiAutomation helper there: unset OFFSIDER_ANDROID_INPUT and OFFSIDER_ANDROID_TREE, then retry.")
         }
     }
 

@@ -27,7 +27,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// The display cache entry this command loaded or last saved, so an unchanged one is not written again.
     private var displayEntries: [String: AndroidDisplayCacheEntry] = [:]
     private var avdNames: [String: String] = [:]
-    private var apiLevels: [String: Int?] = [:]
+    /// `ro.build.version.sdk` per serial, from the display probe or a `getprop` of its own; nil inside when unreadable.
+    var apiLevels: [String: Int?] = [:]
     /// Phones this command named, from their device-list row, once checked.
     var phones: [String: ConnectedPhone] = [:]
     /// The row routing read for a phone, so `requireConnectedPhone` checks it without listing again.
@@ -299,7 +300,13 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         }
     }
 
-    /// `ro.build.version.sdk`, read once per command and only when input needs it; nil when it cannot be read.
+    func noteAPILevel(in probe: String, of serial: String) {
+        if let level = AndroidDisplayGeometry.apiLevel(in: probe) {
+            apiLevels[serial] = level
+        }
+    }
+
+    /// `ro.build.version.sdk` from the display probe, else read once per command when input needs it; nil when it cannot be read.
     private func apiLevel(of serial: String) async -> Int? {
         if let known = apiLevels[serial] {
             return known
@@ -724,6 +731,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             let geometry = try AndroidDisplayGeometry.parse(result.stdoutText)
             geometries[serial] = geometry
             activeUniqueIds[serial] = AndroidDisplayGeometry.viewportUniqueId(in: result.stdoutText)
+            noteAPILevel(in: result.stdoutText, of: serial)
             return geometry
         } catch let error as AndroidDisplayGeometry.Unparseable {
             let stderrLine = result.stderrText.split(whereSeparator: \.isNewline).first.map(String.init)
