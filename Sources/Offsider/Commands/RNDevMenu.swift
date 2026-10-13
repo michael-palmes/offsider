@@ -58,7 +58,14 @@ struct DevMenuDriver {
     /// Taps the item, closes the menu if a switch left it open, and returns the label tapped once the menu is gone.
     @discardableResult
     func choose(_ item: DevMenu.Item?, label: String?, state: DevMenu.State, tree: UITree) async throws -> String {
+        let android = route.device.platform == .android
         guard let (node, tapped) = DevMenu.match(for: item, label: label, in: tree), let frame = node.frame else {
+            // React Native's own menu on Android is a dialog with no close control, which Back dismisses.
+            if item == .close, android {
+                try await perform(.shortButtonPress(.back))
+                if try await closed(leaving: state.menu) { return "Back" }
+                throw CLIError(errorDescription: "Pressed Back, but the \(state.menu) dev menu is still open.", reason: .notVerified, hint: "offsider describe-ui --summary --device \(route.device.rawValue)")
+            }
             let name = label.map { "--label '\($0)'" } ?? item?.rawValue ?? "item"
             throw CLIError(
                 errorDescription: "The \(state.menu) dev menu has no \(name). Its items: \(state.items.map(\.label).joined(separator: ", ")).",
@@ -70,9 +77,15 @@ struct DevMenuDriver {
         try await tap(frame.center, tree: tree, hold: node.role == .switch)
         if try await closed(leaving: state.menu) { return tapped }
         // A switch or label can leave the menu open, and a Close tapped while the menu still presents can be ignored.
-        if item?.isToggle == true || label != nil || item == .close, let close = DevMenu.node(for: .close, label: nil, in: try await read()), let closeFrame = close.frame {
-            try await tap(closeFrame.center, tree: nil)
-            if try await closed(leaving: state.menu) { return tapped }
+        if item?.isToggle == true || label != nil || item == .close {
+            let fresh = try await read()
+            if let close = DevMenu.node(for: .close, label: nil, in: fresh), let closeFrame = close.frame {
+                try await tap(closeFrame.center, tree: nil)
+                if try await closed(leaving: state.menu) { return tapped }
+            } else if android, DevMenu.read(fresh)?.menu == state.menu {
+                try await perform(.shortButtonPress(.back))
+                if try await closed(leaving: state.menu) { return tapped }
+            }
         }
         throw CLIError(
             errorDescription: "Tapped \(node.label ?? item?.rawValue ?? "the item"), but the dev menu is still open.",
@@ -120,7 +133,8 @@ struct RNDevMenu: AsyncParsableCommand {
         (KEYCODE_MENU, as `button menu` sends it) on Android emulators and phones. \
         Without an item it prints the items and leaves the menu open. With one (reload, home, inspector, \
         perf-monitor, fast-refresh, debugger, close) or --label, it taps it and waits until the menu closes, \
-        closing it after a switch. Exits 2 when the menu has no such item (the items are the candidates), 1 when \
+        closing it after a switch. React Native's own menu on Android has no close control, so there `close` \
+        presses Back and checks the menu went. Exits 2 when the menu has no such item (the items are the candidates), 1 when \
         the menu never opens (a Release build has none) and 5 when it stays open. In batch, `rn devmenu` is \
         an input step that needs an item or --label.
 

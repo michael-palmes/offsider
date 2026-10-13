@@ -261,6 +261,48 @@ struct RNDevMenuTests {
         #expect(backend.session.calls.count == 1)
     }
 
+    @Test("close on React Native's own menu on Android, which has no close control, presses Back and checks the menu went")
+    func closeReactNativeMenuWithBack() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [try Self.capture("devmenu-rn-android"), Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["close", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "react-native", item: .close, label: "Back"))
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.back))])
+    }
+
+    @Test("a React Native menu that Back leaves open is not verified, after exactly one Back")
+    func backLeavesMenuOpen() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [try Self.capture("devmenu-rn-android")], advanceTreeOnInput: true)
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["close", "--device", Self.device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .notVerified)
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.back))])
+    }
+
+    @Test("a React Native menu a toggle left open closes with Back, and one the toggle closed gets no Back")
+    func toggleLeavesReactNativeMenuOpen() async throws {
+        let menu = try Self.capture("devmenu-rn-android")
+        let toggle = try #require(DevMenu.node(for: .inspector, label: nil, in: menu)?.frame?.center)
+        let stillOpen = FakeDeviceBackend(platform: .android, trees: [menu, menu, Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["inspector", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: stillOpen, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "react-native", item: .inspector, label: "Toggle Element Inspector"))
+        #expect(stillOpen.session.calls == [.perform(.tapAt(x: toggle.x, y: toggle.y)), .perform(.shortButtonPress(.back))])
+
+        let gone = FakeDeviceBackend(platform: .android, trees: [menu, Self.app], advanceTreeOnInput: true)
+        _ = try await RNDevMenu.parse(["inspector", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: gone, device: Self.device), clock: ScriptedClock().poll)
+        #expect(gone.session.calls == [.perform(.tapAt(x: toggle.x, y: toggle.y))])
+    }
+
     @Test("an item the menu lacks is exit 2 with the menu's items as candidates")
     func absentItem() async throws {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.expoMenu()])

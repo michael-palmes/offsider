@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `screenshot --json`'s `maskedBeneath` no longer counts a page element identical to one beneath the page: each match is placed by its position in the tree, not by its attributes.
 - On Android a selector tap no longer warns (or with `--fail-if-covered` refuses) because an unlabelled full-screen React Native view on the target's own page is drawn over it with nothing at the point: it judges what lies beneath, so the target taps and a control beneath still refuses. Off every page such a view is still a guessed cover.
 - On Android, when drawing order puts another element over the point of every match of a selector but one (a pushed page's full-width button over a half-width one with the same label), `tap`, `type --into-*` and `slider` take that one instead of exiting 6. Matches side by side still exit 6.
+- `rn devmenu close` on React Native's own dev menu on Android, which has no close control, presses Back and checks the menu closed (`"label":"Back"`) instead of exiting 2. After a switch or `--label` leaves that menu open, Back closes it only while a fresh read still shows it, so Back never pops the app's own screen.
 
 ## [0.11.0] - 2026-10-12
 

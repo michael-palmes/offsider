@@ -273,6 +273,19 @@ struct ReactNativeDebugSmokeTests {
         #expect(result.stdout.contains(#""dispatched":"yes""#), "\(result.stdout)")
     }
 
+    @Test("on Android rn devmenu close presses Back on React Native's own menu, which has no close control", arguments: RNPlatform.enabled.filter { $0 == .android })
+    func reactNativeMenuClosesWithBack(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("overlay-test")
+
+        try await app.run("rn devmenu --label 'Open React Native dev menu'")
+        _ = try await app.waitForNode(timeout: 10) { Self.label($0) == "React Native Dev Menu" }
+        let closed = try await app.run("rn devmenu close --json")
+
+        #expect(closed.stdout.contains(#""menu":"react-native","item":"close","label":"Back","closed":true"#), "\(closed.stdout)")
+        _ = try await app.waitForNode(timeout: 10) { $0["id"] as? String == "overlay-test-screen" }
+    }
+
     @Test("a full-width 10, pcs button near the bottom is never read as LogBox", arguments: RNPlatform.enabled)
     func amountIsNotLogBox(platform: RNPlatform) async throws {
         let app = RNApp(platform)
