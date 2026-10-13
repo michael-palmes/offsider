@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- On-screen text output (`describe-ui --summary`, `--on-screen --format text`, `--diff`'s full view and batch `describe-ui` steps) closes with `# off-screen: N elements folded into runs; check one with assert --label-contains <text> --allow-offscreen` when off-screen runs hide elements, so a grep that misses a run's item is not read as absent. The byte budget never cuts it, and JSON is unchanged.
+
 ### Fixed
 
 - `credential status --json` with `--device` gives each listed user a `signedInHere` boolean beside the top-level name, so a script reads who is signed in there without comparing names. Without a device neither appears; `status <name>` and `status --where` keep only the top-level name.

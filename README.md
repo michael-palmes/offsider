@@ -303,6 +303,7 @@ application "Playground" (0,0 402x874)
     button "Inbox, 3 unread" (0,400 402x56)
     [off-screen below] 34 items: id=rows-item-9 to id=rows-end
 # folded 2 repeated labels
+# off-screen: 34 elements folded into runs; check one with assert --label-contains <text> --allow-offscreen
 ```
 
 On a foldable the header line ends with the display and posture, such as `inner open`.
@@ -312,7 +313,7 @@ On a foldable the header line ends with the display and posture, such as `inner 
 Text output (`--summary` and `--format text`) saves bytes in four ways; JSON and ndjson keep every node and label:
 
 - A child whose label its parent already shows, whole or as one of its comma-separated parts (React Native merges `Inbox` and `3 unread` into `Inbox, 3 unread`), loses the label, and its line goes when nothing else is left (no id, value, control role or checked or selected state). A text's value equal to its label is left out. One closing `# folded N repeated labels` line counts them.
-- With `--on-screen`, nodes wholly past an edge that would otherwise show are summarised where they start, per side and counting rows rather than their texts: `[off-screen below] 34 items: id=rows-item-9 to id=rows-end`, also `above`, `left` and `right`. When the items hold elements that would be listed, the count says so: `[off-screen below] 1 item (+12 inside): id=sheet-host`. Scroll that way to bring them on screen.
+- With `--on-screen`, nodes wholly past an edge that would otherwise show are summarised where they start, per side and counting rows rather than their texts: `[off-screen below] 34 items: id=rows-item-9 to id=rows-end`, also `above`, `left` and `right`. When the items hold elements that would be listed, the count says so: `[off-screen below] 1 item (+12 inside): id=sheet-host`. Scroll that way to bring them on screen. A run's items are not listed, so a grep for one misses it: a closing `# off-screen: 34 elements folded into runs` line, which the byte budget never cuts, counts them, and `assert --label-contains <text> --allow-offscreen` checks one.
 - With `--on-screen`, a screen a full-screen page is drawn over (an earlier page kept mounted under a pushed one, by Android's drawing order or iOS tree order) is left out, and a closing line counts it, which the byte budget never cuts: `# beneath: "Products" (42 elements) under "Kettle"`. Its elements are still in JSON and plain `--format text`.
 - Nested lines stop indenting at 10 levels.
 
