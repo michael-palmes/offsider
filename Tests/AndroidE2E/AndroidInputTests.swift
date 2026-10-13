@@ -55,18 +55,24 @@ struct AndroidSwipeGestureTests {
         #expect(try await AndroidE2E.label(of: "last-swipe-start") == "Start: (200, 700)")
     }
 
+    /// Before Android 11 (API 30) the expanded shade is the StatusBar window; later it has its own NotificationShade window.
+    static func isShade(_ focus: String, apiLevel: Int) -> Bool {
+        apiLevel < 30 ? focus.contains(" StatusBar}") : focus.contains("NotificationShade")
+    }
+
     @Test("both top presets open the notification shade", arguments: ["swipe-from-top-edge", "swipe-from-top-right-edge"])
     func topPresetsOpenShade(preset: String) async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        let apiLevel = try await AndroidE2E.apiLevel()
         try await AndroidE2E.run("gesture \(preset)")
         let deadline = Date().addingTimeInterval(5)
         var focus = ""
         while Date() < deadline {
             focus = try await AndroidE2E.shell("dumpsys window | grep -m1 mCurrentFocus")
-            if focus.contains("NotificationShade") { break }
+            if Self.isShade(focus, apiLevel: apiLevel) { break }
             try await Task.sleep(for: .milliseconds(300))
         }
-        #expect(focus.contains("NotificationShade"))
+        #expect(Self.isShade(focus, apiLevel: apiLevel), "\(focus)")
         try await AndroidE2E.shell("cmd statusbar collapse")
     }
 
