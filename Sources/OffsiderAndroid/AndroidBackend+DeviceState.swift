@@ -3,16 +3,26 @@ import OffsiderCore
 
 extension AndroidBackend: PermissionControlling {
     public func permissions(of app: String, on id: DeviceID) async throws -> AndroidPackagePermissions {
+        let client = try requireClient()
         let script = AndroidPermissionPlan.readScript(package: app)
-        let result = try await requireClient().shell(script, on: id.rawValue, timeout: .seconds(20), label: "dumpsys package")
+        let result = try await client.shell(script, on: id.rawValue, timeout: .seconds(20), label: "dumpsys package")
         if result.stdoutText.contains("Unable to find package") || (result.status != 0 && result.stderrText.contains("Unable to find package")) {
             throw AndroidError.appNotInstalled(app, serial: id.rawValue)
         }
         guard result.status == 0, result.stdoutText.contains("Package [\(app)]") else {
             if result.status == 0 { throw AndroidError.appNotInstalled(app, serial: id.rawValue) }
-            throw AndroidError.adbCommandFailed(serial: id.rawValue, command: script, detail: Self.firstLine(result.stderrText, status: result.status))
+            throw AndroidError.adbCommandFailed(serial: id.rawValue, command: "dumpsys package \(app)", detail: Self.firstLine(result.stderrText, status: result.status))
         }
-        return AndroidPackagePermissions.parse(dumpsysPackage: result.stdoutText)
+        let (apiLevel, dump) = AndroidPackagePermissions.splitRead(result.stdoutText)
+        guard AndroidPackagePermissions.needsDangerousList(apiLevel: apiLevel) else {
+            return AndroidPackagePermissions.parse(dumpsysPackage: String(dump), apiLevel: apiLevel)
+        }
+        let list = try await client.shell(AndroidPermissionPlan.dangerousScript, on: id.rawValue, timeout: .seconds(20), label: "pm list permissions")
+        guard list.status == 0, let dangerous = AndroidPackagePermissions.parseDangerous(list.stdoutText) else {
+            let detail = list.status == 0 ? "it printed no Dangerous Permissions list" : Self.firstLine(list.stderrText, status: list.status)
+            throw AndroidError.adbCommandFailed(serial: id.rawValue, command: AndroidPermissionPlan.dangerousScript, detail: detail)
+        }
+        return AndroidPackagePermissions.parse(dumpsysPackage: String(dump), apiLevel: apiLevel, dangerous: dangerous)
     }
 
     /// One read and at most one script; nothing runs when every permission is already in place.

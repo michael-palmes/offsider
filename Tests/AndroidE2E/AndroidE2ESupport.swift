@@ -89,6 +89,12 @@ enum AndroidE2E {
         try await adb("shell \(quote(command))", timeout: timeout)
     }
 
+    static func apiLevel() async throws -> Int {
+        let text = try await shell("getprop ro.build.version.sdk").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let level = Int(text) else { throw AndroidE2EError(description: "getprop ro.build.version.sdk answered '\(text)'") }
+        return level
+    }
+
     /// Runs offsider with `--device` set to the guarded serial.
     static func offsider(_ arguments: String, environment: [String: String]? = nil, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
         let serial = try await serial()
