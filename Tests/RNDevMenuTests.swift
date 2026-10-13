@@ -303,6 +303,40 @@ struct RNDevMenuTests {
         #expect(gone.session.calls == [.perform(.tapAt(x: toggle.x, y: toggle.y))])
     }
 
+    /// An app screen whose notes field holds focus, as while typing.
+    static let focusedField = FakeUI.tree(platform: .android, [
+        FakeUI.node(.textField, id: "notes-field", label: "Notes", frame: FakeUI.frame(16, 200, 370, 44), state: UIState(focused: true), platform: .android),
+    ])
+
+    @Test("on Android an item React Native's menu lacks says a focused field can send the menu key there, and lists that menu's items")
+    func reactNativeMenuLacksItem() async throws {
+        let menu = try Self.capture("devmenu-rn-android")
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.focusedField, menu], advanceTreeOnInput: true)
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", "Clear Cache", "--device", Self.device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .selectorNotFound)
+        #expect(error?.userFacingDescription.contains("while a text field has focus: move focus out of the field, or open Expo's menu with its Tools button") == true)
+        #expect(error?.candidates.map(\.label) == DevMenu.read(menu)?.items.map(\.label))
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu))])
+    }
+
+    @Test("on Android a menu key that opens nothing while a text field has focus names the field as the likely cause")
+    func focusedFieldOpensNothing() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.focusedField])
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--device", Self.device.rawValue]).perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .stateNotReached)
+        #expect(error?.userFacingDescription.contains("A text field has focus") == true)
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu))])
+    }
+
     @Test("an item the menu lacks is exit 2 with the menu's items as candidates")
     func absentItem() async throws {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.expoMenu()])
@@ -312,6 +346,7 @@ struct RNDevMenuTests {
         }
         #expect(error?.reason == .selectorNotFound)
         #expect(error?.candidates.map(\.label) == ["Reload", "Go home", "Toggle performance monitor", "Toggle element inspector", "Fast Refresh", "Close"])
+        #expect(error?.userFacingDescription.contains("text field") == false)
         #expect(backend.session.calls.isEmpty)
     }
 
@@ -322,6 +357,7 @@ struct RNDevMenuTests {
             _ = try await RNDevMenu.parse(["--device", Self.device.rawValue]).perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
         }
         #expect(error?.reason == .stateNotReached)
+        #expect(error?.userFacingDescription.hasSuffix("Release builds have none; check this is a debug build.") == true)
     }
 
     @Test("tools off turns off a showing performance monitor through the menu and leaves the inspector alone")
