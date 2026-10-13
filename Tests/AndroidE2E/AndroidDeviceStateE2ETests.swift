@@ -16,16 +16,21 @@ struct AndroidDeviceStateE2ETests {
         await cleanup()
     }
 
+    /// Android 9 drops a runtime permission's line once it holds no grant and no flags, so there a missing line reads as denied with none.
     static func runtimeState(_ permission: String) async throws -> String {
         let dump = try await AndroidE2E.shell("dumpsys package \(AndroidE2E.package)")
-        return dump.split(whereSeparator: \.isNewline).first { $0.contains("android.permission.\(permission): granted=") }.map(String.init) ?? ""
+        let line = dump.split(whereSeparator: \.isNewline).first { $0.contains("android.permission.\(permission): granted=") }.map(String.init)
+        if line == nil, try await AndroidE2E.apiLevel() < 29 { return "android.permission.\(permission): granted=false" }
+        return line ?? ""
     }
 
     @Test("granting camera shows granted on the permission-state screen, and reset denies it with the user flags cleared")
     func cameraPermission() async throws {
         try await AndroidE2E.ensurePlaygroundInstalled()
-        try await AndroidE2E.run("permission reset camera notifications \(Self.app)")
-        try await Self.restoring({ _ = try? await AndroidE2E.offsider("permission reset camera notifications \(Self.app)") }) {
+        // POST_NOTIFICATIONS is a runtime permission only from Android 13 (API 33).
+        let services = try await AndroidE2E.apiLevel() >= 33 ? "camera notifications" : "camera"
+        try await AndroidE2E.run("permission reset \(services) \(Self.app)")
+        try await Self.restoring({ _ = try? await AndroidE2E.offsider("permission reset \(services) \(Self.app)") }) {
             let grant = try await AndroidE2E.run("permission grant camera \(Self.app) --json")
             #expect(grant.stdout.contains(#""name":"android.permission.CAMERA","previous":"denied","current":"granted","changed":true"#))
             try await AndroidE2E.open("permission-state", waitingFor: "permission-state-camera")
