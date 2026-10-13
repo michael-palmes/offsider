@@ -390,11 +390,12 @@ The batch exits with the code of its first step that failed to run, else 5 when 
 
 ### Masks
 
-Masks are painted from one accessibility tree read before the image is written, and `--json` reports `masked`, `maskedBy`, `maskedBeneath` (matches on a screen beneath a page, still painted) and `maskUnmatched`.
+Masks are painted from one accessibility tree read before the image is written, and `--json` reports `masked`, `maskedBy`, `maskedBeneath` (matches on a screen beneath a page, still painted), `skippedBeneath` (with `--mask-skip-beneath`) and `maskUnmatched`.
 
 - `--mask-secure` (or `OFFSIDER_MASK_SECURE=1`) paints every password field opaque black; when a password field has no frame, the image is withheld and no file is written. Masking follows the platform's secure flag, so a secret in an ordinary text field, such as a custom PIN pad, is not masked.
 - `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text <regex>` and `--mask-emails` paint the elements they match. `--mask-text` searches labels, values (never a secure one), titles, text, content descriptions and hints, and paints the innermost match, so a row is not blacked out for one field.
 - `--mask-region x,y,w,h` paints a rectangle in points without reading the tree.
+- `--mask-skip-beneath` leaves matches of `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text`, `--mask-emails` and the evidence run's email and id masks unpainted when their element is on a screen beneath a page, and `--json` counts them per kind in `skippedBeneath` (zeros included), with a count on stderr. Password fields and `--mask-region` are always painted, and with no page found nothing is skipped. Use it only when the page on top is opaque: a translucent or animating page shows what is beneath, so check the image. `batch` screenshot steps take it too; video commands do not.
 
 Plain screenshots are never masked, and iOS briefly shows the last character typed into a secure field. Tree masks cover only what the accessibility tree describes: web views, canvases, images, a field that appears between the tree read and the capture, and text drawn in that gap can still show, so check an image before you share it.
 
@@ -424,14 +425,14 @@ Video is never masked by the accessibility tree, since a tree read cannot be pro
 `manifest.ndjson` gets one line per capture, failures included:
 
 ```json
-{"n":1,"file":"001-screenshot-14.03.22.png","command":"screenshot","step":null,"line":null,"device":"emulator-5554","platform":"android","time":"2026-10-05T14:03:22.125+10:30","ms":412,"exit":0,"reason":null,"args":["--mask-emails"],"output":null,"diff":null,"masked":2,"changed":null,"expect":null,"entries":null,"redacted":null}
+{"n":1,"file":"001-screenshot-14.03.22.png","command":"screenshot","step":null,"line":null,"device":"emulator-5554","platform":"android","time":"2026-10-05T14:03:22.125+10:30","ms":412,"exit":0,"reason":null,"args":["--mask-emails"],"output":null,"diff":null,"masked":2,"skippedBeneath":null,"changed":null,"expect":null,"entries":null,"redacted":null}
 ```
 
 A failed capture's line has `n` and `file` null, so the numbers count files. Batch steps carry `command` `batch`, `step` and the redacted `line`; `args` pass through the same redaction as `logs`. In both, `--mask-text`, `--mask-label`, `--mask-label-contains`, `--grep` and `--exclude` values read `<N characters>`, since a selector often spells the data it hides; `--mask-id` values (the app's own element ids) and `--mask-region` coordinates are kept. Files that no line names (a command killed mid-capture) are counted as unrecorded.
 
 The run belongs to the session that started it: the first parent process of `run start` that is not a shell or wrapper, such as Claude Code, Codex or a terminal's `login`. A command joins the run whose session (pid and start time) is among its own parents, so two agents on one Mac keep separate runs. A second `run start` with another folder exits 1 with `run_active`; a stopped run's folder continues its numbering. When the session exits, the next `run start` or `run status` ends its run (`endedBy` `owner-exited`). `OFFSIDER_RUN=off` records nothing, and `OFFSIDER_RUN=<dir>` records into `<dir>` whatever the session.
 
-Masks given to `run start` apply to every capture in the run, on top of the capture's own (`screenshot` and batch step flags, `batch --mask-secure` and `OFFSIDER_MASK_SECURE`), so a capture can add masks but never drop one. `run start` again on the active folder adds any new masks to the run and prints the masks now in force; it never removes one, so run `run stop`, then `run start`, to drop a mask.
+Masks given to `run start` apply to every capture in the run, on top of the capture's own (`screenshot` and batch step flags, `batch --mask-secure` and `OFFSIDER_MASK_SECURE`), so a capture can add masks but never drop one, except `--mask-skip-beneath` for the run's email and id matches beneath a page; password fields always stay masked. A capture with it records `skippedBeneath` in its manifest line. `run start` again on the active folder adds any new masks to the run and prints the masks now in force; it never removes one, so run `run stop`, then `run start`, to drop a mask.
 
 ## Device lock and leases
 

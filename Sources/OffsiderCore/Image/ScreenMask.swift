@@ -35,8 +35,13 @@ public struct MaskPlan: Equatable, Sendable {
     public var emails: Bool
     /// Points, painted before any `--region` crop.
     public var regions: [PointRegion]
+    /// Leaves matches of skippable kinds unpainted when their element is on a screen beneath a page.
+    public var skipsBeneath: Bool
 
-    public init(secure: Bool = false, ids: [String] = [], labels: [String] = [], labelsContaining: [String] = [], texts: [String] = [], emails: Bool = false, regions: [PointRegion] = []) {
+    public init(
+        secure: Bool = false, ids: [String] = [], labels: [String] = [], labelsContaining: [String] = [], texts: [String] = [], emails: Bool = false,
+        regions: [PointRegion] = [], skipsBeneath: Bool = false
+    ) {
         self.secure = secure
         self.ids = ids
         self.labels = labels
@@ -44,6 +49,7 @@ public struct MaskPlan: Equatable, Sendable {
         self.texts = texts
         self.emails = emails
         self.regions = regions
+        self.skipsBeneath = skipsBeneath
     }
 
     public static let none = MaskPlan()
@@ -62,7 +68,8 @@ public struct MaskPlan: Equatable, Sendable {
             labelsContaining: merged(labelsContaining, other.labelsContaining),
             texts: merged(texts, other.texts),
             emails: emails || other.emails,
-            regions: merged(regions, other.regions)
+            regions: merged(regions, other.regions),
+            skipsBeneath: skipsBeneath || other.skipsBeneath
         )
     }
 

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - On-screen text output (`describe-ui --summary`, `--on-screen --format text`, `--diff`'s full view and batch `describe-ui` steps) closes with `# off-screen: N elements folded into runs; check one with assert --label-contains <text> --allow-offscreen` when off-screen runs hide elements, so a grep that misses a run's item is not read as absent. The byte budget never cuts it, and JSON is unchanged.
+- `screenshot --mask-skip-beneath` (and batch screenshot steps) leaves matches of `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text`, `--mask-emails` and the evidence run's email and id masks unpainted when their element is on a screen beneath a page; it is the only way a capture leaves a run mask unpainted. Password fields and `--mask-region` are always painted, and with no page found nothing is skipped. `--json` adds `skippedBeneath` per kind, stderr counts them, and the run manifest adds `skippedBeneath` (null without the flag). `record-video` and `stream-video` do not take it.
 
 ### Fixed
 

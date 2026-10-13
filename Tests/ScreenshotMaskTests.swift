@@ -196,19 +196,34 @@ struct ScreenshotMaskTests {
         return tree
     }
 
-    /// Runs `screenshot` with `arguments` on `tree` over a white 1080 x 2424 capture.
-    static func stackCapture(_ arguments: [String], tree: UITree) async throws -> (report: ScreenshotReport, image: CGImage, backend: FakeDeviceBackend) {
-        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
-        let backend = FakeDeviceBackend(
+    static let stackDevice = DeviceID(rawValue: "emulator-5554", platform: .android)
+
+    /// `tree` over a white 1080 x 2424 capture at 2.625 pixels per point.
+    static func stackBackend(_ tree: UITree) throws -> FakeDeviceBackend {
+        FakeDeviceBackend(
             platform: .android, trees: [tree],
             screenshots: [try ScreenImage.encode(TestImages.make(width: 1080, height: 2424, background: 255), as: .png)],
             screen: UIScreenInfo(width: 411.4, height: 923.4, scale: 2.625, rotation: .portrait)
         )
+    }
+
+    /// Runs `screenshot` with `arguments` on `tree`, with `environment` for OFFSIDER_MASK_SECURE.
+    static func stackCapture(_ arguments: [String], tree: UITree, environment: [String: String] = [:]) async throws -> (report: ScreenshotReport, image: CGImage, backend: FakeDeviceBackend) {
+        let backend = try stackBackend(tree)
         let path = Self.temporaryPath()
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let command = try Screenshot.parse(arguments + ["--output", path, "--device", device.rawValue])
-        let report = try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: try command.maskPlan(environment: [:]))
+        let command = try Screenshot.parse(arguments + ["--output", path, "--device", stackDevice.rawValue])
+        let report = try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: stackDevice), masks: try command.maskPlan(environment: environment))
         return (report, try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path))), backend)
+    }
+
+    /// The tree with stack-test-state, beneath the page, as a password field.
+    static func secureBeneathTree() throws -> UITree {
+        try stackTree { node in
+            var copy = node
+            if node.id == "stack-test-state" { copy.role = .secureTextField }
+            return copy
+        }
     }
 
     /// The tree with the page holding an element identical to stack-test-depth beneath it, frame included.
@@ -245,6 +260,71 @@ struct ScreenshotMaskTests {
         #expect(report.maskedBy == [.id: 2])
         #expect(report.maskedBeneath == [.id: 1])
         #expect(Self.pixel(image, 79, 433) == Self.black)
+    }
+
+    @Test("--mask-skip-beneath leaves the match beneath the page unpainted and still paints the page's own")
+    func skipBeneathLeavesCoveredMatch() async throws {
+        let tree = try Self.stackTree { node in
+            var copy = node
+            if node.id == "stack-test-full-close-later" { copy.label = "Stack Depth: 1" }
+            return copy
+        }
+        let (report, image, _) = try await Self.stackCapture(["--mask-label", "Stack Depth: 1", "--mask-skip-beneath"], tree: tree)
+
+        #expect(report.maskedBy == [.label: 1])
+        #expect(report.skippedBeneath == [.label: 1])
+        #expect(report.maskedBeneath.isEmpty)
+        #expect(report.maskUnmatched.isEmpty)
+        #expect(report.jsonLine().contains(#""masked":1,"maskedBy":{"label":1},"skippedBeneath":{"label":1},"orientation""#))
+        #expect(Self.pixel(image, 79, 433) == Self.white)
+        #expect(Self.pixel(image, 394, 315) == Self.black)
+    }
+
+    @Test("--mask-skip-beneath still paints a page element identical to one it skips beneath the page")
+    func skipBeneathPaintsIdenticalPageElement() async throws {
+        let (report, image, _) = try await Self.stackCapture(["--mask-id", "stack-test-depth", "--mask-skip-beneath"], tree: try Self.stackTreeWithPageCopy())
+
+        #expect(report.maskedBy == [.id: 1])
+        #expect(report.skippedBeneath == [.id: 1])
+        #expect(Self.pixel(image, 79, 433) == Self.black)
+    }
+
+    @Test("--mask-skip-beneath never skips a password field or a --mask-region", arguments: [false, true])
+    func skipBeneathKeepsSecureAndRegions(secureFromEnvironment: Bool) async throws {
+        let arguments = (secureFromEnvironment ? [] : ["--mask-secure"]) + ["--mask-region", "0,600,100,50", "--mask-skip-beneath"]
+        let environment = secureFromEnvironment ? ["OFFSIDER_MASK_SECURE": "1"] : [:]
+        let (report, image, _) = try await Self.stackCapture(arguments, tree: try Self.secureBeneathTree(), environment: environment)
+
+        #expect(report.maskedBy == [.secure: 1, .region: 1])
+        #expect(report.maskedBeneath == [.secure: 1])
+        #expect(report.skippedBeneath == [:])
+        #expect(report.jsonLine().contains(#""skippedBeneath":{}"#))
+        #expect(Self.pixel(image, 60, 330) == Self.black)
+        #expect(Self.pixel(image, 50, 1600) == Self.black)
+    }
+
+    @Test("with no page in the tree --mask-skip-beneath skips nothing and reports zero")
+    func skipBeneathWithoutAPage() async throws {
+        let backend = try Self.backend([FakeUI.node(.text, id: "profile-email", label: "e2e@example.com", frame: FakeUI.frame(16, 100, 200, 40))])
+        let result = try await Self.capture(["--mask-emails", "--mask-skip-beneath"], on: backend)
+        defer { try? FileManager.default.removeItem(atPath: result.path) }
+
+        #expect(result.report.maskedBy == [.emails: 1])
+        #expect(result.report.skippedBeneath == [.emails: 0])
+        #expect(Self.point(result.image, 116, 120) == Self.black)
+    }
+
+    @Test("--mask-skip-beneath alone asks for no mask, so it reads no tree and reports none")
+    func skipBeneathAlone() async throws {
+        let backend = try Self.backend([SecureTextTests.passwordField()])
+        let result = try await Self.capture(["--mask-skip-beneath"], on: backend)
+        defer { try? FileManager.default.removeItem(atPath: result.path) }
+
+        #expect(backend.treeReads == 0)
+        #expect(result.report.masked == nil)
+        #expect(result.report.skippedBeneath == nil)
+        #expect(!result.report.jsonLine().contains("masked"))
+        #expect(!result.report.jsonLine().contains("skippedBeneath"))
     }
 
     @Test("masks on a tree with no covered screen report no maskedBeneath")
@@ -333,8 +413,21 @@ struct ScreenshotMaskTests {
 
         #expect(records.allSatisfy { $0.ok })
         #expect(records.last?.jsonLine().contains(#""maskedBy":{"secure":1,"emails":1}"#) == true)
+        #expect(records.last?.jsonLine().contains("skippedBeneath") == false)
         #expect(backend.treeReads == 1)
         #expect(Self.pixel(written, 600, 870) == Self.black)
         #expect(Self.point(written, 116, 120) == Self.black)
+    }
+
+    @Test("a batch screenshot step takes --mask-skip-beneath and reports skippedBeneath")
+    func batchSkipBeneath() async throws {
+        let path = Self.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let backend = try Self.backend([FakeUI.node(.text, id: "profile-email", label: "e2e@example.com", frame: FakeUI.frame(16, 100, 200, 40))])
+
+        let records = try await Self.batch(["screenshot --mask-emails --mask-skip-beneath --output \(path)"], on: backend)
+
+        #expect(records.allSatisfy { $0.ok })
+        #expect(records.last?.jsonLine().contains(#""maskedBy":{"emails":1},"skippedBeneath":{"emails":0}"#) == true)
     }
 }

@@ -23,6 +23,10 @@ struct Screenshot: AsyncParsableCommand {
         they match the same way, even on a screen beneath a page (counted in maskedBeneath); --mask-region paints a rectangle \
         in points before any --region crop and reads no tree. A selector that matches nothing is named in maskUnmatched \
         and on stderr, and the image is still written. \
+        --mask-skip-beneath leaves those matches, and an evidence run's email and id masks, unpainted when their element is on \
+        a screen beneath a page (counted in skippedBeneath); password fields and --mask-region are always painted, and with no \
+        page found nothing is skipped. Use it only when the page on top is opaque: a translucent or animating page shows what is \
+        beneath, so check the image. \
         Masks cover what the tree describes: web views, canvases, images and text drawn after the tree read can \
         still show. Video is never masked.
         """
@@ -82,6 +86,9 @@ struct Screenshot: AsyncParsableCommand {
     @Option(name: .customLong("mask-region"), parsing: .upToNextOption, help: ArgumentHelp("Paint this rectangle, in points, black before any --region crop; reads no tree. Repeatable.", valueName: "x,y,w,h"))
     var maskRegions: [String] = []
 
+    @Flag(name: .customLong("mask-skip-beneath"), help: "Leave matches of the other masks and the run's email and id masks unpainted on a screen beneath a page. Password fields and --mask-region are always painted.")
+    var maskSkipBeneath = false
+
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
 
@@ -139,7 +146,8 @@ struct Screenshot: AsyncParsableCommand {
             labelsContaining: maskLabelsContaining,
             texts: maskTexts,
             emails: maskEmails,
-            regions: try maskRegions.map { try PointRegion.parse($0, option: "--mask-region") }
+            regions: try maskRegions.map { try PointRegion.parse($0, option: "--mask-region") },
+            skipsBeneath: maskSkipBeneath
         )
     }
 
@@ -233,9 +241,15 @@ struct Screenshot: AsyncParsableCommand {
             if !result.unmatched.isEmpty {
                 Self.writeError("Warning: nothing matched \(result.unmatched.joined(separator: ", ")), so nothing was painted for it.")
             }
+            let skipped = result.skipped?.values.reduce(0, +) ?? 0
+            if skipped > 0 {
+                Self.writeError("Note: --mask-skip-beneath left \(skipped == 1 ? "1 match" : "\(skipped) matches") on a screen beneath a page unpainted (skippedBeneath).")
+            }
             let beneath = result.beneath.values.reduce(0, +)
             if beneath > 0 {
-                Self.writeError("Note: \(beneath == 1 ? "1 mask was" : "\(beneath) masks were") painted for elements on a screen beneath a page, so black boxes can sit over the page on top (maskedBeneath).")
+                let skippable = !masks.skipsBeneath && result.beneath.keys.contains(where: \.skippableBeneath)
+                let advice = skippable ? "; --mask-skip-beneath leaves them unpainted" : ""
+                Self.writeError("Note: \(beneath == 1 ? "1 mask was" : "\(beneath) masks were") painted for elements on a screen beneath a page, so black boxes can sit over the page on top (maskedBeneath)\(advice).")
             }
         }
         let rendered = try ScreenCapture.render(capture, request: request)
@@ -254,6 +268,7 @@ struct Screenshot: AsyncParsableCommand {
             recorder.update(token) { entry in
                 entry.output = path
                 entry.masked = masked.map { $0.painted.values.reduce(0, +) }
+                entry.skippedBeneath = masked?.skipped.map { $0.values.reduce(0, +) }
             }
             if path == nil, let runFile {
                 path = runFile
@@ -344,7 +359,7 @@ struct Screenshot: AsyncParsableCommand {
         }
     }
 
-    /// The capture's own masks with the run's added, so a capture can add masks but never drop one the run set.
+    /// The capture's own masks with the run's added, so a capture never drops a run mask; only --mask-skip-beneath leaves one unpainted beneath a page.
     @MainActor
     func masksWithRunDefaults(_ own: MaskPlan) -> MaskPlan {
         guard let defaults = EvidenceRecorder.current.defaultMasks else { return own }

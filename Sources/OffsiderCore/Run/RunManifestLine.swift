@@ -21,6 +21,8 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
     public var output: String?
     public var diff: String?
     public var masked: Int?
+    /// Matches `--mask-skip-beneath` left unpainted beneath a page; nil without the flag.
+    public var skippedBeneath: Int?
     public var changed: Bool?
     /// The outcome a compare expected, `changed` or `unchanged`.
     public var expect: String?
@@ -30,7 +32,7 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
     public init(
         n: Int? = nil, file: String? = nil, command: String, step: Int? = nil, line: String? = nil, device: String? = nil, platform: String? = nil,
         time: Date, ms: Int, exit: Int, reason: String? = nil, args: [String]? = nil, output: String? = nil, diff: String? = nil,
-        masked: Int? = nil, changed: Bool? = nil, expect: String? = nil, entries: Int? = nil, redacted: Int? = nil
+        masked: Int? = nil, skippedBeneath: Int? = nil, changed: Bool? = nil, expect: String? = nil, entries: Int? = nil, redacted: Int? = nil
     ) {
         self.n = n
         self.file = file
@@ -47,6 +49,7 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
         self.output = output
         self.diff = diff
         self.masked = masked
+        self.skippedBeneath = skippedBeneath
         self.changed = changed
         self.expect = expect
         self.entries = entries
@@ -74,6 +77,7 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
             ("output", .optional(output, OrderedJSON.string)),
             ("diff", .optional(diff, OrderedJSON.string)),
             ("masked", .optional(masked, OrderedJSON.integer)),
+            ("skippedBeneath", .optional(skippedBeneath, OrderedJSON.integer)),
             ("changed", .optional(changed, OrderedJSON.bool)),
             ("expect", .optional(expect, OrderedJSON.string)),
             ("entries", .optional(entries, OrderedJSON.integer)),

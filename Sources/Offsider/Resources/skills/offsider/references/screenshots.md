@@ -21,7 +21,7 @@ Content the tree cannot see (charts, maps, canvases, web views) changes pixels o
 
 ## Secure fields and personal data
 
-Before sharing an image of a screen with a password field or personal data, mask it: `--mask-secure`, `--mask-id`, `--mask-text`, `--mask-emails` and `--mask-region` are in `offsider guide evidence`.
+Before sharing an image of a screen with a password field or personal data, mask it: `--mask-secure`, `--mask-id`, `--mask-text`, `--mask-emails` and `--mask-region` are in `offsider guide evidence`, as is `--mask-skip-beneath`, which leaves matches on a screen beneath an opaque page unpainted.
 
 ## Video
 

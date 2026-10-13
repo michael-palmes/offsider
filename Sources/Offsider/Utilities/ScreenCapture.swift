@@ -74,6 +74,7 @@ struct RenderedScreenshot {
             comparison: comparison,
             maskedBy: masks?.painted,
             maskedBeneath: masks?.beneath ?? [:],
+            skippedBeneath: masks?.skipped,
             maskUnmatched: masks?.unmatched ?? []
         )
     }
@@ -120,11 +121,13 @@ enum ScreenCapture {
         )
     }
 
-    /// What masking painted: rectangles per kind asked for, those on a screen beneath a page, and the selectors that matched nothing.
+    /// What masking painted: rectangles per kind asked for, those on a screen beneath a page, the matches left unpainted there, and the selectors that matched nothing.
     struct MaskResult {
         let capture: CapturedScreen
         let painted: [MaskKind: Int]
         var beneath: [MaskKind: Int] = [:]
+        /// Nil unless `--mask-skip-beneath` was given; then every skippable kind asked for, zeros included.
+        var skipped: [MaskKind: Int]?
         let unmatched: [String]
     }
 
@@ -147,7 +150,9 @@ enum ScreenCapture {
             }
         }
         targets.frames[.region] = plan.regions.map { UIFrame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
-        let beneathFrames = tree.map { targets.placeBeneath(in: $0, skip: false).painted } ?? [:]
+        let placement = tree.map { targets.placeBeneath(in: $0, skip: plan.skipsBeneath) } ?? (painted: [:], skipped: [:])
+        let beneathFrames = placement.painted
+        let skipped = plan.skipsBeneath ? Dictionary(uniqueKeysWithValues: plan.kinds.filter(\.skippableBeneath).map { ($0, placement.skipped[$0] ?? 0) }) : nil
 
         var image = capture.image
         var painted: [MaskKind: Int] = [:]
@@ -172,12 +177,12 @@ enum ScreenCapture {
             }
         }
         beneath = beneath.filter { $0.value > 0 }
-        guard image !== capture.image else { return MaskResult(capture: capture, painted: painted, beneath: beneath, unmatched: targets.unmatched) }
+        guard image !== capture.image else { return MaskResult(capture: capture, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched) }
         let masked = CapturedScreen(
             image: image, platform: capture.platform, screen: capture.screen, pixelsPerPoint: capture.pixelsPerPoint,
             upright: capture.upright, untouchedPNG: nil
         )
-        return MaskResult(capture: masked, painted: painted, beneath: beneath, unmatched: targets.unmatched)
+        return MaskResult(capture: masked, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched)
     }
 
     nonisolated private static func subject(of kind: MaskKind) -> String {

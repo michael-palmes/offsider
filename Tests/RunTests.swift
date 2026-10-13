@@ -396,6 +396,38 @@ struct RunTests {
         #expect(fixture.manifest().map(\.masked) == [1, 2, 2])
     }
 
+    @Test("--mask-skip-beneath leaves a run's id match beneath a page unpainted for that capture only, and never its password fields")
+    func runMasksSkippedBeneath() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(masks: RunMasks(secure: true, ids: ["stack-test-depth"]))
+        let backend = try ScreenshotMaskTests.stackBackend(try ScreenshotMaskTests.secureBeneathTree())
+        let device = ScreenshotMaskTests.stackDevice
+        var reports: [ScreenshotReport] = []
+        for arguments in [["--mask-skip-beneath"], []] {
+            try await fixture.command(fixture.recorder("screenshot", arguments: arguments)) {
+                let command = try Screenshot.parse(arguments + ["--device", device.rawValue])
+                let masks = command.masksWithRunDefaults(try command.maskPlan(environment: [:]))
+                reports.append(try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: masks))
+            }
+        }
+        let images = try reports.map { try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: try #require($0.path)))) }
+        let lines = fixture.manifest()
+
+        #expect(reports.map(\.skippedBeneath) == [[.id: 1], nil])
+        #expect(reports.map(\.maskedBy) == [[.secure: 1, .id: 0], [.secure: 1, .id: 1]])
+        #expect(reports.allSatisfy { $0.maskUnmatched.isEmpty })
+        #expect(images.map { ScreenshotMaskTests.pixel($0, 60, 330) } == [ScreenshotMaskTests.black, ScreenshotMaskTests.black])
+        #expect(images.map { ScreenshotMaskTests.pixel($0, 79, 433) } == [ScreenshotMaskTests.white, ScreenshotMaskTests.black])
+        #expect(lines.map(\.skippedBeneath) == [1, nil])
+        #expect(lines.first?.args?.contains("--mask-skip-beneath") == true)
+        #expect(lines.first?.jsonLine().contains(#""masked":1,"skippedBeneath":1,"#) == true)
+        #expect(lines.last?.jsonLine().contains(#""masked":2,"skippedBeneath":null,"#) == true)
+        let state = RunState(label: nil, startedAt: fixture.now, stoppedAt: fixture.now, next: 3)
+        let timeline = RunTimeline(dir: fixture.folder(), state: state, entries: lines, unrecorded: []).text(now: fixture.now, timeZone: RunFixture.timeZone)
+        #expect(timeline.contains("(masked 1, skipped beneath 1)"))
+        #expect(!timeline.contains("(masked 2, skipped"))
+    }
+
     @Test("a batch screenshot step keeps the run's masks beside batch --mask-secure and its own masks")
     func runWideMasksInBatch() async throws {
         let fixture = try RunFixture()
