@@ -256,6 +256,54 @@ struct TapCoverTests {
         #expect(verdict.evidence == .drawingOrder && !verdict.isConfident)
     }
 
+    /// A React Native stack on Android, flat as the helper sends it: Settings pushed over Home, then an unlabelled full-screen view drawn last.
+    static func settingsOverHome(overlayControl: Bool = false, draftSave: Bool = false) -> UITree {
+        func button(_ id: String, _ label: String, _ frame: UIFrame) -> UINode {
+            FakeUI.node(.button, id: id, label: label, frame: frame, platform: .android)
+        }
+        let help = button("overlay-help", "Help", FakeUI.frame(150, 700, 100, 50))
+        let draft = draftSave ? [button("settings-save-draft", "Save", FakeUI.frame(16, 700, 176, 50))] : []
+        let nodes = [
+            FakeUI.node(.header, label: "Home", frame: FakeUI.frame(16, 40, 368, 30), platform: .android),
+            button("home-filters", "Filters", FakeUI.frame(16, 300, 100, 40)),
+            button("home-open", "Open Settings", FakeUI.frame(16, 700, 368, 50)),
+            classed(FakeUI.node(.group, id: "settings-page", frame: FakeUI.frame(0, 0, 400, 800), platform: .android), "android.view.ViewGroup"),
+            FakeUI.node(.header, label: "Settings", frame: FakeUI.frame(16, 40, 368, 30), platform: .android),
+        ] + draft + [
+            button("settings-save", "Save", FakeUI.frame(16, 700, 368, 50)),
+            classed(FakeUI.node(.group, frame: FakeUI.frame(0, 0, 400, 800), platform: .android, children: overlayControl ? [help] : []), "android.view.ViewGroup"),
+        ]
+        let drawn = nodes.enumerated().map { order, node in
+            var copy = node
+            if case .android(var attributes) = node.native {
+                attributes.drawingOrder = order + 1
+                copy.native = .android(attributes)
+            }
+            return copy
+        }
+        return FakeUI.tree(platform: .android, width: 400, height: 800, drawn)
+    }
+
+    @Test("on Android an empty React Native view spanning the target's own page takes no tap there, so the target is clear")
+    func emptyReactViewOnOwnPage() throws {
+        #expect(try Self.judge(Self.settingsOverHome(), target: "settings-save", hit: nil) == nil)
+    }
+
+    @Test("on Android a control of that view's own at the point is still a confident cover")
+    func controlOnEmptyReactView() throws {
+        let verdict = try #require(try Self.judge(Self.settingsOverHome(overlayControl: true), target: "settings-save", hit: nil))
+        #expect(verdict.cover.id == "overlay-help")
+        #expect(verdict.evidence == .drawingOrder && verdict.isConfident)
+        #expect(verdict.screen == "settings-page")
+    }
+
+    @Test("on Android a control beneath the page stays refused, naming the page, though an empty React Native view is drawn over both")
+    func controlBeneathPageUnderEmptyReactView() throws {
+        let verdict = try #require(try Self.judge(Self.settingsOverHome(), target: "home-filters", hit: nil))
+        #expect(verdict.cover.id == "settings-page")
+        #expect(verdict.isConfident)
+    }
+
     @Test("on Android a LogBox banner beneath that host is still a confident cover by drawing order")
     func bannerBeneathToolsHost() throws {
         let verdict = try #require(try Self.judge(Self.toolsHostOverTabs(banner: true), target: "tab-search", hit: nil))

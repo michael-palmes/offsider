@@ -12,7 +12,9 @@ struct RunCommand: AsyncParsableCommand {
         NNN-<command>-<HH.MM.SS>.<ext>, and manifest.ndjson gets one line per capture, failures included. \
         `run stop --summary` ends the run and prints its timeline. Masks given to `run start` apply to every capture \
         in the run, on top of the capture's own; `run start` again on the active folder adds masks and never removes \
-        one. OFFSIDER_RUN=off records nothing; OFFSIDER_RUN=<dir> records into <dir> whatever the session.
+        one. The one exception: `screenshot --mask-skip-beneath` leaves the run's email and id matches unpainted on a \
+        screen beneath a page; password fields always stay masked. OFFSIDER_RUN=off records nothing; OFFSIDER_RUN=<dir> \
+        records into <dir> whatever the session.
         """,
         subcommands: [RunStart.self, RunStop.self, RunStatus.self]
     )

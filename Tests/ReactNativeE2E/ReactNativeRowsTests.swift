@@ -106,10 +106,15 @@ struct ReactNativeRowsTests {
         case .ios:
             #expect(full.contains("rows-test-item-40"), "iOS lists every row of a non-virtualised ScrollView")
             #expect(summary.contains("[off-screen below]"))
+            #expect(summary.contains("# off-screen: "), "the closing line counts the rows a grep would miss")
+            #expect(!summary.contains("Item 40"))
+            let found = try await app.offsider(#"assert --label-contains "Item 40" --allow-offscreen"#)
+            #expect(found.exitCode == 0, "\(found.stderr)")
         case .android:
             #expect(!full.contains("rows-test-item-40"), "Android's helper omits rows below the fold from every view")
             #expect(!summary.contains(#"text "Inbox""#), "the row's child texts repeat its merged label")
             #expect(summary.contains("# folded "))
+            #expect(!summary.contains("# off-screen:"), "Android lists no runs to count")
         }
     }
 }

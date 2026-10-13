@@ -94,6 +94,41 @@ public struct UITreeContext: Equatable, Sendable {
         }
     }
 
+    /// A branch Android's helper left out as not visible, named by its id, label or class.
+    public struct HiddenBranch: Equatable, Sendable {
+        public var id: String?
+        /// Masked and cut to 40 characters; nil for a secure field and never taken from an editable one.
+        public var label: String?
+        public var className: String?
+        public var frame: UIFrame?
+
+        public init(id: String?, label: String?, className: String?, frame: UIFrame?) {
+            self.id = id
+            self.label = label
+            self.className = className
+            self.frame = frame
+        }
+
+        /// With `label` masked and cut to 40 characters, as a presented view's label is shown.
+        public static func shown(id: String?, label: String?, className: String?, frame: UIFrame?) -> HiddenBranch {
+            let masked = label.map { SelectorText.truncated(LogRedactor.redact($0).text, limit: PresentationProbe.labelLimit) }
+            return HiddenBranch(id: id, label: masked, className: className, frame: frame)
+        }
+
+        /// `id=drawer`, else the quoted label, else the class's short name, else `a branch`.
+        public var name: String {
+            if let id { return "id=" + UITreeRenderer.token(SelectorText.truncated(id, limit: PresentationProbe.labelLimit)) }
+            if let label { return UITreeRenderer.quoted(label) }
+            if let short = className?.split(separator: ".").last { return String(short) }
+            return "a branch"
+        }
+
+        /// `id=drawer at (0, 0) 280x874`.
+        public var summary: String {
+            frame.map { "\(name) at \($0.summary)" } ?? name
+        }
+    }
+
     public var window: Window?
     public var keyboard: Bool
     public var logBox: LogBox?
@@ -101,14 +136,20 @@ public struct UITreeContext: Equatable, Sendable {
     public var staleFrame: StaleFrame?
     /// Branches Android's helper left out as not visible to the user, such as a panel slid off screen; nil when the source cannot say.
     public var hidden: Int?
+    /// Up to five of them, on-screen and larger first; nil when the source does not name them.
+    public var hiddenBranches: [HiddenBranch]?
 
-    public init(window: Window? = nil, keyboard: Bool = false, logBox: LogBox? = nil, presented: Presented? = nil, staleFrame: StaleFrame? = nil, hidden: Int? = nil) {
+    public init(
+        window: Window? = nil, keyboard: Bool = false, logBox: LogBox? = nil, presented: Presented? = nil, staleFrame: StaleFrame? = nil,
+        hidden: Int? = nil, hiddenBranches: [HiddenBranch]? = nil
+    ) {
         self.window = window
         self.keyboard = keyboard
         self.logBox = logBox
         self.presented = presented
         self.staleFrame = staleFrame
         self.hidden = hidden
+        self.hiddenBranches = hiddenBranches
     }
 
     public init(tree: UITree) {
@@ -124,7 +165,8 @@ public struct UITreeContext: Equatable, Sendable {
             logBox: logBox,
             presented: tree.presented,
             staleFrame: tree.staleFrame,
-            hidden: tree.hiddenBranches
+            hidden: tree.hiddenBranches,
+            hiddenBranches: tree.namedHiddenBranches
         )
     }
 
@@ -166,7 +208,8 @@ public struct UITreeContext: Equatable, Sendable {
             lines.append("# stale frame: \(staleFrame.name) is listed off screen at \(staleFrame.frame.summary), but the screen's centre is inside it; check a screenshot")
         }
         if let hidden, hidden > 0 {
-            lines.append("# hidden: \(hidden) branch\(hidden == 1 ? "" : "es") not visible to the user")
+            let named = (hiddenBranches ?? []).map(\.summary).joined(separator: "; ")
+            lines.append("# hidden: \(hidden) branch\(hidden == 1 ? "" : "es") not visible to the user\(named.isEmpty ? "" : ": " + named)")
         }
         return lines
     }
@@ -198,6 +241,16 @@ public struct UITreeContext: Equatable, Sendable {
                 ])
             } ?? .null),
             ("hidden", .optional(hidden, OrderedJSON.integer)),
+            ("hiddenBranches", .optional(hiddenBranches) { branches in
+                .array(branches.map { branch in
+                    .object([
+                        ("id", .optional(branch.id, OrderedJSON.string)),
+                        ("label", .optional(branch.label, OrderedJSON.string)),
+                        ("className", .optional(branch.className, OrderedJSON.string)),
+                        ("frame", branch.frame.map(\.jsonValue) ?? .null),
+                    ])
+                })
+            }),
         ])
     }
 }

@@ -211,6 +211,15 @@ struct TapCommandTests {
         #expect(backend.session.calls.count == 1)
     }
 
+    @Test("on Android --fail-if-covered taps a button under an empty React Native view drawn over its own page")
+    func emptyReactViewOnOwnPageTaps() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [TapCoverTests.settingsOverHome()])
+
+        try await Self.tapAndroid(["--id", "settings-save", "--fail-if-covered"], on: backend)
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 725))])
+    }
+
     @Test("--wait-timeout reads again while a confident cover stays, and taps once it has gone")
     func waitOutlastsCover() async throws {
         let page = try Self.fullPage()
@@ -349,6 +358,15 @@ struct TapCommandTests {
         try await Self.tapAndroid(["--id", "mark", "--topmost"], on: backend)
 
         #expect(backend.session.calls == [.perform(.tapAt(x: 205.5, y: 469))])
+    }
+
+    @Test("on Android a label a pushed page repeats taps the match drawn on top, with or without --topmost", arguments: [[], ["--topmost"]])
+    func pushedPageLabelTaps(extra: [String]) async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [StackedScreenTests.pushedContinue()])
+
+        try await Self.tapAndroid(["--label", "Continue", "--element-type", "button"] + extra, on: backend)
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 725))])
     }
 
     @Test("iOS --topmost hit-tests the tree it taps from, not an earlier read that had no match yet")

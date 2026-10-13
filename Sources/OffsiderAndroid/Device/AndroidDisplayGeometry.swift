@@ -47,8 +47,8 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
         return hasSizeOverride || [logicalWidth, logicalHeight].sorted() == panel
     }
 
-    /// Plain `grep`, not `-m1`: an early exit breaks dumpsys's pipe, which can hold the shell until dumpsys times out.
-    static let probeScript = "wm size; wm density; dumpsys input | grep 'Viewport INTERNAL: displayId=0'"
+    /// Plain `grep`, not `-m1`: an early exit breaks dumpsys's pipe, which can hold the shell until dumpsys times out. Android 9 prints `Viewport:` without `INTERNAL`.
+    static let probeScript = "wm size; wm density; dumpsys input | grep -e 'Viewport INTERNAL: displayId=0' -e 'Viewport: displayId=0,'"
 
     struct Unparseable: Error, Equatable {
         let firstLine: String
@@ -59,7 +59,8 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
         var override = false
         var physicalDensity: Int?
         var overrideDensity: Int?
-        var viewport: (rotation: Int, width: Int, height: Int)?
+        var internalViewport: (rotation: Int, width: Int, height: Int)?
+        var plainViewport: (rotation: Int, width: Int, height: Int)?
 
         for line in output.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) {
             if line.hasPrefix("Physical size:") {
@@ -70,12 +71,14 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
                 physicalDensity = Int(line.dropFirst("Physical density:".count).trimmingCharacters(in: .whitespaces))
             } else if line.hasPrefix("Override density:") {
                 overrideDensity = Int(line.dropFirst("Override density:".count).trimmingCharacters(in: .whitespaces))
-            } else if line.contains("Viewport INTERNAL"), viewport == nil {
-                viewport = parseViewport(line)
+            } else if line.contains("Viewport INTERNAL") {
+                internalViewport = internalViewport ?? parseViewport(line)
+            } else if line.hasPrefix("Viewport: displayId=0,") {
+                plainViewport = plainViewport ?? parseViewport(line)
             }
         }
 
-        guard let natural, let density = overrideDensity ?? physicalDensity, density > 0, let viewport else {
+        guard let natural, let density = overrideDensity ?? physicalDensity, density > 0, let viewport = internalViewport ?? plainViewport else {
             let first = output.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
             throw Unparseable(firstLine: first)
         }

@@ -11,7 +11,8 @@ struct CredentialCommand: AsyncParsableCommand {
         The password is kept in your login Keychain, never in a file, an argument or Offsider's output. \
         The first login saved for an app is the default, so login with no name uses it. A name such as dev \
         or qa saves another login for that same app. The same name may be saved again for a different app, \
-        and login types a credential only into an app it was saved for.
+        and login types a credential only into an app it was saved for. The name default means the login \
+        saved without a name, as status lists it, which is not the default when the first login had a name.
 
         set asks for the username or email, then the password twice, showing a dot for each character, or \
         reads two lines with --stdin. Both must be characters the keyboard can type: the username 1 to 254, \
@@ -69,7 +70,7 @@ struct CredentialCommand: AsyncParsableCommand {
     @Argument(help: ArgumentHelp("set, status, describe, remove, join or signed-out.", valueName: "action"))
     var action: String
 
-    @Argument(help: ArgumentHelp("The saved login's name, such as dev. Omit it to use the default login. join and signed-out do not take one.", valueName: "name"))
+    @Argument(help: ArgumentHelp("The saved login's name, such as dev, or default for the one saved without a name. Omit it to use the default login. join and signed-out do not take one.", valueName: "name"))
     var key: String?
 
     @Flag(name: .customLong("stdin"), help: "With set: read the username, then the password, from two lines of standard input.")
@@ -123,7 +124,7 @@ struct CredentialCommand: AsyncParsableCommand {
         _ = try LoginCommand.whereTags(filters, named: key != nil)
         if let key {
             guard parsed != .join, parsed != .signedOut else { throw ValidationError("\(parsed.rawValue) does not take a name.") }
-            guard LoginKey(rawValue: key) != nil else { throw ValidationError(Self.keyMessage) }
+            guard Self.storedKey(key) != nil else { throw ValidationError(Self.keyMessage) }
         }
         if let app, Self.appID(app) == nil {
             throw ValidationError("--app must be a bundle id or package, such as com.example.app.")
@@ -137,7 +138,7 @@ struct CredentialCommand: AsyncParsableCommand {
 
     func run() async throws {
         let parsed = try parsedAction()
-        let key = key.map { LoginKey(rawValue: $0)?.rawValue ?? $0 }
+        let key = key.map { Self.storedKey($0) ?? $0 }
         let store = KeychainLoginCredentialStore()
         let person = isatty(STDIN_FILENO) != 0 && isatty(STDERR_FILENO) != 0
         let styled = json || isatty(STDOUT_FILENO) == 0 ? nil : TerminalOutput(style: .detect(isTerminal: true), device: suggestedDevice)
@@ -204,7 +205,14 @@ struct CredentialCommand: AsyncParsableCommand {
         return try await TerminalSpinner.run("Finding the app in front…", work)
     }
 
-    static let keyMessage = "A saved login's name is 1 to 32 characters from A-Z, a-z, 0-9, '.', '_' and '-', starting with a letter or digit, such as dev. The word default is reserved."
+    static let keyMessage = "A saved login's name is 1 to 32 characters from A-Z, a-z, 0-9, '.', '_' and '-', starting with a letter or digit, such as dev, or default for the login saved without a name. No new login can take the name default."
+
+    /// The stored key a name passed on the command line means: `default`, in any case, is the login saved without a name.
+    static func storedKey(_ name: String) -> String? {
+        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.compare("default", options: .caseInsensitive) == .orderedSame { return LoginCredential.defaultAccountKey }
+        return LoginKey(rawValue: text)?.rawValue
+    }
     static let warning = "Save test development credentials only. Anything that can run commands as you can then type them into this app. The password is never printed."
 
     static func appID(_ raw: String) -> String? {
@@ -267,6 +275,7 @@ struct CredentialCommand: AsyncParsableCommand {
         warn: () -> Void = {},
         readCredential: () throws -> LoginCredential
     ) throws -> String {
+        let key = key.map { storedKey($0) ?? $0 }
         func render(_ report: CredentialReport) -> String {
             if json { return report.jsonLine() }
             guard let styled else { return report.textLine() }
@@ -327,13 +336,13 @@ struct CredentialCommand: AsyncParsableCommand {
         case .describe:
             let entries = try store.entries(app: canonical)
             let target = try describeTarget(entries: entries, name: key, app: app)
-            guard let entry = entries.first(where: { $0.key == target }) else { throw missingLogin(target, app: app) }
+            guard let entry = entries.first(where: { $0.key == target }) else { throw missingLogin(target, app: app, entries: entries) }
             let next = try edited(entry.stored, with: edit, key: target, app: app, now: now)
             let changed = entry.stored != .saved(next)
             if changed {
                 keychainWillWrite()
                 defer { keychainDidWrite() }
-                guard try store.setContext(next, app: canonical, key: target) else { throw missingLogin(target, app: app) }
+                guard try store.setContext(next, app: canonical, key: target) else { throw missingLogin(target, app: app, entries: entries) }
             }
             let report = CredentialReport(
                 action: "describe", app: app, key: target, saved: true, isDefault: entry.isDefault || entries.count == 1, also: shared,
@@ -477,7 +486,14 @@ struct CredentialCommand: AsyncParsableCommand {
         throw CLIError(errorDescription: "Several logins are saved (\(names)) and none is the default. Pass the name to describe. Nothing was changed.", reason: .usage)
     }
 
-    private static func missingLogin(_ key: String, app: String) -> CLIError {
+    private static func missingLogin(_ key: String, app: String, entries: [LoginEntry]) -> CLIError {
+        if key == LoginCredential.defaultAccountKey, !entries.isEmpty {
+            return CLIError(
+                errorDescription: "\(LoginDirectory.noUnnamedLogin(app: app, entries: entries)) Nothing was changed.",
+                reason: .commandFailed,
+                hint: "offsider credential status --app \(app)"
+            )
+        }
         let argument = key == LoginCredential.defaultAccountKey ? "" : " \(key)"
         return CLIError(
             errorDescription: "No login named \(LoginCredential.displayKey(key)) is saved for \(app). Nothing was changed.",

@@ -40,33 +40,41 @@ public enum UITreeEconomy {
         "# folded \(count) repeated label\(count == 1 ? "" : "s")"
     }
 
+    /// The closing count of elements runs hide, so a grep that misses one is not read as absent.
+    public static func offScreenLine(_ count: Int) -> String {
+        "# off-screen: \(count) element\(count == 1 ? "" : "s") folded into runs; check one with assert --label-contains <text> --allow-offscreen"
+    }
+
     /// `# beneath: "Products" (42 elements) under "Kettle"`: a screen a page covers, left out of on-screen text.
     public static func beneathLine(_ screen: ScreenStack.Beneath) -> String {
         let count = "\(screen.elements) element\(screen.elements == 1 ? "" : "s")"
         return "# beneath: \(UITreeRenderer.quoted(SelectorText.truncated(screen.name, limit: 40))) (\(count)) under \(UITreeRenderer.quoted(SelectorText.truncated(screen.under, limit: 40)))"
     }
 
-    /// The node and run lines in document order, how many nodes had a label folded, and the covered screens left out.
+    /// The node and run lines in document order, how many nodes had a label folded, the covered screens left out, and the elements runs hide.
     static func lines(
         _ tree: UITree,
         _ options: UITreeRenderOptions,
         fields: Set<UIField>,
         render: @escaping (UINode, _ label: String?, _ value: String?) -> String
-    ) -> (lines: [UITextLine], folded: Int, beneath: [ScreenStack.Beneath]) {
+    ) -> (lines: [UITextLine], folded: Int, beneath: [ScreenStack.Beneath], offScreen: Int) {
         var walker = Walker(tree: tree, options: options, fields: fields, render: render)
         for root in tree.roots {
             walker.visit(root, depth: 0, ancestorLabel: nil, ancestor: .absent)
         }
         walker.flushRun()
-        return (walker.lines, walker.folded, walker.beneath)
+        return (walker.lines, walker.folded, walker.beneath, walker.offScreen)
     }
 
     /// The header, the lines that fit `maxBytes` (nil for all) with a cut marker, then the closing notes, which the budget never cuts.
-    static func budgeted(_ lines: [UITextLine], header: String, folded: Int, sourceTruncated: Bool, maxBytes: Int?, beneath: [ScreenStack.Beneath] = []) -> String {
+    static func budgeted(
+        _ lines: [UITextLine], header: String, folded: Int, sourceTruncated: Bool, maxBytes: Int?, beneath: [ScreenStack.Beneath] = [], offScreen: Int = 0
+    ) -> String {
         let rendered = lines.map { String(repeating: "  ", count: min($0.depth, maxIndent)) + $0.text + "\n" }
         var closing = ""
         if sourceTruncated { closing += deviceTruncationMarker + "\n" }
         if folded > 0 { closing += foldedLine(folded) + "\n" }
+        if offScreen > 0 { closing += offScreenLine(offScreen) + "\n" }
         for screen in beneath { closing += beneathLine(screen) + "\n" }
         let head = header + "\n"
         let total = rendered.reduce(head.utf8.count + closing.utf8.count) { $0 + $1.utf8.count }
@@ -120,6 +128,8 @@ public enum UITreeEconomy {
         var index = 0
         var lines: [UITextLine] = []
         var folded = 0
+        /// Elements the flushed runs stand for, their items and what is inside them.
+        var offScreen = 0
         var run: Run?
         var runsStarted = 0
 
@@ -221,6 +231,7 @@ public enum UITreeEconomy {
         mutating func flushRun() {
             guard let current = run else { return }
             run = nil
+            offScreen += current.count + current.inside
             let inside = current.inside > 0 ? " (+\(current.inside) inside)" : ""
             var text = "[off-screen \(current.side.rawValue)] \(current.count) item\(current.count == 1 ? "" : "s")\(inside): \(current.first)"
             if current.count > 1 { text += " to \(current.last)" }

@@ -353,6 +353,8 @@ struct HelperDump: Decodable, Equatable, Sendable {
     let truncated: Bool
     /// Subtrees the walk left out as not visible to the user; nil when the helper did not say.
     let skippedInvisible: Int?
+    /// Up to five of those subtrees' roots, each with its first labelled descendant when it has no label; nil before helper 1.6.0.
+    let hiddenBranches: [HelperNode]?
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -362,7 +364,9 @@ struct HelperDump: Decodable, Equatable, Sendable {
         display = try c.decode(HelperDisplay.self, forKey: .display)
         windows = try c.decodeIfPresent([HelperWindow].self, forKey: .windows) ?? []
         truncated = try c.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
-        skippedInvisible = try c.decodeIfPresent(HelperDumpStats.self, forKey: .stats)?.skippedInvisible
+        let stats = try c.decodeIfPresent(HelperDumpStats.self, forKey: .stats)
+        skippedInvisible = stats?.skippedInvisible
+        hiddenBranches = stats?.hiddenBranches
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -373,6 +377,7 @@ struct HelperDump: Decodable, Equatable, Sendable {
 /// The counts a dump reports beside its windows; only what Offsider reads.
 struct HelperDumpStats: Decodable, Equatable, Sendable {
     let skippedInvisible: Int?
+    let hiddenBranches: [HelperNode]?
 }
 
 /// The `setProgress` reply: the range as the node reads after the action, nil when it no longer reports one.

@@ -134,7 +134,8 @@ public enum UITreeRenderer {
             folded: result.folded,
             sourceTruncated: tree.sourceTruncated,
             maxBytes: options.maxBytes,
-            beneath: result.beneath
+            beneath: result.beneath,
+            offScreen: result.offScreen
         )
     }
 
