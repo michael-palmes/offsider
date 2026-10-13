@@ -51,6 +51,8 @@ struct AndroidInputRoute {
     let clipboard: (any EmulatorControlling)?
     /// Why there is no gRPC endpoint, for the error when text needs a paste.
     let adbReason: AdbReason
+    /// Where keys, buttons and text go when the executor's never arrive (gRPC on an AVD without a hardware keyboard).
+    var keys: AndroidInputExecutor? = nil
 }
 
 /// One command's input on one emulator; keeps finger state so a failed gesture can be lifted on close.
@@ -184,7 +186,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
             route = AndroidInputRoute(executor: .helper(helper), scale: route.scale, clipboard: route.clipboard, adbReason: route.adbReason)
             resolvedRoute = route
         }
-        try await run(steps, through: route.executor)
+        try await run(steps, through: route.executor, keys: route.keys)
         touchIsDown = down
     }
 
@@ -215,11 +217,12 @@ final class AndroidInputSession: InputSession, TextInputSession {
             }
             try await paste(whole, through: clipboard)
         case .keys(let chunks):
-            if case .grpc(let driver) = route.executor {
+            let executor = route.keys ?? route.executor
+            if case .grpc(let driver) = executor {
                 try await type(chunks, on: driver.emulator)
                 return
             }
-            if case .helper(let driver) = route.executor {
+            if case .helper(let driver) = executor {
                 try await driver.type(chunks)
                 return
             }
@@ -356,15 +359,12 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
-    private func run(_ steps: [AndroidInputStep], through executor: AndroidInputExecutor) async throws {
+    private func run(_ steps: [AndroidInputStep], through executor: AndroidInputExecutor, keys: AndroidInputExecutor? = nil) async throws {
         if let last = steps.last(where: { if case .touch = $0 { return true } else { return false } }), case .touch(_, let point) = last {
             lastTouch = point
         }
         let pressesDown = steps.contains { if case .touch(.down, _) = $0 { return true } else { return false } }
-        var scripts: [String] = []
-        if case .adb = executor {
-            scripts = try AdbInputScript.scripts(for: steps)
-        }
+        let parts = try Self.parts(of: steps, through: executor, keys: keys)
         let fingersBefore = heldFingers
         for step in steps {
             if case .touches(let phase, let points) = step {
@@ -372,16 +372,18 @@ final class AndroidInputSession: InputSession, TextInputSession {
             }
         }
         do {
-            switch executor {
-            case .adb(let shell):
-                let wait = AdbInputScript.waitTime(of: steps)
-                for script in scripts {
-                    try await shell.run(script, waiting: wait)
+            for part in parts {
+                switch part.executor {
+                case .adb(let shell):
+                    let wait = AdbInputScript.waitTime(of: part.steps)
+                    for script in part.scripts {
+                        try await shell.run(script, waiting: wait)
+                    }
+                case .grpc(let driver):
+                    try await driver.run(part.steps)
+                case .helper(let driver):
+                    try await driver.run(part.steps)
                 }
-            case .grpc(let driver):
-                try await driver.run(steps)
-            case .helper(let driver):
-                try await driver.run(steps)
             }
         } catch {
             if case .helper(let driver) = executor, driver.releasedInput {
@@ -398,7 +400,44 @@ final class AndroidInputSession: InputSession, TextInputSession {
     }
 }
 
+extension AndroidInputSession {
+    /// Each run of steps with the executor that sends it, and its `input` scripts when that is adb, built before anything is sent.
+    private static func parts(
+        of steps: [AndroidInputStep],
+        through executor: AndroidInputExecutor,
+        keys: AndroidInputExecutor?
+    ) throws -> [(executor: AndroidInputExecutor, steps: [AndroidInputStep], scripts: [String])] {
+        let runs = keys == nil ? [(keys: false, steps: steps)] : AndroidInputStep.keyRuns(steps)
+        return try runs.map { run in
+            let target = run.keys ? keys ?? executor : executor
+            guard case .adb = target else { return (target, run.steps, []) }
+            return (target, run.steps, try AdbInputScript.scripts(for: run.steps))
+        }
+    }
+}
+
 extension AndroidInputStep {
+    var isKeyOrButton: Bool {
+        switch self {
+        case .key, .button: return true
+        default: return false
+        }
+    }
+
+    /// Steps cut where they switch between keys or buttons and anything else; a pause stays with the steps before it.
+    static func keyRuns(_ steps: [AndroidInputStep]) -> [(keys: Bool, steps: [AndroidInputStep])] {
+        var runs: [(keys: Bool, steps: [AndroidInputStep])] = []
+        for step in steps {
+            let isPause = if case .pause = step { true } else { false }
+            if let last = runs.indices.last, isPause || runs[last].keys == step.isKeyOrButton {
+                runs[last].steps.append(step)
+            } else {
+                runs.append((step.isKeyOrButton, [step]))
+            }
+        }
+        return runs
+    }
+
     var isMultiTouch: Bool {
         if case .touches = self { return true }
         return false

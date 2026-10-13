@@ -33,13 +33,14 @@ struct AndroidGrpcInputTests {
         func touch(_ x: Int32, _ y: Int32, _ pressure: Int32) -> FakeEmulator.Call { .touch(PanelTouch(x: x, y: y, pressure: pressure)) }
     }
 
-    /// emulator-5556 with a live discovery file (token and gRPC port) and a fake endpoint that answers.
+    /// emulator-5556 with a live discovery file (token and gRPC port) and a fake endpoint that answers; `avdHardware` is its AVD's `hardware-qemu.ini`.
     static func rig(
         geometry: String = AndroidBackendTests.geometryOutput,
         emulator: FakeEmulator = FakeEmulator(),
         environment: [String: String] = [:],
         failingScript: @escaping @Sendable (String) -> Bool = { _ in false },
-        uiautomatorDump: String? = nil
+        uiautomatorDump: String? = nil,
+        avdHardware: String? = nil
     ) throws -> Rig {
         let server = FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556"],
@@ -61,11 +62,12 @@ struct AndroidGrpcInputTests {
             }
         ))
         let home = try AndroidTestHost.homeWithSDK()
-        try AndroidTestHost.write(
-            "avd.id=Offsider_E2E\nport.serial=5556\ngrpc.port=8556\ngrpc.token=t\n",
-            to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini",
-            in: home
-        )
+        var discovery = "avd.id=Offsider_E2E\nport.serial=5556\ngrpc.port=8556\ngrpc.token=t\n"
+        if let avdHardware {
+            discovery += "avd.dir=\(home.appendingPathComponent(".android/avd/Offsider_E2E.avd").path)\n"
+            try AndroidTestHost.write(avdHardware, to: ".android/avd/Offsider_E2E.avd/hardware-qemu.ini", in: home)
+        }
+        try AndroidTestHost.write(discovery, to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini", in: home)
         let connector = FakeEmulatorConnector(.success(emulator))
         let logs = LogRecorder()
         let sleeps = SleepRecorder()
