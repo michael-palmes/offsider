@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `credential status --json` with `--device` gives each listed user a `signedInHere` boolean beside the top-level name, so a script reads who is signed in there without comparing names. Without a device neither appears; `status <name>` and `status --where` keep only the top-level name.
+
 ## [0.11.0] - 2026-10-12
 
 ### Added

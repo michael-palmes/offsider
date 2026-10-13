@@ -24,7 +24,7 @@ Exit 0 means `login` tapped submit, not that the app accepted the user. Trust th
 
 ## Switch users
 
-After `login` exits 0, Offsider records which user it submitted on that device and app. `status` shows each user's `signedIn` (`device`, `platform`, `since`), and with `--device` adds `signedInHere`. A record means Offsider submitted the form, not that the app accepted it, and selection ignores it.
+After `login` exits 0, Offsider records which user it submitted on that device and app. `status` shows each user's `signedIn` (`device`, `platform`, `since`). With `--device`, a top-level `signedInHere` names the user signed in there (null when none), and each listed user carries a `signedInHere` boolean. A record means Offsider submitted the form, not that the app accepted it, and selection ignores it.
 
 1. Sign out in the app, with taps or one `batch`. Offsider never signs out.
 2. `offsider credential signed-out --device <DEVICE_ID>` clears the record for the app in front (`--app` names another), and exits 0 even when there was none.

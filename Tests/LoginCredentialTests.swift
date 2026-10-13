@@ -362,7 +362,7 @@ struct LoginCredentialTests {
         }
 
         let list = try status(nil)
-        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"Test_AVD","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}]},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[]}]}"#)
+        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"Test_AVD","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}],"signedInHere":true},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[],"signedInHere":false}]}"#)
         let text = try status(nil, json: false)
         #expect(text.contains("role=admin"))
         #expect(text.contains("Admin on staging"))
@@ -472,13 +472,17 @@ struct LoginCredentialTests {
             }
         }
 
-        #expect(try status("emulator-5554") == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":[],"signedIn":[{"device":"ZY22FAKE01","platform":"android","since":"2026-10-11T09:31:00Z"},{"device":"Test_AVD","platform":"android","since":"2026-10-11T09:30:00Z","restarted":false}]},{"name":"qa-member","default":false,"tags":[],"signedIn":[]}]}"#)
-        #expect(try status("ZY22FAKE02").hasPrefix(#"{"version":2,"action":"status","app":"com.example.app","signedInHere":null,"users":["#))
+        #expect(try status("emulator-5554") == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":[],"signedIn":[{"device":"ZY22FAKE01","platform":"android","since":"2026-10-11T09:31:00Z"},{"device":"Test_AVD","platform":"android","since":"2026-10-11T09:30:00Z","restarted":false}],"signedInHere":true},{"name":"qa-member","default":false,"tags":[],"signedIn":[],"signedInHere":false}]}"#)
+        let elsewhere = try #require(try JSONSerialization.jsonObject(with: Data(try status("ZY22FAKE02").utf8)) as? [String: Any])
+        #expect(elsewhere["signedInHere"] is NSNull)
+        let users = try #require(elsewhere["users"] as? [[String: Any]])
+        #expect(users.count == 2)
+        #expect(users.allSatisfy { $0["signedInHere"] as? Bool == false })
         #expect(!(try status(nil)).contains("signedInHere"))
         #expect(store.decrypts == 0)
     }
 
-    @Test("with a device in hand every status form prints signedInHere, null when nobody is recorded; with none it leaves the key out")
+    @Test("with a device in hand every status form prints signedInHere and each listed user a boolean, false when nobody is recorded; with none both are left out")
     func signedInHereNeedsOnlyADevice() throws {
         let fixture = try SignInTrackerFixture()
         defer { fixture.remove() }
@@ -492,20 +496,30 @@ struct LoginCredentialTests {
         }
         let admin = [try #require(LoginTag(rawValue: "role=admin"))]
 
+        func here(_ report: [String: Any]) throws -> [String: Bool?] {
+            let users = try #require(report["users"] as? [[String: Any]])
+            return Dictionary(uniqueKeysWithValues: try users.map { (try #require($0["name"] as? String), $0["signedInHere"] as? Bool) })
+        }
+
         for deviceID in ["emulator-5554", "ZY22FAKE02"] {
             for report in [try status(nil, deviceID: deviceID), try status("qa-member", deviceID: deviceID), try status("qa-owner", deviceID: deviceID), try status(nil, where: admin, deviceID: deviceID)] {
                 #expect(report["signedInHere"] is NSNull, "\(report)")
             }
+            #expect(try here(try status(nil, deviceID: deviceID)) == ["qa-admin": false, "qa-member": false])
         }
         for report in [try status(nil, deviceID: nil), try status("qa-member", deviceID: nil), try status(nil, where: admin, deviceID: nil)] {
             #expect(report.keys.contains("signedInHere") == false, "\(report)")
         }
+        #expect(try here(try status(nil, deviceID: nil)) == ["qa-admin": nil, "qa-member": nil])
+        #expect(try status("qa-member", deviceID: "emulator-5554")["users"] == nil)
         let signinsPath = (fixture.root as NSString).appendingPathComponent(OffsiderPrivateDirectory.signInsDirectoryName)
         #expect(!FileManager.default.fileExists(atPath: signinsPath))
 
         fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
         #expect(try status("qa-member", deviceID: "emulator-5554")["signedInHere"] as? String == "qa-admin")
         #expect(try status(nil, where: admin, deviceID: "Test_AVD")["signedInHere"] as? String == "qa-admin")
+        #expect(try here(try status(nil, deviceID: "emulator-5554")) == ["qa-admin": true, "qa-member": false])
+        #expect(try here(try status(nil, deviceID: "ZY22FAKE02")) == ["qa-admin": false, "qa-member": false])
     }
 
     @Test("signed-out clears only this device's record for the app, names who it was, and exits 0 when nothing was recorded")

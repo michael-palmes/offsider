@@ -159,7 +159,8 @@ public struct CredentialReport: Equatable, Sendable {
             ]
             return OrderedJSON.object(fields).rendered(compact: true)
         }
-        if action == "status", deviceInHand || signedInHere != nil {
+        let showsHere = action == "status" && (deviceInHand || signedInHere != nil)
+        if showsHere {
             fields.append(("signedInHere", .optional(signedInHere.map(LoginCredential.displayKey), OrderedJSON.string)))
         }
         if !filter.isEmpty {
@@ -170,6 +171,7 @@ public struct CredentialReport: Equatable, Sendable {
                 var user: [(String, OrderedJSON)] = [("name", .string(entry.name)), ("default", .bool(entry.isDefault))]
                 user += Self.contextFields(entry.context)
                 user.append(("signedIn", Self.signInsJSON(signIns[entry.key] ?? [])))
+                if showsHere { user.append(("signedInHere", .bool(entry.key == signedInHere))) }
                 return .object(user)
             })))
             return OrderedJSON.object(fields).rendered(compact: true)
