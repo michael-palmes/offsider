@@ -185,6 +185,9 @@ final class AndroidInputSession: InputSession, TextInputSession {
         if case .adb = route.executor, let helper = try await helper(for: steps) {
             route = AndroidInputRoute(executor: .helper(helper), scale: route.scale, clipboard: route.clipboard, adbReason: route.adbReason)
             resolvedRoute = route
+        } else if case .adb? = route.keys, AdbInputScript.hasKeyCombination(steps), let helper = try await keyCombinationHelper() {
+            route.keys = .helper(helper)
+            resolvedRoute = route
         }
         try await run(steps, through: route.executor, keys: route.keys)
         touchIsDown = down

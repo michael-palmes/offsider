@@ -57,7 +57,7 @@ struct AndroidKeyboardlessInputTests {
             .keyboard(direction: .down, keyCode: 225), .delay(0.5), .keyboard(direction: .up, keyCode: 225),
         ]), on: Self.device)
 
-        #expect(rig.adbScripts == ["input keycombination 113 29 && input keyevent --longpress 59"])
+        #expect(rig.adbScripts == ["getprop ro.build.version.sdk", "input keycombination 113 29 && input keyevent --longpress 59"])
         #expect(rig.emulator.calls.isEmpty)
     }
 
