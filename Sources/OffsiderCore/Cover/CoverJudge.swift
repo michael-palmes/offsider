@@ -78,9 +78,8 @@ public enum CoverJudge {
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
             case .undecided: break
             }
-        } else if context.target.isAndroidNode,
-                  let top = drawnTop(at: context.point, in: context.roots, holding: [context.target, context.matched], viewport: context.viewport, stack: context.stack) {
-            switch context.judge(hit: top) {
+        } else if context.target.isAndroidNode, let judgement = context.drawnJudgement() {
+            switch judgement {
             case .clear: return nil
             case .cover(let node, let confident): return context.verdict(node, .drawingOrder, confident: confident)
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
@@ -88,6 +87,14 @@ public enum CoverJudge {
             }
         }
         return context.guess(viewport: context.viewport).map { context.verdict($0, .treeOrder, confident: false) }
+    }
+
+    /// What Android's drawing order surely draws over target at point: the cover a selector tap refuses outright; nil when the point reaches it or the order cannot tell.
+    public static func drawnCover(of target: UINode, at point: UIPoint, roots: [UINode], viewport: UIFrame, stack: ScreenStack) -> UINode? {
+        guard target.isAndroidNode else { return nil }
+        let context = Context(target: target, matched: target, point: point, candidates: [], roots: roots, viewport: viewport, stack: stack)
+        guard case .cover(let node, confident: true)? = context.drawnJudgement() else { return nil }
+        return node
     }
 
     /// The hit chain when Android's drawing order or window layers order every set of siblings it passes; nil otherwise.
@@ -194,6 +201,11 @@ public enum CoverJudge {
             self.indicators = indicators
             flat = roots.flatMap { $0.flattened() }
             own = target.flattened() + matched.flattened()
+        }
+
+        /// The judgement of what Android's drawing order puts on top at the point; nil when the order cannot tell.
+        func drawnJudgement() -> HitJudgement? {
+            CoverJudge.drawnTop(at: point, in: roots, holding: [target, matched], viewport: viewport, stack: stack).map(judge(hit:))
         }
 
         func verdict(_ node: UINode, _ evidence: CoverEvidence, confident: Bool) -> CoverVerdict {

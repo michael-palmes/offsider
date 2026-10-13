@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `default` names the user saved without a name, as `credential status` lists it, so every listed name works with `login`, `credential status`, `describe` and `remove` (it was refused as reserved). It is not the user marked default: with no user saved without a name, `default` exits 1 saying to omit the name or pass a listed one, reads no password, and `remove default` removes nothing. `credential set default` saves that user only while the app has no users, or replaces it with `--update`; beside named users it is refused before any password is read.
 - `screenshot --json`'s `maskedBeneath` no longer counts a page element identical to one beneath the page: each match is placed by its position in the tree, not by its attributes.
 - On Android a selector tap no longer warns (or with `--fail-if-covered` refuses) because an unlabelled full-screen React Native view on the target's own page is drawn over it with nothing at the point: it judges what lies beneath, so the target taps and a control beneath still refuses. Off every page such a view is still a guessed cover.
+- On Android, when drawing order puts another element over the point of every match of a selector but one (a pushed page's full-width button over a half-width one with the same label), `tap`, `type --into-*` and `slider` take that one instead of exiting 6. Matches side by side still exit 6.
 
 ## [0.11.0] - 2026-10-12
 

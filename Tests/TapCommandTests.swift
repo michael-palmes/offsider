@@ -360,6 +360,15 @@ struct TapCommandTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 205.5, y: 469))])
     }
 
+    @Test("on Android a label a pushed page repeats taps the match drawn on top, with or without --topmost", arguments: [[], ["--topmost"]])
+    func pushedPageLabelTaps(extra: [String]) async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [StackedScreenTests.pushedContinue()])
+
+        try await Self.tapAndroid(["--label", "Continue", "--element-type", "button"] + extra, on: backend)
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 725))])
+    }
+
     @Test("iOS --topmost hit-tests the tree it taps from, not an earlier read that had no match yet")
     func topmostPicksOnPolledTree() async throws {
         var root = StackedScreenTests.stack(platform: .ios)[0]

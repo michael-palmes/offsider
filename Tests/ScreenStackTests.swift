@@ -54,6 +54,12 @@ struct ScreenStackTests {
         #expect(Self.stack(settings).page(holding: index)?.name == "settings-page")
     }
 
+    @Test("a pushed page with no container in the tree covers no screen")
+    func pushedPageWithoutContainer() {
+        let stack = Self.stack(StackedScreenTests.pushedContinue())
+        #expect(stack.pages.isEmpty && stack.beneath.isEmpty)
+    }
+
     @Test("Android siblings without drawing order give no stack")
     func androidWithoutDrawingOrder() throws {
         func strip(_ node: UINode) -> UINode {
