@@ -220,6 +220,45 @@ struct ExpoDevClientOpeningTests {
         #expect(ExpoDevLauncher.isLoading(tree(["Bundling 42%"])))
         #expect(!ExpoDevLauncher.isLoading(tree(["Home"])))
     }
+
+    /// An Android dev client while its bundle loads: Expo's dev menu button inside unlabelled views, as a pixel_4 emulator lists it.
+    static func devMenuOnly(plus extra: [UINode] = []) -> UITree {
+        let button = FakeUI.node(.group, frame: FakeUI.frame(328, 69, 50, 90), platform: .android, children: [
+            FakeUI.node(.image, label: "Tools", frame: FakeUI.frame(341, 80, 25, 25), platform: .android),
+            FakeUI.node(.group, platform: .android, children: [FakeUI.node(.text, label: "Tools", frame: FakeUI.frame(341, 127, 25, 12), platform: .android)]),
+        ])
+        let compose = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 411, 923), platform: .android, children: [button] + extra)
+        return FakeUI.tree(platform: .android, label: "OffsiderPlaygroundRN", [TapCoverTests.classed(compose, ExpoDevLauncher.composeHostClass)])
+    }
+
+    @Test("a tree is bare with no roots, an empty application or only Expo's dev menu button in it")
+    func bare() {
+        #expect(ExpoDevLauncher.isBare(UITree(platform: .android, device: "D", roots: [])))
+        #expect(ExpoDevLauncher.isBare(FakeUI.tree([])))
+        #expect(ExpoDevLauncher.isBare(Self.devMenuOnly()))
+    }
+
+    @Test("anything the app drew, even unlabelled views alone, is not bare")
+    func notBare() {
+        #expect(!ExpoDevLauncher.isBare(Self.devMenuOnly(plus: [FakeUI.node(.text, label: "Offsider Playground", platform: .android)])))
+        #expect(!ExpoDevLauncher.isBare(Self.devMenuOnly(plus: [FakeUI.node(.group, id: "menu-title", platform: .android)])))
+        #expect(!ExpoDevLauncher.isBare(FakeUI.tree([FakeUI.node(.group, children: [FakeUI.node(.other)])])))
+    }
+
+    @Test("Expo's dev menu button counts as bare wherever its Compose host sits in the window")
+    func nestedHostIsBare() {
+        let host = ExpoDevClientOpeningTests.devMenuOnly().roots[0].children[0]
+        let content = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 411, 923), platform: .android, children: [host])
+        #expect(ExpoDevLauncher.isBare(FakeUI.tree(platform: .android, label: "OffsiderPlaygroundRN", [content])))
+    }
+
+    @Test("an app's own Tools text outside Expo's Compose host is something the app drew")
+    func toolsTextIsNotTheDevMenu() {
+        let page = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 411, 923), platform: .android, children: [
+            FakeUI.node(.text, label: "Tools", frame: FakeUI.frame(16, 120, 60, 20), platform: .android),
+        ])
+        #expect(!ExpoDevLauncher.isBare(FakeUI.tree(platform: .android, label: "OffsiderPlaygroundRN", [TapCoverTests.classed(page, "android.view.ViewGroup")])))
+    }
 }
 
 @Suite("App liveness")
