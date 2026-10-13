@@ -86,8 +86,11 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private var heldFingers: [AndroidPoint] = []
     /// The helper for multi-finger input when the route is `input`, which moves one finger; nil when the policy forbids it.
     private let multiTouchHelper: @MainActor () async throws -> HelperInputDriver?
-    /// The helper for a key combination `input` would drop (before Android 12); nil when `input` sends it, and throws when nothing can.
-    private let keyCombinationHelper: @MainActor () async throws -> HelperInputDriver?
+    /// `ro.build.version.sdk`, asked for only when touch phases or a key combination would go through `input`; nil when unreadable.
+    private let apiLevel: @MainActor () async -> Int?
+    private var knownAPILevel: Int?
+    /// The helper for steps `input` on this API level lacks; throws when nothing can send them.
+    private let gapHelper: @MainActor (AdbInputGap, Int) async throws -> HelperInputDriver
 
     init(
         device: DeviceID,
@@ -97,7 +100,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
         replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
         focusedSecureField: @escaping @MainActor () async -> Bool = { false },
         multiTouchHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
-        keyCombinationHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
+        apiLevel: @escaping @MainActor () async -> Int?,
+        gapHelper: @escaping @MainActor (AdbInputGap, Int) async throws -> HelperInputDriver,
         readFocusedField: @escaping @MainActor () async -> FocusedFieldReading? = { nil },
         pasteFocused: @escaping @MainActor (AndroidFieldInfo) async throws -> HelperTextResult? = { _ in nil },
         sleep: @escaping @Sendable (Duration) async throws -> Void,
@@ -111,7 +115,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.replaceFocusedText = replaceFocusedText
         self.focusedSecureField = focusedSecureField
         self.multiTouchHelper = multiTouchHelper
-        self.keyCombinationHelper = keyCombinationHelper
+        self.apiLevel = apiLevel
+        self.gapHelper = gapHelper
         self.readFocusedField = readFocusedField
         self.pasteFocused = pasteFocused
         self.sleep = sleep
@@ -139,9 +144,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
-    /// Through the helper, down, hold and up are one `inject`; elsewhere, the shared timed down and up.
+    /// Through the helper, down, hold and up are one `inject`, and before Android 10 one `input swipe` that stays put;
+    /// elsewhere, the shared timed down and up.
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
-        guard case .helper = try await route().executor else {
+        guard try await tapsInOneStep() else {
             try await separatePhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
             return
         }
@@ -156,6 +162,21 @@ final class AndroidInputSession: InputSession, TextInputSession {
         if let postDelay, postDelay > 0 {
             try await sleep(.seconds(postDelay))
         }
+    }
+
+    private func tapsInOneStep() async throws -> Bool {
+        switch try await route().executor {
+        case .helper: return true
+        case .grpc: return false
+        case .adb: return !AdbInputScript.sendsMotionEvents(apiLevel: await readAPILevel())
+        }
+    }
+
+    private func readAPILevel() async -> Int? {
+        if knownAPILevel == nil {
+            knownAPILevel = await apiLevel()
+        }
+        return knownAPILevel
     }
 
     /// The `InputSession` default: after a failure that follows the down, only a best-effort up, never a second down.
@@ -191,14 +212,17 @@ final class AndroidInputSession: InputSession, TextInputSession {
         touchIsDown = down
     }
 
-    /// Steps `input` cannot send go through the helper: several fingers, or a key combination it would drop, wherever keys go.
+    /// Steps `input` cannot send go through the helper: several fingers, touch phases before Android 10 other than a held tap,
+    /// and a key combination before Android 12, wherever keys go.
     private func rerouted(_ route: AndroidInputRoute, for steps: [AndroidInputStep]) async throws -> AndroidInputRoute {
         var route = route
-        if case .adb = route.executor, steps.contains(where: \.isMultiTouch), let helper = try await multiTouchHelper() {
+        if case .adb = route.executor, let helper = try await touchHelper(for: steps) {
             route = route.through(.helper(helper))
             resolvedRoute = route
         }
-        if case .adb = route.keys ?? route.executor, AdbInputScript.hasKeyCombination(steps), let helper = try await keyCombinationHelper() {
+        if case .adb = route.keys ?? route.executor, AdbInputScript.hasKeyCombination(steps),
+           let level = await readAPILevel(), !AdbInputScript.sendsKeyCombinations(apiLevel: level) {
+            let helper = try await gapHelper(.keyCombination, level)
             if route.keys == nil {
                 route = route.through(.helper(helper))
             } else {
@@ -207,6 +231,15 @@ final class AndroidInputSession: InputSession, TextInputSession {
             resolvedRoute = route
         }
         return route
+    }
+
+    private func touchHelper(for steps: [AndroidInputStep]) async throws -> HelperInputDriver? {
+        if steps.contains(where: \.isMultiTouch) {
+            return try await multiTouchHelper()
+        }
+        guard steps.contains(where: \.isTouchPhase), let level = await readAPILevel(),
+              !AdbInputScript.sendsMotionEvents(apiLevel: level), AdbInputScript.needsMotionEvent(steps) else { return nil }
+        return try await gapHelper(.motionEvent, level)
     }
 
     /// All-ASCII text as key events (gRPC `text` chunks, or adb `input text`); anything else pasted whole.
@@ -375,7 +408,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
             lastTouch = point
         }
         let pressesDown = steps.contains { if case .touch(.down, _) = $0 { return true } else { return false } }
-        let parts = try Self.parts(of: steps, through: executor, keys: keys)
+        let parts = try Self.parts(of: steps, through: executor, keys: keys, apiLevel: knownAPILevel)
         let fingersBefore = heldFingers
         for step in steps {
             if case .touches(let phase, let points) = step {
@@ -416,13 +449,14 @@ extension AndroidInputSession {
     private static func parts(
         of steps: [AndroidInputStep],
         through executor: AndroidInputExecutor,
-        keys: AndroidInputExecutor?
+        keys: AndroidInputExecutor?,
+        apiLevel: Int?
     ) throws -> [(executor: AndroidInputExecutor, steps: [AndroidInputStep], scripts: [String])] {
         let runs = keys == nil ? [(keys: false, steps: steps)] : AndroidInputStep.keyRuns(steps)
         return try runs.map { run in
             let target = run.keys ? keys ?? executor : executor
             guard case .adb = target else { return (target, run.steps, []) }
-            return (target, run.steps, try AdbInputScript.scripts(for: run.steps))
+            return (target, run.steps, try AdbInputScript.scripts(for: run.steps, apiLevel: apiLevel))
         }
     }
 }
@@ -451,6 +485,11 @@ extension AndroidInputStep {
 
     var isMultiTouch: Bool {
         if case .touches = self { return true }
+        return false
+    }
+
+    var isTouchPhase: Bool {
+        if case .touch = self { return true }
         return false
     }
 

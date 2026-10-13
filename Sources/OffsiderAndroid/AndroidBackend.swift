@@ -271,7 +271,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             focusedSecureField: { await self.hasFocusedSecureField(id) },
             multiTouchHelper: { try await self.multiTouchHelper(serial) },
-            keyCombinationHelper: { try await self.keyCombinationHelper(serial) },
+            apiLevel: { await self.apiLevel(of: serial) },
+            gapHelper: { gap, level in try await self.gapHelper(serial, for: gap, apiLevel: level) },
             readFocusedField: { await self.focusedFieldReading(serial) },
             pasteFocused: { field in try await self.pasteIntoFocusedField(serial, expecting: field) },
             sleep: host.sleep,
@@ -286,16 +287,15 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
     }
 
-    /// nil while `input` sends key combinations (API 31 and later, or an unread level); before that the helper, else a refusal.
-    private func keyCombinationHelper(_ serial: String) async throws -> HelperInputDriver? {
-        guard let level = await apiLevel(of: serial), !AdbInputScript.sendsKeyCombinations(apiLevel: level) else { return nil }
-        log(.debug, "`input` on \(serial) (API \(level)) has no keycombination, so a key combination needs the helper")
+    /// The helper for steps `input` on this API level lacks, started if needed; a refusal when the policy or the tree source rules it out.
+    private func gapHelper(_ serial: String, for gap: AdbInputGap, apiLevel level: Int) async throws -> HelperInputDriver {
+        log(.debug, "`input` on \(serial) (API \(level)) has no \(gap == .motionEvent ? "motionevent" : "keycombination"), so these steps need the helper")
         guard try AndroidInputPolicy.policy(host: host) != .input else {
-            throw AndroidError.keyCombinationNeedsHelper(serial, apiLevel: level, reason: nil)
+            throw AndroidError.inputNeedsHelper(serial, for: gap, apiLevel: level, reason: nil)
         }
         switch try await treeSource(for: serial, announcingFallback: false) {
         case .helper(let session): return HelperInputDriver(session: session)
-        case .uiautomator(let reason): throw AndroidError.keyCombinationNeedsHelper(serial, apiLevel: level, reason: reason)
+        case .uiautomator(let reason): throw AndroidError.inputNeedsHelper(serial, for: gap, apiLevel: level, reason: reason)
         }
     }
 
@@ -373,7 +373,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     }
 
     /// `touch --down` now and `touch --up` later: one gRPC finger (lifted by the emulator after 120 s if forgotten),
-    /// or one `input motionevent` script per call over adb.
+    /// or one `input motionevent` script per call over adb; before Android 10, only a down and up in one call, as a swipe that stays put.
     public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         try await prepare()
         let inputSteps: [AndroidInputStep] = steps.map { step in
@@ -388,7 +388,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             try await driver.run(inputSteps)
             return
         }
-        for script in try AdbInputScript.scripts(for: inputSteps) {
+        let level = await apiLevel(of: id.rawValue)
+        if let level, !AdbInputScript.sendsMotionEvents(apiLevel: level), AdbInputScript.needsMotionEvent(inputSteps) {
+            throw AndroidError.detachedTouchNeedsMotionEvent(id.rawValue, apiLevel: level)
+        }
+        for script in try AdbInputScript.scripts(for: inputSteps, apiLevel: level) {
             try await shell.run(script, waiting: AdbInputScript.waitTime(of: inputSteps))
         }
     }

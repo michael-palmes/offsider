@@ -29,6 +29,61 @@ struct AdbInputScriptTests {
         #expect(abs(AdbInputScript.waitTime(of: steps) - 0.15) < 1e-9)
     }
 
+    @Test("the same drag is a motionevent script from API 29, and with an unread level")
+    func dragFromAPI29() throws {
+        let steps: [AndroidInputStep] = [.touch(.down, AndroidPoint(x: 0, y: 0)), .touch(.move, AndroidPoint(x: 50, y: 0)), .touch(.up, AndroidPoint(x: 50, y: 0))]
+        for level in [29, 36, nil] {
+            #expect(try AdbInputScript.scripts(for: steps, apiLevel: level) == [
+                "input motionevent DOWN 0 0 && input motionevent MOVE 50 0 && input motionevent UP 50 0",
+            ])
+        }
+    }
+
+    @Test("`input` sends motion events from Android 10 (API 29) on, and an unread level counts as recent")
+    func motionEventLevels() {
+        #expect([28, 29, 36, nil].map { AdbInputScript.sendsMotionEvents(apiLevel: $0) } == [false, true, true, true])
+    }
+
+    @Test("only touch phases other than a held tap need `input motionevent`")
+    func detectsMotionEvent() {
+        let p = AndroidPoint(x: 10, y: 20)
+        let q = AndroidPoint(x: 30, y: 20)
+        #expect(!AdbInputScript.needsMotionEvent([.touch(.down, p), .pause(0.1), .touch(.up, p)]))
+        #expect(!AdbInputScript.needsMotionEvent([.pause(0.2), .touch(.down, p), .touch(.up, p), .tap(q), .touch(.down, q), .pause(1), .pause(1), .touch(.up, q)]))
+        #expect(!AdbInputScript.needsMotionEvent([.tap(p), .swipe(from: p, to: q, duration: 1, steps: 4), .key(.press, usage: 40)]))
+        #expect(AdbInputScript.needsMotionEvent([.touch(.down, p), .pause(0.1), .touch(.move, q), .touch(.up, q)]))
+        #expect(AdbInputScript.needsMotionEvent([.touch(.down, p), .pause(0.1), .touch(.up, q)]))
+        #expect(AdbInputScript.needsMotionEvent([.touch(.down, p)]))
+        #expect(AdbInputScript.needsMotionEvent([.pause(0.25), .touch(.up, p)]))
+        #expect(AdbInputScript.needsMotionEvent([.touch(.down, p), .tap(q), .touch(.up, p)]))
+    }
+
+    @Test("before API 29 a held tap is a swipe that stays put for its hold, and an unheld one input tap")
+    func heldTapBeforeAPI29() throws {
+        let p = AndroidPoint(x: 550.4, y: 1374.6)
+        #expect(try AdbInputScript.scripts(for: [.touch(.down, p), .pause(0.5), .pause(0.3), .touch(.up, p)], apiLevel: 28) == ["input swipe 550 1375 550 1375 800"])
+        #expect(try AdbInputScript.scripts(for: [.pause(0.2), .touch(.down, p), .touch(.up, p), .key(.press, usage: 40)], apiLevel: 28) == [
+            "sleep 0.2 && input tap 550 1375 && input keyevent 66",
+        ])
+    }
+
+    @Test("before API 29 a drag or a lone touch phase is refused, never sent as a motionevent `input` would ignore")
+    func dragRefusedBeforeAPI29() {
+        let p = AndroidPoint(x: 10, y: 20)
+        for steps: [AndroidInputStep] in [[.touch(.down, p), .touch(.move, AndroidPoint(x: 10, y: 90)), .touch(.up, p)], [.touch(.down, p)], [.touch(.up, p)]] {
+            let error = #expect(throws: AndroidError.self) { try AdbInputScript.scripts(for: steps, apiLevel: 28) }
+            #expect(error?.kind == .notSupported)
+        }
+    }
+
+    @Test("before API 31 a key combination is refused, never sent as a keycombination `input` would ignore")
+    func keyCombinationRefusedBeforeAPI31() throws {
+        let steps: [AndroidInputStep] = [.key(.down, usage: 224), .key(.press, usage: 4), .key(.up, usage: 224)]
+        let error = #expect(throws: AndroidError.self) { try AdbInputScript.scripts(for: steps, apiLevel: 30) }
+        #expect(error?.kind == .notSupported)
+        #expect(try AdbInputScript.scripts(for: steps, apiLevel: 31) == ["input keycombination 113 29"])
+    }
+
     @Test("modifier downs, a press and the ups become one keycombination")
     func keyCombination() throws {
         let steps: [AndroidInputStep] = [.key(.down, usage: 224), .key(.press, usage: 6), .key(.up, usage: 224)]
