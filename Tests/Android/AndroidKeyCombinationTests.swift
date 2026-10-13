@@ -105,6 +105,53 @@ struct AndroidKeyCombinationTests {
         #expect(Self.apiLevelReads(rig) == 0)
     }
 
+    /// emulator-5556 with gRPC on an AVD without a hardware keyboard, so its keys go over adb while touches stay on gRPC.
+    static func keyboardlessRig(apiLevel: String, emulator: FakeEmulator, environment: [String: String] = [:]) throws -> HelperRig {
+        let home = try AndroidTestHost.homeWithSDK()
+        let avd = ".android/avd/Offsider_E2E.avd"
+        try AndroidTestHost.write("hw.keyboard = false\n", to: "\(avd)/hardware-qemu.ini", in: home)
+        try AndroidTestHost.write(
+            "avd.id=Offsider_E2E\nport.serial=5556\ngrpc.port=8556\ngrpc.token=t\navd.dir=\(home.appendingPathComponent(avd).path)\n",
+            to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini",
+            in: home
+        )
+        let device = FakeHelperDevice()
+        let rig = try HelperRig(device, environment: environment, emulator: FakeEmulatorConnector(.success(emulator)), home: home)
+        let other = device.other
+        device.other = { service in
+            service.hasSuffix(":getprop ro.build.version.sdk") ? FakeAdbServer.shell(stdout: "\(apiLevel)\n") : other(service)
+        }
+        return rig
+    }
+
+    @Test("on a keyboardless API 28 AVD a key combination goes through the helper, while a tap stays on gRPC")
+    func keyboardlessUsesHelper() async throws {
+        let emulator = FakeEmulator()
+        let rig = try Self.keyboardlessRig(apiLevel: "28", emulator: emulator)
+        try await rig.backend.perform(.composite([InputEvent.selectAllAndDelete(modifier: InputEvent.controlKey), .tapAt(x: 525, y: 1050)]), on: Self.device)
+        let calls = emulator.calls
+        await rig.backend.close()
+
+        #expect(rig.device.injected == Self.selectAllInjected)
+        #expect(AndroidHelperInputTests.inputScripts(rig).isEmpty)
+        #expect(calls == [.touch(PanelTouch(x: 525, y: 1050, pressure: 1)), .touch(PanelTouch(x: 525, y: 1050, pressure: 0))])
+    }
+
+    @Test("on a keyboardless API 28 AVD with OFFSIDER_ANDROID_INPUT=input, a key combination is refused and nothing is sent")
+    func keyboardlessRefusedOnInput() async throws {
+        let emulator = FakeEmulator()
+        let rig = try Self.keyboardlessRig(apiLevel: "28", emulator: emulator, environment: ["OFFSIDER_ANDROID_INPUT": "input"])
+        let error = await #expect(throws: AndroidError.self) {
+            try await rig.backend.perform(.composite([.tapAt(x: 525, y: 1050), InputEvent.selectAllAndDelete(modifier: InputEvent.controlKey)]), on: Self.device)
+        }
+        let calls = emulator.calls
+        await rig.backend.close()
+
+        #expect(error?.kind == .helperUnavailable)
+        #expect(AndroidHelperInputTests.inputScripts(rig).isEmpty)
+        #expect(calls.isEmpty)
+    }
+
     @Test("type --replace on API 28 with OFFSIDER_ANDROID_INPUT=input refuses its Ctrl+A fallback before Delete or any text is sent")
     func replaceFallbackRefused() async throws {
         let rig = try AndroidReplaceTextTests.rig(
