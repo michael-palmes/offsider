@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The tagline is now "A hand for your agent on iOS and Android, simulated or real." `offsider --help`, the bundled skill's description and the Homebrew formula's description name USB iPhones, iPads and Android phones beside simulators and emulators, and the formula's homepage is https://offsidercli.com/.
+
 ## [0.11.0] - 2026-10-12
 
 ### Added
