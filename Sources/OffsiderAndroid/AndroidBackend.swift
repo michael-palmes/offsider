@@ -305,10 +305,27 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let (executor, geometry) = try await inputExecutor(for: serial, shell: shell)
         switch try await transport(for: serial) {
         case .grpc(let emulator):
-            return AndroidInputRoute(executor: executor, scale: geometry.scale, clipboard: emulator, adbReason: .forced)
+            let keys = try await keyboardlessKeys(serial, executor: executor, shell: shell)
+            return AndroidInputRoute(executor: executor, scale: geometry.scale, clipboard: emulator, adbReason: .forced, keys: keys)
         case .adb(let reason):
             return AndroidInputRoute(executor: executor, scale: geometry.scale, clipboard: nil, adbReason: reason)
         }
+    }
+
+    /// On an AVD without a hardware keyboard, keys, buttons and text take the route a device without gRPC takes; nil elsewhere.
+    private func keyboardlessKeys(_ serial: String, executor: AndroidInputExecutor, shell: AdbDeviceShell) async throws -> AndroidInputExecutor? {
+        guard case .grpc = executor, emulatorHasKeyboard(serial) == false else { return nil }
+        log(.debug, "\(serial) has no hardware keyboard (hw.keyboard), which drops gRPC keys, so its keys, buttons and text go as without gRPC")
+        return try await shellExecutor(serial, shell: shell, policy: try AndroidInputPolicy.policy(host: host))
+    }
+
+    /// From the live discovery file's AVD directory, so it costs no adb call; nil when that does not say.
+    private func emulatorHasKeyboard(_ serial: String) -> Bool? {
+        guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial),
+              let discovery = EmulatorDiscovery.live(host: host).first(where: { $0.consolePort == port }) else {
+            return nil
+        }
+        return EmulatorKeyboard.present(in: discovery, files: host.files)
     }
 
     /// For messages: the cached name, else the live discovery file, else one `getprop` on this serial only.
