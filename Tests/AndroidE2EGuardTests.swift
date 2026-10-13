@@ -160,11 +160,11 @@ struct AndroidPhoneGuardTests {
 @Suite("Android E2E install marker")
 struct AndroidInstallMarkerTests {
     private let digest = "4f1c0de2"
-    private let package = "com.mpalmes.offsider.playground.rn"
+    private let package = AndroidE2E.package
 
     @Test("a marker written for an install is current for that install", arguments: [
-        "package:/data/app/com.mpalmes.offsider.playground.rn-AbC_12-x==/base.apk",
-        "package:/data/app/~~Zx9-Q_w==/com.mpalmes.offsider.playground.rn-Kp4_Lm==/base.apk",
+        "package:/data/app/\(AndroidE2E.package)-AbC_12-x==/base.apk",
+        "package:/data/app/~~Zx9-Q_w==/\(AndroidE2E.package)-Kp4_Lm==/base.apk",
     ])
     func currentForItsInstall(pmPath: String) throws {
         let marker = try #require(AndroidInstallMarker.line(digest: digest, pmPath: pmPath + "\n"))
@@ -175,6 +175,12 @@ struct AndroidInstallMarkerTests {
     func reinstallLeavesMarkerStale() throws {
         let marker = try #require(AndroidInstallMarker.line(digest: digest, pmPath: "package:/data/app/~~old==/\(package)-a==/base.apk"))
         #expect(!AndroidInstallMarker.isCurrent("\(marker)\npackage:/data/app/~~new==/\(package)-b==/base.apk\n", digest: digest))
+    }
+
+    @Test("a stale marker's own path is never taken for the current install")
+    func installLineSkipsMarker() {
+        let state = "\(digest) package:/data/app/~~old==/\(package)-a==/base.apk\npackage:/data/app/~~new==/\(package)-b==/base.apk\n"
+        #expect(AndroidInstallMarker.installLine(in: state) == "package:/data/app/~~new==/\(package)-b==/base.apk")
     }
 
     @Test("a marker with no install path, another digest, no marker or no package is stale")
