@@ -1,7 +1,7 @@
 import Foundation
 @testable import OffsiderAndroid
 
-/// Display probe and status outputs captured from an Android 9 (API 28) emulator with the pixel_4 profile.
+/// Display probe, status and package outputs captured from an Android 9 (API 28) emulator with the pixel_4 profile.
 enum Android9Fixtures {
     /// Android 9 prints `Viewport:` without `INTERNAL`: once in the touch screen's section, then as the internal and external viewports.
     nonisolated static let portraitProbe = """
@@ -44,6 +44,57 @@ enum Android9Fixtures {
           showing=false
           occluded=false
           secure=false
+
+    """
+
+    /// `AndroidPermissionPlan.readScript`'s stdout with camera untouched (so unlisted), location granted and contacts user-fixed.
+    nonisolated static let permissionRead = """
+    28
+    Packages:
+      Package [com.example.app] (5c9b1cb):
+        versionCode=1 minSdk=24 targetSdk=36
+        declared permissions:
+          com.example.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION: prot=signature, INSTALLED
+        requested permissions:
+          android.permission.CAMERA
+          android.permission.INTERNET
+          android.permission.POST_NOTIFICATIONS
+          android.permission.ACCESS_FINE_LOCATION
+          android.permission.READ_CONTACTS
+          android.permission.SYSTEM_ALERT_WINDOW
+          com.example.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+        install permissions:
+          com.example.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION: granted=true
+          android.permission.INTERNET: granted=true
+        User 0: ceDataInode=115097 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+          gids=[3003]
+          runtime permissions:
+            android.permission.READ_CONTACTS: granted=false, flags=[ USER_SET|USER_FIXED ]
+            android.permission.ACCESS_FINE_LOCATION: granted=true
+
+    Package Changes:
+      Sequence number=457
+
+    """
+
+    /// `pm list permissions -g -d`, trimmed to three groups.
+    nonisolated static let dangerousPermissions = """
+    Dangerous Permissions:
+
+    group:android.permission-group.CONTACTS
+      permission:android.permission.WRITE_CONTACTS
+      permission:android.permission.GET_ACCOUNTS
+      permission:android.permission.READ_CONTACTS
+
+    group:android.permission-group.CAMERA
+      permission:android.permission.CAMERA
+
+    group:android.permission-group.LOCATION
+      permission:android.permission.ACCESS_FINE_LOCATION
+      permission:android.permission.ACCESS_COARSE_LOCATION
+
+    ungrouped:
+      permission:com.example.provider.permission.READ_ONLY
 
     """
 
