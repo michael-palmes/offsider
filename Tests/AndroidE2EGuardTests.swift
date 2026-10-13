@@ -156,3 +156,35 @@ struct AndroidPhoneGuardTests {
         #expect(!source.contains("emulatorClient"), "AndroidPhoneTests.swift reaches for the emulator gRPC client")
     }
 }
+
+@Suite("Android E2E install marker")
+struct AndroidInstallMarkerTests {
+    private let digest = "4f1c0de2"
+    private let package = "com.mpalmes.offsider.playground.rn"
+
+    @Test("a marker written for an install is current for that install", arguments: [
+        "package:/data/app/com.mpalmes.offsider.playground.rn-AbC_12-x==/base.apk",
+        "package:/data/app/~~Zx9-Q_w==/com.mpalmes.offsider.playground.rn-Kp4_Lm==/base.apk",
+    ])
+    func currentForItsInstall(pmPath: String) throws {
+        let marker = try #require(AndroidInstallMarker.line(digest: digest, pmPath: pmPath + "\n"))
+        #expect(AndroidInstallMarker.isCurrent("\(marker)\n\(pmPath)\n", digest: digest))
+    }
+
+    @Test("a build installed after the marker leaves it stale, even when the marker names the expected digest")
+    func reinstallLeavesMarkerStale() throws {
+        let marker = try #require(AndroidInstallMarker.line(digest: digest, pmPath: "package:/data/app/~~old==/\(package)-a==/base.apk"))
+        #expect(!AndroidInstallMarker.isCurrent("\(marker)\npackage:/data/app/~~new==/\(package)-b==/base.apk\n", digest: digest))
+    }
+
+    @Test("a marker with no install path, another digest, no marker or no package is stale")
+    func staleStates() {
+        let current = "package:/data/app/~~x==/\(package)-y==/base.apk"
+        #expect(!AndroidInstallMarker.isCurrent("\(digest)\n\(current)\n", digest: digest))
+        #expect(!AndroidInstallMarker.isCurrent("0ddba11 \(current)\n\(current)\n", digest: digest))
+        #expect(!AndroidInstallMarker.isCurrent("\(current)\n", digest: digest))
+        #expect(!AndroidInstallMarker.isCurrent("\(digest) \(current)\n", digest: digest))
+        #expect(!AndroidInstallMarker.isCurrent("", digest: digest))
+        #expect(AndroidInstallMarker.line(digest: digest, pmPath: "") == nil)
+    }
+}

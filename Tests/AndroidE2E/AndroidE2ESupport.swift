@@ -114,16 +114,16 @@ enum AndroidE2E {
         return apk
     }
 
-    /// Installs the APK unless the emulator already has this exact one (its SHA-256 in a marker file).
+    /// Installs the APK unless the emulator already has this exact one (its SHA-256 and `pm path` line in a marker file).
     /// The debug and release APKs share the package, so each records its own digest and the other reinstalls.
     static func ensurePlaygroundInstalled() async throws {
         try await installOnce {
             let apk = try apkPath()
             let digest = try apkDigest(apk)
-            let installed = (try? await shell("cat \(marker) 2>/dev/null; pm path \(package)")) ?? ""
-            if !(installed.contains(digest) && installed.contains("package:")) {
+            let state = (try? await shell("cat \(marker) 2>/dev/null; pm path \(package)")) ?? ""
+            if !AndroidInstallMarker.isCurrent(state, digest: digest) {
                 if try await installedDigest() == digest {
-                    try await shell("echo \(digest) > \(marker)")
+                    try await recordMarker(digest)
                 } else {
                     try await install(apk, digest: digest)
                 }
@@ -166,7 +166,16 @@ enum AndroidE2E {
             try await shellInstall("pm install \(remote)")
         }
         _ = try? await shell("rm \(remote)")
-        try await shell("echo \(digest) > \(marker)")
+        try await recordMarker(digest)
+    }
+
+    /// Every install gets a new `pm path` directory, so a build installed later by anything else leaves this marker stale.
+    private static func recordMarker(_ digest: String) async throws {
+        let paths = try await shell("pm path \(package)")
+        guard let line = AndroidInstallMarker.line(digest: digest, pmPath: paths) else {
+            throw AndroidE2EError(description: "pm path \(package) printed no package: line: \(paths.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+        try await shell("echo \(quote(line)) > \(marker)")
     }
 
     /// `pm install` reports failure on stdout with exit 0 on some builds, so the text is checked too.
@@ -244,6 +253,21 @@ enum AndroidE2E {
 
     static func waitForLabel(of id: String, timeout: TimeInterval = 20, _ predicate: @escaping (String) -> Bool) async throws -> String {
         try await describeUI.waitForLabel(of: id, timeout: timeout, predicate)
+    }
+}
+
+/// The playground marker's contents: the APK's SHA-256 and the `pm path` line of the install it describes.
+enum AndroidInstallMarker {
+    /// `<digest> <first package: line>`, or nil when `pm path` printed none.
+    static func line(digest: String, pmPath: String) -> String? {
+        let lines = pmPath.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+        return lines.first { $0.hasPrefix("package:") }.map { "\(digest) \($0)" }
+    }
+
+    /// Whether `cat <marker>; pm path <package>` shows a marker naming this digest and the package's current install.
+    static func isCurrent(_ state: String, digest: String) -> Bool {
+        guard let expected = line(digest: digest, pmPath: state) else { return false }
+        return state.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == expected }
     }
 }
 
