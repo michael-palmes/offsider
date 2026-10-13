@@ -181,6 +181,7 @@ extension CredentialReport {
                 PromptScreen.nextStep("Next", command: "offsider login\(nameArgument)\(deviceSuffix)", style: style),
             ]).joined(separator: "\n")
         case "remove":
+            if key == LoginCredential.defaultAccountKey, !removed { return style.bold("🤷 No login named default was saved for \(app)") }
             return removed ? style.bold("🧹 Removed the \(named) for \(app)") : style.bold("🤷 No \(named) to remove for \(app)")
         case "signed-out":
             let place = "\(app) on \(self.device ?? "")"
@@ -207,8 +208,10 @@ extension CredentialReport {
                 return ([style.bold("🔐 \(app) · \(count)")] + rows + (shared + here).map { "   " + style.dim($0) }).joined(separator: "\n")
             }
             guard saved else {
-                let nameArgument = key == LoginCredential.defaultAccountKey ? "" : " \(shown)"
-                return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set\(nameArgument) --app \(app)", style: style)].joined(separator: "\n")
+                if key == LoginCredential.defaultAccountKey {
+                    return [style.bold("🔐 No login named default saved for \(app)"), PromptScreen.nextStep("See the saved logins", command: "offsider credential status --app \(app)", style: style)].joined(separator: "\n")
+                }
+                return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set \(shown) --app \(app)", style: style)].joined(separator: "\n")
             }
             let details = (username.map { ["👤 \($0)"] } ?? []) + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
             let rows = Self.styledDetails(context ?? .empty, signIns: key.flatMap { signIns[$0] } ?? [], indent: "   ", style: style)

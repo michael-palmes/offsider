@@ -37,9 +37,15 @@ public enum LoginDirectory {
             if let existing = entries.first(where: { $0.key == name }) {
                 guard update else {
                     if interactive { return .confirm(key: name, makeDefault: existing.isDefault) }
-                    return .refused("The name \(name) is already saved for this app. Pass --update to replace it. Nothing was saved.")
+                    return .refused("The name \(LoginCredential.displayKey(name)) is already saved for this app. Pass --update to replace it. Nothing was saved.")
                 }
                 return .write(key: name, makeDefault: existing.isDefault)
+            }
+            if name == LoginCredential.defaultAccountKey {
+                return .refused(
+                    "default names only a login saved without a name, and only an app's first login is saved that way. "
+                        + "This app has named logins (\(names(entries))): pass one of those names with --update to replace it, or a new name to add one. Nothing was saved."
+                )
             }
             return .write(key: name, makeDefault: false)
         }
@@ -55,6 +61,18 @@ public enum LoginDirectory {
         }
         if interactive { return .choose }
         return .refused("This app already has a saved login. Pass --update to replace the default, or a name such as qa to add another. Nothing was saved.")
+    }
+
+    /// Why `default` matched nothing: no login of the app was saved without a name. Lists names, never usernames.
+    public static func noUnnamedLogin(app: String, entries: [any LoginMark]) -> String {
+        "No login named default is saved for \(app); default names only a login saved without a name. "
+            + "Omit the name to use the default, or pass a saved name: \(names(entries))."
+    }
+
+    /// Up to five saved names, then how many more.
+    public static func names(_ entries: [any LoginMark]) -> String {
+        let shown = entries.prefix(5).map { LoginCredential.displayKey($0.key) }.joined(separator: ", ")
+        return entries.count > 5 ? "\(shown) and \(entries.count - 5) more" : shown
     }
 
     /// True when adding another login should mark the sole existing one as the default.

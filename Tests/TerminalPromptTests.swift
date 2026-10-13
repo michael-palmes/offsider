@@ -192,6 +192,13 @@ struct TerminalPromptTests {
 
         let empty = CredentialReport(action: "status", app: "com.example.app", saved: false)
         #expect(empty.styledText(style: .plain, device: "").contains("offsider credential set --app com.example.app"))
+        let unnamed = CredentialReport(action: "status", app: "com.example.app", key: LoginCredential.defaultAccountKey, saved: false).styledText(style: .plain, device: "")
+        #expect(unnamed.contains("No login named default saved for com.example.app"))
+        #expect(unnamed.contains("offsider credential status --app com.example.app"))
+        let missing = CredentialReport(action: "status", app: "com.example.app", key: "qa", saved: false).styledText(style: .plain, device: "")
+        #expect(missing.contains("offsider credential set qa --app com.example.app"))
+        let kept = CredentialReport(action: "remove", app: "com.example.app", key: LoginCredential.defaultAccountKey, saved: false).styledText(style: .plain, device: "")
+        #expect(kept.contains("No login named default was saved for com.example.app"))
         #expect(UnlockCodeScreen.status(name: "Pixel", device: "SERIAL", saved: true, lastAttemptFailed: true, style: .plain).contains("unlock-code set --device SERIAL"))
     }
 

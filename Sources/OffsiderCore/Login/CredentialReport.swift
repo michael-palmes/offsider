@@ -115,6 +115,7 @@ public struct CredentialReport: Equatable, Sendable {
             let role = isDefault ? " It is the default login." : ""
             return "Saved the login named \(shown) for \(app) (\(username ?? "")).\(role) The password is not shown."
         case "remove":
+            if key == LoginCredential.defaultAccountKey, !removed { return "No login named default was saved for \(app)" }
             let name = key == LoginCredential.defaultAccountKey ? "default login" : "login credential \(shown)"
             return removed ? "Removed the \(name) for \(app)" : "No \(name) was saved for \(app)"
         case "describe":
@@ -123,7 +124,10 @@ public struct CredentialReport: Equatable, Sendable {
                 : "Nothing changed: \(shown) for \(app) already has these notes and tags."
             return ([head] + Self.textDetails(context ?? .empty, signIns: [])).joined(separator: "\n")
         default:
-            guard saved else { return "No login credential \(shown) is saved for \(app)." }
+            guard saved else {
+                if key == LoginCredential.defaultAccountKey { return "No login named default is saved for \(app)." }
+                return "No login credential \(shown) is saved for \(app)."
+            }
             let first: String
             if !filter.isEmpty {
                 first = "\(heading) \(shown)\(isDefault ? " (default)" : "") matches --where \(filter.map(\.rawValue).joined(separator: " "))"
