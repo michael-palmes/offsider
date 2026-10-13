@@ -262,8 +262,8 @@ render_formula() {  # version url sha256 [explicit]
   if [ "${4:-}" = explicit ]; then version_line="  version \"$1\""$'\n'; fi
   cat <<EOF
 class Offsider < Formula
-  desc "Drive iOS Simulators from the terminal and AI agents"
-  homepage "https://github.com/${GITHUB_REPO}"
+  desc "Inspect and drive iOS and Android simulators, emulators and USB devices"
+  homepage "https://offsidercli.com/"
   url "$2"
 ${version_line}  sha256 "$3"
   license "MIT"
