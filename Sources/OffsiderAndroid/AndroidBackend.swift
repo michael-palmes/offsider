@@ -27,6 +27,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// The display cache entry this command loaded or last saved, so an unchanged one is not written again.
     private var displayEntries: [String: AndroidDisplayCacheEntry] = [:]
     private var avdNames: [String: String] = [:]
+    /// `ro.build.version.sdk` per serial, from the display probe or a `getprop` of its own; nil inside when unreadable.
+    var apiLevels: [String: Int?] = [:]
     /// Phones this command named, from their device-list row, once checked.
     var phones: [String: ConnectedPhone] = [:]
     /// The row routing read for a phone, so `requireConnectedPhone` checks it without listing again.
@@ -270,6 +272,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             focusedSecureField: { await self.hasFocusedSecureField(id) },
             multiTouchHelper: { try await self.multiTouchHelper(serial) },
+            apiLevel: { await self.apiLevel(of: serial) },
+            gapHelper: { gap, level in try await self.gapHelper(serial, for: gap, apiLevel: level) },
             readFocusedField: { await self.focusedFieldReading(serial) },
             pasteFocused: { field in try await self.pasteIntoFocusedField(serial, expecting: field) },
             sleep: host.sleep,
@@ -282,6 +286,36 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     private func multiTouchHelper(_ serial: String) async throws -> HelperInputDriver? {
         guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
         return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
+    }
+
+    /// The helper for steps `input` on this API level lacks, started if needed; a refusal when the policy or the tree source rules it out.
+    private func gapHelper(_ serial: String, for gap: AdbInputGap, apiLevel level: Int) async throws -> HelperInputDriver {
+        log(.debug, "`input` on \(serial) (API \(level)) has no \(gap == .motionEvent ? "motionevent" : "keycombination"), so these steps need the helper")
+        guard try AndroidInputPolicy.policy(host: host) != .input else {
+            throw AndroidError.inputNeedsHelper(serial, for: gap, apiLevel: level, reason: nil)
+        }
+        switch try await treeSource(for: serial, announcingFallback: false) {
+        case .helper(let session): return HelperInputDriver(session: session)
+        case .uiautomator(let reason): throw AndroidError.inputNeedsHelper(serial, for: gap, apiLevel: level, reason: reason)
+        }
+    }
+
+    func noteAPILevel(in probe: String, of serial: String) {
+        if let level = AndroidDisplayGeometry.apiLevel(in: probe) {
+            apiLevels[serial] = level
+        }
+    }
+
+    /// `ro.build.version.sdk` from the display probe, else read once per command when input needs it; nil when it cannot be read.
+    private func apiLevel(of serial: String) async -> Int? {
+        if let known = apiLevels[serial] {
+            return known
+        }
+        let script = "getprop ro.build.version.sdk"
+        let result = try? await requireClient().shell(script, on: serial, timeout: .seconds(5), label: script)
+        let level = result.flatMap { Int($0.stdoutText.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        apiLevels[serial] = .some(level)
+        return level
     }
 
     /// Best effort: an unreadable screen does not block typing, since the guard only keeps a password off the clipboard.
@@ -346,7 +380,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     }
 
     /// `touch --down` now and `touch --up` later: one gRPC finger (lifted by the emulator after 120 s if forgotten),
-    /// or one `input motionevent` script per call over adb.
+    /// or one `input motionevent` script per call over adb; before Android 10, only a down and up in one call, as a swipe that stays put.
     public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         try await prepare()
         let inputSteps: [AndroidInputStep] = steps.map { step in
@@ -361,7 +395,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             try await driver.run(inputSteps)
             return
         }
-        for script in try AdbInputScript.scripts(for: inputSteps) {
+        let level = await apiLevel(of: id.rawValue)
+        if let level, !AdbInputScript.sendsMotionEvents(apiLevel: level), AdbInputScript.needsMotionEvent(inputSteps) {
+            throw AndroidError.detachedTouchNeedsMotionEvent(id.rawValue, apiLevel: level)
+        }
+        for script in try AdbInputScript.scripts(for: inputSteps, apiLevel: level) {
             try await shell.run(script, waiting: AdbInputScript.waitTime(of: inputSteps))
         }
     }
@@ -693,6 +731,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             let geometry = try AndroidDisplayGeometry.parse(result.stdoutText)
             geometries[serial] = geometry
             activeUniqueIds[serial] = AndroidDisplayGeometry.viewportUniqueId(in: result.stdoutText)
+            noteAPILevel(in: result.stdoutText, of: serial)
             return geometry
         } catch let error as AndroidDisplayGeometry.Unparseable {
             let stderrLine = result.stderrText.split(whereSeparator: \.isNewline).first.map(String.init)

@@ -32,7 +32,7 @@ struct AndroidInputSessionTests {
 
     nonisolated static func scripts(_ server: FakeAdbServer) -> [String] {
         server.services
-            .filter { $0.hasPrefix("shell,v2,raw:") && !$0.hasSuffix(AndroidDisplayGeometry.probeScript) && !$0.hasSuffix(AndroidDeviceDirectory.propertiesScript) && !$0.hasSuffix(AndroidDeviceState.printStates) }
+            .filter { $0.hasPrefix("shell,v2,raw:") && !$0.hasSuffix(AndroidDisplayGeometry.probeScript) && !$0.hasSuffix(AndroidDeviceDirectory.propertiesScript) && !$0.hasSuffix(AndroidDeviceState.printStates) && !$0.hasSuffix(":getprop ro.build.version.sdk") }
             .map { String($0.dropFirst("shell,v2,raw:".count)) }
     }
 

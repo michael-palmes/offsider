@@ -48,7 +48,15 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
     }
 
     /// Plain `grep`, not `-m1`: an early exit breaks dumpsys's pipe, which can hold the shell until dumpsys times out. Android 9 prints `Viewport:` without `INTERNAL`.
-    static let probeScript = "wm size; wm density; dumpsys input | grep -e 'Viewport INTERNAL: displayId=0' -e 'Viewport: displayId=0,'"
+    static let probeScript = "wm size; wm density; dumpsys input | grep -e 'Viewport INTERNAL: displayId=0' -e 'Viewport: displayId=0,'; echo \"\(apiLevelPrefix) $(getprop ro.build.version.sdk)\""
+    static let apiLevelPrefix = "API level:"
+
+    /// The probe's `ro.build.version.sdk`, so input that depends on it needs no shell call of its own; nil when absent or unreadable.
+    static func apiLevel(in output: String) -> Int? {
+        output.split(whereSeparator: \.isNewline).lazy
+            .compactMap { line in line.hasPrefix(apiLevelPrefix) ? Int(line.dropFirst(apiLevelPrefix.count).trimmingCharacters(in: .whitespaces)) : nil }
+            .first
+    }
 
     struct Unparseable: Error, Equatable {
         let firstLine: String
