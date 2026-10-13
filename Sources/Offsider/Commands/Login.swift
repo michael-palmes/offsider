@@ -35,7 +35,7 @@ struct LoginCommand: AsyncParsableCommand {
         """
     )
 
-    @Argument(help: ArgumentHelp("The saved login's name, such as dev. Omit it to use the default login.", valueName: "name"))
+    @Argument(help: ArgumentHelp("The saved login's name, such as dev, or default for the one saved without a name. Omit it to use the default login.", valueName: "name"))
     var key: String?
 
     @Option(name: .customLong("where"), help: ArgumentHelp("Use the saved login with this tag, such as role=admin. Repeat to require more tags. Not with a name.", valueName: "tag"))
@@ -61,7 +61,7 @@ struct LoginCommand: AsyncParsableCommand {
     var timeout: Double { timeoutOption ?? Self.defaultTimeout }
 
     func validate() throws {
-        if let key, LoginKey(rawValue: key) == nil { throw ValidationError(CredentialCommand.keyMessage) }
+        if let key, CredentialCommand.storedKey(key) == nil { throw ValidationError(CredentialCommand.keyMessage) }
         _ = try Self.whereTags(filters, named: key != nil)
         guard timeout.isFinite, (1...60).contains(timeout) else {
             throw ValidationError("--timeout must be from 1 to 60 seconds.")
@@ -211,24 +211,24 @@ struct LoginCommand: AsyncParsableCommand {
 
     /// The login a name, `--where` or the default picks; errors never show a username. `device` is nil for `credential status`.
     static func resolveLogin(_ name: String?, where filter: [LoginTag], app: String, entries: [LoginEntry], device: DeviceID?) throws -> LoginEntry {
-        let requested = name.map { LoginKey(rawValue: $0)?.rawValue ?? $0 }
+        let requested = name.map { CredentialCommand.storedKey($0) ?? $0 }
         let deviceArgument = device.map { "--device \($0.rawValue)" } ?? "--device <id>"
         let wanted = filter.map(\.rawValue).joined(separator: " ")
         switch LoginSelection.resolve(entries: entries, name: requested, where: filter) {
         case .chosen(let entry):
             return entry
+        case .missing(let key) where key == LoginCredential.defaultAccountKey && entries.isEmpty:
+            throw noneSaved(app: app, device: device)
         case .missing(let key):
             throw CLIError(
-                errorDescription: "No login named \(LoginCredential.displayKey(key)) is saved for \(app).",
+                errorDescription: key == LoginCredential.defaultAccountKey
+                    ? LoginDirectory.noUnnamedLogin(app: app, entries: entries)
+                    : "No login named \(key) is saved for \(app).",
                 reason: .commandFailed,
                 hint: "offsider credential status --app \(app)"
             )
         case .noneSaved:
-            throw CLIError(
-                errorDescription: "No login credential is saved for \(app).",
-                reason: .commandFailed,
-                hint: device.map { "offsider credential set --device \($0.rawValue)" } ?? "offsider credential set --app \(app)"
-            )
+            throw noneSaved(app: app, device: device)
         case .noMatch(let all):
             throw CLIError(
                 errorDescription: "No saved login for \(app) has every tag in --where \(wanted). Saved: \(listed(all)).",
@@ -256,6 +256,14 @@ struct LoginCommand: AsyncParsableCommand {
                 users: all.map(FailureUser.init)
             )
         }
+    }
+
+    private static func noneSaved(app: String, device: DeviceID?) -> CLIError {
+        CLIError(
+            errorDescription: "No login credential is saved for \(app).",
+            reason: .commandFailed,
+            hint: device.map { "offsider credential set --device \($0.rawValue)" } ?? "offsider credential set --app \(app)"
+        )
     }
 
     /// Up to five logins as `name (tags · about)`, then how many more.

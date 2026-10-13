@@ -35,7 +35,7 @@ enum AndroidE2E {
     static let marker = "/data/local/tmp/offsider-e2e-playground.sha256"
 
     /// The only AVDs any Android suite may drive; OFFSIDER_ANDROID_E2E_AVD picks one of them.
-    static let allowedAVDs: Set<String> = ["Offsider_E2E", "Offsider_E2E_Fold"]
+    static let allowedAVDs: Set<String> = ["Offsider_E2E", "Offsider_E2E_Fold", "Offsider_E2E_API28"]
     static let foldAVD = "Offsider_E2E_Fold"
 
     static var expectedAVD: String {
@@ -182,7 +182,8 @@ enum AndroidE2E {
     static func launch(_ screen: String) async throws {
         try await ensurePlaygroundInstalled()
         guard isRNDebugE2EEnabled else {
-            try await shell("am start -S -W -a android.intent.action.VIEW -d offsiderplaygroundrn://screen/\(screen) \(package)")
+            // Android 9's `am start -S` matches no activity for a package-scoped link, so stop the app first.
+            try await shell("am force-stop \(package); am start -W -a android.intent.action.VIEW -d offsiderplaygroundrn://screen/\(screen) \(package)")
             return
         }
         try await shell("am force-stop \(package)")

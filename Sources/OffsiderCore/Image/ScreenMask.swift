@@ -9,6 +9,11 @@ public enum MaskKind: String, CaseIterable, Sendable {
     case text
     case emails
     case region
+
+    /// `--mask-skip-beneath` may leave this kind unpainted beneath a page; password fields and regions are always painted.
+    public var skippableBeneath: Bool {
+        self != .secure && self != .region
+    }
 }
 
 /// Patterns for personal data, shared by screenshot masks and log redaction.
@@ -30,8 +35,13 @@ public struct MaskPlan: Equatable, Sendable {
     public var emails: Bool
     /// Points, painted before any `--region` crop.
     public var regions: [PointRegion]
+    /// Leaves matches of skippable kinds unpainted when their element is on a screen beneath a page.
+    public var skipsBeneath: Bool
 
-    public init(secure: Bool = false, ids: [String] = [], labels: [String] = [], labelsContaining: [String] = [], texts: [String] = [], emails: Bool = false, regions: [PointRegion] = []) {
+    public init(
+        secure: Bool = false, ids: [String] = [], labels: [String] = [], labelsContaining: [String] = [], texts: [String] = [], emails: Bool = false,
+        regions: [PointRegion] = [], skipsBeneath: Bool = false
+    ) {
         self.secure = secure
         self.ids = ids
         self.labels = labels
@@ -39,6 +49,7 @@ public struct MaskPlan: Equatable, Sendable {
         self.texts = texts
         self.emails = emails
         self.regions = regions
+        self.skipsBeneath = skipsBeneath
     }
 
     public static let none = MaskPlan()
@@ -57,7 +68,8 @@ public struct MaskPlan: Equatable, Sendable {
             labelsContaining: merged(labelsContaining, other.labelsContaining),
             texts: merged(texts, other.texts),
             emails: emails || other.emails,
-            regions: merged(regions, other.regions)
+            regions: merged(regions, other.regions),
+            skipsBeneath: skipsBeneath || other.skipsBeneath
         )
     }
 
@@ -120,34 +132,67 @@ public struct MaskPlan: Equatable, Sendable {
     }
 }
 
+/// One matcher's matches from the tree: its kind, and the elements it matched.
+public struct MaskGroup: Equatable, Sendable {
+    public var kind: MaskKind
+    public var nodes: [UINode]
+
+    public init(kind: MaskKind, nodes: [UINode]) {
+        self.kind = kind
+        self.nodes = nodes
+    }
+}
+
 /// Frames to paint by kind, and the selectors that matched nothing (`--mask-id profile-email`).
 public struct MaskTargets: Equatable, Sendable {
     public var frames: [MaskKind: [UIFrame?]]
     public var unmatched: [String]
-    /// The elements behind `frames`, for the kinds read from the tree.
-    public var nodes: [MaskKind: [UINode]]
+    /// The elements behind `frames`, one group per matcher, for the kinds read from the tree.
+    public var groups: [MaskGroup]
 
-    public init(frames: [MaskKind: [UIFrame?]] = [:], unmatched: [String] = [], nodes: [MaskKind: [UINode]] = [:]) {
+    public init(frames: [MaskKind: [UIFrame?]] = [:], unmatched: [String] = [], groups: [MaskGroup] = []) {
         self.frames = frames
         self.unmatched = unmatched
-        self.nodes = nodes
+        self.groups = groups
     }
 
     public mutating func add(_ matches: [UINode], as kind: MaskKind) {
         frames[kind, default: []] += matches.map(\.frame)
-        nodes[kind, default: []] += matches
+        groups.append(MaskGroup(kind: kind, nodes: matches))
     }
 
-    /// The frames of matched elements on a screen beneath a page, by kind; the stack is built only when something matched.
-    public func framesBeneathPages(in tree: UITree) -> [MaskKind: [UIFrame?]] {
-        guard nodes.values.contains(where: { !$0.isEmpty }) else { return [:] }
+    /// Places matches by tree position: frames painted beneath a page, and with `skip` the skippable ones left out of `frames`; an unplaceable group is painted whole.
+    public mutating func placeBeneath(in tree: UITree, skip: Bool) -> (painted: [MaskKind: [UIFrame?]], skipped: [MaskKind: Int]) {
+        guard groups.contains(where: { !$0.nodes.isEmpty }) else { return ([:], [:]) }
         let stack = ScreenStack.build(roots: tree.roots, viewport: tree.viewport)
-        guard !stack.beneath.isEmpty else { return [:] }
+        guard !stack.beneath.isEmpty else { return ([:], [:]) }
         let flat = tree.roots.flatMap { $0.flattened() }
-        let covered = stack.beneath.flatMap(\.indexes).map { flat[$0] }
-        return nodes.mapValues { matches in
-            matches.filter { match in covered.contains { $0.isSameElement(as: match) } }.map(\.frame)
+        var painted: [MaskKind: [UIFrame?]] = [:]
+        var skipped: [MaskKind: Int] = [:]
+        var placed: [MaskKind: [UIFrame?]] = [:]
+        for group in groups {
+            // Equal elements match alike, so a group's matches are the elements equal to one of them.
+            let positions = flat.indices.filter { index in group.nodes.contains { $0.isSameElement(as: flat[index]) } }
+            guard positions.count == group.nodes.count else {
+                placed[group.kind, default: []] += group.nodes.map(\.frame)
+                continue
+            }
+            for position in positions {
+                let frame = flat[position].frame
+                if stack.isBeneath(index: position) {
+                    if skip, group.kind.skippableBeneath {
+                        skipped[group.kind, default: 0] += 1
+                        continue
+                    }
+                    painted[group.kind, default: []].append(frame)
+                }
+                placed[group.kind, default: []].append(frame)
+            }
         }
+        for kind in Set(groups.map(\.kind)) {
+            frames[kind] = placed[kind] ?? []
+        }
+        return (painted, skipped)
     }
 }
 

@@ -21,8 +21,7 @@ struct TapCover {
         if AccessibilityTargetResolver.keyboardCover(resolution, in: tree) != nil {
             throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device)
         }
-        // On Android the keyboard's window bounds have decided; its root view spans the screen, so it leaves the judging.
-        let roots = android ? tree.roots.filter { $0.role != .keyboard } : tree.roots
+        let roots = AccessibilityTargetResolver.coverRoots(tree.roots, android: android)
         var candidates = resolution.coverCandidates
         if android {
             candidates.removeAll { AccessibilityTargetResolver.isUnderKeyboard($0, in: tree.roots) }

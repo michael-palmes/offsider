@@ -65,16 +65,19 @@ struct ReactNativeOffscreenTests {
         let app = RNApp(platform)
         try await app.open("parked-sheet-test")
 
-        let onScreen = try await app.run("describe-ui --flat --on-screen --format ndjson").stdout
-        let full = try await app.run("describe-ui").stdout
+        let onScreen = DescribeUITree.nodes(in: try DescribeUITree.parse(try await app.run("describe-ui --on-screen").stdout)).compactMap { $0["id"] as? String }
+        let full = try DescribeUITree.parse(try await app.run("describe-ui").stdout)
+        let fullIDs = DescribeUITree.nodes(in: full).compactMap { $0["id"] as? String }
 
         #expect(onScreen.contains("parked-sheet-test-body-save"))
         #expect(!onScreen.contains("parked-sheet-test-apply"))
         switch platform {
         case .ios:
-            #expect(full.contains("parked-sheet-test-apply"), "iOS reports the parked sheet with its off-screen frame")
+            #expect(fullIDs.contains("parked-sheet-test-apply"), "iOS reports the parked sheet with its off-screen frame")
         case .android:
-            #expect(!full.contains("parked-sheet-test-apply"), "Android's helper omits invisible nodes from every view")
+            #expect(!fullIDs.contains("parked-sheet-test-apply"), "Android's helper omits invisible nodes from every view")
+            let named = ((full["context"] as? [String: Any])?["hiddenBranches"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+            #expect(named.contains("parked-sheet-test-apply"), "and names the hidden branches in context")
         }
     }
 
@@ -96,6 +99,21 @@ struct ReactNativeOffscreenTests {
 
         try await app.run("tap --id stack-test-mark")
         _ = try await app.waitForLabel(of: "stack-test-state") { $0 == "Stack State: Page 2 marked" }
+    }
+
+    @Test("on Android a page title the previous page repeats taps the copy drawn over it, while Mark buttons at their own points stay ambiguous", arguments: RNPlatform.enabled.filter { $0 == .android })
+    func stackTitleTakesDrawnCopy(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("stack-test")
+        try await app.run("tap --id stack-test-next")
+        _ = try await app.waitForLabel(of: "stack-test-depth") { $0 == "Stack Depth: 2" }
+
+        let title = try await app.offsider("tap --id stack-test-page-title")
+        #expect(title.exitCode == 0, "\(title.stderr)")
+
+        let mark = try await app.offsider("tap --id stack-test-mark")
+        #expect(mark.exitCode == 6, "\(mark.stderr)")
+        #expect(try await app.label(of: "stack-test-state") == "Stack State: Initial")
     }
 
     @Test("assert sees a parked sheet as gone, and wait sees it arrive and leave", arguments: RNPlatform.enabled)

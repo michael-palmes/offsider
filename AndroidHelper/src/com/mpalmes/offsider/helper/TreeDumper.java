@@ -35,7 +35,13 @@ final class TreeDumper {
     int skippedInvisible;
     int testTagsFound;
     int testTagRefreshes;
+    int windowRefreshes;
     boolean truncated;
+    final HiddenBranches hidden = new HiddenBranches();
+    private final Rect windowBounds = new Rect();
+    private boolean nameHidden;
+    private AccessibilityWindowInfo app;
+    private AccessibilityNodeInfo appRoot;
 
     TreeDumper(Json json, DumpOptions options, NodeTable table) {
         this.json = json;
@@ -44,9 +50,19 @@ final class TreeDumper {
     }
 
     /** Writes "windows"; with app scope only the app window and input methods carry a root. */
-    void dump(UiAutomation automation) {
+    void dump(Connection connection) {
+        UiAutomation automation = connection.automation();
         json.name("windows").beginArray();
         List<AccessibilityWindowInfo> list = automation.getWindows();
+        if (options.appWindowsOnly) {
+            findApp(automation, list);
+            // Android 9 can leave a window that appeared during a screen change out of the list until it is read again.
+            if (appRoot == null && connection.shouldRefreshFor(unlistedActiveWindow(automation, list)) && connection.refreshWindows()) {
+                windowRefreshes++;
+                list = automation.getWindows();
+                findApp(automation, list);
+            }
+        }
         if (list == null || list.isEmpty()) {
             source = "getRootInActiveWindow";
             AccessibilityNodeInfo root = automation.getRootInActiveWindow();
@@ -55,7 +71,6 @@ final class TreeDumper {
             }
         } else {
             source = "getWindows";
-            AccessibilityWindowInfo app = options.appWindowsOnly ? appWindow(automation, list) : null;
             windowList = list;
             keyboardShown = false;
             for (AccessibilityWindowInfo window : list) {
@@ -68,6 +83,29 @@ final class TreeDumper {
             }
         }
         json.endArray();
+    }
+
+    /** The active window's id when it has a root but the window list leaves it out; -1 otherwise. */
+    private static int unlistedActiveWindow(UiAutomation automation, List<AccessibilityWindowInfo> list) {
+        AccessibilityNodeInfo active = automation.getRootInActiveWindow();
+        if (active == null) {
+            return -1;
+        }
+        int id = active.getWindowId();
+        if (list != null) {
+            for (AccessibilityWindowInfo window : list) {
+                if (window.getId() == id) {
+                    return -1;
+                }
+            }
+        }
+        return id;
+    }
+
+    /** The app window and its root, each read once. */
+    private void findApp(UiAutomation automation, List<AccessibilityWindowInfo> list) {
+        app = list == null || list.isEmpty() ? null : appWindow(automation, list);
+        appRoot = app == null ? null : app.getRoot();
     }
 
     /** Writes "windows" with metadata only. */
@@ -127,11 +165,13 @@ final class TreeDumper {
         json.flag("pictureInPicture", window.isInPictureInPictureMode());
         if (tree) {
             trees++;
-            AccessibilityNodeInfo root = window.getRoot();
+            AccessibilityNodeInfo root = window == app ? appRoot : window.getRoot();
             json.name("root");
             if (root == null) {
                 json.nullValue();
             } else {
+                windowBounds.set(rect);
+                nameHidden = window.getType() != AccessibilityWindowInfo.TYPE_INPUT_METHOD;
                 keepHidden = hiddenByKeyboard(window, root);
                 behindKeyboard = keyboardShown && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION ? window : null;
                 keyboardRegion = null;
@@ -207,6 +247,8 @@ final class TreeDumper {
         json.field("active", true);
         json.field("focused", true);
         json.name("root");
+        windowBounds.set(rect);
+        nameHidden = true;
         node(root, 0, false);
         json.endObject();
     }
@@ -299,6 +341,9 @@ final class TreeDumper {
             }
             if (options.visibleOnly && !keepHidden && !child.isVisibleToUser() && !coveredByKeyboard(child)) {
                 skippedInvisible++;
+                if (nameHidden) {
+                    hidden.offer(child, windowBounds);
+                }
                 continue;
             }
             if (!open) {

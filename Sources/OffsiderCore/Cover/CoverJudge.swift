@@ -78,9 +78,8 @@ public enum CoverJudge {
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
             case .undecided: break
             }
-        } else if context.target.isAndroidNode,
-                  let top = drawnTop(at: context.point, in: context.roots, holding: [context.target, context.matched], viewport: context.viewport, stack: context.stack) {
-            switch context.judge(hit: top) {
+        } else if context.target.isAndroidNode, let judgement = context.drawnJudgement() {
+            switch judgement {
             case .clear: return nil
             case .cover(let node, let confident): return context.verdict(node, .drawingOrder, confident: confident)
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
@@ -88,6 +87,14 @@ public enum CoverJudge {
             }
         }
         return context.guess(viewport: context.viewport).map { context.verdict($0, .treeOrder, confident: false) }
+    }
+
+    /// What Android's drawing order surely draws over target at point: the cover a selector tap refuses outright; nil when the point reaches it or the order cannot tell.
+    public static func drawnCover(of target: UINode, at point: UIPoint, roots: [UINode], viewport: UIFrame, stack: ScreenStack) -> UINode? {
+        guard target.isAndroidNode else { return nil }
+        let context = Context(target: target, matched: target, point: point, candidates: [], roots: roots, viewport: viewport, stack: stack)
+        guard case .cover(let node, confident: true)? = context.drawnJudgement() else { return nil }
+        return node
     }
 
     /// The hit chain when Android's drawing order or window layers order every set of siblings it passes; nil otherwise.
@@ -103,19 +110,30 @@ public enum CoverJudge {
         return chain
     }
 
-    /// The drawn chain's top, looking beneath full-screen native hosts with nothing to touch at the point (an Expo dev client's tools button), as Android passes the touch on.
+    /// The drawn chain's top, looking beneath full-screen views with nothing to touch at the point (an Expo dev client's tools button), as Android passes the touch on.
     static func drawnTop(at point: UIPoint, in roots: [UINode], holding targets: [UINode], viewport: UIFrame, stack: ScreenStack) -> UINode? {
+        let targetsPage = targets.lazy.compactMap { ScreenStack.index(of: $0, in: roots) }.compactMap(stack.page(holding:)).first
         var remaining = roots
         for _ in 0..<8 {
             guard let chain = drawnChain(at: point, in: remaining), let top = chain.last else { return nil }
-            let onPage = ScreenStack.index(of: top, in: roots).map { index in stack.pages.contains { $0.content.contains(index) } } ?? false
-            guard chain.count > 1, !onPage, !isPlausibleOccluder(top), !isReactView(top, in: chain), let frame = top.frame, spans(frame, viewport),
+            guard chain.count > 1, !isPlausibleOccluder(top), passesTouch(top, in: chain, roots: roots, stack: stack, targetsPage: targetsPage),
+                  let frame = top.frame, spans(frame, viewport),
                   !targets.contains(where: { target in top.flattened().contains { $0.isSameElement(as: target) } }) else {
                 return top
             }
             remaining = remaining.map { $0.removing(top) }
         }
         return nil
+    }
+
+    /// A native host off every page passes the touch on; a React Native view only on the target's own page, never the page itself.
+    private static func passesTouch(_ node: UINode, in chain: [UINode], roots: [UINode], stack: ScreenStack, targetsPage: ScreenStack.Page?) -> Bool {
+        let index = ScreenStack.index(of: node, in: roots)
+        let react = isReactView(node, in: chain)
+        if let index, let page = targetsPage, index != page.index, page.content.contains(index) {
+            return react
+        }
+        return !react && !(index.map { index in stack.pages.contains { $0.content.contains(index) } } ?? false)
     }
 
     /// The classes Android names a React Native view by: `ReactViewGroup`'s own, or a role's.
@@ -183,6 +201,11 @@ public enum CoverJudge {
             self.indicators = indicators
             flat = roots.flatMap { $0.flattened() }
             own = target.flattened() + matched.flattened()
+        }
+
+        /// The judgement of what Android's drawing order puts on top at the point; nil when the order cannot tell.
+        func drawnJudgement() -> HitJudgement? {
+            CoverJudge.drawnTop(at: point, in: roots, holding: [target, matched], viewport: viewport, stack: stack).map(judge(hit:))
         }
 
         func verdict(_ node: UINode, _ evidence: CoverEvidence, confident: Bool) -> CoverVerdict {

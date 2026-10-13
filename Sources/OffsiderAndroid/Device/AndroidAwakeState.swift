@@ -69,20 +69,23 @@ enum AndroidAwakeState {
             }
         }
         guard let screen = values["mWakefulness"].flatMap(screenPower), let showing = values["showing"].flatMap(Bool.init) else { return nil }
-        let secure = values["secure"] == "true"
-        let lockScreen: LockScreen = showing && values["occluded"] != "true" ? (secure ? .secure : .swipe) : .hidden
+        let keyguardSecure = values["secure"].flatMap(Bool.init)
+        let lockScreen: LockScreen = showing && values["occluded"] != "true" ? (keyguardSecure == true ? .secure : .swipe) : .hidden
         let powered = values["mIsPowered"] == "true"
+        // Android 9 prints no CredentialType; the keyguard still says whether one is set.
+        let named = values["CredentialType"].flatMap(credential)
         return AwakeReading(
             screen: screen,
             lockScreen: lockScreen,
-            credential: values["CredentialType"].flatMap(credential),
+            credential: named ?? (keyguardSecure == false ? "none" : nil),
             stayAwake: PowerSources(rawValue: values["mStayOnWhilePluggedInSetting"].flatMap { Int($0) } ?? 0),
             charging: powered ? PowerSources(rawValue: values["mPlugType"].flatMap { Int($0) } ?? 0) : [],
             screenTimeoutMilliseconds: values["mScreenOffTimeoutSetting"].flatMap { Int($0) },
             timeoutCappedByPolicy: values["mMaximumScreenOffTimeoutFromDeviceAdmin"]?.contains("enforced=true") == true,
             maker: values["maker"].flatMap { $0.isEmpty ? nil : $0 },
             userUnlocked: userUnlocked(state: values["user_state"], ceAvailable: values["ce_available"]),
-            memTotalKB: values["memtotal_kb"].flatMap(kilobytes)
+            memTotalKB: values["memtotal_kb"].flatMap(kilobytes),
+            keyguardSecure: keyguardSecure
         )
     }
 

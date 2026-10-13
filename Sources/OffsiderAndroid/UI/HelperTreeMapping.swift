@@ -86,6 +86,15 @@ enum HelperTreeMapping {
         }
     }
 
+    /// The hidden branches the helper named, in dp; a label never comes from a secure node, and the helper sends no editable text.
+    static func hiddenBranches(from dump: HelperDump, scale: Double) -> [UITreeContext.HiddenBranch]? {
+        dump.hiddenBranches?.map { helper in
+            let node = AndroidTreeMapping.node(from: rawNode(helper), scale: scale)
+            let label = node.isSecure ? nil : node.normalizedLabel ?? node.children.first { !$0.isSecure && $0.normalizedLabel != nil }?.normalizedLabel
+            return .shown(id: node.id, label: label, className: helper.class, frame: node.frame)
+        }
+    }
+
     /// The app window as `application`, then each keyboard as `keyboard`, both titled; bars are left out.
     static func roots(from dump: HelperDump, scale: Double, pid: Int32) -> (roots: [UINode], index: HelperTreeIndex) {
         guard let app = appWindow(in: dump), let appRoot = app.root else {

@@ -362,7 +362,7 @@ struct LoginCredentialTests {
         }
 
         let list = try status(nil)
-        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"Test_AVD","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}]},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[]}]}"#)
+        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"Test_AVD","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}],"signedInHere":true},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[],"signedInHere":false}]}"#)
         let text = try status(nil, json: false)
         #expect(text.contains("role=admin"))
         #expect(text.contains("Admin on staging"))
@@ -405,14 +405,23 @@ struct LoginCredentialTests {
         _ = try CredentialCommand.parse(["set", "qa", "--stdin", "--about", "Member on staging"] + app)
     }
 
-    @Test("credential takes --device, and --app does not require one")
+    @Test("credential takes --device, --app does not require one, and default is a name everywhere a name goes")
     func parsing() throws {
         #expect(throws: (any Error).self) { try CredentialCommand.parse(["set", "dev"]) }
         let bound = try CredentialCommand.parse(["set", "dev", "--app", "com.example.app"])
         #expect(bound.app == "com.example.app")
         let bare = try CredentialCommand.parse(["set", "--app", "com.example.app"])
         #expect(bare.key == nil)
-        #expect(throws: (any Error).self) { try CredentialCommand.parse(["set", "default", "--app", "com.example.app"]) }
+        _ = try CredentialCommand.parse(["set", "default", "--app", "com.example.app"])
+        _ = try CredentialCommand.parse(["describe", "Default", "--about", "x", "--app", "com.example.app"])
+        _ = try CredentialCommand.parse(["status", "DEFAULT", "--app", "com.example.app"])
+        _ = try CredentialCommand.parse(["remove", "default", "--app", "com.example.app"])
+        _ = try LoginCommand.parse(["default", "--device", "DEVICE"])
+        #expect(CredentialCommand.storedKey(" Default ") == LoginCredential.defaultAccountKey)
+        #expect(CredentialCommand.storedKey("qa") == "qa")
+        #expect(CredentialCommand.storedKey("*") == nil)
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["join", "default", "--device", "DEVICE"]) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["signed-out", "default", "--device", "DEVICE"]) }
         let joining = try CredentialCommand.parse(["join", "--device", "DEVICE"])
         #expect(joining.action == "join")
         #expect(throws: (any Error).self) { try CredentialCommand.parse(["join", "--app", "com.example.app"]) }
@@ -425,6 +434,121 @@ struct LoginCredentialTests {
             let parsed = try CredentialCommand.parse(["status"])
             #expect(parsed.device.resolved?.id == "DEVICE")
         }
+    }
+
+    @Test("every name status lists works with login, status, describe and remove, and default reaches only the login saved without a name")
+    func listedNamesWork() throws {
+        let store = MemoryLoginCredentialStore()
+        let credential = try #require(LoginCredential(username: username, password: password))
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: nil, json: true, store: store) { credential }
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa", json: true, store: store) {
+            try #require(LoginCredential(username: "bea@example.com", password: password))
+        }
+        func run(_ action: CredentialCommand.Action, _ key: String?, edit: LoginContextEdit = LoginContextEdit()) throws -> [String: Any] {
+            let line = try CredentialCommand.perform(action, app: "com.example.app", key: key, edit: edit, json: true, store: store) {
+                Issue.record("\(action.rawValue) must not ask for a password")
+                return credential
+            }
+            return try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+
+        let users = try #require(try run(.status, nil)["users"] as? [[String: Any]])
+        let names = users.compactMap { $0["name"] as? String }
+        #expect(names == ["default", "qa"])
+        for name in names {
+            #expect(try chosen(store, name: name) == (name == "default" ? LoginCredential.defaultAccountKey : name))
+            let described = try run(.describe, name, edit: LoginContextEdit(state: "Cart holds 2 items"))
+            #expect(described["name"] as? String == name)
+            #expect(described["changed"] as? Bool == true)
+        }
+        #expect(store.decrypts == 0)
+
+        let shown = try run(.status, "DEFAULT")
+        #expect(shown["name"] as? String == "default")
+        #expect(shown["username"] as? String == username)
+        #expect(store.decrypts == 1)
+
+        let removed = try run(.remove, "default")
+        #expect(removed["removed"] as? Bool == true)
+        #expect(try store.keys(app: "com.example.app") == ["qa"])
+        #expect(store.decrypts == 1)
+    }
+
+    @Test("default with no login saved without a name says to omit the name or pass a listed one, reads no password and removes nothing")
+    func defaultWithoutAnUnnamedLogin() throws {
+        let store = try savedPair()
+        let failure = #expect(throws: CLIError.self) { try chosen(store, name: "default") }
+        #expect(failure?.reason == .commandFailed)
+        #expect(failure?.failureMessage.contains("default names only a login saved without a name") == true)
+        #expect(failure?.failureMessage.contains("Omit the name to use the default, or pass a saved name: qa-admin, qa-member.") == true)
+        #expect(failure?.hint == "offsider credential status --app com.example.app")
+        #expect(failure?.failureMessage.contains("@example.com") == false)
+
+        let described = #expect(throws: CLIError.self) {
+            try CredentialCommand.perform(.describe, app: "com.example.app", key: "default", edit: LoginContextEdit(state: "x"), json: true, store: store) {
+                Issue.record("describe must not ask for a password")
+                return try #require(LoginCredential(username: "x", password: "x"))
+            }
+        }
+        #expect(described?.failureMessage.hasSuffix("pass a saved name: qa-admin, qa-member. Nothing was changed.") == true)
+        #expect(described?.hint == "offsider credential status --app com.example.app")
+
+        func perform(_ action: CredentialCommand.Action, json: Bool = true) throws -> String {
+            try CredentialCommand.perform(action, app: "com.example.app", key: "default", json: json, store: store) {
+                Issue.record("\(action.rawValue) must not ask for a password")
+                return try #require(LoginCredential(username: "x", password: "x"))
+            }
+        }
+        #expect(try perform(.status) == #"{"version":2,"action":"status","app":"com.example.app","name":"default","saved":false}"#)
+        #expect(try perform(.remove) == #"{"version":2,"action":"remove","app":"com.example.app","name":"default","saved":false,"removed":false}"#)
+        #expect(try perform(.remove, json: false) == "No login named default was saved for com.example.app")
+        #expect(try store.keys(app: "com.example.app") == ["qa-admin", "qa-member"])
+        #expect(try store.defaultKey(app: "com.example.app") == "qa-admin")
+        #expect(store.decrypts == 0)
+
+        let many = (1...7).map { LoginEntry(key: "qa-\($0)") }
+        #expect(LoginDirectory.noUnnamedLogin(app: "com.example.app", entries: many).hasSuffix("pass a saved name: qa-1, qa-2, qa-3, qa-4, qa-5 and 2 more."))
+        let empty = #expect(throws: CLIError.self) { try chosen(MemoryLoginCredentialStore(), name: "default") }
+        #expect(empty?.failureMessage == "No login credential is saved for com.example.app.")
+    }
+
+    @Test("set default writes the login saved without a name only while the app has none, replaces it with --update, and is refused beside named logins before any read")
+    func setDefault() throws {
+        let store = MemoryLoginCredentialStore()
+        let credential = try #require(LoginCredential(username: username, password: password))
+        var reads = 0
+        func save(_ store: MemoryLoginCredentialStore, update: Bool = false) throws -> String {
+            try CredentialCommand.perform(.set, app: "com.example.app", key: "default", update: update, json: false, store: store) {
+                reads += 1
+                return credential
+            }
+        }
+        #expect(try save(store).hasPrefix("Saved the default login for com.example.app"))
+        #expect(try store.keys(app: "com.example.app") == [LoginCredential.defaultAccountKey])
+
+        let again = #expect(throws: CLIError.self) { try save(store) }
+        #expect(again?.reason == .usage)
+        #expect(again?.failureMessage.contains("The name default is already saved") == true)
+        #expect(again?.failureMessage.contains("*") == false)
+        #expect(reads == 1)
+        _ = try save(store, update: true)
+        #expect(reads == 2)
+
+        let named = try savedPair()
+        for update in [false, true] {
+            let refused = #expect(throws: CLIError.self) { try save(named, update: update) }
+            #expect(refused?.reason == .usage)
+            #expect(refused?.failureMessage.contains("default names only a login saved without a name") == true)
+            #expect(refused?.failureMessage.contains("(qa-admin, qa-member)") == true)
+            #expect(refused?.failureMessage.hasSuffix("Nothing was saved.") == true)
+        }
+        guard case .refused = LoginDirectory.setIntent(entries: try named.entries(app: "com.example.app"), name: LoginCredential.defaultAccountKey, update: false, interactive: true) else {
+            Issue.record("expected a terminal to be refused too, before its menu decrypts anything")
+            return
+        }
+        #expect(reads == 2)
+        #expect(named.decrypts == 0)
+        #expect(try named.keys(app: "com.example.app") == ["qa-admin", "qa-member"])
     }
 
     @Test("login reads the Keychain between the keychain callbacks, so a macOS prompt never runs under the watchdog")
@@ -472,13 +596,17 @@ struct LoginCredentialTests {
             }
         }
 
-        #expect(try status("emulator-5554") == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":[],"signedIn":[{"device":"ZY22FAKE01","platform":"android","since":"2026-10-11T09:31:00Z"},{"device":"Test_AVD","platform":"android","since":"2026-10-11T09:30:00Z","restarted":false}]},{"name":"qa-member","default":false,"tags":[],"signedIn":[]}]}"#)
-        #expect(try status("ZY22FAKE02").hasPrefix(#"{"version":2,"action":"status","app":"com.example.app","signedInHere":null,"users":["#))
+        #expect(try status("emulator-5554") == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":[],"signedIn":[{"device":"ZY22FAKE01","platform":"android","since":"2026-10-11T09:31:00Z"},{"device":"Test_AVD","platform":"android","since":"2026-10-11T09:30:00Z","restarted":false}],"signedInHere":true},{"name":"qa-member","default":false,"tags":[],"signedIn":[],"signedInHere":false}]}"#)
+        let elsewhere = try #require(try JSONSerialization.jsonObject(with: Data(try status("ZY22FAKE02").utf8)) as? [String: Any])
+        #expect(elsewhere["signedInHere"] is NSNull)
+        let users = try #require(elsewhere["users"] as? [[String: Any]])
+        #expect(users.count == 2)
+        #expect(users.allSatisfy { $0["signedInHere"] as? Bool == false })
         #expect(!(try status(nil)).contains("signedInHere"))
         #expect(store.decrypts == 0)
     }
 
-    @Test("with a device in hand every status form prints signedInHere, null when nobody is recorded; with none it leaves the key out")
+    @Test("with a device in hand every status form prints signedInHere and each listed user a boolean, false when nobody is recorded; with none both are left out")
     func signedInHereNeedsOnlyADevice() throws {
         let fixture = try SignInTrackerFixture()
         defer { fixture.remove() }
@@ -492,20 +620,30 @@ struct LoginCredentialTests {
         }
         let admin = [try #require(LoginTag(rawValue: "role=admin"))]
 
+        func here(_ report: [String: Any]) throws -> [String: Bool?] {
+            let users = try #require(report["users"] as? [[String: Any]])
+            return Dictionary(uniqueKeysWithValues: try users.map { (try #require($0["name"] as? String), $0["signedInHere"] as? Bool) })
+        }
+
         for deviceID in ["emulator-5554", "ZY22FAKE02"] {
             for report in [try status(nil, deviceID: deviceID), try status("qa-member", deviceID: deviceID), try status("qa-owner", deviceID: deviceID), try status(nil, where: admin, deviceID: deviceID)] {
                 #expect(report["signedInHere"] is NSNull, "\(report)")
             }
+            #expect(try here(try status(nil, deviceID: deviceID)) == ["qa-admin": false, "qa-member": false])
         }
         for report in [try status(nil, deviceID: nil), try status("qa-member", deviceID: nil), try status(nil, where: admin, deviceID: nil)] {
             #expect(report.keys.contains("signedInHere") == false, "\(report)")
         }
+        #expect(try here(try status(nil, deviceID: nil)) == ["qa-admin": nil, "qa-member": nil])
+        #expect(try status("qa-member", deviceID: "emulator-5554")["users"] == nil)
         let signinsPath = (fixture.root as NSString).appendingPathComponent(OffsiderPrivateDirectory.signInsDirectoryName)
         #expect(!FileManager.default.fileExists(atPath: signinsPath))
 
         fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
         #expect(try status("qa-member", deviceID: "emulator-5554")["signedInHere"] as? String == "qa-admin")
         #expect(try status(nil, where: admin, deviceID: "Test_AVD")["signedInHere"] as? String == "qa-admin")
+        #expect(try here(try status(nil, deviceID: "emulator-5554")) == ["qa-admin": true, "qa-member": false])
+        #expect(try here(try status(nil, deviceID: "ZY22FAKE02")) == ["qa-admin": false, "qa-member": false])
     }
 
     @Test("signed-out clears only this device's record for the app, names who it was, and exits 0 when nothing was recorded")

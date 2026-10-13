@@ -93,6 +93,8 @@ public struct UITree: Equatable, Sendable {
     public var staleFrame: UITreeContext.StaleFrame?
     /// Subtrees Android's helper left out as not visible to the user; nil on iOS, with uiautomator and with an older helper.
     public var hiddenBranches: Int?
+    /// Up to five of those branches by id, label or class; nil when the helper does not name them.
+    public var namedHiddenBranches: [UITreeContext.HiddenBranch]?
     /// A prompt another process draws over an iOS app, which `describe-ui` found with a point read; JSON carries it only in `context`.
     public var systemPrompt: SystemPrompt?
     /// The context a decoded describe-ui JSON carried, which its windows no longer can.

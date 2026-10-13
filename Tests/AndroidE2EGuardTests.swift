@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Android E2E guard")
 struct AndroidE2EGuardTests {
-    private let allowed: Set<String> = ["Offsider_E2E", "Offsider_E2E_Fold"]
+    private let allowed: Set<String> = ["Offsider_E2E", "Offsider_E2E_Fold", "Offsider_E2E_API28"]
 
     private func refused(_ result: Result<String, AndroidE2EError>) -> String? {
         if case .failure(let error) = result { return error.description }
@@ -44,6 +44,15 @@ struct AndroidE2EGuardTests {
     func allowedPasses() throws {
         #expect(try AndroidE2EGuard.verdict(serial: "emulator-5556", avdName: "Offsider_E2E", expected: "Offsider_E2E", allowed: allowed).get() == "emulator-5556")
         #expect(try AndroidE2EGuard.verdict(serial: "emulator-5558", avdName: "Offsider_E2E_Fold", expected: "Offsider_E2E_Fold", allowed: allowed).get() == "emulator-5558")
+    }
+
+    @Test("the Android 9 AVD passes only when OFFSIDER_ANDROID_E2E_AVD names it")
+    func android9AVD() throws {
+        #expect(AndroidE2E.allowedAVDs.contains("Offsider_E2E_API28"))
+        let named = AndroidE2EGuard.verdict(serial: "emulator-5560", avdName: "Offsider_E2E_API28", expected: "Offsider_E2E_API28", allowed: AndroidE2E.allowedAVDs)
+        #expect(try named.get() == "emulator-5560")
+        let unnamed = AndroidE2EGuard.verdict(serial: "emulator-5560", avdName: "Offsider_E2E_API28", expected: "Offsider_E2E", allowed: AndroidE2E.allowedAVDs)
+        #expect(refused(unnamed)?.contains("Offsider_E2E_API28") == true)
     }
 
     @Test("E2E suites reach Android devices only through the guard")

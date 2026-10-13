@@ -217,6 +217,7 @@ struct VideoMaskTests {
         (["record-video", "--mask-secure", "--unmasked", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD"], "--unmasked records without the masks --mask-secure asks for"),
         (["stream-video", "--format", "bgra", "--mask-region", "0,0,10,10", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD"], "--format bgra passes the device's own video through"),
         (["record-video", "--mask-region", "0,0,0,10", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD"], "--mask-region 0,0,0,10 has no area"),
+        (["record-video", "--mask-skip-beneath", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD"], "Unknown option '--mask-skip-beneath'"),
     ])
     func usageErrors(arguments: [String], message: String) {
         do {

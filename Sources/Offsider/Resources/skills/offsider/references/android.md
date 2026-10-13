@@ -24,7 +24,7 @@
 
 - Screen reads (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `slider`, `type --replace`) go through a small UiAutomation helper that Offsider starts on the device for one command (input and screenshots start it only when `OFFSIDER_ANDROID_INPUT` or `OFFSIDER_ANDROID_CAPTURE` is `helper`): about 0.3 s per `describe-ui` and 1 to 1.5 s per verified tap on a quiet Mac, slower when the Mac is busy. Poll and verify as on iOS.
 - While a command reads the screen, the device reports an accessibility service as enabled, which some apps react to.
-- A "found no window" error while an activity starts is retried by `--wait-timeout` and `tap --verify`.
+- A "found no window" error while an activity starts is retried by `--wait-timeout` and `tap --verify`. When Android's window list misses the app's window just after a screen change (Android 9 does after a dialog or a React Native `Modal` opens or closes), the helper has the list read again once before it reports one.
 - With `OFFSIDER_TIMINGS=1`, stderr shows where a command spent its time (`helper-launch`, `helper-dump`, `helper-inject`, `helper-capture`, `capture-encode`, `adb-shell`, `grpc-call` and more), one `offsider timing: <phase> <n> ms` line per phase.
 - "Another UiAutomation client is connected" means Appium, Maestro, `uiautomator`, an instrumentation test or Layout Inspector holds Android's single UiAutomation connection. Offsider never reads around it: ask the user to stop that client, then retry.
 - "An earlier Offsider helper (pid N) still holds UiAutomation" usually means another Offsider command is still running on the same emulator. Run commands on one emulator one at a time; the helper exits within 10 s, or run the `adb -s <serial> shell kill <pid>` command the message gives.
@@ -36,7 +36,7 @@
 - Sliders and progress bars report `value` as a percentage of their range (`"25%"`, `"39.95%"`), and a partly checked checkbox reports `"2"`. A Jetpack Compose `testTag` is the `id` when the node has no resource id.
 - Alerts show upper-case button text (`DELETE`, `CANCEL`) with ids `android:id/button1` and `android:id/button2`; `--id button1` matches through the `:id/` suffix.
 - `# the device stopped listing nodes at its limit` at the end of `describe-ui --summary` means the tree itself is incomplete.
-- `# hidden: N branches not visible to the user` (`context.hidden`) counts subtrees the helper skipped as not visible. When the screenshot shows content the tree lacks, the app may hide it from accessibility (`importantForAccessibility="no-hide-descendants"`) or a parent may clip it; read coordinates off a `--scale points` screenshot.
+- `# hidden: N branches not visible to the user` (`context.hidden`) counts subtrees the helper skipped as not visible, and names up to five by id, label or class with their frame (`context.hiddenBranches`); keyboard branches are counted, not named. When the screenshot shows content the tree lacks, the app may hide it from accessibility (`importantForAccessibility="no-hide-descendants"`) or a parent may clip it; read coordinates off a `--scale points` screenshot.
 
 ## Input
 

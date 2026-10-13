@@ -591,6 +591,11 @@ struct AccessibilityTargetResolver {
         return found
     }
 
+    /// The roots a cover check judges: on Android the keyboard's window bounds decide, and its root view spans the screen, so it leaves the judging.
+    static func coverRoots(_ roots: [UINode], android: Bool) -> [UINode] {
+        android ? roots.filter { $0.role != .keyboard } : roots
+    }
+
     /// The keyboard over the tap point, from the tree already read; on Android its window's bounds decide, as its root view spans the screen.
     static func keyboardCover(_ resolution: TapResolution, in tree: UITree) -> UINode? {
         let roots = tree.roots
@@ -819,7 +824,7 @@ struct AccessibilityTargetResolver {
         }
         guard matches.count == 1 else {
             let stack = ScreenStack.build(roots: ambiguity.roots, viewport: ambiguity.viewport)
-            if let chosen = stackedPick(matches, roots: ambiguity.roots, stack: stack) {
+            if let chosen = stackedPick(matches, roots: ambiguity.roots, stack: stack, viewport: ambiguity.viewport) {
                 return chosen
             }
             let hasUniqueIDs = matches.contains {
@@ -839,13 +844,25 @@ struct AccessibilityTargetResolver {
         return matches[0]
     }
 
-    /// Among several matches, the only one not beneath a page; else, when they all share one activation point, the one a touch there reaches.
-    static func stackedPick(_ matches: [UINode], roots: [UINode], stack: ScreenStack) -> UINode? {
+    /// Among several matches, the only one not beneath a page; else on Android the only one whose point the tap's cover check lets through; else, when they all share one activation point, the one a touch there reaches.
+    static func stackedPick(_ matches: [UINode], roots: [UINode], stack: ScreenStack, viewport: UIFrame?) -> UINode? {
         let uncovered = matches.filter { !stack.isBeneath($0, in: roots) }
         if uncovered.count == 1 {
             return uncovered[0]
         }
         let pool = uncovered.isEmpty ? matches : uncovered
+        if let viewport, pool.contains(where: \.isAndroid) {
+            let judged = coverRoots(roots, android: true)
+            let judgedStack = judged.count == roots.count ? stack : ScreenStack.build(roots: judged, viewport: viewport)
+            let reached = pool.filter { match in
+                guard let frame = match.frame else { return true }
+                let point = activationPoint(for: match, frame: frame)
+                return CoverJudge.drawnCover(of: match, at: UIPoint(x: point.x, y: point.y), roots: judged, viewport: viewport, stack: judgedStack) == nil
+            }
+            if reached.count == 1 {
+                return reached[0]
+            }
+        }
         let points = pool.compactMap { node in node.frame.map { activationPoint(for: node, frame: $0) } }
         guard points.count == pool.count, let first = points.first, points.allSatisfy({ point in
             abs(point.x - first.x) <= TransitionGuard.frameTolerance && abs(point.y - first.y) <= TransitionGuard.frameTolerance
