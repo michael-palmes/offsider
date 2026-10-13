@@ -38,6 +38,25 @@ struct AdbInputScriptTests {
         #expect(try AdbInputScript.scripts(for: two) == ["input keycombination 113 59 29"])
     }
 
+    @Test("`input` sends key combinations from Android 12 (API 31) on, and an unread level counts as recent")
+    func keyCombinationLevels() {
+        #expect(!AdbInputScript.sendsKeyCombinations(apiLevel: 28))
+        #expect(!AdbInputScript.sendsKeyCombinations(apiLevel: 30))
+        #expect(AdbInputScript.sendsKeyCombinations(apiLevel: 31))
+        #expect(AdbInputScript.sendsKeyCombinations(apiLevel: 36))
+        #expect(AdbInputScript.sendsKeyCombinations(apiLevel: nil))
+    }
+
+    @Test("only steps that become an `input keycombination` count as a key combination")
+    func detectsKeyCombination() {
+        let ctrl: UInt32 = 224
+        #expect(AdbInputScript.hasKeyCombination([.key(.down, usage: ctrl), .key(.press, usage: 4), .key(.up, usage: ctrl), .pause(0.05), .key(.press, usage: 42)]))
+        #expect(AdbInputScript.hasKeyCombination([.tap(AndroidPoint(x: 1, y: 1)), .key(.down, usage: ctrl), .key(.press, usage: 6), .key(.up, usage: ctrl)]))
+        #expect(!AdbInputScript.hasKeyCombination([.key(.press, usage: 40), .button(.press, .home)]))
+        #expect(!AdbInputScript.hasKeyCombination([.key(.down, usage: 40), .pause(2), .key(.up, usage: 40)]))
+        #expect(!AdbInputScript.hasKeyCombination([.key(.down, usage: ctrl), .key(.press, usage: 4)]))
+    }
+
     @Test("a held key or button is a long press; a press is a keyevent")
     func heldKeys() throws {
         #expect(try AdbInputScript.scripts(for: [.key(.down, usage: 40), .pause(2), .key(.up, usage: 40)]) == ["input keyevent --longpress 66"])

@@ -80,6 +80,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private var heldFingers: [AndroidPoint] = []
     /// The helper for multi-finger input when the route is `input`, which moves one finger; nil when the policy forbids it.
     private let multiTouchHelper: @MainActor () async throws -> HelperInputDriver?
+    /// The helper for a key combination `input` would drop (before Android 12); nil when `input` sends it, and throws when nothing can.
+    private let keyCombinationHelper: @MainActor () async throws -> HelperInputDriver?
 
     init(
         device: DeviceID,
@@ -89,6 +91,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
         focusedSecureField: @escaping @MainActor () async -> Bool = { false },
         multiTouchHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
+        keyCombinationHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
         readFocusedField: @escaping @MainActor () async -> FocusedFieldReading? = { nil },
         pasteFocused: @escaping @MainActor (AndroidFieldInfo) async throws -> HelperTextResult? = { _ in nil },
         sleep: @escaping @Sendable (Duration) async throws -> Void,
@@ -102,6 +105,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.replaceFocusedText = replaceFocusedText
         self.focusedSecureField = focusedSecureField
         self.multiTouchHelper = multiTouchHelper
+        self.keyCombinationHelper = keyCombinationHelper
         self.readFocusedField = readFocusedField
         self.pasteFocused = pasteFocused
         self.sleep = sleep
@@ -176,12 +180,20 @@ final class AndroidInputSession: InputSession, TextInputSession {
         var route = try await route()
         var down = touchIsDown
         let steps = try AndroidInputLowering.steps(for: event, touchIsDown: &down, scale: route.scale)
-        if case .adb = route.executor, steps.contains(where: \.isMultiTouch), let helper = try await multiTouchHelper() {
+        if case .adb = route.executor, let helper = try await helper(for: steps) {
             route = AndroidInputRoute(executor: .helper(helper), scale: route.scale, clipboard: route.clipboard, adbReason: route.adbReason)
             resolvedRoute = route
         }
         try await run(steps, through: route.executor)
         touchIsDown = down
+    }
+
+    /// The helper for steps `input` cannot send: several fingers, or a key combination it would drop.
+    private func helper(for steps: [AndroidInputStep]) async throws -> HelperInputDriver? {
+        if steps.contains(where: \.isMultiTouch) {
+            return try await multiTouchHelper()
+        }
+        return AdbInputScript.hasKeyCombination(steps) ? try await keyCombinationHelper() : nil
     }
 
     /// All-ASCII text as key events (gRPC `text` chunks, or adb `input text`); anything else pasted whole.
