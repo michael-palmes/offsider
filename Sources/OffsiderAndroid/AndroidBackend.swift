@@ -27,6 +27,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// The display cache entry this command loaded or last saved, so an unchanged one is not written again.
     private var displayEntries: [String: AndroidDisplayCacheEntry] = [:]
     private var avdNames: [String: String] = [:]
+    private var apiLevels: [String: Int?] = [:]
     /// Phones this command named, from their device-list row, once checked.
     var phones: [String: ConnectedPhone] = [:]
     /// The row routing read for a phone, so `requireConnectedPhone` checks it without listing again.
@@ -270,6 +271,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             focusedSecureField: { await self.hasFocusedSecureField(id) },
             multiTouchHelper: { try await self.multiTouchHelper(serial) },
+            keyCombinationHelper: { try await self.keyCombinationHelper(serial) },
             readFocusedField: { await self.focusedFieldReading(serial) },
             pasteFocused: { field in try await self.pasteIntoFocusedField(serial, expecting: field) },
             sleep: host.sleep,
@@ -282,6 +284,31 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     private func multiTouchHelper(_ serial: String) async throws -> HelperInputDriver? {
         guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
         return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
+    }
+
+    /// nil while `input` sends key combinations (API 31 and later, or an unread level); before that the helper, else a refusal.
+    private func keyCombinationHelper(_ serial: String) async throws -> HelperInputDriver? {
+        guard let level = await apiLevel(of: serial), !AdbInputScript.sendsKeyCombinations(apiLevel: level) else { return nil }
+        log(.debug, "`input` on \(serial) (API \(level)) has no keycombination, so a key combination needs the helper")
+        guard try AndroidInputPolicy.policy(host: host) != .input else {
+            throw AndroidError.keyCombinationNeedsHelper(serial, apiLevel: level, reason: nil)
+        }
+        switch try await treeSource(for: serial, announcingFallback: false) {
+        case .helper(let session): return HelperInputDriver(session: session)
+        case .uiautomator(let reason): throw AndroidError.keyCombinationNeedsHelper(serial, apiLevel: level, reason: reason)
+        }
+    }
+
+    /// `ro.build.version.sdk`, read once per command and only when input needs it; nil when it cannot be read.
+    private func apiLevel(of serial: String) async -> Int? {
+        if let known = apiLevels[serial] {
+            return known
+        }
+        let script = "getprop ro.build.version.sdk"
+        let result = try? await requireClient().shell(script, on: serial, timeout: .seconds(5), label: script)
+        let level = result.flatMap { Int($0.stdoutText.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        apiLevels[serial] = .some(level)
+        return level
     }
 
     /// Best effort: an unreadable screen does not block typing, since the guard only keeps a password off the clipboard.

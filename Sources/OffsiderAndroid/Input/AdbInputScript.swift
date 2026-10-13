@@ -18,6 +18,19 @@ enum AdbInputScript {
         return pack(commands)
     }
 
+    /// Android 12 (API 31) added `input keycombination`; before it, `input` prints its usage for one and exits 0.
+    static let keyCombinationAPILevel = 31
+
+    /// Whether `input` on this API level sends a key combination; an unknown level counts as recent.
+    static func sendsKeyCombinations(apiLevel: Int?) -> Bool {
+        (apiLevel ?? keyCombinationAPILevel) >= keyCombinationAPILevel
+    }
+
+    /// Whether `scripts(for:)` turns any of these steps into an `input keycombination`.
+    static func hasKeyCombination(_ steps: [AndroidInputStep]) -> Bool {
+        steps.indices.contains { (try? keyCombination(at: $0, in: steps)) != nil }
+    }
+
     /// Total device-side waiting, so the caller can give the shell call enough time.
     static func waitTime(of steps: [AndroidInputStep]) -> TimeInterval {
         steps.reduce(0) { total, step in

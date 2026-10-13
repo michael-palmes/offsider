@@ -40,7 +40,8 @@ struct AndroidGrpcInputTests {
         environment: [String: String] = [:],
         failingScript: @escaping @Sendable (String) -> Bool = { _ in false },
         uiautomatorDump: String? = nil,
-        avdHardware: String? = nil
+        avdHardware: String? = nil,
+        apiLevel: Int? = nil
     ) throws -> Rig {
         let server = FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556"],
@@ -55,6 +56,7 @@ struct AndroidGrpcInputTests {
                 if service.hasSuffix(AndroidDisplayGeometry.probeScript) { return FakeAdbServer.shell(stdout: geometry) }
                 if service.hasSuffix(AndroidDeviceDirectory.propertiesScript) { return FakeAdbServer.shell(stdout: "Offsider_E2E\n\n1\n16\n36\n") }
                 if let uiautomatorDump, service.contains("uiautomator dump") { return FakeAdbServer.shell(stdout: uiautomatorDump) }
+                if let apiLevel, service.hasSuffix(":getprop ro.build.version.sdk") { return FakeAdbServer.shell(stdout: "\(apiLevel)\n") }
                 if failingScript(String(service.dropFirst("shell,v2,raw:".count))) {
                     return FakeAdbServer.shell(stderr: "Error: injection failed\n", status: 1)
                 }

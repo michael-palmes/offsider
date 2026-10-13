@@ -361,6 +361,16 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    /// `input` before Android 12 drops a key combination with no error, so only the helper can send one.
+    static func keyCombinationNeedsHelper(_ serial: String, apiLevel: Int, reason: HelperUnavailableReason?) -> AndroidError {
+        let lead = "\(serial) runs API \(apiLevel), where `input` has no key combinations (Android 12, API 31, added them), so Offsider sent nothing. Combinations go through the UiAutomation helper there,"
+        switch reason {
+        case nil: return AndroidError(.helperUnavailable, "\(lead) and OFFSIDER_ANDROID_INPUT is input: unset it, then retry.")
+        case .forcedOff?: return AndroidError(.helperUnavailable, "\(lead) and OFFSIDER_ANDROID_TREE is uiautomator: unset it, then retry.")
+        case let reason?: return AndroidError(.helperUnavailable, "\(lead) which is unavailable on \(serial) (\(reason)).")
+        }
+    }
+
     static func sliderNeedsHelper(_ serial: String, reason: HelperUnavailableReason) -> AndroidError {
         guard reason != .forcedOff else {
             return AndroidError(

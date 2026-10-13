@@ -61,6 +61,18 @@ struct AndroidKeyboardlessInputTests {
         #expect(rig.emulator.calls.isEmpty)
     }
 
+    @Test("before API 31 a key combination follows the keys onto `input`, so it is refused there rather than dropped")
+    func keyCombinationBeforeAPI31() async throws {
+        let rig = try AndroidGrpcInputTests.rig(environment: ["OFFSIDER_ANDROID_INPUT": "input"], avdHardware: Self.noKeyboard, apiLevel: 28)
+        let error = await #expect(throws: AndroidError.self) {
+            try await rig.backend.perform(InputEvent.selectAllAndDelete(modifier: InputEvent.controlKey), on: Self.device)
+        }
+
+        #expect(error?.kind == .helperUnavailable)
+        #expect(rig.emulator.calls.isEmpty)
+        #expect(rig.adbScripts.isEmpty)
+    }
+
     @Test("a key held across a touch is refused before anything is sent")
     func keyAcrossTouchRefused() async throws {
         let rig = try AndroidGrpcInputTests.rig(avdHardware: Self.noKeyboard)
