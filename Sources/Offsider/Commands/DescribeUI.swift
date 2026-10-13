@@ -12,7 +12,8 @@ struct DescribeUI: AsyncParsableCommand {
         active display is described; --display checks that it is the one you expect. On an iOS simulator it also reads the \
         element at the screen's centre once, so context names a view another process presents over the app (presented) and \
         a screen-sized view listed off screen that the centre lands in (staleFrame); on Android, context.hidden counts \
-        branches the helper left out as not visible to the user.
+        branches the helper left out as not visible to the user, and context.hiddenBranches names up to five of them \
+        ({id, label, className, frame}, on-screen and larger first).
         """
     )
 

@@ -36,7 +36,7 @@
 - Sliders and progress bars report `value` as a percentage of their range (`"25%"`, `"39.95%"`), and a partly checked checkbox reports `"2"`. A Jetpack Compose `testTag` is the `id` when the node has no resource id.
 - Alerts show upper-case button text (`DELETE`, `CANCEL`) with ids `android:id/button1` and `android:id/button2`; `--id button1` matches through the `:id/` suffix.
 - `# the device stopped listing nodes at its limit` at the end of `describe-ui --summary` means the tree itself is incomplete.
-- `# hidden: N branches not visible to the user` (`context.hidden`) counts subtrees the helper skipped as not visible. When the screenshot shows content the tree lacks, the app may hide it from accessibility (`importantForAccessibility="no-hide-descendants"`) or a parent may clip it; read coordinates off a `--scale points` screenshot.
+- `# hidden: N branches not visible to the user` (`context.hidden`) counts subtrees the helper skipped as not visible, and names up to five by id, label or class with their frame (`context.hiddenBranches`); keyboard branches are counted, not named. When the screenshot shows content the tree lacks, the app may hide it from accessibility (`importantForAccessibility="no-hide-descendants"`) or a parent may clip it; read coordinates off a `--scale points` screenshot.
 
 ## Input
 

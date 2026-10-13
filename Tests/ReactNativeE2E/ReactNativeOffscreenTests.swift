@@ -65,16 +65,19 @@ struct ReactNativeOffscreenTests {
         let app = RNApp(platform)
         try await app.open("parked-sheet-test")
 
-        let onScreen = try await app.run("describe-ui --flat --on-screen --format ndjson").stdout
-        let full = try await app.run("describe-ui").stdout
+        let onScreen = DescribeUITree.nodes(in: try DescribeUITree.parse(try await app.run("describe-ui --on-screen").stdout)).compactMap { $0["id"] as? String }
+        let full = try DescribeUITree.parse(try await app.run("describe-ui").stdout)
+        let fullIDs = DescribeUITree.nodes(in: full).compactMap { $0["id"] as? String }
 
         #expect(onScreen.contains("parked-sheet-test-body-save"))
         #expect(!onScreen.contains("parked-sheet-test-apply"))
         switch platform {
         case .ios:
-            #expect(full.contains("parked-sheet-test-apply"), "iOS reports the parked sheet with its off-screen frame")
+            #expect(fullIDs.contains("parked-sheet-test-apply"), "iOS reports the parked sheet with its off-screen frame")
         case .android:
-            #expect(!full.contains("parked-sheet-test-apply"), "Android's helper omits invisible nodes from every view")
+            #expect(!fullIDs.contains("parked-sheet-test-apply"), "Android's helper omits invisible nodes from every view")
+            let named = ((full["context"] as? [String: Any])?["hiddenBranches"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+            #expect(named.contains("parked-sheet-test-apply"), "and names the hidden branches in context")
         }
     }
 

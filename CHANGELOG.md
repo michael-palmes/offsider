@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - On-screen text output (`describe-ui --summary`, `--on-screen --format text`, `--diff`'s full view and batch `describe-ui` steps) closes with `# off-screen: N elements folded into runs; check one with assert --label-contains <text> --allow-offscreen` when off-screen runs hide elements, so a grep that misses a run's item is not read as absent. The byte budget never cuts it, and JSON is unchanged.
 - `screenshot --mask-skip-beneath` (and batch screenshot steps) leaves matches of `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text`, `--mask-emails` and the evidence run's email and id masks unpainted when their element is on a screen beneath a page; it is the only way a capture leaves a run mask unpainted. Password fields and `--mask-region` are always painted, and with no page found nothing is skipped. `--json` adds `skippedBeneath` per kind, stderr counts them, and the run manifest adds `skippedBeneath` (null without the flag). `record-video` and `stream-video` do not take it.
+- `describe-ui` on Android names up to five of the branches the helper left out as not visible, on-screen and larger first, by id, label or class with their frame in points: `# hidden: 3 branches not visible to the user: id=drawer at (0, 0) 280x874; ...` and `context.hiddenBranches` (`{id, label, className, frame}`, null when not named). A label is never taken from an editable or password field, and is masked and cut to 40 characters. This needs helper 1.6.0.
 
 ### Changed
 
