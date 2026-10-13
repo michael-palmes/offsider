@@ -326,7 +326,8 @@ launch_android() {
   require_screen "${2:-}"
   local adb
   adb=$(adb_bin)
-  "${adb}" -s "$1" shell am start -S -W -a android.intent.action.VIEW -d "${SCREEN_URL}/$2" "${APP_ID}"
+  # Android 9's `am start -S` matches no activity for a package-scoped link, so stop the app first.
+  "${adb}" -s "$1" shell "am force-stop ${APP_ID}; am start -W -a android.intent.action.VIEW -d ${SCREEN_URL}/$2 ${APP_ID}"
 }
 
 # Parsed by parse_dev_args: DEV_DEVICE and the optional DEV_SCREEN.
