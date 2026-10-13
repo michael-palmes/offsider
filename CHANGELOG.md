@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu close` on React Native's own dev menu on Android, which has no close control, presses Back and checks the menu closed (`"label":"Back"`) instead of exiting 2. After a switch or `--label` leaves that menu open, Back closes it only while a fresh read still shows it, so Back never pops the app's own screen.
 - On Android, when the menu key opens no dev menu while a text field has focus (an Expo dev client keeps the key from its menu then), `rn devmenu` says so instead of only suggesting a Release build, and an item React Native's own menu lacks says the same: move focus out of the field, or open Expo's menu with its Tools button, then run it again.
 - On Android 9 (API 28), coordinate input (`tap -x -y`, `swipe`, `drag`, `gesture`) and `orientation` no longer fail with "Could not read the display size and rotation": the display probe also reads Android 9's viewport line, which has no `INTERNAL`.
+- `doctor`'s `android-device.lock` on Android 9 no longer skips with "could not read the lock settings": Android 9 does not name the credential, so Offsider reads whether one is set from the keyguard. `lock.type` in `boot --json` and `doctor --json` is null when a credential is set but unnamed.
 
 ## [0.11.0] - 2026-10-12
 

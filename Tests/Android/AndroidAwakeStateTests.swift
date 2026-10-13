@@ -83,7 +83,7 @@ struct AndroidAwakeStateTests {
     @Test("an awake moto reads on and unlocked, charging over AC, with a PIN set and the first repeated key winning")
     func parseAwake() throws {
         let reading = try #require(AndroidAwakeState.parse(Self.motoAwake))
-        #expect(reading == AwakeReading(screen: .on, lockScreen: .hidden, credential: "pin", stayAwake: [], charging: [.ac], screenTimeoutMilliseconds: 1_800_000))
+        #expect(reading == AwakeReading(screen: .on, lockScreen: .hidden, credential: "pin", stayAwake: [], charging: [.ac], screenTimeoutMilliseconds: 1_800_000, keyguardSecure: true))
     }
 
     @Test("the maker the read script echoes first names the phone, and an empty one is nil")
@@ -116,6 +116,30 @@ struct AndroidAwakeStateTests {
         let reading = try #require(AndroidAwakeState.parse(pixel))
         #expect(reading.credential == "password")
         #expect(reading.timeoutCappedByPolicy)
+    }
+
+    @Test("Android 9 prints no credential type: a keyguard that is not secure reads as no credential")
+    func android9NoCredential() throws {
+        let reading = try #require(AndroidAwakeState.parse(Android9Fixtures.awakeRead))
+        #expect(reading.credential == "none")
+        #expect(!reading.hasCredential)
+        #expect(reading.isUsable)
+    }
+
+    @Test("a secure keyguard without a credential type has a credential of unknown type")
+    func secureUnknownType() throws {
+        let secure = Android9Fixtures.awakeRead.replacingOccurrences(of: "secure=false", with: "secure=true")
+        let reading = try #require(AndroidAwakeState.parse(secure))
+        #expect(reading.credential == nil)
+        #expect(reading.hasCredential)
+        #expect(reading.credentialName == "PIN, pattern or password")
+    }
+
+    @Test("a named credential type wins over the keyguard's secure line")
+    func namedTypeWins() throws {
+        let named = try #require(AndroidAwakeState.parse(Self.motoAwake.replacingOccurrences(of: "secure=true", with: "secure=false")))
+        #expect(named.credential == "pin")
+        #expect(named.hasCredential)
     }
 
     @Test("states map from mWakefulness, and output without it or the keyguard is unreadable")

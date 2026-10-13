@@ -57,8 +57,10 @@ public enum LockScreen: Equatable, Sendable {
 public struct AwakeReading: Equatable, Sendable {
     public var screen: ScreenPower
     public var lockScreen: LockScreen
-    /// `pin`, `pattern` or `password` when a credential is set and lock settings name it, `none` when they say there is none.
+    /// `pin`, `pattern` or `password` when a credential is set and lock settings name it, `none` when they or the keyguard say there is none.
     public var credential: String?
+    /// The keyguard's `secure` line: a credential is set, whatever its type; nil when not read.
+    public var keyguardSecure: Bool?
     /// The stay-awake setting: the sources that keep the screen on while charging.
     public var stayAwake: PowerSources
     /// Empty when not charging.
@@ -83,11 +85,13 @@ public struct AwakeReading: Equatable, Sendable {
         timeoutCappedByPolicy: Bool = false,
         maker: String? = nil,
         userUnlocked: Bool? = nil,
-        memTotalKB: Int? = nil
+        memTotalKB: Int? = nil,
+        keyguardSecure: Bool? = nil
     ) {
         self.screen = screen
         self.lockScreen = lockScreen
         self.credential = credential
+        self.keyguardSecure = keyguardSecure
         self.stayAwake = stayAwake
         self.charging = charging
         self.screenTimeoutMilliseconds = screenTimeoutMilliseconds
@@ -97,8 +101,8 @@ public struct AwakeReading: Equatable, Sendable {
         self.memTotalKB = memTotalKB
     }
 
-    /// A PIN, pattern or password is set.
-    public var hasCredential: Bool { credential != nil && credential != "none" }
+    /// A PIN, pattern or password is set: named by lock settings, else said by the keyguard.
+    public var hasCredential: Bool { credential.map { $0 != "none" } ?? (keyguardSecure == true) }
 
     /// Set up with a credential and not unlocked since boot: apps cannot start until someone unlocks it.
     public var awaitsFirstUnlock: Bool { hasCredential && userUnlocked == false }
