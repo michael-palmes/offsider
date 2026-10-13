@@ -11,18 +11,18 @@ struct AndroidButtonTests {
         try await AndroidE2E.shell("dumpsys power | grep -m1 mWakefulness=").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The newest line of AudioService's volume event log.
-    private func lastVolumeEvent() async throws -> String {
-        let log = try await AndroidE2E.shell("dumpsys audio | sed -n '/Events log: volume changes/,/^$/p' | grep adjustSuggestedStreamVolume | tail -1")
+    /// The newest volume event in that direction; Android 9 logs an ADJUST_SAME line after it, for the key's release.
+    private func lastVolumeEvent(_ direction: String) async throws -> String {
+        let log = try await AndroidE2E.shell("dumpsys audio | sed -n '/log: volume changes/,/^$/p' | grep 'adjustSuggestedStreamVolume.*dir:\(direction)' | tail -1")
         return log.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The age of the newest KEYCODE_MENU press in the input dispatcher's recent queue, in milliseconds.
+    /// The age of the newest KEYCODE_MENU press in the input dispatcher's recent queue, in milliseconds (Android 9 prints `keyCode=82`, `age=76.0ms`).
     private func newestMenuPressAge() async throws -> Int? {
         let queue = try await AndroidE2E.shell("dumpsys input | sed -n '/RecentQueue/,/PendingEvent/p'")
         return queue.split(separator: "\n")
-            .filter { $0.contains("keyCode=MENU(82)") && $0.contains("action=DOWN") }
-            .compactMap { line in line.firstMatch(of: #/age=(\d+)ms/#).flatMap { Int($0.1) } }
+            .filter { ($0.contains("keyCode=MENU(82)") || $0.contains("keyCode=82,")) && $0.contains("action=DOWN") }
+            .compactMap { line in line.firstMatch(of: #/age=(\d+)(?:\.\d+)?ms/#).flatMap { Int($0.1) } }
             .min()
     }
 
@@ -63,17 +63,21 @@ struct AndroidButtonTests {
     func appSwitch() async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
         try await AndroidE2E.run("button app-switch")
-        _ = try await AndroidE2E.waitForNode { ($0["id"] as? String)?.hasSuffix(":id/overview_panel") == true }
+        // Android 9 shows SystemUI's own Recents, where each task card has a dismiss button.
+        _ = try await AndroidE2E.waitForNode { node in
+            let id = node["id"] as? String ?? ""
+            return id.hasSuffix(":id/overview_panel") || id == "com.android.systemui:id/dismiss_task"
+        }
         try await AndroidE2E.run("button home")
     }
 
     @Test("volume-up and volume-down reach AudioService as volume keys", arguments: [("volume-up", "ADJUST_RAISE"), ("volume-down", "ADJUST_LOWER")])
     func volume(button: String, direction: String) async throws {
-        let before = try await lastVolumeEvent()
+        let before = try await lastVolumeEvent(direction)
         try await AndroidE2E.run("button \(button)")
         try await waitFor("a \(direction) volume event") {
-            let now = try await lastVolumeEvent()
-            return now != before && now.contains("dir:\(direction)")
+            let now = try await lastVolumeEvent(direction)
+            return !now.isEmpty && now != before
         }
     }
 

@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On Android 9 (API 28), coordinate input (`tap -x -y`, `swipe`, `drag`, `gesture`) and `orientation` no longer fail with "Could not read the display size and rotation": the display probe also reads Android 9's viewport line, which has no `INTERNAL`.
 - `doctor`'s `android-device.lock` on Android 9 no longer skips with "could not read the lock settings": Android 9 does not name the credential, so Offsider reads whether one is set from the keyguard. `lock.type` in `boot --json` and `doctor --json` is null when a credential is set but unnamed.
 - On Android 9, a selector `tap`, `wait` or `describe-ui` right after a screen change that opens or closes a window, such as a dialog or a React Native `Modal`, no longer fails with "found no window": when Android's window list misses the app's window, helper 1.6.0 has it read again once, which costs nothing when the window is listed.
+- `permission` on Android 9 (API 28) no longer fails with "android.permission.CAMERA is not a runtime permission" for a permission the app has never been granted or asked for: before Android 10, `dumpsys package` lists only runtime permissions with saved state, so Offsider also reads the device's dangerous permissions there, and `permission show` lists the rest as denied.
+- `permission reset` on Android 12 and earlier (API 32 and below) no longer fails with "Unknown command: clear-permission-flags": `pm` gained that command in Android 13, so there `reset` only revokes, and a note says when a permission the user fixed with "Don't ask again" stays denied.
 
 ## [0.11.0] - 2026-10-12
 
