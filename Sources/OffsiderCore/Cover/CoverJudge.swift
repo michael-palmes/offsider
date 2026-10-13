@@ -103,19 +103,30 @@ public enum CoverJudge {
         return chain
     }
 
-    /// The drawn chain's top, looking beneath full-screen native hosts with nothing to touch at the point (an Expo dev client's tools button), as Android passes the touch on.
+    /// The drawn chain's top, looking beneath full-screen views with nothing to touch at the point (an Expo dev client's tools button), as Android passes the touch on.
     static func drawnTop(at point: UIPoint, in roots: [UINode], holding targets: [UINode], viewport: UIFrame, stack: ScreenStack) -> UINode? {
+        let targetsPage = targets.lazy.compactMap { ScreenStack.index(of: $0, in: roots) }.compactMap(stack.page(holding:)).first
         var remaining = roots
         for _ in 0..<8 {
             guard let chain = drawnChain(at: point, in: remaining), let top = chain.last else { return nil }
-            let onPage = ScreenStack.index(of: top, in: roots).map { index in stack.pages.contains { $0.content.contains(index) } } ?? false
-            guard chain.count > 1, !onPage, !isPlausibleOccluder(top), !isReactView(top, in: chain), let frame = top.frame, spans(frame, viewport),
+            guard chain.count > 1, !isPlausibleOccluder(top), passesTouch(top, in: chain, roots: roots, stack: stack, targetsPage: targetsPage),
+                  let frame = top.frame, spans(frame, viewport),
                   !targets.contains(where: { target in top.flattened().contains { $0.isSameElement(as: target) } }) else {
                 return top
             }
             remaining = remaining.map { $0.removing(top) }
         }
         return nil
+    }
+
+    /// A native host off every page passes the touch on; a React Native view only on the target's own page, never the page itself.
+    private static func passesTouch(_ node: UINode, in chain: [UINode], roots: [UINode], stack: ScreenStack, targetsPage: ScreenStack.Page?) -> Bool {
+        let index = ScreenStack.index(of: node, in: roots)
+        let react = isReactView(node, in: chain)
+        if let index, let page = targetsPage, index != page.index, page.content.contains(index) {
+            return react
+        }
+        return !react && !(index.map { index in stack.pages.contains { $0.content.contains(index) } } ?? false)
     }
 
     /// The classes Android names a React Native view by: `ReactViewGroup`'s own, or a role's.

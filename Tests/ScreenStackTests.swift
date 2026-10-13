@@ -38,6 +38,22 @@ struct ScreenStackTests {
         #expect(stack.screenName(of: buy) == "stack-test-full-page-1")
     }
 
+    @Test("the page an element is drawn on is its page only while no page covers it")
+    func pageHolding() throws {
+        let tree = try Self.golden(.android, "stack-test@full")
+        let stack = Self.stack(tree)
+        let buy = try #require(ScreenStack.index(of: try Self.node("stack-test-full-buy", in: tree), in: tree.roots))
+        let tab = try #require(ScreenStack.index(of: try Self.node("stack-test-tab-products", in: tree), in: tree.roots))
+
+        #expect(stack.page(holding: buy)?.name == "stack-test-full-page-1")
+        #expect(stack.page(holding: tab) == nil)
+
+        let settings = TapCoverTests.settingsOverHome()
+        let overlay = try #require(settings.roots[0].children.last)
+        let index = try #require(ScreenStack.index(of: overlay, in: settings.roots))
+        #expect(Self.stack(settings).page(holding: index)?.name == "settings-page")
+    }
+
     @Test("Android siblings without drawing order give no stack")
     func androidWithoutDrawingOrder() throws {
         func strip(_ node: UINode) -> UINode {

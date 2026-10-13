@@ -211,6 +211,15 @@ struct TapCommandTests {
         #expect(backend.session.calls.count == 1)
     }
 
+    @Test("on Android --fail-if-covered taps a button under an empty React Native view drawn over its own page")
+    func emptyReactViewOnOwnPageTaps() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [TapCoverTests.settingsOverHome()])
+
+        try await Self.tapAndroid(["--id", "settings-save", "--fail-if-covered"], on: backend)
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 725))])
+    }
+
     @Test("--wait-timeout reads again while a confident cover stays, and taps once it has gone")
     func waitOutlastsCover() async throws {
         let page = try Self.fullPage()
