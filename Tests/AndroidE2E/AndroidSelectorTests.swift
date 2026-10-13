@@ -40,6 +40,21 @@ struct AndroidSelectorTests {
         _ = try await AndroidE2E.waitForLabel(of: "alert-test-state") { $0 == "Alert State: \(state)" }
     }
 
+    @Test("a selector tap right after each of five window changes finds the app's window")
+    func tapAfterWindowChanges() async throws {
+        try await AndroidE2E.open("modal-navigation-test", waitingFor: "modal-navigation-test-open")
+        for _ in 1...5 {
+            try await AndroidE2E.run("tap --id modal-navigation-test-open")
+            try await AndroidE2E.run("tap --id modal-navigation-test-done")
+        }
+        try await AndroidE2E.run("tap --id modal-navigation-test-open")
+        try await AndroidE2E.run("tap --id modal-navigation-test-detail-link")
+        try await AndroidE2E.run("tap --id modal-navigation-test-complete")
+        try await AndroidE2E.run("tap --id modal-navigation-test-back")
+        try await AndroidE2E.run("tap --id modal-navigation-test-done")
+        _ = try await AndroidE2E.waitForLabel(of: "modal-navigation-test-state") { $0 == "Modal Navigation State: Completed" }
+    }
+
     @Test("--label taps a row in a long list")
     func longListRow() async throws {
         try await AndroidE2E.open("long-scroll-test", waitingFor: "long-scroll-test-row-3")

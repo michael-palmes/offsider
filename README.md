@@ -20,7 +20,7 @@ You need:
 
 - An Apple silicon Mac (arm64) on macOS 26 or later. Intel Macs are not supported.
 - Xcode 26 or later, selected with `xcode-select` or `DEVELOPER_DIR`, even if you only drive Android, because the binary links the simulator frameworks. Tested on Xcode 27, where simulators run under Device Hub and Simulator.app is not required.
-- For Android: the Android SDK with Platform-Tools (and the Android Emulator for emulators) and `arm64-v8a` system images, tested on API 36 (the adb fallback needs API 33 or later). Offsider finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` (where Android Studio installs it) or `adb` on your `PATH`.
+- For Android: the Android SDK with Platform-Tools (and the Android Emulator for emulators) and `arm64-v8a` system images, tested on API 36 (the adb fallback needs API 33 or later); screen reads, selectors and taps are also checked on Android 9, API 28. Offsider finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` (where Android Studio installs it) or `adb` on your `PATH`.
 - For a physical iPhone or iPad: a USB cable. The host's Xcode decides which commands work; see [Physical iPhones and iPads](#physical-iphones-and-ipads).
 
 To install the signed release tarball by hand instead, see [Verified tarball](#verified-tarball).
