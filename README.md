@@ -77,6 +77,8 @@ If input seems to be ignored, or screen reads fail, run `offsider doctor --devic
 
 ## Privacy and security
 
+![Offsider inside your Mac reaches a simulator, which shows a password field as bullets, and an emulator; its only link out is a USB cable to a phone, and a path towards the network stops at the Mac's edge.](docs/assets/privacy.png)
+
 - **Nothing leaves your Mac.** Offsider has no telemetry, no accounts and no update checks. It never connects to non-loopback addresses and never resolves hostnames; it uses only Unix sockets and loopback TCP to local developer daemons (the adb server, the Android Emulator and usbmuxd), and talks to simulators through Xcode's frameworks. `rn open` reads Metro's `/status` on 127.0.0.1 only, at the port you pass.
 - **Your agent sees what the device shows.** A device's screen and notifications reach `describe-ui` and screenshots, and from there whatever your agent sends to its model provider; Offsider itself sends nothing. On a physical device, turn on a Focus (iPhone or iPad) or Do Not Disturb (Android) first.
 - **Password fields stay hidden.** Password fields (iOS secure text fields, Android `password="true"`) read as bullets, one per character, in `describe-ui`, selectors, `wait`, `assert` and `--verify`, so a typed password keeps its length and nothing else. Their `id`, `label` and hint stay readable; `--value` never matches them. `type` logs only the number of characters, never the text, and `batch` records and errors show `<N characters>` for a `type` step.
