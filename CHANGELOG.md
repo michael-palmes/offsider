@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- On an Android emulator whose AVD has no hardware keyboard (`hw.keyboard=no`, as `avdmanager` leaves a phone profile), `type`, `key`, `button` and batch key steps no longer do nothing: the emulator's key devices then declare too few keys, so the guest dropped every key the gRPC transport sent (Android 9 and 16 alike). Offsider reads `hw.keyboard` from the running AVD's `hardware-qemu.ini`, with no device call, and sends keys, buttons and ASCII text there as it would without gRPC; touches, screenshots and the clipboard stay on gRPC, and AVDs with a keyboard are unchanged.
+
 ## [0.11.0] - 2026-10-12
 
 ### Added
