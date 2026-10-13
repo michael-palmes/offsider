@@ -147,7 +147,7 @@ enum ScreenCapture {
             }
         }
         targets.frames[.region] = plan.regions.map { UIFrame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
-        let beneathFrames = tree.map { targets.framesBeneathPages(in: $0) } ?? [:]
+        let beneathFrames = tree.map { targets.placeBeneath(in: $0, skip: false).painted } ?? [:]
 
         var image = capture.image
         var painted: [MaskKind: Int] = [:]

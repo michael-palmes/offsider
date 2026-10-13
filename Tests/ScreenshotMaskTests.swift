@@ -184,16 +184,20 @@ struct ScreenshotMaskTests {
         }
     }
 
-    @Test("a label on both a covered screen and the page over it is painted on both, and the covered one is counted in maskedBeneath")
-    func masksBeneathAPage() async throws {
-        func relabel(_ node: UINode) -> UINode {
-            var copy = node
-            if node.id == "stack-test-full-close-later" { copy.label = "Stack Depth: 1" }
-            copy.children = node.children.map(relabel)
+    /// The Android stack-test@full golden, a full page over a mounted stack, with `edit` applied to every node.
+    static func stackTree(_ edit: (UINode) -> UINode = { $0 }) throws -> UITree {
+        func walk(_ node: UINode) -> UINode {
+            var copy = edit(node)
+            copy.children = copy.children.map(walk)
             return copy
         }
         var tree = try TreeGoldens.tree(of: TreeGoldens.Golden(platform: .android, screen: "stack-test@full"))
-        tree.roots = tree.roots.map(relabel)
+        tree.roots = tree.roots.map(walk)
+        return tree
+    }
+
+    /// Runs `screenshot` with `arguments` on `tree` over a white 1080 x 2424 capture.
+    static func stackCapture(_ arguments: [String], tree: UITree) async throws -> (report: ScreenshotReport, image: CGImage, backend: FakeDeviceBackend) {
         let device = DeviceID(rawValue: "emulator-5554", platform: .android)
         let backend = FakeDeviceBackend(
             platform: .android, trees: [tree],
@@ -202,9 +206,29 @@ struct ScreenshotMaskTests {
         )
         let path = Self.temporaryPath()
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let command = try Screenshot.parse(["--mask-label", "Stack Depth: 1", "--output", path, "--device", device.rawValue])
+        let command = try Screenshot.parse(arguments + ["--output", path, "--device", device.rawValue])
         let report = try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: try command.maskPlan(environment: [:]))
-        let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
+        return (report, try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path))), backend)
+    }
+
+    /// The tree with the page holding an element identical to stack-test-depth beneath it, frame included.
+    static func stackTreeWithPageCopy() throws -> UITree {
+        let depth = try #require(try stackTree().roots.flatMap { $0.flattened() }.first { $0.id == "stack-test-depth" })
+        return try stackTree { node in
+            var copy = node
+            if node.id == "stack-test-full-page-1" { copy.children.append(depth) }
+            return copy
+        }
+    }
+
+    @Test("a label on both a covered screen and the page over it is painted on both, and the covered one is counted in maskedBeneath")
+    func masksBeneathAPage() async throws {
+        let tree = try Self.stackTree { node in
+            var copy = node
+            if node.id == "stack-test-full-close-later" { copy.label = "Stack Depth: 1" }
+            return copy
+        }
+        let (report, image, _) = try await Self.stackCapture(["--mask-label", "Stack Depth: 1"], tree: tree)
 
         #expect(report.maskedBy == [.label: 2])
         #expect(report.maskedBeneath == [.label: 1])
@@ -212,6 +236,15 @@ struct ScreenshotMaskTests {
         #expect(Self.pixel(image, 79, 433) == Self.black)
         #expect(Self.pixel(image, 394, 315) == Self.black)
         #expect(Self.pixel(image, 538, 1575) == Self.white)
+    }
+
+    @Test("a page element identical to one beneath the page is placed by its position, so only the one beneath counts in maskedBeneath")
+    func identicalElementOnThePage() async throws {
+        let (report, image, _) = try await Self.stackCapture(["--mask-id", "stack-test-depth"], tree: try Self.stackTreeWithPageCopy())
+
+        #expect(report.maskedBy == [.id: 2])
+        #expect(report.maskedBeneath == [.id: 1])
+        #expect(Self.pixel(image, 79, 433) == Self.black)
     }
 
     @Test("masks on a tree with no covered screen report no maskedBeneath")
