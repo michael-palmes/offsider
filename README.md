@@ -1,8 +1,8 @@
-![The Offsider wordmark beside three chevrons pointing at a target on a phone's screen, with a second phone behind it, over the tagline: a hand for your agent on the iOS Simulator and the Android Emulator.](docs/assets/hero.png)
+![The Offsider wordmark beside three chevrons pointing at a target on a phone's screen, with a second phone behind it trailing a USB cable, over the tagline: a hand for your agent on iOS and Android, simulated or real.](docs/assets/hero.png)
 
 # Offsider
 
-A hand for your agent on the iOS Simulator and the Android Emulator.
+A hand for your agent on iOS and Android, simulated or real.
 
 [![CI](https://github.com/michael-palmes/offsider/actions/workflows/ci.yml/badge.svg)](https://github.com/michael-palmes/offsider/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/michael-palmes/offsider?sort=semver)](https://github.com/michael-palmes/offsider/releases/latest)

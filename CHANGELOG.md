@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `rn open` without `--wait-id` no longer takes an empty app window, or one holding only Expo's dev menu button (`Tools`), for the app being up, as a debug build shows while its bundle loads; a timeout says whether the Bundling banner was still showing or the window stayed empty.
+- The tagline is now "A hand for your agent on iOS and Android, simulated or real." `offsider --help`, the bundled skill's description and the Homebrew formula's description name USB iPhones, iPads and Android phones beside simulators and emulators, and the formula's homepage is https://offsidercli.com/.
 
 ### Fixed
 
