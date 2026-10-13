@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On Android, when the menu key opens no dev menu while a text field has focus (an Expo dev client keeps the key from its menu then), `rn devmenu` says so instead of only suggesting a Release build, and an item React Native's own menu lacks says the same: move focus out of the field, or open Expo's menu with its Tools button, then run it again.
 - On Android 9 (API 28), coordinate input (`tap -x -y`, `swipe`, `drag`, `gesture`) and `orientation` no longer fail with "Could not read the display size and rotation": the display probe also reads Android 9's viewport line, which has no `INTERNAL`.
 - `doctor`'s `android-device.lock` on Android 9 no longer skips with "could not read the lock settings": Android 9 does not name the credential, so Offsider reads whether one is set from the keyguard. `lock.type` in `boot --json` and `doctor --json` is null when a credential is set but unnamed.
+- On Android 9, a selector `tap`, `wait` or `describe-ui` right after a screen change that opens or closes a window, such as a dialog or a React Native `Modal`, no longer fails with "found no window": when Android's window list misses the app's window, helper 1.6.0 has it read again once, which costs nothing when the window is listed.
 
 ## [0.11.0] - 2026-10-12
 
