@@ -123,7 +123,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     static let focusPoll: Duration = .milliseconds(250)
 
     /// `--into-*` taps the field and waits for focus; `--require-focus-id` checks it. Either throws before any text is sent.
+    /// Returns the password-field verdict of a read with no tap after it, for the input session to reuse; nil when there was none.
     @MainActor
+    @discardableResult
     func ensureFocus(
         backend: any DeviceBackend,
         device: DeviceID,
@@ -133,14 +135,14 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         beforeTap: @MainActor (UITree) throws -> Void = { _ in },
         refusingSecureTarget secureRefusal: CLIError? = nil,
         tap: @MainActor (InputEvent) async throws -> Void
-    ) async throws {
+    ) async throws -> KnownSecureFocus? {
         let simulator = device.platform == .ios && !device.isPhysicalIOSDevice
         guard requireFocusID != nil || intoQuery != nil else {
             // An unreadable screen does not block typing: Android still sends a password field's text through the helper.
-            if let secureRefusal, !simulator, (try? await backend.accessibilityTree(for: device))?.secureFocus == .secureFocused {
-                throw secureRefusal
-            }
-            return
+            guard let secureRefusal, !simulator else { return nil }
+            guard let tree = try? await backend.accessibilityTree(for: device) else { return .unknown }
+            if tree.secureFocus == .secureFocused { throw secureRefusal }
+            return .notSecure
         }
         if let requireFocusID {
             guard !simulator else {
@@ -162,9 +164,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 )
             }
             if let secureRefusal, focused?.isSecure == true { throw secureRefusal }
-            return
+            return nil
         }
-        guard let query = intoQuery else { return }
+        guard let query = intoQuery else { return nil }
         let cover = TapCover(override: "tap the field with `offsider tap --allow-covered` and type without --into-id")
         let polled = try await AccessibilityPoller.resolveWithPolling(
             query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25,
@@ -184,14 +186,14 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             try await clock.sleep(Self.focusPoll)
             warn("the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value.")
             logger.info().log("Tapped \(query.selectorDescription); focusCheck: unproven")
-            return
+            return nil
         }
         let deadline = clock.now() + Self.focusTimeout
         repeat {
             try await clock.sleep(Self.focusPoll)
             if let tree = try? await backend.accessibilityTree(for: device), Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator) {
                 logger.info().log("\(query.selectorDescription) has focus")
-                return
+                return nil
             }
         } while clock.now() < deadline
         throw CLIError(
@@ -265,7 +267,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let throughSession = device.platform == .android || device.isPhysicalIOSDevice
         let hidEvents = throughSession ? [] : try Self.checkedIOSEvents(for: inputText, replacing: replace, logger: logger)
         let secureRefusal = refusingSecureArgument ? Self.secureFieldRefusal(device: device) : nil
-        try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
+        let knownFocus = try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
             if progress != nil, case .appearing(let id) = verification.mode {
                 try Verifier.refuseIfOnScreen(id, in: tree)
             }
@@ -275,7 +277,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         logger.info().log("Typing \(inputText.count) character\(inputText.count == 1 ? "" : "s")")
 
         if throughSession {
-            try await typeThroughSession(inputText, backend: backend, device: device, progress: progress)
+            try await InputSecrecy.$fromArgument.withValue(refusingSecureArgument) {
+                try await InputSecrecy.$knownFocus.withValue(knownFocus) {
+                    try await typeThroughSession(inputText, backend: backend, device: device, progress: progress)
+                }
+            }
             return
         }
 

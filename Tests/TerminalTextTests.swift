@@ -1,5 +1,5 @@
 import Foundation
-import OffsiderCore
+@testable import OffsiderCore
 import Testing
 
 @Suite("Terminal text")
@@ -32,6 +32,13 @@ struct TerminalTextTests {
         ("\u{FEFF}bom", #"\ufeffbom"#),
         ("anno\u{FFF9}tation\u{FFFB}", #"anno\ufff9tation\ufffb"#),
         ("tag\u{E0041}\u{E007F}", #"tag\udb40\udc41\udb40\udc7f"#),
+        ("soft\u{00AD}hyphen", #"soft\u00adhyphen"#),
+        ("mongolian\u{180E}vowel", #"mongolian\u180evowel"#),
+        ("deprecated\u{206A}format\u{206F}", #"deprecated\u206aformat\u206f"#),
+        ("selector\u{FE00}\u{FE0F}", #"selector\ufe00\ufe0f"#),
+        ("\u{FE0F}leading", #"\ufe0fleading"#),
+        ("a\u{FE0F}\u{FE0F}", "a\u{FE0F}\\ufe0f"),
+        ("supplement\u{E0100}\u{E01EF}", #"supplement\udb40\udd00\udb40\uddef"#),
     ])
     func hazardsEscaped(text: String, expected: String) {
         #expect(TerminalText.line(text) == expected)
@@ -67,6 +74,17 @@ struct TerminalTextTests {
         #expect(TerminalText.line(String(repeating: "b", count: 500)) == String(repeating: "b", count: 500))
         #expect(TerminalText.capped(String(repeating: "c", count: 510), cap: 10) == String(repeating: "c", count: 10) + "…(+500)")
         #expect(TerminalText.line(String(repeating: "d", count: 600), cap: nil).count == 600)
+        #expect(TerminalText.line(String(repeating: "e", count: 501)) == String(repeating: "e", count: 500) + "…(+1)")
+    }
+
+    @Test("one character holding thousands of combining marks is cut by scalars, so it cannot flood the output")
+    func combiningFlood() {
+        let flood = "a" + String(repeating: "\u{0301}", count: 20_000)
+        let shown = TerminalText.line(flood)
+        let marker = "…(+19501)"
+        #expect(shown.hasSuffix(marker))
+        #expect(shown.unicodeScalars.count - marker.unicodeScalars.count <= 600)
+        #expect(TerminalText.line("ok " + flood).hasSuffix("…(+19504)"))
     }
 
     @Test("colour codes survive only with keepsSGR; other escapes never do")
@@ -100,5 +118,21 @@ struct TerminalTextTests {
         #expect(TerminalText.isHazard("\u{200B}"))
         #expect(!TerminalText.isHazard(" "))
         #expect(!TerminalText.isHazard("é"))
+        #expect(!TerminalText.isHazard("\u{00AC}"))
+        #expect(!TerminalText.isHazard("\u{FE10}"))
+        #expect(!TerminalText.isHazard("\u{2065}"))
+    }
+}
+
+@Suite("Presentation selectors in ordinary emoji")
+struct PresentationSelectorTests {
+    @Test("a lone U+FE0F or U+FE0E after a visible scalar is ordinary text, as every emoji label needs")
+    func emojiLabelsStay() {
+        let label = "\u{270F}\u{FE0F} Typing active \u{2764}\u{FE0F} \u{263A}\u{FE0E}"
+        #expect(TerminalText.line(label) == label)
+        #expect(TerminalText.bareOrQuoted(label) == label)
+        var json = ""
+        OrderedJSON.writeString(label, to: &json)
+        #expect(json == "\"\(label)\"")
     }
 }

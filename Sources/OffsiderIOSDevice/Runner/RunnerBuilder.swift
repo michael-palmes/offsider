@@ -191,10 +191,42 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         return paths.sorted()
     }
 
-    /// The copy in the cache must hold exactly the files this build shipped, byte for byte; anything else is removed and refused.
+    /// Deletes Xcode's per-user state and Finder's `.DS_Store` from the copy: the digests leave them out, so they never reach xcodebuild.
+    static func scrubCopiedSource(_ project: URL) throws {
+        guard let walker = FileManager.default.enumerator(at: project, includingPropertiesForKeys: nil) else { return }
+        var unverified: [URL] = []
+        for case let url as URL in walker {
+            if url.lastPathComponent == "xcuserdata" {
+                unverified.append(url)
+                walker.skipDescendants()
+            } else if url.lastPathComponent == ".DS_Store" {
+                unverified.append(url)
+            }
+        }
+        for url in unverified { try FileManager.default.removeItem(at: url) }
+    }
+
+    /// Every entry in the copy that is not a folder, with its digest; nil for a symlink or anything else that is not a regular file.
+    static func copiedEntries(in directory: URL) throws -> [String: String?] {
+        let base = directory.standardizedFileURL.path
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey]
+        guard let walker = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys) else { return [:] }
+        var entries: [String: String?] = [:]
+        for case let url as URL in walker {
+            let values = try url.resourceValues(forKeys: Set(keys))
+            if values.isDirectory == true, values.isSymbolicLink != true { continue }
+            let relative = String(url.standardizedFileURL.path.dropFirst(base.count + 1))
+            entries[relative] = values.isRegularFile == true && values.isSymbolicLink != true
+                ? hex(SHA256.hash(data: try Data(contentsOf: url)))
+                : String?.none
+        }
+        return entries
+    }
+
+    /// The copy in the cache must hold exactly the files this build shipped, byte for byte, and nothing else; anything else is removed and refused.
     static func verifyCopiedSource(_ project: URL, expected: [String: String]) throws {
-        let actual = (try? fileDigests(in: project)) ?? [:]
-        guard actual == expected else {
+        let actual = (try? copiedEntries(in: project)) ?? [:]
+        guard actual == expected.mapValues(Optional.some) else {
             try? FileManager.default.removeItem(at: project)
             throw IOSDeviceError(
                 .runnerBuildFailed,
@@ -283,6 +315,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         let project = directory.appendingPathComponent("source", isDirectory: true)
         try? FileManager.default.removeItem(at: project)
         try FileManager.default.copyItem(at: source, to: project)
+        try Self.scrubCopiedSource(project)
         if let expectedSource { try Self.verifyCopiedSource(project, expected: expectedSource) }
         let log = directory.appendingPathComponent("build.log")
         let team = signing.team.map { " with team \($0)" } ?? ""

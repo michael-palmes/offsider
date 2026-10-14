@@ -149,7 +149,7 @@ struct LoginCommand: AsyncParsableCommand {
         // The caller holds the device lock, so no recording can start after this check.
         if recordingLive(DeviceLockKey(platform: route.device.platform, id: route.device.rawValue)) {
             throw CLIError(
-                errorDescription: "A recording is running on \(route.device.rawValue) (record-video), so login will not type a password until it stops. Stop the recording, then retry. Nothing was typed.",
+                errorDescription: "A recording is running on \(route.device.rawValue) (record-video or stream-video), so login will not type a password until it stops. Stop the recording, then retry. Nothing was typed.",
                 reason: .deviceBusy
             )
         }

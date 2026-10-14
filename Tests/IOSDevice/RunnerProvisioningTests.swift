@@ -218,7 +218,26 @@ struct RunnerProvisioningTests {
     }
 
     enum SourceDrift: String, CaseIterable {
-        case changed, extra, missing
+        case changed, extra, missing, nameHoldingXcuserdata, symlink
+    }
+
+    @Test("Xcode's per-user state in the bundled source is removed from the copy, so the build runs without it")
+    func xcuserdataScrubbed() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let expected = try fixture.digests()
+        let scheme = fixture.source.appendingPathComponent("OffsiderRunner.xcodeproj/xcuserdata/me.xcuserdatad/xcschemes/x.xcscheme")
+        try FileManager.default.createDirectory(at: scheme.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("<Scheme/>".utf8).write(to: scheme)
+        try Data("finder".utf8).write(to: fixture.source.appendingPathComponent(".DS_Store"))
+
+        let build = try await fixture.builder(expected: expected).build(for: .device(udid: "U"), deviceName: "iPhone")
+
+        #expect(fixture.xcodebuild.calls.count == 1)
+        let copy = build.directory.appendingPathComponent("source")
+        #expect(!FileManager.default.fileExists(atPath: copy.appendingPathComponent("OffsiderRunner.xcodeproj/xcuserdata").path))
+        #expect(!FileManager.default.fileExists(atPath: copy.appendingPathComponent(".DS_Store").path))
+        #expect(try XcodeRunnerBuilder.copiedEntries(in: copy) == expected.mapValues(Optional.some))
     }
 
     @Test("a runner source copy that differs from the compiled-in digests is removed and refused before xcodebuild runs", arguments: SourceDrift.allCases)
@@ -230,6 +249,8 @@ struct RunnerProvisioningTests {
         case .changed: try Data("final class Changed {}\n".utf8).write(to: fixture.source.appendingPathComponent("UITests/RunnerTests.swift"))
         case .extra: try Data("extra".utf8).write(to: fixture.source.appendingPathComponent("UITests/Extra.swift"))
         case .missing: try FileManager.default.removeItem(at: fixture.source.appendingPathComponent("project.yml"))
+        case .nameHoldingXcuserdata: try Data("extra".utf8).write(to: fixture.source.appendingPathComponent("UITests/notxcuserdata.swift"))
+        case .symlink: try FileManager.default.createSymbolicLink(at: fixture.source.appendingPathComponent("UITests/Linked.swift"), withDestinationURL: fixture.source.appendingPathComponent("project.yml"))
         }
 
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await fixture.builder(expected: expected).build(for: .device(udid: "U"), deviceName: "iPhone") }

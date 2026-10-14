@@ -69,11 +69,8 @@ struct StreamVideo: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
-        try await backend.prepare()
-        let booted = try await backend.requireBootedDevice(route.device)
-        if checksSecureField {
-            try await VideoMaskOptions.requireNoSecureField(command: "stream-video", backend: backend, device: booted.id)
-        }
+        let (device, marker) = try await RecordVideo.start(command: "stream-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
+        defer { marker.remove() }
 
         let cancellationFlag = CancellationFlag()
         let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
@@ -85,9 +82,9 @@ struct StreamVideo: AsyncParsableCommand {
 
         switch format {
         case .bgra:
-            try await streamBGRA(from: backend, device: booted.id, cancellationFlag: cancellationFlag)
+            try await streamBGRA(from: backend, device: device, cancellationFlag: cancellationFlag)
         default:
-            let source = VideoFrameSource(backend: backend, device: booted.id, scale: scale, regions: regions)
+            let source = VideoFrameSource(backend: backend, device: device, scale: scale, regions: regions)
             try await streamCompressedFrames(from: source, format: format, cancellationFlag: cancellationFlag)
         }
     }

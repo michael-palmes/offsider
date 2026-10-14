@@ -129,6 +129,10 @@ enum DeviceRouter {
             guard device.isPhysicalAndroidDevice else { return Route(backend: backend, device: device) }
             // Only the host-side device list has been read; nothing reaches the phone before this check.
             let allowance = try requireAllowed(platform: .android, key: serial, rawID: rawID, gate: gate)
+            let policy = gate.policy()
+            if let permitted = policy.permittedApps(for: allowance) {
+                backend.appScopes[serial] = AndroidAppScope(permitted: permitted, managedCeiling: policy.managed.allowedBundleIDs.map(Set.init))
+            }
             return Route(backend: backend, device: device, allowance: allowance)
         case .empty:
             throw CLIError(errorDescription: "Device ID cannot be empty. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")

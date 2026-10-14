@@ -106,6 +106,22 @@ struct DevicePolicyRoutingTests {
         #expect(allowed.allowance?.platform == .android)
     }
 
+    @Test("a phone's allowance apps, narrowed by the managed ceiling, reach the Android backend; no apps and no ceiling leave it unscoped")
+    func androidAppScope() async throws {
+        let server = Self.phoneServer("R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n")
+        let host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: server)
+        let pinned = try await Self.route("R58M123ABC", gate: Self.gate(
+            [PolicyFixtures.entry(.android, key: "R58M123ABC", apps: ["com.example.app", "com.example.other"])],
+            managed: ManagedDevicePolicy(allowedBundleIDs: ["com.example.app"])
+        ), host: host)
+        let scope = try #require((pinned.backend as? AndroidBackend)?.appScopes["R58M123ABC"])
+        #expect(scope.permitted == ["com.example.app"])
+        #expect(scope.managedCeiling == ["com.example.app"])
+
+        let open = try await Self.route("R58M123ABC", gate: Self.gate([PolicyFixtures.entry(.android, key: "R58M123ABC")]), host: host)
+        #expect((open.backend as? AndroidBackend)?.appScopes.isEmpty == true)
+    }
+
     @Test("a USB device reporting an emulator serial is refused")
     func spoofedEmulatorSerial() async throws {
         let server = Self.phoneServer("emulator-5554 device usb:1-1 model:Pixel_9 transport_id:2\n")
@@ -155,12 +171,37 @@ struct ListDevicesPolicyTests {
 @Suite("doctor device.policy")
 @MainActor
 struct DoctorDevicePolicyTests {
-    @Test("only an iPhone UDID or a serial adb lists as a phone is physical; simulators and AVDs are not")
+    @Test("an iPhone UDID and any Android name that is not a defined AVD are physical, even with no adb listing; simulators, emulator serials and AVDs are not")
     func physicalTargets() async {
-        #expect(await Doctor.physicalTarget(PolicyFixtures.phone.lowercased()) { _ in false }! == (.ios, PolicyFixtures.phone))
-        #expect(await Doctor.physicalTarget("R58M123ABC") { $0 == "R58M123ABC" }! == (.android, "R58M123ABC"))
-        #expect(await Doctor.physicalTarget("Offsider_E2E") { _ in false } == nil)
-        #expect(await Doctor.physicalTarget("ABCDEF00-0000-4000-8000-00000000ABCD") { _ in true } == nil)
+        func target(_ id: String, listed: Bool = false, avd: Bool = false) async -> (platform: DevicePlatform, key: String)? {
+            await Doctor.physicalTarget(id, isListedPhone: { _ in listed }, isDefinedAVD: { _ in avd })
+        }
+        #expect(await target(PolicyFixtures.phone.lowercased())! == (.ios, PolicyFixtures.phone))
+        #expect(await target("R58M123ABC", listed: true)! == (.android, "R58M123ABC"))
+        #expect(await target("R58M123ABC")! == (.android, "R58M123ABC"))
+        #expect(await target("Offsider_E2E", avd: true) == nil)
+        #expect(await target("emulator-5554") == nil)
+        #expect(await target("ABCDEF00-0000-4000-8000-00000000ABCD", listed: true) == nil)
+    }
+
+    @Test("doctor --fix on a serial no one allowed, with no adb server answering, reports only device.policy and starts no server")
+    func refusedWithoutListingStartsNothing() async throws {
+        let processes = RecordingProcessRunner()
+        let launcher = FakeLauncher()
+        let adb = FakeAdbServer(connect: .refuse) { _ in .hang }
+        let host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: adb, processes: processes, launcher: launcher)
+        let doctor = try Doctor.parse(["--device", "R58M123ABC", "--fix", "--json"])
+        let report = await DevicePolicyGate.$current.withValue(DevicePolicyRoutingTests.gate([])) {
+            await doctor.makeReport(host: host)
+        }
+        #expect(report.checks.filter { !$0.id.rawValue.hasPrefix("host.") && $0.id != .installBundle }.map(\.id) == [.devicePolicy])
+        #expect(report.checks.first?.status == .fail)
+        #expect(report.exitCode == .doctorFailures)
+        #expect(report.exitCode.rawValue == 4)
+        #expect(report.fixes.isEmpty)
+        #expect(processes.calls.isEmpty)
+        #expect(launcher.launches.isEmpty)
+        #expect(adb.requests.isEmpty)
     }
 
     @Test("a device no one allowed gets one failing device.policy check naming the allow command, and a policy object")
@@ -210,5 +251,35 @@ struct UnlockCodePolicyTests {
         #expect(try await UnlockCodeCommand.gatePhone("Offsider_E2E", rawID: "Offsider_E2E", action: .set, gate: refused) { _ in false } == true)
         let allowed = DevicePolicyRoutingTests.gate([PolicyFixtures.entry(.android, key: "R58M123ABC")])
         #expect(try await UnlockCodeCommand.gatePhone("R58M123ABC", rawID: "R58M123ABC", action: .set, gate: allowed) { _ in true } == true)
+    }
+}
+
+@Suite("runner and session stop --clean")
+@MainActor
+struct StopCleanPolicyTests {
+    @Test("--clean on a UDID no one allowed exits 7 with device_not_allowed before any session stops or devicectl runs", arguments: ["runner", "session"])
+    func cleanRefused(command: String) async throws {
+        let error = await #expect(throws: CLIError.self) {
+            try await DevicePolicyGate.$current.withValue(DevicePolicyRoutingTests.gate([])) {
+                if command == "runner" {
+                    try await RunnerStop.parse(["--device", PolicyFixtures.phone.lowercased(), "--clean"]).run()
+                } else {
+                    try await SessionStop.parse(["--device", PolicyFixtures.phone.lowercased(), "--clean"]).run()
+                }
+            }
+        }
+        #expect(error?.reason == .deviceNotAllowed)
+        #expect(error?.exitCode.rawValue == 7)
+        #expect(error?.hint?.contains("offsider device-access allow --device \(PolicyFixtures.phone)") == true)
+    }
+
+    @Test("--clean on an allowed UDID passes the gate; a plain stop never reads the policy")
+    func cleanAllowedAndPlainStopExempt() async throws {
+        let allowed = DevicePolicyRoutingTests.gate([PolicyFixtures.entry()])
+        #expect(try RunnerSessions.cleanableUDID(PolicyFixtures.phone, command: "runner stop --clean", gate: allowed) == PolicyFixtures.phone)
+        let unread = DevicePolicyGate(policy: { Issue.record("policy read"); return PhysicalDevicePolicy(managed: .none, list: .empty) })
+        try await DevicePolicyGate.$current.withValue(unread) {
+            try await RunnerStop.parse(["--device", PolicyFixtures.phone, "--json"]).run()
+        }
     }
 }

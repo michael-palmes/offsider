@@ -62,7 +62,7 @@ struct SessionStop: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        let cleanUDID = try clean ? RunnerSessions.physicalUDID(device ?? "", command: "session stop --clean") : nil
+        let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "session stop --clean") : nil
         let brokers = DeviceSessions.records(device: device)
         let manager = DeviceSessions.manager()
         for record in brokers {

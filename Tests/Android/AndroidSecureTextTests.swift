@@ -103,6 +103,39 @@ struct AndroidSecureTextTests {
         #expect(rig.emulator.calls == [.getClipboard, .setClipboard("héllo"), .setClipboard("saved")])
     }
 
+    @Test("argument text with an unreadable focused field goes only through the helper; without one it is helper_unavailable and never an input text script")
+    func unreadableFocusArgument() async throws {
+        let rig = try AndroidGrpcInputTests.rig(environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"])
+        let session = try #require(try await rig.backend.openInputSession(for: AndroidGrpcTextTests.device) as? any TextInputSession)
+
+        let error = await #expect(throws: AndroidError.self) {
+            try await InputSecrecy.$fromArgument.withValue(true) { try await session.typeText(Self.sentinel) }
+        }
+        #expect(error?.kind == .helperUnavailable)
+        #expect(error?.message.contains("could not read the focused field on emulator-5556") == true)
+        #expect(error?.message.contains("The text was not sent") == true)
+        #expect(!(error?.message.contains(Self.sentinel) ?? true))
+        #expect(!rig.adbScripts.contains { $0.hasPrefix("input text") })
+
+        try await session.typeText("abc")
+        #expect(rig.adbScripts.contains { $0.hasPrefix("input text") })
+    }
+
+    @Test("a known verdict from the command replaces the session's first focus read, and only the first")
+    func knownFocusUsedOnce() async throws {
+        let plain = Self.passwordNode(text: "", focused: true).replacingOccurrences(of: #"password="true""#, with: #"password="false""#)
+        let rig = try AndroidGrpcInputTests.rig(environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"], uiautomatorDump: Self.xml(plain))
+        let session = try #require(try await rig.backend.openInputSession(for: AndroidGrpcTextTests.device) as? any TextInputSession)
+        let dumps = { rig.server.services.filter { $0.contains("uiautomator dump") }.count }
+
+        try await InputSecrecy.$knownFocus.withValue(.notSecure) {
+            try await session.typeText("ab")
+            #expect(dumps() == 0)
+            try await session.typeText("cd")
+        }
+        #expect(dumps() == 1)
+    }
+
     @Test("a failed adb input names the character count, never the typed text")
     func adbLabel() async throws {
         let rig = try AndroidGrpcInputTests.rig(

@@ -100,7 +100,7 @@ struct RunnerStop: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        let cleanUDID = try clean ? RunnerSessions.physicalUDID(device ?? "", command: "runner stop --clean") : nil
+        let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "runner stop --clean") : nil
         let records = RunnerSessions.records(device: device)
         let manager = RunnerSessionManager(
             store: RunnerSessions.store,
@@ -144,6 +144,13 @@ enum RunnerSessions {
                 reason: .usage, hint: "offsider list-devices --physical"
             )
         }
+        return udid
+    }
+
+    /// `--clean` uninstalls from the device, so it needs the allow-list like any other command that reaches it; a plain stop touches only local records.
+    static func cleanableUDID(_ raw: String, command: String, gate: DevicePolicyGate = DevicePolicyGate.current) throws -> String {
+        let udid = try physicalUDID(raw, command: command)
+        try gate.require(platform: .ios, key: udid.uppercased())
         return udid
     }
 

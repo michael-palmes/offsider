@@ -105,11 +105,13 @@ enum OrderedJSON {
         if TerminalText.isJSONClean(value) {
             output += value
         } else {
+            var previous: Unicode.Scalar?
             for scalar in value.unicodeScalars {
+                defer { previous = scalar }
                 switch scalar {
                 case "\"": output += "\\\""
                 case "\\": output += "\\\\"
-                case _ where TerminalText.isHazard(scalar):
+                case _ where TerminalText.isHazard(scalar, after: previous):
                     TerminalText.appendEscape(scalar, to: &output)
                 default:
                     output.unicodeScalars.append(scalar)

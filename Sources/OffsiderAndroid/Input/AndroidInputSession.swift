@@ -87,6 +87,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
     /// On a phone, refuses a browser or system app in front; checked before text and before the first other input.
     private let requireForeground: @MainActor () async throws -> Void
     private var foregroundChecked = false
+    /// Set once the command's own focus verdict has served a dispatch; later dispatches read the screen again.
+    private var knownFocusUsed = false
     /// The focused field after a key replacement; nil when it cannot be read.
     private let readFocusedField: @MainActor () async -> FocusedFieldReading?
     /// The helper's `paste` op on the focused field, refused unless it is the given one; nil when the helper has none.
@@ -291,7 +293,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
             guard let clipboard = route.clipboard else {
                 throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: await avdName(), reason: route.adbReason)
             }
-            switch await focusedSecureField() {
+            switch await currentFocus() {
             case .secure: throw AndroidError.securePasteRefused(device.rawValue)
             case .unknown: throw AndroidError.securePasteUnconfirmed(device.rawValue)
             case .notSecure: break
@@ -308,10 +310,21 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 return
             }
             // A password never becomes an `input text` argument, which the device's process list shows.
-            let typingSecret = secret ? true : await focusedSecureField() == .secure
-            if typingSecret {
+            switch secret ? .secure : await currentFocus() {
+            case .secure:
                 try await secretHelper().type(chunks)
                 return
+            case .unknown where InputSecrecy.fromArgument:
+                let helper: HelperInputDriver
+                do {
+                    helper = try await secretHelper()
+                } catch let error as AndroidError where error.kind == .helperUnavailable {
+                    throw AndroidError.unreadableFocusNeedsHelper(device.rawValue)
+                }
+                try await helper.type(chunks)
+                return
+            case .unknown, .notSecure:
+                break
             }
             let commands = try chunks.flatMap { chunk -> [String] in
                 switch chunk {
@@ -322,6 +335,19 @@ final class AndroidInputSession: InputSession, TextInputSession {
             guard !commands.isEmpty else { return }
             try await shell.run(commands.joined(separator: " && "), redactedLabel: "input text (\(text.count) character\(text.count == 1 ? "" : "s"))")
         }
+    }
+
+    /// The command's own verdict for the first dispatch, so a positional `type` reads the screen once; else a fresh read.
+    private func currentFocus() async -> FocusedSecureField {
+        if !knownFocusUsed, let known = InputSecrecy.knownFocus {
+            knownFocusUsed = true
+            switch known {
+            case .secure: return .secure
+            case .notSecure: return .notSecure
+            case .unknown: return .unknown
+            }
+        }
+        return await focusedSecureField()
     }
 
     /// Non-ASCII text through the running helper's `setText`, appended to the field's text, so it never reaches a clipboard.

@@ -6,32 +6,67 @@ extension TerminalText {
     /// The most characters one untrusted string shows before `…(+N)` replaces the rest.
     public static let maxCharacters = 500
 
-    /// C0, DEL, C1, bidi controls and isolates, zero-width and invisible operators, line and paragraph separators,
-    /// the byte-order mark, interlinear annotation and tag characters. Joiners (U+200C, U+200D) are not hazards.
+    /// How many scalars past `cap` a cut may run to finish the character it is in; a longer character is cut inside.
+    public static let graphemeOverrun = 100
+
+    /// C0, DEL, C1, the soft hyphen, bidi controls and isolates, zero-width and invisible operators and format characters,
+    /// line and paragraph separators, variation selectors, the byte-order mark, interlinear annotation and tag characters.
+    /// Joiners (U+200C, U+200D) are not hazards, nor are the presentation selectors U+FE0E and U+FE0F on their own: see `isHazard(_:after:)`.
     @inline(__always)
     public static func isHazard(_ scalar: Unicode.Scalar) -> Bool {
         let value = scalar.value
         if value < 0x20 || value == 0x7F { return true }
         if value < 0x80 { return false }
-        if value < 0xA0 { return true }
+        if value < 0xA0 || value == 0xAD { return true }
         if value < 0x061C { return false }
         switch value {
-        case 0x061C, 0x200B, 0x200E, 0x200F, 0x2028, 0x2029, 0x202A...0x202E, 0x2060...0x2064, 0x2066...0x2069,
-             0xFEFF, 0xFFF9...0xFFFB, 0xE0000...0xE007F:
+        case 0x061C, 0x180E, 0x200B, 0x200E, 0x200F, 0x2028, 0x2029, 0x202A...0x202E, 0x2060...0x2064, 0x2066...0x206F,
+             0xFE00...0xFE0D, 0xFEFF, 0xFFF9...0xFFFB, 0xE0000...0xE007F, 0xE0100...0xE01EF:
             return true
         default:
             return false
         }
     }
 
-    /// `text` cut to `cap` characters plus `…(+N)` naming how many were left out; unchanged when it fits.
+    /// A presentation selector (U+FE0E, U+FE0F) is ordinary after a visible scalar, as in an emoji, and a hazard at the start
+    /// of the text, after another selector or after a hazard: a run of selectors is how text is smuggled past a reader.
+    @inline(__always)
+    public static func isHazard(_ scalar: Unicode.Scalar, after previous: Unicode.Scalar?) -> Bool {
+        if isHazard(scalar) { return true }
+        guard scalar.value == 0xFE0E || scalar.value == 0xFE0F else { return false }
+        guard let previous else { return true }
+        return isVariationSelector(previous) || isHazard(previous)
+    }
+
+    @inline(__always)
+    static func isVariationSelector(_ scalar: Unicode.Scalar) -> Bool {
+        (0xFE00...0xFE0F).contains(scalar.value) || (0xE0100...0xE01EF).contains(scalar.value)
+    }
+
+    /// `text` cut to `cap` characters and about `cap` scalars, plus `…(+N)` naming how many characters were left out
+    /// (scalars, when one character holds more than `graphemeOverrun` scalars past the cap and is cut inside); unchanged when it fits.
     public static func capped(_ text: String, cap: Int = maxCharacters) -> String {
         guard text.utf8.count > cap else { return text }
+        let scalars = text.unicodeScalars
         var end = text.startIndex
-        var count = 0
-        while count < cap, end < text.endIndex {
-            text.formIndex(after: &end)
-            count += 1
+        var characters = 0
+        var scalarCount = 0
+        while characters < cap, end < text.endIndex {
+            let next = text.index(after: end)
+            let width = scalars.distance(from: end, to: next)
+            if scalarCount + width > cap {
+                guard scalarCount + width <= cap + graphemeOverrun else {
+                    let cut = scalars.index(end, offsetBy: cap - scalarCount)
+                    var shown = ""
+                    shown.unicodeScalars.append(contentsOf: scalars[..<cut])
+                    return shown + "…(+\(scalars[cut...].count))"
+                }
+                end = next
+                break
+            }
+            end = next
+            characters += 1
+            scalarCount += width
         }
         guard end < text.endIndex else { return text }
         return String(text[..<end]) + "…(+\(text[end...].count))"
@@ -45,18 +80,21 @@ extension TerminalText {
         output.reserveCapacity(shown.utf8.count + 16)
         let scalars = shown.unicodeScalars
         var index = scalars.startIndex
+        var previous: Unicode.Scalar?
         while index < scalars.endIndex {
             let scalar = scalars[index]
             if keepsSGR, scalar == "\u{1B}", let end = sgrEnd(scalars, from: index) {
                 output.unicodeScalars.append(contentsOf: scalars[index..<end])
                 index = end
+                previous = nil
                 continue
             }
-            if (keepsTab && scalar == "\t") || !isHazard(scalar) {
+            if (keepsTab && scalar == "\t") || !isHazard(scalar, after: previous) {
                 output.unicodeScalars.append(scalar)
             } else {
                 appendEscape(scalar, to: &output)
             }
+            previous = scalar
             scalars.formIndex(after: &index)
         }
         return output
@@ -93,9 +131,12 @@ extension TerminalText {
         for byte in text.utf8 {
             if byte >= 0x20, byte < 0x7F { continue }
             if byte >= 0x80 {
-                return !text.unicodeScalars.contains { scalar in
-                    isHazard(scalar) && !(keepsTab && scalar == "\t") && !(keepsNewline && scalar == "\n")
+                var previous: Unicode.Scalar?
+                for scalar in text.unicodeScalars {
+                    defer { previous = scalar }
+                    if isHazard(scalar, after: previous), !(keepsTab && scalar == "\t"), !(keepsNewline && scalar == "\n") { return false }
                 }
+                return true
             }
             if keepsTab, byte == 0x09 { continue }
             if keepsNewline, byte == 0x0A { continue }
@@ -110,7 +151,12 @@ extension TerminalText {
         for byte in text.utf8 {
             if byte >= 0x20, byte < 0x7F, byte != 0x22, byte != 0x5C { continue }
             if byte >= 0x80 {
-                return !text.unicodeScalars.contains { $0 == "\"" || $0 == "\\" || isHazard($0) }
+                var previous: Unicode.Scalar?
+                for scalar in text.unicodeScalars {
+                    defer { previous = scalar }
+                    if scalar == "\"" || scalar == "\\" || isHazard(scalar, after: previous) { return false }
+                }
+                return true
             }
             return false
         }

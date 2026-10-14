@@ -355,6 +355,36 @@ struct AndroidBackendHelperTests {
         #expect(Self.foregroundReads(server) == 1)
     }
 
+    @Test("on a phone with pinned apps, a tree read, a screenshot or typed text with another app in front is app_not_allowed, naming the allow command")
+    func pinnedAppsRefuseOthers() async throws {
+        let (backend, server) = try Self.phoneBackend(top: "com.example.app/.MainActivity")
+        backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: ["com.example.pinned"], managedCeiling: nil)
+        let treeError = await #expect(throws: AndroidError.self) { _ = try await backend.accessibilityTree(for: Self.phone, point: nil) }
+        let shotError = await #expect(throws: AndroidError.self) { _ = try await backend.screenshotPNG(for: Self.phone) }
+        let session = try #require(try await backend.openInputSession(for: Self.phone) as? any TextInputSession)
+        let typeError = await #expect(throws: AndroidError.self) { try await session.typeText("x") }
+
+        for error in [treeError, shotError, typeError] {
+            #expect(error?.reason == .appNotAllowed)
+            #expect(error?.message.contains("com.example.app is in front on R58M123ABC") == true)
+            #expect(error?.hint == "offsider device-access allow --device R58M123ABC --app com.example.app")
+        }
+        #expect(!server.services.contains { $0.contains("uiautomator") || $0.contains("screencap") || $0.contains("input ") || $0.contains("app_process") })
+    }
+
+    @Test("an app outside the managed ceiling is refused without an allow command, and a pinned app in front passes")
+    func managedCeilingAndPinnedPass() async throws {
+        let (backend, _) = try Self.phoneBackend(top: "com.example.app/.MainActivity")
+        backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: [], managedCeiling: ["com.example.managed"])
+        let error = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
+        #expect(error?.message.contains("managed policy on this Mac does not list it") == true)
+        #expect(error?.hint == nil)
+
+        backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: ["com.example.app"], managedCeiling: nil)
+        backend.foregroundChecks = [:]
+        try await backend.requireDrivableForeground(Self.phone.rawValue)
+    }
+
     @Test("buttons such as Home skip the foreground check, so a phone can always be sent away from a deny-listed app")
     func buttonsSkipCheck() {
         #expect(AndroidInputSession.onlyButtons(.shortButtonPress(.home)))

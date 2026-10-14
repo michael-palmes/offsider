@@ -31,5 +31,19 @@ extension AndroidBackend {
         if let refusal = SystemAppDenyList.refusal(package, platform: .android) {
             throw AndroidError.appNotAllowed(serial, refusal: refusal)
         }
+        if let scope = appScopes[serial], !scope.permitted.contains(package) {
+            throw AndroidError.appNotPermitted(serial, package: package, byManagedPolicy: scope.managedCeiling.map { !$0.contains(package) } ?? false)
+        }
+    }
+}
+
+/// The apps a phone's allowance permits, already narrowed by any managed `allowedBundleIDs` ceiling.
+public struct AndroidAppScope: Equatable, Sendable {
+    public let permitted: Set<String>
+    public let managedCeiling: Set<String>?
+
+    public init(permitted: Set<String>, managedCeiling: Set<String>?) {
+        self.permitted = permitted
+        self.managedCeiling = managedCeiling
     }
 }

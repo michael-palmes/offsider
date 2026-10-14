@@ -62,16 +62,8 @@ struct RecordVideo: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
-        try await backend.prepare()
-        let booted = try await backend.requireBootedDevice(route.device)
-        if checksSecureField {
-            try await VideoMaskOptions.requireNoSecureField(command: "record-video", backend: backend, device: booted.id)
-        }
-
-        let key = DeviceLockKey(platform: booted.id.platform, id: booted.id.rawValue)
-        try Self.refuseDuringSignIn(key, device: booted.id.rawValue)
-        let marker = try? RecordingMarker.create(key)
-        defer { marker?.remove() }
+        let (device, marker) = try await Self.start(command: "record-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
+        defer { marker.remove() }
 
         let target = try prepareOutputURL()
         let staging: String
@@ -83,7 +75,7 @@ struct RecordVideo: AsyncParsableCommand {
         defer { OutputFile.discardStaging(staging) }
         let stagedURL = URL(fileURLWithPath: staging).appendingPathComponent("recording.mp4")
         var outputURL = target.url
-        FileHandle.standardError.write(Data("Recording \(booted.id.platform.videoSourceNoun) \(booted.id.rawValue) to \(outputURL.path)\n".utf8))
+        FileHandle.standardError.write(Data("Recording \(device.platform.videoSourceNoun) \(device.rawValue) to \(outputURL.path)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop recording\n".utf8))
 
         let cancellationFlag = CancellationFlag()
@@ -94,7 +86,7 @@ struct RecordVideo: AsyncParsableCommand {
         }
         defer { signalObserver.invalidate() }
 
-        let source = VideoFrameSource(backend: backend, device: booted.id, scale: scale, regions: regions)
+        let source = VideoFrameSource(backend: backend, device: device, scale: scale, regions: regions)
         let written: (frames: Int, held: Int)
         do {
             written = try await recordVideo(
@@ -202,10 +194,50 @@ struct RecordVideo: AsyncParsableCommand {
 
     /// Refuses (exit 8, `device_busy`) while `login` or `wake` holds the device, so a typed password never lands in a recording.
     static func refuseDuringSignIn(
-        _ key: DeviceLockKey, device: String, holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
+        _ key: DeviceLockKey, device: String, command: String = "record-video", holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
     ) throws {
         guard let current = holder(key), RecordingMarker.refusedHolderCommands.contains(current.command.split(separator: " ").first.map(String.init) ?? "") else { return }
-        throw DeviceBusy(device: device, command: "record-video", holder: current, waited: nil)
+        throw DeviceBusy(device: device, command: command, holder: current, waited: nil)
+    }
+
+    /// The booted device and its recording marker, for `record-video` and `stream-video` alike; nothing is captured before this returns.
+    @MainActor
+    static func start(
+        command: String, backend: any DeviceBackend, device: DeviceID, checksSecureField: Bool,
+        root: String = OffsiderPrivateDirectory.root,
+        holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
+    ) async throws -> (device: DeviceID, marker: RecordingMarker) {
+        try await backend.prepare()
+        let booted = try await backend.requireBootedDevice(device)
+        if checksSecureField {
+            try await VideoMaskOptions.requireNoSecureField(command: command, backend: backend, device: booted.id)
+        }
+        let marker = try beginRecording(DeviceLockKey(platform: booted.id.platform, id: booted.id.rawValue), device: booted.id.rawValue, command: command, root: root, holder: holder)
+        return (booted.id, marker)
+    }
+
+    /// Marks the device as recording before checking the lock holder, so a `login` that takes the lock in between sees the marker.
+    static func beginRecording(
+        _ key: DeviceLockKey, device: String, command: String,
+        root: String = OffsiderPrivateDirectory.root,
+        holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
+    ) throws -> RecordingMarker {
+        let marker: RecordingMarker
+        do {
+            marker = try RecordingMarker.create(key, root: root)
+        } catch {
+            throw CLIError(
+                errorDescription: "Offsider could not mark \(device) as recording (\(error)), so nothing was recorded. Check that Offsider's private locks folder exists and is writable by you, then retry.",
+                reason: .videoFailed
+            )
+        }
+        do {
+            try refuseDuringSignIn(key, device: device, command: command, holder: holder)
+        } catch {
+            marker.remove()
+            throw error
+        }
+        return marker
     }
 
     /// Where the recording goes once it finishes, and whether the user named that file (only then may it replace one).

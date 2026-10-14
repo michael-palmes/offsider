@@ -41,6 +41,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var warnedAboutTruncation: Set<String> = []
     /// Each phone's front package from its latest deny-list check, reused for a second.
     var foregroundChecks: [String: (at: ContinuousClock.Instant, package: String?)] = [:]
+    /// Per phone serial, the apps its allowance and managed policy permit; a serial with no entry may run any app the deny-list allows.
+    public var appScopes: [String: AndroidAppScope] = [:]
 
     public init(host: AndroidHost = .live(), log: @escaping AndroidLog) {
         self.host = host

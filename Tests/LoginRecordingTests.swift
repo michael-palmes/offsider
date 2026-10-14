@@ -25,7 +25,7 @@ struct LoginRecordingTests {
 
         #expect(error?.reason == .deviceBusy)
         #expect(error?.reason.exitCode.rawValue == 8)
-        #expect(error?.failureMessage.contains("A recording is running on emulator-5554 (record-video), so login will not type a password until it stops") == true)
+        #expect(error?.failureMessage.contains("A recording is running on emulator-5554 (record-video or stream-video), so login will not type a password until it stops") == true)
         #expect(backend.treeReads == 0)
     }
 }

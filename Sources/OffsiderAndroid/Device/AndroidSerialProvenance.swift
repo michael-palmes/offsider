@@ -16,4 +16,9 @@ public enum AndroidPhoneListing {
         let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
         return (try? await AndroidDeviceDirectory(client: client, host: host).connectedPhone(serial: serial)) != nil
     }
+
+    /// True when an AVD of exactly this name is defined on this Mac; reads the AVD folder only.
+    public static func isDefinedAVD(name: String, host: AndroidHost) -> Bool {
+        AVDCatalog(host: host).info(named: name) != nil
+    }
 }
