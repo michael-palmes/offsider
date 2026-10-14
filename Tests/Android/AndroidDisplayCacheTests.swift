@@ -60,6 +60,7 @@ struct AndroidDisplayCacheTests {
             case AndroidDisplayStatus.scriptWithProbe:
                 return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(status, GalaxyFoldFixtures.geometry(closed: closed)))
             case AndroidDisplayGeometry.probeScript: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.geometry(closed: closed))
+            case AndroidForeground.readScript: return AndroidBackendHelperTests.ordinaryForeground
             default: return FakeAdbServer.shell(stderr: "unexpected", status: 1)
             }
         })
@@ -76,14 +77,15 @@ struct AndroidDisplayCacheTests {
         return AndroidBackend(host: host) { _, _ in }
     }
 
-    /// One command: routes by serial, as the CLI does, then captures; returns the PNG and the services it sent.
+    /// One command: routes by serial, as the CLI does, then captures; returns the PNG and the services it sent, bar the foreground check.
     static func command(_ server: FakeAdbServer, cache: String?) async throws -> (png: Data, services: [String]) {
         let backend = try Self.backend(server, cache: cache)
         let before = server.services.count
         _ = try await backend.resolveAndroidName(serial)
         let png = try await backend.screenshotPNG(for: phone)
         await backend.close()
-        let sent = server.services.dropFirst(before).filter { $0.hasPrefix("exec:") || $0.hasPrefix("shell") }
+        // The phone's foreground check comes first in every command; these tests are about the capture after it.
+        let sent = server.services.dropFirst(before).filter { ($0.hasPrefix("exec:") || $0.hasPrefix("shell")) && !$0.hasSuffix(AndroidForeground.readScript) }
         return (png, Array(sent))
     }
 

@@ -34,13 +34,8 @@ enum AndroidAwakeState {
         "\(readScript); echo \(afterMarker); settings put global stay_on_while_plugged_in \(on ? everySource.rawValue : 0) && settings get global stay_on_while_plugged_in"
     }
 
-    /// The label the code's shell command runs under, so errors and timings never carry it.
-    static let codeLabel = "input text <code withheld>"
-
-    /// `input text` for the code, then Enter only if every piece was typed.
-    static func codeScript(_ code: UnlockCode) -> String {
-        (AdbShellQuoting.inputTextCommands(for: code.text) + ["input keyevent KEYCODE_ENTER"]).joined(separator: " && ")
-    }
+    /// The HID usage of Return, which submits the code.
+    static let enterUsage: UInt32 = 40
 
     static func wakeScript(screenOn: Bool, lockScreen: LockScreen) -> (script: String, sent: [String])? {
         var commands: [String] = []

@@ -54,6 +54,7 @@ struct AndroidMultiDisplayCaptureTests {
             case AndroidDisplayStatus.scriptWithProbe:
                 return FakeAdbServer.shell(stdout: FoldableFixtures.withProbe(GalaxyFoldFixtures.status(closed: closed), GalaxyFoldFixtures.geometry(closed: closed)))
             case AndroidDisplayGeometry.probeScript: return FakeAdbServer.shell(stdout: GalaxyFoldFixtures.geometry(closed: closed))
+            case AndroidForeground.readScript: return AndroidBackendHelperTests.ordinaryForeground
             default: return FakeAdbServer.shell(stderr: "unexpected", status: 1)
             }
         })
@@ -132,6 +133,7 @@ struct AndroidMultiDisplayCaptureTests {
                 ))
             case AndroidDisplayList.command: return FakeAdbServer.shell(stdout: FoldableFixtures.foldDumpsysClosed)
             case AndroidDisplayGeometry.probeScript: return FakeAdbServer.shell(stdout: probes.next())
+            case AndroidForeground.readScript: return AndroidBackendHelperTests.ordinaryForeground
             default: return FakeAdbServer.shell(stderr: "unexpected", status: 1)
             }
         })
@@ -150,16 +152,17 @@ struct AndroidMultiDisplayCaptureTests {
         #expect(Self.execs(server) == ["exec:screencap -p"])
     }
 
-    @Test("a phone with one display takes one plain screencap and reads no displays")
+    @Test("a phone with one display takes one plain screencap after its foreground check, and reads no displays")
     func singleDisplayAddsNoCalls() async throws {
         let png = Self.png(1080, 2424)
         let server = FakeAdbServer(handler: FakeAdbServer.devices(["R58M123ABC"], host: Self.host) { _, service in
-            service == "exec:screencap -p" ? FakeAdbServer.exec(png) : FakeAdbServer.shell(stderr: "unexpected", status: 1)
+            if service == "shell,v2,raw:" + AndroidForeground.readScript { return AndroidBackendHelperTests.ordinaryForeground }
+            return service == "exec:screencap -p" ? FakeAdbServer.exec(png) : FakeAdbServer.shell(stderr: "unexpected", status: 1)
         })
         let backend = try Self.backend(server)
 
         #expect(try await backend.screenshotPNG(for: Self.phone) == png)
-        #expect(server.services.filter { $0.hasPrefix("exec:") || $0.hasPrefix("shell") } == ["exec:screencap -p"])
+        #expect(server.services.filter { $0.hasPrefix("exec:") || $0.hasPrefix("shell") } == ["shell,v2,raw:" + AndroidForeground.readScript, "exec:screencap -p"])
     }
 
     @Test("raw capture follows the active panel too: a pick of another size is captured again with -d")
@@ -187,7 +190,8 @@ struct AndroidMultiDisplayCaptureTests {
     @Test("a failed capture reports screencap's own error, not its multi-display warning")
     func failureSkipsWarning() async throws {
         let server = FakeAdbServer(handler: FakeAdbServer.devices(["R58M123ABC"], host: Self.host) { _, service in
-            service == "exec:screencap -p"
+            if service == "shell,v2,raw:" + AndroidForeground.readScript { return AndroidBackendHelperTests.ordinaryForeground }
+            return service == "exec:screencap -p"
                 ? FakeAdbServer.exec(ScreencapRawTests.warning + Data("screencap: no display\n".utf8))
                 : FakeAdbServer.shell(stderr: "unexpected", status: 1)
         })

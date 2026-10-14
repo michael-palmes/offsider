@@ -80,13 +80,13 @@ struct AndroidInputSessionTests {
         #expect(Self.scripts(server) == ["input tap 1 1"])
     }
 
-    @Test("ASCII text goes as input text and key events in one script")
+    @Test("ASCII text goes as input text and key events in one script, after a read for a focused password field")
     func typeASCII() async throws {
         let server = Self.server()
         let session = try #require(try await AndroidBackendTests.backend(server).openInputSession(for: Self.device) as? any TextInputSession)
         try await session.typeText("hello world\n")
 
-        #expect(Self.scripts(server) == ["input text 'hello%sworld' && input keyevent 66"])
+        #expect(Self.scripts(server).filter { !$0.contains("uiautomator dump") } == ["input text 'hello%sworld' && input keyevent 66"])
     }
 
     @Test("non-ASCII text on an adb-only emulator fails with the gRPC message naming the AVD, and types nothing")

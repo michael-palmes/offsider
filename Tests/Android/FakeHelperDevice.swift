@@ -75,6 +75,7 @@ final class FakeHelperDevice: @unchecked Sendable {
     var dexOnDevice: Bool
     /// False: a push succeeds but the file never appears, so the next start exits 90 again.
     var pushLands = true
+    var mkdirFails = false
     var exitOnQuit = true
     var refuseSocket = false
     var syncAnswer: FakeSyncSession.Answer = .okay
@@ -133,6 +134,10 @@ final class FakeHelperDevice: @unchecked Sendable {
                 }
             }
             return FakeAdbServer.shell()
+        }
+        if service.hasPrefix("shell,v2,raw:rm -rf '/data/local/tmp/offsider-push-"), service.contains("&& mkdir -m 700 ") {
+            note("mkdir \(service.split(separator: "'")[1])")
+            return mkdirFails ? FakeAdbServer.shell(stderr: "mkdir: Permission denied\n", status: 1) : FakeAdbServer.shell()
         }
         if service == "sync:" {
             let answer = syncAnswer

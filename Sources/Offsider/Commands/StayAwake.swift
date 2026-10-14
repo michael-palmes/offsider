@@ -51,6 +51,15 @@ struct StayAwakeCommand: AsyncParsableCommand {
             throw CLIError(errorDescription: "stay-awake is not available for \(booted.id.rawValue).", reason: .notSupported)
         }
         print(try await Self.report(target, json: json, booted: booted, backend: backend))
+        if let note = Self.phoneNote(target, on: booted.id) {
+            FileHandle.standardError.write(Data((note + "\n").utf8))
+        }
+    }
+
+    /// One stderr line after turning stay awake on for a USB phone: the setting outlives the command and reboots.
+    static func phoneNote(_ target: Bool?, on device: DeviceID) -> String? {
+        guard target == true, device.isPhysicalAndroidDevice else { return nil }
+        return "Note: stay awake stays on for \(device.rawValue), across reboots; `offsider stay-awake off --device \(device.rawValue)` turns it off."
     }
 
     /// Before routing, so a simulator is refused without starting its stack.

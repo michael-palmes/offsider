@@ -12,3 +12,24 @@ extension AndroidBackend: ForegroundReading {
         _ = try await settingsShell(AndroidForeground.homeIntent, on: id.rawValue)
     }
 }
+
+extension AndroidBackend {
+    static let foregroundCheckLifetime: Duration = .seconds(1)
+
+    /// On a USB phone only: refuses when a browser, a system app or an unknown app is in front. One `dumpsys` a second at most.
+    func requireDrivableForeground(_ serial: String) async throws {
+        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice else { return }
+        let package: String?
+        if let cached = foregroundChecks[serial], ContinuousClock.now - cached.at < Self.foregroundCheckLifetime {
+            package = cached.package
+        } else {
+            let top = try await foreground(on: DeviceID(rawValue: serial, platform: .android)).top
+            package = top.flatMap { $0.split(separator: "/").first.map(String.init) }
+            foregroundChecks[serial] = (ContinuousClock.now, package)
+        }
+        guard let package else { throw AndroidError.foregroundUnknown(serial) }
+        if let refusal = SystemAppDenyList.refusal(package, platform: .android) {
+            throw AndroidError.appNotAllowed(serial, refusal: refusal)
+        }
+    }
+}

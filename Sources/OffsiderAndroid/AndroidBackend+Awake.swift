@@ -57,16 +57,16 @@ extension AndroidBackend: AwakeControlling {
         return WakeOutcome(previous: before, current: current, sent: sent)
     }
 
-    /// Types nothing unless the lock screen is up with its PIN or password field focused, read again just before typing.
-    public func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> UnlockAttempt {
+    /// Types nothing unless the helper runs and the lock screen is up with its PIN or password field focused, read again just before typing.
+    /// The code goes as key events through the helper's socket (digits or characters, then Enter), never as a shell argument.
+    public func enterUnlockCode(_ code: UnlockCode, on id: DeviceID, beforeTyping: @MainActor () throws -> Void) async throws -> UnlockAttempt {
         let serial = id.rawValue
+        let helper = HelperInputDriver(session: try await helperForSecret(serial))
         guard try await codeFieldShowing(id) else { throw AndroidError.codeFieldMissing(serial) }
         let state = try await awakeState(on: id)
         guard state.screen == .on, state.lockScreen == .secure else { return UnlockAttempt(typed: false, reading: state) }
-        let result = try await requireClient().shell(AndroidAwakeState.codeScript(code), on: serial, timeout: .seconds(15), label: AndroidAwakeState.codeLabel)
-        guard result.status == 0 else {
-            throw AndroidError.adbCommandFailed(serial: serial, command: AndroidAwakeState.codeLabel, detail: "exit status \(result.status)")
-        }
+        try beforeTyping()
+        try await helper.type([.text(code.text), .key(usage: AndroidAwakeState.enterUsage)])
         var current = state
         for _ in 0..<Self.codePolls {
             try await host.sleep(Self.awakePollInterval)
@@ -84,7 +84,7 @@ extension AndroidBackend: AwakeControlling {
                 try await host.sleep(.milliseconds(600))
             }
             do {
-                let roots = try await accessibilityTree(for: id, point: nil).roots
+                let roots = try await readTree(id, point: nil).roots
                 if AndroidAwakeState.lockScreenCodeField(in: roots) != nil { return true }
             } catch let error as AndroidError where error.kind == .noWindow {
                 continue

@@ -196,4 +196,170 @@ struct AndroidBackendHelperTests {
         #expect(!rig.server.services.contains { $0.hasSuffix(AndroidDisplayGeometry.probeScript) })
         await rig.backend.close()
     }
+
+    // MARK: Secrets, pastes and the phone deny-list
+
+    static func inputScripts(_ server: FakeAdbServer) -> [String] {
+        server.services.filter { $0.hasPrefix("shell,v2,raw:input ") }.map { String($0.dropFirst("shell,v2,raw:".count)) }
+    }
+
+    @Test("a password on an adb route goes through the helper as key events, never as an input text argument")
+    func secretThroughHelper() async throws {
+        let rig = try HelperRig()
+        let session = try #require(try await rig.backend.openInputSession(for: Self.device) as? any TextInputSession)
+        try await InputSecrecy.$isSecret.withValue(true) { try await session.typeText("hunter2") }
+        await session.close()
+
+        #expect(rig.device.injected == ["text hunter2"])
+        #expect(Self.inputScripts(rig.server).isEmpty)
+        #expect(!rig.server.services.contains { $0.contains("hunter2") })
+    }
+
+    @Test("a password with OFFSIDER_ANDROID_INPUT=input or forced uiautomator is helper_unavailable, with nothing typed", arguments: [
+        ["OFFSIDER_ANDROID_INPUT": "input"], ["OFFSIDER_ANDROID_TREE": "uiautomator"],
+    ])
+    func secretWithoutHelper(environment: [String: String]) async throws {
+        let rig = try HelperRig(environment: environment)
+        let session = try #require(try await rig.backend.openInputSession(for: Self.device) as? any TextInputSession)
+        let error = await #expect(throws: AndroidError.self) {
+            try await InputSecrecy.$isSecret.withValue(true) { try await session.typeText("hunter2") }
+        }
+        await session.close()
+
+        #expect(error?.reason == .helperUnavailable)
+        #expect(error?.message.contains("Nothing was typed") == true)
+        #expect(rig.device.injected.isEmpty)
+        #expect(Self.inputScripts(rig.server).isEmpty)
+    }
+
+    @Test("ordinary text into a focused password field on an adb route also goes through the helper")
+    func focusedPasswordThroughHelper() async throws {
+        let device = FakeHelperDevice()
+        device.dump = AndroidReplaceTextTests.fieldDump(text: "", password: true)
+        let rig = try HelperRig(device)
+        let session = try #require(try await rig.backend.openInputSession(for: Self.device) as? any TextInputSession)
+        try await session.typeText("abc")
+        await session.close()
+
+        #expect(rig.device.injected == ["text abc"])
+        #expect(Self.inputScripts(rig.server).isEmpty)
+    }
+
+    @Test("ordinary text into an ordinary field on an adb route is still typed with input text")
+    func plainTextThroughInput() async throws {
+        let device = FakeHelperDevice()
+        device.dump = AndroidReplaceTextTests.fieldDump(text: "")
+        let rig = try HelperRig(device, environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"])
+        let session = try #require(try await rig.backend.openInputSession(for: Self.device) as? any TextInputSession)
+        try await session.typeText("abc")
+        await session.close()
+
+        #expect(Self.inputScripts(rig.server) == ["input text 'abc'"])
+    }
+
+    @Test("non-ASCII text with the helper running is appended with setText, never through a clipboard")
+    func nonASCIIThroughSetText() async throws {
+        let device = FakeHelperDevice()
+        device.dump = AndroidReplaceTextTests.fieldDump(text: "ab")
+        device.answer = { _, op, _ in op == "setText" ? .ok(#"{"className":"android.widget.EditText","resourceId":"amount","length":4}"#) : nil }
+        let rig = try HelperRig(device)
+        _ = try await rig.read()
+        let session = try #require(try await rig.backend.openInputSession(for: Self.device) as? any TextInputSession)
+        try await session.typeText("é日")
+        await session.close()
+
+        #expect(try AndroidReplaceTextTests.sentText(rig) == "abé日")
+        #expect(Self.inputScripts(rig.server).isEmpty)
+    }
+
+    @Test("a paste is refused when the focused field cannot be read, before the clipboard is touched")
+    func unknownFocusRefusesPaste() async throws {
+        let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "saved"), environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"])
+        let session = try #require(try await rig.backend.openInputSession(for: AndroidGrpcTextTests.device) as? any TextInputSession)
+        let error = await #expect(throws: AndroidError.self) { try await session.typeText("héllo") }
+
+        #expect(error?.kind == .securePasteRefused)
+        #expect(error?.message.hasPrefix("Offsider could not confirm the focused field on emulator-5556 is not a password field") == true)
+        #expect(rig.emulator.calls.isEmpty)
+    }
+
+    @Test("a password is never pasted through the clipboard, even into a plain field")
+    func secretNeverPasted() async throws {
+        let plain = AndroidSecureTextTests.passwordNode(text: "", focused: true).replacingOccurrences(of: #"password="true""#, with: #"password="false""#)
+        let rig = try AndroidGrpcInputTests.rig(
+            emulator: FakeEmulator(clipboard: "saved"), environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"], uiautomatorDump: AndroidSecureTextTests.xml(plain)
+        )
+        let session = try #require(try await rig.backend.openInputSession(for: AndroidGrpcTextTests.device) as? any TextInputSession)
+        let error = await #expect(throws: AndroidError.self) {
+            try await InputSecrecy.$isSecret.withValue(true) { try await session.typeText("pässwörd") }
+        }
+
+        #expect(error?.kind == .securePasteRefused)
+        #expect(rig.emulator.calls.isEmpty)
+    }
+
+    static let phone = DeviceID(rawValue: "R58M123ABC", platform: .android)
+
+    /// The foreground read on a phone showing an ordinary app, for tests about something else.
+    nonisolated static let ordinaryForeground = FakeAdbServer.shell(
+        stdout: "top=  topResumedActivity=ActivityRecord{1a2b u0 com.example.app/.MainActivity t12}\nhome=com.example.launcher/.Home\n"
+    )
+
+    static func phoneBackend(top: String?) throws -> (AndroidBackend, FakeAdbServer) {
+        let server = AndroidDeviceStateTests.server(devicesList: "R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n") { command in
+            guard command == AndroidForeground.readScript else { return FakeAdbServer.shell() }
+            let line = top.map { "top=  topResumedActivity=ActivityRecord{1a2b u0 \($0) t12}" } ?? "top="
+            return FakeAdbServer.shell(stdout: line + "\nhome=com.example.launcher/.Home\n")
+        }
+        return (try AndroidBackendTests.backend(server), server)
+    }
+
+    static func foregroundReads(_ server: FakeAdbServer) -> Int {
+        server.services.filter { $0 == "shell,v2,raw:" + AndroidForeground.readScript }.count
+    }
+
+    @Test("on a phone, a tree read, a screenshot or input with a deny-listed app in front is app_not_allowed, and nothing else is sent", arguments: [
+        "com.android.settings/.Settings", "com.android.chrome/com.google.android.apps.chrome.Main", "com.google.android.gm/.ConversationListActivityGmail",
+    ])
+    func phoneDenyList(top: String) async throws {
+        let (backend, server) = try Self.phoneBackend(top: top)
+        let treeError = await #expect(throws: AndroidError.self) { _ = try await backend.accessibilityTree(for: Self.phone, point: nil) }
+        let shotError = await #expect(throws: AndroidError.self) { _ = try await backend.screenshotPNG(for: Self.phone) }
+        let session = try await backend.openInputSession(for: Self.phone)
+        let tapError = await #expect(throws: AndroidError.self) { try await session.perform(.tapAt(x: 10, y: 10)) }
+
+        for error in [treeError, shotError, tapError] {
+            #expect(error?.reason == .appNotAllowed)
+            #expect(error?.message.contains("on a physical phone, so Offsider did nothing on R58M123ABC") == true)
+        }
+        #expect(Self.foregroundReads(server) >= 1)
+        #expect(!server.services.contains { $0.contains("uiautomator") || $0.contains("screencap") || $0.contains("input ") || $0.contains("app_process") })
+    }
+
+    @Test("on a phone an unreadable front app is refused, and an emulator is never checked")
+    func phoneUnknownForeground() async throws {
+        let (backend, server) = try Self.phoneBackend(top: nil)
+        let error = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
+        #expect(error?.reason == .appNotAllowed)
+        #expect(error?.message.hasPrefix("Offsider could not tell which app is in front on R58M123ABC") == true)
+
+        try await backend.requireDrivableForeground("emulator-5556")
+        #expect(Self.foregroundReads(server) == 1)
+    }
+
+    @Test("on a phone your own app passes, and checks within a second share one read")
+    func phoneOwnApp() async throws {
+        let (backend, server) = try Self.phoneBackend(top: "com.example.app/.MainActivity")
+        try await backend.requireDrivableForeground(Self.phone.rawValue)
+        try await backend.requireDrivableForeground(Self.phone.rawValue)
+        #expect(Self.foregroundReads(server) == 1)
+    }
+
+    @Test("buttons such as Home skip the foreground check, so a phone can always be sent away from a deny-listed app")
+    func buttonsSkipCheck() {
+        #expect(AndroidInputSession.onlyButtons(.shortButtonPress(.home)))
+        #expect(AndroidInputSession.onlyButtons(.composite([.button(direction: .down, button: .home), .delay(0.1), .button(direction: .up, button: .home)])))
+        #expect(!AndroidInputSession.onlyButtons(.tapAt(x: 1, y: 1)))
+        #expect(!AndroidInputSession.onlyButtons(.shortKeyPress(4)))
+    }
 }

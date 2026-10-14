@@ -77,7 +77,7 @@ struct AndroidDeviceStateTests {
         #expect(Self.shellCommands(server) == [StatusBarOverride().androidEnterScript])
     }
 
-    @Test("permission and status bar work on a named USB phone")
+    @Test("on an allowed USB phone, permission and status bar reach only that phone")
     func phone() async throws {
         let server = Self.server(devicesList: "R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n") { _ in FakeAdbServer.shell(stdout: "null\n") }
         let backend = try AndroidBackendTests.backend(server)

@@ -144,7 +144,38 @@ struct WakeCommandTests {
 
             #expect(output == "Motorola moto g (ZY22FAKE01): screen on and unlocked with the saved PIN (was off, PIN lock screen showing)")
             #expect(backend.enteredCodes.map(\.text) == ["2580"])
+            #expect(!ledger.hasFailed("ZY22FAKE01"))
         }
+    }
+
+    @Test("the failure marker is written before the first key, so a run that dies mid-code never types it again")
+    func markerBeforeTyping() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            backend.afterCode = Self.usable
+            var markedWhileTyping = false
+            backend.whileTyping = { markedWhileTyping = ledger.hasFailed("ZY22FAKE01") }
+            _ = try await Self.wake(backend, unlock: true, store: try Self.store("2580"), ledger: ledger)
+
+            #expect(markedWhileTyping)
+            #expect(!ledger.hasFailed("ZY22FAKE01"))
+        }
+    }
+
+    @Test("a failure marker that cannot be written stops the command with nothing typed")
+    func markerWriteFails() async throws {
+        let blocked = (NSTemporaryDirectory() as NSString).appendingPathComponent("offsider-ledger-file-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: blocked, contents: Data())
+        defer { try? FileManager.default.removeItem(atPath: blocked) }
+        let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+        backend.afterCode = Self.usable
+        let error = await #expect(throws: CLIError.self) {
+            try await Self.wake(backend, unlock: true, store: try Self.store("2580"), ledger: UnlockAttemptLedger(root: blocked))
+        }
+
+        #expect(error?.userFacingDescription.contains("could not record the unlock attempt") == true)
+        #expect(error?.userFacingDescription.contains("so it typed nothing") == true)
+        #expect(backend.enteredCodes.isEmpty)
     }
 
     @Test("a rejected code is recorded, and the next --unlock refuses without typing")

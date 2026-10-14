@@ -8,6 +8,7 @@ extension AndroidBackend: FrameCapturing {
     public func captureFrame(for id: DeviceID, scale: Double) async throws -> CGImage {
         try await prepare()
         let serial = id.rawValue
+        try await requireDrivableForeground(serial)
         do {
             guard case .grpc(let emulator) = try await transport(for: serial) else {
                 return try AndroidScreenCapture.scaled(try AndroidScreenCapture.decodePNG(try await adbScreenshot(serial)), by: scale)

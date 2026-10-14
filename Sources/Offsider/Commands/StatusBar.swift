@@ -115,6 +115,15 @@ struct StatusBarCommand: AsyncParsableCommand {
             throw CLIError(errorDescription: "status-bar is not available for \(id.rawValue).", reason: .notSupported)
         }
         print(try await Self.report(action, override: override, json: json, on: id, backend: backend))
+        if let note = Self.phoneNote(action, on: id) {
+            FileHandle.standardError.write(Data((note + "\n").utf8))
+        }
+    }
+
+    /// One stderr line after an override on a USB phone: demo mode stays until it is cleared.
+    static func phoneNote(_ action: Action, on device: DeviceID) -> String? {
+        guard action == .override, device.isPhysicalAndroidDevice else { return nil }
+        return "Note: demo mode stays on for \(device.rawValue) after this command; `offsider status-bar clear --device \(device.rawValue)` turns it off."
     }
 
     @MainActor

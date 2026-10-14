@@ -7,6 +7,8 @@ enum AdbConnectError: Error, Equatable, Sendable {
     case noSuchSocket
     case timedOut
     case failed(errno: Int32)
+    /// A Unix socket whose server runs as another user.
+    case foreignPeer(uid: uid_t)
 }
 
 protocol AdbByteStream: Sendable {
@@ -22,10 +24,14 @@ protocol AdbConnecting: Sendable {
 
 /// BSD sockets on numeric loopback addresses or a Unix path; there is no code path that resolves a name.
 struct PosixAdbConnector: AdbConnecting {
+    /// The only user a Unix-socket server may run as.
+    var ownerUID: uid_t = getuid()
+
     func connect(to endpoint: LoopbackEndpoint, timeout: Duration) async throws -> any AdbByteStream {
         let deadline = ContinuousClock.now + timeout
+        let owner = ownerUID
         return try await PosixAdbStream.onQueue(DispatchQueue(label: "offsider.adb.connect")) {
-            try PosixAdbStream.open(endpoint, deadline: deadline)
+            try PosixAdbStream.open(endpoint, deadline: deadline, ownerUID: owner)
         }
     }
 }
@@ -53,7 +59,7 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
         }
     }
 
-    static func open(_ endpoint: LoopbackEndpoint, deadline: ContinuousClock.Instant) throws -> PosixAdbStream {
+    static func open(_ endpoint: LoopbackEndpoint, deadline: ContinuousClock.Instant, ownerUID: uid_t = getuid()) throws -> PosixAdbStream {
         let family: Int32
         switch endpoint {
         case .tcp(.ipv4, _): family = AF_INET
@@ -76,6 +82,12 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
             var length = socklen_t(MemoryLayout<Int32>.size)
             getsockopt(fd, SOL_SOCKET, SO_ERROR, &pending, &length)
             if pending != 0 { throw mapConnectError(pending) }
+        }
+        if case .unix = endpoint {
+            var uid: uid_t = 0
+            var gid: gid_t = 0
+            guard getpeereid(fd, &uid, &gid) == 0 else { throw AdbConnectError.failed(errno: errno) }
+            guard uid == ownerUID else { throw AdbConnectError.foreignPeer(uid: uid) }
         }
         return stream
     }

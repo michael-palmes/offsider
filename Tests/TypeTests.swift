@@ -1,5 +1,7 @@
 import Testing
 import Foundation
+import OffsiderCore
+@testable import Offsider
 
 @Suite("Type Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct TypeTests {
@@ -299,5 +301,104 @@ struct TypeTests {
             try await Task.sleep(nanoseconds: 300_000_000)
         } while Date() < deadline
         return value
+    }
+}
+@Suite("type refuses argument text aimed at a password field")
+@MainActor
+struct TypeSecureFieldTests {
+    static let android = DeviceID(rawValue: "emulator-5554", platform: .android)
+    static let simulator = DeviceID(rawValue: "ABCD0000-0000-4000-8000-000000000001", platform: .ios)
+
+    static func form(focusedPassword: Bool = false, keyboard: Bool = false, platform: DevicePlatform) -> UITree {
+        var children = [
+            FakeUI.node(.textField, id: "email", label: "Email", frame: FakeUI.frame(20, 200, 360, 44), platform: platform),
+            FakeUI.node(
+                .secureTextField, id: "password", label: "Password", frame: FakeUI.frame(20, 300, 360, 44),
+                state: UIState(focused: focusedPassword ? true : nil), platform: platform
+            ),
+        ]
+        if keyboard { children.append(FakeUI.node(.keyboard, frame: FakeUI.frame(0, 574, 402, 300), platform: platform)) }
+        return FakeUI.tree(platform: platform, children)
+    }
+
+    static func type(_ arguments: [String], on device: DeviceID, trees: [UITree], refusing: Bool = true) async throws -> FakeDeviceBackend {
+        let backend = FakeDeviceBackend(platform: device.platform, trees: trees)
+        try await TypeIntoTests.quiet {
+            try await Type.parse(arguments + ["--device", device.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: nil, logger: OffsiderLogger(), refusingSecureArgument: refusing)
+        }
+        return backend
+    }
+
+    static func refusal(_ arguments: [String], on device: DeviceID, trees: [UITree]) async throws -> (CLIError?, FakeDeviceBackend) {
+        let backend = FakeDeviceBackend(platform: device.platform, trees: trees)
+        let error = await #expect(throws: CLIError.self) {
+            try await TypeIntoTests.quiet {
+                try await Type.parse(arguments + ["--device", device.rawValue])
+                    .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: nil, logger: OffsiderLogger(), refusingSecureArgument: true)
+            }
+        }
+        return (error, backend)
+    }
+
+    @Test("argument text aimed at a password field by --into-id exits 64 with nothing sent, pointing at login and --stdin", arguments: [android, simulator])
+    func intoPassword(device: DeviceID) async throws {
+        let (error, backend) = try await Self.refusal(["--into-id", "password", "hunter2"], on: device, trees: [Self.form(platform: device.platform)])
+
+        #expect(error?.reason == .secureFieldArgument)
+        #expect(error?.exitCode.rawValue == 64)
+        #expect(error?.userFacingDescription == "The field is a password field, and text given as an argument stays in shell history and process lists, so Offsider typed nothing. Sign in with `offsider login --device \(device.rawValue)`, or pipe it in with `offsider type --stdin --device \(device.rawValue)`.")
+        #expect(error?.hint == "offsider login --device \(device.rawValue)")
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("on Android argument text with a password field focused is refused with nothing sent")
+    func focusedPassword() async throws {
+        let (error, backend) = try await Self.refusal(["hunter2"], on: Self.android, trees: [Self.form(focusedPassword: true, platform: .android)])
+        #expect(error?.reason == .secureFieldArgument)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("--require-focus-id on a focused password field refuses argument text")
+    func requireFocusPassword() async throws {
+        let (error, _) = try await Self.refusal(["--require-focus-id", "password", "hunter2"], on: Self.android, trees: [Self.form(focusedPassword: true, platform: .android)])
+        #expect(error?.reason == .secureFieldArgument)
+    }
+
+    @Test("argument text into an ordinary field is typed")
+    func ordinaryField() async throws {
+        let backend = try await Self.type(["--into-id", "email", "a@b.c"], on: Self.simulator, trees: [Self.form(platform: .ios), Self.form(keyboard: true, platform: .ios)])
+        #expect(backend.session.calls.first == .perform(.tapAt(x: 200, y: 222)))
+        #expect(backend.session.calls.count == 2)
+    }
+
+    @Test("an iOS simulator reports no focus, so without --into-* argument text is typed")
+    func simulatorFailsOpen() async throws {
+        let backend = try await Self.type(["abc"], on: Self.simulator, trees: [Self.form(focusedPassword: true, platform: .ios)])
+        #expect(backend.session.calls.count == 1)
+    }
+
+    @Test("login's own typing, which never passes the refusal, still reaches a password field")
+    func loginUnaffected() async throws {
+        let backend = try await Self.type(["--into-id", "password", "--replace", "x"], on: Self.simulator, trees: [Self.form(platform: .ios), Self.form(keyboard: true, platform: .ios)], refusing: false)
+        #expect(backend.session.calls.first == .perform(.tapAt(x: 200, y: 322)))
+    }
+
+    @Test("--allow-path without --file is a usage error")
+    func allowPathNeedsFile() {
+        #expect(throws: (any Error).self) { try Type.parse(["--allow-path", "abc", "--device", Self.android.rawValue]) }
+    }
+
+    @Test("--file reads through the file checks and refuses a secret's file name with exit 64")
+    func fileRefused() throws {
+        let folder = (NSTemporaryDirectory() as NSString).appendingPathComponent("offsider-type-file-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        try Data("TOKEN=x".utf8).write(to: URL(fileURLWithPath: folder + "/.env"))
+        try Data("hello".utf8).write(to: URL(fileURLWithPath: folder + "/text.txt"))
+
+        #expect(throws: TextFileInput.Refused.self) { try Type.parse(["--file", folder + "/.env", "--device", Self.android.rawValue]).resolvedText() }
+        #expect(try Type.parse(["--file", folder + "/.env", "--allow-path", "--device", Self.android.rawValue]).resolvedText() == "TOKEN=x")
+        #expect(try Type.parse(["--file", folder + "/text.txt", "--device", Self.android.rawValue]).resolvedText() == "hello")
     }
 }

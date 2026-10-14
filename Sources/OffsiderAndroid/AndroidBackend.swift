@@ -37,6 +37,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var treeSources: [String: AndroidTreeSource] = [:]
     var announcedFallbacks: Set<String> = []
     var warnedAboutTruncation: Set<String> = []
+    /// Each phone's front package from its latest deny-list check, reused for a second.
+    var foregroundChecks: [String: (at: ContinuousClock.Instant, package: String?)] = [:]
 
     public init(host: AndroidHost = .live(), log: @escaping AndroidLog) {
         self.host = host
@@ -146,6 +148,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
 
     /// The helper's dump (else `uiautomator dump --compressed`) mapped to dp; with `point`, the deepest node there as the only root.
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+        try await requireDrivableForeground(id.rawValue)
+        return try await readTree(id, point: point)
+    }
+
+    /// The tree without the phone deny-list check, for the lock screen `wake --unlock` reads.
+    func readTree(_ id: DeviceID, point: UIPoint?) async throws -> UITree {
         let serial = id.rawValue
         let startedAt = Date()
         let roots: [UINode]
@@ -268,7 +276,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             route: { try await self.inputRoute(for: serial, shell: shell) },
             avdName: { await self.avdName(for: serial) },
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
-            focusedSecureField: { await self.hasFocusedSecureField(id) },
+            focusedSecureField: { await self.focusedSecureField(id) },
+            secretHelper: { HelperInputDriver(session: try await self.helperForSecret(serial)) },
+            requireForeground: { try await self.requireDrivableForeground(serial) },
             multiTouchHelper: { try await self.multiTouchHelper(serial) },
             readFocusedField: { await self.focusedFieldReading(serial) },
             pasteFocused: { field in try await self.pasteIntoFocusedField(serial, expecting: field) },
@@ -284,8 +294,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
     }
 
-    /// Best effort: an unreadable screen does not block typing, since the guard only keeps a password off the clipboard.
-    private func hasFocusedSecureField(_ id: DeviceID) async -> Bool {
+    /// Whether a password field has focus; `unknown` when the screen cannot be read, which a paste refuses.
+    private func focusedSecureField(_ id: DeviceID) async -> FocusedSecureField {
         let serial = id.rawValue
         do {
             let roots: [UINode]
@@ -293,10 +303,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             case .helper(let session): roots = try await helperRoots(serial, session: session).roots
             case .uiautomator: roots = try await uiautomatorRoots(serial)
             }
-            return UITree(platform: .android, device: serial, roots: roots).secureFocus == .secureFocused
+            return UITree(platform: .android, device: serial, roots: roots).secureFocus == .secureFocused ? .secure : .notSecure
         } catch {
-            log(.debug, "Could not check for a focused password field on \(id.rawValue) before pasting: \((error as? AndroidError)?.message ?? error.localizedDescription)")
-            return false
+            log(.debug, "Could not check for a focused password field on \(id.rawValue): \((error as? AndroidError)?.message ?? error.localizedDescription)")
+            return .unknown
         }
     }
 
@@ -332,6 +342,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// or one `input motionevent` script per call over adb.
     public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         try await prepare()
+        if steps.contains(where: { if case .down = $0 { return true } else { return false } }) {
+            try await requireDrivableForeground(id.rawValue)
+        }
         let inputSteps: [AndroidInputStep] = steps.map { step in
             switch step {
             case .down(let x, let y): return .touch(.down, AndroidPoint(x: x, y: y))
@@ -402,6 +415,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// gRPC `getScreenshot`, turned upright when only the guest rotated; else adb's `screencap`.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         try await prepare()
+        try await requireDrivableForeground(id.rawValue)
         return try await host.timing.measure(.capture) {
             try await capturePNG(id.rawValue)
         }
@@ -694,6 +708,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         treeSources = [:]
         announcedFallbacks = []
         warnedAboutTruncation = []
+        foregroundChecks = [:]
         transports = [:]
         geometries = [:]
         activeUniqueIds = [:]

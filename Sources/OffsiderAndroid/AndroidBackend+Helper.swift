@@ -123,6 +123,23 @@ extension AndroidBackend {
         }
     }
 
+    /// The helper for a password or unlock code, started if needed; anything else is `helper_unavailable`, before anything is typed.
+    func helperForSecret(_ serial: String) async throws -> HelperSession {
+        if try AndroidInputPolicy.policy(host: host) == .input {
+            throw AndroidError.secretNeedsHelper(serial, reason: "\(AndroidInputPolicy.variable) is input")
+        }
+        let source: AndroidTreeSource
+        do {
+            source = try await treeSource(for: serial, announcingFallback: false)
+        } catch let error as AndroidError where error.kind == .helperBusy || error.kind == .helperUnavailable {
+            throw AndroidError.secretNeedsHelper(serial, reason: error.kind == .helperBusy ? "another UiAutomation client holds it" : "it could not start")
+        }
+        switch source {
+        case .helper(let session): return session
+        case .uiautomator(let reason): throw AndroidError.secretNeedsHelper(serial, reason: reason.description)
+        }
+    }
+
     /// The helper this command already started on `serial`, for callers that must never start one.
     func runningHelper(for serial: String) -> HelperSession? {
         guard case .helper(let session) = treeSources[serial] else { return nil }

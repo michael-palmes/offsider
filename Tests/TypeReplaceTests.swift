@@ -78,17 +78,17 @@ struct TypeReplaceTests {
         #expect(clear == Self.iosClear)
     }
 
-    @Test("an Android batch step replaces, even with empty text, and plain type does not")
+    @Test("an Android batch step replaces, even with empty text, and plain type does not (past its password-field check)")
     func androidBatch() async throws {
         for (arguments, expected) in [(["--replace", "bye"], "bye"), (["--replace", ""], "")] {
-            let primitives = try await Self.primitives(arguments, Self.context(.android))
+            let primitives = try await Self.primitives(arguments, Self.context(.android)).filter { if case .run = $0 { false } else { true } }
             guard primitives.count == 1, case .text(let text, replace: true) = primitives[0] else {
                 Issue.record("expected one replacing text step for \(arguments), got \(primitives)")
                 continue
             }
             #expect(text == expected)
         }
-        let plain = try await Self.primitives(["bye"], Self.context(.android))
+        let plain = try await Self.primitives(["bye"], Self.context(.android)).filter { if case .run = $0 { false } else { true } }
         guard plain.count == 1, case .text("bye", replace: false) = plain[0] else {
             Issue.record("expected one plain text step, got \(plain)")
             return

@@ -46,6 +46,7 @@ struct TypeTextTests {
     func batchAndroid() async throws {
         let primitives = try await Type.parse([Self.decomposed, "--device", "x"])
             .toBatchPrimitives(context: Self.context(.android), logger: OffsiderLogger())
+            .filter { if case .run = $0 { false } else { true } }
         guard primitives.count == 1, case .text(let text, replace: false) = primitives[0] else {
             Issue.record("expected one text step, got \(primitives)")
             return
