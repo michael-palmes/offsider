@@ -124,6 +124,7 @@ extension AndroidBackend: DisplayControlling {
                 if probing, geometries[serial] == nil, let probe = status.probe, let geometry = try? AndroidDisplayGeometry.parse(probe) {
                     geometries[serial] = geometry
                     activeUniqueIds[serial] = AndroidDisplayGeometry.viewportUniqueId(in: probe)
+                    noteAPILevel(in: probe, of: serial)
                 }
             } catch {
                 log(.debug, "Could not read the displays and posture of \(serial): \(error)")

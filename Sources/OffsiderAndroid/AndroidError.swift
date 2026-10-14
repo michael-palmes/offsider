@@ -370,6 +370,38 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    /// `input` drops a key combination before Android 12, and a drag or held touch before Android 10, with no error, so only the helper can send one.
+    static func inputNeedsHelper(_ serial: String, for gap: AdbInputGap, apiLevel: Int, reason: HelperUnavailableReason?) -> AndroidError {
+        let lead = switch gap {
+        case .keyCombination:
+            "\(serial) runs API \(apiLevel), where `input` has no key combinations (Android 12, API 31, added them), so Offsider sent nothing. Combinations go through the UiAutomation helper there,"
+        case .motionEvent:
+            "\(serial) runs API \(apiLevel), where `input` has no motionevent (Android 10, API 29, added it), so Offsider sent nothing. A drag, or a touch held across other steps, goes through the UiAutomation helper there,"
+        }
+        switch reason {
+        case nil: return AndroidError(.helperUnavailable, "\(lead) and OFFSIDER_ANDROID_INPUT is input: unset it, then retry.")
+        case .forcedOff?: return AndroidError(.helperUnavailable, "\(lead) and OFFSIDER_ANDROID_TREE is uiautomator: unset it, then retry.")
+        case let reason?: return AndroidError(.helperUnavailable, "\(lead) which is unavailable on \(serial) (\(reason)).")
+        }
+    }
+
+    /// A script `input` on this API level would ignore; the session sends such steps through the helper first, so this is a last check.
+    static func inputLacks(_ gap: AdbInputGap, apiLevel: Int) -> AndroidError {
+        let lacking = gap == .motionEvent ? "motionevent (Android 10, API 29, added it)" : "keycombination (Android 12, API 31, added it)"
+        return AndroidError(
+            .notSupported,
+            "`input` on API \(apiLevel) has no \(lacking), so Offsider sent nothing. These steps need the UiAutomation helper there: unset OFFSIDER_ANDROID_INPUT and OFFSIDER_ANDROID_TREE, then retry."
+        )
+    }
+
+    /// Before Android 10 only the helper holds a finger down, and it ends with the command.
+    static func detachedTouchNeedsMotionEvent(_ serial: String, apiLevel: Int) -> AndroidError {
+        AndroidError(
+            .notSupported,
+            "\(serial) runs API \(apiLevel), where `input` has no motionevent (Android 10, API 29, added it), so a touch cannot stay down between commands, and Offsider sent nothing. Use `touch --down --up` in one command (with --delay for a long press), or both touch steps in one `batch`."
+        )
+    }
+
     static func sliderNeedsHelper(_ serial: String, reason: HelperUnavailableReason) -> AndroidError {
         guard reason != .forcedOff else {
             return AndroidError(

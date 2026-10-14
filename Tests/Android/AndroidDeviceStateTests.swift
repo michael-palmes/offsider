@@ -8,8 +8,9 @@ import Testing
 struct AndroidDeviceStateTests {
     static let device = AndroidBackendTests.device
     nonisolated static let shellPrefix = "shell,v2,raw:"
+    static let read = AndroidPermissionPlan.readScript(package: "com.example.app")
 
-    static func server(dumpsys: String = "  Package [com.example.app] (1):\n" + PermissionServiceTests.dumpsys, devicesList: String? = nil, reply: @escaping @Sendable (String) -> FakeAdbServer.Reply = { _ in FakeAdbServer.shell() }) -> FakeAdbServer {
+    static func server(dumpsys: String = "36\n  Package [com.example.app] (1):\n" + PermissionServiceTests.dumpsys, devicesList: String? = nil, reply: @escaping @Sendable (String) -> FakeAdbServer.Reply = { _ in FakeAdbServer.shell() }) -> FakeAdbServer {
         FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556", "R58M123ABC"],
             host: { service in
@@ -21,7 +22,7 @@ struct AndroidDeviceStateTests {
             },
             device: { _, service in
                 let command = service.hasPrefix(shellPrefix) ? String(service.dropFirst(shellPrefix.count)) : service
-                if command.hasPrefix("dumpsys package ") { return FakeAdbServer.shell(stdout: dumpsys) }
+                if command.contains("dumpsys package ") { return FakeAdbServer.shell(stdout: dumpsys) }
                 return reply(command)
             }
         ))
@@ -31,21 +32,48 @@ struct AndroidDeviceStateTests {
         server.services.filter { $0.hasPrefix(shellPrefix) }.map { String($0.dropFirst(shellPrefix.count)) }
     }
 
-    @Test("a grant is one read and one script")
+    @Test("a grant on API 29 and later is one read and one script")
     func grantRoundTrips() async throws {
         let server = Self.server()
         let backend = try AndroidBackendTests.backend(server)
         let change = try await backend.applyPermission(.grant, [.service(.camera), .service(.location)], app: "com.example.app", on: Self.device)
 
-        #expect(Self.shellCommands(server) == ["dumpsys package com.example.app", "pm grant com.example.app android.permission.CAMERA"])
+        #expect(Self.shellCommands(server) == [Self.read, "pm grant com.example.app android.permission.CAMERA"])
         #expect(change.targets.map { $0.permissions.map(\.changed) } == [[true], [false, false]])
+    }
+
+    @Test("on Android 9 a grant lists the dangerous permissions, then reaches a camera permission dumpsys has not listed yet")
+    func android9Grant() async throws {
+        let server = Self.server(dumpsys: Android9Fixtures.permissionRead) { command in
+            command == AndroidPermissionPlan.dangerousScript ? FakeAdbServer.shell(stdout: Android9Fixtures.dangerousPermissions) : FakeAdbServer.shell()
+        }
+        let change = try await AndroidBackendTests.backend(server).applyPermission(.grant, [.service(.camera)], app: "com.example.app", on: Self.device)
+
+        #expect(Self.shellCommands(server) == [Self.read, AndroidPermissionPlan.dangerousScript, "pm grant com.example.app android.permission.CAMERA"])
+        #expect(change.targets[0].permissions.map(\.previous) == [.denied])
+    }
+
+    @Test("on Android 9 a failing dangerous list is an error naming pm, and nothing is granted", arguments: [
+        ("", "Error: permission service busy\n", 1, "permission service busy"),
+        ("\n", "", 0, "it printed no Dangerous Permissions list"),
+    ] as [(String, String, UInt8, String)])
+    func android9ListFails(stdout: String, stderr: String, status: UInt8, detail: String) async throws {
+        let server = Self.server(dumpsys: Android9Fixtures.permissionRead) { command in
+            command == AndroidPermissionPlan.dangerousScript ? FakeAdbServer.shell(stdout: stdout, stderr: stderr, status: status) : FakeAdbServer.shell()
+        }
+        let error = await #expect(throws: AndroidError.self) {
+            _ = try await AndroidBackendTests.backend(server).applyPermission(.grant, [.service(.camera)], app: "com.example.app", on: Self.device)
+        }
+        #expect(error?.message.contains("pm list permissions -g -d") == true)
+        #expect(error?.message.contains(detail) == true)
+        #expect(Self.shellCommands(server) == [Self.read, AndroidPermissionPlan.dangerousScript])
     }
 
     @Test("a grant with nothing to change runs only the read")
     func grantNothing() async throws {
         let server = Self.server()
         _ = try await AndroidBackendTests.backend(server).applyPermission(.grant, [.service(.location)], app: "com.example.app", on: Self.device)
-        #expect(Self.shellCommands(server) == ["dumpsys package com.example.app"])
+        #expect(Self.shellCommands(server) == [Self.read])
     }
 
     @Test("an uninstalled package fails with the app-not-installed reason")

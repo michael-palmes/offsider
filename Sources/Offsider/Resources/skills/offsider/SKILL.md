@@ -1,10 +1,10 @@
 ---
 name: offsider
-description: Provides agent-ready Offsider CLI usage guidance for iOS Simulator and Android Emulator automation. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "log in or switch test users", "number and mask screenshots for a report", "redact logs", "React Native dev menu or LogBox", or "interact with an iOS, Android or React Native app (Expo dev client, debug or release build)".
+description: Provides Offsider CLI guidance for automating iOS and Android simulators, emulators and USB devices. Use when asked to "use Offsider", "automate a simulator", "automate an Android emulator or USB phone", "boot an emulator", "tap/swipe/type on simulator or emulator", "replace or clear a text field", "press back", "set a slider", "describe UI", "take a screenshot", "record video", "batch steps", "wait for an element", "assert", "read app logs", "dark mode", "grant a permission", "clean status bar", "Face ID or fingerprint", "keep a screen awake or unlock it", "rotate", "fold or unfold a foldable", "text size", "log in or switch test users", "number and mask screenshots for a report", "redact logs", "React Native dev menu or LogBox", or "interact with an iOS, Android or React Native app (Expo dev client, debug or release build)".
 ---
 # Offsider
 
-Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from the terminal: it reads the screen as an accessibility tree, then taps, types, swipes and captures, all on this Mac. `offsider guide <topic>` prints version-matched depth for each topic below; read a topic before guessing.
+Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from the terminal: it reads the screen as an accessibility tree, then taps, types, swipes and captures, all on this Mac. `offsider guide <topic>` prints depth for each topic below; read a topic before guessing.
 
 ## Every session
 

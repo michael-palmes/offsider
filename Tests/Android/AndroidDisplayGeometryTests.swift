@@ -13,6 +13,15 @@ struct AndroidDisplayGeometryTests {
         """
     }
 
+    @Test("the probe's last line carries the API level, which neither changes the geometry nor is required")
+    func apiLevelLine() throws {
+        let probe = Self.probe(rotation: 0, frame: "[0, 0, 1080, 2424]")
+        #expect(AndroidDisplayGeometry.apiLevel(in: probe + "\nAPI level: 28\n") == 28)
+        #expect(try AndroidDisplayGeometry.parse(probe + "\nAPI level: 28\n") == AndroidDisplayGeometry.parse(probe))
+        #expect(AndroidDisplayGeometry.apiLevel(in: probe + "\nAPI level: \n") == nil)
+        #expect(AndroidDisplayGeometry.apiLevel(in: probe) == nil)
+    }
+
     @Test("portrait: logical size is the panel size and the scale is density over 160")
     func portrait() throws {
         let geometry = try AndroidDisplayGeometry.parse(Self.probe(rotation: 0, frame: "[0, 0, 1080, 2424]"))

@@ -152,36 +152,76 @@ public struct PermissionChange: Equatable, Sendable {
     }
 }
 
-/// An Android app's runtime permissions from `dumpsys package`, in dumpsys order.
+/// An Android app's runtime permissions from `dumpsys package`, in dumpsys order (requested order before Android 10).
 public struct AndroidPackagePermissions: Equatable, Sendable {
+    /// From Android 10 (API 29) dumpsys lists every requested runtime permission; before, only those with saved state.
+    public static let listsEveryRuntimePermission = 29
+    /// `pm clear-permission-flags` arrived in Android 13 (API 33).
+    public static let clearsPermissionFlags = 33
+
     public let requested: [String]
     public let runtime: [(name: String, granted: Bool)]
+    /// Runtime permissions with the user-fixed flag: the user chose "Don't ask again".
+    public let userFixed: Set<String>
+    /// Nil when `getprop ro.build.version.sdk` answered nothing.
+    public let apiLevel: Int?
+
+    public var clearsFlags: Bool { (apiLevel ?? Self.clearsPermissionFlags) >= Self.clearsPermissionFlags }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.requested == rhs.requested && lhs.runtime.map(\.name) == rhs.runtime.map(\.name) && lhs.runtime.map(\.granted) == rhs.runtime.map(\.granted)
+            && lhs.userFixed == rhs.userFixed && lhs.apiLevel == rhs.apiLevel
     }
 
-    public init(requested: [String], runtime: [(name: String, granted: Bool)]) {
+    public init(requested: [String], runtime: [(name: String, granted: Bool)], userFixed: Set<String> = [], apiLevel: Int? = nil) {
         self.requested = requested
         self.runtime = runtime
+        self.userFixed = userFixed
+        self.apiLevel = apiLevel
     }
 
     public func isGranted(_ permission: String) -> Bool? {
         runtime.first { $0.name == permission }?.granted
     }
 
-    /// The first `requested permissions:` block and the first `runtime permissions:` block (user 0).
-    public static func parse(dumpsysPackage output: String) -> AndroidPackagePermissions {
+    /// Whether the read must also list the device's dangerous permissions to find the runtime ones dumpsys leaves out.
+    public static func needsDangerousList(apiLevel: Int?) -> Bool {
+        apiLevel.map { $0 < listsEveryRuntimePermission } ?? false
+    }
+
+    /// The first `requested permissions:` and `runtime permissions:` blocks (user 0); with `dangerous`, a requested one missing from the runtime block is denied.
+    public static func parse(dumpsysPackage output: String, apiLevel: Int? = nil, dangerous: Set<String>? = nil) -> AndroidPackagePermissions {
         let lines = output.components(separatedBy: .newlines)
         let requested = block(named: "requested permissions:", in: lines).map { line in
             String(line.prefix { $0 != ":" && $0 != "," && !$0.isWhitespace })
         }
-        let runtime: [(name: String, granted: Bool)] = block(named: "runtime permissions:", in: lines).compactMap { line in
+        let listed: [(name: String, granted: Bool, flags: String)] = block(named: "runtime permissions:", in: lines).compactMap { line in
             let parts = line.split(separator: ":", maxSplits: 1)
             guard parts.count == 2 else { return nil }
-            return (String(parts[0]), parts[1].contains("granted=true"))
+            return (String(parts[0]), parts[1].contains("granted=true"), String(parts[1]))
         }
-        return AndroidPackagePermissions(requested: requested, runtime: runtime)
+        let userFixed = Set(listed.filter { $0.flags.contains("USER_FIXED") }.map(\.name))
+        guard let dangerous else {
+            return AndroidPackagePermissions(requested: requested, runtime: listed.map { ($0.name, $0.granted) }, userFixed: userFixed, apiLevel: apiLevel)
+        }
+        let granted = Dictionary(listed.map { ($0.name, $0.granted) }, uniquingKeysWith: { first, _ in first })
+        let runtime = requested.compactMap { name in granted[name].map { (name, $0) } ?? (dangerous.contains(name) ? (name, false) : nil) }
+            + listed.filter { !requested.contains($0.name) }.map { ($0.name, $0.granted) }
+        return AndroidPackagePermissions(requested: requested, runtime: runtime, userFixed: userFixed, apiLevel: apiLevel)
+    }
+
+    /// `pm list permissions -g -d`'s permission names; nil without its `Dangerous Permissions:` header.
+    public static func parseDangerous(_ output: String) -> Set<String>? {
+        let lines = output.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let header = lines.firstIndex(of: "Dangerous Permissions:") else { return nil }
+        return Set(lines[header...].compactMap { $0.hasPrefix("permission:") ? String($0.dropFirst("permission:".count)) : nil })
+    }
+
+    /// The read script's stdout split into the API level on its first line and the dump after it.
+    public static func splitRead(_ output: String) -> (apiLevel: Int?, dump: Substring) {
+        guard let newline = output.firstIndex(where: \.isNewline) else { return (Int(output.trimmingCharacters(in: .whitespaces)), output[...]) }
+        let level = Int(output[..<newline].trimmingCharacters(in: .whitespaces))
+        return (level, level == nil ? output[...] : output[output.index(after: newline)...])
     }
 
     private static func block(named header: String, in lines: [String]) -> [String] {
@@ -246,9 +286,17 @@ public struct AndroidPermissionPlan: Equatable, Sendable {
                     if granted, first { commands.append("pm revoke \(package) \(permission)"); revoked = true }
                     entries.append(PermissionEntry(name: permission, previous: previous, current: .denied, changed: granted))
                 case .reset:
-                    if first { commands.append("pm revoke \(package) \(permission) && pm clear-permission-flags \(package) \(permission) user-set user-fixed") }
+                    let staysFixed = !state.clearsFlags && state.userFixed.contains(permission)
+                    if first {
+                        commands.append(state.clearsFlags
+                            ? "pm revoke \(package) \(permission) && pm clear-permission-flags \(package) \(permission) user-set user-fixed"
+                            : "pm revoke \(package) \(permission)")
+                        if staysFixed {
+                            notes.append("Android 12 and earlier cannot clear \(permission)'s user-fixed flag from the shell, so \(package) will not ask for it again until it is reinstalled.")
+                        }
+                    }
                     revoked = revoked || granted
-                    entries.append(PermissionEntry(name: permission, previous: previous, current: .notDetermined, changed: granted ? true : nil))
+                    entries.append(PermissionEntry(name: permission, previous: previous, current: staysFixed ? .denied : .notDetermined, changed: granted ? true : nil))
                 }
             }
             changes.append(PermissionTargetChange(target: target.name, permissions: entries))
@@ -262,9 +310,12 @@ public struct AndroidPermissionPlan: Equatable, Sendable {
         )
     }
 
+    /// The API level on the first line, then the dump; the script's status is dumpsys's.
     public static func readScript(package: String) -> String {
-        "dumpsys package \(package)"
+        "getprop ro.build.version.sdk; dumpsys package \(package)"
     }
+
+    public static let dangerousScript = "pm list permissions -g -d"
 }
 
 public enum IOSPermissionArguments {

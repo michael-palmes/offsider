@@ -208,7 +208,7 @@ struct PermissionCommand: AsyncParsableCommand {
             let same = target.permissions.filter { $0.changed == false }
             if !done.isEmpty {
                 let tail = platform == .ios ? " (simctl privacy)" : ""
-                let asks = change.action == .reset ? "; it asks again on next use" : ""
+                let asks = change.action == .reset && done.allSatisfy { $0.current == .notDetermined } ? "; it asks again on next use" : ""
                 lines.append("\(verb) \(label(done)) \(preposition) \(app)\(tail)\(asks)")
             }
             if !same.isEmpty {

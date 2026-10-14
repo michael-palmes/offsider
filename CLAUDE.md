@@ -1,6 +1,6 @@
 # Offsider agent guide
 
-Offsider: a hand for your agent on the iOS Simulator and the Android Emulator. A Swift CLI that inspects and drives iOS Simulators and Android Emulators (describe the UI, tap, type, swipe, capture) for terminals and AI agents.
+Offsider: a hand for your agent on iOS and Android, simulated or real. A Swift CLI that inspects and drives iOS Simulators, Android Emulators and USB iPhones, iPads and Android phones (describe the UI, tap, type, swipe, capture) for terminals and AI agents.
 
 IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for Swift Testing, swift-argument-parser, idb/FBSimulatorControl, grpc-swift-2 and adb server protocol tasks.
 

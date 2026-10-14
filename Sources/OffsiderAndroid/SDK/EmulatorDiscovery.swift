@@ -14,6 +14,7 @@ struct EmulatorDiscovery: Equatable, Sendable, CustomStringConvertible {
     var jwkActivePath: String? { values["grpc.jwk_active"] }
     var allowlistPath: String? { values["grpc.allowlist"] }
     var emulatorVersion: String? { values["emulator.version"] }
+    var avdDirectory: String? { values["avd.dir"] }
 
     /// Never prints the gRPC token.
     var description: String {

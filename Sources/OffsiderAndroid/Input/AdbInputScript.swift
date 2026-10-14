@@ -1,21 +1,62 @@
 import Foundation
 import OffsiderCore
 
+/// An `input` subcommand older Android lacks, so the UiAutomation helper sends those steps instead.
+enum AdbInputGap: Sendable {
+    /// `input motionevent`, from Android 10 (API 29).
+    case motionEvent
+    /// `input keycombination`, from Android 12 (API 31).
+    case keyCombination
+}
+
 /// Steps as device shell scripts for `input`; pauses run on the device with `sleep`, which takes fractions.
 enum AdbInputScript {
     /// Scripts stay well under the 64 KB adb request limit.
     static let maxScriptLength = 8_000
 
-    /// Modifier downs, a press and their ups become `input keycombination`; a held key becomes `--longpress`.
-    static func scripts(for steps: [AndroidInputStep]) throws -> [String] {
+    /// Combinations become `input keycombination`, a held key `--longpress`, and before Android 10 a held tap a swipe that stays put.
+    static func scripts(for steps: [AndroidInputStep], apiLevel: Int? = nil) throws -> [String] {
         var commands: [String] = []
         var index = 0
         while index < steps.count {
-            let (command, used) = try command(at: index, in: steps)
+            let (command, used) = try command(at: index, in: steps, apiLevel: apiLevel)
             commands.append(command)
             index += used
         }
         return pack(commands)
+    }
+
+    /// Android 10 (API 29) added `input motionevent` and Android 12 (API 31) `input keycombination`; before, `input` ignores them.
+    static let motionEventAPILevel = 29
+    static let keyCombinationAPILevel = 31
+
+    /// Whether `input` on this API level sends touch phases; an unknown level counts as recent.
+    static func sendsMotionEvents(apiLevel: Int?) -> Bool {
+        (apiLevel ?? motionEventAPILevel) >= motionEventAPILevel
+    }
+
+    /// Whether these steps hold a touch phase only `input motionevent` can send: anything but a held tap.
+    static func needsMotionEvent(_ steps: [AndroidInputStep]) -> Bool {
+        var index = 0
+        while index < steps.count {
+            if let tap = heldTap(at: index, in: steps) {
+                index += tap.used
+                continue
+            }
+            if case .touch = steps[index] { return true }
+            index += 1
+        }
+        return false
+    }
+
+    /// Whether `input` on this API level sends a key combination; an unknown level counts as recent.
+    static func sendsKeyCombinations(apiLevel: Int?) -> Bool {
+        (apiLevel ?? keyCombinationAPILevel) >= keyCombinationAPILevel
+    }
+
+    /// Whether `scripts(for:)` turns any of these steps into an `input keycombination`.
+    static func hasKeyCombination(_ steps: [AndroidInputStep]) -> Bool {
+        steps.indices.contains { (try? keyCombination(at: $0, in: steps)) != nil }
     }
 
     /// Total device-side waiting, so the caller can give the shell call enough time.
@@ -29,7 +70,15 @@ enum AdbInputScript {
         }
     }
 
-    private static func command(at index: Int, in steps: [AndroidInputStep]) throws -> (String, Int) {
+    private static func command(at index: Int, in steps: [AndroidInputStep], apiLevel: Int?) throws -> (String, Int) {
+        if !sendsMotionEvents(apiLevel: apiLevel), case .touch = steps[index] {
+            guard let tap = heldTap(at: index, in: steps) else {
+                throw AndroidError.inputLacks(.motionEvent, apiLevel: apiLevel ?? motionEventAPILevel)
+            }
+            let point = pixels(tap.point)
+            let ms = Int((tap.hold * 1000).rounded())
+            return (ms > 0 ? "input swipe \(point) \(point) \(ms)" : "input tap \(point)", tap.used)
+        }
         switch steps[index] {
         case .tap(let point):
             return ("input tap \(pixels(point))", 1)
@@ -48,6 +97,9 @@ enum AdbInputScript {
             return ("input keyevent \(try AndroidButtonMap.requireKeyCode(for: button))", 1)
         case .key(.down, _), .button(.down, _):
             if let combination = try keyCombination(at: index, in: steps) {
+                guard sendsKeyCombinations(apiLevel: apiLevel) else {
+                    throw AndroidError.inputLacks(.keyCombination, apiLevel: apiLevel ?? keyCombinationAPILevel)
+                }
                 return combination
             }
             if let held = try heldKey(at: index, in: steps) {
@@ -77,6 +129,19 @@ enum AdbInputScript {
         guard released.sorted() == modifiers.sorted() else { return nil }
         let codes = try (modifiers + [key]).map { String(try AndroidKeyTable.requireKeyCode(for: $0)) }
         return ("input keycombination " + codes.joined(separator: " "), cursor - index)
+    }
+
+    /// `touch down(p)`, optional pauses, `touch up(p)`: one finger lifted on the pixel `input` pressed.
+    private static func heldTap(at index: Int, in steps: [AndroidInputStep]) -> (point: AndroidPoint, hold: TimeInterval, used: Int)? {
+        guard case .touch(.down, let point) = steps[index] else { return nil }
+        var cursor = index + 1
+        var hold: TimeInterval = 0
+        while cursor < steps.count, case .pause(let seconds) = steps[cursor] {
+            hold += seconds
+            cursor += 1
+        }
+        guard cursor < steps.count, case .touch(.up, let up) = steps[cursor], pixels(up) == pixels(point) else { return nil }
+        return (point, hold, cursor + 1 - index)
     }
 
     /// `down(k)`, optional pauses, `up(k)`: a long press when held, else a plain press.

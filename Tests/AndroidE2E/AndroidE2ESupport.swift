@@ -89,6 +89,12 @@ enum AndroidE2E {
         try await adb("shell \(quote(command))", timeout: timeout)
     }
 
+    static func apiLevel() async throws -> Int {
+        let text = try await shell("getprop ro.build.version.sdk").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let level = Int(text) else { throw AndroidE2EError(description: "getprop ro.build.version.sdk answered '\(text)'") }
+        return level
+    }
+
     /// Runs offsider with `--device` set to the guarded serial.
     static func offsider(_ arguments: String, environment: [String: String]? = nil, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
         let serial = try await serial()
@@ -114,16 +120,16 @@ enum AndroidE2E {
         return apk
     }
 
-    /// Installs the APK unless the emulator already has this exact one (its SHA-256 in a marker file).
+    /// Installs the APK unless the emulator already has this exact one (its SHA-256 and `pm path` line in a marker file).
     /// The debug and release APKs share the package, so each records its own digest and the other reinstalls.
     static func ensurePlaygroundInstalled() async throws {
         try await installOnce {
             let apk = try apkPath()
             let digest = try apkDigest(apk)
-            let installed = (try? await shell("cat \(marker) 2>/dev/null; pm path \(package)")) ?? ""
-            if !(installed.contains(digest) && installed.contains("package:")) {
-                if try await installedDigest() == digest {
-                    try await shell("echo \(digest) > \(marker)")
+            let state = (try? await shell("cat \(marker) 2>/dev/null; pm path \(package)")) ?? ""
+            if !AndroidInstallMarker.isCurrent(state, digest: digest) {
+                if let installed = AndroidInstallMarker.installLine(in: state), try await installedDigest(installed) == digest {
+                    try await recordMarker(digest, pmPath: state)
                 } else {
                     try await install(apk, digest: digest)
                 }
@@ -146,11 +152,9 @@ enum AndroidE2E {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// The SHA-256 of the installed package's base APK, so a build installed by hand is adopted instead of reinstalled.
-    private static func installedDigest() async throws -> String? {
-        let path = (try? await shell("pm path \(package)"))?.split(whereSeparator: \.isNewline).first { $0.hasPrefix("package:") }
-        guard let path else { return nil }
-        let sum = try await shell("sha256sum \(path.dropFirst("package:".count)) 2>/dev/null", timeout: 120)
+    /// The SHA-256 of the base APK at `pm path`'s line, so a build installed by hand is adopted instead of reinstalled.
+    private static func installedDigest(_ installLine: String) async throws -> String? {
+        let sum = (try? await shell("sha256sum \(quote(String(installLine.dropFirst("package:".count)))) 2>/dev/null", timeout: 120)) ?? ""
         return sum.split(separator: " ").first.map(String.init)
     }
 
@@ -166,7 +170,15 @@ enum AndroidE2E {
             try await shellInstall("pm install \(remote)")
         }
         _ = try? await shell("rm \(remote)")
-        try await shell("echo \(digest) > \(marker)")
+        try await recordMarker(digest, pmPath: try await shell("pm path \(package)"))
+    }
+
+    /// Every install gets a new `pm path` directory, so a build installed later by anything else leaves this marker stale.
+    private static func recordMarker(_ digest: String, pmPath: String) async throws {
+        guard let line = AndroidInstallMarker.line(digest: digest, pmPath: pmPath) else {
+            throw AndroidE2EError(description: "pm path \(package) printed no package: line: \(pmPath.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+        try await shell("echo \(quote(line)) > \(marker)")
     }
 
     /// `pm install` reports failure on stdout with exit 0 on some builds, so the text is checked too.
@@ -247,7 +259,25 @@ enum AndroidE2E {
     }
 }
 
-/// Resolves and caches the guarded serial, and installs the APK once per test run.
+/// The playground marker's contents: the APK's SHA-256 and the `pm path` line of the install it describes.
+enum AndroidInstallMarker {
+    /// The first line `pm path` printed, which names the install's own directory; never the marker's recorded path.
+    static func installLine(in output: String) -> String? {
+        output.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.first { $0.hasPrefix("package:") }
+    }
+
+    /// `<digest> <first package: line>`, or nil when `pm path` printed none.
+    static func line(digest: String, pmPath: String) -> String? {
+        installLine(in: pmPath).map { "\(digest) \($0)" }
+    }
+
+    /// Whether `cat <marker>; pm path <package>` shows a marker naming this digest and the package's current install.
+    static func isCurrent(_ state: String, digest: String) -> Bool {
+        guard let expected = line(digest: digest, pmPath: state) else { return false }
+        return state.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == expected }
+    }
+}
+
 /// The pure decision behind every Android E2E device: only an `emulator-N` serial whose console names an allowed AVD.
 enum AndroidE2EGuard {
     /// What can be decided before any adb call: the serial's shape (when known) and whether the expected AVD is allowed.
@@ -393,6 +423,7 @@ actor GuardedPhone {
     }
 }
 
+/// Resolves and caches the guarded serial, and installs the APK once per test run.
 actor GuardedEmulator {
     static let shared = GuardedEmulator()
     private var resolved: String?
