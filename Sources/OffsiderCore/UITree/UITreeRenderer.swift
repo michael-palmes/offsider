@@ -193,10 +193,9 @@ public enum UITreeRenderer {
         return value
     }
 
+    /// JSON-quoted with hazards escaped and cut at `TerminalText.maxCharacters`.
     static func quoted(_ value: String) -> String {
-        var output = ""
-        OrderedJSON.writeString(value, to: &output)
-        return output
+        TerminalText.quoted(value)
     }
 
     /// Bare when the value is a plain identifier, else JSON-quoted.

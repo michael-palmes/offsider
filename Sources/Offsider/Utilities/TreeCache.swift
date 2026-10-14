@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OffsiderCore
 
@@ -69,6 +70,7 @@ enum TreeCache {
                 activities.append(DeviceActivityLedger.Activity(device: DeviceID(rawValue: key.id, platform: key.platform)))
             }
         }
+        var written = Set<String>()
         for activity in activities {
             let device = activity.device
             let marking = backends.first { $0.platform == device.platform } as? any BootMarking
@@ -86,6 +88,22 @@ enum TreeCache {
                 }
                 let name = TreeCacheRecord.fileName(platform: device.platform, device: device.rawValue)
                 try? OffsiderPrivateDirectory.writeAtomically(data, named: name, in: directory)
+                written.insert(name)
+            }
+        }
+        // File times are wall-clock times, whatever clock the cache runs on.
+        sweep(directory, now: Date(), keeping: written)
+    }
+
+    /// Deletes every device's cache file last written a lifetime ago, so a device no command touches again keeps no tree on disk.
+    static func sweep(_ directory: String, now: Date, keeping written: Set<String> = []) {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return }
+        for name in names where name.hasSuffix(".json") && !written.contains(name) {
+            var info = stat()
+            guard lstat((directory as NSString).appendingPathComponent(name), &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { continue }
+            let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec) + TimeInterval(info.st_mtimespec.tv_nsec) / 1e9)
+            if TreeCacheRecord.isExpired(modifiedAt: modified, now: now) {
+                OffsiderPrivateDirectory.removeFile(named: name, in: directory)
             }
         }
     }

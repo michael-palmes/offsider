@@ -27,8 +27,8 @@ final class BatchContext {
     let pollInterval: TimeInterval
     /// Armed for the batch's setup, then around each wait and assert step as the standalone commands arm it.
     let watchdog: DeviceWatchdog
-    /// `batch --mask-secure`: every screenshot step masks secure fields, reusing the cached tree.
-    let maskSecure: Bool
+    /// `batch --mask-secure` or `--no-mask-secure`; nil leaves each screenshot step to its own flag, the environment and the default.
+    let maskSecure: Bool?
     /// `batch --no-settle`: tap steps skip the transition guard.
     let noSettle: Bool
     /// The device's cached record from before the batch, for the guard until a step sends input.
@@ -49,7 +49,7 @@ final class BatchContext {
         waitTimeout: TimeInterval = 0,
         pollInterval: TimeInterval = 0.25,
         watchdog: DeviceWatchdog = DeviceWatchdog(),
-        maskSecure: Bool = false,
+        maskSecure: Bool? = nil,
         noSettle: Bool = false,
         cachedRecord: TreeCacheRecord? = nil
     ) {

@@ -99,21 +99,21 @@ enum OrderedJSON {
         return String(value)
     }
 
+    /// Quotes and escapes `value`; terminal hazards (escape, bidi, invisible and tag characters) become `\uXXXX`.
     static func writeString(_ value: String, to output: inout String) {
         output += "\""
-        for scalar in value.unicodeScalars {
-            switch scalar {
-            case "\"": output += "\\\""
-            case "\\": output += "\\\\"
-            case "\n": output += "\\n"
-            case "\r": output += "\\r"
-            case "\t": output += "\\t"
-            case "\u{08}": output += "\\b"
-            case "\u{0C}": output += "\\f"
-            case _ where scalar.value < 0x20:
-                output += String(format: "\\u%04x", scalar.value)
-            default:
-                output.unicodeScalars.append(scalar)
+        if TerminalText.isJSONClean(value) {
+            output += value
+        } else {
+            for scalar in value.unicodeScalars {
+                switch scalar {
+                case "\"": output += "\\\""
+                case "\\": output += "\\\\"
+                case _ where TerminalText.isHazard(scalar):
+                    TerminalText.appendEscape(scalar, to: &output)
+                default:
+                    output.unicodeScalars.append(scalar)
+                }
             }
         }
         output += "\""

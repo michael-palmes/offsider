@@ -183,7 +183,7 @@ struct SecureTextTests {
 
     // MARK: - Batch records
 
-    private static func batch(_ steps: [String], on backend: FakeDeviceBackend, maskSecure: Bool = false) async throws -> (records: [BatchStepRecord], out: String, err: String) {
+    private static func batch(_ steps: [String], on backend: FakeDeviceBackend, maskSecure: Bool? = false) async throws -> (records: [BatchStepRecord], out: String, err: String) {
         let context = BatchContext(
             backend: backend, device: device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200, maskSecure: maskSecure
         )

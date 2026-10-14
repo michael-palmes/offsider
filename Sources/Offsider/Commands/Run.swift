@@ -10,11 +10,12 @@ struct RunCommand: AsyncParsableCommand {
         After `run start <dir>`, every screenshot, logs and batch screenshot step from this session (the agent or \
         terminal that ran `run start`, found through the process's parents) is also written to <dir> as \
         NNN-<command>-<HH.MM.SS>.<ext>, and manifest.ndjson gets one line per capture, failures included. \
-        `run stop --summary` ends the run and prints its timeline. Masks given to `run start` apply to every capture \
-        in the run, on top of the capture's own; `run start` again on the active folder adds masks and never removes \
-        one. The one exception: `screenshot --mask-skip-beneath` leaves the run's email and id matches unpainted on a \
+        `run stop --summary` ends the run and prints its timeline. A run masks password fields and email addresses in \
+        every capture unless started with --no-mask-secure or --no-mask-emails; its masks apply on top of the capture's own, \
+        and a capture's --no-mask-secure never drops the run's. `run start` again on the active folder adds the masks its \
+        flags name and never removes one. A folder `run start` creates gets a .gitignore of `*`. The one exception: `screenshot --mask-skip-beneath` leaves the run's email and id matches unpainted on a \
         screen beneath a page; password fields always stay masked. OFFSIDER_RUN=off records nothing; OFFSIDER_RUN=<dir> \
-        records into <dir> whatever the session.
+        records into <dir> whatever the session, with the default masks unless `run start` set others there.
         """,
         subcommands: [RunStart.self, RunStop.self, RunStatus.self]
     )
@@ -41,11 +42,11 @@ struct RunStart: AsyncParsableCommand {
     @Option(help: ArgumentHelp("A name for the run, shown in the summary.", valueName: "text"))
     var label: String?
 
-    @Flag(name: .customLong("mask-secure"), help: "Mask password fields in every capture of the run, on top of its own masks.")
-    var maskSecure = false
+    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Mask password fields in every capture of the run, on top of its own masks (the default).")
+    var maskSecure: Bool?
 
-    @Flag(name: .customLong("mask-emails"), help: "Mask email addresses in every capture of the run, on top of its own masks.")
-    var maskEmails = false
+    @Flag(name: .customLong("mask-emails"), inversion: .prefixedNo, help: "Mask email addresses in every capture of the run, on top of its own masks (the default).")
+    var maskEmails: Bool?
 
     @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Mask elements with this id in every capture of the run, on top of its own masks. Repeatable.", valueName: "id"))
     var maskIDs: [String] = []
@@ -56,9 +57,13 @@ struct RunStart: AsyncParsableCommand {
     @MainActor
     func run() async throws {
         let environment = try runEnvironment()
-        let masks = RunMasks(secure: maskSecure, emails: maskEmails, ids: maskIDs)
-        let started = try RunRegistry.start(dir, label: label, masks: masks, in: environment)
+        let masks = RunMasks(secure: maskSecure ?? true, emails: maskEmails ?? true, ids: maskIDs)
+        let explicit = RunMasks(secure: maskSecure == true, emails: maskEmails == true, ids: maskIDs)
+        let started = try RunRegistry.start(dir, label: label, masks: masks, explicit: explicit, in: environment)
         let path = started.folder.path
+        if !started.state.masks.secure {
+            print("Warning: this run does not mask password fields, so a capture with --no-mask-secure or OFFSIDER_MASK_SECURE=0 shows them.", to: &standardError)
+        }
         if started.writableByOthers {
             print("Warning: other users can write to \(path), so they could add or change files in the run.", to: &standardError)
         }

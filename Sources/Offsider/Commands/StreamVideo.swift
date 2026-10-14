@@ -20,7 +20,9 @@ struct StreamVideo: AsyncParsableCommand {
         or size than the first is replaced by the last masked frame. bgra passes the device's own video stream through \
         and takes no --mask-region. Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, \
         --mask-label, --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and send nothing, as does a stream \
-        while the evidence run has masks or OFFSIDER_MASK_SECURE=1 is set; --unmasked streams anyway, with a warning.
+        while the evidence run masks emails or ids. One tree read before the first frame refuses the same way when a password \
+        field is on screen or the tree cannot be read (OFFSIDER_MASK_SECURE=0 skips it outside a run); --unmasked streams anyway, \
+        with a warning.
         """
     )
 
@@ -62,13 +64,16 @@ struct StreamVideo: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        try masks.requireMaskable(command: "stream-video")
+        let checksSecureField = try masks.requireMaskable(command: "stream-video")
         let regions = try masks.regions()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
+        if checksSecureField {
+            try await VideoMaskOptions.requireNoSecureField(command: "stream-video", backend: backend, device: booted.id)
+        }
 
         let cancellationFlag = CancellationFlag()
         let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {

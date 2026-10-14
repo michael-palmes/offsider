@@ -113,6 +113,17 @@ struct TreeCacheTests {
         #expect((path as NSString).lastPathComponent.count == 16 + ".json".count)
     }
 
+    @Test("a FIFO planted in place of the cache file is refused at once instead of hanging the read")
+    func fifoRefused() throws {
+        let fixture = try TreeCacheFixture()
+        #expect(mkfifo((fixture.directory as NSString).appendingPathComponent("pipe.json"), 0o600) == 0)
+        let started = ContinuousClock.now
+        #expect(throws: PrivateDirectoryError.self) {
+            _ = try OffsiderPrivateDirectory.readOwnedFile(named: "pipe.json", in: fixture.directory, maxBytes: 1000)
+        }
+        #expect(ContinuousClock.now - started < .seconds(1))
+    }
+
     @Test("a symlink in place of the cache file is refused")
     func symlinkRefused() throws {
         let fixture = try TreeCacheFixture()
@@ -307,6 +318,25 @@ struct TreeCacheTests {
         #expect(record?.roots == nil)
         #expect(record?.lastInputAt == fixture.now)
         #expect(try #require(FileManager.default.contents(atPath: fixture.path(for: Self.device))).count < 1000)
+    }
+
+    @Test("a commit for one device deletes another device's cache file once it has gone a lifetime unwritten, and keeps a fresh one")
+    func commitSweepsExpired() async throws {
+        let fixture = try TreeCacheFixture()
+        let stale = (fixture.directory as NSString).appendingPathComponent(TreeCacheRecord.fileName(platform: .android, device: "emulator-5554"))
+        let fresh = (fixture.directory as NSString).appendingPathComponent(TreeCacheRecord.fileName(platform: .android, device: "emulator-5556"))
+        for path in [stale, fresh] {
+            #expect(FileManager.default.createFile(atPath: path, contents: Data("{}".utf8), attributes: [.posixPermissions: 0o600]))
+        }
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-TreeCacheRecord.lifetime - 1)], ofItemAtPath: stale)
+
+        _ = try await commit(fixture, command: "describe-ui", effect: .read) { ledger in
+            ledger.recordTreeRead(Self.screen(), on: Self.device, startedAt: fixture.now)
+        }
+
+        #expect(!FileManager.default.fileExists(atPath: stale))
+        #expect(FileManager.default.fileExists(atPath: fresh))
+        #expect(FileManager.default.fileExists(atPath: fixture.path(for: Self.device)))
     }
 
     @Test("OFFSIDER_TREE_CACHE=off turns the cache off")

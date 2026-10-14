@@ -80,6 +80,11 @@ public struct TreeCacheRecord: Equatable, Sendable {
         return bootMarker == current
     }
 
+    /// True for a cache file last written a lifetime or more before `now`, whichever device it is for.
+    public static func isExpired(modifiedAt: Date, now: Date) -> Bool {
+        now.timeIntervalSince(modifiedAt) >= lifetime
+    }
+
     /// False when the app frame's size moved by more than 1 pt, or a rotation, display or posture both reads know differs.
     public func matches(appFrame current: UIFrame?, screen currentScreen: UIScreenInfo? = nil) -> Bool {
         if let appFrame, let current,

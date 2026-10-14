@@ -1196,3 +1196,22 @@ struct StackedScreenTests {
     }
 }
 
+
+@Suite("Resolver text from the screen")
+struct ResolverUntrustedTextTests {
+    @Test("a candidate's id, label and screen show escaped, and a clean one prints as before")
+    func candidateText() {
+        var hostile = MatchSummary(role: .button, id: "save\u{1B}[2J", label: "Save\u{202E}\nnow", frame: nil, isOnScreen: true)
+        hostile.screen = "home\u{07}"
+        #expect(hostile.text == #"button id="save\u001b[2J" label="Save\u202e\nnow" with no frame in screen="home\u0007""#)
+        let clean = MatchSummary(role: .button, id: "save", label: "Save", frame: nil, isOnScreen: true)
+        #expect(clean.text == #"button id=save label="Save" with no frame"#)
+    }
+
+    @Test("a near miss names the screen's text escaped")
+    func nearMiss() {
+        let near = SelectorText.NearMatch(text: "Settings\u{1B}]0;x\u{07}", closeness: .similar)
+        let relation = NearMissPhrase.relation(near, kind: "--label", query: "Setings")
+        #expect(relation == #"is close, use --label 'Settings\u001b]0;x\u0007'"#)
+    }
+}

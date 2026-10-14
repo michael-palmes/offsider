@@ -26,7 +26,7 @@ struct VideoMaskOptions: ParsableArguments {
     @Option(name: .customLong("mask-region"), parsing: .upToNextOption, help: ArgumentHelp("Paint this rectangle, in points as tap takes them, black on every frame; a frame taken in another orientation is replaced by the last good one. Repeatable.", valueName: "x,y,w,h"))
     var maskRegions: [String] = []
 
-    @Flag(name: .customLong("unmasked"), help: "Record although the evidence run or OFFSIDER_MASK_SECURE=1 asks for masks video cannot apply; prints a warning.")
+    @Flag(name: .customLong("unmasked"), help: "Record although a password field is on screen or the evidence run asks for masks video cannot apply; prints a warning.")
     var unmasked = false
 
     /// The tree-mask flags given, in help order.
@@ -51,27 +51,46 @@ struct VideoMaskOptions: ParsableArguments {
         } catch let error as ScreenRegionError {
             throw ValidationError(error.message)
         }
-        if case .usage(let message) = VideoMaskPolicy.decide(command: "", treeFlags: treeFlags, run: nil, environmentSecure: false, unmasked: unmasked) {
+        if case .usage(let message) = VideoMaskPolicy.decide(command: "", treeFlags: treeFlags, run: nil, secureByDefault: false, unmasked: unmasked) {
             throw ValidationError(message)
         }
     }
 
     /// Before routing, so a refused recording starts no device stack and writes no file; prints the `--unmasked` warning.
+    /// True when `requireNoSecureField` must read the tree before the first frame.
     @MainActor
-    func requireMaskable(command: String, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+    @discardableResult
+    func requireMaskable(command: String, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> Bool {
         let run = try EvidenceRecorder.current.run()?.masks
         switch VideoMaskPolicy.decide(
             command: command, treeFlags: treeFlags, run: run,
-            environmentSecure: Screenshot.masksSecure(flag: false, environment: environment), unmasked: unmasked
+            secureByDefault: Screenshot.masksSecure(flag: nil, environment: environment), unmasked: unmasked
         ) {
         case .record(let warning):
             if let warning {
                 FileHandle.standardError.write(Data("Warning: \(warning)\n".utf8))
             }
+            return false
+        case .checkSecureField:
+            return true
         case .refuse(let message):
             throw CLIError(errorDescription: message, reason: .videoUnmasked)
         case .usage(let message):
             throw ValidationError(message)
+        }
+    }
+
+    /// Reads one tree before the first frame and refuses with `video_unmasked` when it shows a password field or cannot be read.
+    @MainActor
+    static func requireNoSecureField(command: String, backend: any DeviceBackend, device: DeviceID) async throws {
+        let tree: UITree
+        do {
+            tree = try await backend.accessibilityTree(for: device)
+        } catch {
+            throw CLIError(errorDescription: VideoMaskPolicy.unreadableRefusal(command: command, error: OffsiderCommand.message(for: error)), reason: .videoUnmasked)
+        }
+        if VideoMaskPolicy.showsSecureField(tree) {
+            throw CLIError(errorDescription: VideoMaskPolicy.secureFieldRefusal(command: command), reason: .videoUnmasked)
         }
     }
 }

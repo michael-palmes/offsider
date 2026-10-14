@@ -10,10 +10,13 @@ public enum LogText {
 
     // MARK: ANSI
 
-    private static let realEscape = try! NSRegularExpression(pattern: #"\x{1B}\[[0-?]*[ -/]*[@-~]"#)
+    /// CSI; OSC up to BEL or ST; DCS, SOS, PM and APC up to ST (an unterminated one runs to the end); then any other escape.
+    private static let realEscape = try! NSRegularExpression(
+        pattern: #"\x{1B}\[[0-?]*[ -/]*[@-~]|\x{1B}\][^\x{07}\x{1B}]*(?:\x{07}|\x{1B}\\)?|\x{1B}[PX^_][^\x{1B}]*(?:\x{1B}\\)?|\x{1B}(?:[ -/]*[0-~])?"#
+    )
     private static let escapedEscape = try! NSRegularExpression(pattern: #"(?:\\u001[bB]|\\x1[bB]|\\033|\\e)\[[0-9;]*m"#)
 
-    /// Removes real CSI sequences and SGR colour codes written out as `\u001b[`, `\x1b[`, `\033[` or `\e[`.
+    /// Removes real escape sequences (CSI, OSC, DCS, SOS, PM, APC and lone escapes) and SGR colour codes written out as `\u001b[`, `\x1b[`, `\033[` or `\e[`.
     public static func stripANSI(_ text: String) -> String {
         var result = text
         if result.contains("\u{1B}") {
@@ -142,7 +145,8 @@ public enum LogText {
     // MARK: Output
 
     /// `HH:MM:SS.mmm+10:30 Level process[pid] tag: message` (UTC ends `Z`), leaving out what the entry lacks; a cut message ends ` [truncated]`.
-    public static func format(_ entry: LogEntry, timeZone: TimeZone = .current) -> String {
+    /// Always one line: a newline in the message shows as `\n` and other control characters as escapes; `keepsColour` keeps SGR codes.
+    public static func format(_ entry: LogEntry, timeZone: TimeZone = .current, keepsColour: Bool = false) -> String {
         var parts: [String] = []
         if let timestamp = entry.timestamp {
             parts.append(clockTime(timestamp, timeZone: timeZone) + offset(at: timestamp, in: timeZone))
@@ -160,7 +164,7 @@ public enum LogText {
             parts.append("\(tag):")
         }
         parts.append(entry.truncated ? entry.message + truncatedSuffix : entry.message)
-        return parts.joined(separator: " ")
+        return TerminalText.line(parts.joined(separator: " "), cap: nil, keepsSGR: keepsColour)
     }
 
     /// The zone's offset at `date`, so summer and standard time differ: `+10:30`, `-05:00`, or `Z` for UTC.

@@ -32,6 +32,11 @@ public struct LogBoxState: Equatable, Sendable {
         redacts ? LogRedactor.redact(message).text : message
     }
 
+    /// `shown` on one line for text output, with control and bidi characters escaped and long messages cut.
+    public static func shownLine(_ message: String, redacts: Bool) -> String {
+        TerminalText.line(shown(message, redacts: redacts))
+    }
+
     public func jsonLine(redacts: Bool = true) -> String {
         OrderedJSON.object([
             ("version", .integer(1)),
@@ -59,7 +64,7 @@ public struct LogBoxState: Equatable, Sendable {
         }
         let head = "LogBox: \(logs) log\(logs == 1 ? "" : "s") in \(toasts.count) toast\(toasts.count == 1 ? "" : "s"), bottom first"
         let lines = toasts.map { toast in
-            "  \(toast.index). \(Self.shown(toast.message, redacts: redacts))" + (toast.count > 1 ? " (\(toast.count) logs)" : "")
+            "  \(toast.index). \(Self.shownLine(toast.message, redacts: redacts))" + (toast.count > 1 ? " (\(toast.count) logs)" : "")
         }
         return ([head] + lines).joined(separator: "\n")
     }
@@ -120,6 +125,6 @@ public struct LogBoxOpening: Equatable, Sendable {
     public func textLine(redacts: Bool) -> String {
         let position = inspector.of.map { ": log \(inspector.log ?? 1) of \($0)" } ?? ""
         guard let toast else { return "LogBox inspector already open\(position)" }
-        return "✓ Opened LogBox toast \(toast.index) (\(LogBoxState.shown(toast.message, redacts: redacts)))\(position)"
+        return "✓ Opened LogBox toast \(toast.index) (\(LogBoxState.shownLine(toast.message, redacts: redacts)))\(position)"
     }
 }
