@@ -89,4 +89,69 @@ struct ReleaseScriptTests {
         #expect(output.contains("release builds keep library validation on"))
         #expect(!output.contains("missing"))
     }
+
+    /// A throwaway repository holding a copy of release.sh, tagged `v1.2.3`, with nothing built.
+    private static func taggedRepository() throws -> URL {
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-release-repo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent("scripts"), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: root.appendingPathComponent("scripts/release.sh"), to: repo.appendingPathComponent("scripts/release.sh"))
+        try Data("readme\n".utf8).write(to: repo.appendingPathComponent("README"))
+        for arguments in [["init", "-q"], ["add", "."], ["-c", "user.name=t", "-c", "user.email=t@localhost", "-c", "commit.gpgsign=false", "commit", "-qm", "x"], ["tag", "v1.2.3"]] {
+            let git = Process()
+            git.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            git.arguments = ["-C", repo.path] + arguments
+            git.standardOutput = Pipe()
+            git.standardError = Pipe()
+            try git.run()
+            git.waitUntilExit()
+            #expect(git.terminationStatus == 0, "git \(arguments.joined(separator: " ")) failed")
+        }
+        return repo
+    }
+
+    private static func run(script: URL, _ arguments: [String], unsetting: [String] = []) throws -> (status: Int32, stderr: String) {
+        let process = Process()
+        process.executableURL = script
+        process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        for name in unsetting { environment.removeValue(forKey: name) }
+        process.environment = environment
+        let stderr = Pipe()
+        process.standardError = stderr
+        process.standardOutput = Pipe()
+        try process.run()
+        let output = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        return (process.terminationStatus, output)
+    }
+
+    @Test("rehearse --adhoc with no --version takes git describe's without the v, keeping -dirty; other commands still need it")
+    func rehearseDerivesVersion() throws {
+        let repo = try Self.taggedRepository()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let script = repo.appendingPathComponent("scripts/release.sh")
+        let clean = try Self.run(script: script, ["rehearse", "--adhoc", "--dist", repo.appendingPathComponent("dist").path])
+        #expect(clean.stderr.contains("rehearse: using version 1.2.3 from git describe"))
+        #expect(!clean.stderr.contains("--version is required"))
+        try Data("changed\n".utf8).write(to: repo.appendingPathComponent("README"))
+        let dirty = try Self.run(script: script, ["rehearse", "--adhoc", "--dist", repo.appendingPathComponent("dist").path])
+        #expect(dirty.stderr.contains("rehearse: using version 1.2.3-dirty from git describe"))
+        let stage = try Self.run(script: script, ["stage"])
+        #expect(stage.status == 1)
+        #expect(stage.stderr.contains("--version is required"))
+    }
+
+    @Test("a signed rehearse with nothing set names every missing variable in one error before any work")
+    func rehearseListsMissingVariables() throws {
+        let repo = try Self.taggedRepository()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let names = ["OFFSIDER_SIGNING_IDENTITY", "OFFSIDER_NOTARY_KEY_PATH", "OFFSIDER_NOTARY_KEY_ID", "OFFSIDER_NOTARY_ISSUER_ID", "TEAM_ID"]
+        let result = try Self.run(script: repo.appendingPathComponent("scripts/release.sh"), ["rehearse", "--version", "1.2.3"], unsetting: names)
+        #expect(result.status == 1)
+        #expect(result.stderr.contains("rehearse needs these set: " + names.joined(separator: " ")))
+        #expect(result.stderr.split(separator: "\n").filter { $0.hasPrefix("Try: ") }.count == 1)
+        #expect(!result.stderr.contains("staged"))
+        #expect(!FileManager.default.fileExists(atPath: repo.appendingPathComponent("dist").path))
+    }
 }
+

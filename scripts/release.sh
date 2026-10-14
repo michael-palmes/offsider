@@ -66,7 +66,7 @@ Commands:
   rehearse        stage, sign, [notarize], package, verify, brew-gate
 
 Options:
-  --version V            Required. No leading "v".
+  --version V            Required, except by rehearse (default: git describe, without the leading "v"). No leading "v".
   --dist DIR             Output directory (default: ./dist)
   --stage DIR            Staged payload (default: DIST/offsider-V-arm64)
   --archive PATH         Tarball (default: DIST/offsider-V-arm64.tar.gz)
@@ -533,7 +533,31 @@ cmd_render_formula() {
   render_formula "$VERSION" "$url" "$sha"
 }
 
+# rehearse alone may leave out --version: it takes git describe's, without the leading v and keeping -dirty.
+default_rehearse_version() {
+  [ -z "$VERSION" ] || return 0
+  VERSION="$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || true)"
+  VERSION="${VERSION#v}"
+  [ -n "$VERSION" ] || die "--version is required: git describe found no version"
+  log "rehearse: using version ${VERSION} from git describe"
+}
+
+# Every variable a signed rehearsal reads, checked before any work, so one run names all that are missing.
+require_rehearse_variables() {
+  local name missing=""
+  [ "$ADHOC" = 0 ] || return 0
+  for name in OFFSIDER_SIGNING_IDENTITY OFFSIDER_NOTARY_KEY_PATH OFFSIDER_NOTARY_KEY_ID OFFSIDER_NOTARY_ISSUER_ID TEAM_ID; do
+    [ -n "${!name:-}" ] || missing="${missing} ${name}"
+  done
+  [ -n "$missing" ] || return 0
+  echo "release.sh: error: rehearse needs these set:${missing}" >&2
+  echo "Try: fill them in .env (see .env.example), run 'set -a; . ./.env; set +a', then rehearse again; --adhoc needs none of them" >&2
+  exit 1
+}
+
 cmd_rehearse() {
+  default_rehearse_version
+  require_rehearse_variables
   need_version
   cmd_stage
   cmd_sign
