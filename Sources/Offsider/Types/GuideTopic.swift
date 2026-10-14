@@ -25,7 +25,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
         case .android: "The device is an Android emulator or a USB phone"
         case .iosDevice: "The device is a physical iPhone or iPad, named by its UDID"
         case .reactNative: "The app is React Native or Expo, debug or release"
-        case .turnstile: "You need to tick a Cloudflare Turnstile checkbox, or to know the tap does not bypass the check"
+        case .turnstile: "A Cloudflare Turnstile widget is on screen, or `login` exited with `turnstile_required`"
         case .login: "You sign in, choose or switch test users, or save or describe one"
         case .foldables: "The device folds or has more than one display"
         case .batch: "A flow has three or more steps"

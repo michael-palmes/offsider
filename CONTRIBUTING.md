@@ -50,4 +50,10 @@ Commit messages are `type: subject`: lowercase, imperative, under 72 characters,
 
 Commits on `main` must be signed.
 
+### Protected paths signed
+
+A pull request that changes `.github/allowed_signers`, `.github/CODEOWNERS`, `.github/workflows/release.yml`, `.github/workflows/signers.yml`, `scripts/release.sh`, `entitlements.plist` or `entitlements-adhoc.plist` must have its head commit signed by a key listed in the base branch's `.github/allowed_signers`. The `Protected paths signed` check enforces it, using the base branch's copy of the workflow, so a pull request cannot change the rule it is checked by. A Dependabot pull request that touches one of these files, such as a bumped action in `release.yml`, fails that check until the maintainer re-signs its head commit (for example `git commit --amend --no-edit -S` on the branch, then a force push).
+
+Physical-device suites (`--android-phone`, `--ios-device`) need the device to be allowed first, by you in your own terminal: `offsider device-access allow --device <ID>`. `test-runner.sh` checks and prints the exact command.
+
 By contributing you agree that your contributions are licensed under the [MIT licence](LICENSE).

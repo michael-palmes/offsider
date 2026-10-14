@@ -1,6 +1,6 @@
 # Device state
 
-Every setter here changes the device and it stays changed. Read the current value by omitting the argument, set state before launching the app, and set it back when done. `--json` on each prints one object with `version: 1`.
+Every setter here changes the device and it stays changed. Read the current value by omitting the argument, set state before launching the app, and set it back when done. On a USB phone the user allowed, the setters work too and change their phone: change only what the test needs, and always set it back. `--json` on each prints one object with `version: 1`.
 
 ## Appearance and text size
 
@@ -16,13 +16,13 @@ Every setter here changes the device and it stays changed. Read the current valu
 
 ## Permissions
 
-- `offsider permission grant|revoke|reset <service>... --app <bundle id or package>` changes an app's permissions.
+- `offsider permission grant|revoke|reset <service>... --app <bundle id or package>` changes an app's permissions. Grant only the services the test names; ask before any other. On a phone, `all` is refused (exit 64), since it would reach SMS, the call log and location: name each service.
 - `offsider permission services` lists the service names (`camera` and `notifications` are Android only, `photos-add`, `reminders` and `siri` iOS only); `permission show --app <id>` reads an Android app's runtime permissions.
 - Android stops the app when a permission is revoked, so relaunch it.
 
 ## Status bar
 
-`offsider status-bar override` sets a clean status bar (9:41, full battery and signal, or `--time`, `--battery`, `--wifi`, `--cellular` and more), `clear` removes it and `show` reads it.
+`offsider status-bar override` sets a clean status bar (9:41, full battery and signal, or `--time`, `--battery`, `--wifi`, `--cellular` and more), `clear` removes it and `show` reads it. On a phone, `override` and `stay-awake on` print a note that the setting stays, with the command that undoes it.
 
 ## Biometrics
 
@@ -36,6 +36,6 @@ Every setter here changes the device and it stays changed. Read the current valu
 - `offsider stay-awake --device <DEVICE_ID>` reads Developer options > Stay awake with the screen timeout; `on` keeps an awake screen on while the device charges (every power source) and `off` restores the timeout. It survives reboots. The output says when it has no effect: not charging, charging over a source it leaves out, or a device policy capping the timeout. Turn it on before a long run; it does not turn a dark screen on.
 - `offsider wake --device <DEVICE_ID>` turns the screen on and dismisses a swipe lock screen, and sends nothing when the screen is already on and unlocked. A PIN, pattern or password lock screen stays up and exits 7 with `device_locked`: ask the user to unlock the device.
 - After a boot, a device set up with a PIN, pattern or password stays locked until someone unlocks it once, and apps cannot start until then. `offsider boot <AVD>` checks this and exits 7 with `device_locked` naming the serial; `boot --json` reports `lock` (`type`, `savedCode`, `lastAttemptFailed`, `userUnlocked`, `screen`, `lockScreen`); `type` is null when Android 9 says a credential is set but not which. Ask the user to unlock it, or run `wake --unlock` when `savedCode` is true and `lastAttemptFailed` false. `doctor --device <DEVICE_ID>` reports the same as `android-device.lock`, and the RAM the device sees as `android-device.memory`.
-- `offsider wake --unlock --device <DEVICE_ID>` also types the PIN or password the user saved with `offsider unlock-code set --device <serial or AVD name>`, once, into the lock screen's own field only. If that code fails, Offsider will not type it again until the device is unlocked by hand or the code is saved again; never loop on it. Patterns are not supported.
-- `offsider unlock-code status --device <serial or AVD name>` says whether a code is saved and whether its last attempt failed. Never run `unlock-code set` with a code you were given, and never ask for one: the user runs it in their own terminal, where the code shows only as dots.
+- `offsider wake --unlock --device <DEVICE_ID>` also types the PIN or password the user saved with `offsider unlock-code set --device <serial or AVD name>`, once, into the lock screen's own field only, as key events through the UiAutomation helper (exit 9 `helper_unavailable`, nothing typed, when it cannot run). Ask the user before running it. If that code fails, Offsider will not type it again until the device is unlocked by hand or the code is saved again; never loop on it. Patterns are not supported.
+- `offsider unlock-code status --device <serial or AVD name>` says whether a code is saved and whether its last attempt failed. Never run `unlock-code set` with a code you were given, and never ask for one: the user runs it in their own terminal, where the code shows only as dots. Without a terminal, or with `--stdin` but no terminal to confirm on, it exits 1 `person_required`.
 - When a selector misses on an Android device whose screen is off or locked, the error says so and its hint is `offsider wake --device <DEVICE_ID>`, in `--json` errors too. A `--verify` that saw no change, `wait` and `assert` add a `Note:` line on stderr instead, so read stderr before retrying.

@@ -42,11 +42,13 @@ Record only what you saw. Context is not secret: it sits in unencrypted Keychain
 
 `offsider credential set --device <DEVICE_ID>` saves a username or email and a password for the app in front. On a terminal it asks for the username, the password twice (a dot per character), then a new user's "What's it for" and "Tags", both optional. `--stdin` reads the username and password as two lines, for a password manager. The password is never printed, logged or put in an argument. `set` takes the `describe` flags too.
 
+`set` and `describe` also take three settings. `--devices virtual|any`: `virtual` (the default) is simulators and emulators only, and `any` also allows physical Android phones the user allowed. `--confirm`: `login` asks for Touch ID or the login password before it reads the password (on by default with `--devices any`). `--web-login`: `login` may type into a web view, together with `"webLogin": true` in `offsider.login.json`. Loosening (`--devices any`, `--no-confirm`, `--web-login`) needs a person at a terminal and Touch ID or their password, so ask the user to run it; tightening needs neither.
+
 The first user for an app is the default; a name saves another (`credential set qa-member`). `set default` saves the user without a name only while the app has no users, or replaces it with `--update`; beside named users it is refused before any password is read. With users saved, a terminal shows a menu to update one or add another, and asks before replacing a name. Without a terminal, pass `--update` to replace the default, a name to add one, or both to replace that one. Save test development credentials only: anything that can run commands as you can then type them into this app.
 
 Items live in your login Keychain (service `com.mpalmes.offsider.login`, never synchronised). macOS asks once before a new or rebuilt offsider reads a password; `login` holds the device meanwhile, prints a note after 3 seconds, and after 5 minutes exits 1 with nothing typed. `credential status <name> --app <id>` raises that prompt without holding a device.
 
-`credential join --device <DEVICE_ID>` links the app in front to an app with saved users, without a password, so a bundle id and a package share them; with several such apps, a terminal lists them, or pass `--app`. An app with its own users is not linked. `credential remove [name]` deletes the default or that user. `--app <id>` names an app not in front for `set`, `status`, `describe` and `remove`, with no `--device` needed. `--json` is version 2: a user is named by `name`, only `set` and `status <name>` show `username`, and there is never a password field.
+`credential join` links one app to another app's saved users, so a bundle id and a package share them. It is for a person only: it needs a terminal, asks Link or Cancel, then Touch ID or the password. Never run it yourself; when `login` exits 1 with `person_required` naming it, ask the user to run that command in their own terminal. Browsers and system apps are never linked. `credential remove [name]` deletes the default or that user. `--app <id>` names an app not in front for `set`, `status`, `describe` and `remove`, with no `--device` needed. `--json` is version 2: a user is named by `name`, only `set` and `status <name>` show `username`, and there is never a password field.
 
 ## Tags in OFFSIDER.md
 
@@ -64,13 +66,13 @@ Saved users live on each Mac. A repository's `OFFSIDER.md` maps flows to tags, n
 
 It dismisses the software keyboard before submit with a tap on empty space (or on plain text), never a control: first above the topmost field, then up from the keys, and never on or just around a field. It tries up to three distinct points, reading the screen again after each. When the keys still cover the next control, it stops with `target_under_keyboard` and never presses Back.
 
-`--timeout` (default 15 seconds) is how long it waits for submit to enable. `--json` prints one object: `ok`, the user's `name` and `tags`, `where` when passed, `identity`, `password`, `submitted`, `exitCode` and `error`. `identity` and `password` are `filled` once login typed into the field and read it back, else `not_filled`, never the secret.
+`--timeout` (default 15 seconds) is how long it waits for submit to enable. `--json` prints one object: `ok`, the user's `name` and `tags`, `where` when passed, `turnstile` (`absent` or `passed`, null when it stopped before submit), `identity`, `password`, `submitted`, `exitCode` and `error`. `identity` and `password` are `filled` once login typed into the field and read it back, else `not_filled`, never the secret.
 
 Once login reaches the email field, a failure still prints that object, with `ok: false`, `submitted: false` and the `error` object, even when the field never took focus (`identity: not_filled`), and the message ends "Both fields were filled." or "The email or username was filled." when that is so. A failure before then (no form, two matches, no saved user, `--where`) prints the standard error envelope instead, with `command` and no `identity`: nothing was touched. The exit code is the reason's either way.
 
 ## An app can pin its fields
 
-`offsider.login.json`, found like `OFFSIDER.md` (`--project <path>` names where to search; a missing file is not an error), overrides detection for one app. It names the app with `bundleId`, `package` or both, and one must be the app in front, or nothing is typed. A pinned control is still hit-tested: covered is a refusal.
+`offsider.login.json`, found like `OFFSIDER.md` (`--project <path>` names where to search; a missing file is not an error), overrides detection for one app. It names the app with `bundleId`, `package` or both, and one must be the app in front, or nothing is typed. A pinned control is still hit-tested: covered is a refusal. `"webLogin": true` (default false) is half of the web view opt-in above; a `turnstile` key is ignored with a warning.
 
 ```json
 {
@@ -86,11 +88,20 @@ Once login reaches the email field, a failure still prints that object, with `ok
 
 Exit 0 means the submit button was tapped, not that the server accepted the login. Hand back on exit 1 or 5. Do not loop on it.
 
+| Reason | What happened | What to do |
+| --- | --- | --- |
+| `turnstile_required` | A Turnstile widget needs a person; `submitted` says whether submit was tapped | Hand back; never tap it (`guide turnstile`) |
+| `foreground_changed` | Another app came to the front before the password or before submit; nothing more was sent | Bring the app back, then run `login` again |
+| `app_not_allowed` | A browser or system app is in front, or the password field is inside a web view | Bring the app under test to the front; web sign-in needs the user's opt-in |
+| `person_required` | Touch ID or the password was cancelled or unavailable (plain ssh), or a link no person confirmed | Hand back; the message names the command for the user |
+| `device_not_allowed` | A physical phone not allowed, or a user saved without `--devices any` | Ask the user; never loosen it yourself |
+| `device_busy` (exit 8) | `record-video` is recording the device; nothing was typed | Stop the recording, then retry |
+
 On an iOS simulator, iOS can offer to save the password a second or more after a sign-in. `describe-ui` then shows `# window: Save Password? (system)` without its buttons, and a selector `tap` under it refuses with `target_covered` (`evidence` `otherProcess`) rather than spend the tap dismissing it. Take a screenshot and tap Not Now by its coordinates (`tap -x <X> -y <Y>`), or tap its backdrop as the refusal says, then wait until the header has gone. Never tap Save.
 
 ## Where it refuses
 
-A physical iPhone or iPad is refused; use a simulator, an Android emulator or a USB phone the user names. `login` does not take `--app`. `credential` is refused on a physical iPhone or iPad when it would read the device: pass `--app` to save or describe a user without reading one.
+A physical iPhone or iPad is refused; use a simulator or an Android emulator. A USB Android phone works only when the user named it, allowed it with `device-access allow`, and saved the user with `--devices any`. A `login` saved with `--confirm` needs the user at the Mac for Touch ID. For other secrets, such as a one-time code, use `type --stdin`: argument text into a password field exits 64 (`secure_field_argument`). `login` does not take `--app`. `credential` is refused on a physical iPhone or iPad when it would read the device: pass `--app` to save or describe a user without reading one.
 
 ```bash
 offsider credential status --app com.example.app --json
@@ -99,5 +110,4 @@ offsider login --where role=admin --where env=staging --device <DEVICE_ID>
 offsider credential signed-out --device <DEVICE_ID>
 offsider credential describe qa-admin --state 'Cart holds 3 items' --app com.example.app
 offsider credential set qa-member --device <DEVICE_ID>
-offsider credential join --device <DEVICE_ID>
 ```
