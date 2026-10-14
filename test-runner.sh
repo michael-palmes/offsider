@@ -13,7 +13,10 @@ if [[ -f "$(dirname "${BASH_SOURCE[0]}")/.env" ]]; then
     set +a
 fi
 
+# shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/ui.sh"
 
 # Any adb server the suites start sends no mDNS multicast on the LAN.
 export ADB_MDNS=0
@@ -24,139 +27,127 @@ unset OFFSIDER_DEVICE
 # Captures from the suites never land in a developer's evidence run; suites that test runs set their own folder.
 export OFFSIDER_RUN=off
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
 # Configuration
 SIMULATOR_UDID="${SIMULATOR_UDID:-}"
 PLAYGROUND_PROJECT="OffsiderPlaygroundApp/OffsiderPlayground.xcodeproj"
 PLAYGROUND_SCHEME="OffsiderPlayground"
 BUNDLE_ID="com.mpalmes.offsider.playground"
 
-# Print colored messages
-print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
-}
-
-print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-print_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
-
 print_header() {
-    echo -e "\n${BLUE}================================================${NC}"
-    echo -e "${BLUE}🎯 $1${NC}"
-    echo -e "${BLUE}================================================${NC}\n"
+    ui_section "🎯" "$1"
 }
 
-# Function to show usage
+# Short help: the modes. --help-env has the settings and suite names.
 show_usage() {
-    echo "Usage: $0 [OPTIONS] [TEST_FILTER]"
-    echo ""
-    echo "Options:"
-    echo "  -h, --help          Show this help message"
-    echo "  -b, --build-only    Only build Offsider and playground app (skip tests)"
-    echo "  -t, --tests-only    Only run tests (skip building)"
-    echo "  -u, --unit-tests    Build dependencies and run non-E2E Swift tests without a simulator"
-    echo "  -a, --android       Build Offsider and run the Android emulator E2E suites, then the React Native suites (no simulator)"
-    echo "      --rn-ios        Build Offsider and run the React Native playground suites on an iOS simulator"
-    echo "      --rn-debug      With --rn-ios or --android: build the Debug app, start Metro on 8742 and run only ReactNativeDebugSmokeTests"
-    echo "      --foldable      Build Offsider and the playground, then run FoldableTests on the Offsider Duo"
-    echo "      --android-fold  Build Offsider and run AndroidFoldableTests on the Offsider_E2E_Fold AVD"
-    echo "      --android-phone Build Offsider and run the AndroidPhone*Tests suites on the USB phone OFFSIDER_ANDROID_PHONE names"
-    echo "      --ios-device    Build Offsider and run the IOSDevice*E2ETests suites on the wired iPhone or iPad OFFSIDER_IOS_DEVICE names"
-    echo "  -c, --clean         Clean build before building"
-    echo "  -s, --sequential    Run suites one-by-one (single simulator-safe flow)"
-    echo "  -v, --verbose       Verbose output"
-    echo ""
-    echo "Environment:"
-    echo "  DEVELOPER_DIR             Xcode used to build and run tests (Xcode 27 uses Device Hub)"
-    echo "  OFFSIDER_BIN_PATH         Prebuilt Offsider executable to test with --tests-only"
-    echo "  OFFSIDER_LANDSCAPE_E2E=1  Run gated landscape orientation precision tests when Simulator menu automation is available"
-    echo "  OFFSIDER_REUSE_IDB=1      Skip the IDB framework rebuild when existing XCFrameworks pass verification"
-    echo "  OFFSIDER_SIMULATOR_NAME   Exact name of the simulator to test on (default: a stock iPhone on the Xcode's iOS major, booted first)"
-    echo "  SIMULATOR_UDID            UDID of the simulator to test on (overrides OFFSIDER_SIMULATOR_NAME)"
-    echo "  A git-ignored .env in the repository root is loaded first, so these names can live there (see .env.example)."
-    echo ""
-    echo "Android (--android):"
-    echo "  OFFSIDER_ANDROID_DEVICE   Required: the E2E emulator's serial or AVD name, for example Offsider_E2E"
-    echo "  OFFSIDER_ANDROID_APK      The React Native playground's release APK (default: OffsiderPlaygroundRN/build/android/OffsiderPlaygroundRN-release.apk)"
-    echo "  OFFSIDER_ANDROID_E2E_AVD  The only AVD the suites may drive: Offsider_E2E (default), Offsider_E2E_Fold or Offsider_E2E_API28 (Android 9)"
-    echo "  OFFSIDER_ANDROID_LANDSCAPE_E2E=1  Also run the landscape suite on Settings"
-    echo "  OFFSIDER_ANDROID_BOOT_E2E=1       Also stop and cold-boot the E2E AVD"
-    echo "  OFFSIDER_ANDROID_DEBUG_APK        The Debug APK for --rn-debug (default: built by scripts/rn-playground.sh build-android --debug)"
-    echo ""
-    echo "Foldables (--foldable, --android-fold):"
-    echo "  OFFSIDER_FOLDABLE_SIMULATOR_NAME  The iPhone Duo simulator for --foldable (default: Offsider Duo); SIMULATOR_UDID overrides it"
-    echo "  OFFSIDER_ANDROID_FOLD_AVD The fold AVD for --android-fold (default: Offsider_E2E_Fold); OFFSIDER_ANDROID_DEVICE overrides it"
-    echo ""
-    echo "Android phone (--android-phone):"
-    echo "  OFFSIDER_ANDROID_PHONE    Required: the phone's exact USB serial from adb devices -l; no other device is touched"
-    echo "                            The user must first allow it: offsider device-access allow --device <serial>"
-    echo "  OFFSIDER_ANDROID_APK      The React Native playground's release APK, installed once and left in place"
-    echo ""
-    echo "iPhone or iPad (--ios-device, needs XcodeGen):"
-    echo "  OFFSIDER_IOS_DEVICE       Required: the device's exact UDID from devicectl list devices; no other device is touched"
-    echo "                            The user must first allow it: offsider device-access allow --device <udid> --app com.mpalmes.offsider.playground"
-    echo "  OFFSIDER_IOS_TEAM_ID      Required: the team that signs the runner and the playground, installed once and left in place"
-    echo ""
-    echo "React Native on iOS (--rn-ios, needs pnpm):"
-    echo "  OFFSIDER_RN_IOS_APP       The Release simulator app (default: built by scripts/rn-playground.sh build-ios --if-changed)"
-    echo "  OFFSIDER_RN_IOS_DEBUG_APP The Debug simulator app for --rn-debug (default: built by build-ios --debug --if-changed)"
-    echo ""
-    echo "Test Filters (optional):"
-    echo "  SwipeTests          Run only swipe tests"
-    echo "  DragTests           Run only drag tests"
-    echo "  SliderTests         Run only slider tests"
-    echo "  DescribeUITests     Run only describe-ui tests"
-    echo "  DoctorTests         Run only doctor tests"
-    echo "  InitTests           Run only init tests"
-    echo "  KeyComboTests       Run only key-combo tests"
-    echo "  KeySequenceTests    Run only key-sequence tests"
-    echo "  TapTests            Run only tap tests"
-    echo "  KeyTests            Run only key tests"
-    echo "  TouchTests          Run only touch tests"
-    echo "  TypeTests           Run only type tests"
-    echo "  VerifyTests         Run only --verify tests"
-    echo "  BatchTests          Run only batch tests"
-    echo "  ButtonTests         Run only button tests"
-    echo "  CommandNamingTests  Run only command naming tests"
-    echo "  GestureTests        Run only gesture tests"
-    echo "  ListDevicesTests    Run only list devices tests"
-    echo "  PresentationFixtureTests Run only presentation fixture tests"
-    echo "  PresentedSheetTests Run only the presented-by-another-process tests"
-    echo "  RecordVideoTests    Run only record video tests"
-    echo "  StreamVideoDebugTests Run only stream video debug tests"
-    echo "  StreamVideoTests    Run only stream video tests"
-    echo "  ReactNative*Tests   Run only that React Native suite (with --rn-ios or --android), for example ReactNativeFixtureSmokeTests"
-    echo ""
-    echo "Examples:"
-    echo "  $0                  # Build everything and run all tests"
-    echo "  $0 SwipeTests       # Build everything and run only swipe tests"
-    echo "  $0 DragTests        # Build everything and run only drag tests"
-    echo "  $0 -t SwipeTests    # Skip building, run only swipe tests"
-    echo "  $0 -u               # Build and run non-E2E Swift tests without a simulator"
-    echo "  $0 --android        # Build and run the Android E2E suites against OFFSIDER_ANDROID_DEVICE"
-    echo "  $0 --rn-ios         # Build and run the React Native suites on an iOS simulator"
-    echo "  $0 --rn-ios --rn-debug   # Debug build with Metro on 8742, run ReactNativeDebugSmokeTests"
-    echo "  $0 --android ReactNativeRowsTests   # Run one React Native suite on the Android emulator"
-    echo "  $0 --foldable       # Run the foldable suite on the Offsider Duo (unfold it in Device Hub when asked)"
-    echo "  $0 --android-fold   # Run the foldable suite on the Pixel 9 Pro Fold AVD"
-    echo "  OFFSIDER_ANDROID_PHONE=<serial> $0 --android-phone   # Run the phone suites on one USB phone"
-    echo "  OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> $0 --ios-device   # Run the device suites on one wired iPhone or iPad"
-    echo "  $0 -b               # Only build, skip tests"
-    echo "  $0 -c               # Clean build and run all tests"
+    cat <<EOF
+Usage: $0 [mode] [options] [SuiteName]
+
+Modes (run $0 on a terminal with none to pick one):
+  -u, --unit-tests     Unit tests, no device
+      --simulator      Simulator suites on an iPhone simulator (the default)
+  -a, --android        Android emulator suites on Offsider_E2E, booted if it is not running
+      --rn-ios         React Native suites on an iPhone simulator (needs pnpm)
+      --foldable       Foldable suite on the Offsider Duo simulator
+      --android-fold   Foldable suite on the Offsider_E2E_Fold AVD, booted if it is not running
+      --android-phone  Phone suites on a USB phone you allowed (offsider device-access allow)
+      --ios-device     Device suites on an iPhone or iPad you allowed
+Options: -t tests only, -b build only, -c clean build, -v verbose, --rn-debug (with --rn-ios or --android)
+
+Missing a simulator or AVD? scripts/e2e-devices.sh creates them.
+Settings, suite names and examples: $0 --help-env
+EOF
+}
+
+show_env_help() {
+    cat <<EOF
+Settings for $0 (a git-ignored .env in the repository root is loaded first; see .env.example)
+
+All modes:
+  DEVELOPER_DIR             Xcode used to build and run tests (Xcode 27 uses Device Hub)
+  OFFSIDER_BIN_PATH         Prebuilt Offsider executable to test with --tests-only
+  OFFSIDER_REUSE_IDB=1      Reuse a build_products that matches the idb pin and this Xcode, here or in
+                            another checkout of this repository, instead of rebuilding idb
+  -s, --sequential          Run suites one by one (always on)
+
+Simulator (--simulator, --rn-ios):
+  OFFSIDER_SIMULATOR_NAME   Exact name of the simulator to test on (default: a stock iPhone on the Xcode's iOS major, booted first)
+  SIMULATOR_UDID            UDID of the simulator to test on (overrides OFFSIDER_SIMULATOR_NAME)
+  OFFSIDER_LANDSCAPE_E2E=1  Run gated landscape orientation precision tests when Simulator menu automation is available
+
+Android (--android):
+  OFFSIDER_ANDROID_DEVICE   The E2E emulator's serial or AVD name (default: OFFSIDER_ANDROID_E2E_AVD, booted if needed)
+  OFFSIDER_ANDROID_APK      The React Native playground's release APK (default: OffsiderPlaygroundRN/build/android/OffsiderPlaygroundRN-release.apk)
+  OFFSIDER_ANDROID_E2E_AVD  The only AVD the suites may drive: Offsider_E2E (default), Offsider_E2E_Fold or Offsider_E2E_API28 (Android 9)
+  OFFSIDER_ANDROID_LANDSCAPE_E2E=1  Also run the landscape suite on Settings
+  OFFSIDER_ANDROID_BOOT_E2E=1       Also stop and cold-boot the E2E AVD
+  OFFSIDER_ANDROID_DEBUG_APK        The Debug APK for --rn-debug (default: built by scripts/rn-playground.sh build-android --debug)
+
+Foldables (--foldable, --android-fold):
+  OFFSIDER_FOLDABLE_SIMULATOR_NAME  The iPhone Duo simulator for --foldable (default: Offsider Duo); SIMULATOR_UDID overrides it
+  OFFSIDER_ANDROID_FOLD_AVD The fold AVD for --android-fold (default: Offsider_E2E_Fold); OFFSIDER_ANDROID_DEVICE overrides it
+
+Android phone (--android-phone):
+  OFFSIDER_ANDROID_PHONE    The phone's exact USB serial from adb devices -l; no other device is touched
+                            Unset: the one active Android phone on the allow-list (several or none is an error)
+                            The user must first allow it: offsider device-access allow, then choose the phone
+  OFFSIDER_ANDROID_APK      The React Native playground's release APK, installed once and left in place
+
+iPhone or iPad (--ios-device, needs XcodeGen):
+  OFFSIDER_IOS_DEVICE       The device's exact UDID from devicectl list devices; no other device is touched
+                            Unset: the one active iPhone or iPad on the allow-list (several or none is an error)
+                            The user must first allow it: offsider device-access allow, then choose the device
+                            and pin com.mpalmes.offsider.playground
+  OFFSIDER_IOS_TEAM_ID      The team that signs the runner and the playground, installed once and left in place
+                            Unset: the team the device's allowance records
+
+React Native on iOS (--rn-ios, needs pnpm):
+  OFFSIDER_RN_IOS_APP       The Release simulator app (default: built by scripts/rn-playground.sh build-ios --if-changed)
+  OFFSIDER_RN_IOS_DEBUG_APP The Debug simulator app for --rn-debug (default: built by build-ios --debug --if-changed)
+
+Suite names (run just one):
+  Simulator: BatchTests ButtonTests CommandNamingTests DescribeUITests DeviceControlTests DoctorTests DragTests
+             GestureTests InitTests KeyComboTests KeySequenceTests KeyTests ListDevicesTests LogsTests
+             ParkedSheetTests PresentationFixtureTests PresentedSheetTests RecordVideoTests SliderTests
+             StreamVideoDebugTests StreamVideoTests SwipeTests TapTests TouchTests TypeTests VerifyTests
+  React Native (with --rn-ios or --android): ReactNative*Tests, for example ReactNativeFixtureSmokeTests
+
+Examples:
+  $0 --simulator SwipeTests   # Build everything and run only the swipe tests
+  $0 -t SwipeTests            # Skip building, run only the swipe tests
+  $0 --android                # Boot Offsider_E2E if needed and run the Android suites
+  $0 --rn-ios --rn-debug      # Debug build with Metro on 8742, run ReactNativeDebugSmokeTests
+  $0 --android ReactNativeRowsTests   # One React Native suite on the Android emulator
+  OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> $0 --ios-device   # Name the device and the team
+EOF
+}
+
+# The mode picker for a bare run on a terminal; sets the same flags the options do.
+pick_mode() {
+    ui_banner "🧪" "Offsider tests"
+    if ! UI_RECOMMENDED_INDEX=1 select_menu "What should run?" \
+        "🧪|Unit tests|no device" \
+        "📱|Simulator|an iPhone simulator and XcodeGen" \
+        "🤖|Android emulator|the Offsider_E2E AVD, booted for you" \
+        "⚛️|React Native iOS|an iPhone simulator and pnpm" \
+        "📖|Foldable|the Offsider Duo simulator" \
+        "📖|Android foldable|the Offsider_E2E_Fold AVD, booted for you" \
+        "🔌|Android phone|needs a device you allowed" \
+        "🔌|iPhone or iPad|needs a device you allowed" \
+        "❌|Cancel|"; then
+        log "Nothing run."
+        exit 0
+    fi
+    case "$SELECTED_INDEX" in
+        0) UNIT_TESTS=true ;;
+        1) ;;
+        2) ANDROID=true ;;
+        3) RN_IOS=true ;;
+        4) FOLDABLE=true ;;
+        5) ANDROID_FOLD=true ;;
+        6) ANDROID_PHONE=true ;;
+        7) IOS_DEVICE=true ;;
+        *) log "Nothing run."; exit 0 ;;
+    esac
 }
 
 # Parse command line arguments
@@ -173,6 +164,7 @@ ANDROID_PHONE=false
 IOS_DEVICE=false
 FOLDABLE_SIMULATOR_NAME="${OFFSIDER_FOLDABLE_SIMULATOR_NAME:-Offsider Duo}"
 ANDROID_FOLD_AVD="${OFFSIDER_ANDROID_FOLD_AVD:-Offsider_E2E_Fold}"
+ANDROID_E2E_AVD="${OFFSIDER_ANDROID_E2E_AVD:-Offsider_E2E}"
 CLEAN_BUILD=false
 SEQUENTIAL=true
 VERBOSE=false
@@ -206,17 +198,29 @@ cleanup_test_runner() {
     if [[ "$RN_METRO_STARTED" == true ]]; then
         scripts/rn-playground.sh metro stop || true
     fi
+    ui_cleanup
 }
 
 trap cleanup_test_runner EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+if [[ $# -eq 0 && -t 0 && -t 1 ]]; then
+    pick_mode
+fi
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
             show_usage
             exit 0
+            ;;
+        --help-env)
+            show_env_help
+            exit 0
+            ;;
+        --simulator)
+            shift
             ;;
         -b|--build-only)
             BUILD_ONLY=true
@@ -279,53 +283,34 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         *)
-            print_error "Unknown option: $1"
-            show_usage
-            exit 1
+            die "Unknown option: $1" "$0 --help"
             ;;
     esac
 done
 
 if [[ "$UNIT_TESTS" == true ]] &&
    [[ "$BUILD_ONLY" == true || "$TESTS_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
-    print_error "--unit-tests cannot be combined with build, E2E test, clean, or test-filter options."
-    exit 1
+    die "--unit-tests cannot be combined with build, E2E test, clean, or test-filter options."
 fi
 
 if [[ "$FOLDABLE" == true || "$ANDROID_FOLD" == true ]]; then
     if [[ "$FOLDABLE" == true && "$ANDROID_FOLD" == true ]]; then
-        print_error "--foldable and --android-fold cannot be combined; run them one at a time."
-        exit 1
+        die "--foldable and --android-fold cannot be combined; run them one at a time."
     fi
     if [[ "$ANDROID" == true || "$RN_IOS" == true || "$RN_DEBUG" == true || "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
-        print_error "--foldable and --android-fold can only be combined with --tests-only and --verbose."
-        exit 1
+        die "--foldable and --android-fold can only be combined with --tests-only and --verbose."
     fi
 fi
 
 if [[ "$ANDROID_PHONE" == true ]]; then
     if [[ "$FOLDABLE" == true || "$ANDROID_FOLD" == true || "$ANDROID" == true || "$RN_IOS" == true || "$RN_DEBUG" == true || "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
-        print_error "--android-phone can only be combined with --tests-only and --verbose."
-        exit 1
-    fi
-    if [[ -z "${OFFSIDER_ANDROID_PHONE:-}" ]]; then
-        print_error "Set OFFSIDER_ANDROID_PHONE to the phone's USB serial from 'adb devices -l'."
-        exit 1
+        die "--android-phone can only be combined with --tests-only and --verbose."
     fi
 fi
 
 if [[ "$IOS_DEVICE" == true ]]; then
     if [[ "$ANDROID_PHONE" == true || "$FOLDABLE" == true || "$ANDROID_FOLD" == true || "$ANDROID" == true || "$RN_IOS" == true || "$RN_DEBUG" == true || "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true || -n "$TEST_FILTER" ]]; then
-        print_error "--ios-device can only be combined with --tests-only and --verbose."
-        exit 1
-    fi
-    if [[ -z "${OFFSIDER_IOS_DEVICE:-}" ]]; then
-        print_error "Set OFFSIDER_IOS_DEVICE to the device's UDID from 'xcrun devicectl list devices'."
-        exit 1
-    fi
-    if [[ -z "${OFFSIDER_IOS_TEAM_ID:-}" ]]; then
-        print_error "Set OFFSIDER_IOS_TEAM_ID to the team that signs the runner and the playground."
-        exit 1
+        die "--ios-device can only be combined with --tests-only and --verbose."
     fi
 fi
 
@@ -333,34 +318,28 @@ RN_FILTER=false
 [[ "$TEST_FILTER" == ReactNative*Tests ]] && RN_FILTER=true
 
 if [[ "$ANDROID" == true && "$RN_IOS" == true ]]; then
-    print_error "--android and --rn-ios cannot be combined; run them one at a time."
-    exit 1
+    die "--android and --rn-ios cannot be combined; run them one at a time."
 fi
 
 if [[ "$ANDROID" == true || "$RN_IOS" == true ]] &&
    [[ "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true ]]; then
-    print_error "--android and --rn-ios can only be combined with --rn-debug, --tests-only, --verbose and a ReactNative*Tests filter."
-    exit 1
+    die "--android and --rn-ios can only be combined with --rn-debug, --tests-only, --verbose and a ReactNative*Tests filter."
 fi
 
 if [[ "$RN_FILTER" == true && "$ANDROID" != true && "$RN_IOS" != true ]]; then
-    print_error "$TEST_FILTER needs --rn-ios or --android."
-    exit 1
+    die "$TEST_FILTER needs --rn-ios or --android."
 fi
 
 if [[ -n "$TEST_FILTER" && "$RN_FILTER" != true ]] && [[ "$ANDROID" == true || "$RN_IOS" == true ]]; then
-    print_error "$TEST_FILTER is a native iOS suite; --android and --rn-ios only take a ReactNative*Tests filter."
-    exit 1
+    die "$TEST_FILTER is a native iOS suite; --android and --rn-ios only take a ReactNative*Tests filter."
 fi
 
 if [[ "$RN_DEBUG" == true ]]; then
     if [[ "$ANDROID" != true && "$RN_IOS" != true ]]; then
-        print_error "--rn-debug needs --rn-ios or --android."
-        exit 1
+        die "--rn-debug needs --rn-ios or --android."
     fi
     if [[ -n "$TEST_FILTER" ]]; then
-        print_error "--rn-debug runs only ReactNativeDebugSmokeTests and takes no test filter."
-        exit 1
+        die "--rn-debug runs only ReactNativeDebugSmokeTests and takes no test filter."
     fi
 fi
 
@@ -370,40 +349,33 @@ check_prerequisites() {
 
     # Check if we're in the right directory
     if [[ ! -f "Package.swift" ]]; then
-        print_error "Package.swift not found. Please run this script from the Offsider project root."
-        exit 1
+        die "Run this from the Offsider checkout." "cd \"$(dirname "$0")\" && ./test-runner.sh"
     fi
 
     # Check if Xcode is available
     if ! command -v xcodebuild &> /dev/null; then
-        print_error "xcodebuild not found. Please install Xcode."
-        exit 1
+        die "xcodebuild not found." "./scripts/build.sh dev"
     fi
 
     # Check if Swift is available
     if ! command -v swift &> /dev/null; then
-        print_error "swift not found. Please install Swift."
-        exit 1
+        die "swift not found." "./scripts/build.sh dev"
     fi
 
     if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true && "$ANDROID_PHONE" != true && "$IOS_DEVICE" != true ]] && ! command -v jq &> /dev/null; then
-        print_error "jq not found. Install jq to select the matching simulator runtime."
-        exit 1
+        die "jq not found (it picks the simulator runtime)." "brew install jq"
     fi
 
     if [[ "$RN_IOS" == true || "$RN_DEBUG" == true ]] && ! command -v pnpm &> /dev/null; then
-        print_error "pnpm not found. Install pnpm 11 (brew install pnpm) to build the React Native playground."
-        exit 1
+        die "pnpm not found (it builds the React Native playground)." "brew install pnpm"
     fi
 
     if [[ "$UNIT_TESTS" != true && "$ANDROID" != true && "$ANDROID_FOLD" != true && "$ANDROID_PHONE" != true && "$RN_IOS" != true ]] && ! command -v xcodegen &> /dev/null; then
-        print_error "xcodegen not found. Install it with 'brew install xcodegen' to generate the playground project."
-        exit 1
+        die "xcodegen not found (it generates the playground project)." "brew install xcodegen"
     fi
 
     if ! configure_e2e_environment; then
-        print_error "Xcode 26 or later is required to build and test Offsider. Set DEVELOPER_DIR to its Contents/Developer directory."
-        exit 1
+        die "Xcode 26 or later is required to build and test Offsider." "DEVELOPER_DIR=<Xcode 27.app>/Contents/Developer $0"
     fi
 
     print_info "Selected toolchain: Xcode $SELECTED_XCODE_VERSION ($(e2e_xcode_build "$SELECTED_DEVELOPER_DIR"))"
@@ -437,8 +409,7 @@ boot_simulator() {
     print_header "Setting Up Simulator"
 
     if ! select_e2e_simulator; then
-        print_error "Could not select an iOS simulator for E2E tests."
-        exit 1
+        die "Could not select an iOS simulator for E2E tests." "SIMULATOR_UDID=<udid from xcrun simctl list devices> $0"
     fi
     print_info "Selected simulator: $SIMULATOR_NAME ($SIMULATOR_UDID)"
 
@@ -485,24 +456,12 @@ clean_build() {
 build_idb_xcframeworks() {
     print_header "Building IDB Frameworks"
 
+    # dev reuses a build here or in another checkout only when it matches the pin and this Xcode.
     if [[ "${OFFSIDER_REUSE_IDB:-0}" == "1" ]]; then
-        scripts/build.sh setup
-        if scripts/build.sh verify-xcframeworks; then
-            print_success "Reusing verified IDB XCFrameworks"
-            return
-        fi
-        print_warning "Existing IDB XCFrameworks failed verification; rebuilding"
+        scripts/build.sh dev
+        return
     fi
-
-    if ! command -v xcodegen &> /dev/null; then
-        print_error "XcodeGen is required to build IDB frameworks. Install it with 'brew install xcodegen'."
-        exit 1
-    fi
-
-    local command
-    for command in setup clean frameworks install strip xcframeworks; do
-        scripts/build.sh "$command"
-    done
+    scripts/build.sh dev --rebuild
 
     run_selected_swift package clean
     print_success "IDB frameworks built with Xcode $SELECTED_XCODE_VERSION"
@@ -534,8 +493,7 @@ build_offsider() {
         print_success "Offsider executable built successfully"
         print_info "Location: $offsider_bin_path"
     else
-        print_error "Failed to build Offsider executable"
-        exit 1
+        die "Failed to build Offsider executable"
     fi
 }
 
@@ -599,8 +557,7 @@ resolve_rn_artefact() {
         return
     fi
     if [[ ! -x scripts/rn-playground.sh ]]; then
-        print_error "Set $variable to the React Native playground's $platform build."
-        exit 1
+        die "Set $variable to the React Native playground's $platform build."
     fi
     print_info "Building the React Native playground for $platform if its sources changed..."
     scripts/rn-playground.sh "build-$platform" --if-changed "$@"
@@ -608,8 +565,7 @@ resolve_rn_artefact() {
     [[ " $* " == *" --debug "* ]] && flags+=(--debug)
     current="$(scripts/rn-playground.sh "path-$platform" "${flags[@]}")"
     if [[ ! -e "$current" ]]; then
-        print_error "$current is missing after the build. Set $variable to the React Native playground's $platform build."
-        exit 1
+        die "$current is missing after the build. Set $variable to the React Native playground's $platform build."
     fi
     printf -v "$variable" '%s' "$current"
 }
@@ -644,8 +600,7 @@ run_suite_list() {
         set -e
         if [[ "$status" -ne 0 ]]; then
             rm -f "$output_log"
-            print_error "$suite failed"
-            exit 1
+            die "$suite failed"
         fi
         if grep -q "No matching test cases were run" "$output_log" && ! grep -q "Test run with [1-9]" "$output_log"; then
             print_warning "$suite matched no tests (not added yet?)"
@@ -678,8 +633,7 @@ run_rn_ios_tests() {
     fi
     export OFFSIDER_BIN_PATH
     if [[ ! -f "$OFFSIDER_BIN_PATH" ]]; then
-        print_error "Offsider executable not found at $OFFSIDER_BIN_PATH. Run without --tests-only, run swift build first, or set OFFSIDER_BIN_PATH to a prebuilt payload."
-        exit 1
+        die "Offsider executable not found at $OFFSIDER_BIN_PATH. Run without --tests-only, run swift build first, or set OFFSIDER_BIN_PATH to a prebuilt payload."
     fi
 
     export OFFSIDER_RN_E2E=1
@@ -701,13 +655,36 @@ run_rn_ios_tests() {
     run_rn_suites
 }
 
+# Whether scripts/e2e-devices-core.sh knows the device: "true", "false", or nothing for a name it does not manage.
+e2e_device_exists() {
+    command -v jq >/dev/null 2>&1 || return 0
+    scripts/e2e-devices-core.sh status 2>/dev/null | jq -r --arg name "$1" '.devices[] | select(.name == $name) | .exists' || true
+}
+
+# Boots the E2E AVD through offsider boot when OFFSIDER_ANDROID_DEVICE names it; a serial is left alone, and the suites still check the AVD name.
+ensure_avd_running() {
+    local avd="$1" output serial
+    [[ "$OFFSIDER_ANDROID_DEVICE" == "$avd" ]] || return 0
+    case "$avd" in
+        Offsider_E2E|Offsider_E2E_Fold|Offsider_E2E_API28) ;;
+        *) die "$avd is not an Offsider E2E AVD, so it is not booted." "OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E $0 --android" ;;
+    esac
+    if [[ "$(e2e_device_exists "$avd")" == false ]]; then
+        die "There is no $avd AVD yet." "scripts/e2e-devices.sh create"
+    fi
+    [[ -x "$OFFSIDER_BIN_PATH" ]] || die "Offsider is not built at $OFFSIDER_BIN_PATH." "swift build"
+    spinner_start "Starting $avd"
+    output="$("$OFFSIDER_BIN_PATH" boot "$avd")" || die "offsider boot $avd failed." "\"$OFFSIDER_BIN_PATH\" boot $avd"
+    spinner_stop
+    serial="$(printf '%s\n' "$output" | tail -1 | tr -d '\r')"
+    [[ "$serial" =~ ^emulator-[0-9]+$ ]] || die "offsider boot $avd printed no emulator serial." "\"$OFFSIDER_BIN_PATH\" boot $avd"
+    print_success "$avd is running ($serial)"
+}
+
 run_android_tests() {
     print_header "Running Android E2E Tests"
 
-    if [[ -z "${OFFSIDER_ANDROID_DEVICE:-}" ]]; then
-        print_error "Set OFFSIDER_ANDROID_DEVICE to the E2E emulator's serial or AVD name, for example Offsider_E2E."
-        exit 1
-    fi
+    export OFFSIDER_ANDROID_DEVICE="${OFFSIDER_ANDROID_DEVICE:-$ANDROID_E2E_AVD}"
     ensure_test_framework_rpaths
 
     export OFFSIDER_ANDROID_E2E=1
@@ -719,13 +696,14 @@ run_android_tests() {
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
     export OFFSIDER_BIN_PATH
+    ensure_avd_running "$ANDROID_E2E_AVD"
 
     if [[ "$RN_DEBUG" == true ]]; then
         resolve_rn_artefact OFFSIDER_ANDROID_DEBUG_APK android --debug
         export OFFSIDER_ANDROID_DEBUG_APK
         export OFFSIDER_RN_DEBUG_E2E=1
         start_rn_metro
-        print_info "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=${OFFSIDER_ANDROID_E2E_AVD:-Offsider_E2E}, OFFSIDER_RN_DEBUG_E2E=1, OFFSIDER_ANDROID_DEBUG_APK=$OFFSIDER_ANDROID_DEBUG_APK"
+        print_info "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=$ANDROID_E2E_AVD, OFFSIDER_RN_DEBUG_E2E=1, OFFSIDER_ANDROID_DEBUG_APK=$OFFSIDER_ANDROID_DEBUG_APK"
         run_suite_list "${RN_DEBUG_SUITES[@]}"
         print_success "React Native debug suites passed"
         return
@@ -734,7 +712,7 @@ run_android_tests() {
     resolve_android_apk
     export OFFSIDER_ANDROID_APK
     export OFFSIDER_RN_DEBUG_E2E=0
-    print_info "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=${OFFSIDER_ANDROID_E2E_AVD:-Offsider_E2E}, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
+    print_info "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=$ANDROID_E2E_AVD, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
 
     if [[ -n "$TEST_FILTER" ]]; then
         run_rn_suites
@@ -771,8 +749,7 @@ run_android_tests() {
         local args=(--skip-build --no-parallel --filter "$suite")
         [[ "$VERBOSE" == true ]] && args+=(--verbose)
         if ! run_selected_swift test "${args[@]}"; then
-            print_error "$suite failed"
-            exit 1
+            die "$suite failed"
         fi
     done
     print_success "All Android suites passed"
@@ -797,6 +774,7 @@ run_android_fold_tests() {
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
     export OFFSIDER_BIN_PATH
+    ensure_avd_running "$ANDROID_FOLD_AVD"
     resolve_android_apk
     export OFFSIDER_ANDROID_APK
     print_info "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=$OFFSIDER_ANDROID_E2E_AVD, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
@@ -804,41 +782,89 @@ run_android_fold_tests() {
     print_success "Android foldable suite passed"
 }
 
+# Prints the id and name of the one active allow-list entry for a platform (ios or android); several or none prints the names and fails.
+allowed_device_for() {
+    local platform="$1"
+    local status count i
+    status="$("$OFFSIDER_BIN_PATH" device-access status --json 2>/dev/null)" || status=""
+    count="$(printf '%s' "$status" | plutil -extract devices raw -o - - 2>/dev/null)" || count=0
+    local ids=() names=()
+    for (( i = 0; i < count; i++ )); do
+        [[ "$(printf '%s' "$status" | plutil -extract "devices.$i.platform" raw -o - - 2>/dev/null)" == "$platform" ]] || continue
+        [[ "$(printf '%s' "$status" | plutil -extract "devices.$i.active" raw -o - - 2>/dev/null)" == true ]] || continue
+        ids+=("$(printf '%s' "$status" | plutil -extract "devices.$i.id" raw -o - - 2>/dev/null)")
+        names+=("$(printf '%s' "$status" | plutil -extract "devices.$i.name" raw -o - - 2>/dev/null)")
+    done
+    if (( ${#ids[@]} == 1 )); then
+        printf '%s\t%s\n' "${ids[0]}" "${names[0]}"
+        return 0
+    fi
+    local label="Android phone"
+    [[ "$platform" == ios ]] && label="iPhone or iPad"
+    if (( ${#ids[@]} == 0 )); then
+        print_error "No $label is allowed now." >&2
+    else
+        local joined
+        joined="$(printf '%s, ' "${names[@]}")"
+        print_error "More than one $label is allowed: ${joined%, }." >&2
+    fi
+    return 1
+}
+
+# The team an iPhone or iPad's allowance records, or nothing.
+allowance_team() {
+    "$OFFSIDER_BIN_PATH" device-access status --device "$1" --json 2>/dev/null | plutil -extract devices.0.team raw -o - - 2>/dev/null || true
+}
+
+# The command a person runs to allow a device, with what to choose in its menus.
+print_device_allow() {
+    local name="$1"
+    local app="${2:-}"
+    print_error "  offsider device-access allow"
+    if [[ -n "$app" ]]; then
+        print_error "  Then choose $name, pin $app, and allow at least 2 hours."
+    else
+        print_error "  Then choose $name and allow at least 2 hours."
+    fi
+}
+
 # A physical device runs E2E only while a person has allowed it for more than 30 minutes more (and, on an iPhone, the playground); there is no bypass.
 require_device_allowance() {
     local device="$1"
     local app="${2:-}"
-    local allow="offsider device-access allow --device $device --expires 2h${app:+ --app $app}"
     local status
     if ! status="$("$OFFSIDER_BIN_PATH" device-access status --device "$device" --json 2>/dev/null)"; then
         print_error "$device is not on the allow-list. Ask the user to run this in their own terminal, then run the suites again:"
-        print_error "  $allow"
+        print_device_allow "$device" "$app"
         exit 1
     fi
+    local name
+    name="$(printf '%s' "$status" | plutil -extract devices.0.name raw -o - - 2>/dev/null)" || name=""
+    local allow_name="${name:-$device}"
     local expires
     if expires="$(printf '%s' "$status" | plutil -extract devices.0.expires raw -o - - 2>/dev/null)"; then
         local expiry_epoch
         expiry_epoch="$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$expires" +%s 2>/dev/null || echo 0)"
         if (( expiry_epoch - $(date -u +%s) <= 1800 )); then
-            print_error "$device's allowance ends at $expires, within 30 minutes. Ask the user to renew it in their own terminal:"
-            print_error "  $allow"
+            print_error "$allow_name's allowance ends at $expires, within 30 minutes. Ask the user to renew it in their own terminal:"
+            print_device_allow "$allow_name" "$app"
             exit 1
         fi
     elif ! printf '%s' "$status" | plutil -extract devices.0 json -o - - 2>/dev/null | grep -q '"expires":null'; then
-        print_error "Could not read $device's allowance. Ask the user to run this in their own terminal:"
-        print_error "  $allow"
+        print_error "Could not read $allow_name's allowance. Ask the user to run this in their own terminal:"
+        print_device_allow "$allow_name" "$app"
         exit 1
     fi
     if [[ -n "$app" ]]; then
         local apps
         apps="$(printf '%s' "$status" | plutil -extract devices.0.apps json -o - - 2>/dev/null || echo '[]')"
         if [[ "$apps" != *"\"$app\""* ]]; then
-            print_error "$device's allowance does not include $app. Ask the user to run this in their own terminal:"
-            print_error "  $allow"
+            print_error "$allow_name's allowance does not include $app. Ask the user to run this in their own terminal:"
+            print_device_allow "$allow_name" "$app"
             exit 1
         fi
     fi
-    print_info "$device is allowed${expires:+ until $expires}"
+    print_info "$allow_name is allowed${expires:+ until $expires}"
 }
 
 # The phone suites alone, on the one USB phone OFFSIDER_ANDROID_PHONE names; the emulator suites stay off.
@@ -846,7 +872,6 @@ run_android_phone_tests() {
     print_header "Running Android Phone E2E Tests"
     ensure_test_framework_rpaths
 
-    export OFFSIDER_ANDROID_PHONE
     export OFFSIDER_ANDROID_E2E=0
     export OFFSIDER_ANDROID_FOLD_E2E=0
     export OFFSIDER_ANDROID_LANDSCAPE_E2E=0
@@ -860,6 +885,18 @@ run_android_phone_tests() {
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
     export OFFSIDER_BIN_PATH
+    if [[ ! -f "$OFFSIDER_BIN_PATH" ]]; then
+        die "Offsider executable not found at $OFFSIDER_BIN_PATH. Run without --tests-only, run swift build first, or set OFFSIDER_BIN_PATH to a prebuilt payload."
+    fi
+    if [[ -z "${OFFSIDER_ANDROID_PHONE:-}" ]]; then
+        local picked
+        if ! picked="$(allowed_device_for android)"; then
+            die "Set OFFSIDER_ANDROID_PHONE to the phone's USB serial, or ask the user to run 'offsider device-access allow' in their own terminal and choose one phone."
+        fi
+        OFFSIDER_ANDROID_PHONE="${picked%%$'\t'*}"
+        print_info "Using ${picked#*$'\t'}, the one Android phone on the allow-list"
+    fi
+    export OFFSIDER_ANDROID_PHONE
     require_device_allowance "$OFFSIDER_ANDROID_PHONE"
     resolve_android_apk
     export OFFSIDER_ANDROID_APK
@@ -875,8 +912,6 @@ run_ios_device_tests() {
     ensure_test_framework_rpaths
 
     export OFFSIDER_IOS_DEVICE_E2E=1
-    export OFFSIDER_IOS_DEVICE
-    export OFFSIDER_IOS_TEAM_ID
     export OFFSIDER_E2E=0
     export OFFSIDER_LANDSCAPE_E2E=0
     export OFFSIDER_RN_E2E=0
@@ -889,7 +924,27 @@ run_ios_device_tests() {
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
     export OFFSIDER_BIN_PATH
+    if [[ ! -f "$OFFSIDER_BIN_PATH" ]]; then
+        die "Offsider executable not found at $OFFSIDER_BIN_PATH. Run without --tests-only, run swift build first, or set OFFSIDER_BIN_PATH to a prebuilt payload."
+    fi
+    if [[ -z "${OFFSIDER_IOS_DEVICE:-}" ]]; then
+        local picked
+        if ! picked="$(allowed_device_for ios)"; then
+            die "Set OFFSIDER_IOS_DEVICE to the device's UDID, or ask the user to run 'offsider device-access allow' in their own terminal and choose one iPhone or iPad."
+        fi
+        OFFSIDER_IOS_DEVICE="${picked%%$'\t'*}"
+        print_info "Using ${picked#*$'\t'}, the one iPhone or iPad on the allow-list"
+    fi
+    export OFFSIDER_IOS_DEVICE
     require_device_allowance "$OFFSIDER_IOS_DEVICE" "com.mpalmes.offsider.playground"
+    if [[ -z "${OFFSIDER_IOS_TEAM_ID:-}" ]]; then
+        OFFSIDER_IOS_TEAM_ID="$(allowance_team "$OFFSIDER_IOS_DEVICE")"
+        if [[ -z "$OFFSIDER_IOS_TEAM_ID" ]]; then
+            die "No team signs the runner and the playground. Ask the user to run 'offsider device-access allow' in their own terminal and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID."
+        fi
+        print_info "Using the team the device's allowance records"
+    fi
+    export OFFSIDER_IOS_TEAM_ID
     print_info "Environment: OFFSIDER_IOS_DEVICE=$OFFSIDER_IOS_DEVICE, OFFSIDER_IOS_TEAM_ID=$OFFSIDER_IOS_TEAM_ID"
     run_suite_list "IOSDeviceListE2ETests" "IOSDeviceDoctorE2ETests" "IOSDeviceScreenshotE2ETests" "IOSDeviceSettingsE2ETests" \
         "IOSDeviceInputE2ETests" "IOSDeviceTreeE2ETests" "IOSDeviceRunnerE2ETests"
@@ -904,8 +959,10 @@ select_foldable_simulator() {
     SIMULATOR_UDID="$(xcrun simctl list devices available -j | jq -r --arg name "$FOLDABLE_SIMULATOR_NAME" \
         '[.devices[][] | select(.name == $name)] | .[0].udid // empty')"
     if [[ -z "$SIMULATOR_UDID" ]]; then
-        print_error "No simulator is named $FOLDABLE_SIMULATOR_NAME. Create an iPhone Duo simulator with that name, or set SIMULATOR_UDID."
-        exit 1
+        if [[ "$FOLDABLE_SIMULATOR_NAME" == "Offsider Duo" ]]; then
+            die "There is no Offsider Duo simulator yet." "scripts/e2e-devices.sh create"
+        fi
+        die "No simulator is named $FOLDABLE_SIMULATOR_NAME." "scripts/e2e-devices.sh create && OFFSIDER_FOLDABLE_SIMULATOR_NAME= $0 --foldable"
     fi
 }
 
@@ -1007,8 +1064,7 @@ run_tests() {
     fi
     export OFFSIDER_BIN_PATH
     if [[ ! -f "$OFFSIDER_BIN_PATH" ]]; then
-        print_error "Offsider executable not found at $OFFSIDER_BIN_PATH. Run without --tests-only, run swift build first, or set OFFSIDER_BIN_PATH to a prebuilt payload."
-        exit 1
+        die "Offsider executable not found at $OFFSIDER_BIN_PATH. Run without --tests-only, run swift build first, or set OFFSIDER_BIN_PATH to a prebuilt payload."
     fi
 
     local requested_landscape_e2e="${OFFSIDER_LANDSCAPE_E2E:-0}"
@@ -1044,8 +1100,7 @@ run_tests() {
         if run_swift_test "$TEST_FILTER"; then
             print_success "Selected tests passed"
         else
-            print_error "Selected tests failed"
-            exit 1
+            die "Selected tests failed"
         fi
         return
     fi
@@ -1087,8 +1142,7 @@ run_tests() {
         for suite in "${suites[@]}"; do
             print_header "Running $suite"
             if ! run_swift_test "$suite"; then
-                print_error "$suite failed"
-                exit 1
+                die "$suite failed"
             fi
         done
 
@@ -1104,8 +1158,7 @@ run_tests() {
     if run_selected_swift test --skip-build --no-parallel "${args[@]}"; then
         print_success "All tests passed"
     else
-        print_error "Some tests failed"
-        exit 1
+        die "Some tests failed"
     fi
 }
 
@@ -1173,8 +1226,7 @@ main() {
 
     if [[ "$FOLDABLE" == true ]]; then
         ensure_e2e_runtime_host || {
-            print_error "Could not start the Xcode 27 Device Hub runtime host."
-            exit 1
+            die "Could not start the Xcode 27 Device Hub runtime host." "open \"$SELECTED_DEVELOPER_DIR/../Applications/DeviceHub.app\", then run $0 again"
         }
         select_foldable_simulator
         boot_simulator
@@ -1200,8 +1252,7 @@ main() {
 
     if [[ "$RN_IOS" == true ]]; then
         ensure_e2e_runtime_host || {
-            print_error "Could not start the Xcode 27 Device Hub runtime host."
-            exit 1
+            die "Could not start the Xcode 27 Device Hub runtime host." "open \"$SELECTED_DEVELOPER_DIR/../Applications/DeviceHub.app\", then run $0 again"
         }
         boot_simulator
         if [[ "$TESTS_ONLY" != true ]]; then
@@ -1223,8 +1274,7 @@ main() {
     fi
 
     ensure_e2e_runtime_host || {
-        print_error "Could not start the Xcode 27 Device Hub runtime host."
-        exit 1
+        die "Could not start the Xcode 27 Device Hub runtime host." "open \"$SELECTED_DEVELOPER_DIR/../Applications/DeviceHub.app\", then run $0 again"
     }
 
     # Always boot simulator (needed for both building and testing)
