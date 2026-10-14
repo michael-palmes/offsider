@@ -33,6 +33,7 @@ VERSION=""
 DIST="${REPO_ROOT}/dist"
 STAGE=""
 ARCHIVE=""
+SHA256_EXPECTED=""
 URL=""
 ADHOC=0
 CHECK_NOTARIZATION=0
@@ -57,7 +58,7 @@ Commands:
   notarize        notarytool submit --wait ($OFFSIDER_NOTARY_KEY_PATH, $OFFSIDER_NOTARY_KEY_ID, $OFFSIDER_NOTARY_ISSUER_ID)
   package         Create dist/offsider-<v>-arm64.tar.gz and dist/SHA256SUMS
   pack-payload    Create dist/offsider-<v>-arm64-unsigned.tar.gz and dist/PAYLOAD.sha256 from the stage
-  unpack-payload  Recreate the stage from the unsigned payload (the signing job)
+  unpack-payload  Recreate the stage from the unsigned payload (the signing job); --sha256 checks it first
   unpack-archive  Recreate the stage from the signed tarball (the verify job)
   verify          Extract the tarball and check layout, linkage, signatures, behaviour
   brew-gate       Install the tarball via a throwaway local tap and prove Homebrew changed nothing
@@ -72,6 +73,7 @@ Options:
   --url URL              Formula URL override (render-formula)
   --adhoc                Sign ad-hoc; skip notarisation and Developer ID checks (CI)
   --check-notarization   verify: require Apple's online ticket for every code object
+  --sha256 HEX           unpack-payload: the payload digest the build job recorded (default: dist/PAYLOAD.sha256)
 EOF
 }
 
@@ -409,8 +411,16 @@ unpack_into_stage() {
 
 cmd_unpack_payload() {
   need_version
-  local payload="${DIST}/offsider-${VERSION}-arm64-unsigned.tar.gz"
-  (cd "$DIST" && shasum -a 256 -c PAYLOAD.sha256)
+  local payload="${DIST}/offsider-${VERSION}-arm64-unsigned.tar.gz" actual
+  [ -f "$payload" ] || die "payload not found: ${payload}"
+  if [ -n "$SHA256_EXPECTED" ]; then
+    [[ "$SHA256_EXPECTED" =~ ^[0-9a-f]{64}$ ]] || die "--sha256 must be 64 lowercase hex characters"
+    actual="$(shasum -a 256 "$payload" | cut -d' ' -f1)"
+    [ "$actual" = "$SHA256_EXPECTED" ] || die "payload digest mismatch: expected ${SHA256_EXPECTED}, got ${actual}"
+    log "payload digest matches ${SHA256_EXPECTED}"
+  else
+    (cd "$DIST" && shasum -a 256 -c PAYLOAD.sha256)
+  fi
   unpack_into_stage "$payload"
 }
 
@@ -545,6 +555,7 @@ while [ $# -gt 0 ]; do
     --url) URL="${2:?}"; shift 2 ;;
     --adhoc) ADHOC=1; shift ;;
     --check-notarization) CHECK_NOTARIZATION=1; shift ;;
+    --sha256) SHA256_EXPECTED="${2:?}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac

@@ -216,10 +216,7 @@ jobs:
           path: dist
 
       - name: Verify the payload digest and unpack it
-        run: |
-          set -euo pipefail
-          echo "${PAYLOAD_SHA256}  dist/${PAYLOAD}" | shasum -a 256 -c -
-          scripts/release.sh unpack-payload --version "$VERSION"
+        run: scripts/release.sh unpack-payload --version "$VERSION" --sha256 "$PAYLOAD_SHA256"
 
       - name: Select Xcode
         run: |
@@ -422,8 +419,7 @@ jobs:
       - name: Sign ad hoc, package, verify and gate
         run: |
           set -euo pipefail
-          echo "${PAYLOAD_SHA256}  dist/${PAYLOAD}" | shasum -a 256 -c -
-          scripts/release.sh unpack-payload --version "$VERSION"
+          scripts/release.sh unpack-payload --version "$VERSION" --sha256 "$PAYLOAD_SHA256"
           scripts/release.sh sign --version "$VERSION" --adhoc
           scripts/release.sh package --version "$VERSION"
           scripts/release.sh verify --version "$VERSION" --adhoc
