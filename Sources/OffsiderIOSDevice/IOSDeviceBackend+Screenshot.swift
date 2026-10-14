@@ -12,12 +12,17 @@ final class IOSDeviceState {
     var sessionFailures: [String: Error] = [:]
     var sessionConnector: (any DeviceSessionConnecting)?
     var streamNoticeShown = false
+    var pinPolicy: (@MainActor (String) -> String?)?
+    var pinConfirmed: [String: Date] = [:]
+    var runnerTeam: String?
 }
 
 extension IOSDeviceBackend {
     /// The broker's latest frame on an Xcode 27 host; `devicectl device capture screenshot` when its stream cannot serve one.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         _ = try await requireBootedDevice(id)
+        // Video asks for a frame many times a second, so the check is repeated at most every two seconds.
+        try await requirePinnedAppInFront(id, maxAge: 2)
         if hostHasHID, sessionsAvailable {
             do {
                 return try await host.timing.measure("stream-capture") {

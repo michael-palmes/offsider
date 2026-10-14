@@ -17,15 +17,19 @@ final class IOSDeviceInputSession: TextInputSession {
     private let runnerText: (any RunnerTextTyping)?
     private var lowering: DeviceSessionLowering?
     private var runnerSession: (any InputSession)?
+    /// Runs before each batch: the device is still on USB and the pinned app is in front.
+    private let preflight: () async throws -> Void
 
     init(
         device: DeviceID, session: @escaping () async throws -> DeviceSessionClient,
-        runner: (() async throws -> any InputSession)?, runnerText: (any RunnerTextTyping)?
+        runner: (() async throws -> any InputSession)?, runnerText: (any RunnerTextTyping)?,
+        preflight: @escaping () async throws -> Void = {}
     ) {
         self.device = device
         self.session = session
         self.runner = runner
         self.runnerText = runnerText
+        self.preflight = preflight
     }
 
     /// The broker when it answers and sends touches; the runner when it cannot and a runner exists; else the broker's failure.
@@ -45,6 +49,11 @@ final class IOSDeviceInputSession: TextInputSession {
 
     /// Lowers the whole event before sending, so an unsupported part sends nothing.
     func perform(_ event: InputEvent) async throws {
+        try await preflight()
+        try await performChecked(event)
+    }
+
+    private func performChecked(_ event: InputEvent) async throws {
         var next = try await touchLowering()
         let actions = try next.actions(for: event)
         if !next.brokerTouches, actions.contains(where: { if case .keys = $0 { return true } else { return false } }) {
@@ -94,17 +103,19 @@ final class IOSDeviceInputSession: TextInputSession {
     }
 
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+        try await preflight()
         guard try await touchLowering().brokerTouches else {
             try await requireRunner().performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
             return
         }
         if let preDelay, preDelay > 0 { try await Task.sleep(for: .seconds(preDelay)) }
-        try await perform(.tapAt(x: point.x, y: point.y))
+        try await performChecked(.tapAt(x: point.x, y: point.y))
         if let postDelay, postDelay > 0 { try await Task.sleep(for: .seconds(postDelay)) }
     }
 
     /// US keyboard text through broker keys when it sends them; anything else through the runner.
     func typeText(_ text: String) async throws {
+        try await preflight()
         if TextToHIDEvents.validateText(text), (try? await touchLowering())?.brokerTouches == true {
             let requests = try Self.keyRequests(typing: text)
             for (index, steps) in requests.enumerated() {
@@ -138,6 +149,7 @@ final class IOSDeviceInputSession: TextInputSession {
     }
 
     func replaceText(_ text: String) async throws {
+        try await preflight()
         try await requireRunnerText("Replacing a field's text").replaceText(text, on: device)
     }
 

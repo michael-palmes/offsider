@@ -49,10 +49,22 @@ struct DoctorRunner {
             ))
         }
 
+        var trusted = false
+        if let developerDirectory {
+            let trust = DeveloperDirectoryTrust.shared.evaluate(developerDirectory)
+            trusted = (try? trust.get()) != nil
+            let source = DeveloperDirectorySource.of(environment: environment)
+            run.checks.append(DoctorCheckResult(id: .xcodeTrust, verdict: DoctorRules.xcodeTrust(trust, path: developerDirectory, source: source)))
+        } else {
+            run.checks.append(.skipped(.xcodeTrust, "requires xcode.developer-dir"))
+        }
+
         if let developerDirectory {
             (version, build) = DoctorProbes.xcodeVersion(developerDirectory: developerDirectory)
             run.checks.append(DoctorCheckResult(id: .xcodeVersion, verdict: DoctorRules.xcodeVersion(version, build: build)))
-            if let error = DoctorProbes.loadFrameworks(logger: logger) {
+            if !trusted {
+                run.checks.append(.skipped(.frameworks, "requires xcode.trust"))
+            } else if let error = DoctorProbes.loadFrameworks(logger: logger) {
                 run.checks.append(DoctorCheckResult(
                     id: .frameworks,
                     status: .fail,

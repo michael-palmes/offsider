@@ -1,3 +1,4 @@
+import Foundation
 import OffsiderCore
 
 /// The backends one command built; each is closed once when the command ends, after success or failure.
@@ -37,8 +38,25 @@ final class CommandScope {
         return backend
     }
 
+    /// Physical devices this process has announced, so the banner prints once per device.
+    private var announced: Set<String> = []
+
+    /// Where the physical-device banner goes; stderr, also under `--json`.
+    var bannerNote: (String) -> Void = { FileHandle.standardError.write(Data("\($0)\n".utf8)) }
+
     func noteRoute(_ route: DeviceRouter.Route) {
         routes.append(route)
+        guard let allowance = route.allowance, announced.insert("\(allowance.platform.rawValue) \(allowance.key)").inserted else { return }
+        bannerNote(Self.banner(for: allowance, managed: DevicePolicyGate.current.policy().managed.present))
+    }
+
+    /// The one line a command prints before it drives a physical device.
+    nonisolated static func banner(for allowance: DeviceAllowance, managed: Bool) -> String {
+        let kind = allowance.platform == .ios ? "iPhone or iPad" : "Android phone"
+        let until = allowance.expires.map { "allowed until \(ProcessStamp.timestamp($0))" } ?? "allowed until removed"
+        let apps = allowance.apps.isEmpty ? "" : " for \(allowance.apps.joined(separator: ", "))"
+        return "Offsider: driving physical \(kind) \"\(allowance.name)\" (\(allowance.key)), \(until)\(apps) (managed policy: \(managed ? "applies" : "none")). "
+            + "offsider device-access remove --device \(allowance.key) withdraws it."
     }
 
     /// The screen check for a failure, once per command; later calls return `error` unchanged.

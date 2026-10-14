@@ -44,6 +44,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             Wake.self,
             UnlockCodeCommand.self,
             LeaseCommand.self,
+            DeviceAccessCommand.self,
             Key.self,
             KeySequence.self,
             KeyCombo.self,
@@ -72,7 +73,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             let reason: FailureReason = hint.isLegacy ? .legacyArgument : .usage
             ErrorReporter.prepare(command: nil, arguments: arguments)
             ErrorReporter.writeEnvelopeIfWanted(ErrorPayload(reason: reason, message: hint.message))
-            FileHandle.standardError.write(Data("Error: \(hint.message)\n".utf8))
+            FileHandle.standardError.write(Data(ErrorReporter.errorText(hint.message).utf8))
             Darwin.exit(reason.exitCode.rawValue)
         }
         // ArgumentParser's own `main(nil)`, with the command's backends closed before the process exits.

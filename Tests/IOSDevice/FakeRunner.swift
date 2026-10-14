@@ -20,6 +20,8 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
     var failure: (path: String, status: Int, code: String)?
     var refuseConnections = false
     var pingTimesOut = false
+    /// The bundle id `/foreground` reports as active; nil reports none.
+    var foregroundApp: String?
 
     init(buildKey: String = "key", snapshot: Data = Data("[]".utf8)) {
         self.buildKey = buildKey
@@ -39,6 +41,9 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
         switch path {
         case "/ping":
             return Self.response(200, ["ok": true, "data": ["version": RunnerClient.protocolVersion, "buildKey": buildKey, "screenBounds": ["width": 430, "height": 932], "scale": 3, "orientation": "portrait"]])
+        case "/foreground":
+            let active: Any = foregroundApp ?? NSNull()
+            return Self.response(200, ["ok": true, "data": ["inFront": foregroundApp != nil && object["app"] as? String == foregroundApp, "activeBundleId": active]])
         case "/snapshot":
             let data = (try? JSONSerialization.jsonObject(with: snapshot)) ?? []
             return Self.response(200, ["ok": true, "data": data])
@@ -117,16 +122,23 @@ final class FakeRunnerBuilder: RunnerBuilding, @unchecked Sendable {
     let key: String
     private let lock = NSLock()
     private var count = 0
+    private var verified = 0
 
     init(key: String = "key") {
         self.key = key
     }
 
     var builds: Int { lock.withLock { count } }
+    var verifications: Int { lock.withLock { verified } }
 
     func build(for destination: RunnerDestination, deviceName: String) async throws -> RunnerBuild {
         lock.withLock { count += 1 }
         return RunnerBuild(key: key, xctestrun: URL(fileURLWithPath: "/cache/\(key)/Runner.xctestrun"), directory: URL(fileURLWithPath: "/cache/\(key)"))
+    }
+
+    func verifyForLaunch(_ build: RunnerBuild, for destination: RunnerDestination, deviceName: String) async throws -> RunnerBuild {
+        lock.withLock { verified += 1 }
+        return build
     }
 }
 

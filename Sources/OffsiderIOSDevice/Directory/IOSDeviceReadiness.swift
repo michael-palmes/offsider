@@ -8,6 +8,7 @@ public enum IOSDeviceReadiness: String, Equatable, Sendable, CaseIterable {
     case preparing
     /// Xcode prepared this OS before; the developer services return once the tunnel is up again.
     case reconnecting
+    /// Anything but a cable: Wi-Fi, a network tunnel or a transport CoreDevice names that Offsider does not know.
     case wireless
     case ready
 
@@ -24,10 +25,15 @@ public enum IOSDeviceReadiness: String, Equatable, Sendable, CaseIterable {
         if device.ddiServicesAvailable == false {
             return deviceSupportFinalized ? .reconnecting : .preparing
         }
-        if device.transportType == "localNetwork" {
+        if !isWired(device) {
             return .wireless
         }
         return .ready
+    }
+
+    /// Only a USB cable counts; an unknown or missing transport is treated as not wired.
+    public static func isWired(_ device: DevicectlDevice) -> Bool {
+        device.transportType == "wired"
     }
 
     /// The `list-devices` STATE column.
@@ -61,9 +67,9 @@ public enum IOSDeviceReadiness: String, Equatable, Sendable, CaseIterable {
         case .ready:
             return nil
         case .reconnecting:
-            return device.transportType == "localNetwork" ? .wireless : nil
+            return isWired(device) ? nil : .wireless
         case .preparing:
-            return device.transportType == "localNetwork" ? .wireless : .preparing
+            return isWired(device) ? .preparing : .wireless
         case let problem:
             return problem
         }

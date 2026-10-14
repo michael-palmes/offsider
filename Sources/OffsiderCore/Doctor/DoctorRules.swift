@@ -99,6 +99,33 @@ public enum DoctorRules {
         return (.pass, "CoreSimulator \(version)", nil)
     }
 
+    /// Pass for an Apple-signed Xcode in /Applications; warn when it is elsewhere or chosen through DEVELOPER_DIR; fail when it is not Apple's.
+    public static func xcodeTrust(
+        _ result: Result<TrustedDeveloperDirectory, UntrustedDeveloperDirectory.Problem>, path: String, source: DeveloperDirectorySource
+    ) -> Verdict {
+        let hint = "xcode-select -s <Xcode.app>/Contents/Developer"
+        switch result {
+        case .failure(.notInAppBundle):
+            return (.fail, "\(path) (\(source.rawValue)) is not the Contents/Developer folder of an Xcode app, so Offsider will not use it", hint)
+        case .failure(.notAppleSigned):
+            return (.fail, "\(path) (\(source.rawValue)) is not inside an Apple-signed Xcode, so Offsider will not use it", hint)
+        case .success(let trusted) where source == .environment:
+            return (.warn, "\(trusted.app) is signed by Apple, and was chosen through DEVELOPER_DIR, which any process can set", "Unset DEVELOPER_DIR and select Xcode with \(hint).")
+        case .success(let trusted) where !trusted.inApplications:
+            return (.warn, "\(trusted.app) is signed by Apple, outside /Applications", "Move Xcode into /Applications, then run \(hint).")
+        case .success(let trusted):
+            return (.pass, "\(trusted.app) is signed by Apple", nil)
+        }
+    }
+
+    // MARK: Install
+
+    /// `install.bundle`: every bundled resource matches the digest compiled into this build; `mismatch` names the first that does not.
+    public static func installBundle(mismatch: String?, count: Int) -> Verdict {
+        guard let mismatch else { return (.pass, "\(count) bundled files match this build", nil) }
+        return (.fail, mismatch, "brew reinstall offsider")
+    }
+
     // MARK: Host
 
     /// The Xcode bundle that holds `path`, for a developer directory or anything inside it; nil when `path` is not inside one.

@@ -3,6 +3,7 @@ import Foundation
 /// Stable check ids: scripts and agents match on these raw values.
 public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case developerDir = "xcode.developer-dir"
+    case xcodeTrust = "xcode.trust"
     case xcodeVersion = "xcode.version"
     case frameworks = "xcode.frameworks"
     case coreSimulator = "coresimulator.version"
@@ -54,9 +55,11 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case iosDeviceUsbmuxd = "ios-device.usbmuxd"
     case iosDeviceRunnerSigning = "ios-device.runner-signing"
     case deviceLease = "device.lease"
+    case devicePolicy = "device.policy"
     case hostLoad = "host.load"
     case hostDisk = "host.disk"
     case hostSessions = "host.sessions"
+    case installBundle = "install.bundle"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -77,6 +80,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     public var title: String {
         switch self {
         case .developerDir: return "Xcode developer directory"
+        case .xcodeTrust: return "Xcode signature"
         case .xcodeVersion: return "Xcode version"
         case .frameworks: return "Simulator frameworks"
         case .coreSimulator: return "CoreSimulator version"
@@ -128,9 +132,11 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .iosDeviceUsbmuxd: return "usbmuxd"
         case .iosDeviceRunnerSigning: return "Runner signing"
         case .deviceLease: return "Lease"
+        case .devicePolicy: return "Physical device policy"
         case .hostLoad: return "Load"
         case .hostDisk: return "Free disk"
         case .hostSessions: return "Offsider commands"
+        case .installBundle: return "Bundled resources"
         }
     }
 }

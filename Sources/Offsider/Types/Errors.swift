@@ -79,6 +79,30 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
         }
     }
 
+    /// A step only a person at the Mac may take: no terminal, or Touch ID or the password failed, was cancelled or is unavailable.
+    static func personRequired(_ message: String, hint: String? = nil) -> CLIError {
+        CLIError(errorDescription: message, reason: .personRequired, hint: hint)
+    }
+
+    /// A physical device the allow-list or managed policy refuses; only a person (or an administrator) can change that.
+    static func deviceNotAllowed(name: String?, key: String, refusal: DeviceRefusal) -> CLIError {
+        let device = name.map { "\($0) (\(key))" } ?? key
+        let command = "offsider device-access allow --device \(key)"
+        if refusal.isManaged {
+            return CLIError(
+                errorDescription: "\(device) is a physical device and \(refusal.explanation). Nothing was sent to it. Ask the administrator of this Mac.",
+                reason: .deviceNotAllowed
+            )
+        }
+        let again = refusal == .notAllowed ? "" : " again"
+        return CLIError(
+            errorDescription: "\(device) is a physical device and \(refusal.explanation), so Offsider will not drive it. Nothing was sent to it. "
+                + "Ask the user to run `\(command)` in their own terminal\(again); an agent cannot allow a device.",
+            reason: .deviceNotAllowed,
+            hint: command
+        )
+    }
+
     static func internalError(_ message: String) -> CLIError {
         CLIError(errorDescription: message, reason: .internalError)
     }

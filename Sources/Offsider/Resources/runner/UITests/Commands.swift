@@ -3,7 +3,7 @@ import XCTest
 
 /// Every route the runner serves; called on the main thread, as XCUITest requires.
 final class RunnerCommands {
-    static let version = "1"
+    static let version = "2"
 
     let buildKey: String
     private(set) var lastActivity = Date()
@@ -18,6 +18,7 @@ final class RunnerCommands {
         lastActivity = Date()
         let body = (try? JSONSerialization.jsonObject(with: request.body.isEmpty ? Data("{}".utf8) : request.body)) as? [String: Any]
         guard let body else { return .failure(400, code: "bad_request", message: "the body is not a JSON object") }
+        if request.method == "POST", request.path == "/foreground" { return foreground(body) }
         if let requested = body["app"] as? String, XCUIApplication(bundleIdentifier: requested).state != .runningForeground {
             return .failure(409, code: "app_not_in_front", message: "\(requested) is not the app in front")
         }
@@ -55,8 +56,16 @@ final class RunnerCommands {
             "screenBounds": ["width": screen.nativeBounds.width / scale, "height": screen.nativeBounds.height / scale],
             "scale": scale,
             "orientation": Self.orientationName(XCUIDevice.shared.orientation),
-            "activeBundleId": (active.flatMap(ActiveApplication.bundleID(of:)) ?? rememberedApp) as Any? ?? NSNull(),
+            "activeBundleId": active.flatMap(ActiveApplication.bundleID(of:)) as Any? ?? NSNull(),
         ])
+    }
+
+    /// Whether the named app is in front, by XCTest's private active-app lookup alone; a remembered app never stands in for it.
+    private func foreground(_ body: [String: Any]) -> RunnerResponse {
+        guard let app = body["app"] as? String, !app.isEmpty else { return .failure(400, code: "bad_request", message: "app is required") }
+        let active = ActiveApplication.privateActive().flatMap(ActiveApplication.bundleID(of:))
+        let inFront = active == app && XCUIApplication(bundleIdentifier: app).state == .runningForeground
+        return .ok(["inFront": inFront, "activeBundleId": active as Any? ?? NSNull()])
     }
 
     private func snapshot(_ app: XCUIApplication) -> RunnerResponse {

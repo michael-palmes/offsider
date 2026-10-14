@@ -164,10 +164,11 @@ public enum OffsiderPrivateDirectory {
         }
     }
 
-    /// The file's bytes, or nil when it does not exist; refuses a symlink, a file another user owns, one with group or other bits, or one over `maxBytes`.
+    /// The file's bytes, or nil when it does not exist; refuses a symlink, a FIFO or other non-regular file, a file another user owns, one with group or other bits, or one over `maxBytes`.
     public static func readOwnedFile(named name: String, in directory: String, maxBytes: Int, uid: uid_t = getuid()) throws -> Data? {
         let path = (directory as NSString).appendingPathComponent(name)
-        let descriptor = Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        // O_NONBLOCK so a FIFO planted at the path is refused below instead of hanging the open.
+        let descriptor = Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
         guard descriptor >= 0 else {
             if errno == ENOENT { return nil }
             if errno == ELOOP { throw PrivateDirectoryError(.unsafeFile, path: path) }

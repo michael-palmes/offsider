@@ -9,9 +9,12 @@ import Testing
 struct IOSDeviceRoutingTests {
     static let phone = "00008130-0000000000000ABC"
 
-    @Test("an iPhone UDID routes to the device backend in canonical uppercase")
+    @Test("an allowed iPhone UDID routes to the device backend in canonical uppercase")
     func phoneRoutesToDeviceBackend() async throws {
-        let route = try await DeviceRouter.route(" \(Self.phone.lowercased()) ", logger: OffsiderLogger())
+        let gate = DevicePolicyRoutingTests.gate([PolicyFixtures.entry(key: Self.phone)])
+        let route = try await DevicePolicyGate.$current.withValue(gate) {
+            try await DeviceRouter.route(" \(Self.phone.lowercased()) ", logger: OffsiderLogger(), scope: CommandScope())
+        }
 
         #expect(route.backend is IOSDeviceBackend)
         #expect(route.device == DeviceID(rawValue: Self.phone, platform: .ios))

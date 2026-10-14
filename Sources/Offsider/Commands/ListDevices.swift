@@ -15,12 +15,44 @@ struct ListDevices: AsyncParsableCommand {
     @Option(name: .customLong("platform"), help: "Only list devices on this platform.")
     var platform: DevicePlatform?
 
+    @Flag(name: .customLong("physical"), help: "List only physical devices, including the ones no one has allowed with `offsider device-access allow`.")
+    var physical = false
+
     func run() async throws {
-        let devices = Self.withLeases(Self.withHolders(try await Self.listDevices(platform: platform, logger: OffsiderLogger())))
-        print(json ? DeviceListRenderer.json(devices) : DeviceListRenderer.table(devices), terminator: "")
-        for hint in Self.phoneHints(devices) + Self.holderNotes(devices) + Self.leaseNotes(devices) {
+        let listed = try await Self.listDevices(platform: platform, logger: OffsiderLogger())
+        let (shown, hidden) = Self.applyPolicy(listed, physicalOnly: physical, gate: DevicePolicyGate.current)
+        let devices = Self.withLeases(Self.withHolders(shown))
+        print(json ? DeviceListRenderer.json(devices, hiddenPhysical: hidden) : DeviceListRenderer.table(devices), terminator: "")
+        for hint in Self.phoneHints(devices) + Self.holderNotes(devices) + Self.leaseNotes(devices) + Self.hiddenNote(hidden) {
             FileHandle.standardError.write(Data("\(hint)\n".utf8))
         }
+    }
+
+    /// Marks each physical row allowed or not; without `physicalOnly`, rows that are not allowed are dropped and counted. The policy is read only when a physical row exists.
+    static func applyPolicy(_ devices: [DeviceSummary], physicalOnly: Bool, gate: DevicePolicyGate) -> (shown: [DeviceSummary], hidden: Int) {
+        guard devices.contains(where: { $0.kind == .physical }) else { return (physicalOnly ? [] : devices, 0) }
+        var hidden = 0
+        var shown: [DeviceSummary] = []
+        for var device in devices {
+            guard device.kind == .physical else {
+                if !physicalOnly { shown.append(device) }
+                continue
+            }
+            let key = StableDeviceKey.of(device) ?? device.id
+            if case .allowed = gate.decision(platform: device.platform, key: key) { device.allowed = true } else { device.allowed = false }
+            if physicalOnly || device.allowed == true {
+                shown.append(device)
+            } else {
+                hidden += 1
+            }
+        }
+        return (shown, hidden)
+    }
+
+    static func hiddenNote(_ hidden: Int) -> [String] {
+        guard hidden > 0 else { return [] }
+        let what = hidden == 1 ? "1 physical device is" : "\(hidden) physical devices are"
+        return ["\(what) hidden because no one allowed Offsider to drive \(hidden == 1 ? "it" : "them"); a person can list them with offsider list-devices --physical."]
     }
 
     /// Fills `heldBy` for every row that can be locked; a shut-down AVD cannot.

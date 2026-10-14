@@ -37,11 +37,11 @@ struct HostDoctorRulesTests {
         #expect(verdict == (.pass, "2 other Offsider commands: pid 12 tap on emulator-5554, pid 13 offsider", nil))
     }
 
-    @Test("every report carries host facts and the three host checks after its own")
+    @Test("every report carries host facts, then the three host checks and the install check after its own")
     func withHost() throws {
         let base = DoctorReport(offsiderVersion: "0.8.0", udid: nil, xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil), booted: [], checks: [])
         let report = Doctor.withHost(base, Self.facts())
-        #expect(report.checks.map(\.id) == [.hostLoad, .hostDisk, .hostSessions])
+        #expect(report.checks.map(\.id) == [.hostLoad, .hostDisk, .hostSessions, .installBundle])
         let object = try #require(try JSONSerialization.jsonObject(with: try report.jsonData()) as? [String: Any])
         let host = try #require(object["host"] as? [String: Any])
         #expect(Set(host.keys) == ["loadAverage", "cpuCount", "memoryGB", "diskFreeGB", "diskPath", "sessions"])
