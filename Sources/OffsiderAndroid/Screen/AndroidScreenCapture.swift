@@ -64,7 +64,10 @@ enum AndroidScreenCapture {
     static func rgba(from frame: EmulatorFrame) throws -> Pixels {
         switch frame.format {
         case .rgba8888:
-            return Pixels(width: frame.width, height: frame.height, bytes: Data(frame.bytes.prefix(frame.width * frame.height * 4)))
+            guard let count = PixelMath.byteCount(width: frame.width, height: frame.height) else {
+                throw ImageFailure(detail: "the emulator reported a \(frame.width) x \(frame.height) frame, larger than \(PixelMath.maxSide) pixels a side")
+            }
+            return Pixels(width: frame.width, height: frame.height, bytes: Data(frame.bytes.prefix(count)))
         case .png:
             return try rgba(from: try decodePNG(frame.bytes))
         }
@@ -81,7 +84,10 @@ enum AndroidScreenCapture {
     static func rgba(from image: CGImage) throws -> Pixels {
         let width = image.width
         let height = image.height
-        var bytes = Data(count: width * height * 4)
+        guard let count = PixelMath.byteCount(width: width, height: height) else {
+            throw ImageFailure(detail: "a \(width) x \(height) image is larger than \(PixelMath.maxSide) pixels a side")
+        }
+        var bytes = Data(count: count)
         let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(
                 data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
@@ -189,7 +195,8 @@ enum AndroidScreenCapture {
                 let width = word(offset)
                 let height = word(offset + 4)
                 guard (1...maxRawSide).contains(width), (1...maxRawSide).contains(height),
-                      output.count - offset == headerSize + width * height * 4 else { continue }
+                      let pixelBytes = PixelMath.byteCount(width: width, height: height),
+                      output.count - offset == headerSize + pixelBytes else { continue }
                 let format = word(offset + 8)
                 guard format == 1 || format == 2 else {
                     throw ImageFailure(detail: "screencap reported pixel format \(format), not RGBA_8888 or RGBX_8888")

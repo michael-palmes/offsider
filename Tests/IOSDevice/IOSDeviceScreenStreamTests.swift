@@ -56,6 +56,28 @@ struct IOSDeviceScreenStreamTests {
         #expect(throws: MediaStreamAnswer.ParseError(detail: "no session identifier")) { try MediaStreamAnswer.parse(.dictionary(missingIdentifier)) }
     }
 
+    @Test("a stream size past 16,384 pixels a side, or too large for an Int, is a parse error, never a trap", arguments: [
+        UInt64.max, 20_000, 0,
+    ])
+    func streamSizeBounds(width: UInt64) throws {
+        guard case .dictionary(var output) = try Self.fixture("mediastreamstart-output.plist"),
+              case .dictionary(var connection)? = output["connection"], case .dictionary(var config)? = connection["streamConfig"] else { throw CancellationError() }
+        config["CustomWidth"] = .uint(width)
+        connection["streamConfig"] = .dictionary(config)
+        output["connection"] = .dictionary(connection)
+        #expect(throws: MediaStreamAnswer.ParseError.self) { try MediaStreamAnswer.parse(.dictionary(output)) }
+    }
+
+    @Test("a frame rate too large for an Int is dropped, not trapped on")
+    func frameRateBounds() throws {
+        guard case .dictionary(var output) = try Self.fixture("mediastreamstart-output.plist"),
+              case .dictionary(var connection)? = output["connection"], case .dictionary(var config)? = connection["streamConfig"] else { throw CancellationError() }
+        config["Framerate"] = .uint(UInt64.max)
+        connection["streamConfig"] = .dictionary(config)
+        output["connection"] = .dictionary(connection)
+        #expect(try MediaStreamAnswer.parse(.dictionary(output)).frameRate == nil)
+    }
+
     @Test("the stop answer lists the sessions the device still runs")
     func serverStatus() throws {
         let status = MediaStreamServerStatus.parse(try Self.fixture("mediastreamstop-output.plist"))

@@ -1,10 +1,89 @@
 import Darwin
+import FBSimulatorControl
 import Foundation
 import Testing
 @testable import Offsider
 
 @Suite("HID Broker Reliability Tests")
 struct HIDBrokerReliabilityTests {
+    private final class Played: @unchecked Sendable {
+        var touches: [(down: Bool, x: Double, y: Double)] = []
+        var slept: Duration = .zero
+    }
+
+    @Test("A request is refused before anything is sent when it is too long, a delay is out of range or not finite, or the delays add up past 25 s", arguments: [
+        Array(repeating: HIDBrokerPrimitive.delay(0), count: 4097),
+        [HIDBrokerPrimitive.delay(10.5)],
+        [HIDBrokerPrimitive.delay(-1)],
+        [HIDBrokerPrimitive.delay(.nan)],
+        [HIDBrokerPrimitive.delay(.infinity)],
+        [HIDBrokerPrimitive.delay(10), .delay(10), .delay(6)],
+        [HIDBrokerPrimitive(kind: .down, x: .nan, y: 1, duration: nil)],
+        [HIDBrokerPrimitive(kind: .up, x: nil, y: 1, duration: nil)],
+    ])
+    func validateRefuses(primitives: [HIDBrokerPrimitive]) {
+        let error = #expect(throws: CLIError.self) { try HIDBroker.validate(primitives) }
+        #expect(error?.reason == .hidBrokerFailed)
+    }
+
+    @Test("A request at the limits passes validation")
+    func validateAccepts() throws {
+        try HIDBroker.validate(Array(repeating: .delay(0), count: 4096))
+        try HIDBroker.validate([.touch(.down, x: 1, y: 2), .delay(10), .delay(10), .delay(5), .touch(.up, x: 1, y: 2)])
+    }
+
+    @Test("A client that goes away mid-delay ends the request within a slice and its held touch is lifted")
+    func abandonedPeerLiftsTouch() async throws {
+        let played = Played()
+        var checks = 0
+        let outcome = try await HIDBroker.play(
+            [.touch(.down, x: 5, y: 6), .delay(10), .touch(.up, x: 5, y: 6)],
+            peerGone: {
+                checks += 1
+                return checks > 3
+            },
+            touch: { direction, x, y in played.touches.append((direction == .down, x, y)) },
+            sleep: { played.slept += $0 }
+        )
+        #expect(outcome == .abandoned)
+        #expect(played.touches.map(\.down) == [true, false])
+        #expect(played.touches.last.map { ($0.x, $0.y) } ?? (0, 0) == (5, 6))
+        #expect(played.slept <= .milliseconds(300))
+    }
+
+    @Test("A completed request sleeps its delays in 100 ms slices and lifts nothing extra")
+    func completedRequest() async throws {
+        let played = Played()
+        var slices: [Duration] = []
+        let outcome = try await HIDBroker.play(
+            [.touch(.down, x: 1, y: 1), .delay(0.25), .touch(.up, x: 1, y: 1)],
+            peerGone: { false },
+            touch: { direction, x, y in played.touches.append((direction == .down, x, y)) },
+            sleep: { slices.append($0) }
+        )
+        #expect(outcome == .completed)
+        #expect(played.touches.map(\.down) == [true, false])
+        #expect(slices == [.milliseconds(100), .milliseconds(100), .milliseconds(50)])
+    }
+
+    @Test("A touch that fails after a contact went down still lifts it before the error is reported")
+    func failureLiftsTouch() async throws {
+        let played = Played()
+        struct Boom: Error {}
+        await #expect(throws: Boom.self) {
+            _ = try await HIDBroker.play(
+                [.touch(.down, x: 1, y: 1), .touch(.down, x: 2, y: 2)],
+                peerGone: { false },
+                touch: { direction, x, y in
+                    if direction == .down, x == 2 { throw Boom() }
+                    played.touches.append((direction == .down, x, y))
+                },
+                sleep: { _ in }
+            )
+        }
+        #expect(played.touches.map(\.down) == [true, false])
+    }
+
     @Test("A broker lifetime lock distinguishes a live process from a stale endpoint")
     func lifetimeLockTracksBrokerProcess() throws {
         let endpoint = try makeEndpoint()

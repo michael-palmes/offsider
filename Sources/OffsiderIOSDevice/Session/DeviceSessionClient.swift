@@ -14,7 +14,13 @@ protocol DeviceSessionLink: AnyObject, Sendable {
     func exchange(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?)
     /// True once a failed write or a lost reply has ended the connection, so a new one is needed.
     var isBroken: Bool { get }
+    /// True once the broker has closed this connection, so nothing more can go over it.
+    var peerClosed: Bool { get }
     func close()
+}
+
+extension DeviceSessionLink {
+    var peerClosed: Bool { false }
 }
 
 /// Blocking frame I/O on its own queue, one request at a time; a lost reply breaks the link for good.
@@ -24,6 +30,7 @@ final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
     private let state = NSLock()
     private var nextID = 1
     private var broken = false
+    private var peerEnded = false
 
     init(channel: DeviceSessionChannel) {
         self.channel = channel
@@ -35,6 +42,9 @@ final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
 
     var isBroken: Bool { state.withLock { broken } }
 
+    /// Live while the link works; once broken, whether the broker had closed it when it broke (a timeout leaves it false).
+    var peerClosed: Bool { isBroken ? state.withLock { peerEnded } : channel.peerClosed() }
+
     func exchange(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?) {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
@@ -44,7 +54,11 @@ final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
     }
 
     private func breakLink() {
-        state.withLock { broken = true }
+        let ended = channel.peerClosed()
+        state.withLock {
+            broken = true
+            peerEnded = ended
+        }
     }
 
     private func blockingExchange(_ request: DeviceSessionRequest, timeout: Duration) throws -> (DeviceSessionReply, Data?) {
@@ -71,7 +85,8 @@ final class SocketSessionLink: DeviceSessionLink, @unchecked Sendable {
                 throw DeviceSessionWireError(detail: "the broker closed the connection")
             }
             let reply = try JSONDecoder().decode(DeviceSessionReply.self, from: payload)
-            guard reply.id == id else { throw DeviceSessionWireError(detail: "a reply to another request") }
+            // A broker at its client limit refuses before reading a request, so its refusal can carry id 0.
+            guard reply.id == id || (reply.id == 0 && !reply.ok) else { throw DeviceSessionWireError(detail: "a reply to another request") }
             guard reply.ok, let bytes = reply.bytes else { return (reply, nil) }
             let frame = try channel.readFrame(limit: DeviceSessionWire.maxPayloadBytes, timeout: timeout) ?? Data()
             guard frame.count == bytes else { throw DeviceSessionWireError(detail: "a frame of \(frame.count) bytes after announcing \(bytes)") }
@@ -100,13 +115,16 @@ public final class DeviceSessionClient {
     nonisolated static let inputTimeout: Duration = .seconds(30)
 
     public let udid: String
-    let link: any DeviceSessionLink
+    private(set) var link: any DeviceSessionLink
+    /// Opens a fresh connection to the same broker; nil never reconnects.
+    let reconnect: (@Sendable () throws -> any DeviceSessionLink)?
     /// The broker's latest `ping`.
     public private(set) var status: DeviceSessionReply?
 
-    init(udid: String, link: any DeviceSessionLink) {
+    init(udid: String, link: any DeviceSessionLink, reconnect: (@Sendable () throws -> any DeviceSessionLink)? = nil) {
         self.udid = udid
         self.link = link
+        self.reconnect = reconnect
     }
 
     /// The broker sends touches and keys itself; otherwise they go through the runner.
@@ -124,7 +142,8 @@ public final class DeviceSessionClient {
 
     public func frame(_ format: IOSDeviceScreenFrame.Format, timeout: Duration = frameTimeout) async throws -> IOSDeviceScreenFrame {
         let (reply, payload) = try await call(.frame(format), timeout: timeout)
-        guard let payload, let width = reply.width, let height = reply.height else {
+        guard let payload, let width = reply.width, let height = reply.height,
+              (1...DeviceSessionLimits.maxFrameDimension).contains(width), (1...DeviceSessionLimits.maxFrameDimension).contains(height) else {
             throw IOSDeviceError(.sessionFailed, "The device session for \(udid) answered a frame request without a frame. Retry; `offsider session stop --device \(udid)` restarts it.")
         }
         return IOSDeviceScreenFrame(data: payload, width: width, height: height, format: format)
@@ -158,11 +177,38 @@ public final class DeviceSessionClient {
         steps.reduce(0) { $0 + ($1.kind == .wait ? max($1.seconds ?? 0, 0) : 0) }
     }
 
+    /// A link the broker closed while this command was silent is replaced before anything is sent over it.
+    private func replaceClosedLink() {
+        guard let reconnect, link.peerClosed, let fresh = try? reconnect() else { return }
+        link.close()
+        link = fresh
+    }
+
+    /// `ping` and `frame` change nothing on the device, so one that failed on a link the broker has since closed is sent once more on a new one.
+    private func exchange(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?) {
+        replaceClosedLink()
+        do {
+            return try await link.exchange(request, timeout: timeout)
+        } catch let error as DeviceSessionLinkError {
+            guard Self.retriesOnClosedLink(request), let reconnect, link.peerClosed, let fresh = try? reconnect() else { throw error }
+            link.close()
+            link = fresh
+            return try await link.exchange(request, timeout: timeout)
+        }
+    }
+
+    static func retriesOnClosedLink(_ request: DeviceSessionRequest) -> Bool {
+        switch request {
+        case .ping, .frame: return true
+        case .press, .touch, .keys, .displayChanged, .stop: return false
+        }
+    }
+
     func call(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?) {
         let reply: DeviceSessionReply
         let payload: Data?
         do {
-            (reply, payload) = try await link.exchange(request, timeout: timeout)
+            (reply, payload) = try await exchange(request, timeout: timeout)
         } catch DeviceSessionLinkError.notSent(let detail) {
             throw IOSDeviceError(
                 .sessionFailed,
@@ -294,7 +340,7 @@ public final class DeviceSessionManager: DeviceSessionConnecting {
         unlink(logPath)
         let pid: Int32
         do {
-            pid = try processes.launch(arguments: Self.serveArguments + [udid], environment: environment, logPath: logPath)
+            pid = try processes.launch(arguments: Self.serveArguments + [udid], environment: ChildEnvironment.make(.offsiderBroker, from: environment), logPath: logPath)
         } catch {
             throw IOSDeviceError(.sessionFailed, "Offsider could not start the device session for \(udid): \(error.localizedDescription). Run `offsider doctor --device \(udid)`.")
         }
@@ -329,11 +375,12 @@ public final class DeviceSessionManager: DeviceSessionConnecting {
     /// A client whose broker answered `ping` for this device and protocol.
     private func answering(_ socket: String, udid: String, timeout: Duration = DeviceSessionClient.pingTimeout) async -> DeviceSessionClient? {
         guard let link = try? connector(socket) else { return nil }
-        let client = DeviceSessionClient(udid: udid, link: link)
+        let connector = connector
+        let client = DeviceSessionClient(udid: udid, link: link, reconnect: { try connector(socket) })
         guard let reply = try? await client.ping(timeout: timeout),
               reply.protocol == DeviceSessionWire.protocolVersion,
               reply.udid?.caseInsensitiveCompare(udid) == .orderedSame else {
-            link.close()
+            client.close()
             return nil
         }
         return client

@@ -336,7 +336,8 @@ public final class IOSDeviceScreenStream {
         case .png:
             data = images.createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: space).flatMap(fastPNG)
         case .bgra:
-            var bytes = Data(count: width * height * 4)
+            guard let count = DeviceSessionLimits.bgraByteCount(width: width, height: height) else { return nil }
+            var bytes = Data(count: count)
             bytes.withUnsafeMutableBytes { buffer in
                 images.render(image, toBitmap: buffer.baseAddress!, rowBytes: width * 4, bounds: image.extent, format: .BGRA8, colorSpace: space)
             }

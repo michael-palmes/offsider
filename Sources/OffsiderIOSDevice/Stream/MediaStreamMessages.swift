@@ -103,8 +103,9 @@ struct MediaStreamAnswer: Equatable, Sendable {
         guard let ssrc = config["RemoteSSRC"]?.unsigned, let identifier = UInt32(exactly: ssrc) else {
             throw ParseError(detail: "no session identifier")
         }
-        guard let width = config["CustomWidth"]?.unsigned, let height = config["CustomHeight"]?.unsigned, width > 0, height > 0 else {
-            throw ParseError(detail: "no stream size")
+        guard let width = config["CustomWidth"]?.unsigned.flatMap({ Int(exactly: $0) }), let height = config["CustomHeight"]?.unsigned.flatMap({ Int(exactly: $0) }),
+              (1...DeviceSessionLimits.maxFrameDimension).contains(width), (1...DeviceSessionLimits.maxFrameDimension).contains(height) else {
+            throw ParseError(detail: "no stream size from 1 to \(DeviceSessionLimits.maxFrameDimension) pixels")
         }
         var session: UUID?
         if case .uuid(let value)? = output["connection"]?["options"]?["avcMediaStreamOptionClientSessionID"]?["uuid"] {
@@ -114,9 +115,9 @@ struct MediaStreamAnswer: Equatable, Sendable {
             negotiatorAnswer: answer,
             identifier: identifier,
             session: session,
-            width: Int(width),
-            height: Int(height),
-            frameRate: config["Framerate"]?.unsigned.map { Int($0) },
+            width: width,
+            height: height,
+            frameRate: config["Framerate"]?.unsigned.flatMap { Int(exactly: $0) },
             senderPort: output["connection"]?["sender"]?["port"]?.unsigned.flatMap { UInt16(exactly: $0) }
         )
     }

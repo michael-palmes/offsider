@@ -48,7 +48,7 @@ enum AndroidInputLowering {
         case let .swipe(xStart, yStart, xEnd, yEnd, delta, duration):
             let distance = hypot(xEnd - xStart, yEnd - yStart)
             let spacing = delta * scale
-            let count = spacing > 0 ? max(1, Int((distance / spacing).rounded(.up))) : 1
+            let count = spacing > 0 ? PixelMath.swipeSteps((distance / spacing).rounded(.up)) : 1
             return [.swipe(from: AndroidPoint(x: xStart, y: yStart), to: AndroidPoint(x: xEnd, y: yEnd), duration: duration, steps: count)]
         case .button(let direction, let button):
             _ = try AndroidButtonMap.requireKeyCode(for: button)

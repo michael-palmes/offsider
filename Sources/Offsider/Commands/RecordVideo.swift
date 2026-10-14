@@ -13,8 +13,9 @@ struct RecordVideo: AsyncParsableCommand {
         been taken in another orientation or size than the first is replaced by the last masked frame (heldFrames). \
         Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, --mask-label, \
         --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and write nothing, as does \
-        a recording while the evidence run has masks or OFFSIDER_MASK_SECURE=1 is set; --unmasked records anyway, \
-        with a warning. For masked evidence use \
+        a recording while the evidence run masks emails or ids. One tree read before the first frame refuses the same way \
+        when a password field is on screen or the tree cannot be read (OFFSIDER_MASK_SECURE=0 skips it outside a run); \
+        --unmasked records anyway, with a warning. For masked evidence use \
         `screenshot` or screenshot steps in a batch.
         """
     )
@@ -56,15 +57,32 @@ struct RecordVideo: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        try masks.requireMaskable(command: "record-video")
+        let checksSecureField = try masks.requireMaskable(command: "record-video")
         let regions = try masks.regions()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let backend = route.backend
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
+        if checksSecureField {
+            try await VideoMaskOptions.requireNoSecureField(command: "record-video", backend: backend, device: booted.id)
+        }
 
-        let outputURL = try prepareOutputURL()
+        let key = DeviceLockKey(platform: booted.id.platform, id: booted.id.rawValue)
+        try Self.refuseDuringSignIn(key, device: booted.id.rawValue)
+        let marker = try? RecordingMarker.create(key)
+        defer { marker?.remove() }
+
+        let target = try prepareOutputURL()
+        let staging: String
+        do {
+            staging = try OutputFile.stagingDirectory(for: target.url.path)
+        } catch let error as OutputFileError {
+            throw CLIError(errorDescription: error.message, reason: .videoFailed)
+        }
+        defer { OutputFile.discardStaging(staging) }
+        let stagedURL = URL(fileURLWithPath: staging).appendingPathComponent("recording.mp4")
+        var outputURL = target.url
         FileHandle.standardError.write(Data("Recording \(booted.id.platform.videoSourceNoun) \(booted.id.rawValue) to \(outputURL.path)\n".utf8))
         FileHandle.standardError.write(Data("Press Ctrl+C to stop recording\n".utf8))
 
@@ -81,7 +99,7 @@ struct RecordVideo: AsyncParsableCommand {
         do {
             written = try await recordVideo(
                 from: source,
-                outputURL: outputURL,
+                outputURL: stagedURL,
                 fps: fps,
                 quality: quality,
                 scale: scale,
@@ -91,6 +109,11 @@ struct RecordVideo: AsyncParsableCommand {
             throw failure
         } catch {
             throw CLIError(errorDescription: "Failed to record video: \(error.localizedDescription)", reason: .videoFailed)
+        }
+        do {
+            outputURL = URL(fileURLWithPath: try OutputFile.commit(stagedURL.path, to: target.url.path, replacing: target.userNamed))
+        } catch let error as OutputFileError {
+            throw CLIError(errorDescription: error.message, reason: .videoFailed)
         }
         let held = written.held > 0 ? ", \(written.held) of \(written.frames) frames held" : ""
         FileHandle.standardError.write(Data("Recording saved to \(outputURL.path)\(held)\n".utf8))
@@ -177,17 +200,29 @@ struct RecordVideo: AsyncParsableCommand {
         return (Int(frameCount), heldCount)
     }
 
-    private func prepareOutputURL() throws -> URL {
+    /// Refuses (exit 8, `device_busy`) while `login` or `wake` holds the device, so a typed password never lands in a recording.
+    static func refuseDuringSignIn(
+        _ key: DeviceLockKey, device: String, holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
+    ) throws {
+        guard let current = holder(key), RecordingMarker.refusedHolderCommands.contains(current.command.split(separator: " ").first.map(String.init) ?? "") else { return }
+        throw DeviceBusy(device: device, command: "record-video", holder: current, waited: nil)
+    }
+
+    /// Where the recording goes once it finishes, and whether the user named that file (only then may it replace one).
+    private func prepareOutputURL() throws -> (url: URL, userNamed: Bool) {
         let fileManager = FileManager.default
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
+        let generatedName = "offsider-video-\(formatter.string(from: Date())).mp4"
 
         let providedPath = output?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedPath: String
+        var userNamed = false
         if let providedPath, !providedPath.isEmpty {
             resolvedPath = (providedPath as NSString).expandingTildeInPath
+            userNamed = true
         } else {
-            resolvedPath = "offsider-video-\(formatter.string(from: Date())).mp4"
+            resolvedPath = generatedName
         }
 
         let baseURL: URL
@@ -199,28 +234,20 @@ struct RecordVideo: AsyncParsableCommand {
 
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: baseURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
-            let filename = "offsider-video-\(formatter.string(from: Date())).mp4"
-            let directoryURL = baseURL
-            if !fileManager.fileExists(atPath: directoryURL.path) {
-                try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
-            }
-            return directoryURL.appendingPathComponent(filename)
+            return (baseURL.appendingPathComponent(generatedName), false)
         }
 
         let directoryURL = baseURL.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: directoryURL.path) {
             try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
         }
-
-        if fileManager.fileExists(atPath: baseURL.path) {
-            var existingIsDirectory: ObjCBool = false
-            fileManager.fileExists(atPath: baseURL.path, isDirectory: &existingIsDirectory)
-            if existingIsDirectory.boolValue {
-                throw CLIError(errorDescription: "Output path \(baseURL.path) is a directory. Provide a file name or point to a different location.", reason: .videoFailed)
+        if userNamed {
+            do {
+                try OutputFile.checkReplaceable(baseURL.path)
+            } catch let error as OutputFileError {
+                throw CLIError(errorDescription: error.message, reason: .videoFailed)
             }
-            try fileManager.removeItem(at: baseURL)
         }
-
-        return baseURL
+        return (baseURL, userNamed)
     }
 }

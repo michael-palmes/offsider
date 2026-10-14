@@ -273,9 +273,7 @@ final class DeviceSessionChannel: @unchecked Sendable {
 
     /// True once the peer has closed its end; peeks without consuming or blocking.
     func peerClosed() -> Bool {
-        var byte: UInt8 = 0
-        let count = recv(descriptor, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
-        return count == 0 || (count < 0 && errno != EAGAIN && errno != EINTR)
+        SocketPeer.closed(descriptor)
     }
 
     func write(_ data: Data, timeout: Duration? = .seconds(5)) throws {
@@ -294,18 +292,27 @@ final class DeviceSessionChannel: @unchecked Sendable {
     }
 
     /// One frame's payload; nil when the peer closed cleanly before a new frame began.
-    func readFrame(limit: Int, timeout: Duration?) throws -> Data? {
-        setTimeout(SO_RCVTIMEO, timeout)
-        guard let header = try readExactly(4, allowEOF: true) else { return nil }
+    /// `timeout` bounds the wait for the header, `bodyTimeout` (default `timeout`) the whole body once the header is in.
+    func readFrame(limit: Int, timeout: Duration?, bodyTimeout: Duration? = nil) throws -> Data? {
+        guard let header = try readExactly(4, allowEOF: true, within: timeout) else { return nil }
         let length = Int(header[0]) << 24 | Int(header[1]) << 16 | Int(header[2]) << 8 | Int(header[3])
         guard length <= limit else { throw DeviceSessionWireError(detail: "a frame of \(length) bytes, more than \(limit)") }
-        return try readExactly(length, allowEOF: false) ?? Data()
+        return try readExactly(length, allowEOF: false, within: bodyTimeout ?? timeout) ?? Data()
     }
 
-    private func readExactly(_ count: Int, allowEOF: Bool) throws -> Data? {
+    /// Reads `count` bytes before one deadline for them all, so a peer trickling bytes cannot stretch it.
+    private func readExactly(_ count: Int, allowEOF: Bool, within timeout: Duration?) throws -> Data? {
+        let deadline = timeout.map { ContinuousClock.now + $0 }
         var data = Data(count: count)
         var offset = 0
         while offset < count {
+            if let deadline {
+                let remaining = deadline - .now
+                guard remaining > .zero else { throw DeviceSessionWireError(detail: "the reply timed out") }
+                setTimeout(SO_RCVTIMEO, remaining)
+            } else {
+                setTimeout(SO_RCVTIMEO, nil)
+            }
             let read = data.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress!.advanced(by: offset), count - offset) }
             if read < 0 {
                 if errno == EINTR { continue }

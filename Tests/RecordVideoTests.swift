@@ -1,6 +1,8 @@
 import AVFoundation
 import Foundation
+import OffsiderCore
 import Testing
+@testable import Offsider
 
 @Suite("Record Video Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct RecordVideoTests {
@@ -176,5 +178,25 @@ struct RecordVideoTests {
             fileSize: fileSize,
             exitCode: process.terminationStatus
         )
+    }
+}
+
+@Suite("Record video during sign-in")
+struct RecordVideoSignInTests {
+    static let key = DeviceLockKey(platform: .ios, id: "SIM-1")
+
+    @Test("recording is refused with device_busy (exit 8) while login or wake holds the device", arguments: ["login", "wake", "wake --unlock"])
+    func refusedDuringSignIn(command: String) {
+        let holder = DeviceLockHolder(pid: 4242, command: command, startedAt: nil)
+        let error = #expect(throws: DeviceBusy.self) { try RecordVideo.refuseDuringSignIn(Self.key, device: "SIM-1", holder: { _ in holder }) }
+        #expect(error?.reason == .deviceBusy)
+        #expect(error?.reason.exitCode.rawValue == 8)
+        #expect(error?.failureMessage.contains("offsider \(command)") == true)
+    }
+
+    @Test("any other holder, or none, leaves recording free", arguments: ["tap", "batch", "loginx", ""])
+    func otherHolders(command: String) throws {
+        try RecordVideo.refuseDuringSignIn(Self.key, device: "SIM-1", holder: { _ in DeviceLockHolder(pid: 1, command: command, startedAt: nil) })
+        try RecordVideo.refuseDuringSignIn(Self.key, device: "SIM-1", holder: { _ in nil })
     }
 }

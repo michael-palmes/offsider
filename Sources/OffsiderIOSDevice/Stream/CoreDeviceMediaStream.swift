@@ -2,6 +2,7 @@ import CoreMedia
 import Darwin
 import Foundation
 import ObjectiveC
+import OffsiderCore
 import XPC
 
 /// Every private class, selector and option key the screen stream uses, reached through the Objective-C runtime and never linked.
@@ -37,6 +38,26 @@ enum MediaStreamSymbols {
     static let clientNameKey = "avcMediaStreamOptionClientName"
     static let clientName = "CoreDeviceScreenSharing"
     static let sessionKey = "avcMediaStreamOptionClientSessionID"
+
+    /// Each selector's type encoding (offsets stripped) as AVConference has it on macOS 27, checked before its implementation is cast.
+    static let encodings: [String: String] = [
+        alloc: "@@:",
+        negotiatorInit: "@@:q@^@",
+        createOffer: "B@:",
+        offer: "@@:",
+        setAnswer: "B@:@^@",
+        configuration: "@@:^@",
+        initOptions: "@@:^@",
+        videoStreamInit: "@@:@@^@",
+        setDelegate: "v@:@",
+        configure: "B@:@^@",
+        start: "v@:",
+        stop: "v@:",
+        streamOutput: "@@:",
+        setStreamOutput: "v@:@",
+        streamToken: "q@:",
+        streamOutputInit: "@@:qi@@",
+    ]
 }
 
 /// A missing class or selector, or a private call that returned an error.
@@ -61,6 +82,9 @@ private enum Runtime {
     static func implementation<F>(_ type: AnyClass, _ selector: String, as _: F.Type) throws -> F {
         guard class_respondsToSelector(type, NSSelectorFromString(selector)), let method = class_getMethodImplementation(type, NSSelectorFromString(selector)) else {
             throw MediaStreamRuntimeError(description: "\(NSStringFromClass(type)) has no \(selector)")
+        }
+        if let expected = MediaStreamSymbols.encodings[selector] {
+            try PrivateAPIGuard.requireMethod(type, NSSelectorFromString(selector), encoding: expected, framework: "AVConference", owner: "macOS")
         }
         return unsafeBitCast(method, to: F.self)
     }
@@ -254,6 +278,7 @@ enum ImageQueueTap {
                 _ = try Runtime.implementation(type, selector, as: IMP.self)
             }
             _ = try Runtime.implementation(try Runtime.type(MediaStreamSymbols.streamOutputClass), MediaStreamSymbols.streamOutputInit, as: IMP.self)
+            try PrivateAPIGuard.requireMethod(type, NSSelectorFromString(MediaStreamSymbols.start), encoding: MediaStreamSymbols.encodings[MediaStreamSymbols.start]!, framework: "AVConference", owner: "macOS")
             guard let method = class_getInstanceMethod(type, NSSelectorFromString(MediaStreamSymbols.start)) else {
                 throw MediaStreamRuntimeError(description: "\(MediaStreamSymbols.imageQueueClass) has no \(MediaStreamSymbols.start)")
             }

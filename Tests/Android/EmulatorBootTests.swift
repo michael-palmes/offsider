@@ -83,7 +83,8 @@ struct EmulatorBootTests {
         var lines: [String] = []
         let request = EmulatorBootRequest(avdName: avd, headless: headless, timeout: timeout)
         do {
-            let result = try await EmulatorBooter(host: host) { _, _ in }.boot(request) { lines.append($0) }
+            let logs = host.homeDirectory.path
+            let result = try await EmulatorBooter(host: host, log: { _, _ in }, logsDirectory: { logs }).boot(request) { lines.append($0) }
             return Run(result: .success(result), lines: lines)
         } catch let error as AndroidError {
             return Run(result: .failure(error), lines: lines)
@@ -118,7 +119,7 @@ struct EmulatorBootTests {
 
         let run = await Self.boot(host, headless: true)
 
-        let logPath = home.appendingPathComponent("offsider-boot-\(Self.avd).log").path
+        let logPath = home.appendingPathComponent("boot-\(Self.avd).log").path
         #expect(try run.result.get() == EmulatorBootResult(serial: "emulator-5556", alreadyRunning: false, hasGRPC: true, logPath: logPath))
         #expect(launcher.launches == [FakeLauncher.Launch(
             executable: home.appendingPathComponent("Library/Android/sdk/emulator/emulator").path,
@@ -127,8 +128,33 @@ struct EmulatorBootTests {
         )])
         #expect(launcher.environments.map { $0["ADB_MDNS"] } == ["0"])
         #expect(launcher.environments.first?["TMPDIR"] == home.path)
+        #expect(launcher.environments.first?["ANDROID_EMU_ENABLE_CRASH_REPORTING"] == "0")
         #expect(emulator.calls == [.status, .status, .close])
         #expect(run.lines == ["Starting \(Self.avd)...", "Waiting for Android to finish booting on emulator-5556..."])
+    }
+
+    @Test("the boot log lives in the private logs folder, named by the AVD made safe for a file name")
+    func bootLogPath() {
+        #expect(EmulatorBooter.logPath(avdName: "Offsider_E2E", directory: "/private/offsider-501/logs") == "/private/offsider-501/logs/boot-Offsider_E2E.log")
+        #expect(EmulatorBooter.logPath(avdName: "../evil", directory: "/p/logs") == "/p/logs/boot--evil.log")
+        #expect(EmulatorBooter.logsDirectoryName == "logs")
+    }
+
+    @Test("the emulator sees only its allow-listed environment, never the caller's secrets")
+    func launchEnvironment() async throws {
+        let home = try Self.home()
+        let adb = AdbState(hiddenFor: .max, pendingBootChecks: 0)
+        let launcher = FakeLauncher(pid: 4242) { _ in
+            Self.writeDiscovery(pid: 4242, in: home)
+            adb.appear()
+        }
+        let host = AndroidTestHost.make(
+            home: home, environment: ["TMPDIR": home.path, "GITHUB_TOKEN": "token-not-for-children", "ADB_MDNS": "1"], adb: Self.server(adb),
+            emulator: FakeEmulatorConnector(.success(FakeEmulator(booted: [true]))), liveProcesses: [4242], launcher: launcher
+        )
+        _ = await Self.boot(host)
+        #expect(launcher.environments.first?["GITHUB_TOKEN"] == nil)
+        #expect(launcher.environments.first?["ADB_MDNS"] == "0")
     }
 
     @Test("a launcher that hands over to a child process still finds the new discovery file for the AVD")
@@ -224,7 +250,9 @@ struct EmulatorBootTests {
         (["-gpu", "bogus"], "--emulator-arg -gpu bogus is refused: -gpu takes auto|host|software|lavapipe|swiftshader|swangle."),
         (["-cores", "1000"], "--emulator-arg -cores 1000 is refused: -cores takes 1 to 16."),
         (["-cores", "two"], "--emulator-arg -cores two is refused: -cores takes 1 to 16."),
-        (["-camera-back", "imagefile:/etc/hosts"], "--emulator-arg -camera-back imagefile:/etc/hosts is refused: -camera-back takes emulated|none|webcamN."),
+        (["-camera-back", "imagefile:/etc/hosts"], "--emulator-arg -camera-back imagefile:/etc/hosts is refused: -camera-back takes emulated|none."),
+        (["-camera-front", "webcam0"], "--emulator-arg -camera-front webcam0 is refused: -camera-front takes emulated|none."),
+        (["-camera-back", "webcam1"], "--emulator-arg -camera-back webcam1 is refused: -camera-back takes emulated|none."),
         (["-skin", "../../skins/x"], "--emulator-arg -skin ../../skins/x is refused: -skin takes WIDTHxHEIGHT|name."),
         (["-partition-size", "99999999"], "--emulator-arg -partition-size 99999999 is refused: -partition-size takes 512 to 65536."),
         (["-gpu"], "--emulator-arg -gpu is refused: it needs a value (auto|host|software|lavapipe|swiftshader|swangle) in the next --emulator-arg."),
@@ -236,7 +264,7 @@ struct EmulatorBootTests {
     }
 
     @Test("--emulator-arg passes the allowed flags and values", arguments: [
-        ["-gpu", "host"], ["-gpu", "swiftshader"], ["-no-boot-anim"], ["-camera-back", "none"], ["-camera-front", "webcam0"],
+        ["-gpu", "host"], ["-gpu", "swiftshader"], ["-no-boot-anim"], ["-camera-back", "none"], ["-camera-front", "emulated"],
         ["-camera-back", "emulated"], ["-feature", "-Vulkan"], ["-feature", "GLESDynamicVersion"], ["-no-snapshot-save"], ["-wipe-data"],
         ["-cores", "4"], ["-accel", "auto"], ["-no-audio"], ["-read-only"], ["-verbose"], ["-no-cache"], ["-noskin"], ["-no-snapshot"],
         ["-skin", "1080x2400"], ["-skin", "pixel_9"], ["-partition-size", "8192"],
@@ -420,7 +448,7 @@ struct EmulatorBootTests {
             return
         }
         #expect(error.kind == .emulatorExited)
-        #expect(error.message.hasPrefix("The emulator exited during start-up (status 1). Last lines of \(home.path)/offsider-boot-\(Self.avd).log:\nline 6\n"))
+        #expect(error.message.hasPrefix("The emulator exited during start-up (status 1). Last lines of \(home.path)/boot-\(Self.avd).log:\nline 6\n"))
         #expect(error.message.hasSuffix("\nline 25"))
     }
 
@@ -438,7 +466,7 @@ struct EmulatorBootTests {
             Issue.record("expected the boot to time out")
             return
         }
-        #expect(error.message == "\(Self.avd) (emulator-5556) did not finish booting within 20 s. It is still running; check its window or \(home.path)/offsider-boot-\(Self.avd).log, then run `offsider boot \(Self.avd)` again to keep waiting.")
+        #expect(error.message == "\(Self.avd) (emulator-5556) did not finish booting within 20 s. It is still running; check its window or \(home.path)/boot-\(Self.avd).log, then run `offsider boot \(Self.avd)` again to keep waiting.")
         #expect(launcher.launches.count == 1)
     }
 

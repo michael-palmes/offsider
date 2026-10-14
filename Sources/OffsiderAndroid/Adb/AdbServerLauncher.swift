@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 /// Starts the SDK's adb server when none answers; never kills or restarts a running one.
 struct AdbServerLauncher {
@@ -15,8 +16,7 @@ struct AdbServerLauncher {
             return
         } catch let error as AndroidError where error.kind == .adbServerNotRunning {}
 
-        var environment = host.environment
-        environment["ADB_MDNS"] = "0"
+        let environment = ChildEnvironment.make(.adbServer, from: host.environment)
         let result = try await host.processes.capture(
             executable: adb.path,
             arguments: ["start-server"],

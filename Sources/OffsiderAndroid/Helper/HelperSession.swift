@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 /// One helper process per command: started on the first tree read, reused by every later read, stopped by `close()`.
 @MainActor
@@ -170,7 +171,7 @@ final class HelperSession {
             try await requestWithPayload(.screenshot(format: "raw"), as: HelperScreenshotReply.self, timeout: Self.dumpTimeout)
         }
         let frame = reply.frame
-        guard frame.format == "rgba8888", bytes.count == frame.bytes, frame.width > 0, frame.height > 0, bytes.count == frame.width * frame.height * 4 else {
+        guard frame.format == "rgba8888", bytes.count == frame.bytes, let expected = PixelMath.byteCount(width: frame.width, height: frame.height), bytes.count == expected else {
             throw HelperProtocolError(detail: "its screenshot frame (\(frame.format), \(frame.width) x \(frame.height), \(bytes.count) bytes) does not match its header")
         }
         return AndroidScreenCapture.Pixels(width: frame.width, height: frame.height, bytes: bytes)

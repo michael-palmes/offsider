@@ -12,6 +12,8 @@ enum DeviceSessionReport: Equatable {
 enum DeviceSessionReports {
     /// A held contact is sent again this often, so the device sees a long press or a slow drag as one live touch.
     static let holdInterval = 0.02
+    /// The most a request `DeviceSessionLimits.checkBudget` accepts can expand to: each step, plus two reports per hold slice (60 s of slices, and one partial slice per wait).
+    static let maxTouchReports = 3 * DeviceSessionLimits.maxSteps + 2 * Int((DeviceSessionLimits.maxRequestSeconds / holdInterval).rounded(.up)) + 2
 
     /// Checked whole before anything is sent; a contact left down at the end is released.
     static func touch(_ steps: [DeviceSessionStep], panel: IOSDevicePanel) throws -> [DeviceSessionReport] {
@@ -34,6 +36,7 @@ enum DeviceSessionReports {
             }
         }
         if let held { reports.append(.touch(x: held.x, y: held.y, state: .release)) }
+        assert(reports.count <= maxTouchReports, "checkBudget should have refused this request")
         return reports
     }
 
