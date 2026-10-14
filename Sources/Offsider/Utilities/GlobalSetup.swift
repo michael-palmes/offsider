@@ -1,6 +1,16 @@
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderCore
+
+/// Refuses a developer directory outside an Apple-signed Xcode before any framework or tool is loaded from it.
+func requireTrustedDeveloperDirectory(_ path: String, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+    do {
+        try DeveloperDirectoryTrust.shared.require(path, source: .of(environment: environment))
+    } catch let error as UntrustedDeveloperDirectory {
+        throw CLIError(errorDescription: error.failureMessage, reason: .xcodeUnusable, hint: error.hint)
+    }
+}
 
 @MainActor
 func performGlobalSetup(logger: OffsiderLogger) async throws {
@@ -15,6 +25,7 @@ func performGlobalSetup(logger: OffsiderLogger) async throws {
             logger.error().log(errorMessage)
             throw CLIError(errorDescription: errorMessage, reason: .xcodeMissing, hint: "xcode-select -s <Xcode.app>/Contents/Developer")
         }
+        try requireTrustedDeveloperDirectory(xcodePath)
         logger.info().log("Xcode is available at: \(xcodePath)")
     } catch let error as CLIError {
         throw error
@@ -54,6 +65,7 @@ func setup(logger: OffsiderLogger) async throws {
                 reason: .xcodeMissing, hint: "xcode-select -s <Xcode.app>/Contents/Developer"
             )
         }
+        try requireTrustedDeveloperDirectory(developerDirectory)
     } catch let error as CLIError {
         throw error
     } catch {

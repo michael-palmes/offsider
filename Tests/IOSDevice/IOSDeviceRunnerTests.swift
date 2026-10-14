@@ -7,6 +7,8 @@ import Testing
 @MainActor
 struct RunnerSessionTests {
     static let udid = IOSDeviceFixtures.phone
+    /// A minute before this run, in whole seconds, so a recorded session is never past its 12 hours.
+    static let started = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - 60).rounded(.down))
 
     static func record(
         pid: Int32 = 4242, buildKey: String = "key", version: String = RunnerClient.protocolVersion,
@@ -14,7 +16,7 @@ struct RunnerSessionTests {
     ) -> RunnerSessionRecord {
         RunnerSessionRecord(
             udid: udid, pid: pid, port: 31337, token: "old-token",
-            startedAt: Date(timeIntervalSince1970: 1_800_000_000), lastUsed: Date(timeIntervalSince1970: 1_800_000_100),
+            startedAt: started, lastUsed: started.addingTimeInterval(30),
             buildKey: buildKey, version: version, transport: .usbmux, process: process, state: state
         )
     }
@@ -203,12 +205,14 @@ struct RunnerSessionTests {
         #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
     }
 
-    @Test("stop asks the runner to stop, then signals a process that lingers and removes the session")
+    @Test("stop asks the runner to stop, then signals a process that lingers and removes the session and its result bundles")
     func stop() async throws {
         let root = RunnerTestPaths.temporaryRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
         let store = RunnerSessionStore(root: root)
         try store.write(Self.record())
+        let bundle = "\(root)/ios-devices/\(Self.udid)/result-\(UUID().uuidString).xcresult"
+        try FileManager.default.createDirectory(atPath: bundle, withIntermediateDirectories: true)
         let processes = FakeRunnerProcesses(alive: [4242])
         let transport = FakeRunnerTransport()
         let record = Self.record()
@@ -217,6 +221,37 @@ struct RunnerSessionTests {
 
         #expect(processes.terminations == [4242])
         #expect(try store.read(udid: Self.udid) == nil)
+        #expect(!FileManager.default.fileExists(atPath: bundle))
+    }
+
+    @Test("a session whose runner exited is forgotten with its result bundles")
+    func exitedSessionCleansResults() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let store = RunnerSessionStore(root: root)
+        try store.write(Self.record())
+        let bundle = "\(root)/ios-devices/\(Self.udid)/result-old.xcresult"
+        try FileManager.default.createDirectory(atPath: bundle, withIntermediateDirectories: true)
+        let manager = Self.manager(root: root, processes: FakeRunnerProcesses(), transport: FakeRunnerTransport())
+
+        let reused = try await manager.reuse(.device(udid: Self.udid), deviceName: "iPhone", build: RunnerBuild(key: "key", xctestrun: URL(fileURLWithPath: "/x"), directory: URL(fileURLWithPath: "/x")), holdingLock: true)
+
+        #expect(reused == nil)
+        #expect(!FileManager.default.fileExists(atPath: bundle))
+    }
+
+    @Test("a new session checks the build's products first and runs xcodebuild quietly")
+    func startVerifiesAndIsQuiet() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses()
+        let builder = FakeRunnerBuilder()
+
+        _ = try await Self.manager(root: root, processes: processes, transport: FakeRunnerTransport(), builder: builder).connect(.device(udid: Self.udid), deviceName: "iPhone")
+
+        #expect(builder.verifications == 1)
+        let arguments = try #require(processes.launches.first?.arguments)
+        #expect(arguments.first == "test-without-building" && arguments.contains("-quiet"))
     }
 
     @Test("a recorded pid now running another process is forgotten and never signalled", arguments: [
@@ -242,6 +277,42 @@ struct RunnerSessionTests {
         #expect(processes.terminations.isEmpty)
         #expect(processes.launches.count == 1)
         #expect(try store.read(udid: Self.udid)?.pid == 5151)
+    }
+
+    @Test("a live session of this build that has run for 12 hours is stopped and replaced")
+    func lifetime() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try RunnerSessionStore(root: root).write(Self.record())
+        let processes = FakeRunnerProcesses(alive: [4242])
+        let transport = FakeRunnerTransport(buildKey: "key")
+        let later = Self.started.addingTimeInterval(12 * 3600)
+
+        _ = try await Self.manager(root: root, processes: processes, transport: transport, now: { later }).connect(.device(udid: Self.udid), deviceName: "iPhone")
+
+        #expect(processes.terminations == [4242])
+        #expect(processes.launches.count == 1)
+    }
+
+    @Test("OFFSIDER_IOS_RUNNER_IDLE is clamped to 1 to 3600 seconds", arguments: [("999999", 3600), ("45", 45), ("0", 300), ("x", 300)])
+    func idleClamp(value: String, seconds: Int) {
+        let manager = Self.manager(root: "/nonexistent", processes: FakeRunnerProcesses(), transport: FakeRunnerTransport(), environment: ["OFFSIDER_IOS_RUNNER_IDLE": value])
+        #expect(manager.idleSeconds == seconds)
+    }
+
+    @Test("xcodebuild for the runner sees only the allowed environment, never the caller's secrets")
+    func runnerEnvironment() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses()
+        let environment = ["HOME": "/Users/me", "AWS_SECRET_ACCESS_KEY": "s", "HTTPS_PROXY": "http://127.0.0.1:3128", "TEST_RUNNER_EXTRA": "1"]
+        _ = try await Self.manager(root: root, processes: processes, transport: FakeRunnerTransport(buildKey: "key"), environment: environment)
+            .connect(.device(udid: Self.udid), deviceName: "iPhone")
+        let launch = try #require(processes.launches.first)
+        #expect(launch.environment["AWS_SECRET_ACCESS_KEY"] == nil)
+        #expect(launch.environment["HOME"] == "/Users/me")
+        #expect(launch.environment["HTTPS_PROXY"] == "http://127.0.0.1:3128")
+        #expect(launch.environment["TEST_RUNNER_EXTRA"] == "1")
     }
 
     @Test("a runner that accepts the connection but is slow to answer is busy, so it is reused and never stopped")
@@ -449,7 +520,7 @@ struct RunnerBuilderTests {
         return url
     }
 
-    @Test("the cache key is stable and changes with the source, Xcode build, team and destination")
+    @Test("the cache key is stable and changes with the source, Xcode build, team, bundle prefix and destination")
     func keyStability() throws {
         let source = try Self.sourceDirectory()
         defer { try? FileManager.default.removeItem(at: source) }
@@ -469,28 +540,56 @@ struct RunnerBuilderTests {
             XcodeRunnerBuilder.key(sourceDigest: digest, xcodeBuild: "27B5", team: "ABCDE12345", destination: .device(udid: "U")),
             XcodeRunnerBuilder.key(sourceDigest: digest, xcodeBuild: "27A266a", team: "ZZZZZ99999", destination: .device(udid: "U")),
             XcodeRunnerBuilder.key(sourceDigest: digest, xcodeBuild: "27A266a", team: nil, destination: .simulator(udid: "U")),
+            XcodeRunnerBuilder.key(sourceDigest: digest, xcodeBuild: "27A266a", team: "ABCDE12345", prefix: "com.example.qa", destination: .device(udid: "U")),
         ]
-        #expect(Set(others + [key]).count == 4)
+        #expect(Set(others + [key]).count == 5)
     }
 
-    @Test("the team comes from OFFSIDER_IOS_TEAM_ID first, then Xcode's only signed-in team")
+    @Test("the team comes from OFFSIDER_IOS_TEAM_ID first, then the device's allowance")
     func teamResolution() throws {
-        #expect(try XcodeRunnerBuilder.resolveTeam(environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], signedInTeams: ["Q1", "Q2"]) == "ABCDE12345")
-        #expect(try XcodeRunnerBuilder.resolveTeam(environment: [:], signedInTeams: ["TEAM000001"]) == "TEAM000001")
+        #expect(try XcodeRunnerBuilder.resolveTeam(environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], allowanceTeam: "ZYXWV98765", signedInTeams: []) == "ABCDE12345")
+        #expect(try XcodeRunnerBuilder.resolveTeam(environment: [:], allowanceTeam: "ZYXWV98765", signedInTeams: ["AAAAA11111"]) == "ZYXWV98765")
     }
 
-    @Test("no team, several teams or a malformed variable is team_missing naming the variable", arguments: [
-        ([String: String](), [String]()),
-        ([:], ["AAAAA11111", "BBBBB22222"]),
-        (["OFFSIDER_IOS_TEAM_ID": "not a team"], ["AAAAA11111"]),
-    ])
-    func teamMissing(environment: [String: String], teams: [String]) {
+    @Test("Xcode's only signed-in team is never used: team_missing names the variable, --team and the team count")
+    func singleXcodeTeamIsNotUsed() {
         let error = #expect(throws: IOSDeviceError.self) {
-            _ = try XcodeRunnerBuilder.resolveTeam(environment: environment, signedInTeams: teams)
+            _ = try XcodeRunnerBuilder.resolveTeam(environment: [:], allowanceTeam: nil, signedInTeams: ["AAAAA11111"])
+        }
+        #expect(error?.reason == .teamMissing)
+        #expect(error?.message == "Offsider signs its runner app with an Apple development team you choose. Set OFFSIDER_IOS_TEAM_ID to your personal or test team's ID (Xcode is signed in to 1 team), or allow the device with --team.")
+    }
+
+    @Test("no team, several teams, a malformed variable or a malformed allowance team is team_missing naming the variable", arguments: [
+        ([String: String](), nil, [String]()),
+        ([:], nil, ["AAAAA11111", "BBBBB22222"]),
+        (["OFFSIDER_IOS_TEAM_ID": "not a team"], "ZYXWV98765", ["AAAAA11111"]),
+        (["OFFSIDER_IOS_TEAM_ID": "ABCDE1234"], nil, []),
+        ([:], "short", []),
+    ] as [([String: String], String?, [String])])
+    func teamMissing(environment: [String: String], allowance: String?, teams: [String]) {
+        let error = #expect(throws: IOSDeviceError.self) {
+            _ = try XcodeRunnerBuilder.resolveTeam(environment: environment, allowanceTeam: allowance, signedInTeams: teams)
         }
         #expect(error?.reason == .teamMissing)
         #expect(error?.reason.exitCode == .toolMissing)
         #expect(error?.message.contains("OFFSIDER_IOS_TEAM_ID") == true)
+    }
+
+    @Test("the bundle prefix defaults to com.mpalmes.offsider and takes a valid OFFSIDER_IOS_RUNNER_PREFIX")
+    func prefixResolution() throws {
+        #expect(try XcodeRunnerBuilder.resolvePrefix(environment: [:]) == "com.mpalmes.offsider")
+        #expect(try XcodeRunnerBuilder.resolvePrefix(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": "com.example-qa.offsider"]) == "com.example-qa.offsider")
+        #expect(XcodeRunnerBuilder.installedBundleIDs(prefix: "com.example.qa") == ["com.example.qa.runner.uitests.xctrunner", "com.example.qa.runner"])
+    }
+
+    @Test("a prefix that is not a reverse-DNS id of at most 100 characters is a usage error naming the variable", arguments: [
+        "com", "1com.example", "com..example", "com.exa mple", "com.example.", "com.ex_ample", "com.ëxample", "a." + String(repeating: "b", count: 99),
+    ])
+    func prefixRefused(value: String) {
+        let error = #expect(throws: IOSDeviceError.self) { _ = try XcodeRunnerBuilder.resolvePrefix(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": value]) }
+        #expect(error?.reason == .usage)
+        #expect(error?.message.contains("OFFSIDER_IOS_RUNNER_PREFIX") == true)
     }
 
     @Test("a cached build is returned without running xcodebuild")

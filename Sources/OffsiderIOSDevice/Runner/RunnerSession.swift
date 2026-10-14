@@ -194,6 +194,9 @@ public final class RunnerSessionManager {
     static let exitedLogLimit = 1024 * 1024
     /// A snapshot can hold the runner's main thread for seconds, so a slow ping means busy, not gone.
     static let reuseTimeout: TimeInterval = 5
+    static let maxIdleSeconds = 3600
+    /// A runner session this old is restarted rather than reused.
+    static let maxLifetime: TimeInterval = 12 * 3600
 
     let store: RunnerSessionStore
     let builder: any RunnerBuilding
@@ -248,8 +251,10 @@ public final class RunnerSessionManager {
         }
     }
 
+    /// `OFFSIDER_IOS_RUNNER_IDLE` seconds, 300 when unset or not a positive number, clamped to 1 to 3600.
     var idleSeconds: Int {
-        environment[Self.idleVariable].flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil } ?? 300
+        let seconds = environment[Self.idleVariable].flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil } ?? 300
+        return min(max(seconds, 1), Self.maxIdleSeconds)
     }
 
     public func connect(_ destination: RunnerDestination, deviceName: String) async throws -> RunnerClient {
@@ -267,11 +272,14 @@ public final class RunnerSessionManager {
         guard processes.isRunning(record) else {
             log(.debug, "Forgetting the Offsider runner session on \(destination.udid): its process has exited")
             store.remove(udid: destination.udid)
+            removeResultBundles(udid: destination.udid)
             return nil
         }
         // Without the lock, a starting session may belong to a command still waiting for it.
         if record.state == .starting, !holdingLock { return nil }
-        if record.version == RunnerClient.protocolVersion, record.buildKey == build.key {
+        if now().timeIntervalSince(record.startedAt) >= Self.maxLifetime {
+            log(.debug, "Restarting the Offsider runner on \(destination.udid): it has run for 12 hours")
+        } else if record.version == RunnerClient.protocolVersion, record.buildKey == build.key {
             switch await client(for: record).probe(timeout: Self.reuseTimeout) {
             case .answered(let ping) where ping.version == record.version && ping.buildKey == record.buildKey:
                 return keep(&record)
@@ -301,13 +309,14 @@ public final class RunnerSessionManager {
     func start(_ destination: RunnerDestination, deviceName: String, build: RunnerBuild) async throws -> RunnerClient {
         let udid = destination.udid
         if let failure = await usbmuxFailure(destination, deviceName: deviceName) { throw failure }
+        let build = try await builder.verifyForLaunch(build, for: destination, deviceName: deviceName)
         let directory = try IOSDevicePaths.device(udid, root: store.root)
         Self.removeResultBundles(in: directory)
         let logPath = try store.logPath(udid: udid)
         unlink(logPath)
         let token = Self.makeToken()
         let port = UInt16.random(in: 20000...59999)
-        var childEnvironment = environment
+        var childEnvironment = ChildEnvironment.make(.xcodebuild, from: environment)
         if let developerDirectory { childEnvironment["DEVELOPER_DIR"] = developerDirectory }
         childEnvironment["TEST_RUNNER_OFFSIDER_RUNNER_PORT"] = String(port)
         childEnvironment["TEST_RUNNER_OFFSIDER_RUNNER_TOKEN"] = token
@@ -318,6 +327,7 @@ public final class RunnerSessionManager {
             "-xctestrun", build.xctestrun.path,
             "-destination", "id=\(udid)",
             "-resultBundlePath", (directory as NSString).appendingPathComponent("result-\(UUID().uuidString).xcresult"),
+            "-quiet",
         ]
         let pid: Int32
         do {
@@ -407,6 +417,13 @@ public final class RunnerSessionManager {
             if processes.isRunning(record) { processes.terminate(record.pid, identity: identity) }
         }
         store.remove(udid: record.udid)
+        removeResultBundles(udid: record.udid)
+    }
+
+    /// The result bundles a stopped runner left, which can hold what it was asked to type.
+    func removeResultBundles(udid: String) {
+        guard let directory = try? IOSDevicePaths.device(udid, root: store.root) else { return }
+        Self.removeResultBundles(in: directory)
     }
 
     func client(for record: RunnerSessionRecord) -> RunnerClient {

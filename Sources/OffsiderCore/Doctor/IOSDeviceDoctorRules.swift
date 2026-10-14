@@ -269,15 +269,15 @@ public enum IOSDeviceDoctorRules {
                 return (.fail, "OFFSIDER_IOS_TEAM_ID is not a 10-character team ID", "Set it to the team ID from Xcode's Signing & Capabilities, or unset it.")
             }
             return (.pass, "Team \(team) from OFFSIDER_IOS_TEAM_ID", nil)
+        case .allowance(let team):
+            return (.pass, "Team \(team) from the device's allowance (device-access allow --team)", nil)
         case .xcodeTeams(let teams):
-            switch teams.count {
-            case 0:
-                return (.warn, "No team is signed in to Xcode", "Sign in to Xcode with an Apple Account, or set OFFSIDER_IOS_TEAM_ID.")
-            case 1:
-                return (.pass, "Team \(teams[0]), the only one signed in to Xcode", nil)
-            default:
-                return (.warn, "Xcode has \(teams.count) teams signed in", "Set OFFSIDER_IOS_TEAM_ID to one of \(teams.sorted().joined(separator: ", ")).")
-            }
+            let count = Set(teams).count
+            return (
+                .warn,
+                "No team is chosen for the runner app (Xcode is signed in to \(count) \(count == 1 ? "team" : "teams"), and Offsider never picks one)",
+                "Set OFFSIDER_IOS_TEAM_ID to your personal or test team's ID, or allow the device with `offsider device-access allow --device <udid> --team <id>`."
+            )
         }
     }
 }

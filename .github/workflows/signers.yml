@@ -1,0 +1,51 @@
+name: Signers
+
+# Runs the base branch's copy of this file (pull_request_target), so a pull request cannot edit the
+# check away. The pull request's commits are fetched as data only and never executed.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  protected-paths:
+    name: Protected paths signed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch the pull request head as data
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/pull/${PR}/head:refs/remotes/pr/head"
+          [ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD_SHA" ] || { echo "::error::the fetched head is not the event's head"; exit 1; }
+
+      # A change to the signer list, the release path or the entitlements must be vouched for by a key
+      # the base branch already lists; the head commit's signature covers the whole tree.
+      - name: Require an allowed signature when protected paths change
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git show "${BASE_SHA}:.github/allowed_signers" > "$RUNNER_TEMP/allowed_signers"
+          protected='^(\.github/allowed_signers|\.github/CODEOWNERS|\.github/workflows/(release|signers)\.yml|scripts/release\.sh|entitlements(-adhoc)?\.plist)$'
+          mb="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          if git diff --name-only "$mb" "$HEAD_SHA" | grep -Eq "$protected"; then
+            echo "Protected paths changed; checking the head commit's signature against the base branch's allowed_signers"
+            git -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/allowed_signers" -c gpg.minTrustLevel=fully verify-commit --verbose "$HEAD_SHA" \
+              || { echo "::error::this pull request changes a protected path, so its head commit must be signed by a key listed in the base branch's .github/allowed_signers"; exit 1; }
+          else
+            echo "No protected path changed"
+          fi

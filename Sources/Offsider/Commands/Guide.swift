@@ -62,11 +62,7 @@ struct Guide: AsyncParsableCommand {
     }
 
     static func content(of topic: GuideTopic) throws -> String {
-        guard let url = Bundle.module.url(forResource: topic.rawValue, withExtension: "md", subdirectory: "skills/offsider/references"),
-              let text = try? String(contentsOf: url, encoding: .utf8)
-        else {
-            throw CLIError(errorDescription: "The bundled guide topic '\(topic.rawValue)' is missing from this install. Reinstall Offsider.", reason: .initFailed)
-        }
-        return text
+        let data = try BundleIntegrity.verifiedData("skills/offsider/references/\(topic.rawValue).md")
+        return String(decoding: data, as: UTF8.self)
     }
 }

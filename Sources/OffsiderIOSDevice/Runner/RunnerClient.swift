@@ -23,6 +23,17 @@ public struct RunnerPing: Equatable, Sendable {
     }
 }
 
+/// What `POST /foreground` reports.
+public struct RunnerForeground: Equatable, Sendable {
+    public let inFront: Bool
+    public let activeBundleID: String?
+
+    public init(inFront: Bool, activeBundleID: String?) {
+        self.inFront = inFront
+        self.activeBundleID = activeBundleID
+    }
+}
+
 /// What a reuse ping found: an answer, a runner that accepted the connection but is still busy, or nothing usable.
 public enum RunnerProbe: Equatable, Sendable {
     case answered(RunnerPing)
@@ -32,7 +43,7 @@ public enum RunnerProbe: Equatable, Sendable {
 
 /// The runner's routes, each a fresh connection through `transport`.
 public struct RunnerClient: Sendable {
-    public static let protocolVersion = "1"
+    public static let protocolVersion = "2"
     public static let timeout: TimeInterval = 5
 
     public let udid: String
@@ -110,6 +121,13 @@ public struct RunnerClient: Sendable {
         _ = try await call("POST", "/swipe", body, timeout: max(RunnerClient.timeout, duration + 5))
     }
 
+    /// Whether `app` is the app in front, and the bundle id XCTest reports as active (never a remembered one).
+    public func foreground(app: String) async throws -> RunnerForeground {
+        let data = try await call("POST", "/foreground", ["app": app]) as? [String: Any]
+        guard let data, let inFront = data["inFront"] as? Bool else { throw malformed("/foreground") }
+        return RunnerForeground(inFront: inFront, activeBundleID: data["activeBundleId"] as? String)
+    }
+
     public func home() async throws {
         _ = try await call("POST", "/home", [:])
     }
@@ -152,7 +170,7 @@ public struct RunnerClient: Sendable {
         case "secure_field":
             throw IOSDeviceError(.secureFieldRefused, "The focused field on \(udid) is a secure field, and Offsider does not replace its text. Clear it in the app, or type without --replace.")
         case "app_not_in_front":
-            throw IOSDeviceError(.runnerFailed, "The app --app names is not in front on \(udid), so Offsider did not read or touch it. Open the app, or leave out --app to use the app in front.")
+            throw IOSDeviceError(.appNotAllowed, "The app this command may drive is not in front on \(udid), so Offsider did not read or touch it. Ask the user to open it, then retry.")
         default:
             throw IOSDeviceError(.runnerFailed, "The runner on \(udid) could not complete \(path): \(message) (\(code)). Retry; if it persists, run `offsider runner stop --device \(udid)`.")
         }

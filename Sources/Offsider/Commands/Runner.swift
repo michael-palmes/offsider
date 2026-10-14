@@ -11,8 +11,52 @@ struct RunnerCommand: AsyncParsableCommand {
         Offsider builds a small runner app the first time it reads a phone's screen, then keeps it running in the \
         background so later commands answer quickly; it stops by itself after 300 idle seconds (OFFSIDER_IOS_RUNNER_IDLE).
         """,
-        subcommands: [RunnerStatus.self, RunnerStop.self]
+        subcommands: [RunnerStatus.self, RunnerBuildCommand.self, RunnerStop.self]
     )
+}
+
+struct RunnerBuildCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "build",
+        abstract: "Build the runner app for an allowed, wired iPhone or iPad, or check its cached build.",
+        discussion: """
+        The runner is signed with OFFSIDER_IOS_TEAM_ID, or the team `device-access allow --team` recorded for the device. \
+        Offsider never registers a device with a team on its own: --register-device lets Xcode add this device to the team, \
+        and only a person in their own terminal can pass it. Xcode > Window > Devices and Simulators registers it too.
+        """
+    )
+
+    @Option(name: .customLong("device"), help: ArgumentHelp("The iPhone or iPad's UDID. OFFSIDER_DEVICE is never read.", valueName: "id"))
+    var device: String
+
+    @Flag(name: .customLong("register-device"), help: "Let Xcode register the device with the team while building; needs a person at a terminal.")
+    var registerDevice = false
+
+    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of text.")
+    var json = false
+
+    @MainActor
+    func run() async throws {
+        let udid = try RunnerSessions.physicalUDID(device, command: "runner build")
+        if registerDevice {
+            let instead = "Ask the user to run `offsider runner build --device \(udid) --register-device` in their own terminal."
+            try PersonPresence.requireTerminal(instead: instead)
+            guard isatty(STDOUT_FILENO) != 0 else {
+                throw CLIError.personRequired("This step needs a person at a terminal, and standard output is not one. Nothing was changed. \(instead)")
+            }
+        }
+        let route = try await DeviceRouter.route(udid, logger: OffsiderLogger())
+        guard let backend = route.backend as? IOSDeviceBackend else {
+            throw CLIError(errorDescription: "runner build is for a physical iPhone or iPad, and \(udid) is not one.", reason: .usage)
+        }
+        let build = try await backend.buildRunner(for: route.device, registerDevice: registerDevice)
+        if json {
+            let data = try JSONSerialization.data(withJSONObject: ["device": udid, "key": build.key, "directory": build.directory.path], options: [.sortedKeys])
+            print(String(decoding: data, as: UTF8.self))
+        } else {
+            print("The Offsider runner for \(udid) is built and its signature checked (\(build.directory.path)).")
+        }
+    }
 }
 
 struct RunnerStatus: AsyncParsableCommand {
@@ -44,11 +88,19 @@ struct RunnerStop: AsyncParsableCommand {
     @Option(name: .customLong("device"), help: ArgumentHelp("The phone whose runner to stop.", valueName: "id"))
     var device: String?
 
+    @Flag(name: .customLong("clean"), help: "Also uninstall the runner from the device and delete its cached builds and logs; needs --device.")
+    var clean = false
+
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of text.")
     var json = false
 
+    func validate() throws {
+        if clean, device == nil { throw ValidationError(RunnerSessions.cleanNeedsDevice) }
+    }
+
     @MainActor
     func run() async throws {
+        let cleanUDID = try clean ? RunnerSessions.physicalUDID(device ?? "", command: "runner stop --clean") : nil
         let records = RunnerSessions.records(device: device)
         let manager = RunnerSessionManager(
             store: RunnerSessions.store,
@@ -61,19 +113,76 @@ struct RunnerStop: AsyncParsableCommand {
             await manager.stop(record)
         }
         let stopped = records.map(\.udid)
+        var cleaned: RunnerCleanupReport?
+        if let cleanUDID { cleaned = await RunnerSessions.clean(udid: cleanUDID) }
         if json {
-            let data = try JSONSerialization.data(withJSONObject: ["stopped": stopped], options: [.sortedKeys])
+            var object: [String: Any] = ["stopped": stopped]
+            if let cleaned { object["clean"] = RunnerSessions.cleanFields(cleaned) }
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
             print(String(decoding: data, as: UTF8.self))
-        } else if stopped.isEmpty {
-            print(device.map { "No runner is running for \($0)." } ?? "No runner is running.")
         } else {
-            for udid in stopped { print("Stopped the runner on \(udid).") }
+            if stopped.isEmpty {
+                print(device.map { "No runner is running for \($0)." } ?? "No runner is running.")
+            } else {
+                for udid in stopped { print("Stopped the runner on \(udid).") }
+            }
+            if let cleaned { print(RunnerSessions.cleanText(cleaned), terminator: "") }
         }
     }
 }
 
 enum RunnerSessions {
     static var store: RunnerSessionStore { RunnerSessionStore(root: OffsiderPrivateDirectory.root) }
+
+    static let cleanNeedsDevice = "--clean needs --device <udid>: it uninstalls the runner from that one iPhone or iPad."
+
+    /// The UDID of a physical iPhone or iPad named on the command line, or a usage error.
+    static func physicalUDID(_ raw: String, command: String) throws -> String {
+        guard case .iosDevice(let udid) = DeviceIDClassifier.classify(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw CLIError(
+                errorDescription: "`offsider \(command)` is for a physical iPhone or iPad, named by its UDID with --device; \(raw.isEmpty ? "none was given" : "\(raw) is not one").",
+                reason: .usage, hint: "offsider list-devices --physical"
+            )
+        }
+        return udid
+    }
+
+    /// Uninstalls the runner apps, then deletes this device's cached builds, `runner.log` and the broker's log. Its sessions must be stopped first.
+    @MainActor
+    static func clean(udid: String, environment: [String: String] = ProcessInfo.processInfo.environment) async -> RunnerCleanupReport {
+        let prefix = (try? XcodeRunnerBuilder.resolvePrefix(environment: environment)) ?? XcodeRunnerBuilder.defaultPrefix
+        let logs = [try? store.logPath(udid: udid), try? DeviceSessions.store.logPath(udid: udid)].compactMap { $0 }
+        return await RunnerCleanup.clean(
+            udid: udid, cacheRoot: XcodeRunnerBuilder.defaultCacheRoot(home: FileManager.default.homeDirectoryForCurrentUser),
+            environmentPrefix: prefix, devicectl: XcrunDevicectl(environment: environment), logPaths: logs
+        )
+    }
+
+    static func cleanText(_ report: RunnerCleanupReport) -> String {
+        var lines: [String] = []
+        if !report.uninstalled.isEmpty {
+            lines.append("Uninstalled \(report.uninstalled.joined(separator: " and ")) from \(report.udid).")
+        }
+        for (bundleID, detail) in report.notUninstalled.sorted(by: { $0.key < $1.key }) {
+            lines.append("Did not uninstall \(bundleID) from \(report.udid): \(detail)")
+        }
+        let builds = report.removedBuilds == 1 ? "1 cached runner build" : "\(report.removedBuilds) cached runner builds"
+        let logs = report.removedLogs.isEmpty ? "" : " and \(report.removedLogs.count == 1 ? "1 log" : "\(report.removedLogs.count) logs")"
+        lines.append("Deleted \(builds)\(logs) for \(report.udid).")
+        lines.append(report.remains)
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    static func cleanFields(_ report: RunnerCleanupReport) -> [String: Any] {
+        [
+            "device": report.udid,
+            "uninstalled": report.uninstalled,
+            "notUninstalled": report.notUninstalled,
+            "removedBuilds": report.removedBuilds,
+            "removedLogs": report.removedLogs,
+            "remains": report.remains,
+        ]
+    }
 
     static func records(device: String?) -> [RunnerSessionRecord] {
         let all = store.all()
