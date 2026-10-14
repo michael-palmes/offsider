@@ -12,6 +12,8 @@ public struct IOSDeviceDoctorProbe {
 
     let host: IOSDeviceHost
     let xcodeTeams: @Sendable () -> [String]
+    /// The team the device's allowance records, if any.
+    let allowanceTeam: String?
     let hid: HIDProbe
     let session: SessionProbe
 
@@ -22,10 +24,12 @@ public struct IOSDeviceDoctorProbe {
         host: IOSDeviceHost = .live(),
         xcodeTeams: @escaping @Sendable () -> [String] = IOSDeviceDoctorProbe.signedInTeams,
         hid: @escaping HIDProbe = IOSDeviceDoctorProbe.liveHID,
-        session: SessionProbe? = nil
+        session: SessionProbe? = nil,
+        allowanceTeam: String? = nil
     ) {
         self.host = host
         self.xcodeTeams = xcodeTeams
+        self.allowanceTeam = allowanceTeam
         self.hid = hid
         self.session = session ?? { udid in await Self.sessionFact(udid, root: host.privateRoot) }
     }
@@ -56,6 +60,7 @@ public struct IOSDeviceDoctorProbe {
 
     public func run(udid: String) async -> Result {
         let team: IOSDeviceDoctorFacts.TeamFact = host.environment[Self.teamVariable].flatMap { $0.isEmpty ? nil : .environment($0) }
+            ?? allowanceTeam.map { .allowance($0) }
             ?? .xcodeTeams(xcodeTeams())
         var facts = IOSDeviceDoctorFacts(udid: udid, xcode: .notFound("No Xcode was found"), usbmuxdSocket: host.fileExists(Self.usbmuxdSocket), team: team)
         if facts.usbmuxdSocket { facts.usbmux = await Self.usbmuxFact(udid, usbmux: host.usbmux) }

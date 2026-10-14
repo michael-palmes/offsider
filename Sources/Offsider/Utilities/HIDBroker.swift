@@ -59,6 +59,7 @@ enum HIDBroker {
         _ primitives: [HIDBrokerPrimitive],
         descriptorProvider: () throws -> Int32
     ) throws {
+        try validate(primitives)
         let request = HIDBrokerRequest(primitives: primitives)
         var requestData = try JSONEncoder().encode(request)
         requestData.append(0x0A)
@@ -167,29 +168,23 @@ enum HIDBroker {
         do {
             let data = try readMessage(from: client)
             let request = try JSONDecoder().decode(HIDBrokerRequest.self, from: data)
-            for primitive in request.primitives {
-                switch primitive.kind {
-                case .down, .up:
-                    guard let x = primitive.x, let y = primitive.y else {
-                        throw CLIError(errorDescription: "Touch primitive is missing coordinates.", reason: .hidBrokerFailed)
-                    }
-                    let direction: FBSimulatorHIDDirection = primitive.kind == .down ? .down : .up
+            try validate(request.primitives)
+            let outcome = try await play(
+                request.primitives,
+                peerGone: { SocketPeer.closed(client) },
+                touch: { direction, x, y in
                     do {
-                        try await HIDInteractor.performHIDEvent(
-                            .touch(direction: direction, x: x, y: y),
-                            in: session,
-                            logger: logger
-                        )
+                        try await HIDInteractor.performHIDEvent(.touch(direction: direction, x: x, y: y), in: session, logger: logger)
                     } catch {
                         shouldContinue = false
                         throw error
                     }
-                case .delay:
-                    guard let duration = primitive.duration, duration >= 0, duration <= 10 else {
-                        throw CLIError(errorDescription: "HID broker delay is invalid.", reason: .hidBrokerFailed)
-                    }
-                    try await Task.sleep(for: .seconds(duration))
-                }
+                },
+                sleep: { try? await Task.sleep(for: $0) }
+            )
+            if outcome == .abandoned {
+                logger.info().log("HID broker client disconnected mid-request; released its touch")
+                return shouldContinue
             }
             try writeResponse(error: nil, to: client)
         } catch {
@@ -197,6 +192,88 @@ enum HIDBroker {
             try? writeResponse(error: brokerResponseDescription(for: error), to: client)
         }
         return shouldContinue
+    }
+
+    static let maxPrimitives = 4096
+    static let maxDelaySeconds: Double = 10
+    static let maxTotalDelaySeconds: Double = 25
+    static let delaySlice: Duration = .milliseconds(100)
+
+    /// Refuses a request before any of it is sent: too many primitives, a touch without a finite point, a delay outside 0 to 10 s, or delays over 25 s together.
+    static func validate(_ primitives: [HIDBrokerPrimitive]) throws {
+        guard primitives.count <= maxPrimitives else {
+            throw CLIError(errorDescription: "HID broker request has \(primitives.count) primitives, more than \(maxPrimitives).", reason: .hidBrokerFailed)
+        }
+        var total = 0.0
+        for primitive in primitives {
+            switch primitive.kind {
+            case .down, .up:
+                guard let x = primitive.x, let y = primitive.y, x.isFinite, y.isFinite else {
+                    throw CLIError(errorDescription: "Touch primitive is missing coordinates.", reason: .hidBrokerFailed)
+                }
+            case .delay:
+                guard let duration = primitive.duration, duration.isFinite, duration >= 0, duration <= maxDelaySeconds else {
+                    throw CLIError(errorDescription: "HID broker delay is invalid.", reason: .hidBrokerFailed)
+                }
+                total += duration
+            }
+        }
+        guard total <= maxTotalDelaySeconds else {
+            throw CLIError(errorDescription: "HID broker delays add up to more than \(Int(maxTotalDelaySeconds)) seconds.", reason: .hidBrokerFailed)
+        }
+    }
+
+    enum PlayOutcome: Equatable {
+        case completed
+        /// The client went away; a touch it left down was lifted.
+        case abandoned
+    }
+
+    /// Sends the primitives in order, sleeping in 100 ms slices; stops once `peerGone`, and always lifts a touch it leaves down.
+    static func play(
+        _ primitives: [HIDBrokerPrimitive],
+        peerGone: () -> Bool,
+        touch: (FBSimulatorHIDDirection, Double, Double) async throws -> Void,
+        sleep: (Duration) async -> Void
+    ) async throws -> PlayOutcome {
+        var held: (x: Double, y: Double)?
+        func lift() async {
+            guard let point = held else { return }
+            held = nil
+            try? await touch(.up, point.x, point.y)
+        }
+        do {
+            for primitive in primitives {
+                if peerGone() {
+                    await lift()
+                    return .abandoned
+                }
+                switch primitive.kind {
+                case .down, .up:
+                    guard let x = primitive.x, let y = primitive.y else {
+                        throw CLIError(errorDescription: "Touch primitive is missing coordinates.", reason: .hidBrokerFailed)
+                    }
+                    let down = primitive.kind == .down
+                    try await touch(down ? .down : .up, x, y)
+                    held = down ? (x, y) : nil
+                case .delay:
+                    var remaining = Duration.seconds(primitive.duration ?? 0)
+                    while remaining > .zero {
+                        if peerGone() {
+                            await lift()
+                            return .abandoned
+                        }
+                        let slice = min(remaining, delaySlice)
+                        await sleep(slice)
+                        remaining -= slice
+                    }
+                }
+            }
+        } catch {
+            await lift()
+            throw error
+        }
+        return .completed
     }
 
     static func isSameUserPeer(_ client: Int32, expectedUID: uid_t = getuid()) -> Bool {
@@ -214,6 +291,7 @@ enum HIDBroker {
 
     static func endpointPath(simulatorUDID: String) throws -> String {
         let developerDirectory = try FBXcodeDirectory.resolveDeveloperDirectory()
+        try requireTrustedDeveloperDirectory(developerDirectory)
         return try endpointPath(simulatorUDID: simulatorUDID, developerDirectory: developerDirectory)
     }
 
@@ -272,6 +350,7 @@ enum HIDBroker {
         let process = Process()
         process.executableURL = executable
         process.arguments = ["hid-broker", "--udid", simulatorUDID]
+        process.environment = ChildEnvironment.make(.offsiderBroker, from: ProcessInfo.processInfo.environment)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice

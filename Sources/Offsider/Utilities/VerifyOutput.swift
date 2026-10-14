@@ -183,7 +183,7 @@ enum VerifyOutput {
     }
 
     private static func quoted(_ text: String?) -> String {
-        text.map { "\"\($0)\"" } ?? "nothing"
+        text.map { TerminalText.quoted($0) } ?? "nothing"
     }
 
     /// `; ignored as live: price, orders` and the like, for a failure.
@@ -240,7 +240,8 @@ enum VerifyOutput {
         for flag in ["id", "label", "label-contains"] where selector.hasPrefix(flag + "=") {
             return "--\(flag) \(shellWord(String(selector.dropFirst(flag.count + 1))))"
         }
-        return node.label.map { "--label \(shellWord($0))" }
+        // A label that needs escaping cannot be pasted back as a selector.
+        return node.label.flatMap { TerminalText.line($0, cap: nil, keepsTab: false) == $0 ? "--label \(shellWord($0))" : nil }
     }
 
     private static func shellWord(_ text: String) -> String {

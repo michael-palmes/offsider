@@ -21,6 +21,24 @@ enum DeviceDefault {
     }
 
     static func resolve(explicit: String?) -> (id: String, source: DeviceSource)? {
-        resolve(explicit: explicit, environment: environment())
+        let resolved = resolve(explicit: explicit, environment: environment())
+        if let resolved { record(resolved.id, source: resolved.source) }
+        return resolved
     }
+
+    /// Where `id` last came from in this process, so the router can insist that a physical device is named with `--device`.
+    static func lastSource(for id: String) -> DeviceSource? {
+        sourcesLock.lock()
+        defer { sourcesLock.unlock() }
+        return sources[id.trimmingCharacters(in: .whitespacesAndNewlines)]
+    }
+
+    static func record(_ id: String, source: DeviceSource) {
+        sourcesLock.lock()
+        defer { sourcesLock.unlock() }
+        sources[id.trimmingCharacters(in: .whitespacesAndNewlines)] = source
+    }
+
+    private static let sourcesLock = NSLock()
+    nonisolated(unsafe) private static var sources: [String: DeviceSource] = [:]
 }

@@ -43,6 +43,9 @@ extension IOSDeviceBackend {
         _ = try await requireBootedDevice(id)
         guard hostHasHID, sessionsAvailable else {
             if let fallback = input.fallbackInputSession {
+                // The runner checks the pinned app on each call it is sent with; this checks the cable and the policy once.
+                try await requireWired(id)
+                try await requirePinnedAppInFront(id)
                 return try await fallback(id)
             }
             throw IOSDeviceError.xcodeTooOld(try await displayName(id), version: input.coreDeviceVersion())
@@ -52,7 +55,11 @@ extension IOSDeviceBackend {
             device: id,
             session: { try await self.session(for: id) },
             runner: runner,
-            runnerText: input.runnerText
+            runnerText: input.runnerText,
+            preflight: { [unowned self] in
+                try await self.requireWired(id)
+                try await self.requirePinnedAppInFront(id)
+            }
         )
     }
 

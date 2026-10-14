@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import OffsiderCore
 import Testing
+@testable import Offsider
 
 @Suite("Batch Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct BatchTests {
@@ -388,5 +389,48 @@ struct BatchTests {
         throw TestError.unexpectedState(
             "Timed out waiting for \(text) near x:\(expectedX),y:\(expectedY). Last value: \(lastValue ?? "none")"
         )
+    }
+}
+
+@Suite("Batch type steps aimed at a password field")
+@MainActor
+struct BatchSecureTypeTests {
+    static let android = DeviceID(rawValue: "emulator-5554", platform: .android)
+
+    static func run(_ steps: [String], trees: [UITree], device: DeviceID = android) async throws -> FakeDeviceBackend {
+        let backend = FakeDeviceBackend(platform: device.platform, trees: trees)
+        let context = BatchContext(backend: backend, device: device, axCachePolicy: .perStep, typeSubmissionMode: .chunked, typeChunkSize: 200)
+        _ = try await DispatchTracker.$current.withValue(DispatchTracker()) {
+            try await TypeIntoTests.quiet {
+                try await Batch.runSteps(steps, context: context, session: backend.session, continueOnError: false, output: TypeIntoTests.quietOutput(), logger: OffsiderLogger())
+            }
+        }
+        return backend
+    }
+
+    @Test("a type step into a password field, by --into-id or by focus, exits 64 pointing at login, with nothing sent", arguments: [
+        ["type --into-id password hunter2"], ["type hunter2"], ["type --into-id password --replace hunter2"],
+    ])
+    func refused(steps: [String]) async throws {
+        let tree = TypeSecureFieldTests.form(focusedPassword: true, platform: .android)
+        let error = await #expect(throws: ReportedFailure.self) { _ = try await Self.run(steps, trees: [tree]) }
+
+        #expect(error?.exitCode.rawValue == 64)
+        #expect(error?.userFacingDescription.contains("A batch type step is aimed at a password field") == true)
+        #expect(error?.userFacingDescription.contains("`offsider login --device emulator-5554`") == true)
+        #expect(error?.userFacingDescription.contains("Dispatched: no") == true)
+    }
+
+    @Test("a type step into an ordinary focused field is not refused as a password")
+    func ordinaryField() async throws {
+        let tree = FakeUI.tree(platform: .android, [
+            FakeUI.node(.textField, id: "email", frame: FakeUI.frame(20, 200, 360, 44), state: UIState(focused: true), platform: .android),
+        ])
+        do {
+            _ = try await Self.run(["type hello"], trees: [tree])
+        } catch let failure as ReportedFailure {
+            // The fake session cannot type text; any failure must come from that, not the password check.
+            #expect(!failure.userFacingDescription.contains("password field"), "\(failure.userFacingDescription)")
+        }
     }
 }

@@ -62,21 +62,34 @@ struct HelperLauncher {
     var hostPid: Int32 = getpid()
     var timing: AndroidTiming = .disabled
 
-    /// Exits 90 unless the dex has the right size; `exec` lets adbd's hang-up reach the helper; a push renames, drops adbd's 0666 to 644 and prunes first.
-    static func startScript(_ dex: HelperDex, pushedFrom temporaryPath: String?) -> String {
+    /// Exits 90 unless the dex matches the manifest's SHA-256 (its size where the device has no `sha256sum`); `exec` lets adbd's hang-up
+    /// reach the helper. After a push it moves the copy out of the private push folder, makes it 644 and prunes older copies first.
+    static func startScript(_ dex: HelperDex, pushedFrom pushDirectory: String?) -> String {
         var script = "f=\(AdbShellQuoting.quote(dex.devicePath)); "
-        if let temporaryPath {
-            script += "mv -f \(AdbShellQuoting.quote(temporaryPath)) \"$f\" && chmod 644 \"$f\" && "
+        if let pushDirectory {
+            let directory = AdbShellQuoting.quote(pushDirectory)
+            script += "mv -f \(directory)/\(pushedName) \"$f\" && chmod 644 \"$f\"; rm -rf \(directory); "
                 + "for o in /data/local/tmp/offsider-helper-*.dex; do [ \"$o\" = \"$f\" ] || rm -f \"$o\"; done; "
         }
         return script
-            + "[ \"$(stat -c %s \"$f\" 2>/dev/null)\" = \(dex.bytes.count) ] || exit \(missingStatus); "
+            + "[ -f \"$f\" ] && [ ! -L \"$f\" ] || exit \(missingStatus); "
+            + "if command -v sha256sum >/dev/null 2>&1; then case \"$(sha256sum \"$f\" 2>/dev/null)\" in \(dex.sha256)\\ *) ;; *) exit \(missingStatus);; esac; "
+            + "else [ \"$(stat -c %s \"$f\" 2>/dev/null)\" = \(dex.bytes.count) ] || exit \(missingStatus); fi; "
             + "CLASSPATH=\"$f\" exec app_process /data/local/tmp --nice-name=\(processName) \(mainClass) serve "
             + "--idle-timeout-ms \(idleTimeoutMs) --accept-timeout-ms \(acceptTimeoutMs)"
     }
 
-    var temporaryPath: String {
-        "\(dex.devicePath).\(hostPid).tmp"
+    /// The dex's name inside the push folder.
+    static let pushedName = "helper.dex"
+
+    /// A folder only the shell user can enter, so the pushed copy is never readable or replaceable before it moves into place.
+    var pushDirectory: String {
+        "/data/local/tmp/offsider-push-\(hostPid)"
+    }
+
+    static func makePushDirectoryScript(_ directory: String) -> String {
+        let quoted = AdbShellQuoting.quote(directory)
+        return "rm -rf \(quoted) && mkdir -m 700 \(quoted)"
     }
 
     /// Starts the helper, pushing once on exit 90; throws `HelperStartFailure` or a device `AndroidError`.
@@ -88,15 +101,23 @@ struct HelperLauncher {
             log(.debug, "The UiAutomation helper on \(serial) was ready in \(elapsed) ms (pid \(ready.pid))")
             return (shell, ready, false, elapsed)
         }
-        log(.debug, "\(dex.devicePath) is missing on \(serial); pushing it")
+        log(.debug, "\(dex.devicePath) is missing or does not match on \(serial); pushing it")
         do {
             try await timing.measure(.dexPush) {
-                try await client.push(dex.bytes, to: temporaryPath, mtime: UInt32(Date().timeIntervalSince1970), on: serial, timeout: Self.pushTimeout)
+                let made = try await client.shell(Self.makePushDirectoryScript(pushDirectory), on: serial, timeout: Self.pushTimeout)
+                guard made.status == 0 else {
+                    let detail = Self.firstLine(made.stderrText) ?? "exit status \(made.status)"
+                    throw HelperStartFailure.unavailable(.pushFailed("could not make \(pushDirectory): \(detail)"))
+                }
+                try await client.push(
+                    dex.bytes, to: "\(pushDirectory)/\(Self.pushedName)", mode: 0o100600,
+                    mtime: UInt32(Date().timeIntervalSince1970), on: serial, timeout: Self.pushTimeout
+                )
             }
         } catch let error as AndroidError where error.kind == .adbCommandFailed {
             throw HelperStartFailure.unavailable(.pushFailed(Self.pushDetail(error)))
         }
-        switch try await attempt(Self.startScript(dex, pushedFrom: temporaryPath)) {
+        switch try await attempt(Self.startScript(dex, pushedFrom: pushDirectory)) {
         case .started(let shell, let ready):
             let elapsed = Self.milliseconds(since: started)
             log(.debug, "The UiAutomation helper on \(serial) was pushed and ready in \(elapsed) ms (pid \(ready.pid))")

@@ -242,7 +242,7 @@ function invoke_xcodebuild() {
 function swift_build_bin_path() {
   local build_config="$1"
   local target_arch="$2"
-  swift build --configuration "$build_config" --arch "$target_arch" --show-bin-path
+  swift build --configuration "$build_config" --arch "$target_arch" --force-resolved-versions --show-bin-path
 }
 
 function copy_resource_bundle() {
@@ -586,7 +586,7 @@ function build_offsider_executable() {
   swift package clean
 
   print_info "Building arm64 executable..."
-  swift build --configuration "${build_config}" --arch arm64
+  swift build --configuration "${build_config}" --arch arm64 --force-resolved-versions
   bin_path="$(swift_build_bin_path "$build_config" "arm64")/offsider"
   if [[ ! -f "${bin_path}" ]]; then
     echo "❌ Error: arm64 Offsider executable not found at ${bin_path}"

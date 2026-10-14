@@ -9,7 +9,13 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         Input Methods:
         1. Direct text: offsider type "Hello World" --device DEVICE_ID
         2. From stdin: echo "Hello World!" | offsider type --stdin --device DEVICE_ID
-        3. From file: offsider type --file text.txt --device DEVICE_ID
+        3. From file: offsider type --file text.txt --device DEVICE_ID (a regular UTF-8 file of at most 64 KiB;
+           files under ~/.ssh, ~/.aws, ~/.config and similar, and names such as .env or id_rsa, need --allow-path)
+
+        Password fields: text given as an argument is refused (exit 64, secure_field_argument) when the field it
+        names with --into-id, --into-label or --into-label-contains, or the field with focus, is a password field;
+        use `offsider login`, or --stdin. An iOS simulator does not report focus, so without a named field the
+        argument is typed there.
 
         Replacing a field's text:
         • offsider type --replace "new text" --device DEVICE_ID sets the focused field to exactly "new text"
@@ -56,8 +62,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     @Flag(name: .customLong("stdin"), help: "Read text from standard input.")
     var useStdin: Bool = false
     
-    @Option(name: .customLong("file"), help: "Read text from the specified file.")
+    @Option(name: .customLong("file"), help: "Read text from the specified file (UTF-8, at most 64 KiB).")
     var inputFile: String?
+
+    @Flag(name: .customLong("allow-path"), help: "Let --file read a file in a folder or with a name that usually holds secrets, such as ~/.ssh or .env.")
+    var allowPath = false
 
     @Flag(name: .customLong("replace"), help: "Replace the focused field's text instead of adding to it (an empty TEXT clears it).")
     var replace = false
@@ -92,6 +101,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if sourceCount == 0 {
             throw ValidationError("No input provided. Provide text as argument, or use --stdin, or --file.")
         }
+        if allowPath, inputFile == nil {
+            throw ValidationError("--allow-path applies only to --file.")
+        }
         let focusOptions = [intoID != nil, intoLabel != nil, intoLabelContains != nil, requireFocusID != nil].filter { $0 }.count
         if focusOptions > 1 {
             throw ValidationError("Use only one of --into-id, --into-label, --into-label-contains or --require-focus-id.")
@@ -111,7 +123,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     static let focusPoll: Duration = .milliseconds(250)
 
     /// `--into-*` taps the field and waits for focus; `--require-focus-id` checks it. Either throws before any text is sent.
+    /// Returns the password-field verdict of a read with no tap after it, for the input session to reuse; nil when there was none.
     @MainActor
+    @discardableResult
     func ensureFocus(
         backend: any DeviceBackend,
         device: DeviceID,
@@ -119,9 +133,17 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         clock: PollClock = .live,
         warn: @MainActor (String) -> Void = { FileHandle.standardError.write(Data("Warning: \($0)\n".utf8)) },
         beforeTap: @MainActor (UITree) throws -> Void = { _ in },
+        refusingSecureTarget secureRefusal: CLIError? = nil,
         tap: @MainActor (InputEvent) async throws -> Void
-    ) async throws {
+    ) async throws -> KnownSecureFocus? {
         let simulator = device.platform == .ios && !device.isPhysicalIOSDevice
+        guard requireFocusID != nil || intoQuery != nil else {
+            // An unreadable screen does not block typing: Android still sends a password field's text through the helper.
+            guard let secureRefusal, !simulator else { return nil }
+            guard let tree = try? await backend.accessibilityTree(for: device) else { return .unknown }
+            if tree.secureFocus == .secureFocused { throw secureRefusal }
+            return .notSecure
+        }
         if let requireFocusID {
             guard !simulator else {
                 throw CLIError(
@@ -141,9 +163,10 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                     candidates: focused.map { [MatchSummary($0, viewport: viewport).failureCandidate] } ?? []
                 )
             }
-            return
+            if let secureRefusal, focused?.isSecure == true { throw secureRefusal }
+            return nil
         }
-        guard let query = intoQuery else { return }
+        guard let query = intoQuery else { return nil }
         let cover = TapCover(override: "tap the field with `offsider tap --allow-covered` and type without --into-id")
         let polled = try await AccessibilityPoller.resolveWithPolling(
             query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25,
@@ -154,6 +177,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             logger: logger
         )
         let field = polled.value.matched ?? polled.value.target
+        if let secureRefusal, field?.isSecure == true || polled.value.target?.isSecure == true { throw secureRefusal }
         let point = try await backend.deviceCoordinates(for: [polled.value.point], tree: polled.tree, on: device)[0]
         let keyboardAlreadyUp = simulator && polled.tree.roots.flatMap { $0.flattened() }.contains { $0.role == .keyboard }
         try beforeTap(polled.tree)
@@ -162,14 +186,14 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             try await clock.sleep(Self.focusPoll)
             warn("the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value.")
             logger.info().log("Tapped \(query.selectorDescription); focusCheck: unproven")
-            return
+            return nil
         }
         let deadline = clock.now() + Self.focusTimeout
         repeat {
             try await clock.sleep(Self.focusPoll)
             if let tree = try? await backend.accessibilityTree(for: device), Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator) {
                 logger.info().log("\(query.selectorDescription) has focus")
-                return
+                return nil
             }
         } while clock.now() < deadline
         throw CLIError(
@@ -214,11 +238,26 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        try await execute(on: route, progress: progress, logger: logger)
+        try await execute(on: route, progress: progress, logger: logger, refusingSecureArgument: text?.isEmpty == false)
+    }
+
+    /// Text typed as an argument stays in shell history and process lists, so it never goes into a password field.
+    static func secureFieldRefusal(device: DeviceID, batch: Bool = false) -> CLIError {
+        let login = "offsider login --device \(device.rawValue)"
+        let why = batch
+            ? "A batch type step is aimed at a password field, and the step's text stays in the batch file or command line"
+            : "The field is a password field, and text given as an argument stays in shell history and process lists"
+        let instead = batch ? "" : ", or pipe it in with `offsider type --stdin --device \(device.rawValue)`"
+        return CLIError(
+            errorDescription: "\(why), so Offsider typed nothing. Sign in with `\(login)`\(instead).",
+            reason: .secureFieldArgument,
+            hint: login
+        )
     }
 
     /// Logs the character count only, never the text: the unified log keeps what it is given.
-    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger) async throws {
+    /// `login` calls this directly with its secret already in place, so only `run` refuses an argument aimed at a password field.
+    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger, refusingSecureArgument: Bool = false) async throws {
         await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
@@ -227,17 +266,22 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let inputText = try resolvedText()
         let throughSession = device.platform == .android || device.isPhysicalIOSDevice
         let hidEvents = throughSession ? [] : try Self.checkedIOSEvents(for: inputText, replacing: replace, logger: logger)
-        try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
+        let secureRefusal = refusingSecureArgument ? Self.secureFieldRefusal(device: device) : nil
+        let knownFocus = try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
             if progress != nil, case .appearing(let id) = verification.mode {
                 try Verifier.refuseIfOnScreen(id, in: tree)
             }
-        }) { event in
+        }, refusingSecureTarget: secureRefusal) { event in
             try await backend.performTracked(event, on: device)
         }
         logger.info().log("Typing \(inputText.count) character\(inputText.count == 1 ? "" : "s")")
 
         if throughSession {
-            try await typeThroughSession(inputText, backend: backend, device: device, progress: progress)
+            try await InputSecrecy.$fromArgument.withValue(refusingSecureArgument) {
+                try await InputSecrecy.$knownFocus.withValue(knownFocus) {
+                    try await typeThroughSession(inputText, backend: backend, device: device, progress: progress)
+                }
+            }
             return
         }
 
@@ -357,11 +401,10 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return input
     }
     
+    /// Through `TextFileInput`, which names the file it read on stderr.
     func readFromFile(_ filePath: String) throws -> String {
-        do {
-            return try String(contentsOfFile: filePath, encoding: .utf8)
-        } catch {
-            throw ValidationError("Failed to read file '\(filePath)': \(error.localizedDescription)")
-        }
+        let read = try TextFileInput.read(filePath, allowSensitive: allowPath)
+        FileHandle.standardError.write(Data((read.announcement + "\n").utf8))
+        return read.text
     }
 }

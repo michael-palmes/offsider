@@ -28,6 +28,8 @@ public struct DeviceSummary: Equatable, Sendable {
     public var lease: DeviceLease?
     /// True when `lease` is this session's, as `doctor`'s `device.lease` decides.
     public var leaseIsMine = false
+    /// For a physical row, whether the allow-list and managed policy let Offsider drive it; nil for simulators and emulators.
+    public var allowed: Bool?
 
     public init(
         id: String,
@@ -59,7 +61,10 @@ public enum DeviceListRenderer {
 
     public static func table(_ devices: [DeviceSummary]) -> String {
         let header = ["PLATFORM", "STATE", "ID", "NAME", "OS"]
-        let rows = [header] + devices.map { [$0.platform.rawValue, $0.state, $0.id, $0.name, $0.osVersion ?? "-"] }
+        let rows: [[String]] = [header] + devices.map { device -> [String] in
+            let name: String = device.allowed == true ? device.name + " (allowed)" : device.name
+            return [device.platform.rawValue, device.state, device.id, name, device.osVersion ?? "-"]
+        }
         let widths = header.indices.map { column in rows.map { $0[column].count }.max() ?? 0 }
         return rows.map { row in
             row.enumerated().map { column, cell in
@@ -71,12 +76,14 @@ public enum DeviceListRenderer {
     }
 
     /// Keys stay in schema order with explicit nulls, which `JSONEncoder` does not guarantee.
-    public static func json(_ devices: [DeviceSummary]) -> String {
+    /// `hiddenPhysical` counts the physical rows left out because they are not allowed.
+    public static func json(_ devices: [DeviceSummary], hiddenPhysical: Int = 0) -> String {
         guard !devices.isEmpty else {
-            return "{\n  \"version\": \(jsonVersion),\n  \"devices\": []\n}\n"
+            return "{\n  \"version\": \(jsonVersion),\n  \"devices\": [],\n  \"hiddenPhysical\": \(hiddenPhysical)\n}\n"
         }
-        let objects = devices.map { device in
-            let fields = [
+        let objects = devices.map { device -> String in
+            let allowed: String = device.allowed.map { $0 ? "true" : "false" } ?? "null"
+            let fields: [(String, String)] = [
                 ("id", string(device.id)),
                 ("platform", string(device.platform.rawValue)),
                 ("state", string(device.state)),
@@ -89,11 +96,12 @@ public enum DeviceListRenderer {
                 ("bootedBy", device.bootedBy.map(stamp) ?? "null"),
                 ("heldBy", device.heldBy.map(holder) ?? "null"),
                 ("lease", device.lease.map { lease($0, mine: device.leaseIsMine) } ?? "null"),
+                ("allowed", allowed),
             ]
             let body = fields.map { "      \(string($0.0)): \($0.1)" }.joined(separator: ",\n")
             return "    {\n\(body)\n    }"
         }
-        return "{\n  \"version\": \(jsonVersion),\n  \"devices\": [\n\(objects.joined(separator: ",\n"))\n  ]\n}\n"
+        return "{\n  \"version\": \(jsonVersion),\n  \"devices\": [\n\(objects.joined(separator: ",\n"))\n  ],\n  \"hiddenPhysical\": \(hiddenPhysical)\n}\n"
     }
 
     static func stamp(_ stamp: ProcessStamp) -> String {

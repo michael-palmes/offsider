@@ -183,6 +183,8 @@ public struct DoctorReport: Codable, Equatable, Sendable {
     public let checks: [DoctorCheckResult]
     public let fixes: [DoctorFixResult]
     public let host: HostFacts?
+    /// Only for a physical device: whether the allow-list and managed policy let Offsider drive it.
+    public let policy: DoctorPolicy?
 
     public init(
         offsiderVersion: String,
@@ -193,7 +195,8 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         android: AndroidSummary? = nil,
         checks: [DoctorCheckResult],
         fixes: [DoctorFixResult] = [],
-        host: HostFacts? = nil
+        host: HostFacts? = nil,
+        policy: DoctorPolicy? = nil
     ) {
         self.version = Self.schemaVersion
         self.offsiderVersion = offsiderVersion
@@ -205,6 +208,7 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         self.checks = checks
         self.fixes = fixes
         self.host = host
+        self.policy = policy
     }
 
     public var status: CheckStatus {
@@ -230,11 +234,11 @@ public struct DoctorReport: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, offsiderVersion, udid, device, xcode, booted, android, checks, fixes, host
+        case version, offsiderVersion, udid, device, xcode, booted, android, checks, fixes, host, policy
     }
 
     private enum EncodingKeys: String, CodingKey {
-        case version, offsiderVersion, status, udid, device, xcode, booted, android, checks, fixes, host
+        case version, offsiderVersion, status, udid, device, xcode, booted, android, checks, fixes, host, policy
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -250,5 +254,62 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         try container.encode(checks, forKey: .checks)
         try container.encode(fixes, forKey: .fixes)
         try container.encode(host, forKey: .host)
+        try container.encodeIfPresent(policy, forKey: .policy)
+    }
+}
+
+/// `doctor --json`'s `policy` object for a physical device.
+public struct DoctorPolicy: Codable, Equatable, Sendable {
+    public let platform: String
+    public let id: String
+    public let allowed: Bool
+    /// `not_allowed`, `expired`, `managed_off` and the other `DeviceRefusal` codes; nil when allowed.
+    public let refusal: String?
+    public let expires: String?
+    public let apps: [String]
+    public let managed: Bool
+
+    public init(platform: DevicePlatform, key: String, decision: DeviceDecision, managed: Bool) {
+        self.platform = platform.rawValue
+        self.id = key
+        self.managed = managed
+        switch decision {
+        case .allowed(let entry):
+            allowed = true
+            refusal = nil
+            expires = entry.expires.map(ProcessStamp.timestamp)
+            apps = entry.apps
+        case .refused(let why):
+            allowed = false
+            refusal = why.code
+            expires = nil
+            apps = []
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(platform, forKey: .platform)
+        try container.encode(id, forKey: .id)
+        try container.encode(allowed, forKey: .allowed)
+        try container.encode(refusal, forKey: .refusal)
+        try container.encode(expires, forKey: .expires)
+        try container.encode(apps, forKey: .apps)
+        try container.encode(managed, forKey: .managed)
+    }
+
+    /// The `device.policy` check: a pass naming the expiry, or a failure whose hint is the command a person runs.
+    public var check: DoctorCheckResult {
+        if allowed {
+            return DoctorCheckResult(id: .devicePolicy, status: .pass, detail: "\(id) is allowed\(expires.map { " until \($0)" } ?? " until removed")\(apps.isEmpty ? "" : " for \(apps.joined(separator: ", "))")")
+        }
+        if refusal?.hasPrefix("managed") == true {
+            return DoctorCheckResult(id: .devicePolicy, status: .fail, detail: "\(id) is blocked by managed policy on this Mac; the allow-list cannot override it", hint: "Ask the administrator of this Mac.")
+        }
+        return DoctorCheckResult(
+            id: .devicePolicy, status: .fail,
+            detail: "\(id) is a physical device no one has allowed (\(refusal ?? "not_allowed")); no device checks ran",
+            hint: "Ask the user to run `offsider device-access allow --device \(id)` in their own terminal."
+        )
     }
 }

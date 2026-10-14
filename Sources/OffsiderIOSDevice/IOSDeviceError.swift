@@ -6,6 +6,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
     public enum Kind: String, Equatable, Sendable {
         case notYetSupported
         case xcodeMissing
+        /// The developer directory is not inside an Apple-signed Xcode.
+        case xcodeUntrusted
         case devicectlFailed
         case notListed
         case unavailable
@@ -31,6 +33,12 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case streamNeedsGUISession
         case sessionFailed
         case sessionLost
+        /// The app in front is not the one this command may drive, or that app is deny-listed or outside the allowance.
+        case appNotAllowed
+        /// A physical iPhone or iPad needs a pinned app and none was named.
+        case appRequired
+        /// An Offsider environment variable holds a value it cannot use.
+        case invalidSetting
     }
 
     public let kind: Kind
@@ -159,6 +167,7 @@ extension IOSDeviceError: OffsiderFailure {
         switch kind {
         case .notYetSupported: return .notSupported
         case .xcodeMissing: return .xcodeMissing
+        case .xcodeUntrusted: return .xcodeUnusable
         case .devicectlFailed: return .commandFailed
         case .notListed, .unavailable: return .deviceNotFound
         case .notWired: return .deviceNotWired
@@ -183,6 +192,8 @@ extension IOSDeviceError: OffsiderFailure {
         case .streamNeedsGUISession: return .notSupported
         case .sessionFailed: return .hidBrokerFailed
         case .sessionLost: return .inputOutcomeUnknown
+        case .appNotAllowed: return .appNotAllowed
+        case .appRequired, .invalidSetting: return .usage
         }
     }
 

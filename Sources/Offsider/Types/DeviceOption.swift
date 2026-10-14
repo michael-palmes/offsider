@@ -17,7 +17,7 @@ extension RequiredDeviceOption {
 
 /// `--device` plus `--wait-lock`, for commands that can lock the device.
 struct DeviceOption: RequiredDeviceOption {
-    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE).", valueName: "id"))
+    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE, which never names a physical device).", valueName: "id"))
     var explicitID: String?
 
     @OptionGroup
@@ -30,7 +30,7 @@ struct DeviceOption: RequiredDeviceOption {
 
 /// `--device` alone, for commands that never lock the device.
 struct ReadDeviceOption: RequiredDeviceOption {
-    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE).", valueName: "id"))
+    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE, which never names a physical device).", valueName: "id"))
     var explicitID: String?
 
     func validate() throws { try validateDevice() }

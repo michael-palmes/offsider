@@ -32,6 +32,8 @@ struct IOSDeviceReadinessTests {
         (with { $0.developerModeStatus = nil }, .developerModeOff),
         (with { $0.ddiServicesAvailable = false; $0.transportType = "localNetwork" }, .preparing),
         (with { $0.transportType = "localNetwork" }, .wireless),
+        (with { $0.transportType = "network" }, .wireless),
+        (with { $0.transportType = "someFutureTransport" }, .wireless),
         (ready, .ready),
         (with { $0.ddiServicesAvailable = nil }, .ready),
     ])
@@ -53,6 +55,17 @@ struct IOSDeviceReadinessTests {
         #expect(IOSDeviceReadiness.blocker(device, deviceSupportFinalized: false) == .wireless)
         #expect(IOSDeviceReadiness.blocker(Self.with { $0.ddiServicesAvailable = false }, deviceSupportFinalized: false) == .preparing)
         #expect(IOSDeviceReadiness.blocker(Self.ready, deviceSupportFinalized: false) == nil)
+    }
+
+    @Test("only a cable counts as wired: any other or unknown transport blocks, even while preparing")
+    func wiredOnly() {
+        for transport in ["localNetwork", "network", "someFutureTransport"] {
+            let preparing = Self.with { $0.ddiServicesAvailable = false; $0.transportType = transport }
+            #expect(IOSDeviceReadiness.blocker(preparing, deviceSupportFinalized: false) == .wireless)
+            #expect(IOSDeviceReadiness.blocker(Self.with { $0.transportType = transport }, deviceSupportFinalized: false) == .wireless)
+            #expect(!IOSDeviceReadiness.isWired(Self.with { $0.transportType = transport }))
+        }
+        #expect(IOSDeviceReadiness.isWired(Self.ready))
     }
 
     @Test("state text for every readiness")

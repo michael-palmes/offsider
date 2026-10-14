@@ -242,9 +242,19 @@ extension KeyCombo: BatchConvertible {
 extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let typed = try await typingPrimitives(context: context)
-        guard intoQuery != nil || requireFocusID != nil else { return typed }
+        // A step's text sits in the batch's steps, so it never goes into a password field, whatever its source.
+        let clearing = text?.isEmpty == true
+        let refusal = typed.isEmpty || clearing ? nil : Type.secureFieldRefusal(device: context.device, batch: true)
+        guard intoQuery != nil || requireFocusID != nil else {
+            let simulator = context.device.platform == .ios && !context.device.isPhysicalIOSDevice
+            guard let refusal, !simulator else { return typed }
+            let check = BatchPrimitive.run { _ in
+                if (try? await context.accessibilityTree())?.secureFocus == .secureFocused { throw refusal }
+            }
+            return [check] + typed
+        }
         let focus = BatchPrimitive.run { session in
-            try await ensureFocus(backend: context.backend, device: context.device, logger: logger) { event in
+            try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
                 try await session.perform(event)
             }
             context.invalidateTree(sentInput: true)

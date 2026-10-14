@@ -55,10 +55,17 @@ public struct EmulatorBooter {
 
     let host: AndroidHost
     let log: AndroidLog
+    /// The private directory's `logs/`, where each AVD's boot log lives.
+    let logsDirectory: @Sendable () throws -> String
 
     public init(host: AndroidHost, log: @escaping AndroidLog) {
+        self.init(host: host, log: log, logsDirectory: { try OffsiderPrivateDirectory.ensureSubdirectory(EmulatorBooter.logsDirectoryName) })
+    }
+
+    init(host: AndroidHost, log: @escaping AndroidLog, logsDirectory: @escaping @Sendable () throws -> String) {
         self.host = host
         self.log = log
+        self.logsDirectory = logsDirectory
     }
 
     /// Never `-port`, `-ports` or any `-grpc` flag: a plain launch serves token and JWT auth on loopback only.
@@ -80,8 +87,11 @@ public struct EmulatorBooter {
         return "\(list) ignored: \(avdName) is already \(starting ? "starting" : "running")."
     }
 
-    static func logPath(avdName: String, host: AndroidHost) -> String {
-        ((host.variable("TMPDIR") ?? NSTemporaryDirectory()) as NSString).appendingPathComponent("offsider-boot-\(avdName).log")
+    static let logsDirectoryName = "logs"
+
+    /// `boot-<avd>.log` in the private `logs/` folder, so no other user can read or plant it.
+    static func logPath(avdName: String, directory: String) -> String {
+        (directory as NSString).appendingPathComponent("boot-\(OutputFile.sanitisedComponent(avdName)).log")
     }
 
     public func boot(_ request: EmulatorBootRequest, progress: (String) -> Void) async throws -> EmulatorBootResult {
@@ -135,9 +145,13 @@ public struct EmulatorBooter {
         if !staleLocks.isEmpty {
             progress("Removed \(staleLocks.joined(separator: " and ")) left by an emulator that is no longer running.")
         }
-        let logPath = Self.logPath(avdName: name, host: host)
-        var environment = host.environment
-        environment["ADB_MDNS"] = "0"
+        let logPath: String
+        do {
+            logPath = Self.logPath(avdName: name, directory: try logsDirectory())
+        } catch {
+            throw AndroidError.emulatorLaunchFailed(path: sdk.emulator.path, detail: "its boot log folder is not private: \(error.localizedDescription)")
+        }
+        let environment = ChildEnvironment.make(.androidEmulator, from: host.environment)
         let pid: Int32
         do {
             pid = try host.launcher.launch(

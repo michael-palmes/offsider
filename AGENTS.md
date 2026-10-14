@@ -25,7 +25,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | Android stack | `OffsiderAndroid` (never imports idb), for emulators and USB phones: a Swift adb server client over loopback plus the emulator gRPC service (grpc-swift-2, generated code checked in from a trimmed proto) |
 | iOS device stack | `OffsiderIOSDevice` (never imports idb), for USB iPhones and iPads: `devicectl` for listing, settings and fallback screenshots; on Xcode 27 a detached per-device session broker (`offsider device-session serve`, Unix socket under the private `sessions/`) holding the CoreDevice screen stream, UniversalHID touch and keyboard reports and the HID button socket; and an XCUITest runner reached over usbmuxd |
 | Android toolchain | Android SDK with Platform-Tools and the Emulator, found through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` or `adb` on `PATH`; `arm64-v8a` images, tested on API 36 |
-| Android helper | Java 8 in `AndroidHelper/src/`, compiled by `scripts/build.sh helper` (JDK 17, build-tools 37.0.0 d8, android-37.0) to a committed dex and manifest in `Sources/Offsider/Resources/helper/`; run with `app_process` as the shell user for one command; Swift-only work needs no JDK |
+| Android helper | Java 8 in `AndroidHelper/src/`, compiled by `scripts/build.sh helper` (JDK 17, build-tools 37.0.0 d8, android-37.0) to a committed dex and manifest in `Sources/Offsider/Resources/helper/`; pushed through a 0700 folder and SHA-256 checked by its start script on every start (size only without `sha256sum`); run with `app_process` as the shell user for one command; Swift-only work needs no JDK |
 | Fixture app | `OffsiderPlaygroundApp` (XcodeGen `project.yml`) |
 | RN fixture app | `OffsiderPlaygroundRN`: Expo SDK 57, pnpm 11, same screens and ids for iOS and Android; `/ios`, `/android` and `/build` are generated and git-ignored; dev Metro on 8742 |
 
@@ -40,14 +40,15 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./scripts/build.sh helper` or `make helper` | Rebuild the Android helper dex and manifest after changing `AndroidHelper/`; refuses toolchain drift |
 | `./scripts/build.sh helper --check` or `make helper-check` | Rebuild the helper and compare it with the committed dex and manifest, as CI does |
 | `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, package, verify and Homebrew-gate a local build without secrets |
+| `scripts/release.sh pack-payload`, `unpack-payload`, `unpack-archive` | Move the unsigned payload and the signed archive between the release workflow's build, sign and verify jobs |
 | `make e2e` or `./test-runner.sh` | Rebuild idb, build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
 | `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
 | `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites (needs `OFFSIDER_ANDROID_DEVICE`) |
 | `./test-runner.sh --foldable` or `make e2e-foldable` | Build Offsider and the playground, run `FoldableTests` on the iPhone Duo simulator `OFFSIDER_FOLDABLE_SIMULATOR_NAME` names (default `Offsider Duo`, or `SIMULATOR_UDID`) |
 | `./test-runner.sh --android-fold` or `make e2e-android-fold` | Build Offsider and run `AndroidFoldableTests` on the AVD `OFFSIDER_ANDROID_FOLD_AVD` names (default `Offsider_E2E_Fold`) |
-| `OFFSIDER_ANDROID_PHONE=<serial> ./test-runner.sh --android-phone` or `make e2e-android-phone` | Build Offsider and run the `AndroidPhone*Tests` suites on that one USB phone (only when the user names it) |
-| `OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> ./test-runner.sh --ios-device` or `make e2e-ios-device` | Build Offsider and run the `IOSDevice*E2ETests` suites on that one wired iPhone or iPad (only when the user names it); input, tree and runner suites skip while its screen is off |
+| `OFFSIDER_ANDROID_PHONE=<serial> ./test-runner.sh --android-phone` or `make e2e-android-phone` | Build Offsider and run the `AndroidPhone*Tests` suites on that one USB phone (only when the user names it and has run `offsider device-access allow --device <serial>`) |
+| `OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> ./test-runner.sh --ios-device` or `make e2e-ios-device` | Build Offsider and run the `IOSDevice*E2ETests` suites on that one wired iPhone or iPad (only when the user names it and has allowed it with the playground pinned); input, tree and runner suites skip while its screen is off |
 | `./test-runner.sh --rn-ios` or `make e2e-rn-ios` | Build Offsider and the RN playground, run the React Native suites on a simulator (needs pnpm) |
 | `./test-runner.sh --rn-ios --rn-debug` or `--android --rn-debug` | Build the RN debug app, start Metro on 8742 and run the debug smoke suite (`make e2e-rn-debug-ios`, `make e2e-rn-debug-android`) |
 | `scripts/generate-emulator-grpc.sh [--check]` or `make grpc-generate` | Regenerate the emulator gRPC client from the vendored proto; `--check` compares with the checked-in code |
@@ -83,23 +84,24 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_PHONE` | The exact USB serial the `AndroidPhone*Tests` suites drive (an `adb devices -l` row with `usb:` and state `device`; refused beside `OFFSIDER_ANDROID_E2E`) |
 | `OFFSIDER_IOS_DEVICE_E2E=1` | Enables the `IOSDevice*E2ETests` suites in `swift test` (`test-runner.sh --ios-device` sets it) |
 | `OFFSIDER_IOS_DEVICE` | The exact UDID the iOS device suites drive (a physical iOS or iPadOS row in `devicectl list devices`; never a simulator) |
-| `OFFSIDER_IOS_TEAM_ID` | The team that signs the runner and the OffsiderPlaygroundApp for a device; required by `--ios-device` |
+| `OFFSIDER_IOS_TEAM_ID` | The team (10 letters and digits) that signs the runner and the OffsiderPlaygroundApp for a device; required unless the device's allowance names one with `device-access allow --team`, and by `--ios-device`; Xcode's signed-in team is never picked |
+| `OFFSIDER_IOS_RUNNER_PREFIX` | The iPhone runner's bundle id prefix (default `com.mpalmes.offsider`; apps `<prefix>.runner` and `<prefix>.runner.uitests`; reverse-DNS, at most 100 characters, else exit 64); part of the runner cache key |
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
 | `OFFSIDER_ANDROID_INPUT` | `helper` or `input` forces how input reaches a device without gRPC; default `auto` (the helper only when the command already runs it) |
 | `OFFSIDER_ANDROID_CAPTURE` | `screencap`, `raw` or `helper` forces how a device without gRPC is captured; `raw` and `helper` fall back to `screencap -p`; default `auto` (`screencap -p`) |
-| `OFFSIDER_IOS_RUNNER_IDLE` | Seconds an iPhone runner session stays up after its last request (default 300) |
-| `OFFSIDER_IOS_SESSION_IDLE` | Seconds an iPhone or iPad session broker stays up after its last command (default 300) |
+| `OFFSIDER_IOS_RUNNER_IDLE` | Seconds an iPhone runner session stays up after its last request (default 300, at most 3600); a session is restarted after 12 hours |
+| `OFFSIDER_IOS_SESSION_IDLE` | Seconds an iPhone or iPad session broker stays up after its last command (default 300, at most 3600); a broker stops after 12 hours at its next idle moment |
 | `OFFSIDER_GOLDENS_UPDATE=1` | Re-renders the tree goldens offline (`--filter TreeGoldenRefresh`), or recaptures them with the RN device variables (`--filter TreeGoldenCaptureTests`) |
 | `OFFSIDER_TREE_CACHE` | `off` stops reading and writing the per-device tree cache under the private directory's `trees/` (`describe-ui --diff` and the tap guard then see no earlier tree) |
 | `OFFSIDER_DISPLAY_CACHE` | `off` stops reading and writing the per-phone display cache under the private directory's `displays/` (a foldable phone's active panel, its size and device state, so the next capture skips the display reads) |
-| `OFFSIDER_DEVICE` | The default `--device` for device commands (an explicit `--device` wins; blank is unset); `doctor --fix` with it set to an iPhone or iPad's UDID mounts the developer disk image on that device; `test-runner.sh` and test child processes unset it |
+| `OFFSIDER_DEVICE` | The default `--device` for device commands (an explicit `--device` wins; blank is unset); it never names a physical device (exit 64: a phone, iPhone or iPad needs `--device` on each command); `test-runner.sh` and test child processes unset it |
 | `OFFSIDER_LEASE` | The label of this session's `lease set`; when set, `doctor`'s `device.lease` passes only when it matches. Unset, a lease passes for any later command of the session that set it |
 | `OFFSIDER_RUN` | `off` keeps captures out of any evidence run (`test-runner.sh`, `bench-ab.sh` and test helpers set it); `<dir>` records into that folder whatever the session |
 | `OFFSIDER_WAIT_LOCK` | Default seconds to wait for a device another Offsider command holds (`--wait-lock` wins; `test-runner.sh` sets 30) |
 | `OFFSIDER_TIMINGS=1` | Prints iOS and Android phase timings to stderr (`offsider timing: <phase> <n> ms`) |
-| `OFFSIDER_MASK_SECURE=1` | Makes `screenshot` and `batch` mask password fields as `--mask-secure` does |
+| `OFFSIDER_MASK_SECURE` | `screenshot` and `batch` mask password fields by default; `0`, `false`, `no` or `off` turns that default off (and the video password check outside a run), `1`, `true`, `yes` or `on` keeps it; a capture's or batch's `--mask-secure` or `--no-mask-secure` wins, and a run's mask is never dropped |
 | `OFFSIDER_BENCH_DIR` | Where `scripts/bench-ab.sh` writes its records (default `$TMPDIR/offsider-bench`) |
 | `OFFSIDER_HELPER_JDK` | JDK 17 home for `scripts/build.sh helper` (else `JAVA_HOME`, then `/usr/libexec/java_home -v 17`) |
 
@@ -129,7 +131,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 ## Simulator caveats
 
 - Xcode 27 has no Simulator.app; simulators run under Device Hub. Quit Simulator.app before E2E runs.
-- Resolve Xcode through `xcode-select -p` or `DEVELOPER_DIR`, never a hard-coded path.
+- Resolve Xcode through `xcode-select -p` or `DEVELOPER_DIR`, never a hard-coded path. Offsider refuses a developer directory that is not `<Xcode>.app/Contents/Developer` of an Apple-signed app (exit 9 `xcode_unusable`).
 - Input commands, setters and `batch` lock the device for their run (exit 8, `device_busy`, when another holds it); locks live under `offsider-<uid>/locks/` in the `confstr` user temp directory.
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>` and rejects peers running as another user.
@@ -139,18 +141,20 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 ## Physical iPhone caveats
 
 - Drive an iPhone or iPad only when the user names its UDID; never pick one from `list-devices`. Reading its `devicectl` row is fine.
+- Every physical device must first be on the allow-list: the user runs `offsider device-access allow --device <udid> --app com.mpalmes.offsider.playground` in their own terminal (Touch ID or their password). Agents never run `allow`, never edit `~/.config/offsider/allowed-devices.json` and never add a bypass; `test-runner.sh` checks the list and prints the command.
 - Offsider never pairs a device or accepts a prompt on it, and refuses Wi-Fi connections (`device_not_wired`); keep it that way, USB only through usbmuxd.
 - The runner source lives under `Sources/Offsider/Resources/runner`; after changing `project.yml`, regenerate the committed project with `scripts/build.sh runner` and check it with `scripts/build.sh runner --check`.
 - Never type, store or ask for an iPhone passcode; a locked device fails with `device_locked`.
 - One session broker per device, started by the first command that needs it; it needs a GUI login session on the Mac (over plain ssh, screenshots use `devicectl` and input the runner). Never start one on the user's own phone unless they name its UDID.
-- After device E2E or a manual check, run `offsider session stop --device <udid>`: it stops the broker and the runner and clears the device's screen-sharing indicator.
+- Offsider never registers a device with a team on its own; only a person runs `offsider runner build --device <udid> --register-device`.
+- After device E2E or a manual check, run `offsider session stop --device <udid>`: it stops the broker and the runner and clears the device's screen-sharing indicator. `--clean` also uninstalls the runner apps and deletes this device's runner builds and logs.
 
 ## Android emulator caveats
 
 - Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
-- `boot --emulator-arg` refuses listener, metrics and Offsider-owned flags by name (`EmulatorArguments.refusedFlags`); add any new emulator listener flag there.
+- `boot --emulator-arg` takes only the flags in `EmulatorArguments.allowed`, each value checked, and refuses Offsider's own flags (`ownedFlags`) and everything else. Never add a listener, port, gRPC, metrics, network or host-path flag to the allow-list, nor `webcam` to the camera values.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
-- A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names its serial. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
+- A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names its serial and has run `offsider device-access allow --device <serial>` themselves. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
 - E2E and manual checks drive only the AVDs `OFFSIDER_ANDROID_E2E_AVD` and `OFFSIDER_ANDROID_FOLD_AVD` name (defaults `Offsider_E2E` and `Offsider_E2E_Fold`), and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
 - Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
 - The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
@@ -207,7 +211,7 @@ Simulator-dependent suites are gated: `@Suite("Tap", .serialized, .enabled(if: i
 ## Boundaries
 
 - ✅ **Always**: run `swift build && swift test` before committing; use `git mv` for renames so history follows; pin GitHub Actions to full commit SHAs with the version in a trailing comment; after editing `AndroidHelper/`, run `scripts/build.sh helper` and commit the dex and manifest with the source.
-- ⚠️ **Ask first**: adding a dependency; changing `entitlements.plist`; changing the idb pin; changing `release.yml` or `scripts/release.sh`; touching `Package.swift` platforms; changing the vendored emulator proto, its generated gRPC code or the gRPC package pins; changing the helper's toolchain pins (JDK major, build-tools, `android.jar`) or its wire protocol; adding emulator launch flags to `boot`; removing code or behaviour that looks intentional.
+- ⚠️ **Ask first**: adding a dependency; changing `entitlements.plist` or `entitlements-adhoc.plist`; changing the idb pin; changing `release.yml` or `scripts/release.sh`; touching `Package.swift` platforms; changing the vendored emulator proto, its generated gRPC code or the gRPC package pins; changing the helper's toolchain pins (JDK major, build-tools, `android.jar`) or its wire protocol; adding emulator launch flags to `boot`; removing code or behaviour that looks intentional.
 - 🚫 **Never**:
   - Commit secrets or signing material (`.p12`, `.p8`, `.env`, `keys/`). Keep them in `.env` and GitHub secrets.
   - Add an `axe` alias or compatibility shim. Document `offsider` instead.

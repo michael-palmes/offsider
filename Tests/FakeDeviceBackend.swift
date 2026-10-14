@@ -54,6 +54,8 @@ class FakeDeviceBackend: DeviceBackend {
     /// What typing a code leaves, and whether the code was typed at all.
     var afterCode = AwakeReading(screen: .on, lockScreen: .hidden)
     var codeTyped = true
+    /// Runs as the code is typed, after `beforeTyping`.
+    var whileTyping: (() -> Void)?
     private(set) var enteredCodes: [UnlockCode] = []
     /// What `listedName(of:)` serves, as a phone's model or an AVD name.
     var listedDeviceName: String?
@@ -339,8 +341,12 @@ extension FakeDeviceBackend: AwakeControlling {
         listedDeviceName
     }
 
-    func enterUnlockCode(_ code: UnlockCode, on id: DeviceID) async throws -> UnlockAttempt {
+    func enterUnlockCode(_ code: UnlockCode, on id: DeviceID, beforeTyping: @MainActor () throws -> Void) async throws -> UnlockAttempt {
         stateCalls.append("enter code")
+        if codeTyped {
+            try beforeTyping()
+            whileTyping?()
+        }
         enteredCodes.append(code)
         awake = afterCode
         return UnlockAttempt(typed: codeTyped, reading: awake)

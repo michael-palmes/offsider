@@ -18,7 +18,8 @@ struct AndroidKeyboardlessInputTests {
         let rig = try AndroidGrpcInputTests.rig(avdHardware: hardware)
         try await Self.session(rig).typeText("abc\n")
 
-        #expect(rig.adbScripts == ["input text 'abc' && input keyevent 66"])
+        // The tree read before `input text` checks that no password field has focus; the text itself goes over adb.
+        #expect(rig.adbScripts.filter { $0.hasPrefix("input") } == ["input text 'abc' && input keyevent 66"])
         #expect(rig.emulator.calls.isEmpty)
     }
 
@@ -33,7 +34,7 @@ struct AndroidKeyboardlessInputTests {
 
     @Test("non-ASCII text is still pasted through the gRPC clipboard")
     func pasteUnchanged() async throws {
-        let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "sentinel"), avdHardware: Self.noKeyboard)
+        let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "sentinel"), uiautomatorDump: AndroidGrpcTextTests.plainFocus, avdHardware: Self.noKeyboard)
         try await Self.session(rig).typeText("é")
 
         #expect(rig.emulator.calls == [.getClipboard, .setClipboard("é"), .setClipboard("sentinel")])

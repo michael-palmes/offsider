@@ -86,6 +86,8 @@ public struct UITree: Equatable, Sendable {
     public var roots: [UINode]
     /// True when the source stopped before the whole tree, so a missing node may still be on screen; JSON does not carry it.
     public var sourceTruncated = false
+    /// Set when the tree was cut to `UITreeLimits` as it was built; `describe-ui` prints its note. JSON does not carry it.
+    public var truncated: UITreeTruncation?
     /// Every window Android's accessibility service lists; nil on iOS and with the uiautomator fallback.
     public var windows: [UIWindowInfo]?
     /// What describe-ui's read at the screen's centre found; nil when it did not read or found nothing.
@@ -106,7 +108,7 @@ public struct UITree: Equatable, Sendable {
         self.platform = platform
         self.device = device
         self.screen = screen
-        self.roots = roots
+        (self.roots, self.truncated) = UITreeLimits.limit(roots)
         self.sourceTruncated = sourceTruncated
         self.windows = windows
     }

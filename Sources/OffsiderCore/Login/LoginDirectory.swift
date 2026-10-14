@@ -106,10 +106,10 @@ public enum LoginDirectory {
             }
             return .join(canonical: target)
         }
-        if groups.count == 1, let only = groups.first { return .join(canonical: only.canonical) }
+        // A person always picks, even when only one app has logins.
         if interactive { return .choose }
         let names = groups.map(\.canonical).joined(separator: ", ")
-        return .refused("Several apps have saved logins (\(names)). Pass --app with the one to share. Nothing was linked.")
+        return .refused("Apps with saved logins: \(names). Pass --app with the one to share. Nothing was linked.")
     }
 
     /// The menu row at `index`: a saved login to update, or the last row to add one.
@@ -121,4 +121,13 @@ public enum LoginDirectory {
         if let own = groups.first(where: { $0.canonical == requested }) { return own.canonical }
         return groups.first { $0.members.contains(requested) }?.canonical
     }
+}
+
+extension CredentialScreen {
+    /// The question `credential join` asks a person, naming both ids.
+    public static func linkTitle(member: String, canonical: String) -> String {
+        "🔗 Let \(member) use the saved logins of \(canonical)? login will type them into either app."
+    }
+
+    public static let linkOptions = ["🔗 Link", "✋ Cancel"]
 }

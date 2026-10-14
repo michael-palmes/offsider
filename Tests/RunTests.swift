@@ -92,7 +92,7 @@ struct RunTests {
 
     static func screenshot(_ arguments: [String], on backend: FakeDeviceBackend) async throws -> ScreenshotReport {
         let command = try Screenshot.parse(arguments + ["--device", device.rawValue])
-        let masks = command.masksWithRunDefaults(try command.maskPlan(environment: [:]))
+        let masks = command.masksWithRunDefaults(try command.maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]))
         return try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: masks)
     }
 
@@ -132,6 +132,28 @@ struct RunTests {
 
         #expect(try RunRegistry.active(in: fixture.environment())?.folder.path == fixture.folder())
         #expect(try RunRegistry.active(in: fixture.environment(selfPID: 700, parentPID: 600)) == nil)
+    }
+
+    @Test("a recorded run folder swapped for a link, opened to other writers or stripped of its run.json is refused as run_unavailable", arguments: ["link", "group-writable", "no-state", "other-run"])
+    func recordedFolderValidated(change: String) throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(label: "mine")
+        let folder = fixture.folder()
+        switch change {
+        case "link":
+            let moved = fixture.folder("moved")
+            try FileManager.default.moveItem(atPath: folder, toPath: moved)
+            try FileManager.default.createSymbolicLink(atPath: folder, withDestinationPath: moved)
+        case "group-writable":
+            chmod(folder, 0o770)
+        case "no-state":
+            unlink(RunFolder(path: folder).file(RunFolder.stateName))
+        default:
+            try RunFolder(path: folder).writeState(RunState(label: "theirs", startedAt: fixture.now))
+        }
+        let error = #expect(throws: CLIError.self) { _ = try RunRegistry.active(in: fixture.environment()) }
+        #expect(error?.reason == .runUnavailable)
+        #expect(error?.errorDescription?.contains("offsider run stop") == true)
     }
 
     @Test("a pid reused by another process is not the run's owner")
@@ -251,17 +273,57 @@ struct RunTests {
         #expect(try RunRegistry.active(in: fixture.environment(variables: variables))?.masks == RunMasks(secure: true, ids: ["card"]))
     }
 
-    @Test("run start on the active folder prints the masks now in force")
+    @Test("run start on the active folder prints the masks now in force, and with no flags changes nothing")
     func restartPrintsMasks() async throws {
         let fixture = try RunFixture()
         let dir = fixture.folder()
-        _ = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)' --mask-emails", environment: ["OFFSIDER_RUN": dir])
+        let first = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)' --no-mask-secure", environment: ["OFFSIDER_RUN": dir])
+        #expect(first.stderr.contains("Warning: this run does not mask password fields"))
         let added = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)' --mask-id card --json", environment: ["OFFSIDER_RUN": dir])
         #expect(added.exitCode == 0)
         #expect(added.stderr.contains("Added masks to the active run in \(dir); masks now in force: email addresses and id card. To remove one, run `offsider run stop`, then start the run again."))
         #expect(added.stdout.contains(#""masks":{"secure":false,"emails":true,"ids":["card"]}"#))
         let same = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)'", environment: ["OFFSIDER_RUN": dir])
         #expect(same.stderr.contains("A run is already active in \(dir) for this session; masks in force: email addresses and id card."))
+    }
+
+    @Test("run start masks password fields and email addresses unless told not to")
+    func startDefaults() async throws {
+        let fixture = try RunFixture()
+        let dir = fixture.folder()
+        let started = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)' --json", environment: ["OFFSIDER_RUN": dir])
+        #expect(started.exitCode == 0)
+        #expect(started.stdout.contains(#""masks":{"secure":true,"emails":true,"ids":[]}"#))
+        #expect(!started.stderr.contains("Warning"))
+
+        let other = fixture.folder("plain")
+        let plain = try await TestHelpers.runOffsiderCommandSeparated("run start '\(other)' --no-mask-emails --json", environment: ["OFFSIDER_RUN": other])
+        #expect(plain.stdout.contains(#""masks":{"secure":true,"emails":false,"ids":[]}"#))
+    }
+
+    @Test("an OFFSIDER_RUN folder no run start set up records with the default masks")
+    func overrideFolderDefaults() throws {
+        let fixture = try RunFixture()
+        let variables = ["OFFSIDER_RUN": fixture.folder("override")]
+        #expect(try RunRegistry.active(in: fixture.environment(variables: variables))?.masks == .defaults)
+    }
+
+    @Test("a folder run start creates gets a private .gitignore of *, which no timeline lists; an existing folder gets none")
+    func gitignore() throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let path = (fixture.folder() as NSString).appendingPathComponent(".gitignore")
+        #expect(FileManager.default.contents(atPath: path) == Data("*\n".utf8))
+        var info = stat()
+        #expect(lstat(path, &info) == 0 && info.st_mode & 0o777 == 0o600)
+        let folder = RunFolder(path: fixture.folder())
+        #expect(folder.unrecorded(given: folder.manifest()).isEmpty)
+        #expect(RunRegistry.files(in: folder) == 0)
+
+        let existing = fixture.folder("existing")
+        try FileManager.default.createDirectory(atPath: existing, withIntermediateDirectories: true)
+        _ = try RunFolder.prepare(existing)
+        #expect(!FileManager.default.fileExists(atPath: (existing as NSString).appendingPathComponent(".gitignore")))
     }
 
     @Test("stopping with no run active says so")
@@ -394,6 +456,16 @@ struct RunTests {
 
         #expect(reports.map(\.maskedBy) == [[.emails: 1], [.id: 1, .emails: 1], [.secure: 1, .emails: 1]])
         #expect(fixture.manifest().map(\.masked) == [1, 2, 2])
+    }
+
+    @Test("a capture's --no-mask-secure never drops the run's password mask")
+    func runSecureBeatsCaptureFlag() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(masks: .defaults)
+        let backend = try Self.screenshotBackend([SecureTextTests.passwordField()])
+        var report: ScreenshotReport?
+        try await fixture.command(fixture.recorder("screenshot")) { report = try await Self.screenshot(["--no-mask-secure"], on: backend) }
+        #expect(report?.maskedBy?[.secure] == 1)
     }
 
     @Test("--mask-skip-beneath leaves a run's id match beneath a page unpainted for that capture only, and never its password fields")
@@ -705,7 +777,7 @@ struct RunTests {
         let started = try await TestHelpers.runOffsiderCommandSeparated("run start '\(dir)' --label 'PR 1' --mask-emails --json", environment: ["OFFSIDER_RUN": dir])
         #expect(started.exitCode == 0)
         #expect(started.stdout.contains(#""dir":"\#(dir)","label":"PR 1""#))
-        #expect(started.stdout.contains(#""masks":{"secure":false,"emails":true,"ids":[]}"#))
+        #expect(started.stdout.contains(#""masks":{"secure":true,"emails":true,"ids":[]}"#))
 
         let stopped = try await TestHelpers.runOffsiderCommandSeparated("run stop --summary --json", environment: ["OFFSIDER_RUN": dir])
         #expect(stopped.stdout.hasPrefix(#"{"version":1,"dir":"\#(dir)","label":"PR 1""#))

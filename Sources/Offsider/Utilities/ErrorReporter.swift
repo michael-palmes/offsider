@@ -104,7 +104,12 @@ enum ErrorReporter {
     }
 
     private static func writeErrorLine(_ message: String) {
-        FileHandle.standardError.write(Data("Error: \(message)\n".utf8))
+        FileHandle.standardError.write(Data(errorText(message).utf8))
+    }
+
+    /// `Error: <message>` and a newline, with control and bidi characters escaped and continuation lines indented.
+    static func errorText(_ message: String) -> String {
+        "Error: \(TerminalText.block(message))\n"
     }
 
     static func deviceArgument(in arguments: [String]) -> String? {

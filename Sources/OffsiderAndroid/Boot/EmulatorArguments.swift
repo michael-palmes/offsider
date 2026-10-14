@@ -26,8 +26,8 @@ public enum EmulatorArguments {
     /// Each entry is justified against `emulator -help`; anything that opens a listener, connects out, reads a host path or sends metrics stays off it.
     public static let allowed: [Flag] = [
         .oneOf("-accel", ["auto", "off", "on"]),
-        Flag(name: "-camera-back", value: "emulated|none|webcamN") { camera($0) },
-        Flag(name: "-camera-front", value: "emulated|none|webcamN") { camera($0) },
+        Flag(name: "-camera-back", value: "emulated|none") { camera($0) },
+        Flag(name: "-camera-front", value: "emulated|none") { camera($0) },
         .integer("-cores", 1...16),
         .oneOf("-feature", ["Vulkan", "-Vulkan", "GLESDynamicVersion", "-GLESDynamicVersion"]),
         .oneOf("-gpu", ["auto", "host", "software", "lavapipe", "swiftshader", "swangle"]),
@@ -53,11 +53,9 @@ public enum EmulatorArguments {
         "-no-metrics": "Offsider always passes it",
     ]
 
+    /// Never `webcamN`: an agent could then see through the Mac's camera.
     static func camera(_ value: String) -> Bool {
-        if value == "emulated" || value == "none" { return true }
-        guard value.hasPrefix("webcam") else { return false }
-        let number = value.dropFirst("webcam".count)
-        return (1...2).contains(number.count) && number.allSatisfy { $0.isASCII && $0.isNumber }
+        value == "emulated" || value == "none"
     }
 
     /// A size such as `1080x2400`, or a skin folder's name with no path in it.

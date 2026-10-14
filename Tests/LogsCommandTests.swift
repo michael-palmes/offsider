@@ -158,8 +158,8 @@ struct LogsCommandTests {
 
     private static let secretLine = #"batch-login {"email":"e2e@example.com","password":"hunter22"}"#
 
-    @Test("redaction is on by default, off with --no-redact or --raw alone, and on with --raw --redact", arguments: [
-        ([String](), true), (["--no-redact"], false), (["--raw"], false), (["--raw", "--redact"], true), (["--redact"], true),
+    @Test("redaction is on by default and with --raw, and off only with --no-redact", arguments: [
+        ([String](), true), (["--no-redact"], false), (["--raw"], true), (["--raw", "--no-redact"], false), (["--redact"], true),
     ])
     func redactionFlags(arguments: [String], redacts: Bool) throws {
         #expect(try Self.command(arguments).collector().redacts == redacts)
@@ -176,7 +176,7 @@ struct LogsCommandTests {
         #expect(collector.redacted == 2)
     }
 
-    @Test("the report counts redacted values, and the stderr footer names --no-redact")
+    @Test("the report counts redacted values, and the stderr footer names what was redacted without a way round it")
     @MainActor
     func reportCountsRedactions() async throws {
         let backend = FakeLogBackend(entries: [LogEntry(message: Self.secretLine), LogEntry(message: "plain")])
@@ -193,8 +193,38 @@ struct LogsCommandTests {
         #expect(lines[0].contains("hunter22"))
         #expect(lines[0].hasSuffix(#""redacted":0,"excluded":0}"#))
 
-        #expect(Logs.redactionFooter(3) == "Redacted 3 values (passwords, tokens, emails); --no-redact shows them.")
+        #expect(Logs.redactionFooter(3) == "Redacted 3 values (passwords, tokens, emails, addresses, cards, phrases, codes).")
+        #expect(Logs.redactionFooter(3)?.contains("--no-redact") == false)
         #expect(Logs.redactionFooter(0) == nil)
+    }
+
+    @Test("--raw keeps colour codes in text output but escapes other sequences, and still redacts")
+    @MainActor
+    func rawKeepsColourOnly() async throws {
+        let message = "\u{1B}[32mok\u{1B}[0m \u{1B}]52;c;ZXZpbA==\u{07} password=hunter22\nnext"
+        let backend = FakeLogBackend(entries: [LogEntry(message: message)])
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        var lines: [String] = []
+        try await Self.command(["--raw", "--app", "com.example.playground"]).read(from: DeviceRouter.Route(backend: backend, device: device), note: { _ in }) { lines.append($0) }
+        let line = try #require(lines.first)
+        #expect(line.contains("\u{1B}[32mok\u{1B}[0m"))
+        #expect(line.contains(#"\u001b]52;c;ZXZpbA==\u0007"#))
+        #expect(!line.contains("\u{07}"))
+        #expect(line.contains("password=[redacted]"))
+        #expect(line.contains(#"\nnext"#))
+        #expect(!line.contains("\n"))
+    }
+
+    @Test("a read of the whole device's log prints one stderr note; a scoped read prints none", arguments: [
+        ([String](), true), (["--app", "com.example.playground"], false), (["--rn"], false), (["--process", "SpringBoard"], false),
+    ])
+    @MainActor
+    func wholeLogNote(arguments: [String], noted: Bool) async throws {
+        let backend = FakeLogBackend(entries: [LogEntry(message: "plain")])
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        var notes: [String] = []
+        try await Self.command(arguments).read(from: DeviceRouter.Route(backend: backend, device: device), note: { notes.append($0) }) { _ in }
+        #expect(notes.filter { $0 == Logs.wholeLogNote }.count == (noted ? 1 : 0))
     }
 
     @Test("an empty result is an empty entries array")

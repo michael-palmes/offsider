@@ -119,7 +119,7 @@ public struct UITreeContext: Equatable, Sendable {
         public var name: String {
             if let id { return "id=" + UITreeRenderer.token(SelectorText.truncated(id, limit: PresentationProbe.labelLimit)) }
             if let label { return UITreeRenderer.quoted(label) }
-            if let short = className?.split(separator: ".").last { return String(short) }
+            if let short = className?.split(separator: ".").last { return TerminalText.bareOrQuoted(String(short)) }
             return "a branch"
         }
 
@@ -193,7 +193,7 @@ public struct UITreeContext: Equatable, Sendable {
     public var headerLines: [String] {
         var lines: [String] = []
         if let window, window.kind != .app {
-            lines.append("# window: \(window.title ?? window.package ?? "untitled") (\(window.kind.rawValue)\(window.empty ? ", empty" : ""))")
+            lines.append("# window: \(TerminalText.bareOrQuoted(window.title ?? window.package ?? "untitled")) (\(window.kind.rawValue)\(window.empty ? ", empty" : ""))")
         }
         if keyboard {
             lines.append("# keyboard shown")
@@ -259,6 +259,6 @@ extension UITreeContext.Presented {
     /// `"Cancel" from PhotosPicker`, the role for an element with no label, and no process when it could not be read.
     public var summary: String {
         let shown = label.map(UITreeRenderer.quoted) ?? role.rawValue
-        return process.map { "\(shown) from \($0)" } ?? shown
+        return process.map { "\(shown) from \(TerminalText.bareOrQuoted($0))" } ?? shown
     }
 }

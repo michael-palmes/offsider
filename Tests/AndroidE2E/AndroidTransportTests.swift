@@ -19,10 +19,19 @@ struct AndroidFallbackTests {
         #expect(FileManager.default.fileExists(atPath: output.path))
     }
 
-    @Test("non-ASCII type over adb alone fails before typing anything")
-    func unicodeNeedsGrpc() async throws {
+    @Test("non-ASCII type over adb alone goes through the helper's setText, never a clipboard or `input text`")
+    func unicodeOverAdbUsesHelper() async throws {
+        try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
+        try await AndroidE2E.run("tap --id text-input-field", environment: adbOnly)
         let result = try await AndroidE2E.offsider("type 'héllo'", environment: adbOnly)
-        #expect(result.exitCode == 9)
+        #expect(result.exitCode == 0, "stderr: \(result.stderr)")
+        _ = try await AndroidE2E.waitForLabel(of: "character-count") { $0 == "Characters: 5" }
+    }
+
+    @Test("non-ASCII type with no helper to run fails before typing anything")
+    func unicodeNeedsHelperOrGrpc() async throws {
+        let result = try await AndroidE2E.offsider("type 'héllo'", environment: adbOnly.merging(["OFFSIDER_ANDROID_TREE": "uiautomator", "OFFSIDER_ANDROID_INPUT": "input"]) { $1 })
+        #expect(result.exitCode == 9, "stdout: \(result.stdout) stderr: \(result.stderr)")
         #expect(result.stderr.contains("Typing non-ASCII text on Android needs the emulator's gRPC endpoint"))
     }
 }

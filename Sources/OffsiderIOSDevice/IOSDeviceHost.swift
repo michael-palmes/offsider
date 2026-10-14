@@ -29,9 +29,11 @@ public protocol DevicectlRunning: Sendable {
 /// `xcrun devicectl` with the resolved Xcode pinned through `DEVELOPER_DIR`.
 public struct XcrunDevicectl: DevicectlRunning {
     let environment: [String: String]
+    let trust: DeveloperDirectoryTrust
 
-    public init(environment: [String: String]) {
+    public init(environment: [String: String], trust: DeveloperDirectoryTrust = .shared) {
         self.environment = environment
+        self.trust = trust
     }
 
     public func locateXcode() async throws -> XcodeLocation {
@@ -52,9 +54,16 @@ public struct XcrunDevicectl: DevicectlRunning {
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw IOSDeviceError.xcodeMissing("\(path) (from \(source)) does not exist")
         }
-        let plist = NSDictionary(contentsOf: URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("version.plist"))
+        // devicectl and xcodebuild run only from the resolved directory of an Apple-signed Xcode.
+        let trusted: TrustedDeveloperDirectory
+        do {
+            trusted = try trust.require(path, source: source == "DEVELOPER_DIR" ? .environment : .xcodeSelect)
+        } catch let error as UntrustedDeveloperDirectory {
+            throw IOSDeviceError(.xcodeUntrusted, error.failureMessage, hint: error.hint)
+        }
+        let plist = NSDictionary(contentsOf: URL(fileURLWithPath: trusted.resolved).deletingLastPathComponent().appendingPathComponent("version.plist"))
         return XcodeLocation(
-            developerDirectory: path,
+            developerDirectory: trusted.resolved,
             source: source,
             version: plist?["CFBundleShortVersionString"] as? String,
             build: plist?["ProductBuildVersion"] as? String
@@ -63,7 +72,7 @@ public struct XcrunDevicectl: DevicectlRunning {
 
     public func run(_ arguments: [String], timeout: TimeInterval) async throws -> ProcessCaptureResult {
         let xcode = try await locateXcode()
-        var environment = environment
+        var environment = ChildEnvironment.make(.base, from: environment)
         environment["DEVELOPER_DIR"] = xcode.developerDirectory
         return try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: ["devicectl"] + arguments, environment: environment, timeout: timeout)
     }
@@ -82,6 +91,8 @@ public struct IOSDeviceHost: Sendable {
     public var timing: IOSDeviceTiming
     /// The bundled runner project; nil leaves tree reads and runner input unavailable.
     public var runnerSource: URL?
+    /// The runner source's digests compiled into this binary, keyed by path below `runner/`; a copy that differs is never built.
+    public var runnerSourceDigests: [String: String]?
     /// Replaces the session manager, so tests never build or start a runner.
     public var runnerConnector: (any RunnerConnecting)?
     /// The `offsider` executable that serves device sessions; nil leaves screenshots on devicectl and buttons on the runner.

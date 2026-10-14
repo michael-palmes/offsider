@@ -1,19 +1,27 @@
 import Foundation
 import OffsiderCore
 
-/// Fills a sign-in form, settles Turnstile, and taps submit once. The secret stays in the injected type call.
+/// Fills a sign-in form and taps submit once. Turnstile is only read: a widget waiting for a person stops the login.
+/// The secret stays in the injected type call.
 @MainActor
 enum LoginFlow {
     struct Services {
         var readTree: () async throws -> UITree
         var typeText: (_ text: String, _ field: UINode) async throws -> Void
         var tap: (_ point: UIPoint, _ tree: UITree) async throws -> Void
-        var readTurnstile: () async throws -> TurnstilePhase
-        var performTurnstile: () async throws -> TurnstileReport
+        /// Turnstile's state on the screen `tree` shows. Never taps.
+        var readTurnstile: (_ tree: UITree) async throws -> TurnstilePhase
         /// Optional extra dismiss after a tap above the keys. The login command leaves this empty: Back can leave the sign-in screen.
         var hideKeyboard: () async throws -> Void = {}
         var clock: PollClock
+        /// The app in front, from a tree already read.
+        var foregroundApp: (_ tree: UITree) throws -> String
+        /// The bundle id of an iOS process, for the web-content check.
+        var bundleForPID: (Int) -> String? = { _ in nil }
     }
+
+    /// How long after the submit tap Turnstile is read once more.
+    static let afterSubmitRead: Duration = .milliseconds(750)
 
     /// Who Offsider last signed in to this app on the device, for the note when no form is in front.
     struct LastSignIn: Equatable {
@@ -24,13 +32,13 @@ enum LoginFlow {
         var deviceID: String
     }
 
-    /// `lastSignIn` is read only when no sign-in form is in front.
+    /// `lastSignIn` is read only when no sign-in form is in front. `webLogin` is the saved login's own web-view consent.
     static func run(
         app: String,
         key: String,
         credential: LoginCredential,
         profile: LoginProfile?,
-        turnstile: LoginTurnstileMode,
+        webLogin: Bool = false,
         timeout: TimeInterval,
         services: Services,
         lastSignIn: () -> LastSignIn? = { nil }
@@ -43,11 +51,15 @@ enum LoginFlow {
         }
         var tree = try await services.readTree()
         tree = try await revealSubmit(in: tree, profile: profile, services: services)
-        let form = try detect(in: tree, profile: profile, afterTyping: false, lastSignIn: lastSignIn)
+        let origin = LoginForm.Origin(foreground: app, bundleForPID: services.bundleForPID)
+        let form = try detect(in: tree, profile: profile, origin: origin, afterTyping: false, lastSignIn: lastSignIn)
+        try refuseWebForm(form, app: app, key: key, profile: profile, webLogin: webLogin)
         try requireName(form.identity, what: "email or username")
         try requireName(form.password, what: "password")
+        try requireNoWidget(try await services.readTurnstile(tree), stage: .beforeTyping)
         var identityProgress = LoginFieldProgress.notFilled
         var passwordProgress = LoginFieldProgress.notFilled
+        var report: LoginReport
         do {
             try await type(credential.username, into: form.identity, services: services)
             tree = try await readUntil({ LoginForm.match(form.identity, in: $0)?.value == credential.username }, services: services)
@@ -64,7 +76,10 @@ enum LoginFlow {
                 )
             }
             identityProgress = .filled
-            try await type(credential.password, into: form.password, services: services)
+            try requireForeground(app, in: tree, services: services, stopped: "the password was not typed")
+            try await InputSecrecy.$isSecret.withValue(true) {
+                try await type(credential.password, into: form.password, services: services)
+            }
             tree = try await readUntil({ LoginForm.match(form.password, in: $0).map { masked($0.value, length: credential.password.count) } == true }, services: services)
             guard let password = LoginForm.match(form.password, in: tree) else {
                 throw CLIError(
@@ -86,19 +101,115 @@ enum LoginFlow {
                 tree = try await readUntil({ (try? LoginForm.detect(in: $0, profile: profile)) != nil }, services: services)
             }
             let filled = try detect(in: tree, profile: profile, afterTyping: true)
-            let step = try await LoginTurnstileRunner.settle(mode: turnstile, read: services.readTurnstile, perform: services.performTurnstile)
-            return try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
+            let step = try await settleTurnstile(in: tree, timeout: timeout, services: services)
+            report = try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
         } catch {
             throw LoginFailure(report: .stopped(app: app, key: key, identity: identityProgress, password: passwordProgress), underlying: error)
         }
+        // One read after the tap; a read that fails cannot show a widget, and the submit already happened.
+        try await services.clock.sleep(afterSubmitRead)
+        let after: TurnstilePhase? = try? await services.readTurnstile(try await services.readTree())
+        if let after {
+            do {
+                try requireNoWidget(after, stage: .afterSubmit)
+            } catch {
+                var submitted = report
+                submitted.error = ErrorReporter.payload(for: error)
+                throw LoginFailure(report: submitted, underlying: error)
+            }
+        }
+        return report
+    }
+
+    /// Where the login was when it read Turnstile, for the hand-back message.
+    enum TurnstileStage {
+        case beforeTyping
+        case beforeSubmit
+        case afterSubmit
+    }
+
+    /// A checkbox, a challenge or several checkboxes are for a person; absent, passed and checking are not.
+    private static func requireNoWidget(_ phase: TurnstilePhase, stage: TurnstileStage) throws {
+        switch phase {
+        case .absent, .passed, .checking:
+            return
+        case .ready, .visualChallenge, .ambiguous:
+            throw turnstileRequired(phase, stage: stage)
+        }
+    }
+
+    /// After typing: absent or passed goes on; checking is read again until `timeout`; anything else hands back.
+    private static func settleTurnstile(in tree: UITree, timeout: TimeInterval, services: Services) async throws -> LoginTurnstileStep {
+        let deadline = services.clock.now() + timeout
+        var phase = try await services.readTurnstile(tree)
+        while true {
+            switch phase {
+            case .absent:
+                return .absent
+            case .passed:
+                return .passed
+            case .ready, .visualChallenge, .ambiguous:
+                throw turnstileRequired(phase, stage: .beforeSubmit)
+            case .checking:
+                if services.clock.now() >= deadline {
+                    throw CLIError(
+                        errorDescription: "The Cloudflare Turnstile widget was still checking after \(seconds(timeout)), so the submit button was not tapped. "
+                            + "Offsider never ticks Turnstile: hand the device to a person to finish it and submit.",
+                        reason: .turnstileRequired
+                    )
+                }
+                try await services.clock.sleep(.milliseconds(250))
+                phase = try await services.readTurnstile(try await services.readTree())
+            }
+        }
+    }
+
+    static func turnstileRequired(_ phase: TurnstilePhase, stage: TurnstileStage) -> CLIError {
+        let handBack = "Offsider never ticks Turnstile: hand the device to a person to complete it, and do not retry."
+        if stage == .afterSubmit {
+            return CLIError(
+                errorDescription: "The submit button was tapped, and then a Cloudflare Turnstile widget asked for a person. \(handBack)",
+                reason: .turnstileRequired
+            )
+        }
+        let what: String
+        switch phase {
+        case .visualChallenge: what = "A Cloudflare Turnstile challenge is on screen"
+        case .ambiguous(let count): what = "\(count) Cloudflare Turnstile checkboxes are on screen"
+        default: what = "A Cloudflare Turnstile checkbox is on screen"
+        }
+        let outcome = stage == .beforeTyping ? "Nothing was typed." : "The submit button was not tapped."
+        return CLIError(errorDescription: "\(what). \(outcome) \(handBack)", reason: .turnstileRequired)
+    }
+
+    /// Recomputes the app in front from a tree already read. A different app, or none, stops the login.
+    private static func requireForeground(_ app: String, in tree: UITree, services: Services, stopped: String) throws {
+        let now = try? services.foregroundApp(tree)
+        guard now != app else { return }
+        let front = now.map { "\($0) is in front now" } ?? "The app in front can no longer be read"
+        throw CLIError(
+            errorDescription: "\(front), not \(app), so \(stopped). Bring \(app) back to the front, then run login again.",
+            reason: .foregroundChanged
+        )
+    }
+
+    /// A password field inside a web view is refused unless both the project file and the saved login opt in.
+    private static func refuseWebForm(_ form: LoginForm.Found, app: String, key: String, profile: LoginProfile?, webLogin: Bool) throws {
+        guard form.webContainer != nil, !(profile?.webLogin == true && webLogin) else { return }
+        let name = key == LoginCredential.defaultAccountKey ? "default" : key
+        throw CLIError(
+            errorDescription: "The password field is inside a web view; nothing was typed. A person can allow web sign-in for this login with "
+                + "`offsider credential describe \(name) --web-login --app \(app)` in their own terminal, together with \"webLogin\": true in offsider.login.json.",
+            reason: .appNotAllowed
+        )
     }
 
     /// Only `noForm` reads `lastSignIn`, to name who Offsider last signed in here.
     private static func detect(
-        in tree: UITree, profile: LoginProfile?, afterTyping: Bool, lastSignIn: () -> LastSignIn? = { nil }
+        in tree: UITree, profile: LoginProfile?, origin: LoginForm.Origin? = nil, afterTyping: Bool, lastSignIn: () -> LastSignIn? = { nil }
     ) throws -> LoginForm.Found {
         do {
-            return try LoginForm.detect(in: tree, profile: profile)
+            return try LoginForm.detect(in: tree, profile: profile, origin: origin)
         } catch let error as LoginFormError {
             let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
             if afterTyping {
@@ -252,6 +363,7 @@ enum LoginFlow {
             }
             missingUntil = nil
             if submit.enabled != false {
+                try requireForeground(app, in: tree, services: services, stopped: "the submit button was not tapped")
                 try await services.tap(frame.center, tree)
                 let label = submit.label?.trimmingCharacters(in: .whitespacesAndNewlines)
                 let shown = (label?.isEmpty == false) ? label : nil
@@ -292,62 +404,4 @@ struct LoginFailure: LocalizedError, UserFacingError, OffsiderFailure {
     var users: [FailureUser] { failure?.users ?? [] }
     var userFacingDescription: String { failureMessage }
     var errorDescription: String? { failureMessage }
-}
-
-/// Applies `LoginTurnstile.plan` with one re-read, and one more checkbox tap when a reload put the box back.
-@MainActor
-enum LoginTurnstileRunner {
-    static func settle(
-        mode: LoginTurnstileMode,
-        read: () async throws -> TurnstilePhase,
-        perform: () async throws -> TurnstileReport
-    ) async throws -> LoginTurnstileStep {
-        if mode == .off { return .off }
-        let phase = try await read()
-        switch LoginTurnstile.plan(phase: phase, mode: mode) {
-        case .done(let step):
-            return step
-        case .challenge:
-            throw challenge()
-        case .ambiguous(let count):
-            throw ambiguous(count)
-        case .waitForWidget:
-            let first = try await perform()
-            let again = try await read()
-            switch LoginTurnstile.plan(phase: again, mode: mode) {
-            case .done(let step):
-                return first.outcome == .tapped ? .tapped : step
-            case .challenge:
-                throw challenge()
-            case .ambiguous(let count):
-                throw ambiguous(count)
-            case .waitForWidget:
-                if case .ready = again {
-                    let second = try await perform()
-                    return first.outcome == .tapped || second.outcome == .tapped ? .tapped : .passed
-                }
-                if case .checking = again {
-                    throw CLIError(
-                        errorDescription: "The Turnstile widget was still checking. The submit button was not tapped.",
-                        reason: .conditionNotMet
-                    )
-                }
-                return first.outcome == .tapped ? .tapped : .passed
-            }
-        }
-    }
-
-    private static func challenge() -> CLIError {
-        CLIError(
-            errorDescription: "The Turnstile widget is showing a visual challenge. A tap on the checkbox cannot complete it. The submit button was not tapped.",
-            reason: .turnstileChallenge
-        )
-    }
-
-    private static func ambiguous(_ count: Int) -> CLIError {
-        CLIError(
-            errorDescription: "\(count) Turnstile checkboxes are on screen. The submit button was not tapped.",
-            reason: .selectorAmbiguous
-        )
-    }
 }

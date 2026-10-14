@@ -55,4 +55,21 @@ struct HelperBundleTests {
             return
         }
     }
+
+    @Test("a dex that matches its manifest but not the digest compiled into this build is refused as damaged")
+    func digestMismatchIsDamaged() throws {
+        let manifest = try Data(contentsOf: Self.committed.appendingPathComponent("manifest.json"))
+        let dex = try Data(contentsOf: Self.committed.appendingPathComponent("offsider-helper.dex"))
+        var digests = BundleDigests.files
+        digests["helper/offsider-helper.dex"] = String(repeating: "0", count: 64)
+
+        let error = #expect(throws: HelperDexError.self) {
+            try HelperBundle.read(from: Self.folder(dex: dex, manifest: manifest), digests: digests)
+        }
+        guard case .damaged(let detail) = error else {
+            Issue.record("expected damaged, got \(String(describing: error))")
+            return
+        }
+        #expect(detail.contains("does not match this build"))
+    }
 }

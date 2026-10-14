@@ -61,6 +61,34 @@ struct LogTextTests {
         #expect(LogText.stripANSI(text) == "LOG done")
     }
 
+    @Test("OSC, DCS, SOS, PM and APC strings and lone escapes are removed, terminated or not", arguments: [
+        ("a\u{1B}]52;c;ZXZpbA==\u{07}b", "ab"),
+        ("a\u{1B}]8;;https://example.com\u{1B}\\link\u{1B}]8;;\u{1B}\\b", "alinkb"),
+        ("a\u{1B}]0;title", "a"),
+        ("a\u{1B}P1$r0m\u{1B}\\b", "ab"),
+        ("a\u{1B}Xsos\u{1B}\\b", "ab"),
+        ("a\u{1B}^pm\u{1B}\\b", "ab"),
+        ("a\u{1B}_apc\u{1B}\\b", "ab"),
+        ("a\u{1B}cb", "ab"),
+        ("a\u{1B}(Bb", "ab"),
+        ("a\u{1B}", "a"),
+    ])
+    func stripsOtherSequences(text: String, expected: String) {
+        #expect(LogText.stripANSI(text) == expected)
+    }
+
+    @Test("a text line keeps a message on one line and escapes control characters; colour stays only when asked")
+    func formatsHostileMessage() throws {
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        let entry = LogEntry(tag: "javascript", message: "first\nError: forged\u{1B}]52;c;eA==\u{07} \u{1B}[31mred\u{1B}[0m \u{202E}cba")
+        let plain = LogText.format(entry, timeZone: utc)
+        #expect(plain == #"javascript: first\nError: forged\u001b]52;c;eA==\u0007 \u001b[31mred\u001b[0m \u202ecba"#)
+        let coloured = LogText.format(entry, timeZone: utc, keepsColour: true)
+        #expect(coloured.contains("\u{1B}[31mred\u{1B}[0m"))
+        #expect(coloured.contains(#"\u001b]52"#))
+        #expect(!coloured.contains("\n"))
+    }
+
     @Test("ordinary backslashes and brackets survive")
     func keepsOrdinaryBackslashes() {
         let text = #"C:\temp\new [ok] \u0041 \e and \x1b alone"#

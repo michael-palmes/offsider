@@ -70,6 +70,21 @@ struct PosixAdbConnectorTests {
         withExtendedLifetime(listener) {}
     }
 
+    @Test("a Unix socket whose server runs as another user is refused before any request")
+    func foreignUnixSocket() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("oa-\(getpid())-\(UInt32.random(in: 0...UInt32.max)).sock").path
+        let listener = try OneShotListener(unixPath: path)
+
+        let connector = PosixAdbConnector(ownerUID: getuid() + 1)
+        let error = await #expect(throws: AndroidError.self) {
+            try await AdbClient(endpoint: listener.endpoint, connector: connector, connectTimeout: .seconds(60), hostTimeout: .seconds(60)).serverVersion()
+        }
+        #expect(error?.kind == .foreignAdbServer)
+        #expect(error?.reason == .adbServerMisconfigured)
+        #expect(error?.message == "The adb server socket \(listener.endpoint) belongs to another user (uid \(getuid())), so Offsider did not use it. Point ADB_SERVER_SOCKET at a server you started, or unset it.")
+        withExtendedLifetime(listener) {}
+    }
+
     @Test("host:version round-trips over IPv4 loopback")
     func ipv4Loopback() async throws {
         let listener = try OneShotListener(ipv4Loopback: ())

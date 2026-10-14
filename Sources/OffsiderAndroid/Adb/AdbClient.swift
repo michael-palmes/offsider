@@ -22,19 +22,25 @@ struct AdbServiceStream: Sendable {
 
 /// A client of the adb server: one connection per service, as the protocol requires.
 actor AdbClient {
+    /// The most output one shell or exec command may return; a full-resolution screenshot is well under it.
+    static let maxOutputBytes = 64 << 20
+
     let endpoint: LoopbackEndpoint
     private let connector: any AdbConnecting
     private let connectTimeout: Duration
     private let hostTimeout: Duration
     let timing: AndroidTiming
+    let maxOutputBytes: Int
 
     init(
         endpoint: LoopbackEndpoint,
         connector: any AdbConnecting,
         connectTimeout: Duration = .seconds(1),
         hostTimeout: Duration = .seconds(3),
-        timing: AndroidTiming = .disabled
+        timing: AndroidTiming = .disabled,
+        maxOutputBytes: Int = AdbClient.maxOutputBytes
     ) {
+        self.maxOutputBytes = maxOutputBytes
         self.endpoint = endpoint
         self.connector = connector
         self.connectTimeout = connectTimeout
@@ -94,6 +100,7 @@ actor AdbClient {
                     case .exit: return AdbShellResult(status: Int32(packet.payload.first ?? 0), stdout: stdout, stderr: stderr)
                     default: continue
                     }
+                    guard stdout.count + stderr.count <= maxOutputBytes else { throw Self.outputTooLarge(serial: serial, command: name) }
                 }
                 chunk = try await connection.stream.read(upTo: 64 * 1024, deadline: connection.deadline)
                 if chunk.isEmpty {
@@ -109,11 +116,16 @@ actor AdbClient {
         var output = connection.takeBuffered()
         return try await closing(connection, serial: serial, command: command, timeout: timeout) {
             while true {
+                guard output.count <= maxOutputBytes else { throw Self.outputTooLarge(serial: serial, command: command) }
                 let chunk = try await connection.stream.read(upTo: 256 * 1024, deadline: connection.deadline)
                 if chunk.isEmpty { return output }
                 output.append(chunk)
             }
         }
+    }
+
+    static func outputTooLarge(serial: String, command: String) -> AndroidError {
+        .adbCommandFailed(serial: serial, command: command, detail: "it printed more than 64 MB, so Offsider stopped reading")
     }
 
     /// The raw stream after `OKAY` for any device service; the caller owns it and must close it.
@@ -199,6 +211,8 @@ actor AdbClient {
             return .adbServerNotRunning(endpoint: endpoint.description)
         case .timedOut, .failed:
             return .adbServerNoAnswer(endpoint: endpoint.description, seconds: seconds)
+        case .foreignPeer(let uid):
+            return .foreignAdbServer(endpoint: endpoint.description, uid: uid)
         }
     }
 

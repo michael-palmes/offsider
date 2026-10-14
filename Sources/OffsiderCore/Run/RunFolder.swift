@@ -6,6 +6,8 @@ public struct RunFolder: Equatable, Sendable {
     public static let stateName = "run.json"
     public static let manifestName = "manifest.ndjson"
     public static let lockName = ".offsider-run.lock"
+    /// Written into a folder `prepare` creates, so git never picks up a run's captures.
+    public static let gitignoreName = ".gitignore"
 
     public let path: String
 
@@ -19,7 +21,7 @@ public struct RunFolder: Equatable, Sendable {
         public let writableByOthers: Bool
     }
 
-    /// Creates the folder 0700 (parents as usual), or takes an existing one this user owns as it is.
+    /// Creates the folder 0700 (parents as usual) with a `.gitignore` of `*`, or takes an existing one this user owns as it is.
     public static func prepare(_ path: String, uid: uid_t = getuid()) throws -> Prepared {
         let parent = (path as NSString).deletingLastPathComponent
         if !FileManager.default.fileExists(atPath: parent) {
@@ -39,9 +41,47 @@ public struct RunFolder: Equatable, Sendable {
         guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else { throw PrivateDirectoryError(.unsafeDirectory, path: path) }
         if created {
             guard chmod(path, S_IRWXU) == 0 else { throw PrivateDirectoryError(.system(operation: "chmod", code: errno), path: path) }
-            return Prepared(folder: RunFolder(path: path), writableByOthers: false)
+            let folder = RunFolder(path: path)
+            try writeNew(Data("*\n".utf8), toPath: folder.file(gitignoreName))
+            return Prepared(folder: folder, writableByOthers: false)
         }
         return Prepared(folder: RunFolder(path: path), writableByOthers: info.st_mode & (S_IWGRP | S_IWOTH) != 0)
+    }
+
+    /// Why a recorded run folder cannot be trusted.
+    public struct RecordedFolderError: LocalizedError, Equatable, Sendable {
+        public let path: String
+        public let detail: String
+        public var errorDescription: String? { "\(path) \(detail)" }
+    }
+
+    /// The folder a run record names, only while it is an absolute, standardised path to a real directory this user owns that no one else
+    /// can write, holding a private `run.json` for the same run (same label, started no later than the record).
+    public static func validateRecorded(_ record: RunRecord, uid: uid_t = getuid()) throws -> RunFolder {
+        let path = record.dir
+        guard path.hasPrefix("/"), URL(fileURLWithPath: path).standardizedFileURL.path == path else {
+            throw RecordedFolderError(path: path, detail: "is not an absolute, standardised path")
+        }
+        var info = stat()
+        guard lstat(path, &info) == 0 else {
+            throw RecordedFolderError(path: path, detail: "cannot be read: \(String(cString: strerror(errno)))")
+        }
+        guard (info.st_mode & S_IFMT) == S_IFDIR else { throw RecordedFolderError(path: path, detail: "is not a directory (a link or a file stands there)") }
+        guard info.st_uid == uid else { throw RecordedFolderError(path: path, detail: "belongs to another user") }
+        guard info.st_mode & (S_IWGRP | S_IWOTH) == 0 else { throw RecordedFolderError(path: path, detail: "can be written by other users") }
+        let data: Data?
+        do {
+            data = try OffsiderPrivateDirectory.readOwnedFile(named: stateName, in: path, maxBytes: RunState.maximumBytes, uid: uid)
+        } catch {
+            throw RecordedFolderError(path: path, detail: "has a \(stateName) that is not a private file")
+        }
+        guard let data, let state = try? RunCoding.decoder.decode(RunState.self, from: data) else {
+            throw RecordedFolderError(path: path, detail: "has no readable \(stateName)")
+        }
+        guard state.label == record.label, state.startedAt <= record.startedAt else {
+            throw RecordedFolderError(path: path, detail: "holds another run's \(stateName)")
+        }
+        return RunFolder(path: path)
     }
 
     public func file(_ name: String) -> String {
@@ -71,7 +111,7 @@ public struct RunFolder: Equatable, Sendable {
     /// Takes the next file number under the lock, so concurrent commands never share one.
     public func reserveNumber(now: Date) throws -> Int {
         try locked {
-            var state = try readState() ?? RunState(label: nil, startedAt: now)
+            var state = try readState() ?? RunState(label: nil, startedAt: now, masks: .defaults)
             let number = state.next
             state.next += 1
             try writeState(state)

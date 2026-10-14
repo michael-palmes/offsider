@@ -22,6 +22,11 @@ struct DeviceSessionServe: AsyncParsableCommand {
     @MainActor
     func run() async throws {
         let udid = device.trimmingCharacters(in: .whitespaces)
+        // Gated again here, before CoreDevice opens, since anything can start this entry point directly.
+        guard case .iosDevice(let canonical) = DeviceIDClassifier.classify(udid) else {
+            throw CLIError(errorDescription: "\(udid) is not a physical iPhone or iPad UDID.", reason: .invalidDeviceID)
+        }
+        _ = try DeviceRouter.requireAllowed(platform: .ios, key: canonical.uppercased(), rawID: udid, gate: DevicePolicyGate.current)
         let store = DeviceSessionStore(root: OffsiderPrivateDirectory.root)
         let socket = try store.socketPath(udid: udid)
         let log: IOSDeviceLog = { level, message in

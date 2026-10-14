@@ -23,9 +23,9 @@ public struct SystemPrompt: Equatable, Sendable {
     public var summary: String {
         var parts = ["the system prompt"]
         if let title {
-            parts.append("'\(SelectorText.truncated(title))'")
+            parts.append("'\(TerminalText.line(SelectorText.truncated(title), keepsTab: false))'")
         }
-        parts.append("from \(process ?? "pid \(pid)")")
+        parts.append("from \(process.map { TerminalText.bareOrQuoted($0) } ?? "pid \(pid)")")
         return parts.joined(separator: " ")
     }
 

@@ -143,11 +143,23 @@ struct DeviceSessionLowering {
         return [.touch(kind, x: x, y: y)]
     }
 
+    /// Points along a swipe, worked out in `Double` and clamped to 1 to `maxSwipeSteps`, so no delta or distance can trap.
+    static func swipeStepCount(from start: (Double, Double), to end: (Double, Double), delta: Double) -> Int {
+        let distance = ((end.0 - start.0) * (end.0 - start.0) + (end.1 - start.1) * (end.1 - start.1)).squareRoot()
+        let ratio = distance / (delta > 0 && delta.isFinite ? delta : defaultSwipeDelta)
+        return PixelMath.swipeSteps(ratio)
+    }
+
+    /// A swipe's duration within 0 to `maxSwipeSeconds`; anything not finite is 0.
+    static func swipeSeconds(_ duration: Double) -> Double {
+        guard duration.isFinite else { return 0 }
+        return min(max(duration, 0), DeviceSessionLimits.maxSwipeSeconds)
+    }
+
     /// Down, a position every `duration / steps`, then up at the last point.
     private mutating func swipe(from start: (Double, Double), to end: (Double, Double), delta: Double, duration: Double) throws -> [DeviceSessionStep] {
-        let distance = ((end.0 - start.0) * (end.0 - start.0) + (end.1 - start.1) * (end.1 - start.1)).squareRoot()
-        let count = max(1, Int(distance / (delta > 0 ? delta : Self.defaultSwipeDelta)))
-        let pause = max(duration, 0) / Double(count)
+        let count = Self.swipeStepCount(from: start, to: end, delta: delta)
+        let pause = Self.swipeSeconds(duration) / Double(count)
         var steps = try contact(start.0, start.1, down: true)
         for index in 1...count {
             let progress = Double(index) / Double(count)

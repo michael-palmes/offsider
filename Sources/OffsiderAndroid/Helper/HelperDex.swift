@@ -35,7 +35,7 @@ public struct HelperDex: Equatable, Sendable {
         version = manifest.helperVersion
     }
 
-    /// Content-addressed, so the name proves the content and the start script only checks the size.
+    /// Named by its digest; the start script still checks the copy's SHA-256 (its size where the device has no `sha256sum`) on every start.
     var devicePath: String {
         "/data/local/tmp/offsider-helper-\(sha256.prefix(16)).dex"
     }

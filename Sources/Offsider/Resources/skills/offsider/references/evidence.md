@@ -2,17 +2,17 @@
 
 ## Runs
 
-`offsider run start <dir> --label 'PR 123'` makes every later `screenshot`, `logs` and `batch` screenshot step from this session also write its file into `<dir>` (created 0700; an existing folder keeps its mode, with a warning when other users can write to it) as `NNN-<command>-<HH.MM.SS>.<ext>`, and adds one line per capture, failures included, to `manifest.ndjson`. End with `offsider run stop --summary` (or `--json`), which prints the timeline: one line per capture, then counts of files, failures and unrecorded files.
+`offsider run start <dir> --label 'PR 123'` makes every later `screenshot`, `logs` and `batch` screenshot step from this session also write its file into `<dir>` (created 0700 with a `.gitignore` of `*`, so a run inside a repository is never committed by accident; an existing folder keeps its mode and files, with a warning when other users can write to it) as `NNN-<command>-<HH.MM.SS>.<ext>`, and adds one line per capture, failures included, to `manifest.ndjson`. End with `offsider run stop --summary` (or `--json`), which prints the timeline: one line per capture, then counts of files, failures and unrecorded files.
 
 - A screenshot without `--output` is written only into the run, and `path` is that file; with `--output` both are written and `--json` adds `runFile`. A `logs` file holds exactly what went to stdout, so filter with `logs --exclude` rather than after a pipe to keep noise out of the run.
 - The manifest records `--mask-text`, `--mask-label`, `--mask-label-contains`, `--grep` and `--exclude` values as `<N characters>`, in `args` and in batch step lines; `--mask-id` and `--mask-region` values are kept.
-- `run start --mask-secure --mask-emails --mask-id <id>` masks every capture in the run, on top of the capture's own masks. `run start` again on the active folder adds masks and prints those in force; to drop one, `run stop` and start again. The one exception: `screenshot --mask-skip-beneath` leaves the run's email and id matches unpainted on a screen beneath a page, and its manifest line records `skippedBeneath`; password fields always stay masked.
+- A run masks password fields and email addresses in every capture by default, on top of the capture's own masks; `--mask-id <id>` adds more, and `--no-mask-secure` or `--no-mask-emails` turns one off (a warning says when password fields are not masked). `run start` again on the active folder adds only the masks its flags name and prints those in force; to drop one, `run stop` and start again. An `OFFSIDER_RUN=<dir>` folder no `run start` set up gets the same default masks. The one exception: `screenshot --mask-skip-beneath` leaves the run's email and id matches unpainted on a screen beneath a page, and its manifest line records `skippedBeneath`; password fields always stay masked.
 - The run belongs to your session (your agent or terminal), found through the process's parents, so other agents on the Mac keep their own runs. Run commands from the same session; `run status` shows the run, `run status --all` every run.
-- `run_active` (exit 1): this session already has a run in another folder; `run stop` first. `run_unavailable`: the folder cannot be written and it would hold the only copy, or no session was found; set `OFFSIDER_RUN=<dir>` to record into a folder whatever the session, or `OFFSIDER_RUN=off` to record nothing.
+- `run_active` (exit 1): this session already has a run in another folder; `run stop` first. `run_unavailable`: the folder cannot be written and it would hold the only copy, the recorded folder is no longer a private directory of yours holding its `run.json`, or no session was found; set `OFFSIDER_RUN=<dir>` to record into a folder whatever the session, or `OFFSIDER_RUN=off` to record nothing.
 - A stopped run's folder continues its numbering when started again. A run whose session exits is ended as `owner-exited`.
 
 ```bash
-offsider run start ./evidence --label 'PR 123' --mask-emails
+offsider run start ./evidence --label 'PR 123'
 offsider screenshot --device <DEVICE_ID>
 offsider logs --rn --last 2m --device <DEVICE_ID>
 offsider run stop --summary
@@ -22,7 +22,7 @@ offsider run stop --summary
 
 Masks paint opaque black boxes over the image before it is written or compared, so the file never holds what they cover.
 
-- `--mask-secure` paints password fields; add it before sharing any screen with one. `OFFSIDER_MASK_SECURE=1` turns it on by default.
+- Password fields are painted by default; a field with no frame withholds the image (`mask_unproven`). `--no-mask-secure` (or `OFFSIDER_MASK_SECURE=0`) skips the tree read, but never drops a run's mask. Use it only for a screen with no password field, such as an inactive display. A secret in an ordinary text field, such as a show-password toggle or a custom PIN pad, is not a password field: mask it with `--mask-id`.
 - `--mask-id <id>` paints every element with that id; `--mask-label <text>` every element with that label, matched as `--label` matches, and `--mask-label-contains <text>` every element whose label holds the text.
 - `--mask-text <regex>` paints the innermost elements whose label, value, title, text, content description or hint matches, case-insensitively; a secure field's value is never searched. `--mask-emails` does the same for email addresses.
 - `--mask-region <x,y,w,h>` paints a rectangle in points before any `--region` crop, and reads no tree. Use it for content the tree cannot see.
@@ -31,10 +31,10 @@ Masks paint opaque black boxes over the image before it is written or compared, 
 - `--mask-skip-beneath` leaves matches of `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text`, `--mask-emails` and the run's email and id masks unpainted when their element is on a screen beneath a page; `--json` adds `skippedBeneath` per kind and stderr counts them. Password fields and `--mask-region` are always painted, and with no page found nothing is skipped. Use it only when the page on top is opaque: a translucent or animating page shows what is beneath, so check the image.
 - An element to mask without a frame withholds the image (`mask_unproven`): retry when the screen is still.
 - Masks cover what the accessibility tree describes. Web views, canvases, images, and text that appears between the tree read and the capture can still show: check the image before sharing it, and add `--mask-region` for what is left.
-- Video takes no tree masks: with masks in the run, or `OFFSIDER_MASK_SECURE=1`, `record-video` and `stream-video` exit 1 with `video_unmasked` and write nothing. Capture the steps with `screenshot` instead, or pass `--unmasked` only when the screen shows nothing private. Their `--mask-region` paints a fixed rectangle on every frame (`guide screenshots`). Video files are not numbered into the run.
+- Video takes no tree masks. `record-video` and `stream-video` read the screen once before the first frame and exit 1 with `video_unmasked`, writing nothing, when a password field is on screen or the read fails, and when the run masks emails or ids (start the run with `--no-mask-emails` and no `--mask-id` to allow video). The check is at the start only: a password field that appears later is recorded. Capture those steps with `screenshot` instead, or pass `--unmasked` only when the screen shows nothing private. Their `--mask-region` paints a fixed rectangle on every frame (`guide screenshots`). Video files are not numbered into the run.
 
 ```bash
-offsider screenshot --mask-secure --mask-emails --mask-id profile-name --json --device <DEVICE_ID>
+offsider screenshot --mask-emails --mask-id profile-name --json --device <DEVICE_ID>
 ```
 
 ## Logs
@@ -47,11 +47,11 @@ Text output times are in this Mac's zone with their offset (`14:03:22.123+10:30`
 
 Long messages: iOS's unified log keeps about 1 KB of a message (1,015 bytes of its arguments; React Native logs each message as one argument) and ends a longer one `<…>`; the rest is never stored, so no reader can get it back. Offsider keeps the message as stored, sets the entry's `truncated` to true, ends its text line `<…> [truncated]` and says on stderr how many entries were cut. Android's logd drops what is past about 4 KB of a message with no marker, so it is not flagged, and logcat prints each line of a multi-line message with its own header, so each line is its own entry. For a long React Native error, see `offsider guide react-native`.
 
-Redaction is on by default for every source: `message` and `raw` read `[redacted]` where a value was masked, the JSON report adds `redacted` (the count), and stderr ends `Redacted N values (passwords, tokens, emails); --no-redact shows them.` `--grep` and `--exclude` match the text before redaction. `--no-redact` turns it off, as `--raw` alone does; `--raw --redact` keeps colour codes and redacts.
+Redaction is on by default for every source: `message` and `raw` read `[redacted]` where a value was masked, the JSON report adds `redacted` (the count), and stderr ends `Redacted N values (passwords, tokens, emails, addresses, cards, phrases, codes).` `--grep` and `--exclude` match the text before redaction. `--raw` keeps colour codes and still redacts; other escape sequences, newlines and control characters in a message print as escapes such as `\u001b` or `\n`, so each entry stays on one line. A read with no `--app`, `--rn` or `--process` reads every app's log and says so on stderr: name the app under test.
 
-- A value is masked when its key (`key: value`, `key=value`, quoted or not) has a camel, snake, kebab or dot part of `password`, `passwd`, `passcode`, `pwd`, `pin`, `secret`, `token`, `authorization`, `jwt`, `ticket`, `email`, `cookie`, `otp`, `apikey` or `api` then `key`, unless its last part is `id`, `ids`, `type`, `count`, `length`, `expiry`, `expires`, `ttl`, `verified`, `enabled`, `required`, `valid`, `status` or `at` (so `tokenType` and `emailVerified` stay).
+- A value is masked when its key (`key: value`, `key=value`, quoted or not) has a camel, snake, kebab or dot part of `password`, `passwd`, `passcode`, `pwd`, `pin`, `secret`, `token`, `authorization`, `jwt`, `ticket`, `email`, `cookie`, `otp`, `apikey`, `mnemonic`, `seed`, `passphrase`, `privatekey`, `xprv`, `totp`, `mfa`, `2fa`, `iban`, `bsb`, `cvv`, `cvc`, `ssn`, `tfn`, `passport`, `dob` or `birthday` (and similar), or a pair such as `api` then `key`, `private key`, `secret key`, `recovery phrase`, `verification code`, `account number`, `card number` or `wallet address`, unless its last part is `id`, `ids`, `type`, `count`, `length`, `expiry`, `expires`, `ttl`, `verified`, `enabled`, `required`, `valid`, `status` or `at` (so `tokenType` and `emailVerified` stay).
 - `true`, `false`, `null`, `undefined` and objects or arrays (`token: {...}`) are left; a quoted key's bare value becomes `"[redacted]"`, so JSON still parses. `Authorization` and `Cookie` values run to the end of the header.
-- `Bearer` and `Basic` credentials, JWTs (`[redacted jwt]`) and email addresses (`[redacted email]`) are masked anywhere.
+- `Bearer` and `Basic` credentials, JWTs (`[redacted jwt]`) and email addresses (`[redacted email]`) are masked anywhere, as are wallet addresses (`0x` hex, `bc1`, base58: `[redacted address]`), card numbers that pass the Luhn check (`[redacted card]`), runs of 12 to 24 lowercase words like a recovery phrase (`[redacted phrase]`) and a 6-digit code just after `otp`, `code`, `pin` or `2fa`. Redacting twice changes nothing.
 - False positives: a capitalised `Basic` before a long word, and any value under a key such as `pin`. False negatives: secrets under other keys or in free text. Read a log before you share it.
 
 ## Pixel diffs

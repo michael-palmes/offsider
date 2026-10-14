@@ -2,6 +2,7 @@ import Foundation
 import OffsiderCore
 import Testing
 @testable import Offsider
+@testable import OffsiderAndroid
 
 @Suite("Type text resolution")
 @MainActor
@@ -46,6 +47,7 @@ struct TypeTextTests {
     func batchAndroid() async throws {
         let primitives = try await Type.parse([Self.decomposed, "--device", "x"])
             .toBatchPrimitives(context: Self.context(.android), logger: OffsiderLogger())
+            .filter { if case .run = $0 { false } else { true } }
         guard primitives.count == 1, case .text(let text, replace: false) = primitives[0] else {
             Issue.record("expected one text step, got \(primitives)")
             return
@@ -62,5 +64,38 @@ struct TypeTextTests {
         guard case .unsupportedCharacters(let positions, let length) = error else { return }
         #expect(positions == [4])
         #expect(length == 4)
+    }
+}
+
+@Suite("Type on an adb route")
+@MainActor
+struct TypeAdbRouteTests {
+    static let plainField = AndroidSecureTextTests.xml(
+        AndroidSecureTextTests.passwordNode(text: "", focused: true).replacingOccurrences(of: #"password="true""#, with: #"password="false""#)
+    )
+
+    static func run(_ text: String, rig: AndroidGrpcInputTests.Rig) async throws {
+        let route = DeviceRouter.Route(backend: rig.backend, device: AndroidGrpcTextTests.device)
+        try await Type.parse([text, "--device", AndroidGrpcTextTests.device.rawValue])
+            .execute(on: route, progress: nil, logger: OffsiderLogger(), refusingSecureArgument: true)
+    }
+
+    @Test("type 'x' on an adb route reads the screen once: the command's password-field check serves the session too")
+    func oneTreeRead() async throws {
+        let rig = try AndroidGrpcInputTests.rig(environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"], uiautomatorDump: Self.plainField)
+        try await Self.run("x", rig: rig)
+
+        #expect(rig.server.services.filter { $0.contains("uiautomator dump") }.count == 1)
+        #expect(rig.adbScripts.contains { $0.hasPrefix("input text") })
+    }
+
+    @Test("type with argument text and an unreadable screen sends no input text script and says the text was not sent")
+    func unreadableScreen() async throws {
+        let rig = try AndroidGrpcInputTests.rig(environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"])
+        let error = await #expect(throws: AndroidError.self) { try await Self.run("S3NT1NEL", rig: rig) }
+
+        #expect(error?.reason == .helperUnavailable)
+        #expect(error?.message.contains("The text was not sent") == true)
+        #expect(!rig.adbScripts.contains { $0.hasPrefix("input text") })
     }
 }

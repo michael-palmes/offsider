@@ -4,7 +4,8 @@ import Security
 
 /// Where `login` finds a test username and password, keyed by the app and a short key.
 protocol LoginCredentialStoring {
-    func load(app: String, key: String) throws -> LoginCredential?
+    /// The decrypted data: the credential and the settings only a person may loosen.
+    func loadStored(app: String, key: String) throws -> StoredLogin?
     /// Every saved credential for one app, username included, password dropped before return.
     /// `isDefault` is the stored mark only. A sole unmarked login is still the default at login time.
     func list(app: String) throws -> [LoginCredentialSummary]
@@ -14,8 +15,8 @@ protocol LoginCredentialStoring {
     func defaultKey(app: String) throws -> String?
     /// Every saved login for one app from the item attributes alone, so no password is decrypted. Default first, then by key.
     func entries(app: String) throws -> [LoginEntry]
-    /// A nil `context` keeps the stored one.
-    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool, context: LoginContext?) throws
+    /// Writes version 2 data. A nil `context` keeps the stored one.
+    func saveStored(_ stored: StoredLogin, app: String, key: String, isDefault: Bool, context: LoginContext?) throws
     /// Replaces the context without reading the password. False when no login is saved under `key`.
     func setContext(_ context: LoginContext, app: String, key: String) throws -> Bool
     /// Marks one saved login as the default without reading its password.
@@ -26,13 +27,18 @@ protocol LoginCredentialStoring {
     func canonical(of app: String) throws -> String
     /// Apps that have at least one saved login, with the other ids joined to each.
     func groups() throws -> [LoginAppGroup]
-    /// Records that `member` uses the logins saved for `canonical`. The password is not copied.
+    /// Records that `member` uses the logins saved for `canonical`, in the link index and in every login's encrypted `links`.
     func join(member: String, canonical: String) throws
 }
 
 extension LoginCredentialStoring {
-    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool) throws {
-        try save(credential, app: app, key: key, isDefault: isDefault, context: nil)
+    func load(app: String, key: String) throws -> LoginCredential? {
+        try loadStored(app: app, key: key)?.credential
+    }
+
+    /// A fresh login with default settings. Use `saveStored` to keep a login's settings.
+    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool, context: LoginContext? = nil) throws {
+        try saveStored(StoredLogin(credential: credential), app: app, key: key, isDefault: isDefault, context: context)
     }
 }
 
@@ -46,7 +52,7 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
         self.service = service
     }
 
-    func load(app: String, key: String) throws -> LoginCredential? {
+    func loadStored(app: String, key: String) throws -> StoredLogin? {
         var request = query(app: app, key: key)
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -56,10 +62,10 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
         guard status == errSecSuccess, let data = item as? Data else {
             throw LoginKeychainFailure(operation: "read", app: app, key: key, status: status)
         }
-        guard let credential = LoginCredential(storageData: data) else {
+        guard let stored = StoredLogin(storageData: data) else {
             throw LoginKeychainFailure(operation: "read", app: app, key: key, detail: Self.corrupt(key))
         }
-        return credential
+        return stored
     }
 
     func list(app: String) throws -> [LoginCredentialSummary] {
@@ -107,9 +113,9 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
         }
     }
 
-    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool, context: LoginContext?) throws {
-        let data = credential.storageData()
-        guard LoginCredential(storageData: data) != nil else {
+    func saveStored(_ stored: StoredLogin, app: String, key: String, isDefault: Bool, context: LoginContext?) throws {
+        let data = stored.storageData()
+        guard StoredLogin(storageData: data) == stored else {
             throw LoginKeychainFailure(operation: "save", app: app, key: key, detail: Self.corrupt(key))
         }
         var attributes = Self.secretAttributes(data, app: app, key: key, isDefault: isDefault)
@@ -174,6 +180,12 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
     }
 
     func join(member: String, canonical: String) throws {
+        for key in try keys(app: canonical) {
+            guard var stored = try loadStored(app: canonical, key: key) else { continue }
+            stored.link(member)
+            let status = SecItemUpdate(query(app: canonical, key: key) as CFDictionary, [kSecValueData as String: stored.storageData()] as CFDictionary)
+            guard status == errSecSuccess else { throw LoginKeychainFailure(operation: "link", app: canonical, key: key, status: status) }
+        }
         let account = LoginCredential.linkAccount(member: member)
         let query = accountQuery(account)
         let status = SecItemUpdate(query as CFDictionary, [kSecAttrLabel as String: canonical] as CFDictionary)

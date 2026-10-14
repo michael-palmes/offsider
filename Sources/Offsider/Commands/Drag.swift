@@ -21,7 +21,8 @@ struct Drag: AsyncParsableCommand {
 
     private static let defaultDuration: TimeInterval = 0.6
     private static let defaultSteps = 60
-    static let maxSteps = 1_000
+    static let maxSteps = PixelMath.maxSwipeSteps
+    static let maxDuration: Double = 30
     static let defaultHoldMilliseconds = 50
     static let defaultHoldEndMilliseconds = 50
 
@@ -62,11 +63,17 @@ struct Drag: AsyncParsableCommand {
         guard startX >= 0, startY >= 0, endX >= 0, endY >= 0 else {
             throw ValidationError("Coordinates must be non-negative values.")
         }
+        guard [startX, startY, endX, endY].allSatisfy(\.isFinite) else {
+            throw ValidationError("Coordinates must be finite numbers.")
+        }
         guard startX != endX || startY != endY else {
             throw ValidationError("Start and end points must be different.")
         }
         guard duration > 0 else {
             throw ValidationError("Duration must be greater than 0.")
+        }
+        guard duration <= Self.maxDuration else {
+            throw ValidationError("Duration must be at most \(Int(Self.maxDuration)) seconds; got \(duration.formatted()).")
         }
         guard (1...Self.maxSteps).contains(steps) else {
             throw ValidationError("Steps must be between 1 and \(Self.maxSteps).")

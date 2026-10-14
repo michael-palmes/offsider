@@ -58,7 +58,6 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case runActive = "run_active"
     case runUnavailable = "run_unavailable"
     case verifyTargetPresent = "verify_target_present"
-    case turnstileChallenge = "turnstile_challenge"
     case focusNotConfirmed = "focus_not_confirmed"
     case focusMismatch = "focus_mismatch"
     case textNotAccepted = "text_not_accepted"
@@ -66,6 +65,11 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case rnLoadFailed = "rn_load_failed"
     case appCrashed = "app_crashed"
     case logBoxInspectorOpen = "logbox_inspector_open"
+    case appNotAllowed = "app_not_allowed"
+    case personRequired = "person_required"
+    case turnstileRequired = "turnstile_required"
+    case foregroundChanged = "foreground_changed"
+    case installDamaged = "install_damaged"
 
     case selectorNotFound = "selector_not_found"
     case selectorFilteredByType = "selector_filtered_by_type"
@@ -91,6 +95,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case developerModeOff = "developer_mode_off"
     case devicePreparing = "device_preparing"
     case uiAutomationOff = "ui_automation_off"
+    case deviceNotAllowed = "device_not_allowed"
 
     case deviceBusy = "device_busy"
     case deviceLeased = "device_leased"
@@ -115,6 +120,8 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case unsupportedKey = "unsupported_key"
     case unknownDisplay = "unknown_display"
     case legacyArgument = "legacy_argument"
+    case secureFieldArgument = "secure_field_argument"
+    case inputFileRefused = "input_file_refused"
 
     public var exitCode: OffsiderExitCode {
         switch self {
@@ -125,14 +132,15 @@ public enum FailureReason: String, CaseIterable, Sendable {
         case .selectorAmbiguous, .selectorAmbiguousSwitch, .userAmbiguous:
             return .ambiguousSelector
         case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
-             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff:
+             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .deviceNotAllowed:
             return .deviceUnavailable
         case .deviceBusy, .uiautomationBusy, .deviceLeased:
             return .deviceBusy
         case .xcodeMissing, .xcodeUnusable, .androidSdkMissing, .adbServerUnavailable, .adbServerMisconfigured,
              .emulatorMissing, .emulatorGrpcRequired, .helperUnavailable, .xcodeTooOld, .teamMissing, .usbmuxUnavailable, .metroNotRunning:
             return .toolMissing
-        case .usage, .invalidDeviceID, .invalidSetting, .unsupportedButton, .unsupportedKey, .unknownDisplay, .legacyArgument:
+        case .usage, .invalidDeviceID, .invalidSetting, .unsupportedButton, .unsupportedKey, .unknownDisplay, .legacyArgument,
+             .secureFieldArgument, .inputFileRefused:
             return .usage
         default:
             return .failure

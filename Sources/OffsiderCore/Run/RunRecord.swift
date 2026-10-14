@@ -14,6 +14,9 @@ public struct RunMasks: Codable, Equatable, Sendable {
 
     public var isEmpty: Bool { !secure && !emails && ids.isEmpty }
 
+    /// What a run masks unless `run start` says otherwise: password fields and email addresses.
+    public static let defaults = RunMasks(secure: true, emails: true)
+
     /// These masks and `other`'s, each id once; a run's masks only ever grow until it stops.
     public func union(_ other: RunMasks) -> RunMasks {
         let merged = other.ids.reduce(into: ids) { result, id in

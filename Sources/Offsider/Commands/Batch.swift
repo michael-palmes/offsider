@@ -20,7 +20,9 @@ struct Batch: AsyncParsableCommand {
         Read steps print their usual output as they run; input steps print nothing to stdout, though warnings \
         such as an off-screen or covered tap still go to stderr. Steps cannot take --device, \
         --json, --verify, --verify-timeout or --retries. A step's own --wait-timeout or --poll-interval \
-        overrides the batch-level value.
+        overrides the batch-level value. A type step aimed at a password field (its --into-* field, or the field \
+        with focus where the device reports it) is refused with exit 64 (secure_field_argument): sign in with \
+        `offsider login` instead.
 
         With --json, stdout is NDJSON: one line per finished step, in this key order: step, kind, line, ok, ms; \
         a type step's line shows its text as <N characters>, never the text; \
@@ -51,8 +53,11 @@ struct Batch: AsyncParsableCommand {
     @Option(name: .customLong("step"), help: "Step to execute. Repeat for multiple steps.")
     var steps: [String] = []
 
-    @Option(name: .customLong("file"), help: "Read steps from a file (one step per line).")
+    @Option(name: .customLong("file"), help: "Read steps from a file (one step per line; UTF-8, at most 64 KiB).")
     var file: String?
+
+    @Flag(name: .customLong("allow-path"), help: "Let --file read a file in a folder or with a name that usually holds secrets, such as ~/.ssh or .env.")
+    var allowPath = false
 
     @Flag(name: .customLong("stdin"), help: "Read steps from stdin (one step per line).")
     var useStdin: Bool = false
@@ -78,8 +83,8 @@ struct Batch: AsyncParsableCommand {
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active.")
     var pollInterval: Double = 0.25
 
-    @Flag(name: .customLong("mask-secure"), help: "Every screenshot step paints password fields black, reusing the cached tree when it is fresh. OFFSIDER_MASK_SECURE=1 turns this on by default.")
-    var maskSecure = false
+    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Whether screenshot steps paint password fields black, reusing the cached tree when it is fresh (the default; OFFSIDER_MASK_SECURE=0 turns it off). A step's own flag wins.")
+    var maskSecure: Bool?
 
     @Flag(name: .customLong("no-settle"), help: "Tap steps act at once, without waiting out a transition an earlier input may have started.")
     var noSettle = false
@@ -94,6 +99,10 @@ struct Batch: AsyncParsableCommand {
         let sourceCount = [!steps.isEmpty, file != nil, useStdin].filter { $0 }.count
         guard sourceCount == 1 else {
             throw ValidationError("Specify exactly one step source: --step, --file, or --stdin.")
+        }
+
+        if allowPath, file == nil {
+            throw ValidationError("--allow-path applies only to --file.")
         }
 
         guard typeChunkSize > 0 else {
@@ -274,11 +283,11 @@ struct Batch: AsyncParsableCommand {
 
         let text: String
         if continueOnError {
-            let lines = failures.map { "Step \($0.0.step) failed: [\($0.0.kind)] -> \($0.1.message)" }
+            let lines = failures.map { "Step \($0.0.step) failed: [\($0.0.kind)] -> \(TerminalText.block($0.1.message))" }
             text = "Batch completed with \(failures.count) failure(s):\n" + lines.joined(separator: "\n")
         } else {
             let (record, failure) = failures[0]
-            text = "Step \(record.step) failed: [\(record.kind)]\n\(failure.message)"
+            text = "Step \(record.step) failed: [\(record.kind)]\n\(TerminalText.block(failure.message))"
         }
         let summary = text + "\nDispatched: \(dispatched.rawValue)" + (dispatched == .no ? "" : " (input may have reached the device; check before resending)")
 
@@ -300,13 +309,9 @@ struct Batch: AsyncParsableCommand {
         if !steps.isEmpty {
             rawLines = steps
         } else if let file {
-            let contents: String
-            do {
-                contents = try String(contentsOfFile: file, encoding: .utf8)
-            } catch {
-                throw ValidationError("Failed to read step file '\(file)': \(error.localizedDescription)")
-            }
-            rawLines = contents.components(separatedBy: .newlines)
+            let read = try TextFileInput.read(file, allowSensitive: allowPath)
+            FileHandle.standardError.write(Data((read.announcement + "\n").utf8))
+            rawLines = read.text.components(separatedBy: .newlines)
         } else {
             rawLines = readStdinLines()
         }

@@ -86,6 +86,7 @@ struct DescribeUI: AsyncParsableCommand {
         (route.backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: route.device)
         let probe = point == nil && !diff ? await PresentationCheck.start(backend: route.backend, device: route.device) : nil
         var tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
+        if let truncated = tree.truncated { FileHandle.standardError.write(Data((truncated.note + "\n").utf8)) }
         let centre = await probe?.centre()
         if point == nil {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)

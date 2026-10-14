@@ -9,7 +9,7 @@ struct ReactNativeSystemPromptTests {
         let app = RNApp(.ios)
         try await app.open("user-switch-test")
         try await app.run("type \(AndroidE2E.quote("prompt@example.test")) --into-id user-switch-test-email")
-        try await app.run("type \(AndroidE2E.quote("not-a-secret")) --into-id user-switch-test-password")
+        try await app.run("type --stdin --into-id user-switch-test-password <<< \(AndroidE2E.quote("not-a-secret"))")
         try await app.run("tap --id user-switch-test-submit")
         _ = try await app.waitForLabel(of: "user-switch-test-state") { $0 == "Session: Signed in" }
 

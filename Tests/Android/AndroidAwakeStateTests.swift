@@ -168,12 +168,6 @@ struct AndroidAwakeStateTests {
         #expect(AndroidAwakeState.wakeScript(screenOn: true, lockScreen: .swipe)?.sent == ["dismiss-keyguard"])
     }
 
-    @Test("a code is typed as quoted input text, then Enter only after every piece")
-    func codeScript() throws {
-        #expect(AndroidAwakeState.codeScript(try #require(UnlockCode("2580"))) == "input text '2580' && input keyevent KEYCODE_ENTER")
-        #expect(AndroidAwakeState.codeScript(try #require(UnlockCode("it's a%sb"))) == #"input text 'it'\''s%sa%' && input text 'sb' && input keyevent KEYCODE_ENTER"#)
-    }
-
     @Test("only a focused password field inside System UI counts as the lock screen's code field")
     func codeField() throws {
         func roots(_ xml: String) throws -> [UINode] {
@@ -228,50 +222,106 @@ struct AndroidAwakeStateTests {
         #expect(Self.shellCommands(server).filter { $0 == AndroidAwakeState.readScript }.count == 1 + AndroidBackend.securePolls)
     }
 
-    @Test("a code is typed once into the focused lock screen field, then the device reads unlocked")
-    func enterCode() async throws {
-        let states = ScriptedOutputs([Self.state(showing: true), Self.motoAwake])
-        let server = Self.server(states: states)
-        let attempt = try await Self.backend(server).enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device)
+    /// The lock screen as the helper reports it: System UI's focused PIN field, or `package`'s own password field.
+    nonisolated static func keyguardDump(package: String = "com.android.systemui", focused: Bool = true) -> String {
+        let field = #"{"i":1,"class":"android.widget.EditText","package":"\#(package)","resourceId":"\#(package):id/pinEntry","bounds":[184,679,895,815],"clickable":true,"focusable":true,"focused":\#(focused),"editable":true,"password":true}"#
+        return #"{"generation":1,"idle":true,\#(FakeHelperDevice.display),"windows":[{"id":2292,"type":"application","layer":0,"title":"Keyguard","displayId":0,"bounds":[0,0,1080,2424],"active":true,"focused":true,"root":{"i":0,"class":"android.widget.FrameLayout","package":"\#(package)","bounds":[0,0,1080,2424],"children":[\#(field)]}}],"truncated":false,"eventSeq":3}"#
+    }
 
+    /// emulator-5556 with the helper, answering the awake read with `states`.
+    static func helperRig(states: ScriptedOutputs, dump: String = keyguardDump(), environment: [String: String] = [:]) throws -> HelperRig {
+        let device = FakeHelperDevice()
+        device.dump = dump
+        let rig = try HelperRig(device, environment: environment)
+        let fallback = device.other
+        device.other = { service in
+            if service == shellPrefix + AndroidAwakeState.readScript { return FakeAdbServer.shell(stdout: states.next()) }
+            return fallback(service)
+        }
+        return rig
+    }
+
+    static func shellCommands(_ rig: HelperRig) -> [String] {
+        rig.server.services.filter { $0.hasPrefix(shellPrefix) }.map { String($0.dropFirst(shellPrefix.count)) }
+    }
+
+    @Test("a code is typed once through the helper as key events, then Enter, and the device reads unlocked")
+    func enterCode() async throws {
+        let rig = try Self.helperRig(states: ScriptedOutputs([Self.state(showing: true), Self.motoAwake]))
+        var marked = false
+        let attempt = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) { marked = true }
+
+        #expect(marked)
         #expect(attempt.typed)
         #expect(attempt.reading.isUsable)
-        #expect(Self.shellCommands(server).filter { $0.hasPrefix("input") } == ["input text '2580' && input keyevent KEYCODE_ENTER"])
+        #expect(rig.device.injected == ["text 2580", "key press 66 meta 0"])
+        #expect(!Self.shellCommands(rig).contains { $0.contains("input ") })
+        #expect(!rig.server.services.contains { $0.contains("2580") })
     }
 
     @Test("a lock screen that went dark between finding the field and typing gets nothing typed")
     func screenWentDark() async throws {
-        let server = Self.server(states: ScriptedOutputs([Self.state("Asleep", showing: true)]))
-        let attempt = try await Self.backend(server).enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device)
+        let rig = try Self.helperRig(states: ScriptedOutputs([Self.state("Asleep", showing: true)]))
+        let attempt = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) {
+            Issue.record("nothing should be about to be typed")
+        }
 
         #expect(!attempt.typed)
         #expect(attempt.reading.screen == .off)
-        #expect(!Self.shellCommands(server).contains { $0.hasPrefix("input") })
+        #expect(rig.device.injected.isEmpty)
     }
 
     @Test("with no lock screen code field Offsider types nothing and says the device is locked")
     func noCodeField() async throws {
-        let server = Self.server(states: ScriptedOutputs([Self.state(showing: true)]), dump: Self.dump(package: "com.example.app"))
+        let rig = try Self.helperRig(states: ScriptedOutputs([Self.state(showing: true)]), dump: Self.keyguardDump(package: "com.example.app"))
         let error = await #expect(throws: AndroidError.self) {
-            _ = try await Self.backend(server).enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device)
+            _ = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) {}
         }
 
         #expect(error?.reason == .deviceLocked)
-        #expect(!Self.shellCommands(server).contains { $0.hasPrefix("input") })
-        #expect(Self.shellCommands(server).filter { $0 == "wm dismiss-keyguard" }.count == 2)
+        #expect(rig.device.injected.isEmpty)
+        #expect(Self.shellCommands(rig).filter { $0 == "wm dismiss-keyguard" }.count == 2)
     }
 
-    @Test("a failed code command reports the withheld label, never the code")
-    func codeFailureWithheld() async throws {
-        let server = Self.server(states: ScriptedOutputs([Self.state(showing: true)])) { command in
-            command.hasPrefix("input text") ? FakeAdbServer.shell(stderr: "Error: 2580\n", status: 1) : nil
+    @Test("when the marker cannot be written, nothing is typed")
+    func beforeTypingThrows() async throws {
+        let rig = try Self.helperRig(states: ScriptedOutputs([Self.state(showing: true)]))
+        await #expect(throws: CancellationError.self) {
+            _ = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) { throw CancellationError() }
         }
+        #expect(rig.device.injected.isEmpty)
+    }
+
+    @Test("without the helper (forced uiautomator, or OFFSIDER_ANDROID_INPUT=input) the code is refused as helper_unavailable with nothing typed", arguments: [
+        ("OFFSIDER_ANDROID_TREE", "uiautomator", "OFFSIDER_ANDROID_TREE is uiautomator"),
+        ("OFFSIDER_ANDROID_INPUT", "input", "OFFSIDER_ANDROID_INPUT is input"),
+    ])
+    func noHelper(variable: String, value: String, reason: String) async throws {
+        let server = Self.server(states: ScriptedOutputs([Self.state(showing: true)]))
+        let host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), environment: [variable: value], adb: server)
+        let backend = AndroidBackend(host: host) { _, _ in }
         let error = await #expect(throws: AndroidError.self) {
-            _ = try await Self.backend(server).enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device)
+            _ = try await backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) {
+                Issue.record("nothing should be about to be typed")
+            }
+        }
+
+        #expect(error?.reason == .helperUnavailable)
+        #expect(error?.message.contains(reason) == true)
+        #expect(error?.message.contains("Nothing was typed") == true)
+        #expect(!Self.shellCommands(server).contains { $0.contains("input ") })
+    }
+
+    @Test("a helper failure while typing names the helper's code, never the unlock code")
+    func codeFailureWithheld() async throws {
+        let rig = try Self.helperRig(states: ScriptedOutputs([Self.state(showing: true)]))
+        rig.device.answer = { _, op, _ in op == "inject" ? .error(code: "inject-failed", message: "the window refused the event") : nil }
+        let error = await #expect(throws: AndroidError.self) {
+            _ = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) {}
         }
 
         #expect(error?.message.contains("2580") == false)
-        #expect(error?.message.contains(AndroidAwakeState.codeLabel) == true)
+        #expect(error?.message.contains("inject-failed") == true)
     }
 }
 

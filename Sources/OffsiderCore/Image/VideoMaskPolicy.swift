@@ -5,14 +5,17 @@ public enum VideoMaskPolicy {
     public enum Decision: Equatable, Sendable {
         /// Record; `warning` goes to stderr.
         case record(warning: String?)
+        /// Record only once one tree read shows no password field on screen; else `video_unmasked`.
+        case checkSecureField
         /// `video_unmasked`: masks are in force that video cannot apply.
         case refuse(String)
         /// Exit 64: the flags contradict each other.
         case usage(String)
     }
 
-    /// `treeFlags` are the tree-mask options given, such as `--mask-secure`; `run` is the active run's masks; `environmentSecure` is `OFFSIDER_MASK_SECURE=1`.
-    public static func decide(command: String, treeFlags: [String], run: RunMasks?, environmentSecure: Bool, unmasked: Bool) -> Decision {
+    /// `treeFlags` are the tree-mask options given, such as `--mask-secure`; `run` is the active run's masks;
+    /// `secureByDefault` is false only when `OFFSIDER_MASK_SECURE` turns password masking off.
+    public static func decide(command: String, treeFlags: [String], run: RunMasks?, secureByDefault: Bool, unmasked: Bool) -> Decision {
         let flags = list(treeFlags)
         if !treeFlags.isEmpty {
             if unmasked {
@@ -24,23 +27,48 @@ public enum VideoMaskPolicy {
                     + "to record anyway, drop \(treeFlags.count == 1 ? "it" : "them") and pass --unmasked."
             )
         }
-        var ambient: [String] = []
-        if let run, !run.isEmpty {
-            ambient.append("the evidence run masks \(run.summary)")
-        }
-        if environmentSecure {
-            ambient.append("OFFSIDER_MASK_SECURE=1 is set")
-        }
-        let reasons = list(ambient)
+        // A run's password mask is honoured by the check below; its other masks cannot be.
+        let others = run.map { RunMasks(secure: false, emails: $0.emails, ids: $0.ids) }
+        let checksSecure = secureByDefault || run?.secure == true
         if unmasked {
-            let because = ambient.isEmpty ? "" : " (\(reasons))"
+            var ambient: [String] = []
+            if let run, !run.isEmpty { ambient.append("the evidence run masks \(run.summary)") }
+            if checksSecure, run?.secure != true { ambient.append("password fields are masked by default") }
+            let because = ambient.isEmpty ? "" : " (\(list(ambient)))"
             return .record(warning: "--unmasked: nothing in this video is masked by the accessibility tree\(because).")
         }
-        guard !ambient.isEmpty else { return .record(warning: nil) }
-        return .refuse(
-            "\(command) will not run while \(reasons): video cannot be masked reliably frame by frame. "
-                + "For masked evidence use `screenshot`, which applies those masks, or screenshot steps in a batch; pass --unmasked to record anyway."
-        )
+        if let others, !others.isEmpty {
+            return .refuse(
+                "\(command) will not run while the evidence run masks \(others.summary): video cannot be masked reliably frame by frame. "
+                    + "For masked evidence use `screenshot`, which applies those masks, or screenshot steps in a batch; "
+                    + "start the run with --no-mask-emails and without --mask-id to allow video, or pass --unmasked to record anyway."
+            )
+        }
+        return checksSecure ? .checkSecureField : .record(warning: nil)
+    }
+
+    /// True when the tree shows a password field: one inside the screen, or one with no frame or no screen to place it on.
+    public static func showsSecureField(_ tree: UITree) -> Bool {
+        let viewport = tree.viewport
+        return tree.roots.contains { root in
+            root.flattened().contains { node in
+                guard node.isSecure else { return false }
+                guard let viewport, let frame = node.frame else { return true }
+                return frame.isVisible(in: viewport)
+            }
+        }
+    }
+
+    /// The refusal when a password field is on screen.
+    public static func secureFieldRefusal(command: String) -> String {
+        "\(command) will not start while a password field is on screen: video cannot be masked reliably frame by frame. "
+            + "Leave that screen first, use `screenshot`, which masks it, or pass --unmasked to record anyway."
+    }
+
+    /// The refusal when the tree read that checks for a password field fails.
+    public static func unreadableRefusal(command: String, error: String) -> String {
+        "\(command) could not read the accessibility tree to check for a password field (\(error)), so nothing was recorded. "
+            + "Retry, or pass --unmasked to record anyway."
     }
 
     /// `a`, `a and b`, `a, b and c`.

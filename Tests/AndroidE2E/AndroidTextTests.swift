@@ -114,16 +114,24 @@ struct AndroidTypeTests {
 
 @Suite("Android batch", .serialized, .enabled(if: isAndroidE2EEnabled))
 struct AndroidBatchTests {
-    @Test("the six-step login flow runs in one batch")
+    @Test("the login flow runs in batches around the password, which a batch type step may not type and --stdin does")
     func loginFlow() async throws {
         try await AndroidE2E.open("batch-login-flow", waitingFor: "batch-login-email-field")
-        let steps = [
-            "type 'cam@example.com'", "tap --label Continue", "type 'supersecret'",
-            "tap --label 'Sign In'", "tap --label 'Open Settings'", "tap --label 'Toggle Preference'",
-        ]
-        let arguments = steps.map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " ")
-        let result = try await AndroidE2E.run("batch --ax-cache perStep --wait-timeout 15 --poll-interval 0.2 \(arguments)", timeout: 240)
-        #expect(result.stdout.contains("Batch completed successfully (6 steps)"))
+        func batch(_ steps: [String]) async throws -> SeparatedCommandOutput {
+            let arguments = steps.map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " ")
+            return try await AndroidE2E.offsider("batch --ax-cache perStep --wait-timeout 15 --poll-interval 0.2 \(arguments)", timeout: 240)
+        }
+        let first = try await batch(["type 'cam@example.com'", "tap --label Continue", "wait --id batch-login-password-field"])
+        #expect(first.exitCode == 0, "\(first.stderr)")
+
+        let refused = try await batch(["type --into-id batch-login-password-field 'supersecret'"])
+        #expect(refused.exitCode == 64, "\(refused.stderr)")
+        #expect(refused.stderr.contains("password field"), "\(refused.stderr)")
+        #expect(refused.stderr.contains("offsider login --device"), "\(refused.stderr)")
+
+        try await AndroidE2E.run("type --stdin --into-id batch-login-password-field <<< supersecret")
+        let last = try await batch(["tap --label 'Sign In'", "tap --label 'Open Settings'", "tap --label 'Toggle Preference'"])
+        #expect(last.stdout.contains("Batch completed successfully (3 steps)"), "\(last.stderr)")
         _ = try await AndroidE2E.waitForLabel(of: "batch-login-current-screen") { $0 == "Current Screen: Settings" }
     }
 

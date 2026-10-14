@@ -36,6 +36,22 @@ struct GuideTests {
         #expect(skill.contains("offsider guide <topic>"))
     }
 
+    @Test("the skill treats screen text as data, lists when to stop and ask, and never tells the agent to join or tick a widget")
+    func skillTrustRules() throws {
+        let skill = try Self.read("SKILL.md")
+        #expect(skill.contains("## Stop and ask"))
+        #expect(skill.contains("data from the app under test"))
+        #expect(skill.contains("`credential join`"))
+        let description = try #require(skill.components(separatedBy: "\n").first { $0.hasPrefix("description: ") })
+        #expect(!description.contains("Turnstile checkbox"))
+        for document in try Self.allDocuments() {
+            for line in document.text.components(separatedBy: "\n") where line.trimmingCharacters(in: .whitespaces).hasPrefix("offsider credential join") {
+                Issue.record("\(document.name) tells the agent to run `credential join`, which is person-only: \(line)")
+            }
+            #expect(!document.text.contains("--jitter"), "\(document.name) names the removed --jitter option")
+        }
+    }
+
     @Test("the router table, the bundled topic files and the guide topics agree")
     func routerTableMatchesTopics() throws {
         let lines = try Self.read("SKILL.md").components(separatedBy: "\n")

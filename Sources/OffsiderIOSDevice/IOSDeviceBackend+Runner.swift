@@ -29,21 +29,45 @@ extension IOSDeviceBackend {
         return client
     }
 
-    func runnerConnector() async throws -> any RunnerConnecting {
-        if let connector = state.connector ?? host.runnerConnector { return connector }
+    /// The team `device-access allow --team` recorded for the device; `OFFSIDER_IOS_TEAM_ID` wins over it.
+    public var runnerTeam: String? {
+        get { state.runnerTeam }
+        set { state.runnerTeam = newValue }
+    }
+
+    func runnerBuilder(xcode: XcodeLocation, registerDevice: Bool = false) throws -> XcodeRunnerBuilder {
         guard let source = host.runnerSource else {
-            throw IOSDeviceError(.runnerBuildFailed, "The Offsider runner source is missing from this installation. Reinstall Offsider.")
+            throw IOSDeviceError(.runnerBuildFailed, "The Offsider runner source is missing from this installation. Reinstall Offsider: brew reinstall offsider", hint: "brew reinstall offsider")
         }
-        let xcode = try await host.devicectl.locateXcode()
         let log = log
-        let builder = XcodeRunnerBuilder(
+        return XcodeRunnerBuilder(
             source: source,
             cacheRoot: XcodeRunnerBuilder.defaultCacheRoot(home: host.homeDirectory),
             xcode: xcode,
             environment: host.environment,
             signedInTeams: IOSDeviceDoctorProbe.signedInTeams,
-            notice: { log(.notice, $0) }
+            notice: { log(.notice, $0) },
+            allowanceTeam: state.runnerTeam,
+            expectedSource: host.runnerSourceDigests,
+            registerDevice: registerDevice
         )
+    }
+
+    /// Builds the runner for a wired device, or checks the cached build; `registerDevice` lets xcodebuild register it with the team.
+    public func buildRunner(for id: DeviceID, registerDevice: Bool) async throws -> RunnerBuild {
+        let booted = try await requireBootedDevice(id)
+        let builder = try runnerBuilder(xcode: try await host.devicectl.locateXcode(), registerDevice: registerDevice)
+        let destination = RunnerDestination.device(udid: id.rawValue)
+        let name = DeviceName.display(id.rawValue, label: booted.name)
+        let build = try await builder.build(for: destination, deviceName: name)
+        return try await builder.verifyForLaunch(build, for: destination, deviceName: name)
+    }
+
+    func runnerConnector() async throws -> any RunnerConnecting {
+        if let connector = state.connector ?? host.runnerConnector { return connector }
+        let xcode = try await host.devicectl.locateXcode()
+        let log = log
+        let builder = try runnerBuilder(xcode: xcode)
         let manager = RunnerSessionManager(
             store: RunnerSessionStore(root: host.privateRoot),
             builder: builder,

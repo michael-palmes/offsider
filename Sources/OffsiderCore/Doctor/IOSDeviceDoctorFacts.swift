@@ -20,6 +20,9 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
 
     public enum TeamFact: Equatable, Sendable {
         case environment(String)
+        /// Recorded by `device-access allow --team`.
+        case allowance(String)
+        /// Neither was set; Xcode's signed-in teams are counted, never used.
         case xcodeTeams([String])
     }
 

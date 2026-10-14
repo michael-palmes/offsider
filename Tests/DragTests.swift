@@ -90,6 +90,12 @@ struct DragHoldTests {
         let error = #expect(throws: (any Error).self) { try Self.holds(["--hold-end=\(value)"]) }
         #expect(error.map { Drag.message(for: $0).contains("--hold-end must be from 0 to 10000") } == true)
     }
+
+    @Test("--duration over 30 seconds is a usage error", arguments: ["31", "1e12"])
+    func durationCap(value: String) {
+        let error = #expect(throws: (any Error).self) { try Self.holds(["--duration", value]) }
+        #expect(error.map { Drag.message(for: $0).contains("Duration must be at most 30 seconds") } == true)
+    }
 }
 
 @Suite("Drag Command Tests", .serialized, .enabled(if: isE2EEnabled))

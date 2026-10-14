@@ -34,7 +34,13 @@ public enum ArgumentHints {
         "describe-ui": [
             "--json": "describe-ui prints JSON by default and has no --json; --format chooses json, ndjson or text.",
         ],
+        "turnstile": Dictionary(uniqueKeysWithValues: ["--timeout", "--poll-interval", "--jitter", "--seed"].map { ($0, turnstileReadOnly) }),
+        "login": [
+            "--turnstile": "login no longer takes --turnstile: it never taps Turnstile, and stops with turnstile_required when a widget is on screen so a person can complete it.",
+        ],
     ]
+
+    public static let turnstileReadOnly = "turnstile no longer taps; it reads the widget's state. Hand a checkbox or challenge to a person."
 
     /// `--label-prefix` and `--label-includes`, guesses at `--label-contains`.
     private static func partialLabel(_ command: String) -> [String: String] {

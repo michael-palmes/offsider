@@ -1,12 +1,12 @@
 import ArgumentParser
 import OffsiderIOSDevice
 
-/// `--app`: the app a physical iPhone or iPad reads, since its runner cannot always tell which app is in front.
+/// `--app`: the one app a physical iPhone or iPad is driven inside, checked in front before every frame and input.
 struct AppOption: ParsableArguments {
     @Option(
         name: .customLong("app"),
         help: ArgumentHelp(
-            "On a physical iPhone or iPad, read this app (its bundle ID) instead of the frontmost one; later commands remember it. Simulators and Android ignore it.",
+            "On a physical iPhone or iPad, the app (its bundle ID) this command reads and drives; it must be an allowed app, and Offsider checks it is in front before every frame and input. Simulators and Android ignore it.",
             valueName: "bundle-id"
         )
     )

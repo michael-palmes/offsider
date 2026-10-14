@@ -9,7 +9,9 @@ struct Wake: AsyncParsableCommand {
         Sends nothing when the screen is already on and unlocked. Otherwise it presses the wake key, dismisses the \
         lock screen and waits about 3 s. A PIN, pattern or password lock screen stays up, and the command exits 7 \
         (device_locked) unless --unlock finds a PIN or password saved with `offsider unlock-code set`. Then it types \
-        that code once, and only into the lock screen's own focused PIN or password field. If the code does not \
+        that code once, and only into the lock screen's own focused PIN or password field, as key events through the \
+        UiAutomation helper, never as a shell command; without the helper it exits 9 (helper_unavailable) and types \
+        nothing. If the code does not \
         unlock the device, Offsider will not type it again until the device is unlocked by hand or the code is saved \
         again. Patterns are not supported. Android only: iOS simulators never sleep.
 
@@ -119,7 +121,17 @@ struct Wake: AsyncParsableCommand {
         }
         let attempt: UnlockAttempt
         do {
-            attempt = try await backend.enterUnlockCode(code, on: device)
+            // The marker goes down before the first key, so a code that never confirms is not typed again by a later run.
+            attempt = try await backend.enterUnlockCode(code, on: device) {
+                do {
+                    try ledger.recordFailure(key)
+                } catch {
+                    throw CLIError(
+                        errorDescription: "Offsider could not record the unlock attempt for \(name) (\(error.localizedDescription)), so it typed nothing. Check that \(OffsiderPrivateDirectory.root) is yours and writable, then retry.",
+                        reason: .commandFailed
+                    )
+                }
+            }
         } catch let failure as any OffsiderFailure where failure.reason == .deviceLocked {
             throw locked("The lock screen of \(name) showed no PIN or password field, so Offsider typed nothing. Unlock it on the device.")
         }
@@ -129,7 +141,6 @@ struct Wake: AsyncParsableCommand {
             throw locked("The screen of \(name) changed before Offsider typed its code, so nothing was typed. Run `\(retry)` again.", hint: retry)
         }
         if attempt.reading.lockScreen == .secure {
-            try? ledger.recordFailure(key)
             throw locked("The saved code did not unlock \(name), so Offsider will not type it again until the device is unlocked by hand or the code is saved again with `\(save)`.", hint: save)
         }
         return attempt

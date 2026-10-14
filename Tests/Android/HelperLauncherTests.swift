@@ -30,37 +30,56 @@ struct HelperLauncherTests {
         }
     }
 
-    @Test("the start script checks the dex's size, then execs app_process under the helper's name with both timeouts")
+    @Test("the start script checks the dex's SHA-256 where sha256sum exists, else its size, then execs app_process under the helper's name")
     func startScript() {
         let script = HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil)
         #expect(script == """
-        f='\(Self.devicePath)'; [ "$(stat -c %s "$f" 2>/dev/null)" = 3 ] || exit 90; \
+        f='\(Self.devicePath)'; [ -f "$f" ] && [ ! -L "$f" ] || exit 90; \
+        if command -v sha256sum >/dev/null 2>&1; then case "$(sha256sum "$f" 2>/dev/null)" in \(FakeHelperDevice.dex.sha256)\\ *) ;; *) exit 90;; esac; \
+        else [ "$(stat -c %s "$f" 2>/dev/null)" = 3 ] || exit 90; fi; \
         CLASSPATH="$f" exec app_process /data/local/tmp --nice-name=offsider-helper com.mpalmes.offsider.helper.OffsiderHelper serve \
         --idle-timeout-ms 10000 --accept-timeout-ms 10000
         """)
     }
 
-    @Test("after a push the script renames the temporary copy, makes it read-only for other users and removes every other copy before starting")
+    @Test("after a push the script moves the copy out of the private push folder, makes it 644, removes the folder and every other copy before the digest check")
     func startScriptAfterPush() {
-        let script = HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: Self.devicePath + ".777.tmp")
+        let script = HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: "/data/local/tmp/offsider-push-777")
         #expect(script.hasPrefix("""
-        f='\(Self.devicePath)'; mv -f '\(Self.devicePath).777.tmp' "$f" && chmod 644 "$f" && \
-        for o in /data/local/tmp/offsider-helper-*.dex; do [ "$o" = "$f" ] || rm -f "$o"; done; [ "$(stat -c %s
+        f='\(Self.devicePath)'; mv -f '/data/local/tmp/offsider-push-777'/helper.dex "$f" && chmod 644 "$f"; rm -rf '/data/local/tmp/offsider-push-777'; \
+        for o in /data/local/tmp/offsider-helper-*.dex; do [ "$o" = "$f" ] || rm -f "$o"; done; [ -f "$f" ]
         """))
-        #expect(script.contains(#"= 3 ] || exit 90; CLASSPATH="$f" exec app_process"#))
+        #expect(script.contains("in \(FakeHelperDevice.dex.sha256)\\ *) ;; *) exit 90;; esac;"))
     }
 
-    @Test("a missing dex (exit 90) is pushed once to a temporary path, then started from its final name")
+    @Test("the push folder is made 0700 by the shell user, replacing any stale one")
+    func pushDirectory() {
+        #expect(Self.launcher(FakeHelperDevice()).pushDirectory == "/data/local/tmp/offsider-push-777")
+        #expect(HelperLauncher.makePushDirectoryScript("/data/local/tmp/offsider-push-777") == "rm -rf '/data/local/tmp/offsider-push-777' && mkdir -m 700 '/data/local/tmp/offsider-push-777'")
+    }
+
+    @Test("a missing or mismatched dex (exit 90) is pushed once, 0600, into a fresh 0700 folder, then started from its final name")
     func pushesOnMissing() async throws {
         let device = FakeHelperDevice(dexOnDevice: false)
         let started = try await Self.launcher(device).launch()
         await started.shell.close()
 
         #expect(started.ready.pid == 4002)
-        #expect(device.timeline.filter { !$0.hasPrefix("shell closed") } == ["start 1", "push \(Self.devicePath).777.tmp,33188", "start 2 after push"])
+        #expect(device.timeline.filter { !$0.hasPrefix("shell closed") } == [
+            "start 1", "mkdir /data/local/tmp/offsider-push-777", "push /data/local/tmp/offsider-push-777/helper.dex,33152", "start 2 after push",
+        ])
         #expect(device.syncSessions.count == 1)
         #expect(device.syncSessions.first?.file == FakeHelperDevice.dexBytes)
-        #expect(device.startScripts.last?.contains("mv -f '\(Self.devicePath).777.tmp' \"$f\"") == true)
+        #expect(device.startScripts.last?.contains("mv -f '/data/local/tmp/offsider-push-777'/helper.dex \"$f\"") == true)
+    }
+
+    @Test("a push folder that cannot be made is a push failure, and nothing is pushed")
+    func pushFolderRefused() async {
+        let device = FakeHelperDevice(dexOnDevice: false)
+        device.mkdirFails = true
+        let failure = await Self.failure(device)
+        #expect(failure == .unavailable(.pushFailed("could not make /data/local/tmp/offsider-push-777: mkdir: Permission denied")))
+        #expect(device.syncSessions.isEmpty)
     }
 
     @Test("a dex already on the device starts without a push")

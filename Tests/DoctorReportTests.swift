@@ -76,6 +76,7 @@ struct DoctorReportTests {
     func checkIdentifiers() {
         #expect(DoctorCheckID.allCases.map(\.rawValue) == [
             "xcode.developer-dir",
+            "xcode.trust",
             "xcode.version",
             "xcode.frameworks",
             "coresimulator.version",
@@ -127,9 +128,11 @@ struct DoctorReportTests {
             "ios-device.usbmuxd",
             "ios-device.runner-signing",
             "device.lease",
+            "device.policy",
             "host.load",
             "host.disk",
             "host.sessions",
+            "install.bundle",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)

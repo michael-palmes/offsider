@@ -1,12 +1,5 @@
 import Foundation
 
-/// How `login` treats a Cloudflare Turnstile widget. `auto` handles one that is already on screen.
-public enum LoginTurnstileMode: String, Equatable, Sendable, CaseIterable {
-    case auto
-    case required
-    case off
-}
-
 /// One pinned control in `offsider.login.json`: an accessibility id, a label, or both.
 public struct LoginField: Equatable, Sendable {
     public var id: String?
@@ -36,17 +29,26 @@ public struct LoginProfile: Equatable, Sendable {
     public var package: String?
     public var identity: LoginField?
     public var password: LoginField?
-    public var turnstile: LoginTurnstileMode?
     public var submit: LoginField?
+    /// Lets `login` type into a web view, together with the saved login's own `webLogin`; this file alone is agent-writable.
+    public var webLogin: Bool
+    /// The file still has the removed `turnstile` key, which is ignored.
+    public var hasRemovedTurnstileKey: Bool
 
-    public init(bundleID: String? = nil, package: String? = nil, identity: LoginField? = nil, password: LoginField? = nil, turnstile: LoginTurnstileMode? = nil, submit: LoginField? = nil) {
+    public init(
+        bundleID: String? = nil, package: String? = nil, identity: LoginField? = nil, password: LoginField? = nil, submit: LoginField? = nil,
+        webLogin: Bool = false, hasRemovedTurnstileKey: Bool = false
+    ) {
         self.bundleID = bundleID
         self.package = package
         self.identity = identity
         self.password = password
-        self.turnstile = turnstile
         self.submit = submit
+        self.webLogin = webLogin
+        self.hasRemovedTurnstileKey = hasRemovedTurnstileKey
     }
+
+    public static let removedTurnstileWarning = "offsider.login.json has a turnstile key, which is ignored: login never taps Turnstile, and stops with turnstile_required when a widget is on screen. Remove the key."
 
     public var appIDs: [String] { [bundleID, package].compactMap { $0 } }
 
@@ -56,7 +58,7 @@ public struct LoginProfile: Equatable, Sendable {
         guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw LoginProfileError("offsider.login.json must be a JSON object.")
         }
-        let allowed: Set<String> = ["bundleId", "package", "identity", "password", "turnstile", "submit"]
+        let allowed: Set<String> = ["bundleId", "package", "identity", "password", "turnstile", "submit", "webLogin"]
         if let unknown = raw.keys.first(where: { !allowed.contains($0) }) {
             throw LoginProfileError("offsider.login.json has an unknown key \(unknown).")
         }
@@ -65,24 +67,21 @@ public struct LoginProfile: Equatable, Sendable {
         guard bundle != nil || package != nil else {
             throw LoginProfileError("offsider.login.json must name bundleId, package or both.")
         }
-        let turnstile: LoginTurnstileMode?
-        if let value = string(raw["turnstile"]) {
-            guard let mode = LoginTurnstileMode(rawValue: value) else {
-                throw LoginProfileError("offsider.login.json turnstile must be auto, required or off.")
+        var webLogin = false
+        if let value = raw["webLogin"], !(value is NSNull) {
+            guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else {
+                throw LoginProfileError("offsider.login.json webLogin must be true or false.")
             }
-            turnstile = mode
-        } else if raw["turnstile"] != nil, !(raw["turnstile"] is NSNull) {
-            throw LoginProfileError("offsider.login.json turnstile must be auto, required or off.")
-        } else {
-            turnstile = nil
+            webLogin = number.boolValue
         }
         return LoginProfile(
             bundleID: bundle,
             package: package,
             identity: try field(raw["identity"], name: "identity"),
             password: try field(raw["password"], name: "password"),
-            turnstile: turnstile,
-            submit: try field(raw["submit"], name: "submit")
+            submit: try field(raw["submit"], name: "submit"),
+            webLogin: webLogin,
+            hasRemovedTurnstileKey: raw["turnstile"] != nil
         )
     }
 

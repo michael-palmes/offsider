@@ -219,14 +219,32 @@ struct LoginProfileTests {
     @Test("a profile names an app and rejects an unknown key or no app at all")
     func parses() throws {
         let parsed = try LoginProfile.parse(Data("""
-        {"bundleId":"com.example.app","identity":{"id":"email-field"},"password":{"id":"password-field"},"turnstile":"required","submit":{"id":"login-button"}}
+        {"bundleId":"com.example.app","identity":{"id":"email-field"},"password":{"id":"password-field"},"submit":{"id":"login-button"}}
         """.utf8))
         #expect(parsed.isFor("com.example.app"))
         #expect(!parsed.isFor("com.example.android"))
-        #expect(parsed.turnstile == .required)
+        #expect(!parsed.webLogin)
+        #expect(!parsed.hasRemovedTurnstileKey)
         #expect(parsed.identity == LoginField(id: "email-field"))
         #expect(throws: LoginProfileError.self) { try LoginProfile.parse(Data("{\"bundleId\":\"com.example.app\",\"extra\":true}".utf8)) }
         #expect(throws: LoginProfileError.self) { try LoginProfile.parse(Data("{\"identity\":{\"id\":\"email-field\"}}".utf8)) }
+    }
+
+    @Test("the removed turnstile key is accepted with a warning, whatever its value, and changes nothing")
+    func removedTurnstileKey() throws {
+        for value in ["\"required\"", "\"off\"", "\"anything\"", "3"] {
+            let parsed = try LoginProfile.parse(Data("{\"bundleId\":\"com.example.app\",\"turnstile\":\(value)}".utf8))
+            #expect(parsed.hasRemovedTurnstileKey)
+            #expect(parsed == LoginProfile(bundleID: "com.example.app", hasRemovedTurnstileKey: true))
+        }
+        #expect(LoginProfile.removedTurnstileWarning.contains("ignored"))
+    }
+
+    @Test("webLogin must be a boolean")
+    func webLoginFlag() throws {
+        #expect(try LoginProfile.parse(Data("{\"bundleId\":\"com.example.app\",\"webLogin\":true}".utf8)).webLogin)
+        #expect(throws: LoginProfileError.self) { try LoginProfile.parse(Data("{\"bundleId\":\"com.example.app\",\"webLogin\":\"yes\"}".utf8)) }
+        #expect(throws: LoginProfileError.self) { try LoginProfile.parse(Data("{\"bundleId\":\"com.example.app\",\"webLogin\":1}".utf8)) }
     }
 
     @Test("one profile can name an iOS bundle id and an Android package, and serves either app")
@@ -321,7 +339,8 @@ enum SignInFixture {
         emptyCover: Bool = false,
         omitSubmit: Bool = false,
         submitLabel: String = "Log in",
-        identityLabel: String = "Email"
+        identityLabel: String = "Email",
+        pid: Int? = nil
     ) -> UITree {
         var children: [UINode] = [
             FakeUI.node(.button, id: "sign-in-button", label: "Sign in", frame: FakeUI.frame(16, 790, 370, 44)),
@@ -331,7 +350,7 @@ enum SignInFixture {
         if extraIdentity {
             children.append(FakeUI.node(.textField, id: "other-email", label: "Email", frame: FakeUI.frame(17, 260, 367, 45)))
         }
-        children.append(FakeUI.node(.secureTextField, id: "password-field", label: "Password", value: passwordValue, frame: FakeUI.frame(17, 316, 367, 45)))
+        children.append(FakeUI.node(.secureTextField, id: "password-field", label: "Password", value: passwordValue, frame: FakeUI.frame(17, 316, 367, 45), pid: pid))
         children.append(FakeUI.node(.button, frame: FakeUI.frame(357, 323, 20, 32)))
         if coverPassword {
             children.append(FakeUI.node(.button, id: "cover", label: "Cover", frame: FakeUI.frame(17, 316, 367, 45)))
@@ -374,6 +393,69 @@ enum SignInFixture {
             let holder = FakeUI.node(.group, frame: FakeUI.frame(0, 874, 402, 270), children: [assistant, keys])
             children.append(FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [holder]))
         }
-        return FakeUI.tree(children)
+        guard pid != nil else { return FakeUI.tree(children) }
+        // The app runs as pid 100; a password field in another process stands for WebKit's web content.
+        let root = FakeUI.node(.application, label: "Playground", frame: FakeUI.frame(0, 0, 402, 874), pid: 100, children: children)
+        return UITree(platform: .ios, device: "fake-device", roots: [root])
+    }
+}
+
+@Suite("Login form in a web view")
+struct LoginFormWebViewTests {
+    private func androidNode(_ role: UIRole, id: String, label: String, frame: UIFrame, className: String? = nil, package: String? = "com.example.app", children: [UINode] = []) -> UINode {
+        UINode(role: role, id: id, label: label, frame: frame, enabled: true, native: .android(AndroidNativeAttributes(className: className, resourceId: id, package: package)), children: children)
+    }
+
+    private func androidForm(container: String? = nil, fieldPackage: String? = "com.example.app") -> UITree {
+        let fields = [
+            androidNode(.textField, id: "email-field", label: "Email", frame: FakeUI.frame(16, 200, 370, 44)),
+            androidNode(.secureTextField, id: "password-field", label: "Password", frame: FakeUI.frame(16, 260, 370, 44), package: fieldPackage),
+            androidNode(.button, id: "login-button", label: "Log in", frame: FakeUI.frame(16, 330, 370, 44)),
+        ]
+        let holder = androidNode(.group, id: "holder", label: "", frame: FakeUI.frame(0, 0, 402, 874), className: container ?? "android.widget.FrameLayout", children: fields)
+        let root = androidNode(.application, id: "root", label: "App", frame: FakeUI.frame(0, 0, 402, 874), children: [holder])
+        return UITree(platform: .android, device: "emulator-5554", roots: [root])
+    }
+
+    private func iosNode(_ role: UIRole, id: String, label: String, frame: UIFrame, type: String? = nil, role axRole: String? = nil, pid: Int = 100, children: [UINode] = []) -> UINode {
+        UINode(role: role, id: id, label: label, frame: frame, enabled: true, native: .ios(IOSNativeAttributes(type: type, role: axRole, pid: pid)), children: children)
+    }
+
+    private func iosForm(holderType: String? = nil, holderRole: String? = nil, fieldPID: Int = 100) -> UITree {
+        let fields = [
+            iosNode(.textField, id: "email-field", label: "Email", frame: FakeUI.frame(16, 200, 370, 44), pid: fieldPID),
+            iosNode(.secureTextField, id: "password-field", label: "Password", frame: FakeUI.frame(16, 260, 370, 44), pid: fieldPID),
+            iosNode(.button, id: "login-button", label: "Log in", frame: FakeUI.frame(16, 330, 370, 44), pid: fieldPID),
+        ]
+        let holder = iosNode(.group, id: "holder", label: "", frame: FakeUI.frame(0, 0, 402, 874), type: holderType, role: holderRole, pid: fieldPID, children: fields)
+        let root = iosNode(.application, id: "app", label: "Playground", frame: FakeUI.frame(0, 0, 402, 874), type: "Application", pid: 100, children: [holder])
+        return UITree(platform: .ios, device: "simulator", roots: [root])
+    }
+
+    @Test("an Android password field under a WebView is web content, and one in another package fails closed")
+    func android() throws {
+        let origin = LoginForm.Origin(foreground: "com.example.app")
+        #expect(try LoginForm.detect(in: androidForm(), origin: origin).webContainer == nil)
+        #expect(try LoginForm.detect(in: androidForm(container: "android.webkit.WebView"), origin: origin).webContainer == .webView)
+        #expect(try LoginForm.detect(in: androidForm(fieldPackage: "com.android.chrome"), origin: origin).webContainer == .otherPackage("com.android.chrome"))
+        #expect(try LoginForm.detect(in: androidForm(fieldPackage: nil), origin: origin).webContainer == .otherPackage(nil))
+        #expect(try LoginForm.detect(in: androidForm(container: "android.webkit.WebView")).webContainer == .webView)
+    }
+
+    @Test("an iOS password field under a runner WebView or a web area is web content; one in another process maps by bundle id")
+    func ios() throws {
+        let origin = LoginForm.Origin(foreground: "com.example.app") { $0 == 100 ? "com.example.app" : nil }
+        #expect(try LoginForm.detect(in: iosForm(), origin: origin).webContainer == nil)
+        #expect(try LoginForm.detect(in: iosForm(holderType: "WebView"), origin: origin).webContainer == .webView)
+        #expect(try LoginForm.detect(in: iosForm(holderRole: "AXWebArea"), origin: origin).webContainer == .webView)
+        #expect(try LoginForm.detect(in: iosForm(fieldPID: 200), origin: origin).webContainer == .otherProcess)
+        let sameApp = LoginForm.Origin(foreground: "com.example.app") { _ in "com.example.app" }
+        #expect(try LoginForm.detect(in: iosForm(fieldPID: 200), origin: sameApp).webContainer == nil)
+    }
+
+    @Test("with no pid and no web marker, a simulator form is treated as native")
+    func iosNoSignal() throws {
+        let tree = SignInFixture.tree()
+        #expect(try LoginForm.detect(in: tree, origin: LoginForm.Origin(foreground: "com.example.app")).webContainer == nil)
     }
 }

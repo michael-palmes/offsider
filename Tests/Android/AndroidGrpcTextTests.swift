@@ -7,6 +7,10 @@ import Testing
 @MainActor
 struct AndroidGrpcTextTests {
     static let device = AndroidGrpcInputTests.device
+    /// A focused plain field, so a paste knows it is not a password field.
+    static let plainFocus = AndroidSecureTextTests.xml(
+        AndroidSecureTextTests.passwordNode(text: "", focused: true).replacingOccurrences(of: #"password="true""#, with: #"password="false""#)
+    )
 
     static func session(_ rig: AndroidGrpcInputTests.Rig) async throws -> any TextInputSession {
         try #require(try await rig.backend.openInputSession(for: Self.device) as? any TextInputSession)
@@ -23,7 +27,7 @@ struct AndroidGrpcTextTests {
 
     @Test("non-ASCII text is pasted: save, set, paste over adb, restore, with the settles between")
     func pasteSequence() async throws {
-        let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "sentinel"))
+        let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "sentinel"), uiautomatorDump: Self.plainFocus)
         try await Self.session(rig).typeText("héllo 日本")
 
         #expect(rig.emulator.calls == [.getClipboard, .setClipboard("héllo 日本"), .setClipboard("sentinel")])
@@ -34,7 +38,7 @@ struct AndroidGrpcTextTests {
 
     @Test("the clipboard is restored even when the paste key fails")
     func restoreAfterFailedPaste() async throws {
-        let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "sentinel"), failingScript: { $0 == "input keyevent 279" })
+        let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "sentinel"), failingScript: { $0 == "input keyevent 279" }, uiautomatorDump: Self.plainFocus)
 
         let error = await #expect(throws: AndroidError.self) { try await Self.session(rig).typeText("日本") }
         #expect(error?.kind == .inputFailed)
@@ -46,7 +50,7 @@ struct AndroidGrpcTextTests {
     func failedRestoreWarns() async throws {
         let failure = AndroidError.grpcDeadlineExceeded(method: "setClipboard", seconds: 2)
         let emulator = FakeEmulator(clipboard: "sentinel") { $0 == .setClipboard("sentinel") ? failure : nil }
-        let rig = try AndroidGrpcInputTests.rig(emulator: emulator)
+        let rig = try AndroidGrpcInputTests.rig(emulator: emulator, uiautomatorDump: Self.plainFocus)
         try await Self.session(rig).typeText("🙂")
 
         #expect(rig.logs.warnings == ["Could not restore the emulator's clipboard after pasting: \(failure.message)"])
@@ -54,7 +58,7 @@ struct AndroidGrpcTextTests {
 
     @Test("a resized display still pastes through the gRPC clipboard and types ASCII over adb")
     func resizedDisplay() async throws {
-        let rig = try AndroidGrpcInputTests.rig(geometry: AndroidGrpcInputTests.resized, emulator: FakeEmulator(clipboard: "x"))
+        let rig = try AndroidGrpcInputTests.rig(geometry: AndroidGrpcInputTests.resized, emulator: FakeEmulator(clipboard: "x"), uiautomatorDump: Self.plainFocus)
         let session = try await Self.session(rig)
         try await session.typeText("ok")
         try await session.typeText("é")
@@ -92,7 +96,8 @@ struct AndroidGrpcTextTests {
             ["R58M123ABC"],
             host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
             device: { _, service in
-                service.hasSuffix(AndroidDisplayGeometry.probeScript) ? FakeAdbServer.shell(stdout: AndroidBackendTests.geometryOutput) : FakeAdbServer.shell()
+                if service.hasSuffix(AndroidForeground.readScript) { return AndroidBackendHelperTests.ordinaryForeground }
+                return service.hasSuffix(AndroidDisplayGeometry.probeScript) ? FakeAdbServer.shell(stdout: AndroidBackendTests.geometryOutput) : FakeAdbServer.shell()
             }
         ))
         let backend = AndroidBackend(host: AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: server)) { _, _ in }

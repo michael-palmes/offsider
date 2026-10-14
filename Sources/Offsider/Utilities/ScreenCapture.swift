@@ -321,14 +321,22 @@ enum ScreenCapture {
         return .jpeg(quality: quality)
     }
 
-    /// A directory or no path gets "<prefix> - <device> - <timestamp>.<ext>"; missing parent directories are created.
-    nonisolated static func outputURL(path: String?, prefix: String, deviceName: String, format: ImageFormat, now: Date = Date()) throws -> URL {
+    /// Where a capture goes, and whether the user named the file (`--output` naming a file, so it may replace one).
+    struct OutputTarget: Equatable {
+        let url: URL
+        let userNamed: Bool
+    }
+
+    /// A directory or no path gets "<prefix> - <device> - <timestamp>.<ext>" with the device name made safe; missing parent directories are created; nothing is deleted.
+    nonisolated static func outputURL(path: String?, prefix: String, deviceName: String, format: ImageFormat, now: Date = Date()) throws -> OutputTarget {
         let fileManager = FileManager.default
-        let generatedName = "\(prefix) - \(deviceName) - \(formatTimestamp(now)).\(format.fileExtension)"
+        let generatedName = "\(prefix) - \(OutputFile.sanitisedComponent(deviceName)) - \(formatTimestamp(now)).\(format.fileExtension)"
         let providedPath = path?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedPath: String
+        var userNamed = false
         if let providedPath, !providedPath.isEmpty {
             resolvedPath = (providedPath as NSString).expandingTildeInPath
+            userNamed = true
         } else {
             resolvedPath = generatedName
         }
@@ -339,17 +347,27 @@ enum ScreenCapture {
 
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: baseURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
-            return baseURL.appendingPathComponent(generatedName)
+            return OutputTarget(url: baseURL.appendingPathComponent(generatedName), userNamed: false)
         }
 
         let directoryURL = baseURL.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: directoryURL.path) {
             try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
         }
-        if fileManager.fileExists(atPath: baseURL.path) {
-            try fileManager.removeItem(at: baseURL)
+        return OutputTarget(url: baseURL, userNamed: userNamed)
+    }
+
+    /// Writes a capture: a file the user named is replaced whole (only an image or video file they own); a generated name is never overwritten and takes " 2", " 3" when taken. Returns where it went.
+    nonisolated static func write(_ data: Data, to target: OutputTarget) throws -> URL {
+        do {
+            if target.userNamed {
+                try OutputFile.replace(data, at: target.url.path)
+                return target.url
+            }
+            return URL(fileURLWithPath: try OutputFile.writeNew(data, at: target.url.path))
+        } catch let error as OutputFileError {
+            throw CLIError(errorDescription: error.message, reason: .screenshotFailed)
         }
-        return baseURL
     }
 
     nonisolated private static func requirePixelsPerPoint(_ capture: CapturedScreen, for option: String) throws -> Double {

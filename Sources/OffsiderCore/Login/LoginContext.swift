@@ -101,7 +101,7 @@ public struct LoginContextProblem: Error, Equatable, Sendable, CustomStringConve
 
 /// What a saved login suits, beside its Keychain secret. It is not secret, so it never holds an email address.
 public struct LoginContext: Equatable, Sendable {
-    public static let version = 1
+    public static let version = 2
     public static let maxTags = 16
     public static let noteCharacters = 200
     public static let noteBytes = 800
@@ -115,13 +115,29 @@ public struct LoginContext: Equatable, Sendable {
     public private(set) var tags: [LoginTag]
     /// When the context last changed, to the second.
     public var updated: Date?
+    /// Mirrors of the encrypted settings, for `status` and for asking early; the encrypted data decides.
+    public var confirm: Bool
+    public var devices: LoginDeviceScope
 
-    public init(about: String? = nil, avoid: String? = nil, state: String? = nil, tags: [LoginTag] = [], updated: Date? = nil) {
+    public init(
+        about: String? = nil, avoid: String? = nil, state: String? = nil, tags: [LoginTag] = [], updated: Date? = nil,
+        confirm: Bool = false, devices: LoginDeviceScope = .virtual
+    ) {
         self.about = about
         self.avoid = avoid
         self.state = state
         self.tags = Set(tags).sorted()
         self.updated = updated
+        self.confirm = confirm
+        self.devices = devices
+    }
+
+    /// This context with the mirrored settings of `stored`.
+    public func mirroring(_ stored: StoredLogin) -> LoginContext {
+        var next = self
+        next.confirm = stored.confirm
+        next.devices = stored.devices
+        return next
     }
 
     public var isEmpty: Bool { about == nil && avoid == nil && state == nil && tags.isEmpty }
@@ -163,7 +179,7 @@ public struct LoginContext: Equatable, Sendable {
         return raw.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// `{"v":1,...}` with empty keys left out.
+    /// `{"v":2,...}` with empty keys and default settings left out.
     public func storageData() -> Data {
         var fields: [(String, OrderedJSON)] = [("v", .integer(Self.version))]
         for note in LoginNote.allCases {
@@ -171,6 +187,8 @@ public struct LoginContext: Equatable, Sendable {
         }
         if !tags.isEmpty { fields.append(("tags", .array(tags.map { .string($0.rawValue) }))) }
         if let updated { fields.append(("updated", .string(ProcessStamp.timestamp(updated)))) }
+        if confirm { fields.append(("confirm", .bool(true))) }
+        if devices != .virtual { fields.append(("devices", .string(devices.rawValue))) }
         return Data(OrderedJSON.object(fields).rendered(compact: true).utf8)
     }
 
@@ -197,6 +215,14 @@ public struct LoginContext: Equatable, Sendable {
         if let value = object["updated"] {
             guard let text = value as? String, let date = ProcessStamp.date(fromTimestamp: text) else { return .damaged }
             context.updated = date
+        }
+        if let value = object["confirm"] {
+            guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { return .damaged }
+            context.confirm = flag.boolValue
+        }
+        if let value = object["devices"] {
+            guard let text = value as? String, let scope = LoginDeviceScope(rawValue: text) else { return .damaged }
+            context.devices = scope
         }
         return .saved(context)
     }
@@ -256,7 +282,9 @@ public struct LoginContextEdit: Equatable, Sendable {
         var tags = clearTags ? [] : context.tags
         tags.removeAll { untag.contains($0) }
         tags += tag
-        var next = LoginContext(about: context.about, avoid: context.avoid, state: context.state, tags: tags, updated: context.updated)
+        var next = LoginContext(
+            about: context.about, avoid: context.avoid, state: context.state, tags: tags, updated: context.updated, confirm: context.confirm, devices: context.devices
+        )
         guard next.tags.count <= LoginContext.maxTags else {
             throw LoginContextProblem("A saved login holds at most \(LoginContext.maxTags) tags, and this would give it \(next.tags.count). Remove some with --untag or --clear-tags. Nothing was saved.")
         }

@@ -54,6 +54,27 @@ struct AdbClientTests {
         #expect(server.services.last == "exec:screencap -p")
     }
 
+    @Test("shell and exec output past the cap fail naming the limit, never returning a partial result")
+    func outputCap() async throws {
+        #expect(AdbClient.maxOutputBytes == 64 * 1024 * 1024)
+        let shellServer = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in
+            FakeAdbServer.shell(stdout: String(repeating: "x", count: 600), stderr: String(repeating: "e", count: 600), status: 0)
+        })
+        let shellError = await #expect(throws: AndroidError.self) {
+            try await AdbClient(endpoint: .defaultAdbServer, connector: shellServer, maxOutputBytes: 1_000).shell("cat big", on: "emulator-5556")
+        }
+        #expect(shellError?.message == "`cat big` failed on emulator-5556: it printed more than 64 MB, so Offsider stopped reading.")
+
+        let execServer = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in FakeAdbServer.exec(Data(count: 1_001)) })
+        let execError = await #expect(throws: AndroidError.self) {
+            try await AdbClient(endpoint: .defaultAdbServer, connector: execServer, maxOutputBytes: 1_000).exec("screencap -p", on: "emulator-5556")
+        }
+        #expect(execError?.kind == .adbCommandFailed)
+
+        let exact = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in FakeAdbServer.exec(Data(count: 1_000)) })
+        #expect(try await AdbClient(endpoint: .defaultAdbServer, connector: exact, maxOutputBytes: 1_000).exec("screencap -p", on: "emulator-5556").count == 1_000)
+    }
+
     @Test("an unknown serial is reported as not running")
     func unknownSerial() async {
         let server = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in FakeAdbServer.shell() })

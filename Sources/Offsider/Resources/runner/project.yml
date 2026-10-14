@@ -9,6 +9,7 @@ settings:
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
     TARGETED_DEVICE_FAMILY: "1,2"
+    OFFSIDER_RUNNER_BUNDLE_PREFIX: com.mpalmes.offsider
 targets:
   OffsiderRunnerHost:
     type: application
@@ -17,7 +18,7 @@ targets:
       - path: Host
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.mpalmes.offsider.runner
+        PRODUCT_BUNDLE_IDENTIFIER: $(OFFSIDER_RUNNER_BUNDLE_PREFIX).runner
         PRODUCT_NAME: OffsiderRunnerHost
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -34,7 +35,7 @@ targets:
       - target: OffsiderRunnerHost
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.mpalmes.offsider.runner.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: $(OFFSIDER_RUNNER_BUNDLE_PREFIX).runner.uitests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: OffsiderRunnerHost
 schemes:

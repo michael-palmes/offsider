@@ -188,6 +188,9 @@ jobs:
           echo "$bin_dir" >> "$GITHUB_PATH"
           "$bin_dir/xcodegen" --version
 
+      - name: Runner project (regenerate and compare)
+        run: scripts/build.sh runner --check
+
       - name: Resolve idb pin
         id: idb
         run: |

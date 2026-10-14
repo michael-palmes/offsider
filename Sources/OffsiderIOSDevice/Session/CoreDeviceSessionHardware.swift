@@ -202,6 +202,9 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
 
     /// The button stays down for `hold` only while its client stays connected, and is always released.
     public func press(usagePage: UInt64, usageCode: UInt64, hold: Double, abandoned: @Sendable () -> Bool) async throws {
+        guard DeviceSessionLimits.allowsButton(page: usagePage, code: usageCode) else {
+            throw IOSDeviceError(.sessionFailed, "The device session presses only the home, lock, side and Siri buttons.")
+        }
         lastUse = .now
         let link = try await buttonLink()
         link.send(DTUHIDMessage.button(usagePage: usagePage, usage: usageCode, state: .down))

@@ -7,6 +7,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case sdkVariableWithoutAdb
         case nonLoopbackAdbServer
         case invalidAdbServerSetting
+        case foreignAdbServer
         case adbServerNotRunning
         case adbServerStartFailed
         case adbServerNoAnswer
@@ -37,6 +38,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case noFocusedField
         case fieldNotEditable
         case securePasteRefused
+        case appNotAllowed
         case textNotAccepted
         case unsupportedKey
         case unsupportedButton
@@ -98,6 +100,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         return AndroidError(
             .invalidAdbServerSetting,
             "\(variable) is \(value), which Offsider cannot read. Use \(expected), or unset it."
+        )
+    }
+
+    static func foreignAdbServer(endpoint: String, uid: uid_t) -> AndroidError {
+        AndroidError(
+            .foreignAdbServer,
+            "The adb server socket \(endpoint) belongs to another user (uid \(uid)), so Offsider did not use it. Point ADB_SERVER_SOCKET at a server you started, or unset it."
         )
     }
 
@@ -466,6 +475,63 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func securePasteUnconfirmed(_ serial: String) -> AndroidError {
+        AndroidError(
+            .securePasteRefused,
+            "Offsider could not confirm the focused field on \(serial) is not a password field, so it did not paste the text through the emulator's clipboard. Retry, or use `offsider type --replace <full text> --device \(serial)`."
+        )
+    }
+
+    static func secretPasteRefused(_ serial: String) -> AndroidError {
+        AndroidError(
+            .securePasteRefused,
+            "A password never goes through the emulator's clipboard, and the focused field on \(serial) did not take it from the UiAutomation helper, so nothing was typed."
+        )
+    }
+
+    /// A password or unlock code is typed only through the helper's socket, never as an `input text` argument.
+    static func secretNeedsHelper(_ serial: String, reason: String) -> AndroidError {
+        AndroidError(
+            .helperUnavailable,
+            "Offsider types a password or unlock code on \(serial) only through the UiAutomation helper, never as a shell command, and the helper is unavailable (\(reason)). Nothing was typed. Unset OFFSIDER_ANDROID_TREE and OFFSIDER_ANDROID_INPUT if either is set, close any other UiAutomation client, then retry."
+        )
+    }
+
+    /// Text from a command argument goes through the helper when the focused field cannot be read, since it may be a password field.
+    static func unreadableFocusNeedsHelper(_ serial: String) -> AndroidError {
+        AndroidError(
+            .helperUnavailable,
+            "Offsider could not read the focused field on \(serial), so it may be a password field, and text given as an argument then goes only through the UiAutomation helper, which is unavailable. The text was not sent. Check the screen with `offsider describe-ui --device \(serial)`, or pipe the text in with --stdin, then retry."
+        )
+    }
+
+    static func appNotAllowed(_ serial: String, refusal: String) -> AndroidError {
+        AndroidError(
+            .appNotAllowed,
+            "\(refusal) on a physical phone, so Offsider did nothing on \(serial). Bring your own app to the front, then retry."
+        )
+    }
+
+    static func appNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool) -> AndroidError {
+        if byManagedPolicy {
+            return AndroidError(
+                .appNotAllowed,
+                "\(package) is in front on \(serial), and managed policy on this Mac does not list it, so Offsider did nothing. The allow-list cannot override managed policy; bring an app it lists to the front, then retry."
+            )
+        }
+        return AndroidError(
+            .appNotAllowed,
+            "\(package) is in front on \(serial), and it is not among the apps allowed on this phone, so Offsider did nothing. Bring an allowed app to the front, or ask the user to run `offsider device-access allow --device \(serial) --app \(package)` in their own terminal."
+        )
+    }
+
+    static func foregroundUnknown(_ serial: String) -> AndroidError {
+        AndroidError(
+            .appNotAllowed,
+            "Offsider could not tell which app is in front on \(serial), and on a physical phone it acts only once it knows, so it did nothing. Unlock the phone and bring your app to the front, then retry."
+        )
+    }
+
     static func textNotAccepted(_ serial: String, field: AndroidFieldInfo?, pasted: Bool) -> AndroidError {
         let element = field.map { " (\($0.description))" } ?? ""
         let outcome = pasted
@@ -641,7 +707,7 @@ extension AndroidError: OffsiderFailure {
     public var reason: FailureReason {
         switch kind {
         case .sdkVariableWithoutAdb: return .androidSdkMissing
-        case .nonLoopbackAdbServer, .invalidAdbServerSetting: return .adbServerMisconfigured
+        case .nonLoopbackAdbServer, .invalidAdbServerSetting, .foreignAdbServer: return .adbServerMisconfigured
         case .adbServerNotRunning, .adbServerStartFailed, .adbServerNoAnswer: return .adbServerUnavailable
         case .adbProtocol: return .adbProtocolError
         case .adbCommandFailed: return .adbCommandFailed
@@ -665,6 +731,7 @@ extension AndroidError: OffsiderFailure {
         case .noFocusedField: return .noFocusedField
         case .fieldNotEditable: return .fieldNotEditable
         case .securePasteRefused: return .securePasteRefused
+        case .appNotAllowed: return .appNotAllowed
         case .textNotAccepted: return .textNotAccepted
         case .unsupportedKey: return .unsupportedKey
         case .unsupportedButton: return .unsupportedButton

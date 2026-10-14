@@ -84,19 +84,8 @@ struct Init: AsyncParsableCommand {
     }
 
     private static func loadSkillMarkdown() throws -> String {
-        guard let sourceURL = Bundle.module.url(
-            forResource: "SKILL",
-            withExtension: "md",
-            subdirectory: "skills/\(skillFolderName)"
-        ) else {
-            throw CLIError(errorDescription: "Bundled Offsider skill source was not found.", reason: .initFailed)
-        }
-
-        do {
-            return try String(contentsOf: sourceURL, encoding: .utf8)
-        } catch {
-            throw CLIError(errorDescription: "Failed to read bundled Offsider skill source: \(error.localizedDescription)", reason: .initFailed)
-        }
+        let data = try BundleIntegrity.verifiedData("skills/\(skillFolderName)/SKILL.md")
+        return String(decoding: data, as: UTF8.self)
     }
 
     private func installSkill(to targets: [ClientInfo]) throws {

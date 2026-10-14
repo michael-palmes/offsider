@@ -151,10 +151,11 @@ struct IOSDeviceDoctorTests {
         #expect(verdict.detail.contains(detail))
     }
 
-    @Test("signing passes with one team, warns with none or several, and fails a malformed variable", arguments: [
+    @Test("signing passes with a chosen team, warns whenever only Xcode's teams exist, and fails a malformed variable", arguments: [
         (IOSDeviceDoctorFacts.TeamFact.environment("ABCDE12345"), CheckStatus.pass),
+        (.allowance("ABCDE12345"), .pass),
         (.environment("abc"), .fail),
-        (.xcodeTeams(["ABCDE12345"]), .pass),
+        (.xcodeTeams(["ABCDE12345"]), .warn),
         (.xcodeTeams([]), .warn),
         (.xcodeTeams(["ABCDE12345", "ZYXWV98765"]), .warn),
     ])

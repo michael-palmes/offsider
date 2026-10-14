@@ -8,7 +8,7 @@ public struct UnlockCode: Equatable, Sendable, CustomStringConvertible, CustomDe
 
     public let text: String
 
-    /// Nil unless `text` is 4 to 64 printable ASCII characters, which `input text` can type, ignoring a trailing line break.
+    /// Nil unless `text` is 4 to 64 printable ASCII characters, which the helper types as key events, ignoring a trailing line break.
     public init?(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .newlines)
         guard trimmed.unicodeScalars.allSatisfy({ (0x20...0x7E).contains($0.value) }), Self.lengths.contains(trimmed.count) else { return nil }

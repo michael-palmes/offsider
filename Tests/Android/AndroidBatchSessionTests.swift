@@ -55,6 +55,7 @@ struct AndroidBatchSessionTests {
         #expect(rig.connector.connections.count == 1)
         #expect(rig.emulator.calls.contains(.key(.text("hi"))))
         #expect(rig.emulator.calls.contains(.key(.w3c("GoBack", .press))))
-        #expect(rig.adbScripts.isEmpty)
+        // Only the type step's password-field check reads the screen over adb.
+        #expect(rig.adbScripts.filter { !$0.contains("uiautomator dump") }.isEmpty)
     }
 }

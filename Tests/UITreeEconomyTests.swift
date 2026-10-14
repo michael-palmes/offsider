@@ -156,7 +156,7 @@ struct UITreeEconomyTests {
 
         #expect(lines.count == 3)
         #expect(lines[0].hasPrefix("# android d"))
-        #expect(lines[1].contains(long))
+        #expect(lines[1].contains(String(repeating: "x", count: TerminalText.maxCharacters) + "…(+400)"))
         #expect(lines[2] == "# truncated: 1 more node past the 512-byte budget; pass --max-bytes 0 for all, or narrow with --actionable")
     }
 

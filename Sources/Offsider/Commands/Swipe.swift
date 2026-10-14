@@ -56,11 +56,17 @@ struct Swipe: AsyncParsableCommand {
         guard startX >= 0, startY >= 0, endX >= 0, endY >= 0 else {
             throw ValidationError("Coordinates must be non-negative values.")
         }
+        guard [startX, startY, endX, endY].allSatisfy(\.isFinite) else {
+            throw ValidationError("Coordinates must be finite numbers.")
+        }
         
         // Validate duration if provided
         if let duration = duration {
             guard duration > 0 else {
                 throw ValidationError("Duration must be greater than 0.")
+            }
+            guard duration <= Drag.maxDuration else {
+                throw ValidationError("Duration must be at most \(Int(Drag.maxDuration)) seconds; got \(duration.formatted()).")
             }
         }
         
@@ -156,7 +162,7 @@ extension Swipe {
             from: start,
             to: end,
             duration: swipeDuration,
-            steps: min(Drag.maxSteps, max(1, Int(distance / swipeDelta))),
+            steps: PixelMath.swipeSteps(distance / swipeDelta),
             initialHold: 0,
             finalHold: Double(holdEnd) / 1000
         )

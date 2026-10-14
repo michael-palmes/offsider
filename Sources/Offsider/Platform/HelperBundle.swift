@@ -11,18 +11,19 @@ enum HelperBundle {
     private static let loaded: Result<HelperDex, HelperDexError> = Result { try read(from: Bundle.module) }
         .mapError { $0 as? HelperDexError ?? .damaged($0.localizedDescription) }
 
-    static func read(from bundle: Bundle) throws -> HelperDex {
-        guard let dexURL = bundle.url(forResource: "offsider-helper", withExtension: "dex", subdirectory: "helper"),
-              let manifestURL = bundle.url(forResource: "manifest", withExtension: "json", subdirectory: "helper") else {
+    /// Reads the dex and its manifest through the digests compiled into this build, then checks the dex against the manifest.
+    static func read(from bundle: Bundle, digests: [String: String] = BundleDigests.files) throws -> HelperDex {
+        guard bundle.url(forResource: "offsider-helper", withExtension: "dex", subdirectory: "helper") != nil,
+              bundle.url(forResource: "manifest", withExtension: "json", subdirectory: "helper") != nil else {
             throw HelperDexError.notBundled("helper/offsider-helper.dex or helper/manifest.json is missing from \(bundle.bundlePath)")
         }
         let bytes: Data
         let manifest: Data
         do {
-            bytes = try Data(contentsOf: dexURL)
-            manifest = try Data(contentsOf: manifestURL)
-        } catch {
-            throw HelperDexError.notBundled("could not read \(dexURL.deletingLastPathComponent().path): \(error.localizedDescription)")
+            bytes = try BundleIntegrity.verifiedData("helper/offsider-helper.dex", in: bundle, digests: digests)
+            manifest = try BundleIntegrity.verifiedData("helper/manifest.json", in: bundle, digests: digests)
+        } catch let error as CLIError {
+            throw HelperDexError.damaged(error.userFacingDescription)
         }
         return try HelperDex(bytes: bytes, manifestJSON: manifest)
     }

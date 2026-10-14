@@ -37,7 +37,7 @@ struct IOSDeviceE2EGuardTests {
 
     @Test("a UDID devicectl does not list is refused, even with other phones attached")
     func differentUDIDRefused() {
-        let message = refusal(IOSDeviceE2EGuard.verdict(requested: "00008132-0000999988887777", listing: Self.attached))
+        let message = refusal(IOSDeviceE2EGuard.verdict(requested: "00008132-0000AAAA9999BBBB", listing: Self.attached))
         #expect(message?.contains("does not list it") == true)
     }
 
@@ -93,5 +93,20 @@ struct IOSDeviceE2EGuardTests {
         #expect(IOSDeviceE2EGuard.isSigningOrLock("Failed to install embedded profile: 0xe8008012 (This provisioning profile cannot be installed on this device.)"))
         #expect(IOSDeviceE2EGuard.isSigningOrLock("error: No Accounts: Add a new account in Accounts settings."))
         #expect(!IOSDeviceE2EGuard.isSigningOrLock("error: cannot find 'ContentView' in scope"))
+    }
+}
+
+@Suite("iOS device E2E allowance")
+struct IOSDeviceE2EAllowanceTests {
+    static let udid = "00008130-0000000000000ABC"
+
+    @Test("the iPhone suites need the playground pinned on the device's allowance")
+    func playgroundPinned() {
+        let now = E2EDeviceAllowanceTests.now
+        let pinned = E2EDeviceAllowanceTests.status(expires: nil, apps: [IOSDeviceE2E.playgroundBundleID], id: Self.udid)
+        let other = E2EDeviceAllowanceTests.status(expires: nil, apps: ["com.example.other"], id: Self.udid)
+        #expect(E2EDeviceAllowance.verdict(device: Self.udid, exitCode: 0, json: pinned, now: now, app: IOSDeviceE2E.playgroundBundleID) == nil)
+        let refusal = E2EDeviceAllowance.verdict(device: Self.udid, exitCode: 0, json: other, now: now, app: IOSDeviceE2E.playgroundBundleID)
+        #expect(refusal?.contains("`offsider device-access allow --device \(Self.udid) --expires 2h --app com.mpalmes.offsider.playground`") == true)
     }
 }

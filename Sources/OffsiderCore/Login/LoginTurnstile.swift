@@ -1,37 +1,9 @@
 import Foundation
 
-/// What `login` reports about Turnstile. `tapped` means the checkbox was tapped and then read Success.
+/// What `login` saw of Turnstile before it tapped submit. Offsider never taps the widget, so it was absent or had already passed.
 public enum LoginTurnstileStep: String, Equatable, Sendable {
-    case off
     case absent
     case passed
-    case tapped
-}
-
-/// The next Turnstile step from one read. `waitForWidget` runs the existing checkbox tap and wait.
-public enum LoginTurnstilePlan: Equatable, Sendable {
-    case done(LoginTurnstileStep)
-    case waitForWidget
-    case challenge
-    case ambiguous(Int)
-}
-
-public enum LoginTurnstile {
-    public static func plan(phase: TurnstilePhase, mode: LoginTurnstileMode) -> LoginTurnstilePlan {
-        if mode == .off { return .done(.off) }
-        switch phase {
-        case .passed:
-            return .done(.passed)
-        case .absent:
-            return mode == .required ? .waitForWidget : .done(.absent)
-        case .ready, .checking:
-            return .waitForWidget
-        case .visualChallenge:
-            return .challenge
-        case .ambiguous(let count):
-            return .ambiguous(count)
-        }
-    }
 }
 
 /// How far `login` got with one field: `filled` once it typed there and read the field back.
@@ -44,7 +16,8 @@ public enum LoginFieldProgress: String, Equatable, Sendable {
 public struct LoginReport: Equatable, Sendable {
     public var app: String
     public var key: String
-    public var turnstile: LoginTurnstileStep
+    /// Nil when the login stopped before Turnstile was read.
+    public var turnstile: LoginTurnstileStep?
     public var submitLabel: String?
     /// The chosen login's tags.
     public var tags: [LoginTag]
@@ -56,7 +29,7 @@ public struct LoginReport: Equatable, Sendable {
     /// Why a login that began typing stopped; nil once submit was tapped.
     public var error: ErrorPayload?
 
-    public init(app: String, key: String, turnstile: LoginTurnstileStep, submitLabel: String?, tags: [LoginTag] = [], filter: [LoginTag] = []) {
+    public init(app: String, key: String, turnstile: LoginTurnstileStep?, submitLabel: String?, tags: [LoginTag] = [], filter: [LoginTag] = []) {
         self.app = app
         self.key = key
         self.turnstile = turnstile
@@ -67,7 +40,7 @@ public struct LoginReport: Equatable, Sendable {
 
     /// A login that stopped after it began typing, before submit was tapped.
     public static func stopped(app: String, key: String, identity: LoginFieldProgress, password: LoginFieldProgress) -> LoginReport {
-        var report = LoginReport(app: app, key: key, turnstile: .off, submitLabel: nil)
+        var report = LoginReport(app: app, key: key, turnstile: nil, submitLabel: nil)
         report.identity = identity
         report.password = password
         report.submitted = false
@@ -102,6 +75,7 @@ public struct LoginReport: Equatable, Sendable {
             ("tags", .array(tags.map { .string($0.rawValue) })),
         ]
         if !filter.isEmpty { fields.append(("where", .array(filter.map { .string($0.rawValue) }))) }
+        fields.append(("turnstile", .optional(turnstile) { .string($0.rawValue) }))
         fields.append(("exitCode", .integer(Int(exitCode.rawValue))))
         fields.append(("error", .optional(error) { $0.jsonValue }))
         return OrderedJSON.object(fields).rendered(compact: true)

@@ -177,7 +177,7 @@ extension TreeDiff {
             parts.append(quoted)
         }
         if let id = node.id, !id.isEmpty {
-            parts.append("id=" + SelectorText.truncated(id))
+            parts.append("id=" + TerminalText.bareOrQuoted(SelectorText.truncated(id)))
         }
         return parts.joined(separator: " ")
     }

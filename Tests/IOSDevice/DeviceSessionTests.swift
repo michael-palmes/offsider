@@ -19,6 +19,7 @@ final class FakeSessionLink: DeviceSessionLink, @unchecked Sendable {
     private var asked: [DeviceSessionRequest] = []
     private var isClosed = false
     private var broken = false
+    private var closedByBroker = false
     private let script: Script
 
     init(script: @escaping Script) {
@@ -55,6 +56,11 @@ final class FakeSessionLink: DeviceSessionLink, @unchecked Sendable {
     var requests: [DeviceSessionRequest] { lock.withLock { asked } }
     var closed: Bool { lock.withLock { isClosed } }
     var isBroken: Bool { lock.withLock { broken } }
+    /// Whether the broker has closed this link, as a socket peek would report.
+    var peerClosed: Bool {
+        get { lock.withLock { closedByBroker } }
+        set { lock.withLock { closedByBroker = newValue } }
+    }
 
     func exchange(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?) {
         if isBroken { throw DeviceSessionLinkError.notSent("its connection broke on an earlier request") }
@@ -201,7 +207,7 @@ struct DeviceSessionManagerTests {
 
     static func manager(_ processes: FakeRunnerProcesses, root: String, links: @escaping @Sendable (String) throws -> any DeviceSessionLink) -> DeviceSessionManager {
         DeviceSessionManager(
-            store: DeviceSessionStore(root: root), processes: processes, environment: ["A": "1"], connector: links, log: { _, _ in },
+            store: DeviceSessionStore(root: root), processes: processes, environment: ["A": "1", "OFFSIDER_IOS_SESSION_IDLE": "60", "HOME": "/Users/me"], connector: links, log: { _, _ in },
             startTimeout: .milliseconds(300), lockTimeout: 2
         )
     }
@@ -224,7 +230,8 @@ struct DeviceSessionManagerTests {
         let client = try await manager.connect(udid: Self.udid)
         #expect(client.supportsTouch)
         #expect(processes.launches.map(\.arguments) == [["device-session", "serve", "--device", Self.udid]])
-        #expect(processes.launches.first?.environment["A"] == "1")
+        // The broker sees only its allow-list: login basics, DEVELOPER_DIR and OFFSIDER_ settings.
+        #expect(processes.launches.first?.environment == ["OFFSIDER_IOS_SESSION_IDLE": "60", "HOME": "/Users/me"])
         let record = try #require(try DeviceSessionStore(root: root).read(udid: Self.udid))
         #expect(record.pid == 5151)
         #expect(record.state == .running)
@@ -500,8 +507,8 @@ struct DeviceSessionServerTests {
         }
     }
 
-    @Test("OFFSIDER_IOS_SESSION_IDLE sets the idle timeout; anything but a positive number keeps 300 s", arguments: [
-        ("60", 60), ("0", 300), ("soon", 300),
+    @Test("OFFSIDER_IOS_SESSION_IDLE sets the idle timeout, at most 3600 s; anything but a positive number keeps 300 s", arguments: [
+        ("60", 60), ("0", 300), ("soon", 300), ("999999", 3600),
     ])
     func idle(value: String, seconds: Int) {
         #expect(DeviceSessionServer.idleSeconds(["OFFSIDER_IOS_SESSION_IDLE": value]) == seconds)
@@ -598,4 +605,167 @@ struct DeviceSessionReportsTests {
         var runner = DeviceSessionLowering(brokerTouches: false)
         #expect(try runner.actions(for: .tapAt(x: 3, y: 4)) == [.runner(.tapAt(x: 3, y: 4))])
     }
+}
+
+@Suite("Device session limits", .serialized)
+@MainActor
+struct DeviceSessionLimitTests {
+    static func socket() -> String { NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8)).sock" }
+
+    @Test("a request is refused before anything is sent when its waits pass 60 s together, it has over 4,096 steps, or a wait is over 30 s, negative or NaN", arguments: [
+        [DeviceSessionStep.wait(30), .wait(30), .wait(1)],
+        Array(repeating: DeviceSessionStep.touch(.move, x: 1, y: 1), count: 4097),
+        [.wait(31)],
+        [.wait(-1)],
+        [.wait(.nan)],
+        [.wait(.infinity)],
+        [DeviceSessionStep(kind: .wait)],
+    ])
+    func budgetRefuses(steps: [DeviceSessionStep]) {
+        let error = #expect(throws: IOSDeviceError.self) { try DeviceSessionLimits.checkBudget(steps) }
+        #expect(error?.reason == .hidBrokerFailed)
+    }
+
+    @Test("a request at the limits is accepted")
+    func budgetAccepts() throws {
+        try DeviceSessionLimits.checkBudget([.wait(30), .wait(30)])
+        try DeviceSessionLimits.checkBudget(Array(repeating: DeviceSessionStep.touch(.move, x: 1, y: 1), count: 4096))
+    }
+
+    @Test("the swipe step cap matches drag's 1,000 steps")
+    func swipeCapMatchesDrag() {
+        #expect(DeviceSessionLimits.maxSwipeSteps == 1000)
+        #expect(DeviceSessionLimits.maxSwipeSeconds == 30)
+    }
+
+    @Test("only the home, lock, side and Siri usages on the consumer page may be pressed")
+    func buttonUsages() async {
+        #expect(DeviceSessionLimits.buttonUsages == [0x40, 0x30, 0xCF])
+        let server = DeviceSessionServer(udid: "U", socketPath: Self.socket(), hardware: FakeSessionHardware(), store: nil, idleTimeout: .seconds(30), log: { _, _ in })
+        for code: UInt64 in [0x40, 0x30, 0xCF] {
+            let (reply, _) = await server.handle(id: 1, request: .press(usagePage: 0x0C, usageCode: code, hold: 0.1))
+            // The fake hardware answers every press it is given as locked, so this one reached it.
+            #expect(reply.error?.error.reason == .deviceLocked)
+        }
+        for (page, code): (UInt64, UInt64) in [(0x0C, 0xE9), (0x0C, 0xEA), (0x07, 0x40)] {
+            let (reply, _) = await server.handle(id: 1, request: .press(usagePage: page, usageCode: code, hold: 0.1))
+            #expect(reply.ok == false)
+            #expect(reply.error?.error.message.contains("presses only the home, lock, side and Siri buttons") == true)
+        }
+    }
+
+    @Test("a swipe with a vanishing delta or an absurd duration lowers to at most 1,000 moves and 30 s, never a trap")
+    func swipeClamped() throws {
+        var lowering = DeviceSessionLowering(brokerTouches: true)
+        let actions = try lowering.actions(for: .swipe(0, yStart: 0, xEnd: 300, yEnd: 300, delta: 1e-300, duration: 1e12))
+        guard case .touch(let steps)? = actions.first else {
+            Issue.record("expected one touch request")
+            return
+        }
+        #expect(steps.filter { $0.kind == .move }.count <= 1000)
+        #expect(DeviceSessionClient.waited(steps) <= 30.000_001)
+        try DeviceSessionLimits.checkBudget(steps)
+    }
+
+    @Test("a ninth client is refused with session_failed while eight are connected")
+    func ninthClientRefused() async throws {
+        let socket = Self.socket()
+        let server = DeviceSessionServer(udid: "U", socketPath: socket, hardware: FakeSessionHardware(), store: nil, idleTimeout: .seconds(30), log: { _, _ in })
+        let running = Task { try await server.run() }
+        var clients: [DeviceSessionClient] = []
+        for _ in 0..<8 {
+            let client = DeviceSessionClient(udid: "U", link: try await DeviceSessionServerTests.whenListening { try SocketSessionLink.connect(socket) })
+            _ = try await client.ping(timeout: DeviceSessionServerTests.replyTimeout)
+            clients.append(client)
+        }
+        let ninth = DeviceSessionClient(udid: "U", link: try SocketSessionLink.connect(socket))
+        let refused = await #expect(throws: IOSDeviceError.self) { try await ninth.ping(timeout: DeviceSessionServerTests.replyTimeout) }
+        #expect(refused?.reason == .hidBrokerFailed)
+        #expect(refused?.message.contains("already serves 8 commands") == true)
+        ninth.close()
+        clients.removeLast().close()
+        try await DeviceSessionServerTests.until { server.clients.current < 8 }
+        let again = DeviceSessionClient(udid: "U", link: try SocketSessionLink.connect(socket))
+        _ = try await again.ping(timeout: DeviceSessionServerTests.replyTimeout)
+        try await again.stop(timeout: DeviceSessionServerTests.replyTimeout)
+        try await running.value
+        clients.forEach { $0.close() }
+    }
+
+    @Test("a client that stalls partway through a request is dropped once the body timeout passes")
+    func stalledClientDropped() async throws {
+        let socket = Self.socket()
+        let server = DeviceSessionServer(
+            udid: "U", socketPath: socket, hardware: FakeSessionHardware(), store: nil, idleTimeout: .seconds(30), bodyTimeout: .milliseconds(300), log: { _, _ in }
+        )
+        let running = Task { try await server.run() }
+        let stalled = try await DeviceSessionServerTests.whenListening { try DeviceSessionChannel.connect(to: socket) }
+        try stalled.write(Data([0, 0, 0, 100]) + Data(repeating: 0x20, count: 10))
+        let started = ContinuousClock.now
+        try await DeviceSessionServerTests.until { stalled.peerClosed() }
+        #expect(stalled.peerClosed())
+        #expect(ContinuousClock.now - started < .seconds(10))
+        stalled.close()
+        let client = DeviceSessionClient(udid: "U", link: try SocketSessionLink.connect(socket))
+        try await client.stop(timeout: DeviceSessionServerTests.replyTimeout)
+        try await running.value
+    }
+
+    @Test("a broker past its lifetime stops at its next idle moment")
+    func lifetime() async throws {
+        let hardware = FakeSessionHardware()
+        let server = DeviceSessionServer(
+            udid: "U", socketPath: Self.socket(), hardware: hardware, store: nil, idleTimeout: .seconds(30), maxLifetime: .milliseconds(200), log: { _, _ in }
+        )
+        try await server.run()
+        #expect(hardware.closed)
+    }
+
+    @Test("a link the broker closed while the command was silent is replaced before ping or frame is sent")
+    func reconnectsClosedLink() async throws {
+        let first = FakeSessionLink.broker(udid: "U")
+        first.peerClosed = true
+        let second = FakeSessionLink.broker(udid: "U")
+        let client = DeviceSessionClient(udid: "U", link: first, reconnect: { second })
+        _ = try await client.ping()
+        _ = try await client.frame(.png)
+        #expect(first.requests.isEmpty)
+        #expect(first.closed)
+        #expect(second.requests == [.ping, .frame(.png)])
+    }
+
+    @Test("ping and frame are sent once more after the broker closed the link mid-request; input never is")
+    func retriesOnlyReads() async throws {
+        let closing = FakeSessionLink { request in throw DeviceSessionLinkError.lost("the broker closed the connection") }
+        closing.peerClosed = false
+        let fresh = FakeSessionLink.broker(udid: "U")
+        let client = DeviceSessionClient(udid: "U", link: ClosingLink(closing), reconnect: { fresh })
+        _ = try await client.frame(.png)
+        #expect(fresh.requests == [.frame(.png)])
+
+        let input = DeviceSessionClient(udid: "U", link: ClosingLink(FakeSessionLink { _ in throw DeviceSessionLinkError.lost("the broker closed the connection") }), reconnect: { FakeSessionLink.broker(udid: "U") })
+        let lost = await #expect(throws: IOSDeviceError.self) { try await input.touch([.touch(.down, x: 1, y: 1), .touch(.up, x: 1, y: 1)]) }
+        #expect(lost?.reason == .inputOutcomeUnknown)
+    }
+
+    @Test("a timed-out frame is not retried, since the broker may still be busy with it")
+    func noRetryOnTimeout() async throws {
+        let slow = FakeSessionLink { _ in throw DeviceSessionLinkError.lost("the reply timed out") }
+        let fresh = FakeSessionLink.broker(udid: "U")
+        let client = DeviceSessionClient(udid: "U", link: slow, reconnect: { fresh })
+        await #expect(throws: IOSDeviceError.self) { _ = try await client.frame(.png) }
+        #expect(fresh.requests.isEmpty)
+    }
+}
+
+/// A fake link whose broker closes it as its exchange fails, as a socket peek would then report.
+final class ClosingLink: DeviceSessionLink, @unchecked Sendable {
+    let inner: FakeSessionLink
+    init(_ inner: FakeSessionLink) { self.inner = inner }
+    var isBroken: Bool { inner.isBroken }
+    var peerClosed: Bool { inner.isBroken }
+    func exchange(_ request: DeviceSessionRequest, timeout: Duration) async throws -> (DeviceSessionReply, Data?) {
+        try await inner.exchange(request, timeout: timeout)
+    }
+    func close() { inner.close() }
 }

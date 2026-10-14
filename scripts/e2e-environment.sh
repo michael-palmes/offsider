@@ -21,8 +21,13 @@ configure_e2e_environment() {
     export DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR"
 }
 
+# In CI, build and test refuse to resolve past Package.resolved, so a run uses exactly the pinned dependencies.
 run_selected_swift() {
-    DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_SWIFT" "$@"
+    if [[ "${CI:-}" == "true" ]] && { [[ "${1:-}" == "build" ]] || [[ "${1:-}" == "test" ]]; }; then
+        DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_SWIFT" "$@" --force-resolved-versions
+    else
+        DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_SWIFT" "$@"
+    fi
 }
 
 E2E_FALLBACK_SIMULATOR_NAME="Offsider E2E"

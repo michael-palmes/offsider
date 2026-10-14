@@ -51,6 +51,30 @@ struct SwipeHoldEndTests {
         #expect(error.map { Swipe.message(for: $0).contains("--hold-end must be from 0 to 10000") } == true)
     }
 
+    @Test("--duration over 30 seconds is a usage error", arguments: ["31", "1e12"])
+    func durationCap(value: String) {
+        let error = #expect(throws: (any Error).self) { try Self.swipe(["--duration", value]) }
+        #expect(error.map { Swipe.message(for: $0).contains("Duration must be at most 30 seconds") } == true)
+    }
+
+    @Test("--hold-end with a vanishing --delta clamps its steps instead of trapping")
+    func vanishingDelta() throws {
+        let event = try Self.swipe(["--delta", "1e-300", "--hold-end", "100"]).swipeEvent(from: (x: 200, y: 800), to: (x: 200, y: 400))
+        guard case .composite(let events) = event else {
+            Issue.record("expected a composite drag, got \(event)")
+            return
+        }
+        #expect(events.filter { if case .touch(.down, _, _) = $0 { return true } else { return false } }.count <= Drag.maxSteps + 2)
+    }
+
+    @Test("coordinates that are not finite are a usage error")
+    func infiniteCoordinates() {
+        let error = #expect(throws: (any Error).self) {
+            try Swipe.parse(["--start-x", "inf", "--start-y", "800", "--end-x", "200", "--end-y", "400", "--device", "emulator-5554"])
+        }
+        #expect(error.map { Swipe.message(for: $0).contains("Coordinates must be finite numbers.") } == true)
+    }
+
     @Test("a batch swipe step sends the command's event, with and without --hold-end", arguments: [[], ["--hold-end", "300"]])
     func batchMatchesCommand(extra: [String]) async throws {
         let device = DeviceID(rawValue: "STUB", platform: .ios)

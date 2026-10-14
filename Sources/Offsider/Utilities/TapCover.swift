@@ -123,13 +123,13 @@ struct TapCover {
     static func describe(_ verdict: CoverVerdict) -> String {
         var parts = [verdict.cover.role.rawValue]
         if let name = verdict.cover.normalizedLabel ?? verdict.cover.normalizedID {
-            parts.append("'\(SelectorText.truncated(name))'")
+            parts.append("'\(TerminalText.line(SelectorText.truncated(name), keepsTab: false))'")
         }
         if let frame = verdict.cover.frame {
             parts.append(frame.summary)
         }
         if let screen = verdict.screen, screen != verdict.cover.normalizedID {
-            parts.append("on \(SelectorText.truncated(screen))")
+            parts.append("on \(TerminalText.line(SelectorText.truncated(screen), keepsTab: false))")
         }
         return parts.joined(separator: " ")
     }

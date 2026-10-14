@@ -17,9 +17,10 @@ struct Screenshot: AsyncParsableCommand {
         --diff-output writes an image of where they are; an evidence run keeps a diff only when pixels changed. \
         --display captures one display of a foldable (see `offsider displays`); a display that is not active \
         is captured as it is, often dark. \
-        --mask-secure (or OFFSIDER_MASK_SECURE=1) reads the accessibility tree first and paints every password field \
+        Password fields are masked by default: the accessibility tree is read first and every password field is painted \
         opaque black before the image is written or compared; when a password field cannot be located, the image is \
-        withheld and no file is written. --mask-id, --mask-label, --mask-label-contains, --mask-text and --mask-emails paint the elements \
+        withheld and no file is written. --no-mask-secure (or OFFSIDER_MASK_SECURE=0) skips the tree read and the mask, \
+        except during an evidence run that masks them. --mask-id, --mask-label, --mask-label-contains, --mask-text and --mask-emails paint the elements \
         they match the same way, even on a screen beneath a page (counted in maskedBeneath); --mask-region paints a rectangle \
         in points before any --region crop and reads no tree. A selector that matches nothing is named in maskUnmatched \
         and on stderr, and the image is still written. \
@@ -28,7 +29,7 @@ struct Screenshot: AsyncParsableCommand {
         page found nothing is skipped. Use it only when the page on top is opaque: a translucent or animating page shows what is \
         beneath, so check the image. \
         Masks cover what the tree describes: web views, canvases, images and text drawn after the tree read can \
-        still show. Video is never masked.
+        still show. Video is never masked: record-video and stream-video refuse while a password field is on screen.
         """
     )
 
@@ -65,8 +66,8 @@ struct Screenshot: AsyncParsableCommand {
     @Option(help: ArgumentHelp("With --compare, the outcome that passes: changed (the default) or unchanged. Exit 5 when the capture does not match it.", valueName: "changed|unchanged"))
     var expect: ScreenCompare.Outcome?
 
-    @Flag(name: .customLong("mask-secure"), help: "Paint password fields black before writing the image; withhold it when one cannot be located. OFFSIDER_MASK_SECURE=1 turns this on by default.")
-    var maskSecure = false
+    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Paint password fields black before writing the image, and withhold it when one cannot be located (the default; OFFSIDER_MASK_SECURE=0 turns it off).")
+    var maskSecure: Bool?
 
     @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this id black. Repeatable.", valueName: "id"))
     var maskIDs: [String] = []
@@ -92,9 +93,9 @@ struct Screenshot: AsyncParsableCommand {
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
 
-    /// The flag, or `OFFSIDER_MASK_SECURE=1`.
-    static func masksSecure(flag: Bool, environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        flag || environment["OFFSIDER_MASK_SECURE"] == "1"
+    /// The capture's flag, else the batch's, else `OFFSIDER_MASK_SECURE`, else on.
+    static func masksSecure(flag: Bool?, batchDefault: Bool? = nil, environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        flag ?? batchDefault ?? EnvironmentFlag.bool("OFFSIDER_MASK_SECURE", in: environment) ?? true
     }
 
     func validate() throws {
@@ -134,13 +135,13 @@ struct Screenshot: AsyncParsableCommand {
         )
     }
 
-    /// The masks the flags ask for; `secureByDefault` adds `--mask-secure`, as `batch --mask-secure` does.
-    func maskPlan(secureByDefault: Bool = false, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> MaskPlan {
+    /// The masks the flags ask for; `batchDefault` is `batch --mask-secure` or `--no-mask-secure`, which a step's own flag beats.
+    func maskPlan(batchDefault: Bool? = nil, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> MaskPlan {
         for pattern in maskTexts {
             _ = try MaskPlan.compile(pattern)
         }
         return MaskPlan(
-            secure: Self.masksSecure(flag: maskSecure || secureByDefault, environment: environment),
+            secure: Self.masksSecure(flag: maskSecure, batchDefault: batchDefault, environment: environment),
             ids: maskIDs,
             labels: maskLabels,
             labelsContaining: maskLabelsContaining,
@@ -257,8 +258,8 @@ struct Screenshot: AsyncParsableCommand {
         var path: String?
         if output != nil || (compare == nil && token == nil) {
             let prefix = route.device.platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
-            let url = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: request.format)
-            try rendered.encoded(as: request.format).write(to: url)
+            let target = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: request.format)
+            let url = try ScreenCapture.write(try rendered.encoded(as: request.format), to: target)
             path = url.path
             Self.writeError("Screenshot saved to \(url.path) (\(rendered.image.width) x \(rendered.image.height) px)")
         }
@@ -297,8 +298,8 @@ struct Screenshot: AsyncParsableCommand {
             entry.expect = result.expected.rawValue
         }
         if diffOutput != nil {
-            let url = try ScreenCapture.outputURL(path: diffOutput, prefix: "Screenshot Diff", deviceName: booted.name, format: .png)
-            try ScreenImage.encode(diffImage, as: .png).write(to: url)
+            let target = try ScreenCapture.outputURL(path: diffOutput, prefix: "Screenshot Diff", deviceName: booted.name, format: .png)
+            let url = try ScreenCapture.write(try ScreenImage.encode(diffImage, as: .png), to: target)
             report.diffPath = url.path
             Self.writeError("Diff saved to \(url.path)")
         }
@@ -322,8 +323,8 @@ struct Screenshot: AsyncParsableCommand {
         var path: String?
         if output != nil || token == nil {
             let prefix = platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
-            let url = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: .png)
-            try png.write(to: url)
+            let target = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: .png)
+            let url = try ScreenCapture.write(png, to: target)
             path = url.path
             Self.writeError("Screenshot saved to \(url.path) (\(size.width) x \(size.height) px)")
         }

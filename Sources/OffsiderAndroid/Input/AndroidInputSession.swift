@@ -34,6 +34,14 @@ enum TextReplacement: Equatable, Sendable {
     case useKeys(warning: String?, field: AndroidFieldInfo? = nil)
 }
 
+/// Whether a password field has focus, read before text could reach a clipboard or an `input text` argument.
+enum FocusedSecureField: Equatable, Sendable {
+    case secure
+    case notSecure
+    /// The screen could not be read.
+    case unknown
+}
+
 /// The focused field as the screen shows it, after keys replaced its text.
 struct FocusedFieldReading: Equatable, Sendable {
     /// Empty while the field shows its hint; nil for a password field.
@@ -72,8 +80,15 @@ final class AndroidInputSession: InputSession, TextInputSession {
     /// Looked up only when a message needs it, so ordinary input costs no extra adb call.
     private let avdName: @MainActor () async -> String?
     private let replaceFocusedText: @MainActor (String) async throws -> TextReplacement
-    /// Read only before a paste, the one path that puts text on a clipboard.
-    private let focusedSecureField: @MainActor () async -> Bool
+    /// Read before a paste, and before `input text` on an adb route.
+    private let focusedSecureField: @MainActor () async -> FocusedSecureField
+    /// The helper for a password: started if needed, else `helper_unavailable`.
+    private let secretHelper: @MainActor () async throws -> HelperInputDriver
+    /// On a phone, refuses a browser or system app in front; checked before text and before the first other input.
+    private let requireForeground: @MainActor () async throws -> Void
+    private var foregroundChecked = false
+    /// Set once the command's own focus verdict has served a dispatch; later dispatches read the screen again.
+    private var knownFocusUsed = false
     /// The focused field after a key replacement; nil when it cannot be read.
     private let readFocusedField: @MainActor () async -> FocusedFieldReading?
     /// The helper's `paste` op on the focused field, refused unless it is the given one; nil when the helper has none.
@@ -98,7 +113,11 @@ final class AndroidInputSession: InputSession, TextInputSession {
         route: @escaping @MainActor () async throws -> AndroidInputRoute,
         avdName: @escaping @MainActor () async -> String?,
         replaceFocusedText: @escaping @MainActor (String) async throws -> TextReplacement,
-        focusedSecureField: @escaping @MainActor () async -> Bool = { false },
+        focusedSecureField: @escaping @MainActor () async -> FocusedSecureField = { .notSecure },
+        secretHelper: @escaping @MainActor () async throws -> HelperInputDriver = {
+            throw AndroidError.secretNeedsHelper("the device", reason: "no helper was offered")
+        },
+        requireForeground: @escaping @MainActor () async throws -> Void = {},
         multiTouchHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
         apiLevel: @escaping @MainActor () async -> Int?,
         gapHelper: @escaping @MainActor (AdbInputGap, Int) async throws -> HelperInputDriver,
@@ -114,6 +133,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.avdName = avdName
         self.replaceFocusedText = replaceFocusedText
         self.focusedSecureField = focusedSecureField
+        self.secretHelper = secretHelper
+        self.requireForeground = requireForeground
         self.multiTouchHelper = multiTouchHelper
         self.apiLevel = apiLevel
         self.gapHelper = gapHelper
@@ -139,6 +160,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
     static let pasteKeyCode = 279
 
     func perform(_ event: InputEvent) async throws {
+        if !foregroundChecked, !Self.onlyButtons(event) {
+            try await requireForeground()
+            foregroundChecked = true
+        }
         try await timing.measure(.input) {
             try await dispatch(event)
         }
@@ -240,6 +265,15 @@ final class AndroidInputSession: InputSession, TextInputSession {
         return try await gapHelper(.motionEvent, level)
     }
 
+    /// Buttons, such as Home or Back, only take a phone away from what is in front, so they skip the foreground check.
+    static func onlyButtons(_ event: InputEvent) -> Bool {
+        switch event {
+        case .button, .shortButtonPress, .delay: return true
+        case .composite(let events): return events.allSatisfy(onlyButtons)
+        default: return false
+        }
+    }
+
     /// All-ASCII text as key events (gRPC `text` chunks, or adb `input text`); anything else pasted whole.
     func typeText(_ text: String) async throws {
         try await timing.measure(.input) {
@@ -248,14 +282,21 @@ final class AndroidInputSession: InputSession, TextInputSession {
     }
 
     private func dispatchText(_ text: String) async throws {
+        try await requireForeground()
+        foregroundChecked = true
         let route = try await route()
+        let secret = InputSecrecy.isSecret
         switch try AndroidTextPlan.make(for: text) {
         case .paste(let whole):
+            if try await appendThroughHelper(whole) { return }
+            guard !secret else { throw AndroidError.secretPasteRefused(device.rawValue) }
             guard let clipboard = route.clipboard else {
                 throw AndroidError.grpcRequiredForText(serial: device.rawValue, avd: await avdName(), reason: route.adbReason)
             }
-            if await focusedSecureField() {
-                throw AndroidError.securePasteRefused(device.rawValue)
+            switch await currentFocus() {
+            case .secure: throw AndroidError.securePasteRefused(device.rawValue)
+            case .unknown: throw AndroidError.securePasteUnconfirmed(device.rawValue)
+            case .notSecure: break
             }
             try await paste(whole, through: clipboard)
         case .keys(let chunks):
@@ -268,6 +309,23 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 try await driver.type(chunks)
                 return
             }
+            // A password never becomes an `input text` argument, which the device's process list shows.
+            switch secret ? .secure : await currentFocus() {
+            case .secure:
+                try await secretHelper().type(chunks)
+                return
+            case .unknown where InputSecrecy.fromArgument:
+                let helper: HelperInputDriver
+                do {
+                    helper = try await secretHelper()
+                } catch let error as AndroidError where error.kind == .helperUnavailable {
+                    throw AndroidError.unreadableFocusNeedsHelper(device.rawValue)
+                }
+                try await helper.type(chunks)
+                return
+            case .unknown, .notSecure:
+                break
+            }
             let commands = try chunks.flatMap { chunk -> [String] in
                 switch chunk {
                 case .text(let run): return AdbShellQuoting.inputTextCommands(for: run)
@@ -276,6 +334,35 @@ final class AndroidInputSession: InputSession, TextInputSession {
             }
             guard !commands.isEmpty else { return }
             try await shell.run(commands.joined(separator: " && "), redactedLabel: "input text (\(text.count) character\(text.count == 1 ? "" : "s"))")
+        }
+    }
+
+    /// The command's own verdict for the first dispatch, so a positional `type` reads the screen once; else a fresh read.
+    private func currentFocus() async -> FocusedSecureField {
+        if !knownFocusUsed, let known = InputSecrecy.knownFocus {
+            knownFocusUsed = true
+            switch known {
+            case .secure: return .secure
+            case .notSecure: return .notSecure
+            case .unknown: return .unknown
+            }
+        }
+        return await focusedSecureField()
+    }
+
+    /// Non-ASCII text through the running helper's `setText`, appended to the field's text, so it never reaches a clipboard.
+    /// False without a running helper or when the field refuses it; a password field, whose text cannot be read, is refused.
+    private func appendThroughHelper(_ text: String) async throws -> Bool {
+        guard let reading = await readFocusedField() else { return false }
+        guard !reading.secure, let current = reading.text else { throw AndroidError.securePasteRefused(device.rawValue) }
+        switch try await replaceFocusedText(current + text) {
+        case .replaced:
+            return true
+        case .replacedWrongLength(let field):
+            try await confirmReplacement(current + text, field: field)
+            return true
+        case .useKeys:
+            return false
         }
     }
 
@@ -314,7 +401,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         log(.debug, "The focused field on \(device.rawValue) holds \(shown.utf16.count) characters after typing \(expected)")
         let target = field.map { AndroidFieldInfo(className: $0.className, resourceId: $0.resourceId) } ?? reading.field
         var pasted = false
-        if let clipboard = try await route().clipboard {
+        if !InputSecrecy.isSecret, let clipboard = try await route().clipboard {
             let saved = try await clipboard.clipboard()
             try await clipboard.setClipboard(text)
             do {

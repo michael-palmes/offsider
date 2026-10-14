@@ -28,17 +28,42 @@ public enum LoginForm {
         public var submit: UINode
         /// The iOS Turnstile web view, or the checkbox frame, when the tree shows exactly one.
         public var turnstileShell: UIFrame?
+        /// Why the password field looks like web content rather than the app's own control; nil when nothing says so.
+        public var webContainer: WebContainer?
 
-        public init(identity: UINode, password: UINode, submit: UINode, turnstileShell: UIFrame?) {
+        public init(identity: UINode, password: UINode, submit: UINode, turnstileShell: UIFrame?, webContainer: WebContainer? = nil) {
             self.identity = identity
             self.password = password
             self.submit = submit
             self.turnstileShell = turnstileShell
+            self.webContainer = webContainer
+        }
+    }
+
+    /// What marks a password field as web content.
+    public enum WebContainer: Equatable, Sendable {
+        /// An Android `WebView` ancestor, an iOS runner `WebView`, or a simulator web area.
+        case webView
+        /// The field belongs to another Android package, or is missing one.
+        case otherPackage(String?)
+        /// The field belongs to another iOS process, as WebKit's web content does.
+        case otherProcess
+    }
+
+    /// The app in front and how to map an iOS process to its bundle id, for the web-view checks that need them.
+    public struct Origin {
+        public var foreground: String
+        public var bundleForPID: (Int) -> String?
+
+        public init(foreground: String, bundleForPID: @escaping (Int) -> String? = { _ in nil }) {
+            self.foreground = foreground
+            self.bundleForPID = bundleForPID
         }
     }
 
     /// Pinned profile fields win. Anything omitted is detected. A covered control is refused.
-    public static func detect(in tree: UITree, profile: LoginProfile? = nil) throws -> Found {
+    /// With `origin`, the package and process checks run as well as the structural web-view checks.
+    public static func detect(in tree: UITree, profile: LoginProfile? = nil, origin: Origin? = nil) throws -> Found {
         let identity = try resolve(
             profile?.identity,
             roles: [.textField, .searchField],
@@ -68,7 +93,68 @@ public enum LoginForm {
             what: "submit button",
             missing: "No Log in, Sign in, Continue or Next button is in front below the password field."
         )
-        return Found(identity: identity, password: password, submit: submit, turnstileShell: shell(in: tree))
+        return Found(
+            identity: identity, password: password, submit: submit, turnstileShell: shell(in: tree),
+            webContainer: webContainer(of: password, in: tree, origin: origin)
+        )
+    }
+
+    /// Android: a `WebView` ancestor, or a package other than the app in front (fail closed). iOS: a `WebView` or web-area
+    /// ancestor (fail closed), or a process other than the app's that maps to another bundle. No signal means native.
+    public static func webContainer(of field: UINode, in tree: UITree, origin: Origin?) -> WebContainer? {
+        guard let chain = ancestry(of: field, in: tree) else { return nil }
+        switch tree.platform {
+        case .android:
+            if chain.contains(where: isAndroidWebView) { return .webView }
+            if let origin {
+                let package = androidPackage(of: field)
+                if package != origin.foreground { return .otherPackage(package) }
+            }
+        case .ios:
+            if chain.contains(where: isIOSWebView) { return .webView }
+            if let origin, let pid = chain.reversed().lazy.compactMap(iosPID).first {
+                let appPID = (tree.roots.flatMap { $0.flattened() }.first { $0.role == .application } ?? tree.roots.first).flatMap(iosPID)
+                if pid != appPID, origin.bundleForPID(pid) != origin.foreground { return .otherProcess }
+            }
+        }
+        return nil
+    }
+
+    /// The nodes from a root down to `field`, or nil when it is not in the tree.
+    private static func ancestry(of field: UINode, in tree: UITree) -> [UINode]? {
+        func walk(_ node: UINode, _ path: [UINode]) -> [UINode]? {
+            let here = path + [node]
+            if node == field { return here }
+            for child in node.children {
+                if let found = walk(child, here) { return found }
+            }
+            return nil
+        }
+        for root in tree.roots {
+            if let found = walk(root, []) { return found }
+        }
+        return nil
+    }
+
+    private static func isAndroidWebView(_ node: UINode) -> Bool {
+        guard case .android(let native) = node.native, let name = native.className else { return false }
+        return name == "WebView" || name.hasSuffix(".WebView")
+    }
+
+    private static func isIOSWebView(_ node: UINode) -> Bool {
+        guard case .ios(let native) = node.native else { return false }
+        if native.type == "WebView" || native.role == "AXWebArea" { return true }
+        return native.roleDescription?.lowercased() == "web area"
+    }
+
+    private static func androidPackage(of node: UINode) -> String? {
+        guard case .android(let native) = node.native, let package = native.package?.trimmingCharacters(in: .whitespaces), !package.isEmpty else { return nil }
+        return package
+    }
+
+    private static func iosPID(_ node: UINode) -> Int? {
+        guard case .ios(let native) = node.native else { return nil }
+        return native.pid
     }
 
     /// The email and password fields are on screen. The submit button may still be under the keyboard.

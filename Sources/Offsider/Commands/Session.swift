@@ -50,11 +50,19 @@ struct SessionStop: AsyncParsableCommand {
     @Option(name: .customLong("device"), help: ArgumentHelp("The device whose sessions to stop.", valueName: "id"))
     var device: String?
 
+    @Flag(name: .customLong("clean"), help: "Also uninstall the runner from the device and delete its cached builds and logs; needs --device.")
+    var clean = false
+
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of text.")
     var json = false
 
+    func validate() throws {
+        if clean, device == nil { throw ValidationError(RunnerSessions.cleanNeedsDevice) }
+    }
+
     @MainActor
     func run() async throws {
+        let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "session stop --clean") : nil
         let brokers = DeviceSessions.records(device: device)
         let manager = DeviceSessions.manager()
         for record in brokers {
@@ -72,15 +80,20 @@ struct SessionStop: AsyncParsableCommand {
             await runnerManager.stop(record)
         }
         let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid))
+        var cleaned: RunnerCleanupReport?
+        if let cleanUDID { cleaned = await RunnerSessions.clean(udid: cleanUDID) }
         if json {
-            print(DeviceSessionRow.stoppedJSON(stopped))
-        } else if stopped.isEmpty {
-            print(device.map { "No session is running for \($0)." } ?? "No session is running.")
+            print(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields)))
         } else {
-            for entry in stopped {
-                let parts = [entry.runner ? "runner" : nil, entry.broker ? "session broker" : nil].compactMap { $0 }
-                print("Stopped the \(parts.joined(separator: " and ")) on \(entry.device).")
+            if stopped.isEmpty {
+                print(device.map { "No session is running for \($0)." } ?? "No session is running.")
+            } else {
+                for entry in stopped {
+                    let parts = [entry.runner ? "runner" : nil, entry.broker ? "session broker" : nil].compactMap { $0 }
+                    print("Stopped the \(parts.joined(separator: " and ")) on \(entry.device).")
+                }
             }
+            if let cleaned { print(RunnerSessions.cleanText(cleaned), terminator: "") }
         }
     }
 }
@@ -198,9 +211,11 @@ struct DeviceSessionRow: Equatable {
         Set(runners + brokers).sorted().map { Stopped(device: $0, runner: runners.contains($0), broker: brokers.contains($0)) }
     }
 
-    static func stoppedJSON(_ stopped: [Stopped]) -> String {
+    static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil) -> String {
         let entries: [[String: Any]] = stopped.map { ["device": $0.device, "runner": $0.runner, "broker": $0.broker] }
-        let data = (try? JSONSerialization.data(withJSONObject: ["stopped": entries], options: [.sortedKeys])) ?? Data("{}".utf8)
+        var object: [String: Any] = ["stopped": entries]
+        if let clean { object["clean"] = clean }
+        let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)
     }
 }

@@ -1,6 +1,8 @@
 import AVFoundation
 import Foundation
+import OffsiderCore
 import Testing
+@testable import Offsider
 
 @Suite("Record Video Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct RecordVideoTests {
@@ -176,5 +178,84 @@ struct RecordVideoTests {
             fileSize: fileSize,
             exitCode: process.terminationStatus
         )
+    }
+}
+
+@Suite("Record video during sign-in")
+struct RecordVideoSignInTests {
+    static let key = DeviceLockKey(platform: .ios, id: "SIM-1")
+
+    @Test("recording is refused with device_busy (exit 8) while login or wake holds the device", arguments: ["login", "wake", "wake --unlock"])
+    func refusedDuringSignIn(command: String) {
+        let holder = DeviceLockHolder(pid: 4242, command: command, startedAt: nil)
+        let error = #expect(throws: DeviceBusy.self) { try RecordVideo.refuseDuringSignIn(Self.key, device: "SIM-1", holder: { _ in holder }) }
+        #expect(error?.reason == .deviceBusy)
+        #expect(error?.reason.exitCode.rawValue == 8)
+        #expect(error?.failureMessage.contains("offsider \(command)") == true)
+    }
+
+    @Test("any other holder, or none, leaves recording free", arguments: ["tap", "batch", "loginx", ""])
+    func otherHolders(command: String) throws {
+        try RecordVideo.refuseDuringSignIn(Self.key, device: "SIM-1", holder: { _ in DeviceLockHolder(pid: 1, command: command, startedAt: nil) })
+        try RecordVideo.refuseDuringSignIn(Self.key, device: "SIM-1", holder: { _ in nil })
+    }
+}
+
+@Suite("Recording marker before capture")
+@MainActor
+struct VideoRecordingStartTests {
+    static let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+    static let key = DeviceLockKey(platform: .android, id: "emulator-5554")
+
+    @Test("record-video and stream-video mark the device before asking who holds its lock, and keep the marker while they run", arguments: ["record-video", "stream-video"])
+    func markerBeforeHolderCheck(command: String) async throws {
+        let root = try RecordingMarkerTests.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        var liveAtCheck: Bool?
+        let (device, marker) = try await RecordVideo.start(
+            command: command, backend: FakeDeviceBackend(platform: .android, trees: []), device: Self.device, checksSecureField: false, root: root,
+            holder: { key in liveAtCheck = RecordingMarker.isLive(key, root: root); return nil }
+        )
+        #expect(device == Self.device)
+        #expect(liveAtCheck == true)
+        #expect(RecordingMarker.isLive(Self.key, root: root))
+        marker.remove()
+        #expect(!RecordingMarker.isLive(Self.key, root: root))
+    }
+
+    @Test("stream-video, like record-video, is refused with device_busy (exit 8) while login holds the device, and leaves no marker", arguments: ["record-video", "stream-video"])
+    func refusedDuringLogin(command: String) async throws {
+        let root = try RecordingMarkerTests.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let error = await #expect(throws: DeviceBusy.self) {
+            _ = try await RecordVideo.start(
+                command: command, backend: FakeDeviceBackend(platform: .android, trees: []), device: Self.device, checksSecureField: false, root: root,
+                holder: { _ in DeviceLockHolder(pid: 4242, command: "login", startedAt: nil) }
+            )
+        }
+        #expect(error?.reason.exitCode.rawValue == 8)
+        #expect(error?.failureMessage.contains("offsider login") == true)
+        #expect(error?.hint == "offsider \(command) ... --wait-lock 30")
+        #expect(!RecordingMarker.isLive(Self.key, root: root))
+    }
+
+    @Test("a marker that cannot be written fails with video_failed before the lock holder is read or any frame is taken")
+    func unwritableLocks() async throws {
+        let root = try RecordingMarkerTests.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        FileManager.default.createFile(atPath: (root as NSString).appendingPathComponent(OffsiderPrivateDirectory.locksDirectoryName), contents: Data())
+        let backend = FakeDeviceBackend(platform: .android, trees: [])
+        var holderRead = false
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RecordVideo.start(
+                command: "record-video", backend: backend, device: Self.device, checksSecureField: false, root: root,
+                holder: { _ in holderRead = true; return nil }
+            )
+        }
+        #expect(error?.reason == .videoFailed)
+        #expect(error?.userFacingDescription.contains("could not mark emulator-5554 as recording") == true)
+        #expect(error?.userFacingDescription.contains("so nothing was recorded") == true)
+        #expect(!holderRead)
+        #expect(backend.screenshotReads == 0)
     }
 }

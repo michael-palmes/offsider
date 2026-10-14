@@ -72,10 +72,16 @@ enum RunRegistry {
             } catch {
                 throw unavailable("OFFSIDER_RUN names \(path), which cannot be used as a run folder: \(OffsiderCommand.message(for: error)).")
             }
-            return ActiveRun(folder: folder, masks: (try? folder.readState())??.masks ?? RunMasks(), record: nil)
+            return ActiveRun(folder: folder, masks: (try? folder.readState())??.masks ?? .defaults, record: nil)
         case .none:
             guard let found = try record(of: environment) else { return nil }
-            return ActiveRun(folder: RunFolder(path: found.dir), masks: found.masks, record: found)
+            let folder: RunFolder
+            do {
+                folder = try RunFolder.validateRecorded(found)
+            } catch {
+                throw unavailable("This session's run folder cannot be trusted: \(OffsiderCommand.message(for: error)). Run `offsider run stop`, then start a new run.")
+            }
+            return ActiveRun(folder: folder, masks: found.masks, record: found)
         }
     }
 
@@ -105,8 +111,10 @@ enum RunRegistry {
         var addedMasks = false
     }
 
-    static func start(_ path: String, label: String?, masks: RunMasks, in environment: EvidenceRunEnvironment) throws -> Started {
+    /// `masks` start a new or stopped run; `explicit`, the masks the flags named (default `masks`), are all a restart of the active run adds.
+    static func start(_ path: String, label: String?, masks: RunMasks, explicit: RunMasks? = nil, in environment: EvidenceRunEnvironment) throws -> Started {
         let dir = absolute(path)
+        let explicit = explicit ?? masks
         var owner: ProcessIdentity?
         switch environment.override {
         case .off:
@@ -124,7 +132,7 @@ enum RunRegistry {
                         reason: .runActive, hint: "offsider run stop"
                     )
                 }
-                return try addMasks(masks, to: existing, in: environment)
+                return try addMasks(explicit, to: existing, in: environment)
             }
             guard let found = ProcessAncestry.owner(from: environment.parentPID, in: environment.processes) else {
                 throw unavailable("Could not find the session that runs this command, so a run cannot be tied to it. Set OFFSIDER_RUN=<dir> instead.")
@@ -144,7 +152,7 @@ enum RunRegistry {
         let (state, continued, unchanged) = try folder.locked { () throws -> (RunState, Bool, Bool) in
             if var state = try folder.readState() {
                 if state.stoppedAt == nil, owner == nil {
-                    let merged = state.masks.union(masks)
+                    let merged = state.masks.union(explicit)
                     if merged != state.masks {
                         state.masks = merged
                         try folder.writeState(state)

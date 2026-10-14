@@ -1,5 +1,6 @@
 import Foundation
 import FBSimulatorControl
+import OffsiderCore
 
 @MainActor
 struct SimulatorOrientationReader {
@@ -76,18 +77,18 @@ struct SimulatorOrientationReader {
         }
 
         let initSelector = NSSelectorFromString("initWithDevice:screenID:")
-        guard let allocated = allocate(screenClass) else {
-            logger.info().log("Orientation probe: SimDeviceScreen allocation failed")
+        do {
+            try PrivateAPIGuard.requireMethod(object_getClass(screenClass)!, NSSelectorFromString("alloc"), encoding: Encodings.alloc, framework: "SimulatorKit")
+            try PrivateAPIGuard.requireMethod(screenClass, initSelector, encoding: Encodings.initWithDeviceScreenID, framework: "SimulatorKit")
+            try PrivateAPIGuard.requireMethod(screenClass, NSSelectorFromString("screen"), encoding: Encodings.screen, framework: "SimulatorKit")
+        } catch {
+            logger.info().log("Orientation probe: \(error.localizedDescription)")
             return nil
         }
-        guard let initMethod = allocated.method(for: initSelector) else {
-            logger.info().log("Orientation probe: initWithDevice:screenID: unavailable")
+        guard let screenID = UInt32(exactly: screenID), let screenDevice = makeScreen(screenClass, device: device, screenID: screenID, selector: initSelector) else {
+            logger.info().log("Orientation probe: SimDeviceScreen could not be made for screen \(screenID)")
             return nil
         }
-
-        typealias InitFunction = @convention(c) (AnyObject, Selector, AnyObject, Int) -> AnyObject
-        let initFunction = unsafeBitCast(initMethod, to: InitFunction.self)
-        let screenDevice = initFunction(allocated, initSelector, device, screenID)
 
         guard let screen = sendObject(screenDevice, selector: "screen") else {
             logger.info().log("Orientation probe: screen unavailable")
@@ -108,15 +109,24 @@ struct SimulatorOrientationReader {
         return mapUIOrientation(rawOrientation)
     }
 
-    private static func allocate(_ objectClass: NSObject.Type) -> AnyObject? {
-        let selector = NSSelectorFromString("alloc")
-        guard let method = class_getClassMethod(objectClass, selector) else {
+    /// The type encodings (offsets stripped) SimulatorKit has with Xcode 27; checked before each cast below.
+    enum Encodings {
+        static let alloc = "@@:"
+        static let initWithDeviceScreenID = "@@:@I"
+        static let screen = "@@:"
+    }
+
+    /// `[[SimDeviceScreen alloc] initWithDevice:screenID:]` with ownership balanced: `alloc` hands over +1, `init` consumes it and returns +1, or nil having released it.
+    private static func makeScreen(_ screenClass: NSObject.Type, device: AnyObject, screenID: UInt32, selector: Selector) -> AnyObject? {
+        let allocSelector = NSSelectorFromString("alloc")
+        guard let allocMethod = class_getClassMethod(screenClass, allocSelector), let initMethod = class_getInstanceMethod(screenClass, selector) else {
             return nil
         }
-
-        typealias Function = @convention(c) (AnyClass, Selector) -> AnyObject?
-        let function = unsafeBitCast(method_getImplementation(method), to: Function.self)
-        return function(objectClass, selector)
+        typealias Alloc = @convention(c) (AnyClass, Selector) -> UnsafeMutableRawPointer?
+        typealias Initialise = @convention(c) (UnsafeMutableRawPointer, Selector, AnyObject, UInt32) -> UnsafeMutableRawPointer?
+        guard let allocated = unsafeBitCast(method_getImplementation(allocMethod), to: Alloc.self)(screenClass, allocSelector) else { return nil }
+        let initialised = unsafeBitCast(method_getImplementation(initMethod), to: Initialise.self)(allocated, selector, device, screenID)
+        return initialised.map { Unmanaged<AnyObject>.fromOpaque($0).takeRetainedValue() }
     }
 
     private static func sendObject(_ target: AnyObject, selector selectorName: String) -> AnyObject? {
@@ -145,7 +155,7 @@ struct SimulatorOrientationReader {
         return function(target, selector)
     }
 
-    private static func mapUIOrientation(_ rawOrientation: UInt32) -> SimulatorOrientation? {
+    static func mapUIOrientation(_ rawOrientation: UInt32) -> SimulatorOrientation? {
         switch rawOrientation {
         case 1:
             return .portrait

@@ -8,7 +8,8 @@ struct PermissionCommand: AsyncParsableCommand {
         abstract: "Grant, revoke or reset an app's permissions, or list the service names.",
         discussion: """
         Services are one vocabulary for both platforms: `simctl privacy` on iOS simulators, runtime permissions on \
-        Android (also by literal android.permission.NAME). Granting a permission already granted changes nothing. \
+        Android (also by literal android.permission.NAME). On a physical Android phone, name the services: `all` \
+        exits 64. Granting a permission already granted changes nothing. \
         reset makes the app ask again on next use. Android stops the app when one of its permissions is revoked. \
         `show` lists an Android app's runtime permissions; iOS simulators offer no read. `services` needs no device.
 
@@ -130,9 +131,21 @@ struct PermissionCommand: AsyncParsableCommand {
             let state = try await backend.permissions(of: app, on: device)
             return json ? DeviceStateReport.permissionShow(state, app: app, on: device) : showLines(state, app: app)
         case .change(let action, let targets, let app, _):
+            try refuseAllOnPhone(action, targets, app: app, on: device)
             let change = try await backend.applyPermission(action, targets, app: app, on: device)
             return json ? DeviceStateReport.permissionChange(change, app: app, on: device) : changeLines(change, app: app, platform: device.platform)
         }
+    }
+
+    /// `all` on a USB phone reaches SMS, call log and location on someone's real device, so a phone needs named services.
+    static func refuseAllOnPhone(_ action: PermissionAction, _ targets: [PermissionTarget], app: String, on device: DeviceID) throws {
+        guard device.isPhysicalAndroidDevice, targets.contains(.service(.all)) else { return }
+        let named = "offsider permission \(action.rawValue) camera notifications --app \(app) --device \(device.rawValue)"
+        throw CLIError(
+            errorDescription: "permission \(action.rawValue) all is refused on a physical phone: name the services, as in `\(named)`. `all` on a phone reaches SMS, call log and location, and the change outlives the run.",
+            reason: .usage,
+            hint: named
+        )
     }
 
     static func services(_ platform: DevicePlatform?) -> [PermissionService] {

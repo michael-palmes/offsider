@@ -18,10 +18,11 @@ struct Logs: AsyncParsableCommand {
         abstract: "Print the device's recent log entries, or collect live ones for a while",
         discussion: """
         Reads the last 30 seconds by default. Choose a source (--rn, --app, both, or --process) and one window \
-        (--last, --since, --duration or --follow). ANSI colour codes, including escaped forms such as \\u001b[32m, \
-        are removed unless --raw. Passwords, tokens, keys, cookies, JWTs and email addresses are replaced with \
-        [redacted] unless --no-redact (or --raw alone); --grep and --exclude match the text before redaction. Exits 0 \
-        even when nothing matches. On iOS this reads the simulator's unified log, which keeps about 1 KB of a message \
+        (--last, --since, --duration or --follow). ANSI escape sequences, including escaped colour codes such as \\u001b[32m, \
+        are removed; --raw keeps colour codes only. Text output keeps each entry on one line, a newline showing as \\n. \
+        Passwords, tokens, keys, cookies, JWTs, email addresses, wallet addresses, card numbers, recovery phrases and one-time \
+        codes are replaced with markers such as [redacted]; --grep and --exclude match the text before redaction. Without \
+        --rn, --app or --process the whole device's log is read, and stderr says so. Exits 0 even when nothing matches. On iOS this reads the simulator's unified log, which keeps about 1 KB of a message \
         and ends a longer one <…> (marked [truncated], or "truncated": true in JSON); on Android, logcat.
 
         --rn reads React Native's own log (the com.facebook.react.log subsystem on iOS, the ReactNativeJS and \
@@ -67,10 +68,10 @@ struct Logs: AsyncParsableCommand {
     @Option(name: .customLong("tz"), help: ArgumentHelp("Text output times in this Mac's zone (local, the default) or UTC; each ends with its offset, such as +10:30 or Z. JSON is always UTC.", valueName: "local|utc"))
     var tz: LogZoneChoice = .local
 
-    @Flag(help: "Keep ANSI colour codes in messages; also turns redaction off unless --redact is given.")
+    @Flag(help: "Keep ANSI colour codes in messages; other escape sequences are still removed, and redaction stays on.")
     var raw = false
 
-    @Flag(inversion: .prefixedNo, help: "Replace passwords, tokens, keys, cookies, JWTs and email addresses with [redacted] (default on, off with --raw).")
+    @Flag(inversion: .prefixedNo, help: "Replace passwords, tokens, keys, cookies, JWTs, emails, wallet addresses, card numbers, recovery phrases and one-time codes with markers (the default).")
     var redact: Bool?
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
@@ -137,9 +138,9 @@ struct Logs: AsyncParsableCommand {
         try LogCollector(maxLines: follow ? 0 : maxLines, grep: grep, exclude: exclude, keepsANSI: raw, redacts: redacts, retainsEntries: !follow)
     }
 
-    /// `--redact` or `--no-redact` when given, else on unless `--raw`.
+    /// `--redact` or `--no-redact` when given, else on; `--raw` never turns it off.
     var redacts: Bool {
-        redact ?? !raw
+        redact ?? true
     }
 
     func run() async throws {
@@ -168,6 +169,9 @@ struct Logs: AsyncParsableCommand {
             throw CLIError(errorDescription: "logs is not available for \(booted.id.platform.rawValue) devices in this build.", reason: .notSupported)
         }
         let query = try Self.options { try self.query() }
+        if query.source == .all {
+            note(Self.wholeLogNote)
+        }
         let sink = LogSink(try Self.options { try self.collector() })
         let recorder = EvidenceRecorder.current
         let token = try recorder.begin(device: booted.id, kind: "logs")
@@ -181,13 +185,14 @@ struct Logs: AsyncParsableCommand {
 
         let follow = self.follow
         let json = self.json
+        let raw = self.raw
         let zone = tz.timeZone
         let device = booted.id.rawValue
         let reading = Task { @MainActor in
             try await reader.readLogs(query, on: booted.id, onEntry: { entry in
                 sink.retention.add(entry)
                 guard let shown = sink.collector.add(entry), follow else { return }
-                tee(json ? LogReport.jsonLine(shown) : LogText.format(shown, timeZone: zone))
+                tee(json ? LogReport.jsonLine(shown) : LogText.format(shown, timeZone: zone, keepsColour: raw))
             }, onNote: { logNote in
                 switch logNote {
                 case .clockSkew(let seconds): note(LogClock.note(seconds, device: device))
@@ -204,7 +209,7 @@ struct Logs: AsyncParsableCommand {
         let started = Date()
         try await reading.value
         if !follow {
-            Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, timeZone: zone, write: tee, note: note)
+            Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, timeZone: zone, keepsColour: raw, write: tee, note: note)
         }
         if booted.id.platform == .ios, let cutoff = query.window.cutoff(now: started), let warning = sink.retention.warning(cutoff: cutoff, timeZone: zone) {
             note(warning)
@@ -242,8 +247,11 @@ struct Logs: AsyncParsableCommand {
     /// The stderr line after a read that redacted something; nil when nothing was.
     static func redactionFooter(_ count: Int) -> String? {
         guard count > 0 else { return nil }
-        return "Redacted \(count) \(count == 1 ? "value" : "values") (passwords, tokens, emails); --no-redact shows them."
+        return "Redacted \(count) \(count == 1 ? "value" : "values") (passwords, tokens, emails, addresses, cards, phrases, codes)."
     }
+
+    /// The stderr line before a read of the whole device's log.
+    static let wholeLogNote = "Reading the whole device's log, every app's included; pass --app, --rn or --process to read only the app under test."
 
     /// The stderr line after a read whose entries the device's log cut short; nil when none were.
     static func cutFooter(_ count: Int) -> String? {
@@ -260,12 +268,15 @@ struct Logs: AsyncParsableCommand {
     }
 
     @MainActor
-    static func emit(_ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool, timeZone: TimeZone = .current, write: (String) -> Void, note: (String) -> Void = Logs.printNote) {
+    static func emit(
+        _ collector: LogCollector, platform: DevicePlatform, device: String, json: Bool, timeZone: TimeZone = .current, keepsColour: Bool = false,
+        write: (String) -> Void, note: (String) -> Void = Logs.printNote
+    ) {
         let entries = collector.entries
         if json {
             write(LogReport(platform: platform, device: device, entries: entries, truncated: collector.truncated, redacted: collector.redacted, excluded: collector.excluded).jsonLine())
         } else if !entries.isEmpty {
-            write(entries.map { LogText.format($0, timeZone: timeZone) }.joined(separator: "\n"))
+            write(entries.map { LogText.format($0, timeZone: timeZone, keepsColour: keepsColour) }.joined(separator: "\n"))
         }
         if collector.truncated > 0 {
             note("Showing the newest \(entries.count) of \(entries.count + collector.truncated) entries; raise --max-lines or narrow with --grep.")

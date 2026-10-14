@@ -8,7 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 BUILD_OUTPUT_DIR="${BUILD_OUTPUT_DIR:-${REPO_ROOT}/build_products}"
-ENTITLEMENTS="${ENTITLEMENTS:-${REPO_ROOT}/entitlements.plist}"
+# Release builds keep library validation on (entitlements.plist is empty); only ad-hoc builds, which carry no
+# Team ID, need entitlements-adhoc.plist to load the frameworks. Resolved after the arguments are parsed.
+ENTITLEMENTS="${ENTITLEMENTS:-}"
 GITHUB_REPO="${GITHUB_REPO:-michael-palmes/offsider}"
 # The signing team comes from the environment (.env locally, a secret in CI); Developer ID checks need it.
 TEAM_ID="${TEAM_ID:-}"
@@ -54,6 +56,9 @@ Commands:
   sign            Sign inside-out with $OFFSIDER_SIGNING_IDENTITY (hardened runtime, timestamp)
   notarize        notarytool submit --wait ($OFFSIDER_NOTARY_KEY_PATH, $OFFSIDER_NOTARY_KEY_ID, $OFFSIDER_NOTARY_ISSUER_ID)
   package         Create dist/offsider-<v>-arm64.tar.gz and dist/SHA256SUMS
+  pack-payload    Create dist/offsider-<v>-arm64-unsigned.tar.gz and dist/PAYLOAD.sha256 from the stage
+  unpack-payload  Recreate the stage from the unsigned payload (the signing job)
+  unpack-archive  Recreate the stage from the signed tarball (the verify job)
   verify          Extract the tarball and check layout, linkage, signatures, behaviour
   brew-gate       Install the tarball via a throwaway local tap and prove Homebrew changed nothing
   render-formula  Print Formula/offsider.rb for the GitHub release URL
@@ -376,6 +381,45 @@ cmd_notarize() {
   log "notarised: submission ${id}"
 }
 
+# The signing job never builds: it signs a payload the build job packed, after checking its digest.
+cmd_pack_payload() {
+  need_version
+  local payload="${DIST}/offsider-${VERSION}-arm64-unsigned.tar.gz"
+  [ -d "$STAGE" ] || die "stage not found: ${STAGE} (run stage first)"
+  sanitise "$STAGE"
+  rm -f "$payload" "${DIST}/PAYLOAD.sha256"
+  # shellcheck disable=SC2086
+  COPYFILE_DISABLE=1 /usr/bin/tar --no-mac-metadata --no-xattrs --no-acls --no-fflags \
+    --uid 0 --gid 0 --numeric-owner \
+    -czf "$payload" -C "$STAGE" "$EXE" "$BUNDLE" Frameworks $LICENCE_FILES
+  (cd "$DIST" && shasum -a 256 "$(basename "$payload")" > PAYLOAD.sha256)
+  log "packed $(cat "${DIST}/PAYLOAD.sha256")"
+}
+
+unpack_into_stage() {
+  local tarball="$1"
+  [ -f "$tarball" ] || die "tarball not found: ${tarball}"
+  rm -rf "$STAGE"
+  mkdir -p "$STAGE"
+  /usr/bin/tar -xzf "$tarball" -C "$STAGE"
+  verify_tree "$STAGE"
+  verify_helper "$STAGE"
+  log "unpacked ${tarball} into ${STAGE}"
+}
+
+cmd_unpack_payload() {
+  need_version
+  local payload="${DIST}/offsider-${VERSION}-arm64-unsigned.tar.gz"
+  (cd "$DIST" && shasum -a 256 -c PAYLOAD.sha256)
+  unpack_into_stage "$payload"
+}
+
+cmd_unpack_archive() {
+  need_version
+  (cd "$DIST" && shasum -a 256 -c SHA256SUMS)
+  unpack_into_stage "$ARCHIVE"
+}
+
 cmd_package() {
   need_version
   sanitise "$STAGE"
@@ -506,11 +550,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ -z "$ENTITLEMENTS" ]; then
+  if [ "$ADHOC" = 1 ]; then ENTITLEMENTS="${REPO_ROOT}/entitlements-adhoc.plist"; else ENTITLEMENTS="${REPO_ROOT}/entitlements.plist"; fi
+fi
+if [ "$ADHOC" = 0 ] && [ "$command_name" != help ] \
+   && /usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.disable-library-validation' "$ENTITLEMENTS" >/dev/null 2>&1; then
+  die "release builds keep library validation on; ${ENTITLEMENTS} disables it (ad-hoc builds use entitlements-adhoc.plist)"
+fi
+
 case "$command_name" in
   stage) cmd_stage ;;
   sign) cmd_sign ;;
   notarize) cmd_notarize ;;
   package) cmd_package ;;
+  pack-payload) cmd_pack_payload ;;
+  unpack-payload) cmd_unpack_payload ;;
+  unpack-archive) cmd_unpack_archive ;;
   verify) cmd_verify ;;
   brew-gate) cmd_brew_gate ;;
   render-formula) cmd_render_formula ;;

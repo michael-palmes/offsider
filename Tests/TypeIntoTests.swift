@@ -140,8 +140,13 @@ struct TypeIntoTests {
     static let playground = "com.mpalmes.offsider.playground"
 
     /// An iPhone on an Xcode 26 host, so the tree, the focus tap and the text all reach the scripted runner.
-    static func runnerBackend() throws -> (IOSDeviceBackend, FakeRunnerTransport) {
-        let transport = FakeRunnerTransport(snapshot: try IOSDeviceFixtures.data("runner-snapshot.json"))
+    /// With `plainField`, the snapshot's focused password field is an ordinary text field, which a batch type step may fill.
+    static func runnerBackend(plainField: Bool = false) throws -> (IOSDeviceBackend, FakeRunnerTransport) {
+        var snapshot = try IOSDeviceFixtures.data("runner-snapshot.json")
+        if plainField {
+            snapshot = Data(String(decoding: snapshot, as: UTF8.self).replacingOccurrences(of: #""SecureTextField""#, with: #""TextField""#).utf8)
+        }
+        let transport = FakeRunnerTransport(snapshot: snapshot)
         return (try RunnerClientTests.backend(transport).0, transport)
     }
 
@@ -171,7 +176,7 @@ struct TypeIntoTests {
 
     @Test("a batch type step's --app reaches its focus read, its tap and its text, through a session opened before the step")
     func batchStepApp() async throws {
-        let (backend, transport) = try Self.runnerBackend()
+        let (backend, transport) = try Self.runnerBackend(plainField: true)
         let context = BatchContext(backend: backend, device: Self.iPhone, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
         let session = try await backend.openInputSession(for: Self.iPhone)
 

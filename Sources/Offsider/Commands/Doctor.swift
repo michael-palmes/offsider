@@ -19,30 +19,55 @@ struct Doctor: AsyncParsableCommand {
     var fix = false
 
     func run() async throws {
-        var report: DoctorReport
-        if let id = deviceOption.id, case .iosDevice(let udid) = DeviceIDClassifier.classify(id) {
-            report = await iosDeviceReport(udid)
-        } else if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
-            report = await androidReport(id)
-        } else {
-            report = await hostAndSimulatorReport()
-        }
-        report = Self.withHost(report, HostProbe.live.facts())
+        let report = await makeReport(host: .cli())
         try write(report)
         if report.exitCode != .success {
             throw ExitCode(report.exitCode.rawValue)
         }
     }
 
+    /// The policy gate runs before any probe, so a refused device gets no adb server and no device read.
+    func makeReport(host: AndroidHost) async -> DoctorReport {
+        var report: DoctorReport
+        var target: (platform: DevicePlatform, key: String)?
+        if let id = deviceOption.id {
+            target = await Self.physicalTarget(
+                id,
+                isListedPhone: { await AndroidPhoneListing.isListedPhone(serial: $0, host: host) },
+                isDefinedAVD: { AndroidPhoneListing.isDefinedAVD(name: $0, host: host) }
+            )
+        }
+        let policy = target.map { target in
+            DoctorPolicy(
+                platform: target.platform, key: target.key,
+                decision: Self.decision(platform: target.platform, key: target.key, fromEnvironment: deviceOption.source == .environment),
+                managed: DevicePolicyGate.current.policy().managed.present
+            )
+        }
+        if let target, let policy, !policy.allowed {
+            report = Self.policyReport(policy, target: target, source: deviceOption.source)
+        } else if let id = deviceOption.id, case .iosDevice(let udid) = DeviceIDClassifier.classify(id) {
+            report = await iosDeviceReport(udid)
+        } else if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
+            report = await androidReport(id, host: host)
+        } else {
+            report = await hostAndSimulatorReport(host: host)
+        }
+        if let policy, policy.allowed {
+            report = Self.withPolicy(report, policy)
+        }
+        return Self.withHost(report, HostProbe.live.facts())
+    }
+
     /// Xcode, simulator and HID checks, then Android host checks (skipped when no SDK is installed).
-    private func hostAndSimulatorReport() async -> DoctorReport {
+    private func hostAndSimulatorReport(host: AndroidHost) async -> DoctorReport {
         let udid = deviceOption.id.map(Self.canonicalUDID)
         let runner = DoctorRunner(
             udid: udid,
             environment: ProcessInfo.processInfo.environment,
             logger: OffsiderLogger()
         )
-        let android = AndroidDoctorProbe(host: .cli())
+        let android = AndroidDoctorProbe(host: host)
         var result = await runner.run()
         var facts = await android.run(deviceID: nil).host
         var fixes: [DoctorFixResult] = []
@@ -71,8 +96,8 @@ struct Doctor: AsyncParsableCommand {
     }
 
     /// Android host and device checks only: Xcode and simulator state cannot affect an Android session.
-    private func androidReport(_ id: String) async -> DoctorReport {
-        let probe = AndroidDoctorProbe(host: .cli())
+    private func androidReport(_ id: String, host: AndroidHost) async -> DoctorReport {
+        let probe = AndroidDoctorProbe(host: host)
         var facts = await probe.run(deviceID: id)
         var fixes: [DoctorFixResult] = []
         if fix {
@@ -104,7 +129,9 @@ struct Doctor: AsyncParsableCommand {
     /// Host checks for a physical iPhone or iPad; simulator and Android state cannot affect it.
     @MainActor
     private func iosDeviceReport(_ udid: String) async -> DoctorReport {
-        let probe = IOSDeviceDoctorProbe()
+        var team: String?
+        if case .allowed(let allowance) = DevicePolicyGate.current.decision(platform: .ios, key: udid.uppercased()) { team = allowance.team }
+        let probe = IOSDeviceDoctorProbe(allowanceTeam: team)
         var result = await probe.run(udid: udid)
         var fixes: [DoctorFixResult] = []
         if fix {
@@ -127,7 +154,57 @@ struct Doctor: AsyncParsableCommand {
     static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
         DoctorReport(
             offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
-            android: report.android, checks: report.checks + HostDoctorRules.checks(host), fixes: report.fixes, host: host
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck()], fixes: report.fixes, host: host, policy: report.policy
+        )
+    }
+
+    /// A physical device's platform and stable key: any iPhone or iPad UDID, and any Android name that is not an AVD on this Mac, even when no adb server answers. Only the host-side device list and AVD folder are read.
+    static func physicalTarget(
+        _ id: String,
+        isListedPhone: (String) async -> Bool,
+        isDefinedAVD: (String) -> Bool
+    ) async -> (platform: DevicePlatform, key: String)? {
+        switch DeviceIDClassifier.classify(id) {
+        case .iosDevice(let udid): return (.ios, udid.uppercased())
+        case .androidName(let name):
+            if await isListedPhone(name) { return (.android, name) }
+            return isDefinedAVD(name) ? nil : (.android, name)
+        default: return nil
+        }
+    }
+
+    /// The gate's decision, with a device named only by `OFFSIDER_DEVICE` refused as the router refuses it.
+    static func decision(platform: DevicePlatform, key: String, fromEnvironment: Bool) -> DeviceDecision {
+        let decision = DevicePolicyGate.current.decision(platform: platform, key: key)
+        guard fromEnvironment, case .allowed = decision else { return decision }
+        return .refused(.notAllowed)
+    }
+
+    /// One failing `device.policy` check and nothing else: no device probe runs, and `--fix` touches nothing.
+    static func policyReport(_ policy: DoctorPolicy, target: (platform: DevicePlatform, key: String), source: DeviceSource?) -> DoctorReport {
+        var check = policy.check
+        if source == .environment, policy.refusal == "not_allowed" {
+            check = DoctorCheckResult(
+                id: .devicePolicy, status: .fail,
+                detail: "\(target.key) is a physical device named only by OFFSIDER_DEVICE; a physical device must be named with --device, and no device checks ran",
+                hint: "offsider doctor --device \(target.key)"
+            )
+        }
+        return DoctorReport(
+            offsiderVersion: VERSION,
+            udid: nil,
+            device: DoctorDevice(id: target.key, platform: target.platform.rawValue, name: nil, kind: "physical", source: source?.rawValue),
+            xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
+            booted: [],
+            checks: [check],
+            policy: policy
+        )
+    }
+
+    static func withPolicy(_ report: DoctorReport, _ policy: DoctorPolicy) -> DoctorReport {
+        DoctorReport(
+            offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
+            android: report.android, checks: [policy.check] + report.checks, fixes: report.fixes, host: report.host, policy: policy
         )
     }
 

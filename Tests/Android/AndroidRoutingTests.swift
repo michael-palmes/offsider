@@ -26,14 +26,15 @@ struct AndroidRoutingTests {
         AndroidTestHost.make(home: home, adb: server)
     }
 
-    @Test("an emulator serial routes to Android in canonical form, without any adb traffic")
-    func serialRoutesWithoutIO() async throws {
+    @Test("an emulator serial routes to Android in canonical form after one host-side device list; nothing reaches the emulator")
+    func serialRoutesWithoutDeviceIO() async throws {
         let server = Self.server([:])
         let route = try await DeviceRouter.route("emulator-05556", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
 
         #expect(route.backend is AndroidBackend)
         #expect(route.device == DeviceID(rawValue: "emulator-5556", platform: .android))
-        #expect(server.connectionAttempts == 0)
+        #expect(route.allowance == nil)
+        #expect(server.requests.allSatisfy { $0.serial == nil && $0.service.hasPrefix("host:") && !$0.service.hasPrefix("host:transport") })
     }
 
     @Test("an AVD name routes to its running serial")
@@ -101,7 +102,10 @@ struct AndroidRoutingTests {
     @Test("a named USB serial routes to the phone and checks it from the device list alone")
     func namedPhoneRoutes() async throws {
         let server = Self.phoneServer()
-        let route = try await DeviceRouter.route("R58M123ABC", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
+        let gate = DevicePolicyRoutingTests.gate([PolicyFixtures.entry(.android, key: "R58M123ABC")])
+        let route = try await DevicePolicyGate.$current.withValue(gate) {
+            try await DeviceRouter.route("R58M123ABC", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()), scope: CommandScope())
+        }
 
         #expect(route.device == DeviceID(rawValue: "R58M123ABC", platform: .android))
         let booted = try await route.backend.requireBootedDevice(route.device)
@@ -112,7 +116,10 @@ struct AndroidRoutingTests {
     @Test("an unauthorised phone fails with the USB debugging hint")
     func unauthorisedPhone() async throws {
         let server = Self.phoneServer()
-        let route = try await DeviceRouter.route("1A2B3C4D5E6F", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()))
+        let gate = DevicePolicyRoutingTests.gate([PolicyFixtures.entry(.android, key: "1A2B3C4D5E6F")])
+        let route = try await DevicePolicyGate.$current.withValue(gate) {
+            try await DeviceRouter.route("1A2B3C4D5E6F", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.homeWithSDK()), scope: CommandScope())
+        }
 
         let error = await #expect(throws: AndroidError.self) { _ = try await route.backend.requireBootedDevice(route.device) }
         #expect(error?.kind == .deviceUnauthorised)
@@ -157,7 +164,7 @@ struct AndroidRoutingTests {
         #expect(rig.emulator.calls.last == .close)
     }
 
-    @Test("in a batch, type on Android becomes one text step instead of HID key events")
+    @Test("in a batch, type on Android becomes one text step, after its password-field check, instead of HID key events")
     func batchTypeIsText() async throws {
         let device = DeviceID(rawValue: "emulator-5556", platform: .android)
         let context = BatchContext(
@@ -169,8 +176,8 @@ struct AndroidRoutingTests {
         )
         let primitives = try await Type.parse(["héllo world", "--device", device.rawValue]).toBatchPrimitives(context: context, logger: OffsiderLogger())
 
-        guard primitives.count == 1, case .text(let text, replace: false) = primitives[0] else {
-            Issue.record("expected one text step, got \(primitives)")
+        guard primitives.count == 2, case .run = primitives[0], case .text(let text, replace: false) = primitives[1] else {
+            Issue.record("expected the check and one text step, got \(primitives)")
             return
         }
         #expect(text == "héllo world")

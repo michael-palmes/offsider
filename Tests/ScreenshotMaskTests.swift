@@ -42,10 +42,13 @@ struct ScreenshotMaskTests {
     }
 
     /// Runs `screenshot` with `arguments`, returning the report and the written image.
-    static func capture(_ arguments: [String], on backend: FakeDeviceBackend) async throws -> (report: ScreenshotReport, image: CGImage, path: String) {
+    /// Password masking is off unless `environment` leaves it on, so each test sees only the masks it is about.
+    static func capture(
+        _ arguments: [String], on backend: FakeDeviceBackend, environment: [String: String] = ["OFFSIDER_MASK_SECURE": "0"]
+    ) async throws -> (report: ScreenshotReport, image: CGImage, path: String) {
         let path = temporaryPath()
         let command = try Screenshot.parse(["--output", path, "--device", device.rawValue] + arguments)
-        let report = try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: try command.maskPlan(environment: [:]))
+        let report = try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: try command.maskPlan(environment: environment))
         let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
         return (report, image, path)
     }
@@ -208,7 +211,7 @@ struct ScreenshotMaskTests {
     }
 
     /// Runs `screenshot` with `arguments` on `tree`, with `environment` for OFFSIDER_MASK_SECURE.
-    static func stackCapture(_ arguments: [String], tree: UITree, environment: [String: String] = [:]) async throws -> (report: ScreenshotReport, image: CGImage, backend: FakeDeviceBackend) {
+    static func stackCapture(_ arguments: [String], tree: UITree, environment: [String: String] = ["OFFSIDER_MASK_SECURE": "0"]) async throws -> (report: ScreenshotReport, image: CGImage, backend: FakeDeviceBackend) {
         let backend = try stackBackend(tree)
         let path = Self.temporaryPath()
         defer { try? FileManager.default.removeItem(atPath: path) }
@@ -381,17 +384,44 @@ struct ScreenshotMaskTests {
         #expect(throws: (any Error).self) { try Screenshot.parse(["--mask-region", "1,2,0,4", "--device", "d"]) }
     }
 
-    @Test("OFFSIDER_MASK_SECURE=1 turns masking on by default")
-    func environmentDefault() throws {
-        #expect(Screenshot.masksSecure(flag: false, environment: ["OFFSIDER_MASK_SECURE": "1"]))
-        #expect(!Screenshot.masksSecure(flag: false, environment: [:]))
-        #expect(Screenshot.masksSecure(flag: true, environment: [:]))
-        #expect(try Screenshot.parse(["--device", "d"]).maskPlan(environment: ["OFFSIDER_MASK_SECURE": "1"]).kinds == [.secure])
+    @Test("password masking resolves the capture's flag, then the batch's, then OFFSIDER_MASK_SECURE, then on", arguments: [
+        (nil as Bool?, nil as Bool?, [String: String](), true),
+        (nil, nil, ["OFFSIDER_MASK_SECURE": "0"], false),
+        (nil, nil, ["OFFSIDER_MASK_SECURE": "off"], false),
+        (nil, nil, ["OFFSIDER_MASK_SECURE": "no"], false),
+        (nil, nil, ["OFFSIDER_MASK_SECURE": "1"], true),
+        (nil, nil, ["OFFSIDER_MASK_SECURE": "maybe"], true),
+        (nil, false, [:], false),
+        (nil, true, ["OFFSIDER_MASK_SECURE": "0"], true),
+        (true, false, ["OFFSIDER_MASK_SECURE": "0"], true),
+        (false, true, ["OFFSIDER_MASK_SECURE": "1"], false),
+    ])
+    func secureResolution(flag: Bool?, batchDefault: Bool?, environment: [String: String], expected: Bool) {
+        #expect(Screenshot.masksSecure(flag: flag, batchDefault: batchDefault, environment: environment) == expected)
+    }
+
+    @Test("--mask-secure and --no-mask-secure parse into the plan")
+    func secureFlags() throws {
+        #expect(try Screenshot.parse(["--device", "d"]).maskPlan(environment: [:]).kinds == [.secure])
+        #expect(try Screenshot.parse(["--device", "d", "--no-mask-secure"]).maskPlan(environment: [:]).isEmpty)
+        #expect(try Screenshot.parse(["--device", "d", "--mask-secure"]).maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]).kinds == [.secure])
+        #expect(try Screenshot.parse(["--device", "d"]).maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]).isEmpty)
+    }
+
+    @Test("a plain screenshot paints the password field black with no mask flag")
+    func paintedByDefault() async throws {
+        let backend = try Self.backend([SecureTextTests.passwordField()])
+        let (report, image, path) = try await Self.capture([], on: backend, environment: [:])
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        #expect(Self.point(image, 200, 290) == Self.black)
+        #expect(Self.point(image, 200, 100) != Self.black)
+        #expect(backend.treeReads == 1)
+        #expect(report.maskedBy == [.secure: 1])
     }
 
     // MARK: - Batch
 
-    private static func batch(_ steps: [String], on backend: FakeDeviceBackend, maskSecure: Bool = false) async throws -> [BatchStepRecord] {
+    private static func batch(_ steps: [String], on backend: FakeDeviceBackend, maskSecure: Bool? = false) async throws -> [BatchStepRecord] {
         let context = BatchContext(
             backend: backend, device: device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200, maskSecure: maskSecure
         )

@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 /// Offsider's values as proto messages and back; pure, so the wire shape is tested without an emulator.
 extension EmulatorControlClient {
@@ -53,12 +54,12 @@ extension EmulatorControlClient {
     static func frame(from image: Android_Emulation_Control_Image) -> EmulatorFrame? {
         let width = Int(image.format.width)
         let height = Int(image.format.height)
-        guard width > 0, height > 0, !image.image.isEmpty else { return nil }
+        guard let byteCount = PixelMath.byteCount(width: width, height: height), !image.image.isEmpty else { return nil }
         let format: EmulatorImageFormat
         switch image.format.format {
         case .png: format = .png
         case .rgba8888:
-            guard image.image.count >= width * height * 4 else { return nil }
+            guard image.image.count >= byteCount else { return nil }
             format = .rgba8888
         default: return nil
         }

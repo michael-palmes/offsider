@@ -88,6 +88,8 @@ final class SimulatorDTUHID: @unchecked Sendable {
     private typealias EndpointFromMachPort = @convention(c) (mach_port_t, UInt64, UInt64) -> xpc_object_t?
     private typealias ConnectionFromEndpoint = @convention(c) (xpc_object_t) -> xpc_connection_t?
     private typealias EnableSimToHost = @convention(c) (xpc_connection_t) -> Void
+    /// `-[SimDevice lookup:error:]` as CoreSimulator has it with Xcode 27: returns a `mach_port_t`.
+    static let lookupEncoding = "I@:@^@"
     private typealias Lookup = @convention(c) (AnyObject, Selector, NSString, AutoreleasingUnsafeMutablePointer<NSError?>?) -> mach_port_t
 
     /// `SimDevice` is private CoreSimulator, so its `lookup:error:` is called through the runtime.
@@ -105,6 +107,7 @@ final class SimulatorDTUHID: @unchecked Sendable {
               let method = device.method(for: selector) else {
             throw Failure.serviceUnavailable(service, nil)
         }
+        try PrivateAPIGuard.requireMethod(type(of: device), selector, encoding: Self.lookupEncoding, framework: "CoreSimulator")
         var error: NSError?
         let port = unsafeBitCast(method, to: Lookup.self)(device, selector, service as NSString, &error)
         guard port != 0 else { throw Failure.serviceUnavailable(service, error) }

@@ -103,10 +103,12 @@ show_usage() {
     echo ""
     echo "Android phone (--android-phone):"
     echo "  OFFSIDER_ANDROID_PHONE    Required: the phone's exact USB serial from adb devices -l; no other device is touched"
+    echo "                            The user must first allow it: offsider device-access allow --device <serial>"
     echo "  OFFSIDER_ANDROID_APK      The React Native playground's release APK, installed once and left in place"
     echo ""
     echo "iPhone or iPad (--ios-device, needs XcodeGen):"
     echo "  OFFSIDER_IOS_DEVICE       Required: the device's exact UDID from devicectl list devices; no other device is touched"
+    echo "                            The user must first allow it: offsider device-access allow --device <udid> --app com.mpalmes.offsider.playground"
     echo "  OFFSIDER_IOS_TEAM_ID      Required: the team that signs the runner and the playground, installed once and left in place"
     echo ""
     echo "React Native on iOS (--rn-ios, needs pnpm):"
@@ -802,6 +804,43 @@ run_android_fold_tests() {
     print_success "Android foldable suite passed"
 }
 
+# A physical device runs E2E only while a person has allowed it for more than 30 minutes more (and, on an iPhone, the playground); there is no bypass.
+require_device_allowance() {
+    local device="$1"
+    local app="${2:-}"
+    local allow="offsider device-access allow --device $device --expires 2h${app:+ --app $app}"
+    local status
+    if ! status="$("$OFFSIDER_BIN_PATH" device-access status --device "$device" --json 2>/dev/null)"; then
+        print_error "$device is not on the allow-list. Ask the user to run this in their own terminal, then run the suites again:"
+        print_error "  $allow"
+        exit 1
+    fi
+    local expires
+    if expires="$(printf '%s' "$status" | plutil -extract devices.0.expires raw -o - - 2>/dev/null)"; then
+        local expiry_epoch
+        expiry_epoch="$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$expires" +%s 2>/dev/null || echo 0)"
+        if (( expiry_epoch - $(date -u +%s) <= 1800 )); then
+            print_error "$device's allowance ends at $expires, within 30 minutes. Ask the user to renew it in their own terminal:"
+            print_error "  $allow"
+            exit 1
+        fi
+    elif ! printf '%s' "$status" | plutil -extract devices.0 json -o - - 2>/dev/null | grep -q '"expires":null'; then
+        print_error "Could not read $device's allowance. Ask the user to run this in their own terminal:"
+        print_error "  $allow"
+        exit 1
+    fi
+    if [[ -n "$app" ]]; then
+        local apps
+        apps="$(printf '%s' "$status" | plutil -extract devices.0.apps json -o - - 2>/dev/null || echo '[]')"
+        if [[ "$apps" != *"\"$app\""* ]]; then
+            print_error "$device's allowance does not include $app. Ask the user to run this in their own terminal:"
+            print_error "  $allow"
+            exit 1
+        fi
+    fi
+    print_info "$device is allowed${expires:+ until $expires}"
+}
+
 # The phone suites alone, on the one USB phone OFFSIDER_ANDROID_PHONE names; the emulator suites stay off.
 run_android_phone_tests() {
     print_header "Running Android Phone E2E Tests"
@@ -821,6 +860,7 @@ run_android_phone_tests() {
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
     export OFFSIDER_BIN_PATH
+    require_device_allowance "$OFFSIDER_ANDROID_PHONE"
     resolve_android_apk
     export OFFSIDER_ANDROID_APK
     print_info "Environment: OFFSIDER_ANDROID_PHONE=$OFFSIDER_ANDROID_PHONE, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
@@ -849,6 +889,7 @@ run_ios_device_tests() {
         OFFSIDER_BIN_PATH="$(run_selected_swift build --show-bin-path)/offsider"
     fi
     export OFFSIDER_BIN_PATH
+    require_device_allowance "$OFFSIDER_IOS_DEVICE" "com.mpalmes.offsider.playground"
     print_info "Environment: OFFSIDER_IOS_DEVICE=$OFFSIDER_IOS_DEVICE, OFFSIDER_IOS_TEAM_ID=$OFFSIDER_IOS_TEAM_ID"
     run_suite_list "IOSDeviceListE2ETests" "IOSDeviceDoctorE2ETests" "IOSDeviceScreenshotE2ETests" "IOSDeviceSettingsE2ETests" \
         "IOSDeviceInputE2ETests" "IOSDeviceTreeE2ETests" "IOSDeviceRunnerE2ETests"

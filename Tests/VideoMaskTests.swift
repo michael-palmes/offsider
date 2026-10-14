@@ -37,6 +37,13 @@ final class FlakyFirstCaptureBackend: TurningFakeBackend {
     }
 }
 
+/// Fails every tree read, as a device that stopped answering does.
+final class UnreadableTreeBackend: FakeDeviceBackend {
+    override func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+        throw CLIError(errorDescription: "tree read failed")
+    }
+}
+
 @Suite("Video masks")
 @MainActor
 struct VideoMaskTests {
@@ -46,25 +53,29 @@ struct VideoMaskTests {
 
     // MARK: - Refusal policy
 
-    @Test("tree masks, a masked run and OFFSIDER_MASK_SECURE refuse video; --unmasked records with a warning", arguments: [
+    @Test("tree masks and a run masking emails or ids refuse video; password masking checks the screen; --unmasked records with a warning", arguments: [
         ([String](), nil as RunMasks?, false, false, "record"),
+        ([], nil, true, false, "check"),
         ([], RunMasks(), false, false, "record"),
-        (["--mask-secure"], nil, false, false, "refuse:cannot apply --mask-secure"),
-        (["--mask-id", "--mask-text"], nil, false, false, "refuse:cannot apply --mask-id and --mask-text"),
-        (["--mask-emails"], nil, false, true, "usage:--unmasked records without the masks --mask-emails asks for"),
-        ([], RunMasks(secure: true, emails: true), false, false, "refuse:while the evidence run masks password fields and email addresses"),
-        ([], nil, true, false, "refuse:while OFFSIDER_MASK_SECURE=1 is set"),
-        ([], RunMasks(ids: ["account-number"]), true, false, "refuse:while the evidence run masks id account-number and OFFSIDER_MASK_SECURE=1 is set"),
-        ([], RunMasks(secure: true), true, true, "warn:(the evidence run masks password fields and OFFSIDER_MASK_SECURE=1 is set)"),
+        ([], RunMasks(secure: true), false, false, "check"),
+        (["--mask-secure"], nil, true, false, "refuse:cannot apply --mask-secure"),
+        (["--mask-id", "--mask-text"], nil, true, false, "refuse:cannot apply --mask-id and --mask-text"),
+        (["--mask-emails"], nil, true, true, "usage:--unmasked records without the masks --mask-emails asks for"),
+        ([], RunMasks.defaults, true, false, "refuse:while the evidence run masks email addresses"),
+        ([], RunMasks(ids: ["account-number"]), false, false, "refuse:while the evidence run masks id account-number"),
+        ([], RunMasks(secure: true), true, true, "warn:(the evidence run masks password fields)"),
+        ([], nil, true, true, "warn:(password fields are masked by default)"),
         ([], nil, false, true, "warn:nothing in this video is masked by the accessibility tree."),
     ])
-    func policy(flags: [String], run: RunMasks?, environmentSecure: Bool, unmasked: Bool, expected: String) {
-        let decision = VideoMaskPolicy.decide(command: "record-video", treeFlags: flags, run: run, environmentSecure: environmentSecure, unmasked: unmasked)
+    func policy(flags: [String], run: RunMasks?, secureByDefault: Bool, unmasked: Bool, expected: String) {
+        let decision = VideoMaskPolicy.decide(command: "record-video", treeFlags: flags, run: run, secureByDefault: secureByDefault, unmasked: unmasked)
         let (kind, text) = expected.split(separator: ":", maxSplits: 1).map(String.init).paddedPair
         switch decision {
         case .record(let warning):
             #expect(kind == (warning == nil ? "record" : "warn"))
             if let warning { #expect(warning.contains(text), "\(warning)") }
+        case .checkSecureField:
+            #expect(kind == "check")
         case .refuse(let message):
             #expect(kind == "refuse")
             #expect(message.contains(text), "\(message)")
@@ -74,6 +85,35 @@ struct VideoMaskTests {
             #expect(kind == "usage")
             #expect(message.contains(text), "\(message)")
         }
+    }
+
+    @Test("video masks password fields by default unless OFFSIDER_MASK_SECURE turns it off")
+    func secureDefault() throws {
+        let options = try VideoMaskOptions.parse([])
+        #expect(try options.requireMaskable(command: "record-video", environment: [:]))
+        #expect(try options.requireMaskable(command: "record-video", environment: ["OFFSIDER_MASK_SECURE": "0"]) == false)
+    }
+
+    @Test("video refuses with video_unmasked while a password field is on screen, or when the tree cannot be read")
+    func secureFieldRefusal() async throws {
+        let screen = UIScreenInfo(width: 390, height: 844, scale: 3)
+        let shown = FakeDeviceBackend(trees: [FakeUI.tree(width: 390, height: 844, [SecureTextTests.passwordField()])], screen: screen)
+        let error = await #expect(throws: CLIError.self) {
+            try await VideoMaskOptions.requireNoSecureField(command: "record-video", backend: shown, device: Self.device)
+        }
+        #expect(error?.reason == .videoUnmasked)
+        #expect(error?.userFacingDescription.contains("password field is on screen") == true)
+        #expect(error?.userFacingDescription.contains("--unmasked") == true)
+
+        let below = FakeDeviceBackend(trees: [FakeUI.tree(width: 390, height: 844, [SecureTextTests.passwordField(frame: FakeUI.frame(16, 2000, 361, 44))])], screen: screen)
+        try await VideoMaskOptions.requireNoSecureField(command: "record-video", backend: below, device: Self.device)
+
+        let unreadable = UnreadableTreeBackend(trees: [], screen: screen)
+        let failed = await #expect(throws: CLIError.self) {
+            try await VideoMaskOptions.requireNoSecureField(command: "stream-video", backend: unreadable, device: Self.device)
+        }
+        #expect(failed?.reason == .videoUnmasked)
+        #expect(failed?.userFacingDescription.contains("could not read the accessibility tree") == true)
     }
 
     @Test("a frame is admitted only when the reads before and after it match the first frame's orientation and its size does too", arguments: [
@@ -251,19 +291,21 @@ struct VideoMaskTests {
 
         #expect(result.exitCode == 1)
         #expect(result.stdout.contains(#""reason":"video_unmasked""#), "\(result.stdout)")
-        #expect(result.stderr.contains("the evidence run masks password fields"))
+        #expect(result.stderr.contains("the evidence run masks email addresses"))
         #expect(!FileManager.default.fileExists(atPath: output))
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == before)
     }
 
-    @Test("OFFSIDER_MASK_SECURE=1 refuses stream-video before anything is streamed")
-    func environmentRefuses() async throws {
-        let result = try await TestHelpers.runOffsiderCommandSeparated(
-            "stream-video --device \(Self.device.rawValue)", environment: ["OFFSIDER_MASK_SECURE": "1"]
-        )
+    @Test("a default run, which masks emails, refuses stream-video before anything is streamed")
+    func defaultRunRefusesStream() async throws {
+        let folder = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let environment = ["OFFSIDER_RUN": folder.path]
+        _ = try await TestHelpers.runOffsiderCommandSeparated("run start '\(folder.path)'", environment: environment)
+        let result = try await TestHelpers.runOffsiderCommandSeparated("stream-video --device \(Self.device.rawValue)", environment: environment)
         #expect(result.exitCode == 1)
         #expect(result.stdout.isEmpty)
-        #expect(result.stderr.contains("stream-video will not run while OFFSIDER_MASK_SECURE=1 is set"))
+        #expect(result.stderr.contains("stream-video will not run while the evidence run masks email addresses"))
     }
 
     @Test("--unmasked records past the refusal with a warning, as far as the device")

@@ -74,17 +74,128 @@ public struct LoginCredential: Equatable, Sendable, CustomStringConvertible, Cus
         return member
     }
 
+    /// Version 2 data with default settings. A save that keeps settings goes through `StoredLogin`.
     public func storageData() -> Data {
-        let object = ["username": username, "password": password]
+        StoredLogin(credential: self).storageData()
+    }
+
+    /// Reads version 1 or 2 data.
+    public init?(storageData: Data) {
+        guard let stored = StoredLogin(storageData: storageData) else { return nil }
+        self = stored.credential
+    }
+}
+
+/// Which devices a saved login may be typed into. `virtual` means simulators and emulators.
+public enum LoginDeviceScope: String, Equatable, Sendable, CaseIterable {
+    case virtual
+    case any
+}
+
+/// A saved login's encrypted data: the credential and the settings only a person may loosen.
+/// `links` are the other app ids a person confirmed with `credential join`; the unencrypted link items are only an index.
+public struct StoredLogin: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public static let version = 2
+
+    public var credential: LoginCredential
+    /// Sorted and unique.
+    public private(set) var links: [String]
+    /// `login` asks for Touch ID or the login password before it reads or types this login.
+    public var confirm: Bool
+    public var devices: LoginDeviceScope
+    /// A person allowed typing into a web view, which also needs `webLogin` in `offsider.login.json`.
+    public var webLogin: Bool
+
+    public init(credential: LoginCredential, links: [String] = [], confirm: Bool = false, devices: LoginDeviceScope = .virtual, webLogin: Bool = false) {
+        self.credential = credential
+        self.links = Set(links).sorted()
+        self.confirm = confirm
+        self.devices = devices
+        self.webLogin = webLogin
+    }
+
+    public var description: String { "<saved login withheld>" }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror { Mirror(self, children: [:]) }
+
+    public mutating func link(_ member: String) {
+        links = Set(links + [member]).sorted()
+    }
+
+    /// `{"v":2,"username","password","links","confirm","devices","webLogin"}`.
+    public func storageData() -> Data {
+        let object: [String: Any] = [
+            "v": Self.version,
+            "username": credential.username,
+            "password": credential.password,
+            "links": links,
+            "confirm": confirm,
+            "devices": devices.rawValue,
+            "webLogin": webLogin,
+        ]
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
     }
 
+    /// Version 1 (`{"username","password"}`) reads with no links, no confirmation and virtual devices only. A newer version is nil.
     public init?(storageData: Data) {
-        guard let object = try? JSONSerialization.jsonObject(with: storageData) as? [String: String],
-              let username = object["username"],
-              let password = object["password"]
+        guard let object = try? JSONSerialization.jsonObject(with: storageData) as? [String: Any],
+              let username = object["username"] as? String,
+              let password = object["password"] as? String,
+              let credential = LoginCredential(username: username, password: password)
         else { return nil }
-        self.init(username: username, password: password)
+        guard let version = object["v"] else {
+            self.init(credential: credential)
+            return
+        }
+        guard let number = version as? Int, number == Self.version else { return nil }
+        guard let links = (object["links"] ?? [String]()) as? [String],
+              let confirm = Self.flag(object["confirm"]),
+              let devices = LoginDeviceScope(rawValue: object["devices"] as? String ?? LoginDeviceScope.virtual.rawValue),
+              let webLogin = Self.flag(object["webLogin"])
+        else { return nil }
+        self.init(credential: credential, links: links, confirm: confirm, devices: devices, webLogin: webLogin)
+    }
+
+    private static func flag(_ value: Any?) -> Bool? {
+        guard let value else { return false }
+        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        return number.boolValue
+    }
+}
+
+/// `--devices`, `--confirm`/`--no-confirm` and `--web-login`/`--no-web-login` on `credential set` or `describe`.
+public struct LoginSettingsEdit: Equatable, Sendable {
+    public var devices: LoginDeviceScope?
+    public var confirm: Bool?
+    public var webLogin: Bool?
+
+    public init(devices: LoginDeviceScope? = nil, confirm: Bool? = nil, webLogin: Bool? = nil) {
+        self.devices = devices
+        self.confirm = confirm
+        self.webLogin = webLogin
+    }
+
+    public var isEmpty: Bool { devices == nil && confirm == nil && webLogin == nil }
+
+    /// What this edit lets an agent do that it could not before, as phrases for the person confirming it. Empty when it only tightens.
+    public var loosening: [String] {
+        var phrases: [String] = []
+        if devices == .any { phrases.append("be typed on physical devices") }
+        if confirm == false { phrases.append("be typed without asking you first") }
+        if webLogin == true { phrases.append("be typed into web views") }
+        return phrases
+    }
+
+    /// `--devices any` turns confirmation on unless `--no-confirm` came with it.
+    public func applied(to stored: StoredLogin) -> StoredLogin {
+        var next = stored
+        if let devices {
+            next.devices = devices
+            if devices == .any, confirm == nil { next.confirm = true }
+        }
+        if let confirm { next.confirm = confirm }
+        if let webLogin { next.webLogin = webLogin }
+        return next
     }
 }
 

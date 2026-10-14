@@ -56,14 +56,22 @@ struct UnlockCodeCommand: AsyncParsableCommand {
     func run() async throws {
         let parsed = try parsedAction()
         let device = try Self.deviceKey(deviceOption.id)
-        let name = DeviceName.display(device, label: await AndroidPhoneLabel.label(serial: device, host: .cli()))
+        let readsLabel = try await Self.gatePhone(device, rawID: deviceOption.id, action: parsed)
+        let name = readsLabel ? DeviceName.display(device, label: await AndroidPhoneLabel.label(serial: device, host: .cli())) : device
         let styled: TerminalStyle? = json || isatty(STDOUT_FILENO) == 0 ? nil : .detect(isTerminal: true)
         let store = KeychainUnlockCodeStore()
-        guard parsed == .set, !stdin, isatty(STDIN_FILENO) != 0 else {
-            let readCode: () throws -> UnlockCode = stdin ? Self.readFromStandardInput : {
-                throw CLIError(errorDescription: "unlock-code set asks for the code on a terminal; without one, pass --stdin and pipe the code in.", reason: .usage)
-            }
-            print(try Self.perform(parsed, device: device, name: name, json: json, styled: styled, store: store, ledger: UnlockAttemptLedger(), readCode: readCode))
+        if parsed == .set, stdin {
+            let code = try await Self.confirmedStandardInput(name: name, device: device)
+            print(try Self.perform(.set, device: device, name: name, json: json, styled: styled, store: store, ledger: UnlockAttemptLedger()) { code })
+            return
+        }
+        if parsed == .set {
+            try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider unlock-code set --device \(device)` in their own terminal.")
+        }
+        guard parsed == .set else {
+            print(try Self.perform(parsed, device: device, name: name, json: json, styled: styled, store: store, ledger: UnlockAttemptLedger()) {
+                throw CLIError(errorDescription: "Only set reads a code.", reason: .usage)
+            })
             return
         }
         print(try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
@@ -71,6 +79,38 @@ struct UnlockCodeCommand: AsyncParsableCommand {
                 try Self.ask(prompt, name: name)
             }
         })
+    }
+
+    /// `op read ... | unlock-code set --stdin`: the code comes from the pipe, and a person confirms on `/dev/tty` and with Touch ID or the password.
+    static func confirmedStandardInput(name: String, device: String) async throws -> UnlockCode {
+        try PersonPresence.requireControllingTerminal(instead: "Ask the user to run `offsider unlock-code set --device \(device)` in their own terminal.")
+        let code = try readFromStandardInput()
+        try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, instead: "Run unlock-code set in your own terminal.") { prompt in
+            guard try prompt.choose(Self.pipedTitle(name: name), options: Self.pipedOptions) == 0 else { throw PromptCancelled() }
+        }
+        try await PersonPresence.confirm(reason: "save the unlock code for \(name)")
+        return code
+    }
+
+    static func pipedTitle(name: String) -> String {
+        "🔐 Save the unlock code from standard input for \(name)? wake --unlock will type it on that device."
+    }
+
+    static let pipedOptions = ["🔐 Save it", "✋ Cancel"]
+
+    /// `set` on a listed phone needs the allow-list's consent before its label is read; `status` and `remove` stay open and skip the label (false) unless the phone is allowed.
+    @MainActor
+    static func gatePhone(
+        _ device: String, rawID: String, action: Action, gate: DevicePolicyGate = .current,
+        isListedPhone: (String) async -> Bool = { await AndroidPhoneListing.isListedPhone(serial: $0, host: .cli()) }
+    ) async throws -> Bool {
+        guard await isListedPhone(device) else { return true }
+        if action == .set {
+            _ = try DeviceRouter.requireAllowed(platform: .android, key: device, rawID: rawID, gate: gate)
+            return true
+        }
+        if case .allowed = gate.decision(platform: .android, key: device) { return true }
+        return false
     }
 
     /// A phone serial or an AVD name; emulator serials change between launches, so they are refused.

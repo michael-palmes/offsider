@@ -22,7 +22,7 @@ offsider batch --device <DEVICE_ID> --json \
 
 ## Output
 
-`batch --json` prints one JSON line per step to stdout (`step`, `kind`, `line`, `ok`, `ms`; `exitCode` and the `error` object on failure; `met`, `reason`, `match`, `matched` and `nearest` for `wait` and `assert`; the screenshot fields; `tree` or `output` for `describe-ui`), then a summary line with `steps`, `failed` and `dispatched` (`yes`, `no` or `unknown`: whether any step sent input). After a failure, resend the whole batch only when `dispatched` is `no`; otherwise check the screen and resend from the failed step. Parse it instead of the text output. A `type` step's record shows `type <N characters>`, never the text, and `--mask-text`, `--mask-label`, `--mask-label-contains` and `--grep` values show as `<N characters>` too. The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0. Keep output quiet by default; add `--verbose` only when troubleshooting. `--mask-secure` masks password fields in every screenshot step; a step can add its own masks, such as `screenshot --mask-emails`, and an evidence run's masks always apply too (`guide evidence`). Screenshot steps take `screenshot --mask-skip-beneath`, and their records add `skippedBeneath`.
+`batch --json` prints one JSON line per step to stdout (`step`, `kind`, `line`, `ok`, `ms`; `exitCode` and the `error` object on failure; `met`, `reason`, `match`, `matched` and `nearest` for `wait` and `assert`; the screenshot fields; `tree` or `output` for `describe-ui`), then a summary line with `steps`, `failed` and `dispatched` (`yes`, `no` or `unknown`: whether any step sent input). After a failure, resend the whole batch only when `dispatched` is `no`; otherwise check the screen and resend from the failed step. Parse it instead of the text output. A `type` step's record shows `type <N characters>`, never the text, and `--mask-text`, `--mask-label`, `--mask-label-contains` and `--grep` values show as `<N characters>` too. The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0. Keep output quiet by default; add `--verbose` only when troubleshooting. Screenshot steps mask password fields by default (`--no-mask-secure` turns that off for the batch, and a step's own flag wins); a step can add its own masks, such as `screenshot --mask-emails`, and an evidence run's masks always apply too (`guide evidence`). Screenshot steps take `screenshot --mask-skip-beneath`, and their records add `skippedBeneath`.
 
 ## Animations and transitions
 
@@ -35,7 +35,8 @@ offsider batch --device <DEVICE_ID> --json \
 
 ## Rules
 
-- Use exactly one step source per run: `--step`, `--file` or `--stdin`.
+- Use exactly one step source per run: `--step`, `--file` or `--stdin`. `--file` follows the same rules as `type --file`, with `batch --allow-path` for a refused location.
+- A `type` step aimed at a password field exits 64 `secure_field_argument` with nothing typed: sign in with `login` instead.
 - Steps run in order and stop at the first failure; add `--continue-on-error` for best-effort runs.
 - Do not pass `--device` inside step lines; keep it on the batch.
 - After an exploratory run, keep the working sequence as a `batch --file` and re-run it once to prove it replays.

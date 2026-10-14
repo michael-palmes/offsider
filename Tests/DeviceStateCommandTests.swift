@@ -33,6 +33,47 @@ struct DeviceStateCommandTests {
         """)
     }
 
+    static let phone = DeviceID(rawValue: "R58M123ABC", platform: .android)
+
+    @Test("on a physical phone, grant, revoke and reset all exit 64 naming services instead, with nothing sent", arguments: ["grant", "revoke", "reset"])
+    func allRefusedOnPhone(action: String) async throws {
+        let backend = Self.backend(android: true)
+        let plan = try Self.plan([action, "all", "--app", "com.example.app", "--device", Self.phone.rawValue])
+        let error = await #expect(throws: CLIError.self) {
+            try await PermissionCommand.report(plan, json: false, on: Self.phone, backend: backend)
+        }
+
+        #expect(error?.reason == .usage)
+        #expect(error?.reason.exitCode.rawValue == 64)
+        #expect(error?.userFacingDescription.contains("permission \(action) all is refused on a physical phone: name the services") == true)
+        #expect(error?.userFacingDescription.contains("SMS, call log and location") == true)
+        #expect(error?.hint == "offsider permission \(action) camera notifications --app com.example.app --device R58M123ABC")
+        #expect(backend.stateCalls.isEmpty)
+    }
+
+    @Test("on a physical phone named services still run, and all still runs on an emulator")
+    func namedServicesOnPhone() async throws {
+        let backend = Self.backend(android: true)
+        _ = try await PermissionCommand.report(
+            try Self.plan(["grant", "camera", "--app", "com.example.app", "--device", Self.phone.rawValue]), json: false, on: Self.phone, backend: backend
+        )
+        _ = try await PermissionCommand.report(
+            try Self.plan(["reset", "all", "--app", "com.example.app", "--device", "emulator-5554"]), json: false, on: Self.android, backend: backend
+        )
+        #expect(backend.stateCalls.count == 2)
+    }
+
+    @Test("status-bar override and stay-awake on name the undo command on a phone, and say nothing elsewhere")
+    func persistenceNotes() {
+        #expect(StatusBarCommand.phoneNote(.override, on: Self.phone) == "Note: demo mode stays on for R58M123ABC after this command; `offsider status-bar clear --device R58M123ABC` turns it off.")
+        #expect(StatusBarCommand.phoneNote(.clear, on: Self.phone) == nil)
+        #expect(StatusBarCommand.phoneNote(.override, on: Self.android) == nil)
+        #expect(StayAwakeCommand.phoneNote(true, on: Self.phone) == "Note: stay awake stays on for R58M123ABC, across reboots; `offsider stay-awake off --device R58M123ABC` turns it off.")
+        #expect(StayAwakeCommand.phoneNote(false, on: Self.phone) == nil)
+        #expect(StayAwakeCommand.phoneNote(nil, on: Self.phone) == nil)
+        #expect(StayAwakeCommand.phoneNote(true, on: Self.android) == nil)
+    }
+
     @Test("revoke on Android reports that the app is stopped")
     func revokeStops() async throws {
         let output = try await PermissionCommand.report(

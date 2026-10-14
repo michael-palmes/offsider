@@ -23,8 +23,16 @@ struct CredentialCommand: AsyncParsableCommand {
         type them into this app.
 
         join links the app in front to an app that already has saved logins, so both bundle ids share them. \
-        It does not ask for the password. When only one app has logins, that is the one. When several do, \
-        a terminal asks, and otherwise --app names the saved app.
+        Only a person runs it: it needs a terminal, shows both ids, asks Link or Cancel, then asks for Touch ID \
+        or your password. It does not ask for the saved password. --app names the saved app, else a menu \
+        lists them. Browsers and system apps are refused (app_not_allowed).
+
+        --devices virtual (the default) keeps a login to simulators and emulators; --devices any also allows \
+        physical phones on the allow-list, and turns on --confirm unless --no-confirm comes with it. --confirm \
+        makes login ask for Touch ID or your password before it reads the login. --web-login lets login type \
+        into a web view, when offsider.login.json also sets "webLogin": true. Loosening (--devices any, \
+        --no-confirm, --web-login) needs a terminal and Touch ID or your password; tightening needs neither. \
+        describe with these flags rewrites the saved item, which may show a Keychain prompt.
 
         describe sets a saved login's notes and tags without reading its password: --about (what it can do, \
         and when to use it), --avoid (tests it must not be used for), --state (what the account holds now), \
@@ -52,6 +60,7 @@ struct CredentialCommand: AsyncParsableCommand {
           offsider credential set dev --device DEVICE_ID
           offsider credential set qa --update --app com.example.app
           offsider credential describe qa-admin --tag role=admin --app com.example.app
+          offsider credential describe qa --devices any --app com.example.app
           offsider credential join --device DEVICE_ID
           offsider credential status --json --app com.example.app
           offsider credential signed-out --device DEVICE_ID
@@ -106,6 +115,15 @@ struct CredentialCommand: AsyncParsableCommand {
     @Option(name: .customLong("where"), help: ArgumentHelp("With status: show the one saved login with this tag, as login --where would choose it. Repeatable. Not with a name.", valueName: "tag"))
     var filters: [String] = []
 
+    @Option(name: .customLong("devices"), help: ArgumentHelp("With set or describe: virtual (simulators and emulators, the default) or any (also allowed physical phones; needs a person).", valueName: "scope"))
+    var devices: LoginDeviceScope?
+
+    @Flag(name: .customLong("confirm"), inversion: .prefixedNo, help: "With set or describe: --confirm makes login ask for Touch ID or your password first; --no-confirm (needs a person) stops asking.")
+    var confirm: Bool?
+
+    @Flag(name: .customLong("web-login"), inversion: .prefixedNo, help: "With set or describe: --web-login (needs a person) lets login type into a web view, with webLogin in offsider.login.json; --no-web-login stops it.")
+    var webLogin: Bool?
+
     @OptionGroup
     var device: CredentialDeviceOption
 
@@ -113,11 +131,11 @@ struct CredentialCommand: AsyncParsableCommand {
         let parsed = try parsedAction()
         if stdin, parsed != .set { throw ValidationError("--stdin goes with set, not \(parsed.rawValue).") }
         if update, parsed != .set { throw ValidationError("--update goes with set, not \(parsed.rawValue).") }
-        if let flag = contextFlags.first, parsed != .set, parsed != .describe {
+        if let flag = (contextFlags + settingsFlags).first, parsed != .set, parsed != .describe {
             throw ValidationError("\(flag) goes with set or describe, not \(parsed.rawValue).")
         }
-        if parsed == .describe, contextFlags.isEmpty {
-            throw ValidationError("describe needs at least one of --about, --avoid, --state, --tag, --untag or --clear-tags.")
+        if parsed == .describe, contextFlags.isEmpty, settingsFlags.isEmpty {
+            throw ValidationError("describe needs at least one of --about, --avoid, --state, --tag, --untag, --clear-tags, --devices, --confirm, --no-confirm, --web-login or --no-web-login.")
         }
         _ = try contextEdit()
         if !filters.isEmpty, parsed != .status { throw ValidationError("--where goes with status or login, not credential \(parsed.rawValue).") }
@@ -143,23 +161,35 @@ struct CredentialCommand: AsyncParsableCommand {
         let person = isatty(STDIN_FILENO) != 0 && isatty(STDERR_FILENO) != 0
         let styled = json || isatty(STDOUT_FILENO) == 0 ? nil : TerminalOutput(style: .detect(isTerminal: true), device: suggestedDevice)
         if parsed == .join {
+            try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider credential join \(suggestedDevice)` in their own terminal.")
             let foreground = try await finding(person) { try await resolveForeground() }
-            let chooseApp: (([LoginAppGroup]) throws -> String)? = isatty(STDIN_FILENO) != 0 ? Self.chooseApp : nil
-            print(try Self.join(foreground: foreground, requested: app.flatMap(Self.appID), json: json, styled: styled, store: store, chooseApp: chooseApp))
+            print(try await Self.join(
+                foreground: foreground, platform: platform, requested: app.flatMap(Self.appID), json: json, styled: styled, store: store,
+                chooseApp: Self.chooseApp, confirmLink: Self.confirmLink
+            ))
             return
         }
         let deviceID = device.resolved?.id
         if parsed == .signedOut { try Self.refuseSignedOutOnPhone(deviceID ?? "") }
+        let settings = settingsEdit
+        if !settings.loosening.isEmpty {
+            try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider credential \(parsed.rawValue)` with these flags in their own terminal.")
+        }
         let app = try await finding(person && app == nil) { try await resolveApp() }
         let edit = try contextEdit()
         let filter = try LoginCommand.whereTags(filters, named: key != nil)
+        if !settings.loosening.isEmpty {
+            let name = key.map(LoginCredential.displayKey) ?? "default"
+            try await PersonPresence.confirm(reason: "let the saved login \(name) for \(app) \(settings.loosening.joined(separator: " and "))")
+        }
+        let confirmed = !settings.loosening.isEmpty
         guard parsed == .set, !stdin, isatty(STDIN_FILENO) != 0 else {
             let read = stdin ? Self.readFromStandardInput : {
                 throw CLIError(errorDescription: "credential set asks for the username on a terminal. Without one, pass --stdin.", reason: .usage)
             }
             let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWriteNotice.utf8)) }
             print(try Self.perform(
-                parsed, app: app, key: key, update: update, edit: edit, where: filter, json: json, styled: styled, store: store,
+                parsed, app: app, key: key, update: update, edit: edit, settings: settings, personConfirmed: confirmed, where: filter, json: json, styled: styled, store: store,
                 tracker: .live(), deviceID: deviceID,
                 keychainWillWrite: { DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice) },
                 keychainDidWrite: { notice.cancel() },
@@ -171,7 +201,10 @@ struct CredentialCommand: AsyncParsableCommand {
         print(try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
             prompt.lines(CredentialScreen.header(app: app, key: key, style: prompt.style))
             let questions = TerminalCredentialQuestions(prompt: prompt)
-            return try Self.perform(.set, app: app, key: key, update: update, edit: edit, json: json, styled: styled, store: store, questions: questions, readCredential: questions.credential)
+            return try Self.perform(
+                .set, app: app, key: key, update: update, edit: edit, settings: settings, personConfirmed: confirmed, json: json, styled: styled, store: store,
+                questions: questions, readCredential: questions.credential
+            )
         })
     }
 
@@ -181,6 +214,22 @@ struct CredentialCommand: AsyncParsableCommand {
             ("--about", about != nil), ("--avoid", avoid != nil), ("--state", state != nil),
             ("--tag", !tags.isEmpty), ("--untag", !untags.isEmpty), ("--clear-tags", clearTags),
         ].filter(\.1).map(\.0)
+    }
+
+    /// Settings flags given on the command line, in the order help lists them.
+    var settingsFlags: [String] {
+        var flags: [String] = []
+        if let devices { flags.append("--devices \(devices.rawValue)") }
+        if let confirm { flags.append(confirm ? "--confirm" : "--no-confirm") }
+        if let webLogin { flags.append(webLogin ? "--web-login" : "--no-web-login") }
+        return flags
+    }
+
+    var settingsEdit: LoginSettingsEdit { LoginSettingsEdit(devices: devices, confirm: confirm, webLogin: webLogin) }
+
+    /// The platform of the device in hand, for the deny-list; nil with `--app` alone.
+    var platform: DevicePlatform? {
+        device.resolved.flatMap { DeviceIDClassifier.classify($0.id).platform }
     }
 
     func contextEdit() throws -> LoginContextEdit {
@@ -251,7 +300,12 @@ struct CredentialCommand: AsyncParsableCommand {
             try await route.backend.prepare()
             ready()
             let tree = try await route.backend.accessibilityTree(for: route.device)
-            return try ForegroundAppLookup.identifier(in: tree, forLogin: false)
+            let app = try ForegroundAppLookup.identifier(in: tree, forLogin: false)
+            // On a phone the app in front is someone's real app; a system or browser app there is never read for a login.
+            if route.device.isPhysicalAndroidDevice, let refusal = SystemAppDenyList.refusal(app, platform: .android) {
+                throw CLIError(errorDescription: "\(refusal). Nothing was read or changed. Bring the app under test to the front.", reason: .appNotAllowed)
+            }
+            return app
         }
     }
 
@@ -262,6 +316,8 @@ struct CredentialCommand: AsyncParsableCommand {
         key: String?,
         update: Bool = false,
         edit: LoginContextEdit = LoginContextEdit(),
+        settings: LoginSettingsEdit = LoginSettingsEdit(),
+        personConfirmed: Bool = false,
         where filter: [LoginTag] = [],
         json: Bool,
         styled: TerminalOutput? = nil,
@@ -281,6 +337,12 @@ struct CredentialCommand: AsyncParsableCommand {
             guard let styled else { return report.textLine() }
             return report.styledText(style: styled.style, device: styled.device)
         }
+        if !settings.loosening.isEmpty, !personConfirmed {
+            throw CLIError.personRequired(
+                "Letting a saved login \(settings.loosening.joined(separator: " and ")) needs a person at a terminal with Touch ID or the login password. Nothing was saved.",
+                hint: "offsider credential \(action.rawValue)"
+            )
+        }
         let canonical = try store.canonical(of: app)
         let shared = try sharedIDs(app: app, canonical: canonical, store: store)
         switch action {
@@ -298,7 +360,9 @@ struct CredentialCommand: AsyncParsableCommand {
             if let stamp = LoginDirectory.shouldStampDefault(entries, writing: target.key) {
                 try store.markDefault(app: canonical, key: stamp)
             }
-            try store.save(credential, app: canonical, key: target.key, isDefault: target.makeDefault, context: context)
+            let next = settings.applied(to: try settingsBase(for: credential, key: target.key, existing: existing, entries: entries, app: canonical, store: store))
+            if let mirrored = mirrored(context, existing: existing, stored: next) { context = mirrored }
+            try store.saveStored(next, app: canonical, key: target.key, isDefault: target.makeDefault, context: context)
             let report = CredentialReport(
                 action: "set", app: app, key: target.key, username: credential.username, saved: true, isDefault: target.makeDefault, also: shared,
                 context: context ?? existing?.context ?? .empty
@@ -337,12 +401,26 @@ struct CredentialCommand: AsyncParsableCommand {
             let entries = try store.entries(app: canonical)
             let target = try describeTarget(entries: entries, name: key, app: app)
             guard let entry = entries.first(where: { $0.key == target }) else { throw missingLogin(target, app: app, entries: entries) }
-            let next = try edited(entry.stored, with: edit, key: target, app: app, now: now)
-            let changed = entry.stored != .saved(next)
+            var next = try edited(entry.stored, with: edit, key: target, app: app, now: now)
+            var rewrite: StoredLogin?
+            if !settings.isEmpty {
+                guard let saved = try store.loadStored(app: canonical, key: target) else { throw missingLogin(target, app: app, entries: entries) }
+                let applied = settings.applied(to: saved)
+                if applied != saved {
+                    rewrite = applied
+                    next = next.mirroring(applied)
+                    if next != entry.context { next.updated = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down)) }
+                }
+            }
+            let changed = entry.stored != .saved(next) || rewrite != nil
             if changed {
                 keychainWillWrite()
                 defer { keychainDidWrite() }
-                guard try store.setContext(next, app: canonical, key: target) else { throw missingLogin(target, app: app, entries: entries) }
+                if let rewrite {
+                    try store.saveStored(rewrite, app: canonical, key: target, isDefault: entry.isDefault, context: next)
+                } else {
+                    guard try store.setContext(next, app: canonical, key: target) else { throw missingLogin(target, app: app, entries: entries) }
+                }
             }
             let report = CredentialReport(
                 action: "describe", app: app, key: target, saved: true, isDefault: entry.isDefault || entries.count == 1, also: shared,
@@ -374,16 +452,21 @@ struct CredentialCommand: AsyncParsableCommand {
         try CLIError.refuseOnPhone(deviceID, command: "credential signed-out", alternative: "login does not run there, so Offsider records no sign-in on it.")
     }
 
+    /// Person-only: the caller has checked for a terminal. `confirmLink` shows both ids and returns true for Link,
+    /// and `PersonPresence` then asks for Touch ID or the password before anything is written.
     static func join(
         foreground: String,
+        platform: DevicePlatform?,
         requested: String?,
         json: Bool,
         styled: TerminalOutput? = nil,
         store: any LoginCredentialStoring,
-        chooseApp: (([LoginAppGroup]) throws -> String)? = nil
-    ) throws -> String {
+        chooseApp: ([LoginAppGroup]) throws -> String,
+        confirmLink: (_ member: String, _ canonical: String) throws -> Bool
+    ) async throws -> String {
+        try refuseDenied(foreground, platform: platform)
         let groups = try store.groups()
-        let intent = LoginDirectory.joinIntent(foreground: foreground, groups: groups, requested: requested, interactive: chooseApp != nil)
+        let intent = LoginDirectory.joinIntent(foreground: foreground, groups: groups, requested: requested, interactive: true)
         let canonical: String
         let already: Bool
         switch intent {
@@ -394,23 +477,67 @@ struct CredentialCommand: AsyncParsableCommand {
             canonical = target
             already = true
         case .choose:
-            guard let chooseApp else {
-                throw CLIError(errorDescription: "Several apps have saved logins. Pass --app with the one to share. Nothing was linked.", reason: .usage)
-            }
             canonical = try chooseApp(groups)
             already = false
         case .refused(let message):
             throw CLIError(errorDescription: message, reason: message.contains("Pass --app") ? .usage : .commandFailed)
         }
-        if !already { try store.join(member: foreground, canonical: canonical) }
+        try refuseDenied(canonical, platform: platform)
+        if !already {
+            guard try confirmLink(foreground, canonical) else { throw CLIError.personRequired("The link was cancelled. Nothing was linked.") }
+            try await PersonPresence.confirm(reason: "let \(foreground) use the saved logins of \(canonical)")
+            try store.join(member: foreground, canonical: canonical)
+        }
         let report = CredentialReport(action: "join", app: foreground, saved: !already, linked: canonical)
         if json { return report.jsonLine() }
         return styled.map { report.styledText(style: $0.style, device: $0.device) } ?? report.textLine()
     }
 
+    /// Browsers and system apps never share or take saved logins. Without a device in hand both platforms' lists apply.
+    static func refuseDenied(_ app: String, platform: DevicePlatform?) throws {
+        let platforms = platform.map { [$0] } ?? DevicePlatform.allCases
+        guard let refusal = platforms.lazy.compactMap({ SystemAppDenyList.refusal(app, platform: $0) }).first else { return }
+        throw CLIError(errorDescription: "\(refusal). Nothing was linked.", reason: .appNotAllowed)
+    }
+
     private static func chooseApp(_ groups: [LoginAppGroup]) throws -> String {
         try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingLinked, instead: "Pass --app with the one to share instead.") { prompt in
             groups[try prompt.choose(CredentialScreen.joinTitle, options: CredentialScreen.joinOptions(groups: groups))].canonical
+        }
+    }
+
+    private static func confirmLink(_ member: String, _ canonical: String) throws -> Bool {
+        try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingLinked, instead: "Run credential join in your own terminal.") { prompt in
+            guard try prompt.choose(CredentialScreen.linkTitle(member: member, canonical: canonical), options: CredentialScreen.linkOptions) == 0 else {
+                throw PromptCancelled()
+            }
+            return true
+        }
+    }
+
+    /// The settings a set starts from: the replaced login's own, or for a new login the links a person confirmed on the default login.
+    /// Only the replaced login is decrypted, and the default only when another app id is joined.
+    private static func settingsBase(
+        for credential: LoginCredential, key: String, existing: LoginEntry?, entries: [LoginEntry], app: String, store: any LoginCredentialStoring
+    ) throws -> StoredLogin {
+        if existing != nil, let saved = try store.loadStored(app: app, key: key) {
+            var kept = saved
+            kept.credential = credential
+            return kept
+        }
+        guard try store.groups().contains(where: { $0.canonical == app && !$0.members.isEmpty }) else { return StoredLogin(credential: credential) }
+        let source = entries.first(where: \.isDefault) ?? (entries.count == 1 ? entries.first : nil)
+        let links = try source.flatMap { try store.loadStored(app: app, key: $0.key) }?.links ?? []
+        return StoredLogin(credential: credential, links: links)
+    }
+
+    /// The context to write so its mirror matches `stored`; nil keeps the stored context, as for one a newer Offsider wrote.
+    private static func mirrored(_ context: LoginContext?, existing: LoginEntry?, stored: StoredLogin) -> LoginContext? {
+        if let context { return context.mirroring(stored) }
+        switch existing?.stored {
+        case .newer?: return nil
+        case .saved(let saved)?: return saved.mirroring(stored)
+        case .damaged?, nil: return LoginContext.empty.mirroring(stored)
         }
     }
 
@@ -600,3 +727,5 @@ struct TerminalCredentialQuestions: CredentialQuestions {
         }
     }
 }
+
+extension LoginDeviceScope: ExpressibleByArgument {}
