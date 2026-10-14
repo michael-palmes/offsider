@@ -25,7 +25,7 @@ Status: **same** (same name and meaning), **renamed** (exists under another name
 | `idb set-location` | none | missing |
 | `idb install`, `launch`, `terminate`, `uninstall`, `list-apps` | `xcrun simctl` | by design |
 | `idb open URL` | `xcrun simctl openurl` | by design |
-| `idb boot` | `xcrun simctl boot` (Offsider `boot` starts Android emulators) | by design |
+| `idb boot` | `boot <UDID or name>` (it also starts Android emulators) | same |
 | `idb file`, `crash`, `xctest`, `instruments`, `contacts`, `clear-keychain` | Xcode and `simctl` tools | by design |
 | `idb_companion` | none: Offsider links idb's frameworks in process | by design |
 

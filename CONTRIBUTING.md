@@ -11,13 +11,13 @@ Thanks for your interest. Offsider is a small, independently maintained project 
 
 ## Set up
 
-You need an Apple silicon Mac, Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [jq](https://jqlang.org).
+You need an Apple silicon Mac and Xcode 26 or later. Then:
 
 ```bash
-brew install xcodegen jq
-./scripts/build.sh dev   # build the pinned idb frameworks once per clone
-swift build
+make setup   # checks the tools, builds the pinned idb frameworks, then swift build
 ```
+
+A missing tool gets one `brew install` line to run. For the E2E suites, `scripts/e2e-devices.sh` shows and creates the simulator and AVDs they drive, and `./test-runner.sh` on its own asks which suites to run.
 
 ## Checks before you open a pull request
 
