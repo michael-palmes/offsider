@@ -43,11 +43,12 @@ struct AdbAdviceTests {
         #expect(far.message == "No AVD named Wear_OS. AVDs on this Mac: Pixel_9a, Tablet. Create one in Android Studio's Device Manager.")
     }
 
-    @Test("a missing emulator names the SDK's sdkmanager; a missing playground names its install script")
+    @Test("a missing emulator names the SDK's sdkmanager; a missing app names the SDK's adb install, never a repository script")
     func installAdvice() {
         #expect(AndroidError.emulatorMissing(sdkRoot: "/sdk").hint == "/sdk/cmdline-tools/latest/bin/sdkmanager emulator")
-        let playground = AndroidError.appNotInstalled(AndroidError.playgroundPackage, serial: "emulator-5554")
-        #expect(playground.hint == "scripts/rn-playground.sh install-android emulator-5554")
+        let playground = AndroidError.appNotInstalled("com.mpalmes.offsider.playground.rn", serial: "emulator-5554", adb: Self.adb)
+        #expect(playground.hint == "\(Self.adb) -s emulator-5554 install <path-to-apk>")
+        #expect(!playground.message.contains("scripts/"))
         #expect(AndroidError.appNotInstalled("com.example", serial: "emulator-5554").hint == "adb -s emulator-5554 install <path-to-apk>")
     }
 }

@@ -9,6 +9,23 @@ struct PromptCancelled: Error {}
 /// R at a menu or wait that offers a rescan: the caller looks again and redraws.
 struct PromptRefresh: Error {}
 
+/// No key for `idle` seconds, as when an agent drives the terminal and no person is there; nothing was saved.
+struct PromptTimedOut: LocalizedError, UserFacingError, OffsiderFailure {
+    let idle: TimeInterval
+    let instead: String
+
+    var reason: FailureReason { .usage }
+    var waited: String { Self.duration(idle) }
+    var userFacingDescription: String { "No key was pressed within \(waited), so the prompt closed and nothing changed. \(instead)" }
+    var failureMessage: String { userFacingDescription }
+    var errorDescription: String? { userFacingDescription }
+
+    /// `60 s` or `10 minutes`.
+    static func duration(_ seconds: TimeInterval) -> String {
+        seconds >= 120 && seconds.truncatingRemainder(dividingBy: 60) == 0 ? "\(Int(seconds / 60)) minutes" : "\(Int(seconds.rounded())) s"
+    }
+}
+
 /// A block of questions on the terminal. Closing it erases every line it drew since the last `settle()`.
 final class TerminalPrompt {
     let style: TerminalStyle
@@ -16,6 +33,8 @@ final class TerminalPrompt {
     private let instead: String
     private let descriptor: Int32
     private let ownsDescriptor: Bool
+    /// Seconds to wait for each key before giving up with `PromptTimedOut`.
+    private let idle: TimeInterval
     private var original = termios()
     private var raw = termios()
     /// Echo and signals are off only while waiting for keys, so Control-C still stops a slow Keychain read.
@@ -32,8 +51,12 @@ final class TerminalPrompt {
     private var settled = 0
 
     /// Opens `/dev/tty`, or uses `descriptor` (a pseudo-terminal in tests).
-    init(descriptor: Int32? = nil, instead: String = TerminalPrompt.pipeInstead, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+    init(
+        descriptor: Int32? = nil, instead: String = TerminalPrompt.pipeInstead, idle: TimeInterval = TerminalPrompt.defaultIdle,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws {
         self.instead = instead
+        self.idle = idle
         if let descriptor {
             self.descriptor = descriptor
             ownsDescriptor = false
@@ -58,9 +81,15 @@ final class TerminalPrompt {
 
     static let pipeInstead = "Pass --stdin to pipe the answers in instead."
 
+    /// How long any prompt waits for a key, so an agent driving a pseudo-terminal never hangs at one.
+    static let defaultIdle: TimeInterval = 60
+
     /// Runs `body` in a block that is erased afterwards. A cancel says `cancelled` and exits 130.
-    static func run<T>(cancelled: @autoclosure () -> String, instead: String = pipeInstead, descriptor: Int32? = nil, keeps: Bool = false, _ body: (TerminalPrompt) throws -> T) throws -> T {
-        let prompt = try TerminalPrompt(descriptor: descriptor, instead: instead)
+    static func run<T>(
+        cancelled: @autoclosure () -> String, instead: String = pipeInstead, descriptor: Int32? = nil, idle: TimeInterval = defaultIdle, keeps: Bool = false,
+        _ body: (TerminalPrompt) throws -> T
+    ) throws -> T {
+        let prompt = try TerminalPrompt(descriptor: descriptor, instead: instead, idle: idle)
         do {
             let result = try body(prompt)
             if keeps { prompt.settle() }
@@ -77,8 +106,11 @@ final class TerminalPrompt {
 
     /// Runs async `body` in a block that is erased afterwards, as `run` does.
     @MainActor
-    static func runAsync<T>(cancelled: @autoclosure () -> String, instead: String = pipeInstead, descriptor: Int32? = nil, keeps: Bool = false, _ body: @MainActor (TerminalPrompt) async throws -> T) async throws -> T {
-        let prompt = try TerminalPrompt(descriptor: descriptor, instead: instead)
+    static func runAsync<T>(
+        cancelled: @autoclosure () -> String, instead: String = pipeInstead, descriptor: Int32? = nil, idle: TimeInterval = defaultIdle, keeps: Bool = false,
+        _ body: @MainActor (TerminalPrompt) async throws -> T
+    ) async throws -> T {
+        let prompt = try TerminalPrompt(descriptor: descriptor, instead: instead, idle: idle)
         do {
             let result = try await body(prompt)
             if keeps { prompt.settle() }
@@ -257,6 +289,7 @@ final class TerminalPrompt {
     /// Hands the next key to `use`, then zeroes any typed bytes it held.
     private func nextKey<T>(_ use: (TerminalKey) -> T) throws -> T {
         while pending.isEmpty {
+            try awaitKey()
             let buffer = SecretBytes(capacity: Self.readSize)
             var result = 0
             buffer.append { result = Darwin.read(descriptor, $0.baseAddress, $0.count); return result }
@@ -270,6 +303,28 @@ final class TerminalPrompt {
         var key = pending.removeFirst()
         defer { key.wipe() }
         return use(key)
+    }
+
+    /// Waits up to `idle` seconds for the terminal to have a byte to read. `select`, since macOS `poll` does not support `/dev/tty`.
+    private func awaitKey() throws {
+        guard descriptor < FD_SETSIZE else { return }
+        let deadline = Date().addingTimeInterval(idle)
+        while true {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { throw PromptTimedOut(idle: idle, instead: instead) }
+            var readable = fd_set()
+            withUnsafeMutableBytes(of: &readable) { bytes in
+                bytes.initializeMemory(as: UInt8.self, repeating: 0)
+                let words = bytes.bindMemory(to: Int32.self)
+                words[Int(descriptor) / 32] |= Int32(bitPattern: UInt32(1) << UInt32(descriptor % 32))
+            }
+            var wait = timeval(tv_sec: Int(remaining), tv_usec: Int32((remaining - remaining.rounded(.down)) * 1_000_000))
+            let ready = select(descriptor + 1, &readable, nil, nil, &wait)
+            if ready > 0 { return }
+            if ready == 0 { throw PromptTimedOut(idle: idle, instead: instead) }
+            // EINTR goes round again; any other failure leaves the read to block as it did before.
+            guard errno == EINTR else { return }
+        }
     }
 
     /// Waits up to 100 ms for more of an arrow key. A termios timeout, since macOS `poll` does not support `/dev/tty`.

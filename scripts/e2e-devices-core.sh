@@ -49,9 +49,12 @@ android_tool() {
         printf '%s' "$SDK/cmdline-tools/latest/bin/$name"
         return 0
     fi
-    for candidate in "$SDK"/cmdline-tools/*/bin/"$name"; do
-        [[ -x "$candidate" ]] && printf '%s' "$candidate"
-    done
+    candidate="$(
+        for candidate in "$SDK"/cmdline-tools/*/bin/"$name"; do
+            [[ -x "$candidate" ]] && printf '%s\n' "${candidate#"$SDK/cmdline-tools/"}"
+        done | sort -V | tail -1
+    )"
+    [[ -n "$candidate" ]] && printf '%s' "$SDK/cmdline-tools/$candidate"
     return 0
 }
 

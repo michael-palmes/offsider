@@ -7,10 +7,10 @@ extension AndroidBackend: PermissionControlling {
         let script = AndroidPermissionPlan.readScript(package: app)
         let result = try await client.shell(script, on: id.rawValue, timeout: .seconds(20), label: "dumpsys package")
         if result.stdoutText.contains("Unable to find package") || (result.status != 0 && result.stderrText.contains("Unable to find package")) {
-            throw AndroidError.appNotInstalled(app, serial: id.rawValue)
+            throw AndroidError.appNotInstalled(app, serial: id.rawValue, adb: adbPath)
         }
         guard result.status == 0, result.stdoutText.contains("Package [\(app)]") else {
-            if result.status == 0 { throw AndroidError.appNotInstalled(app, serial: id.rawValue) }
+            if result.status == 0 { throw AndroidError.appNotInstalled(app, serial: id.rawValue, adb: adbPath) }
             throw AndroidError.adbCommandFailed(serial: id.rawValue, command: "dumpsys package \(app)", detail: Self.firstLine(result.stderrText, status: result.status))
         }
         let (apiLevel, dump) = AndroidPackagePermissions.splitRead(result.stdoutText)

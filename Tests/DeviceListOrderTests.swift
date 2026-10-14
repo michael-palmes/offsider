@@ -66,4 +66,34 @@ struct DeviceListOrderTests {
         #expect(SimulatorBootTarget.match("Pixel", among: [a, b, c]) == .none)
         #expect(SimulatorBootTarget.ambiguity("iPhone 17", [a, b]).contains(b.udid))
     }
+
+    @Test("boot leaves a booted simulator alone, waits for one already booting instead of booting it again, and boots the rest")
+    func bootStepByState() {
+        #expect(SimulatorBootStep.step(for: "Booted") == .alreadyBooted)
+        #expect(SimulatorBootStep.step(for: "Booting") == .waitForBoot)
+        #expect(SimulatorBootStep.step(for: "Shutdown") == .boot)
+    }
+
+    @Test("a boot that outlasts the timeout reports it at once and keeps running, never cancelled")
+    func timedOutBootCarriesOn() async throws {
+        final class Flags: @unchecked Sendable {
+            let lock = NSLock()
+            var finished = false
+            var cancelled = false
+        }
+        let flags = Flags()
+        let finished = try await DetachedWait.finishes(within: .milliseconds(20)) {
+            try? await Task.sleep(for: .milliseconds(200))
+            flags.lock.withLock {
+                flags.cancelled = Task.isCancelled
+                flags.finished = true
+            }
+        }
+        #expect(!finished)
+        for _ in 0..<100 where !flags.lock.withLock({ flags.finished }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(flags.lock.withLock { flags.finished && !flags.cancelled })
+        #expect(try await DetachedWait.finishes(within: .seconds(5)) {})
+    }
 }

@@ -32,6 +32,7 @@ SIMULATOR_UDID="${SIMULATOR_UDID:-}"
 PLAYGROUND_PROJECT="OffsiderPlaygroundApp/OffsiderPlayground.xcodeproj"
 PLAYGROUND_SCHEME="OffsiderPlayground"
 BUNDLE_ID="com.mpalmes.offsider.playground"
+ANDROID_PLAYGROUND_PACKAGE="com.mpalmes.offsider.playground.rn"
 
 print_header() {
     ui_section "🎯" "$1"
@@ -49,7 +50,7 @@ Modes (run $0 on a terminal with none to pick one):
       --rn-ios         React Native suites on an iPhone simulator (needs pnpm)
       --foldable       Foldable suite on the Offsider Duo simulator
       --android-fold   Foldable suite on the Offsider_E2E_Fold AVD, booted if it is not running
-      --android-phone  Phone suites on a USB phone you allowed (offsider device-access allow)
+      --android-phone  Phone suites on a USB phone you allowed (.build/debug/offsider device-access allow)
       --ios-device     Device suites on an iPhone or iPad you allowed
 Options: -t tests only, -b build only, -c clean build, -v verbose, --rn-debug (with --rn-ios or --android)
 
@@ -88,14 +89,17 @@ Foldables (--foldable, --android-fold):
 
 Android phone (--android-phone):
   OFFSIDER_ANDROID_PHONE    The phone's exact USB serial from adb devices -l; no other device is touched
-                            Unset: the one active Android phone on the allow-list (several or none is an error)
-                            The user must first allow it: offsider device-access allow, then choose the phone
+                            Unset: the one active Android phone on the allow-list, only when its allowance pins
+                            com.mpalmes.offsider.playground.rn (several, none or another app is an error)
+                            The user must first allow it: .build/debug/offsider device-access allow, then choose the phone
+                            and pin com.mpalmes.offsider.playground.rn
   OFFSIDER_ANDROID_APK      The React Native playground's release APK, installed once and left in place
 
 iPhone or iPad (--ios-device, needs XcodeGen):
   OFFSIDER_IOS_DEVICE       The device's exact UDID from devicectl list devices; no other device is touched
-                            Unset: the one active iPhone or iPad on the allow-list (several or none is an error)
-                            The user must first allow it: offsider device-access allow, then choose the device
+                            Unset: the one active iPhone or iPad on the allow-list, only when its allowance pins
+                            com.mpalmes.offsider.playground (several, none or another app is an error)
+                            The user must first allow it: .build/debug/offsider device-access allow, then choose the device
                             and pin com.mpalmes.offsider.playground
   OFFSIDER_IOS_TEAM_ID      The team that signs the runner and the playground, installed once and left in place
                             Unset: the team the device's allowance records
@@ -599,7 +603,12 @@ run_suite_list() {
         status=${PIPESTATUS[0]}
         set -e
         if [[ "$status" -ne 0 ]]; then
+            local missing_on
+            missing_on="$(grep -oE "${ANDROID_PLAYGROUND_PACKAGE//./\\.} is not installed on [A-Za-z0-9_:-]+" "$output_log" | head -1)"
             rm -f "$output_log"
+            if [[ -n "$missing_on" ]]; then
+                die "$suite failed: the playground is not installed on ${missing_on##* }." "scripts/rn-playground.sh install-android ${missing_on##* }"
+            fi
             die "$suite failed"
         fi
         if grep -q "No matching test cases were run" "$output_log" && ! grep -q "Test run with [1-9]" "$output_log"; then
@@ -782,52 +791,6 @@ run_android_fold_tests() {
     print_success "Android foldable suite passed"
 }
 
-# Prints the id and name of the one active allow-list entry for a platform (ios or android); several or none prints the names and fails.
-allowed_device_for() {
-    local platform="$1"
-    local status count i
-    status="$("$OFFSIDER_BIN_PATH" device-access status --json 2>/dev/null)" || status=""
-    count="$(printf '%s' "$status" | plutil -extract devices raw -o - - 2>/dev/null)" || count=0
-    local ids=() names=()
-    for (( i = 0; i < count; i++ )); do
-        [[ "$(printf '%s' "$status" | plutil -extract "devices.$i.platform" raw -o - - 2>/dev/null)" == "$platform" ]] || continue
-        [[ "$(printf '%s' "$status" | plutil -extract "devices.$i.active" raw -o - - 2>/dev/null)" == true ]] || continue
-        ids+=("$(printf '%s' "$status" | plutil -extract "devices.$i.id" raw -o - - 2>/dev/null)")
-        names+=("$(printf '%s' "$status" | plutil -extract "devices.$i.name" raw -o - - 2>/dev/null)")
-    done
-    if (( ${#ids[@]} == 1 )); then
-        printf '%s\t%s\n' "${ids[0]}" "${names[0]}"
-        return 0
-    fi
-    local label="Android phone"
-    [[ "$platform" == ios ]] && label="iPhone or iPad"
-    if (( ${#ids[@]} == 0 )); then
-        print_error "No $label is allowed now." >&2
-    else
-        local joined
-        joined="$(printf '%s, ' "${names[@]}")"
-        print_error "More than one $label is allowed: ${joined%, }." >&2
-    fi
-    return 1
-}
-
-# The team an iPhone or iPad's allowance records, or nothing.
-allowance_team() {
-    "$OFFSIDER_BIN_PATH" device-access status --device "$1" --json 2>/dev/null | plutil -extract devices.0.team raw -o - - 2>/dev/null || true
-}
-
-# The command a person runs to allow a device, with what to choose in its menus.
-print_device_allow() {
-    local name="$1"
-    local app="${2:-}"
-    print_error "  offsider device-access allow"
-    if [[ -n "$app" ]]; then
-        print_error "  Then choose $name, pin $app, and allow at least 2 hours."
-    else
-        print_error "  Then choose $name and allow at least 2 hours."
-    fi
-}
-
 # A physical device runs E2E only while a person has allowed it for more than 30 minutes more (and, on an iPhone, the playground); there is no bypass.
 require_device_allowance() {
     local device="$1"
@@ -890,8 +853,8 @@ run_android_phone_tests() {
     fi
     if [[ -z "${OFFSIDER_ANDROID_PHONE:-}" ]]; then
         local picked
-        if ! picked="$(allowed_device_for android)"; then
-            die "Set OFFSIDER_ANDROID_PHONE to the phone's USB serial, or ask the user to run 'offsider device-access allow' in their own terminal and choose one phone."
+        if ! picked="$(allowed_device_for android "$ANDROID_PLAYGROUND_PACKAGE")"; then
+            die "$picked Set OFFSIDER_ANDROID_PHONE to the phone's USB serial." "OFFSIDER_ANDROID_PHONE=<serial> $0 --android-phone"
         fi
         OFFSIDER_ANDROID_PHONE="${picked%%$'\t'*}"
         print_info "Using ${picked#*$'\t'}, the one Android phone on the allow-list"
@@ -929,18 +892,18 @@ run_ios_device_tests() {
     fi
     if [[ -z "${OFFSIDER_IOS_DEVICE:-}" ]]; then
         local picked
-        if ! picked="$(allowed_device_for ios)"; then
-            die "Set OFFSIDER_IOS_DEVICE to the device's UDID, or ask the user to run 'offsider device-access allow' in their own terminal and choose one iPhone or iPad."
+        if ! picked="$(allowed_device_for ios "$BUNDLE_ID")"; then
+            die "$picked Set OFFSIDER_IOS_DEVICE to the device's UDID." "OFFSIDER_IOS_DEVICE=<udid> $0 --ios-device"
         fi
         OFFSIDER_IOS_DEVICE="${picked%%$'\t'*}"
         print_info "Using ${picked#*$'\t'}, the one iPhone or iPad on the allow-list"
     fi
     export OFFSIDER_IOS_DEVICE
-    require_device_allowance "$OFFSIDER_IOS_DEVICE" "com.mpalmes.offsider.playground"
+    require_device_allowance "$OFFSIDER_IOS_DEVICE" "$BUNDLE_ID"
     if [[ -z "${OFFSIDER_IOS_TEAM_ID:-}" ]]; then
         OFFSIDER_IOS_TEAM_ID="$(allowance_team "$OFFSIDER_IOS_DEVICE")"
         if [[ -z "$OFFSIDER_IOS_TEAM_ID" ]]; then
-            die "No team signs the runner and the playground. Ask the user to run 'offsider device-access allow' in their own terminal and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID."
+            die "No team signs the runner and the playground. Ask the user to run $(offsider_command) device-access allow in their own terminal and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID."
         fi
         print_info "Using the team the device's allowance records"
     fi

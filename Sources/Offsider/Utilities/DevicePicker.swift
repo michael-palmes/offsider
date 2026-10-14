@@ -47,6 +47,18 @@ enum DevicePicker {
         return nil
     }
 
+    /// Runs `pick`; when no key comes in time, writes one dim line and throws the parse error the picker stood in for, so the exit stays 64.
+    @MainActor
+    static func orUnanswered(_ error: any Error, boot: Bool = false, _ pick: @MainActor () async throws -> DeviceSummary) async throws -> DeviceSummary {
+        do {
+            return try await pick()
+        } catch let timeout as PromptTimedOut {
+            let style = TerminalStyle.detect(isTerminal: isatty(STDERR_FILENO) != 0)
+            FileHandle.standardError.write(Data((style.dim(DevicePickerScreen.unanswered(within: timeout.waited, boot: boot)) + "\n").utf8))
+            throw error
+        }
+    }
+
     /// Simulators and emulators only: the physical-device backend is never asked.
     @MainActor
     static func virtualDevices() async throws -> [DeviceSummary] {
@@ -58,28 +70,32 @@ enum DevicePicker {
 
     /// Asks which running simulator or emulator to drive; R looks again.
     @MainActor
-    static func pickRunning(descriptor: Int32? = nil, list: @MainActor () async throws -> [DeviceSummary] = virtualDevices) async throws -> DeviceSummary {
+    static func pickRunning(
+        descriptor: Int32? = nil, idle: TimeInterval = TerminalPrompt.defaultIdle, list: @MainActor () async throws -> [DeviceSummary] = virtualDevices
+    ) async throws -> DeviceSummary {
         try await pick(
-            DevicePickerScreen.deviceQuestion, descriptor: descriptor, empty: DevicePickerScreen.noneRunning,
+            DevicePickerScreen.deviceQuestion, descriptor: descriptor, idle: idle, empty: DevicePickerScreen.noneRunning,
             next: ("Boot", DevicePickerScreen.bootCommand), offered: { DevicePickerScreen.runningDevices(try await list()) }, row: DevicePickerScreen.deviceRow
         )
     }
 
     /// Asks which simulator or AVD to boot; running ones say so.
     @MainActor
-    static func pickBootable(descriptor: Int32? = nil, list: @MainActor () async throws -> [DeviceSummary] = virtualDevices) async throws -> DeviceSummary {
+    static func pickBootable(
+        descriptor: Int32? = nil, idle: TimeInterval = TerminalPrompt.defaultIdle, list: @MainActor () async throws -> [DeviceSummary] = virtualDevices
+    ) async throws -> DeviceSummary {
         try await pick(
-            DevicePickerScreen.bootQuestion, descriptor: descriptor, empty: DevicePickerScreen.noneToBoot,
+            DevicePickerScreen.bootQuestion, descriptor: descriptor, idle: idle, empty: DevicePickerScreen.noneToBoot,
             next: nil, offered: { DevicePickerScreen.bootable(try await list()) }, row: DevicePickerScreen.bootRow
         )
     }
 
     @MainActor
     private static func pick(
-        _ question: String, descriptor: Int32?, empty: String, next: (label: String, command: String)?,
+        _ question: String, descriptor: Int32?, idle: TimeInterval, empty: String, next: (label: String, command: String)?,
         offered: @MainActor () async throws -> [DeviceSummary], row: (DeviceSummary) -> MenuRow
     ) async throws -> DeviceSummary {
-        try await TerminalPrompt.runAsync(cancelled: DevicePickerScreen.cancelled, descriptor: descriptor) { prompt in
+        try await TerminalPrompt.runAsync(cancelled: DevicePickerScreen.cancelled, descriptor: descriptor, idle: idle) { prompt in
             while true {
                 let devices = try await TerminalSpinner.run("Looking for devices", terminal: prompt.terminalDescriptor) { try await offered() }
                 do {

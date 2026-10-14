@@ -11,13 +11,13 @@ public enum AccessStatusScreen {
     public static let listUnreadable = "List unreadable. Allow again."
     public static let allowCommand = "offsider device-access allow"
 
-    public static func removeCommand(_ key: String) -> String { "offsider device-access remove --device \(key)" }
+    public static func removeCommand(_ key: String) -> String { "offsider device-access remove --device \(PromptScreen.visible(key))" }
 
     /// `any app · until 22:14`, `com.example.app · until removed`, with `· team ABCDE12345` when `team` is on and the entry has one.
     public static func detail(_ entry: DeviceAllowance, now: Date, timeZone: TimeZone, team: Bool, style: TerminalStyle) -> String {
         let until = entry.expires == nil ? "until removed" : AllowScreen.until(entry.expires, now: now, timeZone: timeZone)
-        let apps = entry.apps.isEmpty ? "any app" : entry.apps.joined(separator: ", ")
-        return ([apps, until] + (team ? entry.team.map { ["team \($0)"] } ?? [] : [])).joined(separator: " \(style.dot) ")
+        let apps = entry.apps.isEmpty ? "any app" : entry.apps.map { PromptScreen.label($0) }.joined(separator: ", ")
+        return ([apps, until] + (team ? entry.team.map { ["team \(PromptScreen.visible($0))"] } ?? [] : [])).joined(separator: " \(style.dot) ")
     }
 
     /// 📲 for an iPad, 📱 for an iPhone, 🤖 for an Android phone, from what the entry recorded.
@@ -29,7 +29,7 @@ public enum AccessStatusScreen {
     }
 
     public static func name(_ entry: DeviceAllowance) -> String {
-        entry.name.hasPrefix("Apple ") ? String(entry.name.dropFirst(6)) : entry.name
+        PromptScreen.label(entry.name.hasPrefix("Apple ") ? String(entry.name.dropFirst(6)) : entry.name)
     }
 
     /// The devices agents may control now; expired and refused entries are left out.

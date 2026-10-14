@@ -106,9 +106,16 @@ enum AndroidE2E {
     static func run(_ arguments: String, environment: [String: String]? = nil, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
         let result = try await offsider(arguments, environment: environment, timeout: timeout)
         guard result.exitCode == 0 else {
-            throw AndroidE2EError(description: "offsider \(arguments) exited \(result.exitCode): \(result.stderr)")
+            throw AndroidE2EError(description: "offsider \(arguments) exited \(result.exitCode): \(result.stderr)" + installAdvice(result.stderr))
         }
         return result
+    }
+
+    /// The repository's install script, for a failure that says the playground is missing; Offsider's own hint stays generic.
+    static func installAdvice(_ stderr: String) -> String {
+        guard let range = stderr.range(of: "\(package) is not installed on ") else { return "" }
+        let serial = stderr[range.upperBound...].prefix { $0.isLetter || $0.isNumber || "-_:".contains($0) }
+        return serial.isEmpty ? "" : " Install the playground with scripts/rn-playground.sh install-android \(serial)."
     }
 
     /// OFFSIDER_ANDROID_APK, or OFFSIDER_ANDROID_DEBUG_APK with OFFSIDER_RN_DEBUG_E2E.

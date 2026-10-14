@@ -11,6 +11,11 @@ public enum DevicePickerScreen {
     public static let cancelled = "👋 Cancelled, nothing run."
     public static let bootCommand = "offsider boot"
 
+    /// The dim line after a picker no one answered, above the original parse error.
+    public static func unanswered(within waited: String, boot: Bool = false) -> String {
+        boot ? "Nothing chosen to boot within \(waited); pass its name, such as offsider boot <avd>." : "No device chosen within \(waited); pass --device <id>."
+    }
+
     /// Booted simulators and running emulators only.
     public static func runningDevices(_ rows: [DeviceSummary]) -> [DeviceSummary] {
         rows.filter { [.simulator, .emulator].contains($0.kind) && $0.state == "Booted" }
@@ -41,16 +46,16 @@ public enum DevicePickerScreen {
 
     /// `📱  iPhone 17 Pro  iOS 27.0`.
     public static func deviceRow(_ row: DeviceSummary) -> MenuRow {
-        MenuRow(AllowScreen.mark(row), [row.name, row.osVersion ?? ""])
+        MenuRow(AllowScreen.mark(row), [PromptScreen.label(row.name), PromptScreen.label(row.osVersion ?? "")])
     }
 
     /// `🤖  Pixel_9  running`, or the OS version for one that is not.
     public static func bootRow(_ row: DeviceSummary) -> MenuRow {
-        MenuRow(AllowScreen.mark(row), [row.platform == .android ? row.avd ?? row.name : row.name, isRunning(row) ? running : row.osVersion ?? ""])
+        MenuRow(AllowScreen.mark(row), [PromptScreen.label(row.platform == .android ? row.avd ?? row.name : row.name), isRunning(row) ? running : PromptScreen.label(row.osVersion ?? "")])
     }
 
     /// The dim line after a pick: `Using iPhone 17 Pro · add --device <id> to skip this`.
     public static func using(_ row: DeviceSummary, style: TerminalStyle) -> String {
-        style.dim("Using \(row.name) \(style.dot) add --device \(row.id) to skip this")
+        style.dim("Using \(PromptScreen.label(row.name)) \(style.dot) add --device \(PromptScreen.visible(row.id)) to skip this")
     }
 }

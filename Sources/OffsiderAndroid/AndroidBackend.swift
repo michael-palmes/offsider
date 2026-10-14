@@ -66,6 +66,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         self.client = client
     }
 
+    /// The SDK's adb by its full path once `prepare` found it, for hints.
+    var adbPath: String? { sdk?.adb.path }
+
     /// The SDK's adb, for the emulator console commands the adb server protocol does not carry.
     func adbExecutable() async throws -> URL {
         try await prepare()

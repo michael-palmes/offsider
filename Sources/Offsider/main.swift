@@ -99,13 +99,13 @@ struct OffsiderCommand: AsyncParsableCommand {
         } catch {
             guard DevicePicker.offers(arguments: arguments, terminal: DevicePicker.terminal()), let need = DevicePicker.need(for: error, arguments: arguments) else { throw error }
             if need == .device {
-                let row = try await DevicePicker.pickRunning()
+                let row = try await DevicePicker.orUnanswered(error) { try await DevicePicker.pickRunning() }
                 DeviceDefault.picked = row.id
                 let command = try parseAsRoot(nil)
                 FileHandle.standardError.write(Data((DevicePickerScreen.using(row, style: .detect(isTerminal: true)) + "\n").utf8))
                 return command
             }
-            let row = try await DevicePicker.pickBootable()
+            let row = try await DevicePicker.orUnanswered(error, boot: true) { try await DevicePicker.pickBootable() }
             return try parseAsRoot([arguments[0], DevicePickerScreen.bootName(row)] + arguments.dropFirst())
         }
     }

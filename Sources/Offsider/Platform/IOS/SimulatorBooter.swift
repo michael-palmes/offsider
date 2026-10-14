@@ -23,23 +23,33 @@ struct SimulatorBooter {
         }
     }
 
-    /// Returns whether it was already booted; a boot that outlasts `timeout` is an error, and the simulator keeps booting.
+    /// Returns whether it was already booted. A boot that outlasts `timeout` is an error, yet it carries on, so running `boot` again
+    /// finds the simulator booting and waits for it rather than starting another.
     func boot(_ simulator: FBSimulator, timeout: Duration, progress: (String) -> Void) async throws -> Bool {
-        if simulator.state == .booted { return true }
-        progress("Booting \(simulator.name) (\(simulator.udid)).")
-        let future = FutureBox(simulator.boot(FBSimulatorBootConfiguration.default))
-        let finished = try await withThrowingTaskGroup(of: Bool.self) { group in
-            group.addTask { _ = try await bridgeFBFuture(future.future); return true }
-            group.addTask { try await Task.sleep(for: timeout); return false }
-            defer { group.cancelAll() }
-            return try await group.next() ?? false
+        let step = SimulatorBootStep.step(for: FBiOSTargetStateStringFromState(simulator.state).rawValue)
+        if step == .alreadyBooted { return true }
+        let target = SimulatorBox(simulator)
+        let finished: Bool
+        if step == .waitForBoot {
+            progress("Waiting for \(simulator.name) (\(simulator.udid)), which is already booting.")
+            finished = try await DetachedWait.finishes(within: timeout) { try await target.simulator.resolveState(.booted) }
+        } else {
+            progress("Booting \(simulator.name) (\(simulator.udid)).")
+            let future = FutureBox(simulator.boot(FBSimulatorBootConfiguration.default))
+            finished = try await DetachedWait.finishes(within: timeout) { _ = try await bridgeFBFuture(future.future) }
         }
         guard finished else {
             throw CLIError(
-                errorDescription: "\(simulator.name) (\(simulator.udid)) did not finish booting within \(timeout.components.seconds) s. It may still be booting; run `offsider boot \(simulator.udid)` again to keep waiting.",
+                errorDescription: "\(simulator.name) (\(simulator.udid)) did not finish booting within \(timeout.components.seconds) s. It carries on booting; run `offsider boot \(simulator.udid)` again to keep waiting.",
                 reason: .bootTimedOut
             )
         }
         return false
     }
+}
+
+/// Lets a boot wait run off the main actor; FBSimulator does its own locking.
+private final class SimulatorBox: @unchecked Sendable {
+    let simulator: FBSimulator
+    init(_ simulator: FBSimulator) { self.simulator = simulator }
 }

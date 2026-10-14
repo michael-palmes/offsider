@@ -19,7 +19,6 @@ public enum AllowScreen {
     public static let done = "Done"
     public static let confirm = "Touch ID or your password to confirm."
     public static let cancelled = PromptScreen.cancelledNothingSaved
-    public static let cancelledAfterSaving = "👋 Cancelled, nothing more saved."
 
     public static func header(width: Int, style: TerminalStyle) -> [String] {
         TerminalUI.banner(title, mark: .lock, width: width, style: style) + [""]
@@ -27,7 +26,7 @@ public enum AllowScreen {
 
     /// The name a person knows the device by: the marketing name without "Apple", or the model the phone reports.
     public static func name(_ row: DeviceSummary) -> String {
-        row.name.hasPrefix("Apple ") ? String(row.name.dropFirst(6)) : row.name
+        PromptScreen.label(row.name.hasPrefix("Apple ") ? String(row.name.dropFirst(6)) : row.name)
     }
 
     /// 📱 for an iPhone, 📲 for an iPad, 🤖 for an Android phone.
@@ -41,7 +40,7 @@ public enum AllowScreen {
     /// A connected device as a menu row: its mark, name and the ID's last four characters. A Wi-Fi device is drawn but cannot be chosen.
     public static func deviceRow(_ row: DeviceSummary, key: String, style: TerminalStyle) -> MenuRow {
         guard row.connection == "usb" else { return MenuRow(mark(row), [name(row), wifiOnly], enabled: false) }
-        return MenuRow(mark(row), [name(row), style.ellipsis + String(key.suffix(4))])
+        return MenuRow(mark(row), [name(row), style.ellipsis + PromptScreen.visible(String(key.suffix(4)))])
     }
 
     /// A connected device agents may already control: dim, never chosen, with `allowed · any app · until 22:14` for its detail.
@@ -59,7 +58,7 @@ public enum AllowScreen {
     }
 
     public static func apps(_ apps: [String]) -> String {
-        apps.isEmpty ? "any app" : apps.joined(separator: ", ") + " only"
+        apps.isEmpty ? "any app" : apps.map { PromptScreen.label($0) }.joined(separator: ", ") + " only"
     }
 
     /// The bold line above the Touch ID request: what is about to be allowed. `team` is the name shown, or `team <id>` when only the ID is known.
@@ -81,7 +80,8 @@ public enum AllowScreen {
 
     /// The closing block for one device: the only place the full ID shows, since the commands need it.
     public static func allowed(name: String, key: String, until: String, apps: [String], width: Int, style: TerminalStyle) -> [String] {
-        TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps)).", commands: [
+        let key = PromptScreen.visible(key)
+        return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps)).", commands: [
             ("Withdraw", "offsider device-access remove --device \(key)"),
             ("Next", "offsider doctor --device \(key)"),
         ], width: width, style: style)

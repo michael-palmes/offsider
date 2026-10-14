@@ -193,19 +193,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    static let playgroundPackage = "com.mpalmes.offsider.playground.rn"
-
-    static func appNotInstalled(_ package: String, serial: String) -> AndroidError {
-        if package == playgroundPackage {
-            return AndroidError(
-                .appNotInstalled,
-                "The playground (\(package)) is not installed on \(serial).",
-                hint: "scripts/rn-playground.sh install-android \(serial)"
-            )
-        }
+    /// `adb` is the SDK's adb by its full path when known, so the hint runs as printed.
+    static func appNotInstalled(_ package: String, serial: String, adb: String? = nil) -> AndroidError {
+        let adb = adb ?? "adb"
         return AndroidError(
             .appNotInstalled,
-            "\(package) is not installed on \(serial). Install it with `adb -s \(serial) install <path-to-apk>`, or check the package name with adb -s \(serial) shell pm list packages."
+            "\(package) is not installed on \(serial). Install it with `\(adb) -s \(serial) install <path-to-apk>`, or check the package name with \(adb) -s \(serial) shell pm list packages.",
+            hint: "\(adb) -s \(serial) install <path-to-apk>"
         )
     }
 

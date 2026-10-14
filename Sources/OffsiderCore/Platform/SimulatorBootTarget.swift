@@ -73,3 +73,58 @@ public struct SimulatorBootReport: Equatable, Sendable {
         ]).rendered(compact: true)
     }
 }
+
+/// What `boot` does for a simulator in each state: a second `boot` while one is under way waits for it instead of starting another.
+public enum SimulatorBootStep: Equatable, Sendable {
+    case alreadyBooted
+    case boot
+    case waitForBoot
+
+    public static func step(for state: String) -> SimulatorBootStep {
+        switch state.lowercased() {
+        case "booted": return .alreadyBooted
+        case "booting": return .waitForBoot
+        default: return .boot
+        }
+    }
+}
+
+/// Waits for work that must outlive the wait, such as a simulator boot a rerun picks up again.
+public enum DetachedWait {
+    private final class Outcome: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Bool, any Error>?
+
+        init(_ continuation: CheckedContinuation<Bool, any Error>) {
+            self.continuation = continuation
+        }
+
+        func resume(_ result: Result<Bool, any Error>) {
+            let pending = lock.withLock { () -> CheckedContinuation<Bool, any Error>? in
+                defer { continuation = nil }
+                return continuation
+            }
+            pending?.resume(with: result)
+        }
+    }
+
+    /// True when `work` finished within `timeout`; false when the time ran out first, leaving `work` running, never cancelled.
+    public static func finishes(within timeout: Duration, _ work: @escaping @Sendable () async throws -> Void) async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            let outcome = Outcome(continuation)
+            let timer = Task.detached {
+                try? await Task.sleep(for: timeout)
+                outcome.resume(.success(false))
+            }
+            Task.detached {
+                do {
+                    try await work()
+                    outcome.resume(.success(true))
+                } catch {
+                    outcome.resume(.failure(error))
+                }
+                timer.cancel()
+            }
+        }
+    }
+}

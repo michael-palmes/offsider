@@ -71,9 +71,18 @@ public enum PromptScreen {
         String(repeating: "•", count: count)
     }
 
-    /// Typed text as drawn: a control character shows as `?`, never as itself.
+    /// Typed text as drawn: a control, bidi, zero-width or other invisible character shows as `?`, never as itself.
     public static func visible(_ text: String) -> String {
-        String(String.UnicodeScalarView(text.unicodeScalars.map { $0.value < 0x20 || $0.value == 0x7F ? "?" : $0 }))
+        var previous: Unicode.Scalar?
+        return String(String.UnicodeScalarView(text.unicodeScalars.map { scalar in
+            defer { previous = scalar }
+            return TerminalText.isHazard(scalar, after: previous) ? "?" : scalar
+        }))
+    }
+
+    /// A name or ID from a device or the Keychain, for a menu row, receipt or summary: `visible`, and cut so it stays on one row.
+    public static func label(_ text: String, cap: Int = 60) -> String {
+        visible(TerminalText.capped(text, cap: cap))
     }
 
     /// A command to run next under a report's headline: the label dim, the command cyan and never wrapped.

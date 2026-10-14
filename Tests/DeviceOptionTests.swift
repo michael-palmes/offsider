@@ -149,6 +149,27 @@ struct DeviceOptionTests {
         #expect(DevicePickerScreen.using(simulator, style: .plain) == "Using Test Sim · add --device \(simulator.id) to skip this")
     }
 
+    @Test("a picker no one answers closes after its idle time, and the missing-device error stands with exit 64")
+    @MainActor
+    func unansweredPickerTimesOut() async throws {
+        let simulator = DeviceSummary(id: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios, state: "Booted", name: "Test Sim", osVersion: "iOS 27.1", deviceType: nil, kind: .simulator, connection: nil)
+        let terminal = try AccessTerminal()
+        let missing = Self.parseError(["tap", "-x", "1", "-y", "1"])
+        let started = Date()
+        let timedOut = await #expect(throws: PromptTimedOut.self) {
+            _ = try await DevicePicker.pickRunning(descriptor: terminal.secondary, idle: 0.3) { [simulator] }
+        }
+        #expect(timedOut?.exitCode.rawValue == 64)
+        let error = await #expect(throws: (any Error).self) {
+            _ = try await DevicePicker.orUnanswered(missing) { try await DevicePicker.pickRunning(descriptor: terminal.secondary, idle: 0.3) { [simulator] } }
+        }
+        #expect(Date().timeIntervalSince(started) < 10)
+        #expect(OffsiderCommand.exitCode(for: try #require(error)).rawValue == 64)
+        #expect(OffsiderCommand.message(for: try #require(error)).contains(DeviceDefault.missingMessage))
+        #expect(DevicePickerScreen.unanswered(within: PromptTimedOut.duration(TerminalPrompt.defaultIdle)) == "No device chosen within 60 s; pass --device <id>.")
+        #expect(PromptTimedOut.duration(DeviceAccessAllow.promptIdle) == "10 minutes")
+    }
+
     @Test("without a terminal, or under JSON output, a command with no device still exits 64 and no picker is offered")
     func noPickerForAgents() async throws {
         #expect(DevicePicker.offers(arguments: ["tap", "-x", "1", "-y", "1"], terminal: true))

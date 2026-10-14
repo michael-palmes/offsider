@@ -105,6 +105,20 @@ check "the simulator is still created" '["Offsider Duo"]' "$(jq -c .created "$SA
 teardown
 
 setup
+for version in 9.0 12.0 10.1; do
+    mkdir -p "$ANDROID_HOME/cmdline-tools/$version/bin"
+    for tool in sdkmanager avdmanager; do
+        sed "s|^echo \"$tool |echo \"$version $tool |" "$ANDROID_HOME/cmdline-tools/latest/bin/$tool" > "$ANDROID_HOME/cmdline-tools/$version/bin/$tool"
+        chmod +x "$ANDROID_HOME/cmdline-tools/$version/bin/$tool"
+    done
+done
+rm -rf "$ANDROID_HOME/cmdline-tools/latest"
+"$CORE" create >/dev/null 2>&1
+check "without latest, the newest versioned tools run" "12.0 sdkmanager" "$(grep -o '^[0-9.]* sdkmanager' "$CALLS" | sort -u)"
+check "only the newest avdmanager runs" "12.0 avdmanager" "$(grep -o '^[0-9.]* avdmanager' "$CALLS" | sort -u)"
+teardown
+
+setup
 "$CORE" frobnicate >/dev/null 2>&1
 check "an unknown command exits 2" "2" "$?"
 check "--help exits 0" "0" "$("$CORE" --help >/dev/null 2>&1; echo $?)"

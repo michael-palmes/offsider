@@ -184,11 +184,40 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let lifetime: TimeInterval?
     }
 
+    /// A person reading the menus may step away for Touch ID, so a key may be minutes coming.
+    static let promptIdle: TimeInterval = 600
+
+    /// A later device failed after earlier ones were saved: `output` holds their receipts, `failure` says what stopped and that they stay.
+    struct Interrupted: Error {
+        let output: String
+        let failure: any Error
+    }
+
     @MainActor
     func run() async throws {
-        let output = try await perform(context: DeviceAccessContext.current)
+        let output: String
+        do {
+            output = try await perform(context: DeviceAccessContext.current)
+        } catch let interrupted as Interrupted {
+            if isatty(STDOUT_FILENO) == 0 { print(interrupted.output) }
+            throw interrupted.failure
+        }
         // The receipt is already on the terminal; stdout gets it only when it goes elsewhere.
         if json || isatty(STDOUT_FILENO) == 0 { print(output) }
+    }
+
+    /// `Test iPhone stays allowed`, or `Test iPhone and Test Pixel stay allowed`.
+    static func staysAllowed(_ names: [String]) -> String {
+        let list = names.count > 1 ? names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1] : names.joined()
+        return "\(list) \(names.count > 1 ? "stay" : "stays") allowed."
+    }
+
+    /// The failure of a later device, reworded to say the earlier ones stay, with its own exit code and hint.
+    static func interrupted(_ error: any Error, keeping names: [String]) -> ReportedFailure {
+        let status = ErrorReporter.status(for: error)
+        let payload = ErrorReporter.payload(for: error)
+        let line = "\(reason(error)); \(staysAllowed(names))"
+        return ReportedFailure(underlying: CLIError(errorDescription: line, reason: payload.reason, hint: payload.hint), exitCode: OffsiderExitCode(rawValue: status.exit) ?? .failure)
     }
 
     @MainActor
@@ -199,15 +228,34 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let policy = context.policy()
         let pasted = try device.map(DeviceAccessCommand.physicalKey)
         var reports: [String] = []
+        var savedNames: [String] = []
+        var stopped: (any Error)?
         try await TerminalPrompt.runAsync(
-            cancelled: reports.isEmpty ? AllowScreen.cancelled : AllowScreen.cancelledAfterSaving, instead: instead, descriptor: context.promptDescriptor, keeps: true
+            cancelled: AllowScreen.cancelled, instead: instead, descriptor: context.promptDescriptor, idle: Self.promptIdle, keeps: true
         ) { prompt in
             prompt.lines(AllowScreen.header(width: prompt.width, style: prompt.style))
             var (row, connected) = try await pickDevice(on: prompt, context: context, policy: policy, pasted: pasted)
             var allowedNow: Set<String> = []
+            /// Where this device's lines begin, so a stop erases them and keeps every earlier receipt.
+            var deviceStart = prompt.mark
             while true {
-                let choice = try await complete(row, on: prompt, context: context, policy: policy, pasted: pasted != nil)
-                let (entry, droppedTampered) = try record(choice, store: store, context: context)
+                let choice: Choice
+                let entry: DeviceAllowance?
+                let droppedTampered: Bool
+                do {
+                    choice = try await complete(row, on: prompt, context: context, policy: policy, pasted: pasted != nil, later: !savedNames.isEmpty)
+                    (entry, droppedTampered) = try record(choice, store: store, context: context)
+                } catch where !savedNames.isEmpty {
+                    // Whatever stops a later device leaves the ones already saved, and says so.
+                    prompt.rewind(to: deviceStart)
+                    if error is PromptCancelled || error is PromptTimedOut {
+                        prompt.lines([prompt.style.dim("Cancelled; " + Self.staysAllowed(savedNames))])
+                    } else {
+                        stopped = Self.interrupted(error, keeping: savedNames)
+                    }
+                    prompt.settle()
+                    return
+                }
                 let until = AllowScreen.until(entry?.expires, now: context.now(), timeZone: context.timeZone)
                 let name = AllowScreen.name(choice.row)
                 if droppedTampered {
@@ -219,6 +267,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                     ? DeviceAccessReport.changeJSON(action: "allow", platform: choice.row.platform, key: choice.key, allowance: entry)
                     : AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, width: .max, style: .detect(isTerminal: false)).joined(separator: "\n"))
                 allowedNow.insert(choice.key)
+                savedNames.append(name)
                 guard pasted == nil, !json else { return }
                 let remaining = connected.filter { other in
                     let key = StableDeviceKey.of(other) ?? other.id
@@ -233,16 +282,18 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 let index: Int
                 do {
                     index = try prompt.choose(prompt.style.mark(.another) + " " + AllowScreen.anotherQuestion, rows: rows, quit: "done", keepsChoice: false)
-                } catch is PromptCancelled {
+                } catch where error is PromptCancelled || error is PromptTimedOut {
                     index = remaining.count
                 }
                 prompt.rewind(to: start)
                 guard index < remaining.count else { return }
+                deviceStart = start
                 row = remaining[index]
                 connected = remaining
                 prompt.lines(["", TerminalUI.receipt("Device", AllowScreen.name(row), style: prompt.style)])
             }
         }
+        if let stopped { throw Interrupted(output: reports.joined(separator: "\n"), failure: stopped) }
         return reports.joined(separator: "\n")
     }
 
@@ -259,7 +310,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 list = .empty
             }
             let entry = DeviceAllowance(
-                platform: platform, key: key, name: chosen.row.name,
+                platform: platform, key: key, name: PromptScreen.label(chosen.row.name, cap: 100),
                 added: Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down)),
                 expires: chosen.lifetime.map { Date(timeIntervalSince1970: now.addingTimeInterval($0).timeIntervalSince1970.rounded(.down)) },
                 apps: chosen.apps,
@@ -279,8 +330,10 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     /// The steps after the device is known: team, app, how long, the summary and Touch ID.
     @MainActor
-    private func complete(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, pasted: Bool) async throws -> Choice {
+    /// `later` marks a device after the first: there `--team` applies only to an iPhone or iPad, and is skipped for a phone.
+    private func complete(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, pasted: Bool, later: Bool = false) async throws -> Choice {
         let key = StableDeviceKey.of(row) ?? row.id
+        let team = row.platform == .ios || !later ? self.team : nil
         if team != nil, row.platform != .ios {
             throw CLIError(errorDescription: "--team is for an iPhone or iPad, and \(key) is an Android phone. Nothing was saved.", reason: .usage)
         }
@@ -329,7 +382,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             }
         }
         prompt.lines([prompt.style.dim(AllowScreen.confirm)])
-        try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(key))")
+        try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))")
         prompt.rewind(to: start)
         return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime)
     }
@@ -412,9 +465,9 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             }.trimmingCharacters(in: .whitespaces).uppercased()
             return typed.isEmpty ? (nil, "none") : (typed, typed)
         }
-        let rows = teams.map { MenuRow(.team, [$0.name, $0.id], recommended: teams.count == 1) } + [MenuRow(.type, [AllowScreen.typeTeam])]
+        let rows = teams.map { MenuRow(.team, [PromptScreen.label($0.name), PromptScreen.label($0.id)], recommended: teams.count == 1) } + [MenuRow(.type, [AllowScreen.typeTeam])]
         let index = try prompt.choose(AllowScreen.teamQuestion, step: step, rows: rows, keepsChoice: false)
-        if index < teams.count { return (teams[index].id, teams[index].name) }
+        if index < teams.count { return (teams[index].id, PromptScreen.label(teams[index].name)) }
         let typed = try prompt.ask("  Team ID: ") { DeviceAllowance.isTeamID($0.trimmingCharacters(in: .whitespaces)) ? nil : problem }
             .trimmingCharacters(in: .whitespaces).uppercased()
         return (typed, typed)
@@ -430,14 +483,14 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             return try typeApp(on: prompt, platform: row.platform, policy: policy, label: (step.map { "\($0) " } ?? "  ") + "App ID (Return for any app): ")
         }
         let offered = listed
-            .filter { Self.appProblem($0.id, platform: row.platform, policy: policy) == nil }
+            .filter { DeviceAllowance.isAppID($0.id) && Self.appProblem($0.id, platform: row.platform, policy: policy) == nil }
             .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
         let rows = [MenuRow(.anyApp, [AllowScreen.anyApp], recommended: true)]
-            + offered.map { MenuRow(.app, ($0.name.map { [$0] } ?? []) + [$0.id]) }
+            + offered.map { MenuRow(.app, ($0.name.map { [PromptScreen.label($0)] } ?? []) + [PromptScreen.label($0.id)]) }
             + [MenuRow(.type, [AllowScreen.typeApp])]
         let index = try prompt.choose(AllowScreen.appQuestion, step: step, rows: rows, keepsChoice: false)
         if index == 0 { return ([], AllowScreen.apps([])) }
-        if index <= offered.count { return ([offered[index - 1].id], offered[index - 1].name ?? offered[index - 1].id) }
+        if index <= offered.count { return ([offered[index - 1].id], PromptScreen.label(offered[index - 1].name ?? offered[index - 1].id)) }
         return try typeApp(on: prompt, platform: row.platform, policy: policy, label: "  App ID: ")
     }
 

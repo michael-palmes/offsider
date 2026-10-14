@@ -88,6 +88,15 @@ final class AccessTerminal: @unchecked Sendable {
     }
 }
 
+/// A presence check that passes the first time and fails after.
+final class OncePresence: PresenceChecking, @unchecked Sendable {
+    private let calls = CallCounter()
+
+    func confirm(reason: String) async throws {
+        if calls.tick() > 0 { throw PersonPresence.error(for: .userCancel) }
+    }
+}
+
 /// Counts calls from any thread.
 final class CallCounter: @unchecked Sendable {
     private let lock = NSLock()
@@ -387,6 +396,90 @@ struct DeviceAccessCommandTests {
         #expect(transcript.contains(AllowScreen.anotherQuestion))
         #expect(transcript.components(separatedBy: AllowScreen.anotherQuestion).count == 2)
         #expect(output.contains("Allowed Test iPhone") && output.contains("Allowed Test Pixel"))
+    }
+
+    @Test("Escape on a later device keeps the one already allowed: its receipt, one line saying it stays, and no error")
+    func cancelLaterDeviceKeepsTheFirst() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (output, transcript) = try await Self.allow([], answers: ["1", "\r", "1", "\r", "1", "\u{1B}"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row, Self.androidRow] }, teams: { [SigningTeam(id: "ABCDE12345", name: "Example Team")] })
+        })
+        #expect(try Self.entries(home).map(\.key) == [PolicyFixtures.phone])
+        #expect(output.contains("Allowed Test iPhone"))
+        #expect(transcript.contains("Cancelled; Test iPhone stays allowed."))
+        #expect(!transcript.contains(AllowScreen.cancelled))
+    }
+
+    @Test("a later device that fails keeps the one already allowed, and the error says so with the failure's exit code")
+    func failedLaterDeviceKeepsTheFirst() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let terminal = try AccessTerminal()
+        terminal.type(["1", "\r", "1", "\r", "1", "1", "\r"])
+        let context = Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row, Self.androidRow] }, teams: { [SigningTeam(id: "ABCDE12345", name: "Example Team")] })
+        let interrupted = await #expect(throws: DeviceAccessAllow.Interrupted.self) {
+            try await PersonPresence.$terminal.withValue({ true }) {
+                try await PersonPresence.$current.withValue(OncePresence()) {
+                    _ = try await DeviceAccessAllow.parse([]).perform(context: context)
+                }
+            }
+        }
+        let failure = try #require(interrupted?.failure as? ReportedFailure)
+        #expect(failure.exitCode == PersonPresence.error(for: .userCancel).exitCode)
+        #expect(failure.userFacingDescription.hasSuffix("; Test iPhone stays allowed."))
+        #expect(!failure.userFacingDescription.contains("Nothing saved"))
+        #expect(interrupted?.output.contains("Allowed Test iPhone") == true)
+        #expect(try Self.entries(home).map(\.key) == [PolicyFixtures.phone])
+    }
+
+    @Test("--team signs the iPhone and is skipped for a later Android phone, while --expires still applies to both")
+    func teamSkippedForLaterPhone() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (output, _) = try await Self.allow(["--team", "ABCDE12345", "--expires", "2h"], answers: ["1", "1", "1", "1"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row, Self.androidRow] })
+        })
+        let entries = try Self.entries(home)
+        #expect(entries.first { $0.platform == .ios }?.team == "ABCDE12345")
+        #expect(entries.first { $0.platform == .android }.map { $0.team == nil } == true)
+        #expect(entries.allSatisfy { $0.expires == PolicyFixtures.now.addingTimeInterval(2 * 3_600) })
+        #expect(output.contains("Allowed Test Pixel"))
+    }
+
+    @Test("a device and app named with escape sequences and newlines draw as one sanitised row, receipt and summary line each")
+    func deviceTextIsSanitised() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let phone = DeviceSummary(
+            id: PolicyFixtures.serial, platform: .android, state: "device", name: "Test\u{1B}[2J\nPixel", osVersion: "Android 16", deviceType: "Pixel 9", kind: .physical, connection: "usb"
+        )
+        let (output, transcript) = try await Self.allow([], answers: ["1", "2", "\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [phone] }, apps: { _ in [InstalledApp(id: "com.example.evil", name: "Evil\u{1B}]0;title\u{07}\nApp\u{202E}")] })
+        })
+        let lines = transcript.components(separatedBy: CharacterSet(charactersIn: "\r\n"))
+        #expect(lines.contains { $0.contains("Evil?]0;title??App?") && $0.contains("com.example.evil") })
+        #expect(lines.contains { $0.hasSuffix("App       Evil?]0;title??App?") })
+        #expect(lines.contains { $0.contains("Test?[2J?Pixel") && $0.contains("com.example.evil only") && $0.hasSuffix("12 hours") })
+        #expect(!transcript.contains("\u{1B}]0;title"))
+        #expect(output.contains("Allowed Test?[2J?Pixel until"))
+        #expect(try Self.entries(home).map(\.apps) == [["com.example.evil"]])
+        #expect(try Self.entries(home).map(\.name) == ["Test?[2J?Pixel"])
+    }
+
+    @Test("the status screen and the device picker draw a device's own text with every control and bidi character as ?")
+    func statusAndPickerSanitise() throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        let entry = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Test\u{2028}iPhone", added: PolicyFixtures.added, expires: nil, apps: ["com.example.app"])
+        try Self.seed(home, seal: seal, [entry])
+        let drawn = try DeviceAccessStatus.parse([]).perform(context: Self.context(home: home, seal: seal), screen: (style: TerminalStyle(colours: false), width: 72)).0
+        #expect(drawn.contains("Test?iPhone  com.example.app"))
+        #expect(!drawn.contains("\u{2028}"))
+        let simulator = DeviceSummary(id: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios, state: "Booted", name: "Sim\u{200F}\u{9B}31m", osVersion: "iOS\n27", deviceType: nil, kind: .simulator, connection: nil)
+        #expect(DevicePickerScreen.deviceRow(simulator).columns == ["Sim??31m", "iOS?27"])
+        #expect(DevicePickerScreen.using(simulator, style: .plain).hasPrefix("Using Sim??31m ·"))
     }
 
     @Test("Done ends the run with the one allowance, and a single connected device is never asked about")

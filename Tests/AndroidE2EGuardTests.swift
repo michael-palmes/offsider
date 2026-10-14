@@ -195,6 +195,13 @@ struct AndroidInstallMarkerTests {
     private let digest = "4f1c0de2"
     private let package = AndroidE2E.package
 
+    @Test("a suite failure for a missing playground names the repository's install script; any other app gets nothing")
+    func installAdviceForThePlayground() {
+        let missing = "Error: \(package) is not installed on emulator-5554. Install it with `adb -s emulator-5554 install <path-to-apk>`.\n"
+        #expect(AndroidE2E.installAdvice(missing) == " Install the playground with scripts/rn-playground.sh install-android emulator-5554.")
+        #expect(AndroidE2E.installAdvice("Error: com.example.app is not installed on emulator-5554.\n").isEmpty)
+    }
+
     @Test("a marker written for an install is current for that install", arguments: [
         "package:/data/app/\(AndroidE2E.package)-AbC_12-x==/base.apk",
         "package:/data/app/~~Zx9-Q_w==/\(AndroidE2E.package)-Kp4_Lm==/base.apk",

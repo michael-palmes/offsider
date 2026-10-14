@@ -32,10 +32,11 @@ struct ErrorHintTests {
         #expect(result.stderr.contains("\nTry: offsider list-devices\n"))
     }
 
-    @Test("device_busy names the command and device only, never other arguments")
+    @Test("device_busy says to add --wait-lock to the same command, never rebuilding it without its arguments")
     func busyHint() {
         let busy = DeviceBusy(device: "emulator-5554", command: "type", holder: nil, waited: nil)
-        #expect(busy.hint == "offsider type --device emulator-5554 --wait-lock 30")
+        #expect(busy.hint == "add --wait-lock 30 to the same command")
+        #expect(busy.hint?.contains("offsider type") == false)
     }
 
     @Test("an agent is asked to fetch the user; a person at a terminal gets the command, never with --device")
