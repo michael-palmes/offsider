@@ -320,6 +320,45 @@ enum AndroidPhoneGuard {
     }
 }
 
+/// The allow-list check every physical-device suite makes through the built CLI before touching the device. There is no bypass.
+enum E2EDeviceAllowance {
+    /// Minutes the allowance must still have, so a run does not lapse half way.
+    static let minimumMinutes: TimeInterval = 30
+
+    static func allowCommand(device: String, app: String?) -> String {
+        "offsider device-access allow --device \(device) --expires 2h" + (app.map { " --app \($0)" } ?? "")
+    }
+
+    /// Nil when `device-access status --device <device> --json` exited 0 with an entry lasting past 30 minutes from `now` (and pinning `app`); otherwise the refusal, quoting the command a person runs.
+    static func verdict(device: String, exitCode: Int32, json: String, now: Date, app: String? = nil) -> String? {
+        let command = allowCommand(device: device, app: app)
+        let ask = "Ask the user to run `\(command)` in their own terminal, then run the suites again."
+        guard exitCode == 0 else { return "Refusing \(device): it is not on the Offsider allow-list (device-access status exited \(exitCode)). \(ask)" }
+        guard let root = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+              root["allowed"] as? Bool == true,
+              let entry = (root["devices"] as? [[String: Any]])?.first(where: { $0["id"] as? String == device || ($0["id"] as? String)?.uppercased() == device.uppercased() }) else {
+            return "Refusing \(device): device-access status did not report it as allowed. \(ask)"
+        }
+        if let expires = entry["expires"] as? String {
+            guard let date = try? Date(expires, strategy: .iso8601), date.timeIntervalSince(now) > minimumMinutes * 60 else {
+                return "Refusing \(device): its allowance ends at \(expires), within \(Int(minimumMinutes)) minutes. \(ask)"
+            }
+        } else if !(entry["expires"] is NSNull) {
+            return "Refusing \(device): device-access status printed no expiry. \(ask)"
+        }
+        if let app, !((entry["apps"] as? [String]) ?? []).contains(app) {
+            return "Refusing \(device): its allowance does not pin \(app). \(ask)"
+        }
+        return nil
+    }
+
+    /// Runs the check through the built CLI; throws the refusal.
+    static func require(device: String, app: String? = nil) async throws -> String? {
+        let result = try await TestHelpers.runOffsiderCommandSeparated("device-access status --device \(device) --json", timeout: 30)
+        return verdict(device: device, exitCode: result.exitCode, json: result.stdout, now: Date(), app: app)
+    }
+}
+
 /// Resolves OFFSIDER_ANDROID_PHONE once from `adb devices -l`; never sends `emu` and never falls back to another serial.
 actor GuardedPhone {
     static let shared = GuardedPhone()
@@ -340,6 +379,9 @@ actor GuardedPhone {
             throw AndroidE2EError(description: "adb devices -l exited \(listing.exitCode): \(listing.stderr)")
         }
         let serial = try AndroidPhoneGuard.verdict(requested: requested, emulatorFlags: emulatorFlags, devices: listing.stdout).get()
+        if let refusal = try await E2EDeviceAllowance.require(device: serial) {
+            throw AndroidE2EError(description: refusal)
+        }
         resolved = serial
         return serial
     }

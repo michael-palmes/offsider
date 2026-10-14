@@ -110,6 +110,9 @@ actor GuardedIOSDevice {
             throw IOSDeviceE2EError(description: "devicectl list devices exited \(listing.exitCode): \(listing.stderr)")
         }
         let udid = try IOSDeviceE2EGuard.verdict(requested: requested, listing: Data(listing.stdout.utf8)).get()
+        if let refusal = try await E2EDeviceAllowance.require(device: udid.uppercased(), app: IOSDeviceE2E.playgroundBundleID) {
+            throw IOSDeviceE2EError(description: refusal)
+        }
         let deviceType = Self.deviceType(udid: udid, listing: Data(listing.stdout.utf8))
         resolved = (udid, deviceType)
         return (udid, deviceType)

@@ -156,3 +156,36 @@ struct AndroidPhoneGuardTests {
         #expect(!source.contains("emulatorClient"), "AndroidPhoneTests.swift reaches for the emulator gRPC client")
     }
 }
+
+@Suite("Physical device E2E allowance")
+struct E2EDeviceAllowanceTests {
+    static let now = Date(timeIntervalSince1970: 1_790_000_000)
+    static let phone = "R58M123ABC"
+
+    static func status(expires: String?, apps: [String] = [], allowed: Bool = true, id: String = phone) -> String {
+        let expiry = expires.map { "\"\($0)\"" } ?? "null"
+        let list = apps.map { "\"\($0)\"" }.joined(separator: ",")
+        return #"{"version":1,"devices":[{"platform":"android","id":"\#(id)","name":"Pixel 9","added":"2026-09-21T12:00:00Z","expires":\#(expiry),"apps":[\#(list)],"active":\#(allowed)}],"allowed":\#(allowed),"refusal":null}"#
+    }
+
+    @Test("a device the CLI refuses stops the run and quotes the exact command a person runs")
+    func notAllowed() {
+        let message = E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 7, json: "", now: Self.now)
+        #expect(message?.contains("`offsider device-access allow --device R58M123ABC --expires 2h`") == true)
+        #expect(message?.contains("Ask the user") == true)
+    }
+
+    @Test("an allowance ending within 30 minutes is refused; one lasting longer or never ending passes")
+    func expiry() {
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: "2026-09-21T14:33:20Z"), now: Self.now)?.contains("within 30 minutes") == true)
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: "2026-09-21T15:13:20Z"), now: Self.now) == nil)
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil), now: Self.now) == nil)
+    }
+
+    @Test("a status that does not report the device as allowed is refused even with exit 0")
+    func notReported() {
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil, allowed: false), now: Self.now) != nil)
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil, id: "OTHER123"), now: Self.now) != nil)
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: "not json", now: Self.now) != nil)
+    }
+}

@@ -122,7 +122,7 @@ struct ReactNativeEvidenceTests {
         try await app.run("type --into-id batch-login-email-field --replace \(Self.email)")
         try await app.run("tap --id batch-login-continue")
         _ = try await app.waitForNode { $0["id"] as? String == "batch-login-password-field" }
-        try await app.run("type --into-id batch-login-password-field --replace Hunter22")
+        try await app.run("type --stdin --into-id batch-login-password-field --replace <<< Hunter22")
         try await app.run("tap --id batch-login-sign-in")
 
         var report: LogReport?
