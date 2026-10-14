@@ -3,7 +3,8 @@ import OffsiderCore
 
 /// Finds `offsider.login.json` the same way as `OFFSIDER.md`. A missing file on the implicit walk means no profile.
 enum LoginProfiles {
-    static func load(project: String?) throws -> LoginProfile? {
+    /// `warn` gets one line when the file still has the removed `turnstile` key.
+    static func load(project: String?, warn: (String) -> Void = { print($0, to: &standardError) }) throws -> LoginProfile? {
         let found: ProjectGuide.Found
         do {
             if let project {
@@ -16,15 +17,12 @@ enum LoginProfiles {
             throw CLIError(errorDescription: message(error), reason: .usage)
         }
         do {
-            return try LoginProfile.parse(Data(found.text.utf8))
+            let profile = try LoginProfile.parse(Data(found.text.utf8))
+            if profile.hasRemovedTurnstileKey { warn(LoginProfile.removedTurnstileWarning) }
+            return profile
         } catch let error as LoginProfileError {
             throw CLIError(errorDescription: "\(error.message) Nothing was typed.", reason: .usage)
         }
-    }
-
-    /// The flag wins, then the profile, then `auto`.
-    static func mode(flag: LoginTurnstileMode?, profile: LoginProfile?) -> LoginTurnstileMode {
-        flag ?? profile?.turnstile ?? .auto
     }
 
     private static func message(_ failure: ProjectGuide.Failure) -> String {

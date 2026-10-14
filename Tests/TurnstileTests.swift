@@ -33,40 +33,10 @@ struct TurnstileTests {
         [node(role: .application, label: "App", frame: screen, children: children)]
     }
 
-    @Test("the tap lands on the checkbox square, not the centre of its label")
-    func aimHitsTheSquare() throws {
+    @Test("a checkbox reads as ready with its frame, the words included")
+    func checkboxIsReady() {
         let phase = TurnstileWidget.phase(in: roots([checkboxWidget()]), viewport: screen)
-        guard case .ready(let target) = phase else {
-            Issue.record("expected a checkbox, got \(phase)")
-            return
-        }
-        let point = TurnstileWidget.aim(target)
-        let centre = target.frame.center
-
-        #expect(abs(point.x - 44.57) < 0.01)
-        #expect(abs(point.y - 401.52) < 0.01)
-        #expect(abs(point.x - centre.x) > 60)
-    }
-
-    @Test("a large offset stays on the square")
-    func jitterStaysOnTheSquare() throws {
-        let frame = UIFrame(x: 32, y: 388.95, width: 163.81, height: 25.14)
-        let target = TurnstileTarget(frame: frame, logoOnRight: true)
-        let point = TurnstileWidget.aim(target, offset: UIPoint(x: 100, y: -100), maxJitter: 8)
-
-        #expect(point.x > frame.x)
-        #expect(point.x < frame.x + frame.height)
-        #expect(point.y > frame.y)
-        #expect(point.y < frame.y + frame.height)
-        #expect(point.x < 80)
-    }
-
-    @Test("a logo on the left puts the square on the trailing edge")
-    func rightToLeftSquare() {
-        let frame = UIFrame(x: 200, y: 400, width: 160, height: 25)
-        let point = TurnstileWidget.aim(TurnstileTarget(frame: frame, logoOnRight: false))
-        #expect(abs(point.x - 347.5) < 0.01)
-        #expect(abs(point.y - 412.5) < 0.01)
+        #expect(phase == .ready(TurnstileTarget(frame: UIFrame(x: 32, y: 388.95, width: 163.81, height: 25.14))))
     }
 
     @Test("Success is already passed, and a tall widget with no checkbox is a visual challenge")
@@ -110,12 +80,7 @@ struct TurnstileTests {
     @Test("a checkbox with the prompt is found when the container id is missing")
     func fallbackPrompt() {
         let box = node(role: .checkbox, label: "Verify you are human", frame: UIFrame(x: 32, y: 389, width: 164, height: 25))
-        guard case .ready(let target) = TurnstileWidget.phase(in: roots([box]), viewport: screen) else {
-            Issue.record("expected the prompt checkbox")
-            return
-        }
-        #expect(target.logoOnRight)
-        #expect(TurnstileWidget.aim(target).x < 60)
+        #expect(TurnstileWidget.phase(in: roots([box]), viewport: screen) == .ready(TurnstileTarget(frame: UIFrame(x: 32, y: 389, width: 164, height: 25))))
     }
 
     @Test("without a checkbox, Success or checking words beside the Cloudflare logo are the widget")
@@ -136,30 +101,25 @@ struct TurnstileTests {
         #expect(TurnstileWidget.phase(in: roots([expanded]), viewport: screen) == .visualChallenge)
     }
 
-    @Test("an iOS web view inside a turnstile-widget wrapper is probed and tapped")
+    @Test("an iOS web view inside a turnstile-widget wrapper is probed by point reads and sends nothing")
     @MainActor
-    func iosWrapperIsProbedAndTapped() async throws {
+    func iosWrapperIsProbedNotTapped() async throws {
         let shell = UIFrame(x: 16, y: 375, width: 370, height: 80)
-        func page(status: UINode?) -> UITree {
-            let children = [
-                node(role: .group, frame: shell),
-                node(role: .link, label: "Cloudflare, opens in a new tab", frame: UIFrame(x: 296, y: 395, width: 73, height: 26)),
-                node(role: .slider, label: "Vertical scroll bar, 2 pages", frame: UIFrame(x: 353, y: 375, width: 30, height: 80)),
-            ] + [status].compactMap { $0 }
-            let wrapper = node(role: .group, id: "turnstile-widget", frame: shell, children: [
-                node(role: .scrollView, frame: shell, children: children),
-            ])
-            return UITree(platform: .ios, device: "fake-device", roots: roots([wrapper]))
-        }
-        let passed = node(role: .text, value: "Success!", frame: UIFrame(x: 69, y: 406, width: 59, height: 19))
-        let backend = FakeDeviceBackend(trees: [page(status: nil), page(status: passed)], advanceTreeOnInput: true)
+        let children = [
+            node(role: .group, frame: shell),
+            node(role: .link, label: "Cloudflare, opens in a new tab", frame: UIFrame(x: 296, y: 395, width: 73, height: 26)),
+            node(role: .slider, label: "Vertical scroll bar, 2 pages", frame: UIFrame(x: 353, y: 375, width: 30, height: 80)),
+        ]
+        let wrapper = node(role: .group, id: "turnstile-widget", frame: shell, children: [node(role: .scrollView, frame: shell, children: children)])
+        let page = UITree(platform: .ios, device: "fake-device", roots: roots([wrapper]))
+        let backend = FakeDeviceBackend(trees: [page])
         let route = DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "fake-device", platform: .ios))
 
-        let report = try await Turnstile.parse(["--device", "x", "--jitter", "0", "--timeout", "2", "--poll-interval", "0.05"])
-            .perform(on: route, logger: OffsiderLogger())
+        let status = try await Turnstile.parse(["--device", "x"]).readStatus(on: route)
 
-        #expect(report.outcome == .tapped)
-        #expect(backend.session.calls == [.perform(.tapAt(x: 48, y: 415))])
+        #expect(status.state == .checkbox)
+        #expect(status.source == .webViewPoints)
+        #expect(backend.session.calls.isEmpty)
     }
 
     @Test("an off-screen widget is ignored")
@@ -179,8 +139,8 @@ struct TurnstileTests {
         ])
     }
 
-    @Test("an iOS web view is not in the tree, and the tap is the green check")
-    func iosWebViewAimsAtTheGreenCheck() {
+    @Test("an iOS web view is not in the tree, and its checkbox frame is the green check")
+    func iosWebViewFindsTheGreenCheck() {
         let shell = iosWebView()
         let page = node(role: .scrollView, frame: UIFrame(x: 0, y: 0, width: 402, height: 722), children: [
             node(role: .slider, label: "Vertical scroll bar, 1 page", frame: UIFrame(x: 369, y: 62, width: 30, height: 660)),
@@ -190,20 +150,16 @@ struct TurnstileTests {
         let shells = TurnstileWidget.iosShells(in: roots([page, shell]), viewport: screen)
         #expect(shells.count == 1)
         let frame = shells[0]
-        let point = TurnstileWidget.aim(TurnstileWidget.iosTarget(frame))
-        #expect(abs(point.x - 48) < 0.01)
-        #expect(abs(point.y - 415) < 0.01)
+        let centre = TurnstileWidget.iosTarget(frame).frame.center
+        #expect(abs(centre.x - 48) < 0.01)
+        #expect(abs(centre.y - 415) < 0.01)
 
         let probes = TurnstileWidget.probePoints(in: frame)
         #expect(abs(probes.status.x - 96) < 0.01)
         #expect(abs(probes.logo.x - 332) < 0.01)
-
-        let wide = TurnstileWidget.aim(TurnstileWidget.iosTarget(frame), offset: UIPoint(x: 100, y: -100), maxJitter: 8)
-        #expect(wide.x > 33 && wide.x < 63)
-        #expect(wide.y > 400 && wide.y < 430)
     }
 
-    @Test("an iOS point read uses the value, and Success is not tapped")
+    @Test("an iOS point read uses the value")
     func iosPointRead() {
         let shell = UIFrame(x: 16, y: 375, width: 370, height: 80)
         let success = node(role: .text, label: "", value: "Success!", frame: UIFrame(x: 69, y: 406, width: 59, height: 19))
@@ -217,11 +173,7 @@ struct TurnstileTests {
         #expect(TurnstileWidget.reading(in: [prompt]) == .prompt)
         #expect(TurnstileWidget.phase(shell: shell, status: .passed, logo: .logo) == .passed)
         #expect(TurnstileWidget.phase(shell: shell, status: .checking, logo: .logo) == .checking)
-        guard case .ready(let target) = TurnstileWidget.phase(shell: shell, status: .prompt, logo: .logo) else {
-            Issue.record("a prompt should be ready to tap")
-            return
-        }
-        #expect(abs(TurnstileWidget.aim(target).x - 48) < 0.01)
+        #expect(TurnstileWidget.phase(shell: shell, status: .prompt, logo: .logo) == .ready(TurnstileWidget.iosTarget(shell)))
         #expect(TurnstileWidget.phase(shell: shell, status: .unrelated, logo: .unrelated) == .absent)
         let parked = node(role: .scrollView, frame: UIFrame(x: 16, y: 2000, width: 370, height: 80), children: [
             node(role: .slider, label: "Vertical scroll bar, 2 pages", frame: UIFrame(x: 353, y: 2000, width: 30, height: 80)),
@@ -229,25 +181,26 @@ struct TurnstileTests {
         #expect(TurnstileWidget.iosShells(in: roots([parked]), viewport: screen).isEmpty)
     }
 
-    @Test("the report names a tap and an already-passed widget")
-    func report() {
-        let tapped = TurnstileReport(outcome: .tapped, point: UIPoint(x: 44.57, y: 401.52))
-        #expect(tapped.textLine() == "✓ Turnstile passed after a tap at (44.57, 401.52)")
-        #expect(tapped.jsonLine().contains("\"outcome\":\"tapped\""))
-        #expect(tapped.jsonLine().contains("\"x\":44.57"))
-
-        let passed = TurnstileReport(outcome: .alreadyPassed)
-        #expect(passed.textLine() == "✓ Turnstile already passed")
-        #expect(passed.jsonLine().contains("\"point\":null"))
+    @Test("the removed tap options exit 64 and say turnstile only reads", arguments: ["--timeout", "--poll-interval", "--jitter", "--seed"])
+    func removedOptionsAreUsageErrors(option: String) {
+        let hint = ArgumentHints.hint(for: ["turnstile", option, "2", "--device", "emulator-5554"])
+        #expect(hint == ArgumentHints.Hint(message: "turnstile no longer taps; it reads the widget's state. Hand a checkbox or challenge to a person.", isLegacy: false))
+        #expect(FailureReason.usage.exitCode.rawValue == 64)
+        #expect(throws: (any Error).self) { try Turnstile.parse([option, "2", "--device", "emulator-5554"]) }
     }
 
-    @Test("jitter outside 0 to 8 and an empty --id are usage errors")
-    func rejectsBadOptions() throws {
-        #expect(parseMessage(["--jitter", "9"]).contains("--jitter must be from 0 to 8"))
-        #expect(parseMessage(["--timeout", "61"]).contains("--timeout must be from 1 to 60"))
-        #expect(parseMessage(["--timeout", "0"]).contains("--timeout must be from 1 to 60"))
+    @Test("login --turnstile is gone and exits 64 with the hand-back rule")
+    func loginTurnstileOptionIsGone() {
+        let hint = ArgumentHints.hint(for: ["login", "dev", "--turnstile", "off", "--device", "emulator-5554"])
+        #expect(hint?.isLegacy == false)
+        #expect(hint?.message.contains("turnstile_required") == true)
+        #expect(throws: (any Error).self) { try LoginCommand.parse(["dev", "--turnstile", "off", "--device", "emulator-5554"]) }
+    }
+
+    @Test("--status still parses for one release, and an empty --id is a usage error")
+    func statusAndID() throws {
+        #expect(try Turnstile.parse(["--status", "--device", "emulator-5558"]).status)
         #expect(parseMessage(["--id", " "]).contains("--id must not be empty"))
-        #expect(try Turnstile.parse(["--device", "emulator-5558", "--seed", "1"]).seed == 1)
     }
 
     private func parseMessage(_ arguments: [String]) -> String {
@@ -262,7 +215,7 @@ struct TurnstileTests {
     @Test("--status maps each phase to a state, keeps the checkbox frame, and leaves ambiguous to exit 6")
     func statusMapping() {
         let frame = UIFrame(x: 32, y: 388.95, width: 163.81, height: 25.14)
-        let checkbox = TurnstileStatus(phase: .ready(TurnstileTarget(frame: frame, logoOnRight: true)), source: .tree)
+        let checkbox = TurnstileStatus(phase: .ready(TurnstileTarget(frame: frame)), source: .tree)
         #expect(checkbox == TurnstileStatus(state: .checkbox, source: .tree, frame: frame))
         #expect(checkbox?.textLine() == "Turnstile: checkbox at (32, 388.95) 163.81x25.14")
         #expect(checkbox?.jsonLine() == #"{"version":1,"state":"checkbox","source":"tree","frame":{"x":32,"y":388.95,"width":163.81,"height":25.14}}"#)
@@ -286,26 +239,17 @@ struct TurnstileTests {
         #expect(backend.openedSessions.isEmpty)
     }
 
-    @Test("--status refuses the tap options", arguments: ["--jitter", "--seed", "--timeout"])
-    func statusRefusesTapOptions(option: String) {
-        let error = #expect(throws: (any Error).self) { try Turnstile.parse(["--status", option, "2", "--device", "emulator-5554"]) }
-        #expect(error.map { Turnstile.exitCode(for: $0).rawValue } == 64)
-        #expect(error.map { Turnstile.message(for: $0).contains("does not take \(option)") } == true)
-    }
-
-    @Test("a visual challenge fails with turnstile_challenge, exit 1, and sends nothing")
+    @Test("a visual challenge reads as challenge, exits 0 and sends nothing")
     @MainActor
-    func challengeReason() async throws {
+    func challengeIsOnlyRead() async throws {
         let grid = node(role: .group, id: "cf-chl-widget-grid", frame: UIFrame(x: 24, y: 300, width: 365, height: 280), children: [
             node(role: .text, label: "Select all squares with a bus", frame: UIFrame(x: 24, y: 300, width: 365, height: 40)),
         ])
         let backend = FakeDeviceBackend(trees: [UITree(platform: .android, device: "emulator-5554", roots: roots([grid]))])
         let route = DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))
-        let error = await #expect(throws: CLIError.self) {
-            try await Turnstile.parse(["--device", "emulator-5554"]).perform(on: route, logger: OffsiderLogger())
-        }
-        #expect(error?.reason == .turnstileChallenge)
-        #expect(FailureReason.turnstileChallenge.exitCode == .failure)
+        let status = try await Turnstile.parse(["--device", "emulator-5554"]).readStatus(on: route)
+        #expect(status.state == .challenge)
         #expect(backend.session.calls.isEmpty)
+        #expect(backend.openedSessions.isEmpty)
     }
 }

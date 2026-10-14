@@ -666,3 +666,26 @@ private final class PseudoTerminal: @unchecked Sendable {
         return lock.withLock { String(decoding: output, as: UTF8.self) }
     }
 }
+
+@Suite("Person-only prompts")
+struct PersonOnlyPromptTests {
+    @Test("join names both ids and offers Link or Cancel")
+    func linkScreen() {
+        let title = CredentialScreen.linkTitle(member: "com.example.android", canonical: "com.example.app")
+        #expect(title.contains("com.example.android") && title.contains("com.example.app"))
+        #expect(CredentialScreen.linkOptions.count == 2)
+        #expect(CredentialScreen.linkOptions[0].hasSuffix("Link"))
+        #expect(CredentialScreen.linkOptions[1].hasSuffix("Cancel"))
+    }
+
+    @Test("unlock-code set --stdin with no terminal to confirm on is person_required, before the pipe is read")
+    func pipedCodeNeedsATerminal() async {
+        let error = await PersonPresence.$controllingTerminal.withValue({ false }) {
+            await #expect(throws: CLIError.self) { try await UnlockCodeCommand.confirmedStandardInput(name: "Offsider_E2E", device: "Offsider_E2E") }
+        }
+        #expect(error?.reason == .personRequired)
+        #expect(error?.hint == nil)
+        #expect(error?.userFacingDescription.contains("`offsider unlock-code set --device Offsider_E2E`") == true)
+        #expect(UnlockCodeCommand.pipedTitle(name: "Offsider_E2E").contains("Offsider_E2E"))
+    }
+}

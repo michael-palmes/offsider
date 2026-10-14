@@ -13,56 +13,137 @@ struct LoginFlowTests {
     func alreadyPassed() async throws {
         let script = script(buttonEnabled: true)
         script.phases = [.passed]
-        let report = try await run(script, mode: .auto)
+        let report = try await run(script)
         #expect(script.typed == [username, password])
-        #expect(script.performs == 0)
         #expect(script.taps.count == 1)
         #expect(report.turnstile == .passed)
         #expect(!report.textLine().contains(password))
         #expect(!report.textLine().contains(username))
         #expect(!report.jsonLine().contains(password))
         #expect(report.jsonLine().contains("\"password\":\"filled\""))
+        #expect(report.jsonLine().contains("\"turnstile\":\"passed\""))
         #expect(report.textLine().contains("The submit button was tapped."))
         #expect(report.textLine().contains("does not mean the server accepted the login."))
     }
 
-    @Test("a checkbox is tapped, and a second checkbox after a reload is tapped once more")
-    func checkboxThenSubmit() async throws {
+    @Test("a checkbox or challenge before typing stops with turnstile_required and types nothing", arguments: [0, 1, 2])
+    func widgetBeforeTyping(index: Int) async throws {
+        let phases: [TurnstilePhase] = [.ready(square), .visualChallenge, .ambiguous(2)]
         let script = script(buttonEnabled: true)
-        script.phases = [.ready(square), .passed]
-        let report = try await run(script, mode: .auto)
-        #expect(script.performs == 1)
-        #expect(script.taps.count == 1)
-        #expect(report.turnstile == .tapped)
-
-        let reload = script
-        reload.phases = [.ready(square), .ready(square)]
-        reload.phaseIndex = 0
-        reload.performs = 0
-        reload.taps = []
-        reload.typed = []
-        reload.index = 0
-        let again = try await run(reload, mode: .auto)
-        #expect(reload.performs == 2)
-        #expect(again.turnstile == .tapped)
-        #expect(reload.taps.count == 1)
+        script.phases = [phases[index]]
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script) })
+        #expect(error.reason == .turnstileRequired)
+        #expect(error.exitCode == .failure)
+        #expect(error.userFacingDescription.contains("Nothing was typed."))
+        #expect(error.userFacingDescription.contains("never ticks Turnstile"))
+        #expect(script.typed.isEmpty)
+        #expect(script.taps.isEmpty)
     }
 
-    @Test("a visual challenge taps nothing further")
-    func challengeStops() async {
+    @Test("a checkbox after typing stops before submit with submitted false and both fields filled")
+    func widgetAfterTyping() async throws {
         let script = script(buttonEnabled: true)
-        script.phases = [.visualChallenge]
-        await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .auto) }
+        script.phases = [.absent, .ready(square)]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+        #expect(stopped.reason == .turnstileRequired)
+        #expect(!stopped.report.submitted)
+        #expect(stopped.report.password == .filled)
+        #expect(stopped.failureMessage.contains("The submit button was not tapped."))
         #expect(script.typed == [username, password])
-        #expect(script.performs == 0)
         #expect(script.taps.isEmpty)
+    }
+
+    @Test("a widget still checking is read again without input until --timeout, then turnstile_required")
+    func checkingWaitsThenHandsBack() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.absent, .checking]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, timeout: 2) })
+        #expect(stopped.reason == .turnstileRequired)
+        #expect(stopped.failureMessage.contains("still checking after 2 s"))
+        #expect(script.taps.isEmpty)
+        #expect(script.typed == [username, password])
+        #expect(script.phaseIndex > 3)
+    }
+
+    @Test("a widget that passes while it is read again lets submit go ahead")
+    func checkingThenPassed() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.absent, .checking, .checking, .passed]
+        let report = try await run(script)
+        #expect(report.turnstile == .passed)
+        #expect(script.taps.count == 1)
+    }
+
+    @Test("a widget after the submit tap stops with turnstile_required and submitted true, read once after 750 ms")
+    func widgetAfterSubmit() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.absent, .absent, .visualChallenge, .visualChallenge]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+        #expect(stopped.reason == .turnstileRequired)
+        #expect(stopped.report.submitted)
+        #expect(stopped.report.turnstile == .absent)
+        #expect(stopped.failureMessage.hasPrefix("The submit button was tapped, and then"))
+        #expect(script.taps.count == 1)
+        #expect(script.phaseIndex == 3)
+        #expect(script.time >= 0.75)
+        #expect(stopped.report.jsonLine().contains("\"submitted\":true"))
+        #expect(stopped.report.jsonLine().contains("\"reason\":\"turnstile_required\""))
+    }
+
+    @Test("another app in front before the password stops with foreground_changed; the password is never typed")
+    func foregroundChangesBeforePassword() async throws {
+        let script = script(buttonEnabled: true)
+        script.foregrounds = ["com.other.app"]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+        #expect(stopped.reason == .foregroundChanged)
+        #expect(stopped.failureMessage.contains("com.other.app is in front now, not com.example.app, so the password was not typed."))
+        #expect(script.typed == [username])
+        #expect(script.taps.isEmpty)
+    }
+
+    @Test("another app in front before submit stops with foreground_changed and no tap")
+    func foregroundChangesBeforeSubmit() async throws {
+        let script = script(buttonEnabled: true)
+        script.foregrounds = ["com.example.app", "com.other.app"]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+        #expect(stopped.reason == .foregroundChanged)
+        #expect(stopped.failureMessage.contains("so the submit button was not tapped"))
+        #expect(script.typed == [username, password])
+        #expect(script.taps.isEmpty)
+    }
+
+    @Test("only the password is typed as a secret")
+    func passwordIsSecret() async throws {
+        let script = script(buttonEnabled: true)
+        _ = try await run(script)
+        #expect(script.secrecy == [false, true])
+    }
+
+    @Test("a password field in a web view types nothing unless both the project file and the saved login opt in")
+    func webViewNeedsBothOptIns() async throws {
+        let web = { SignInFixture.tree(pid: 200) }
+        let filled = SignInFixture.tree(
+            emailValue: username, passwordValue: String(repeating: String(SecureText.bullet), count: password.count), submitEnabled: true, pid: 200
+        )
+        let projectOnly = LoginProfile(bundleID: "com.example.app", webLogin: true)
+        for (profile, saved) in [(nil, false), (projectOnly, false), (LoginProfile(bundleID: "com.example.app"), true)] {
+            let script = LoginScript(trees: [web(), SignInFixture.tree(emailValue: username, pid: 200), filled])
+            let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script, profile: profile, webLogin: saved) })
+            #expect(error.reason == .appNotAllowed)
+            #expect(error.userFacingDescription.hasPrefix("The password field is inside a web view; nothing was typed."))
+            #expect(error.userFacingDescription.contains("offsider credential describe dev --web-login --app com.example.app"))
+            #expect(script.typed.isEmpty)
+        }
+        let both = LoginScript(trees: [web(), SignInFixture.tree(emailValue: username, pid: 200), filled])
+        _ = try await run(both, profile: projectOnly, webLogin: true)
+        #expect(both.typed == [username, password])
     }
 
     @Test("a profile for another app types nothing")
     func profileMismatch() async {
         let script = script(buttonEnabled: true)
         let profile = LoginProfile(bundleID: "com.other.app")
-        await #expect(throws: CLIError.self) { try await self.run(script, mode: .auto, profile: profile) }
+        await #expect(throws: CLIError.self) { try await self.run(script, profile: profile) }
         #expect(script.typed.isEmpty)
         #expect(script.taps.isEmpty)
     }
@@ -71,7 +152,7 @@ struct LoginFlowTests {
     func profileForEitherID() async throws {
         let script = script(buttonEnabled: true)
         let profile = LoginProfile(bundleID: "com.example.ios", package: "com.example.app")
-        _ = try await run(script, mode: .off, profile: profile)
+        _ = try await run(script, profile: profile)
         #expect(script.typed == [username, password])
         #expect(script.taps.count == 1)
     }
@@ -79,19 +160,17 @@ struct LoginFlowTests {
     @Test("a disabled submit button is not tapped")
     func disabledSubmit() async {
         let script = script(buttonEnabled: false)
-        await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .off, timeout: 0) }
+        await #expect(throws: LoginFailure.self) { try await self.run(script, timeout: 0) }
         #expect(script.sleeps == 0)
         #expect(script.taps.isEmpty)
-        #expect(script.performs == 0)
     }
 
     @Test("an off-screen input assistant does not block the submit tap")
     func assistantDoesNotBlockSubmit() async throws {
         let script = script(buttonEnabled: true, assistant: true)
         script.phases = [.passed]
-        let report = try await run(script, mode: .auto)
+        let report = try await run(script)
         #expect(script.taps.count == 1)
-        #expect(script.performs == 0)
         #expect(report.turnstile == .passed)
     }
 
@@ -112,7 +191,7 @@ struct LoginFlowTests {
         let script = LoginScript(trees: [covered, open, filledEmail, filled])
         script.advanceOnHide = true
         script.phases = [.passed]
-        let report = try await run(script, mode: .auto)
+        let report = try await run(script)
         #expect(script.hides == 1)
         #expect(script.typed == [username, password])
         #expect(report.turnstile == .passed)
@@ -128,7 +207,7 @@ struct LoginFlowTests {
             SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
         ])
         script.advanceOnSleep = true
-        let report = try await run(script, mode: .off)
+        let report = try await run(script)
         #expect(script.hides == 0)
         #expect(script.taps.count == 2)
         #expect(report.submitLabel == "Log in")
@@ -144,7 +223,7 @@ struct LoginFlowTests {
             SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
         ])
         script.advanceOnSleep = true
-        let report = try await run(script, mode: .off)
+        let report = try await run(script)
         #expect(script.typed == [username, password])
         #expect(script.taps.count == 1)
         #expect(report.submitLabel == "Log in")
@@ -162,7 +241,7 @@ struct LoginFlowTests {
         ])
         script.advanceOnTap = true
         script.advanceOnSleep = true
-        let report = try await run(script, mode: .off)
+        let report = try await run(script)
         #expect(script.taps.count == 2)
         #expect(report.submitLabel == "Log in")
     }
@@ -178,7 +257,7 @@ struct LoginFlowTests {
             SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
         ])
         script.advanceOnSleep = true
-        let report = try await run(script, mode: .off)
+        let report = try await run(script)
         #expect(script.taps.count == 1)
         #expect(report.submitLabel == "Log in")
     }
@@ -195,7 +274,7 @@ struct LoginFlowTests {
             SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
         ])
         script.advanceOnTap = true
-        let report = try await run(script, mode: .off)
+        let report = try await run(script)
         try #require(script.taps.count == 3)
         #expect(script.taps[0] != script.taps[1])
         #expect(script.taps[0].y < 212)
@@ -211,23 +290,21 @@ struct LoginFlowTests {
             SignInFixture.tree(emailValue: username),
             SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
         ])
-        let error = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .auto) })
+        let error = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
         #expect(error.reason == .targetUnderKeyboard)
         try #require(script.taps.count == 3)
         #expect(script.taps[0] != script.taps[1] && script.taps[1] != script.taps[2] && script.taps[0] != script.taps[2])
         #expect(script.taps.allSatisfy { $0.y < 560 })
         #expect(script.hides == 1)
-        #expect(script.performs == 0)
-        #expect(script.phaseIndex == 0)
+        #expect(script.phaseIndex == 1)
     }
 
     @Test("a keyboard with no safe point does not reach Turnstile or submit")
     func keyboardCoversSubmit() async {
         let script = script(buttonEnabled: true, keyboard: true)
-        await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .auto) }
+        await #expect(throws: LoginFailure.self) { try await self.run(script) }
         #expect(script.taps.isEmpty)
-        #expect(script.performs == 0)
-        #expect(script.phaseIndex == 0)
+        #expect(script.phaseIndex == 1)
     }
 
     @Test("under --json, a login that stops after both fields were filled prints its report with submitted false, and keeps exit 1")
@@ -238,13 +315,13 @@ struct LoginFlowTests {
             SignInFixture.tree(emailValue: username),
             SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
         ])
-        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .off) })
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
         var written: [String] = []
         let thrown = await LoginCommand.failure(stopped, json: true, scope: CommandScope(), write: { written.append($0) })
 
         let message = "The keyboard covers the next control, so Turnstile was not checked and the submit button was not tapped. Both fields were filled."
         #expect(written == [
-            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"filled","submitted":false,"name":"dev","tags":[],"exitCode":1,"#
+            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"filled","submitted":false,"name":"dev","tags":[],"turnstile":null,"exitCode":1,"#
                 + #""error":{"reason":"target_under_keyboard","message":"\#(message)","hint":null,"dispatched":null,"candidates":[]}}"#,
         ])
         #expect((thrown as? ReportedFailure)?.exitCode.rawValue == 1)
@@ -259,12 +336,12 @@ struct LoginFlowTests {
     @Test("a login that stops after the email or username says so, and reports the password not_filled")
     func stoppedAfterIdentity() async throws {
         let script = LoginScript(trees: [SignInFixture.tree(), SignInFixture.tree(emailValue: username)])
-        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, mode: .off) })
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
         var written: [String] = []
         let thrown = await LoginCommand.failure(stopped, json: true, scope: CommandScope(), write: { written.append($0) })
 
         #expect(written == [
-            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"not_filled","submitted":false,"name":"dev","tags":[],"exitCode":5,"#
+            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"not_filled","submitted":false,"name":"dev","tags":[],"turnstile":null,"exitCode":5,"#
                 + #""error":{"reason":"text_not_accepted","message":"The password field did not show one bullet per character. The submit button was not tapped. The email or username was filled.","hint":null,"dispatched":null,"candidates":[]}}"#,
         ])
         #expect((thrown as? ReportedFailure)?.exitCode.rawValue == 5)
@@ -273,7 +350,7 @@ struct LoginFlowTests {
     @Test("a failure before typing prints no login report under --json and keeps the error envelope")
     func failureBeforeTypingKeepsTheEnvelope() async throws {
         let script = LoginScript(trees: [FakeUI.tree([])])
-        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script, mode: .off) })
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script) })
         var written: [String] = []
         let thrown = await LoginCommand.failure(error, json: true, scope: CommandScope(), write: { written.append($0) })
 
@@ -291,7 +368,7 @@ struct LoginFlowTests {
             CLIError(errorDescription: "Form gone.", reason: .selectorNotFound),
             CLIError(errorDescription: "Two boxes.", reason: .selectorAmbiguous),
             CLIError(errorDescription: "Still disabled.", reason: .conditionNotMet),
-            CLIError(errorDescription: "A challenge.", reason: .turnstileChallenge),
+            CLIError(errorDescription: "A challenge.", reason: .turnstileRequired),
             CocoaError(.fileNoSuchFile),
         ]
         for cause in causes {
@@ -312,7 +389,7 @@ struct LoginFlowTests {
         let since = Date(timeIntervalSince1970: 1_791_712_931)
         func failure(_ last: LoginFlow.LastSignIn?) async -> CLIError? {
             let script = LoginScript(trees: [FakeUI.tree([])])
-            return await #expect(throws: CLIError.self) { try await self.run(script, mode: .off, lastSignIn: { last }) }
+            return await #expect(throws: CLIError.self) { try await self.run(script, lastSignIn: { last }) }
         }
         let plain = try #require(await failure(nil))
         let noted = try #require(await failure(LoginFlow.LastSignIn(key: "qa-admin", since: since, restarted: true, deviceID: "emulator-5554")))
@@ -330,7 +407,7 @@ struct LoginFlowTests {
         #expect(fresh.userFacingDescription.contains("Offsider last signed in as the default login here (2026-10-11T10:02:11Z), so the app"))
 
         var reads = 0
-        _ = try await run(script(buttonEnabled: true), mode: .off, lastSignIn: {
+        _ = try await run(script(buttonEnabled: true), lastSignIn: {
             reads += 1
             return nil
         })
@@ -351,7 +428,7 @@ struct LoginFlowTests {
             var reads = 0
             var failure: CLIError?
             do {
-                _ = try await run(LoginScript(trees: [tree]), mode: .off, profile: profile, lastSignIn: {
+                _ = try await run(LoginScript(trees: [tree]), profile: profile, lastSignIn: {
                     reads += 1
                     return last
                 })
@@ -368,7 +445,7 @@ struct LoginFlowTests {
     }
 
     private var square: TurnstileTarget {
-        TurnstileTarget(frame: UIFrame(x: 18, y: 400, width: 30, height: 30), logoOnRight: true)
+        TurnstileTarget(frame: UIFrame(x: 18, y: 400, width: 30, height: 30))
     }
 
     private func script(buttonEnabled: Bool, keyboard: Bool = false, assistant: Bool = false) -> LoginScript {
@@ -386,7 +463,7 @@ struct LoginFlowTests {
     }
 
     private func run(
-        _ script: LoginScript, mode: LoginTurnstileMode, profile: LoginProfile? = nil, timeout: TimeInterval = 15,
+        _ script: LoginScript, profile: LoginProfile? = nil, webLogin: Bool = false, timeout: TimeInterval = 15,
         lastSignIn: () -> LoginFlow.LastSignIn? = { nil }
     ) async throws -> LoginReport {
         let credential = try #require(LoginCredential(username: username, password: password))
@@ -395,7 +472,7 @@ struct LoginFlowTests {
             key: "dev",
             credential: credential,
             profile: profile,
-            turnstile: mode,
+            webLogin: webLogin,
             timeout: timeout,
             services: script.services,
             lastSignIn: lastSignIn
@@ -411,8 +488,12 @@ final class LoginScript {
     var taps: [UIPoint] = []
     var phases: [TurnstilePhase] = [.passed]
     var phaseIndex = 0
-    var performs = 0
     var sleeps = 0
+    /// The app in front at each foreground check; the last repeats.
+    var foregrounds = ["com.example.app"]
+    var foregroundIndex = 0
+    /// `InputSecrecy.isSecret` at each type call.
+    var secrecy: [Bool] = []
     var hides = 0
     var advanceOnHide = false
     var advanceOnSleep = false
@@ -427,6 +508,7 @@ final class LoginScript {
 
     func type(_ text: String, _: UINode) {
         typed.append(text)
+        secrecy.append(InputSecrecy.isSecret)
         if index + 1 < trees.count { index += 1 }
     }
 
@@ -443,14 +525,10 @@ final class LoginScript {
                 self.taps.append(point)
                 if self.advanceOnTap, self.index + 1 < self.trees.count { self.index += 1 }
             },
-            readTurnstile: {
+            readTurnstile: { _ in
                 let phase = self.phases[min(self.phaseIndex, self.phases.count - 1)]
                 self.phaseIndex += 1
                 return phase
-            },
-            performTurnstile: {
-                self.performs += 1
-                return TurnstileReport(outcome: .tapped)
             },
             hideKeyboard: { self.hide() },
             clock: PollClock(
@@ -461,7 +539,13 @@ final class LoginScript {
                     let parts = duration.components
                     self.time += Double(parts.seconds) + Double(parts.attoseconds) / 1e18
                 }
-            )
+            ),
+            foregroundApp: { _ in
+                let app = self.foregrounds[min(self.foregroundIndex, self.foregrounds.count - 1)]
+                self.foregroundIndex += 1
+                return app
+            },
+            bundleForPID: { $0 == 100 ? "com.example.app" : nil }
         )
     }
 }

@@ -50,14 +50,32 @@ struct LoginContextTests {
         #expect(refused?.message.contains("qa@example.com") == false)
     }
 
-    @Test("storage is version 1 JSON with empty keys left out, and it round-trips")
+    @Test("storage is version 2 JSON with empty keys and default settings left out, and it round-trips")
     func storageShape() throws {
         let updated = try Date("2026-10-11T09:30:00Z", strategy: .iso8601)
         let context = LoginContext(about: "Admin on staging", state: "3 items in the cart", tags: [try tag("role=admin"), try tag("env=staging"), try tag("role=admin")], updated: updated)
         let json = String(decoding: context.storageData(), as: UTF8.self)
-        #expect(json == #"{"v":1,"about":"Admin on staging","state":"3 items in the cart","tags":["env=staging","role=admin"],"updated":"2026-10-11T09:30:00Z"}"#)
+        #expect(json == #"{"v":2,"about":"Admin on staging","state":"3 items in the cart","tags":["env=staging","role=admin"],"updated":"2026-10-11T09:30:00Z"}"#)
         #expect(LoginContext.read(context.storageData()) == .saved(context))
-        #expect(String(decoding: LoginContext.empty.storageData(), as: UTF8.self) == #"{"v":1}"#)
+        #expect(String(decoding: LoginContext.empty.storageData(), as: UTF8.self) == #"{"v":2}"#)
+
+        let guarded = LoginContext(tags: [try tag("role=admin")], confirm: true, devices: .any)
+        #expect(String(decoding: guarded.storageData(), as: UTF8.self) == #"{"v":2,"tags":["role=admin"],"confirm":true,"devices":"any"}"#)
+        #expect(LoginContext.read(guarded.storageData()) == .saved(guarded))
+    }
+
+    @Test("the mirror copies confirm and devices from the encrypted data, and a bad mirror is damaged")
+    func mirror() throws {
+        let credential = try #require(LoginCredential(username: "qa@example.com", password: "pw-1234"))
+        let stored = StoredLogin(credential: credential, confirm: true, devices: .any)
+        let mirrored = LoginContext(about: "Member").mirroring(stored)
+        #expect(mirrored.confirm)
+        #expect(mirrored.devices == .any)
+        #expect(mirrored.about == "Member")
+        #expect(LoginContext.read(Data(#"{"v":2,"devices":"phones"}"#.utf8)) == .damaged)
+        #expect(LoginContext.read(Data(#"{"v":2,"confirm":"yes"}"#.utf8)) == .damaged)
+        let edited = try LoginContextEdit(about: "Admin").applied(to: mirrored, now: Date(timeIntervalSince1970: 1_791_712_931))
+        #expect(edited.confirm && edited.devices == .any)
     }
 
     @Test("a login saved by 0.9.0 reads as empty, unknown keys are ignored, and a newer version is reported")
@@ -65,7 +83,8 @@ struct LoginContextTests {
         #expect(LoginContext.read(nil) == .saved(.empty))
         #expect(LoginContext.read(Data()) == .saved(.empty))
         #expect(LoginContext.read(Data(#"{"v":1,"about":"Member","colour":"blue"}"#.utf8)) == .saved(LoginContext(about: "Member")))
-        #expect(LoginContext.read(Data(#"{"v":2,"about":"Member"}"#.utf8)) == .newer(2))
+        #expect(LoginContext.read(Data(#"{"v":2,"about":"Member"}"#.utf8)) == .saved(LoginContext(about: "Member")))
+        #expect(LoginContext.read(Data(#"{"v":3,"about":"Member"}"#.utf8)) == .newer(3))
         #expect(LoginContext.read(Data("not json".utf8)) == .damaged)
         #expect(LoginContext.read(Data(#"{"about":"Member"}"#.utf8)) == .damaged)
         #expect(LoginContext.read(Data(#"{"v":1,"tags":["Bad Tag"]}"#.utf8)) == .damaged)

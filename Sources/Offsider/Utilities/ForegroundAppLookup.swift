@@ -14,6 +14,12 @@ enum ForegroundAppLookup {
         }
     }
 
+    /// The bundle id of the `.app` a simulator process runs from; nil for WebKit's web content and other helpers.
+    static func bundleIdentifier(pid: Int) -> String? {
+        guard let pid = Int32(exactly: pid), let path = ProcessPath.of(pid: pid) else { return nil }
+        return ForegroundApp.bundleIdentifier(atExecutable: path)
+    }
+
     static func error(_ failure: ForegroundApp.Failure, forLogin: Bool) -> CLIError {
         let suffix = forLogin ? " Nothing was typed." : ""
         switch failure {

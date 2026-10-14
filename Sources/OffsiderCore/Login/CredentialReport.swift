@@ -206,13 +206,15 @@ public struct CredentialReport: Equatable, Sendable {
         signedInHere.map { ["Signed in here: \(LoginCredential.displayKey($0))"] } ?? []
     }
 
-    /// `tags` always, then each note and `updated` only when set.
+    /// `tags` always, then each note and `updated` only when set, then `devices` and `confirm` when not the defaults (virtual, false).
     static func contextFields(_ context: LoginContext) -> [(String, OrderedJSON)] {
         var fields: [(String, OrderedJSON)] = [("tags", .array(context.tags.map { .string($0.rawValue) }))]
         for note in LoginNote.allCases {
             if let text = context[note] { fields.append((note.rawValue, .string(text))) }
         }
         if let updated = context.updated { fields.append(("updated", .string(ProcessStamp.timestamp(updated)))) }
+        if context.devices != .virtual { fields.append(("devices", .string(context.devices.rawValue))) }
+        if context.confirm { fields.append(("confirm", .bool(true))) }
         return fields
     }
 
@@ -236,6 +238,11 @@ public struct CredentialReport: Equatable, Sendable {
             if let text = context[note] { lines.append("  \(note.rawValue): \(text)") }
         }
         if let updated = context.updated { lines.append("  updated: \(ProcessStamp.timestamp(updated))") }
+        if context.devices == .any {
+            lines.append(context.confirm ? "  devices: any, asks you first" : "  devices: any, without asking first (credential describe --confirm asks)")
+        } else if context.confirm {
+            lines.append("  asks you first")
+        }
         lines += signIns.map { "  signed in on " + signInText($0) }
         return lines
     }

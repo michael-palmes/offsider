@@ -8,7 +8,7 @@ struct LoginCredentialTests {
     private let password = "s3cret-token"
     private let username = "ada@example.com"
 
-    @Test("login builds type and turnstile through the parser, then replaces the placeholder text")
+    @Test("login builds type through the parser, then replaces the placeholder text")
     func parsedCommandsKeepTheirOptionGroups() throws {
         let email = FakeUI.node(.textField, id: "email-field", label: "Email")
         let typing = try LoginCommand.typingCommand(text: password, field: email, deviceID: "DEVICE")
@@ -20,11 +20,6 @@ struct LoginCredentialTests {
         let secure = FakeUI.node(.secureTextField, label: "Password")
         let byLabel = try LoginCommand.typingCommand(text: password, field: secure, deviceID: "DEVICE")
         #expect(byLabel.intoLabel == "Password")
-
-        let turnstile = try LoginCommand.turnstileCommand(timeout: 15, deviceID: "DEVICE")
-        #expect(turnstile.timeout == 15)
-        #expect(turnstile.elementID == nil)
-        #expect(turnstile.deviceOption.explicitID == "DEVICE")
     }
 
     @Test("a credential withholds its values, and a value the keyboard cannot type is refused")
@@ -149,10 +144,10 @@ struct LoginCredentialTests {
 
         let admin = try #require(LoginTag(rawValue: "role=admin"))
         let report = LoginReport(app: "com.example.app", key: "qa-admin", turnstile: .absent, submitLabel: "Sign in", tags: [admin], filter: [admin])
-        #expect(report.jsonLine() == #"{"version":1,"ok":true,"app":"com.example.app","key":"qa-admin","identity":"filled","password":"filled","submitted":true,"name":"qa-admin","tags":["role=admin"],"where":["role=admin"],"exitCode":0,"error":null}"#)
+        #expect(report.jsonLine() == #"{"version":1,"ok":true,"app":"com.example.app","key":"qa-admin","identity":"filled","password":"filled","submitted":true,"name":"qa-admin","tags":["role=admin"],"where":["role=admin"],"turnstile":"absent","exitCode":0,"error":null}"#)
         #expect(report.textLine().hasPrefix("com.example.app as qa-admin (chosen by --where role=admin): "))
-        let unnamed = LoginReport(app: "com.example.app", key: LoginCredential.defaultAccountKey, turnstile: .off, submitLabel: nil).jsonLine()
-        #expect(unnamed.hasSuffix(#""key":"*","identity":"filled","password":"filled","submitted":true,"name":"default","tags":[],"exitCode":0,"error":null}"#))
+        let unnamed = LoginReport(app: "com.example.app", key: LoginCredential.defaultAccountKey, turnstile: nil, submitLabel: nil).jsonLine()
+        #expect(unnamed.hasSuffix(#""key":"*","identity":"filled","password":"filled","submitted":true,"name":"default","tags":[],"turnstile":null,"exitCode":0,"error":null}"#))
     }
 
     @Test("status --where is a dry run of login --where: one match prints it without a username")
@@ -170,7 +165,7 @@ struct LoginCredentialTests {
     }
 
     @Test("the first saved login is the default, and a joined bundle id uses it")
-    func defaultAndJoin() throws {
+    func defaultAndJoin() async throws {
         let store = MemoryLoginCredentialStore()
         let credential = try #require(LoginCredential(username: username, password: password))
         let saved = try CredentialCommand.perform(.set, app: "com.example.app", key: "dev", json: false, store: store) { credential }
@@ -186,7 +181,7 @@ struct LoginCredentialTests {
         #expect(try store.defaultKey(app: "com.example.app") == "dev")
         #expect(try chosen(store) == "dev")
 
-        let linked = try CredentialCommand.join(foreground: "com.example.android", requested: nil, json: false, store: store)
+        let linked = try await joined(store, foreground: "com.example.android")
         #expect(linked.contains("com.example.android"))
         #expect(linked.contains("com.example.app"))
         #expect(!linked.contains(password))
@@ -198,13 +193,17 @@ struct LoginCredentialTests {
         #expect(try store.load(app: "com.example.android", key: "dev") == nil)
 
         try store.save(credential, app: "com.other.app", key: "dev", isDefault: true)
-        let owns = refusalOfJoin(store: store, foreground: "com.other.app")
+        let owns = await refusalOfJoin(store: store, foreground: "com.other.app")
         #expect(owns.contains("own saved logins"))
         #expect(owns.contains("Nothing was linked."))
         #expect(!owns.contains(password))
-        let needsApp = refusalOfJoin(store: store, foreground: "com.third.app")
-        #expect(needsApp.contains("Pass --app"))
-        #expect(needsApp.contains("Nothing was linked."))
+        var offered: [[String]] = []
+        _ = try await joined(store, foreground: "com.third.app", choose: { groups in
+            offered.append(groups.map(\.canonical))
+            return "com.other.app"
+        })
+        #expect(offered == [["com.example.app", "com.other.app"]])
+        #expect(try store.canonical(of: "com.third.app") == "com.other.app")
     }
 
     @Test("a second save without a terminal does not overwrite, and does not read a password")
@@ -242,7 +241,7 @@ struct LoginCredentialTests {
         #expect(LoginDirectory.setIntent(entries: [], name: nil, update: false, interactive: false) == .write(key: LoginCredential.defaultAccountKey, makeDefault: true))
     }
 
-    @Test("set and remove without a terminal read only item attributes, so no other user's password is decrypted")
+    @Test("set and remove without a terminal decrypt only the login being replaced, to keep its settings, so no other user's password is decrypted")
     func nonInteractiveWritesDecryptNothing() throws {
         let store = MemoryLoginCredentialStore()
         let credential = try #require(LoginCredential(username: username, password: password))
@@ -254,7 +253,7 @@ struct LoginCredentialTests {
             try CredentialCommand.perform(.set, app: "com.example.app", key: "qa-admin", json: true, store: store) { credential }
         }
         _ = try CredentialCommand.perform(.remove, app: "com.example.app", key: nil, json: true, store: store) { credential }
-        #expect(store.decrypts == 0)
+        #expect(store.decrypts == 1)
         #expect(try store.keys(app: "com.example.app") == ["qa-member", "qa-owner"])
     }
 
@@ -331,7 +330,7 @@ struct LoginCredentialTests {
         #expect(several?.reason == .usage)
         #expect(several?.failureMessage.contains("qa-admin, qa-member") == true)
 
-        let newer = Data(#"{"v":2,"about":"Kept"}"#.utf8)
+        let newer = Data(#"{"v":3,"about":"Kept"}"#.utf8)
         store.slots[LoginCredential.account(app: "com.example.app", key: "qa-member")]?.context = newer
         let refused = #expect(throws: CLIError.self) { try describe(store, "qa-member", edit) }
         #expect(refused?.exitCode == .failure)
@@ -344,7 +343,7 @@ struct LoginCredentialTests {
     }
 
     @Test("the version 2 status list reads no password and shows no username; status with a name decrypts and adds it")
-    func statusVersionTwo() throws {
+    func statusVersionTwo() async throws {
         let store = try savedPair()
         let context = LoginContext(
             about: "Admin on staging, can change team settings", avoid: "Checkout: no store credit", state: "3 items in the cart",
@@ -376,12 +375,12 @@ struct LoginCredentialTests {
         #expect(store.decrypts == 1)
         #expect(try status("qa-owner") == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","name":"qa-owner","saved":false}"#)
 
-        _ = try CredentialCommand.join(foreground: "com.example.android", requested: nil, json: true, store: store)
-        let joined = try status(nil, app: "com.example.android")
-        #expect(joined.contains(#""app":"com.example.android","also":["com.example.app"]"#))
-        #expect(joined.contains(#""about":"Admin on staging, can change team settings""#))
-        #expect(joined.contains(#""signedInHere":"qa-admin""#))
-        #expect(joined.contains(#""signedIn":[{"device":"Test_AVD""#))
+        _ = try await joined(store, foreground: "com.example.android", json: true)
+        let shared = try status(nil, app: "com.example.android")
+        #expect(shared.contains(#""app":"com.example.android","also":["com.example.app"]"#))
+        #expect(shared.contains(#""about":"Admin on staging, can change team settings""#))
+        #expect(shared.contains(#""signedInHere":"qa-admin""#))
+        #expect(shared.contains(#""signedIn":[{"device":"Test_AVD""#))
     }
 
     @Test("context flags go only with set or describe, describe needs one, and a bad tag or note states the rule")
@@ -427,8 +426,7 @@ struct LoginCredentialTests {
         #expect(throws: (any Error).self) { try CredentialCommand.parse(["join", "--app", "com.example.app"]) }
         #expect(throws: (any Error).self) { try CredentialCommand.parse(["status", "--stdin", "--app", "com.example.app"]) }
         #expect(throws: (any Error).self) { try CredentialCommand.parse(["set", "Bad Key", "--app", "com.example.app"]) }
-        let login = try LoginCommand.parse(["dev", "--device", "DEVICE", "--turnstile", "off", "--timeout", "5"])
-        #expect(login.turnstile == .off)
+        let login = try LoginCommand.parse(["dev", "--device", "DEVICE", "--timeout", "5"])
         #expect(login.timeout == 5)
         try DeviceDefault.$environment.withValue({ "DEVICE" }) {
             let parsed = try CredentialCommand.parse(["status"])
@@ -571,7 +569,7 @@ struct LoginCredentialTests {
         }
         await #expect(throws: CLIError.self) {
             _ = try await LoginCommand.perform(
-                on: DeviceRouter.Route(backend: backend, device: device), profile: nil, mode: .off, key: "dev",
+                on: DeviceRouter.Route(backend: backend, device: device), profile: nil, key: "dev",
                 timeout: 5, logger: OffsiderLogger(), store: store,
                 keychainWillRead: { paused = $0 == "com.example.app" }, keychainDidRead: { paused = false }
             )
@@ -647,7 +645,7 @@ struct LoginCredentialTests {
     }
 
     @Test("signed-out clears only this device's record for the app, names who it was, and exits 0 when nothing was recorded")
-    func signedOut() throws {
+    func signedOut() async throws {
         let fixture = try SignInTrackerFixture()
         defer { fixture.remove() }
         let store = try savedPair()
@@ -669,10 +667,10 @@ struct LoginCredentialTests {
         #expect(try signOut("ZY22FAKE01", json: false) == "No sign-in was recorded for com.example.app on ZY22FAKE01. Nothing was cleared.")
         #expect(store.decrypts == 0)
 
-        _ = try CredentialCommand.join(foreground: "com.example.android", requested: nil, json: true, store: store)
+        _ = try await joined(store, foreground: "com.example.android", json: true)
         tracker.record(app: "com.example.app", foreground: "com.example.android", key: LoginCredential.defaultAccountKey, deviceID: "emulator-5554")
-        let joined = try signOut("emulator-5554", app: "com.example.android")
-        #expect(joined.contains(#""name":"default","cleared":true"#))
+        let cleared = try signOut("emulator-5554", app: "com.example.android")
+        #expect(cleared.contains(#""name":"default","cleared":true"#))
 
         let phone = #expect(throws: CLIError.self) { try signOut("00008130-0000000000000ABC") }
         #expect(phone?.reason == .notSupported)
@@ -738,7 +736,7 @@ struct LoginCredentialTests {
 
         let error = await #expect(throws: CLIError.self) {
             _ = try await LoginCommand.perform(
-                on: DeviceRouter.Route(backend: backend, device: device), profile: nil, mode: .off, key: "qa-member",
+                on: DeviceRouter.Route(backend: backend, device: device), profile: nil, key: "qa-member",
                 timeout: 5, logger: OffsiderLogger(), store: store, tracker: restarted
             )
         }
@@ -758,11 +756,24 @@ struct LoginCredentialTests {
         }
     }
 
-    private func refusalOfJoin(store: MemoryLoginCredentialStore, foreground: String) -> String {
+    private func refusalOfJoin(store: MemoryLoginCredentialStore, foreground: String) async -> String {
         do {
-            return try CredentialCommand.join(foreground: foreground, requested: nil, json: false, store: store)
+            return try await joined(store, foreground: foreground)
         } catch {
             return "\(error)"
+        }
+    }
+
+    /// `credential join` as a person at a terminal answers it: pick with `choose`, Link or Cancel with `link`, and the presence check.
+    private func joined(
+        _ store: MemoryLoginCredentialStore, foreground: String, requested: String? = nil, json: Bool = false,
+        choose: @escaping ([LoginAppGroup]) throws -> String = { $0[0].canonical }, link: Bool = true, presence: FakePresence = FakePresence()
+    ) async throws -> String {
+        try await PersonPresence.$current.withValue(presence) {
+            try await CredentialCommand.join(
+                foreground: foreground, platform: .android, requested: requested, json: json, store: store,
+                chooseApp: choose, confirmLink: { _, _ in link }
+            )
         }
     }
 
@@ -774,7 +785,8 @@ struct LoginCredentialTests {
 
 final class MemoryLoginCredentialStore: LoginCredentialStoring {
     struct Slot {
-        var credential: LoginCredential
+        var stored: StoredLogin
+        var credential: LoginCredential { stored.credential }
         var isDefault: Bool
         /// The generic attribute's bytes, as the Keychain holds them.
         var context: Data? = nil
@@ -789,11 +801,11 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
     /// Passwords decrypted so far.
     private(set) var decrypts = 0
 
-    func load(app: String, key: String) throws -> LoginCredential? {
+    func loadStored(app: String, key: String) throws -> StoredLogin? {
         onRead()
         guard let slot = slots[LoginCredential.account(app: app, key: key)] else { return nil }
         decrypts += 1
-        return slot.credential
+        return slot.stored
     }
 
     func list(app: String) throws -> [LoginCredentialSummary] {
@@ -817,7 +829,7 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
             .sorted { lhs, rhs in lhs.isDefault != rhs.isDefault ? lhs.isDefault : lhs.key < rhs.key }
     }
 
-    func save(_ credential: LoginCredential, app: String, key: String, isDefault: Bool, context: LoginContext?) throws {
+    func saveStored(_ stored: StoredLogin, app: String, key: String, isDefault: Bool, context: LoginContext?) throws {
         if isDefault {
             for (account, var slot) in slots {
                 guard LoginCredential.parseAccount(account)?.app == app else { continue }
@@ -827,7 +839,7 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
         }
         let account = LoginCredential.account(app: app, key: key)
         let kept = slots[account]?.context
-        slots[account] = Slot(credential: credential, isDefault: isDefault, context: context.map { $0.storageData() } ?? kept)
+        slots[account] = Slot(stored: stored, isDefault: isDefault, context: context.map { $0.storageData() } ?? kept)
     }
 
     func setContext(_ context: LoginContext, app: String, key: String) throws -> Bool {
@@ -887,5 +899,245 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
 
     func join(member: String, canonical: String) throws {
         links[member] = canonical
+        for (account, var slot) in slots where LoginCredential.parseAccount(account)?.app == canonical {
+            slot.stored.link(member)
+            slots[account] = slot
+        }
+    }
+
+    /// The link index alone, as an Offsider before encrypted links wrote it, or an agent with Keychain write access.
+    func indexOnlyLink(member: String, canonical: String) {
+        links[member] = canonical
+    }
+}
+
+@Suite("Saved login settings and links")
+struct LoginCredentialSettingsTests {
+    private let username = "ada@example.com"
+    private let password = "s3cret-token"
+
+    private func credential() throws -> LoginCredential {
+        try #require(LoginCredential(username: username, password: password))
+    }
+
+    @Test("version 1 data reads as no links, no confirmation and virtual devices; every save writes version 2")
+    func versionTwoData() throws {
+        let v1 = try #require(StoredLogin(storageData: Data(#"{"password":"s3cret-token","username":"ada@example.com"}"#.utf8)))
+        #expect(v1 == StoredLogin(credential: try credential()))
+        #expect(v1.links.isEmpty && !v1.confirm && v1.devices == .virtual && !v1.webLogin)
+
+        let guarded = StoredLogin(credential: try credential(), links: ["com.example.b", "com.example.a", "com.example.b"], confirm: true, devices: .any, webLogin: true)
+        let data = guarded.storageData()
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["v"] as? Int == 2)
+        #expect(object["links"] as? [String] == ["com.example.a", "com.example.b"])
+        #expect(StoredLogin(storageData: data) == guarded)
+        #expect(StoredLogin(storageData: Data(#"{"v":3,"password":"x1","username":"a"}"#.utf8)) == nil)
+        #expect(StoredLogin(storageData: Data(#"{"v":2,"password":"x1","username":"a","devices":"phones"}"#.utf8)) == nil)
+        #expect(StoredLogin(storageData: Data(#"{"v":2,"password":"x1","username":"a","confirm":1}"#.utf8)) == nil)
+        #expect("\(guarded)" == "<saved login withheld>")
+        #expect(!String(reflecting: guarded).contains(password))
+        #expect(LoginCredential(storageData: try credential().storageData()) == (try credential()))
+    }
+
+    @Test("--devices any turns confirmation on unless --no-confirm comes with it; loosening is listed for the person")
+    func settingsEdit() throws {
+        let base = StoredLogin(credential: try credential())
+        #expect(LoginSettingsEdit(devices: .any).applied(to: base).confirm)
+        #expect(!LoginSettingsEdit(devices: .any, confirm: false).applied(to: base).confirm)
+        #expect(LoginSettingsEdit(devices: .any, confirm: false, webLogin: true).loosening == ["be typed on physical devices", "be typed without asking you first", "be typed into web views"])
+        #expect(LoginSettingsEdit(devices: .virtual, confirm: true, webLogin: false).loosening.isEmpty)
+    }
+
+    @Test("loosening a saved login without a person is person_required and saves nothing; tightening needs no one")
+    func looseningNeedsAPerson() throws {
+        let store = MemoryLoginCredentialStore()
+        try store.save(try credential(), app: "com.example.app", key: "dev", isDefault: true)
+        func describe(_ settings: LoginSettingsEdit, confirmed: Bool) throws -> String {
+            try CredentialCommand.perform(.describe, app: "com.example.app", key: "dev", settings: settings, personConfirmed: confirmed, json: true, store: store) { try credential() }
+        }
+        for loose in [LoginSettingsEdit(devices: .any), LoginSettingsEdit(confirm: false), LoginSettingsEdit(webLogin: true)] {
+            let refused = #expect(throws: CLIError.self) { try describe(loose, confirmed: false) }
+            #expect(refused?.reason == .personRequired)
+            #expect(refused?.failureMessage.hasSuffix("Nothing was saved.") == true)
+        }
+        #expect(try store.loadStored(app: "com.example.app", key: "dev") == StoredLogin(credential: try credential()))
+
+        let tightened = try describe(LoginSettingsEdit(confirm: true), confirmed: false)
+        #expect(tightened.contains(#""changed":true"#))
+        #expect(tightened.contains(#""confirm":true"#))
+        #expect(try store.loadStored(app: "com.example.app", key: "dev")?.confirm == true)
+
+        let opened = try describe(LoginSettingsEdit(devices: .any), confirmed: true)
+        #expect(opened.contains(#""devices":"any","confirm":true"#))
+        #expect(try store.loadStored(app: "com.example.app", key: "dev")?.devices == .any)
+        #expect(store.context(app: "com.example.app", key: "dev") == .saved(LoginContext(updated: try updatedStamp(store), confirm: true, devices: .any)))
+        #expect(!opened.contains(password))
+    }
+
+    private func updatedStamp(_ store: MemoryLoginCredentialStore) throws -> Date? {
+        guard case .saved(let context)? = store.context(app: "com.example.app", key: "dev") else { return nil }
+        return context.updated
+    }
+
+    @Test("a password update keeps the login's settings, and a new login copies the links a person confirmed on the default")
+    func setKeepsSettings() async throws {
+        let store = MemoryLoginCredentialStore()
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "dev", json: true, store: store) { try credential() }
+        try store.join(member: "com.example.android", canonical: "com.example.app")
+        _ = try CredentialCommand.perform(.describe, app: "com.example.app", key: "dev", settings: LoginSettingsEdit(devices: .any), personConfirmed: true, json: true, store: store) { try credential() }
+        let changed = try #require(LoginCredential(username: username, password: "n3w-secret"))
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "dev", update: true, json: true, store: store) { changed }
+        let kept = try #require(try store.loadStored(app: "com.example.app", key: "dev"))
+        #expect(kept.credential == changed)
+        #expect(kept.devices == .any && kept.confirm)
+        #expect(kept.links == ["com.example.android"])
+
+        _ = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa", json: true, store: store) { try credential() }
+        let added = try #require(try store.loadStored(app: "com.example.app", key: "qa"))
+        #expect(added.links == ["com.example.android"])
+        #expect(added.devices == .virtual && !added.confirm)
+    }
+
+    @MainActor
+    private func login(
+        _ store: MemoryLoginCredentialStore, package: String, device: String = "emulator-5554", presence: FakePresence = FakePresence()
+    ) async -> (any Error)? {
+        let id = DeviceID(rawValue: device, platform: .android)
+        let app = UINode(role: .application, frame: UIFrame(x: 0, y: 0, width: 400, height: 800), native: .android(AndroidNativeAttributes(package: package)))
+        let backend = FakeDeviceBackend(platform: .android, trees: [UITree(platform: .android, device: device, roots: [app])])
+        do {
+            try await PersonPresence.$current.withValue(presence) {
+                _ = try await LoginCommand.perform(
+                    on: DeviceRouter.Route(backend: backend, device: id), profile: nil, key: "dev", timeout: 5, logger: OffsiderLogger(), store: store
+                )
+            }
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// The form check is the first step after the Keychain gates, so `selector_not_found` means every gate passed.
+    private func passedTheGates(_ error: (any Error)?) -> Bool {
+        (error as? CLIError)?.reason == .selectorNotFound
+    }
+
+    @Test("a link only the index knows is person_required naming join, and join's encrypted link lets login through")
+    @MainActor
+    func unconfirmedLink() async throws {
+        let store = MemoryLoginCredentialStore()
+        try store.save(try credential(), app: "com.example.app", key: "dev", isDefault: true)
+        store.indexOnlyLink(member: "com.example.android", canonical: "com.example.app")
+
+        let refused = try #require(await login(store, package: "com.example.android") as? CLIError)
+        #expect(refused.reason == .personRequired)
+        #expect(refused.hint == "offsider credential join --app com.example.app --device emulator-5554")
+        #expect(refused.failureMessage.contains("no person has confirmed that link, so nothing was typed"))
+
+        try store.join(member: "com.example.android", canonical: "com.example.app")
+        #expect(passedTheGates(await login(store, package: "com.example.android")))
+    }
+
+    @Test("a login saved with confirm asks once before the password is read, and a declined check reads nothing")
+    @MainActor
+    func confirmAsksFirst() async throws {
+        let store = MemoryLoginCredentialStore()
+        let guarded = StoredLogin(credential: try credential(), confirm: true)
+        try store.saveStored(guarded, app: "com.example.app", key: "dev", isDefault: true, context: LoginContext(confirm: true))
+
+        let declined = FakePresence(failure: PersonPresence.error(for: .userCancel))
+        let refused = try #require(await login(store, package: "com.example.app", presence: declined) as? CLIError)
+        #expect(refused.reason == .personRequired)
+        #expect(store.decrypts == 0)
+
+        let person = FakePresence()
+        #expect(passedTheGates(await login(store, package: "com.example.app", presence: person)))
+        #expect(person.reasons == ["type the saved login dev into com.example.app on emulator-5554"])
+
+        try store.saveStored(guarded, app: "com.example.app", key: "dev", isDefault: true, context: LoginContext())
+        let late = FakePresence()
+        #expect(passedTheGates(await login(store, package: "com.example.app", presence: late)))
+        #expect(late.reasons.count == 1)
+    }
+
+    @Test("a physical Android phone takes only a login saved for any device")
+    @MainActor
+    func phoneNeedsDevicesAny() async throws {
+        let store = MemoryLoginCredentialStore()
+        try store.save(try credential(), app: "com.example.app", key: "dev", isDefault: true)
+        let refused = try #require(await login(store, package: "com.example.app", device: "ZY22FAKE01") as? CLIError)
+        #expect(refused.reason == .deviceNotAllowed)
+        #expect(refused.hint == "offsider credential describe dev --devices any --app com.example.app")
+        #expect(refused.failureMessage.contains("Nothing was typed."))
+        #expect(passedTheGates(await login(store, package: "com.example.app")))
+
+        try store.saveStored(StoredLogin(credential: try credential(), devices: .any), app: "com.example.app", key: "dev", isDefault: true, context: nil)
+        #expect(passedTheGates(await login(store, package: "com.example.app", device: "ZY22FAKE01")))
+    }
+
+    @Test("a browser or system app in front is app_not_allowed before the Keychain is read")
+    @MainActor
+    func deniedForeground() async throws {
+        let store = MemoryLoginCredentialStore()
+        var reads = 0
+        store.onRead = { reads += 1 }
+        for package in ["com.android.chrome", "com.android.settings", "com.google.android.gms"] {
+            let refused = try #require(await login(store, package: package) as? CLIError)
+            #expect(refused.reason == .appNotAllowed)
+            #expect(refused.failureMessage.contains("Nothing was typed."))
+        }
+        #expect(reads == 0)
+    }
+
+    private func join(
+        _ store: MemoryLoginCredentialStore, foreground: String, link: Bool = true, presence: FakePresence = FakePresence()
+    ) async throws -> String {
+        try await PersonPresence.$current.withValue(presence) {
+            try await CredentialCommand.join(
+                foreground: foreground, platform: .android, requested: nil, json: true, store: store,
+                chooseApp: { $0[0].canonical }, confirmLink: { _, _ in link }
+            )
+        }
+    }
+
+    @Test("join links only after Link and the presence check, writes the member into each login, and refuses system apps")
+    func joinIsPersonOnly() async throws {
+        let store = MemoryLoginCredentialStore()
+        try store.save(try credential(), app: "com.example.app", key: "dev", isDefault: true)
+        try store.save(try credential(), app: "com.example.app", key: "qa", isDefault: false)
+
+        let cancelled = await #expect(throws: CLIError.self) { try await self.join(store, foreground: "com.example.android", link: false) }
+        #expect(cancelled?.reason == .personRequired)
+        let declined = FakePresence(failure: PersonPresence.error(for: .notInteractive))
+        let noSession = await #expect(throws: CLIError.self) { try await self.join(store, foreground: "com.example.android", presence: declined) }
+        #expect(noSession?.reason == .personRequired)
+        #expect(try store.canonical(of: "com.example.android") == "com.example.android")
+
+        let browser = await #expect(throws: CLIError.self) { try await self.join(store, foreground: "com.android.chrome") }
+        #expect(browser?.reason == .appNotAllowed)
+        #expect(browser?.failureMessage.hasSuffix("Nothing was linked.") == true)
+
+        let person = FakePresence()
+        let linked = try await join(store, foreground: "com.example.android", presence: person)
+        #expect(linked.contains(#""linked":"com.example.app""#))
+        #expect(person.reasons == ["let com.example.android use the saved logins of com.example.app"])
+        #expect(try store.loadStored(app: "com.example.app", key: "dev")?.links == ["com.example.android"])
+        #expect(try store.loadStored(app: "com.example.app", key: "qa")?.links == ["com.example.android"])
+
+        let again = FakePresence()
+        _ = try await join(store, foreground: "com.example.android", presence: again)
+        #expect(again.reasons.isEmpty)
+    }
+
+    @Test("--devices, --confirm and --web-login go with set or describe, and describe takes them alone")
+    func settingsFlags() throws {
+        let app = ["--app", "com.example.app"]
+        let parsed = try CredentialCommand.parse(["describe", "qa", "--devices", "any", "--no-confirm", "--web-login"] + app)
+        #expect(parsed.settingsEdit == LoginSettingsEdit(devices: .any, confirm: false, webLogin: true))
+        _ = try CredentialCommand.parse(["set", "qa", "--stdin", "--confirm"] + app)
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["status", "--devices", "any"] + app) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["describe", "qa", "--devices", "phones"] + app) }
+        #expect(throws: (any Error).self) { try CredentialCommand.parse(["join", "--confirm", "--device", "DEVICE"]) }
     }
 }

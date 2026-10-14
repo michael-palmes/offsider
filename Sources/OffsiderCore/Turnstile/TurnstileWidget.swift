@@ -1,14 +1,11 @@
 import Foundation
 
-/// Where a Turnstile checkbox tap should land. The accessibility frame includes the label, so its centre is the words.
+/// The checkbox a person would tick. Offsider reports where it is and never taps it.
 public struct TurnstileTarget: Equatable, Sendable {
     public var frame: UIFrame
-    /// The Cloudflare mark sits on the right in a left-to-right widget, and the square is then at the frame's leading edge.
-    public var logoOnRight: Bool
 
-    public init(frame: UIFrame, logoOnRight: Bool) {
+    public init(frame: UIFrame) {
         self.frame = frame
-        self.logoOnRight = logoOnRight
     }
 }
 
@@ -19,21 +16,18 @@ public enum TurnstilePhase: Equatable, Sendable {
     case ready(TurnstileTarget)
     /// The widget reads Success.
     case passed
-    /// An image grid. A tap on the checkbox square cannot complete it.
+    /// An image grid for a person to solve.
     case visualChallenge
     /// More than one checkbox is on screen.
     case ambiguous(Int)
 }
 
-/// Finds a Turnstile widget in an accessibility tree and aims a tap at the checkbox square.
+/// Finds a Turnstile widget in an accessibility tree and reads its state.
 public enum TurnstileWidget {
     /// Cloudflare's own container. The suffix changes on every load.
     public static let widgetIDPrefix = "cf-chl-widget"
     /// A Cloudflare container this tall, with no checkbox or Success label, is an expanded challenge rather than the compact widget.
     public static let visualChallengeHeight = 160.0
-    public static let defaultJitter = 3.0
-    /// Far enough to leave the square and land on the words beside it.
-    public static let maximumJitter = 8.0
     /// The iOS checkbox square, from a 3x capture of the green check (30pt across).
     public static let iosSquareSide = 30.0
     /// Points from the iOS web view's left edge to that square's centre.
@@ -61,21 +55,6 @@ public enum TurnstileWidget {
         return .checking
     }
 
-    /// A point on the checkbox square. `offset` is clamped to `maxJitter` and then to the square, so it cannot reach the label.
-    public static func aim(_ target: TurnstileTarget, offset: UIPoint = UIPoint(x: 0, y: 0), maxJitter: Double = defaultJitter) -> UIPoint {
-        let frame = target.frame
-        let side = min(max(frame.width, 0), max(frame.height, 0))
-        let half = side / 2
-        let inset = min(4, half * 0.5)
-        let room = max(0, half - inset)
-        let limit = min(max(0, maxJitter), room)
-        let dx = min(max(offset.x, -limit), limit)
-        let dy = min(max(offset.y, -limit), limit)
-        let x = target.logoOnRight ? frame.x + half + dx : frame.maxX - half + dx
-        let y = frame.y + frame.height / 2 + dy
-        return UIPoint(x: x, y: y)
-    }
-
     /// A short, wide web view whose only words are scroll bars. iOS leaves the widget's contents out of the tree.
     public static func iosShells(in roots: [UINode], viewport: UIFrame? = nil, scopeID: String? = nil) -> [UIFrame] {
         let nodes = scoped(roots, id: scopeID).flatMap { $0.flattened() }.filter { onScreen($0, viewport: viewport) }
@@ -101,7 +80,7 @@ public enum TurnstileWidget {
         let side = iosSquareSide
         let x = shell.x + iosSquareCentreInset - side / 2
         let y = shell.y + shell.height / 2 - side / 2
-        return TurnstileTarget(frame: UIFrame(x: x, y: y, width: side, height: side), logoOnRight: true)
+        return TurnstileTarget(frame: UIFrame(x: x, y: y, width: side, height: side))
     }
 
     /// What a point inside the web view says. `passed` wins over a prompt, then a check in progress, then the logo.
@@ -151,9 +130,7 @@ public enum TurnstileWidget {
         }
         if success { return .passed }
         if let checkbox, let frame = checkbox.frame {
-            let logo = nodes.first { isLogo($0) }?.frame
-            let logoOnRight = logo.map { abs($0.center.x - frame.center.x) >= 1 && $0.center.x > frame.center.x } ?? true
-            return .ready(TurnstileTarget(frame: frame, logoOnRight: logoOnRight))
+            return .ready(TurnstileTarget(frame: frame))
         }
         return .checking
     }
@@ -171,8 +148,7 @@ public enum TurnstileWidget {
             if nodes.contains(where: { isChecking($0) }) { return .checking }
             return .absent
         }
-        let logoOnRight = logo.map { abs($0.center.x - frame.center.x) >= 1 && $0.center.x > frame.center.x } ?? true
-        return .ready(TurnstileTarget(frame: frame, logoOnRight: logoOnRight))
+        return .ready(TurnstileTarget(frame: frame))
     }
 
     private static func onScreen(_ node: UINode, viewport: UIFrame?) -> Bool {
@@ -286,12 +262,7 @@ public enum TurnstileReading: Equatable, Sendable {
     case unrelated
 }
 
-private extension UIFrame {
-    var maxX: Double { x + width }
-}
-
-/// What `turnstile` prints. `point` is nil when the widget had already passed and nothing was tapped.
-/// What `turnstile --status` prints: the widget's state from one read, without a tap.
+/// What `turnstile` prints: the widget's state from one read. Offsider never taps it.
 public struct TurnstileStatus: Equatable, Sendable {
     public enum State: String, Sendable {
         case checkbox
@@ -332,7 +303,7 @@ public struct TurnstileStatus: Equatable, Sendable {
     /// `Turnstile: checkbox at (32, 388.95) 163.81x25.14`, or the state alone.
     public func textLine() -> String {
         guard let frame else { return "Turnstile: \(state.rawValue)" }
-        return "Turnstile: \(state.rawValue) at (\(TurnstileReport.format(frame.x)), \(TurnstileReport.format(frame.y))) \(TurnstileReport.format(frame.width))x\(TurnstileReport.format(frame.height))"
+        return "Turnstile: \(state.rawValue) at (\(Self.format(frame.x)), \(Self.format(frame.y))) \(Self.format(frame.width))x\(Self.format(frame.height))"
     }
 
     public func jsonLine() -> String {
@@ -342,48 +313,10 @@ public struct TurnstileStatus: Equatable, Sendable {
             ("source", .string(source.rawValue)),
             ("frame", frame.map { frame in
                 .object([
-                    ("x", .number(TurnstileReport.rounded(frame.x))),
-                    ("y", .number(TurnstileReport.rounded(frame.y))),
-                    ("width", .number(TurnstileReport.rounded(frame.width))),
-                    ("height", .number(TurnstileReport.rounded(frame.height))),
-                ])
-            } ?? .null),
-        ]).rendered(compact: true)
-    }
-}
-
-public struct TurnstileReport: Equatable, Sendable {
-    public enum Outcome: String, Sendable {
-        case tapped
-        case alreadyPassed = "already_passed"
-    }
-
-    public var outcome: Outcome
-    public var point: UIPoint?
-
-    public init(outcome: Outcome, point: UIPoint? = nil) {
-        self.outcome = outcome
-        self.point = point
-    }
-
-    public func textLine() -> String {
-        switch outcome {
-        case .alreadyPassed:
-            return "✓ Turnstile already passed"
-        case .tapped:
-            let point = point ?? UIPoint(x: 0, y: 0)
-            return "✓ Turnstile passed after a tap at (\(Self.format(point.x)), \(Self.format(point.y)))"
-        }
-    }
-
-    public func jsonLine() -> String {
-        OrderedJSON.object([
-            ("version", .integer(1)),
-            ("outcome", .string(outcome.rawValue)),
-            ("point", point.map { value in
-                .object([
-                    ("x", .number(Self.rounded(value.x))),
-                    ("y", .number(Self.rounded(value.y))),
+                    ("x", .number(Self.rounded(frame.x))),
+                    ("y", .number(Self.rounded(frame.y))),
+                    ("width", .number(Self.rounded(frame.width))),
+                    ("height", .number(Self.rounded(frame.height))),
                 ])
             } ?? .null),
         ]).rendered(compact: true)

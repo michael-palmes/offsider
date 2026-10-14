@@ -15,7 +15,13 @@ struct LoginCommand: AsyncParsableCommand {
         --timeout (default 15 seconds, from 1 to 60) is how long login waits for the submit button to enable.
 
         Exit 0 means the submit button was tapped. It does not mean the server accepted the login. The \
-        password is never printed. A physical iPhone or iPad is refused.
+        password is never printed. A physical iPhone or iPad is refused, and an allowed Android phone needs a \
+        login saved with --devices any. Browsers, system apps and a password field inside a web view are \
+        refused (app_not_allowed). A login saved with --confirm asks for Touch ID or your password first.
+
+        login never taps Cloudflare Turnstile. A checkbox or challenge on screen stops it with \
+        turnstile_required, before typing, before submit or just after it, so a person can complete it. \
+        A different app in front before the password or before submit stops it with foreground_changed.
 
         With no name, login uses the default. One saved login is the default, including one saved earlier under a name such as dev.
 
@@ -40,9 +46,6 @@ struct LoginCommand: AsyncParsableCommand {
 
     @Option(name: .customLong("where"), help: ArgumentHelp("Use the saved login with this tag, such as role=admin. Repeat to require more tags. Not with a name.", valueName: "tag"))
     var filters: [String] = []
-
-    @Option(name: .customLong("turnstile"), help: ArgumentHelp("auto (default), required or off. auto handles a widget already on screen.", valueName: "mode"))
-    var turnstile: LoginTurnstileMode?
 
     @Option(name: .customLong("timeout"), help: ArgumentHelp("Give up after this many seconds, from 1 to 60 (default 15), while the submit button stays disabled.", valueName: "seconds"))
     var timeoutOption: Double?
@@ -81,7 +84,6 @@ struct LoginCommand: AsyncParsableCommand {
         let watchdog = DeviceWatchdog()
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         let profile = try LoginProfiles.load(project: project)
-        let mode = LoginProfiles.mode(flag: turnstile, profile: profile)
         let filter = try Self.whereTags(filters, named: key != nil)
         let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWaitNotice.utf8)) }
         var giveUp: DispatchWorkItem?
@@ -89,7 +91,7 @@ struct LoginCommand: AsyncParsableCommand {
         do {
             report = try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
                 try await Self.perform(
-                    on: route, profile: profile, mode: mode, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
+                    on: route, profile: profile, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
                     onPrepared: ready,
                     keychainWillRead: { app in
                         watchdog.disarm()
@@ -133,7 +135,6 @@ struct LoginCommand: AsyncParsableCommand {
     static func perform(
         on route: DeviceRouter.Route,
         profile: LoginProfile?,
-        mode: LoginTurnstileMode,
         key requestedKey: String?,
         where filter: [LoginTag] = [],
         timeout: TimeInterval,
@@ -142,22 +143,41 @@ struct LoginCommand: AsyncParsableCommand {
         tracker: SignInTracker? = nil,
         onPrepared: @Sendable () -> Void = {},
         keychainWillRead: (_ app: String) -> Void = { _ in },
-        keychainDidRead: () -> Void = {}
+        keychainDidRead: () -> Void = {},
+        recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> LoginReport {
+        // The caller holds the device lock, so no recording can start after this check.
+        if recordingLive(DeviceLockKey(platform: route.device.platform, id: route.device.rawValue)) {
+            throw CLIError(
+                errorDescription: "A recording is running on \(route.device.rawValue) (record-video), so login will not type a password until it stops. Stop the recording, then retry. Nothing was typed.",
+                reason: .deviceBusy
+            )
+        }
         try await route.backend.prepare()
         onPrepared()
         let tree = try await route.backend.accessibilityTree(for: route.device)
         let app = try ForegroundAppLookup.identifier(in: tree, forLogin: true)
+        try refuseDeniedApp(app, platform: route.device.platform)
         let canonical: String
         let entry: LoginEntry
-        let credential: LoginCredential
+        let saved: StoredLogin
         do {
             keychainWillRead(app)
             defer { keychainDidRead() }
             canonical = try store.canonical(of: app)
             entry = try resolveLogin(requestedKey, where: filter, app: app, entries: try store.entries(app: canonical), device: route.device)
-            credential = try stored(app: canonical, key: entry.key, foreground: app, store: store)
+            let reason = presenceReason(app: app, key: entry.key, device: route.device)
+            var confirmed = false
+            if entry.context.confirm {
+                try await PersonPresence.confirm(reason: reason)
+                confirmed = true
+            }
+            saved = try stored(app: canonical, key: entry.key, foreground: app, store: store)
+            if saved.confirm, !confirmed { try await PersonPresence.confirm(reason: reason) }
         }
+        try requireConfirmedLink(saved, app: app, canonical: canonical, device: route.device)
+        try requireDeviceScope(saved, key: entry.key, app: canonical, device: route.device)
+        let credential = saved.credential
         let services = LoginFlow.Services(
             readTree: { try await route.backend.accessibilityTree(for: route.device) },
             typeText: { text, field in
@@ -169,20 +189,16 @@ struct LoginCommand: AsyncParsableCommand {
                 let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: tree, on: route.device)[0]
                 try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: route.device)
             },
-            readTurnstile: {
-                let status = try await Self.turnstileCommand(timeout: timeout, deviceID: route.device.rawValue).readStatus(on: route)
-                return phase(of: status)
-            },
-            performTurnstile: {
-                try await Self.turnstileCommand(timeout: timeout, deviceID: route.device.rawValue).perform(on: route, logger: logger)
-            },
-            clock: .live
+            readTurnstile: { tree in await Turnstile.phase(in: tree, on: route) },
+            clock: .live,
+            foregroundApp: { tree in try ForegroundAppLookup.identifier(in: tree, forLogin: true) },
+            bundleForPID: ForegroundAppLookup.bundleIdentifier(pid:)
         )
         let deviceID = route.device.rawValue
         var report: LoginReport
         do {
             report = try await LoginFlow.run(
-                app: app, key: entry.key, credential: credential, profile: profile, turnstile: mode, timeout: timeout, services: services,
+                app: app, key: entry.key, credential: credential, profile: profile, webLogin: saved.webLogin, timeout: timeout, services: services,
                 lastSignIn: {
                     tracker?.last(app: canonical, deviceID: deviceID).map {
                         LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
@@ -286,33 +302,44 @@ struct LoginCommand: AsyncParsableCommand {
         return typing
     }
 
-    /// A parsed `turnstile` command. A bare `Turnstile()` leaves its option groups unread.
-    static func turnstileCommand(timeout: TimeInterval, deviceID: String) throws -> Turnstile {
-        try Turnstile.parse(["--timeout", String(timeout), "--device", deviceID])
-    }
-
-    private static func stored(app: String, key: String, foreground: String, store: any LoginCredentialStoring) throws -> LoginCredential {
-        guard let credential = try store.load(app: app, key: key) else {
+    private static func stored(app: String, key: String, foreground: String, store: any LoginCredentialStoring) throws -> StoredLogin {
+        guard let stored = try store.loadStored(app: app, key: key) else {
             throw CLIError(errorDescription: "No login credential \(LoginCredential.displayKey(key)) is saved for \(foreground).", reason: .commandFailed)
         }
-        return credential
+        return stored
     }
 
-    private static func phase(of status: TurnstileStatus) -> TurnstilePhase {
-        switch status.state {
-        case .checkbox:
-            let frame = status.frame ?? UIFrame(x: 0, y: 0, width: TurnstileWidget.iosSquareSide, height: TurnstileWidget.iosSquareSide)
-            return .ready(TurnstileTarget(frame: frame, logoOnRight: true))
-        case .verifying:
-            return .checking
-        case .passed:
-            return .passed
-        case .challenge:
-            return .visualChallenge
-        case .absent:
-            return .absent
-        }
+    /// Completes macOS's "offsider is trying to ..." and names the app, the login and the device, never the username.
+    static func presenceReason(app: String, key: String, device: DeviceID) -> String {
+        "type the saved login \(LoginCredential.displayKey(key)) into \(app) on \(device.rawValue)"
+    }
+
+    /// Browsers and system apps are never signed in to.
+    static func refuseDeniedApp(_ app: String, platform: DevicePlatform) throws {
+        guard let refusal = SystemAppDenyList.refusal(app, platform: platform) else { return }
+        throw CLIError(errorDescription: "\(refusal). Nothing was typed. Bring the app under test to the front.", reason: .appNotAllowed)
+    }
+
+    /// A joined app id types a login only once a person confirmed the link, which `join` writes into the encrypted data.
+    static func requireConfirmedLink(_ saved: StoredLogin, app: String, canonical: String, device: DeviceID) throws {
+        guard canonical != app, !saved.links.contains(app) else { return }
+        let command = "offsider credential join --app \(canonical) --device \(device.rawValue)"
+        throw CLIError.personRequired(
+            "\(app) shares the saved logins of \(canonical), but no person has confirmed that link, so nothing was typed. "
+                + "Ask the user to run `\(command)` in their own terminal.",
+            hint: command
+        )
+    }
+
+    /// A physical Android phone takes only a login a person saved for any device.
+    static func requireDeviceScope(_ saved: StoredLogin, key: String, app: String, device: DeviceID) throws {
+        guard device.isPhysicalAndroidDevice, saved.devices != .any else { return }
+        let command = "offsider credential describe \(LoginCredential.displayKey(key)) --devices any --app \(app)"
+        throw CLIError(
+            errorDescription: "The saved login \(LoginCredential.displayKey(key)) for \(app) is for simulators and emulators only, and \(device.rawValue) is a physical phone. "
+                + "Nothing was typed. Ask the user to run `\(command)` in their own terminal if this login may be used there.",
+            reason: .deviceNotAllowed,
+            hint: command
+        )
     }
 }
-
-extension LoginTurnstileMode: ExpressibleByArgument {}
