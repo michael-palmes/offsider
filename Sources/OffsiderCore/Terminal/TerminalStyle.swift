@@ -1,19 +1,88 @@
 import Foundation
 
-/// Colour for one stream: on only for a terminal, and never with `NO_COLOR` or `TERM=dumb`.
+/// The terminal UI kit's palette and glyphs, one per stream. Colour only for a terminal, never with `NO_COLOR` or `TERM=dumb`;
+/// ASCII glyphs and tags (`[iPhone]`, `[OK]`, `>`, `=`, `-`) with `NO_COLOR` or a locale that is not UTF-8.
+/// Roles: cyan for rules and structure, green for the cursor row and success, magenta for `(Recommended)`, yellow for
+/// warnings, dim for secondary detail, bold for the question. Nothing else is coloured.
 public struct TerminalStyle: Equatable, Sendable {
     public let colours: Bool
+    public let ascii: Bool
 
-    public init(colours: Bool) {
+    public init(colours: Bool, ascii: Bool = false) {
         self.colours = colours
+        self.ascii = ascii
     }
 
     public static let plain = TerminalStyle(colours: false)
 
     public static func detect(isTerminal: Bool, environment: [String: String] = ProcessInfo.processInfo.environment) -> TerminalStyle {
         let noColour = environment["NO_COLOR"].map { !$0.isEmpty } ?? false
-        return TerminalStyle(colours: isTerminal && !noColour && environment["TERM"] != "dumb")
+        return TerminalStyle(colours: isTerminal && !noColour && environment["TERM"] != "dumb", ascii: noColour || !isUTF8(environment))
     }
+
+    /// The first locale variable set decides; with none set, macOS terminals are UTF-8.
+    static func isUTF8(_ environment: [String: String]) -> Bool {
+        guard let locale = ["LC_ALL", "LC_CTYPE", "LANG"].lazy.compactMap({ environment[$0] }).first(where: { !$0.isEmpty }) else { return true }
+        let lowered = locale.lowercased()
+        return lowered.contains("utf-8") || lowered.contains("utf8")
+    }
+
+    public var pointer: String { ascii ? ">" : "▸" }
+    public var tick: String { mark(.done) }
+    public var rule: String { ascii ? "-" : "─" }
+    public var heavyRule: String { ascii ? "=" : "═" }
+    public var dot: String { ascii ? "-" : "·" }
+    public var ellipsis: String { ascii ? "..." : "…" }
+    public var picked: String { pointer }
+    public var upDown: String { ascii ? "up/down" : "↑↓" }
+
+    /// An emoji that leads a row or line, or its short ASCII tag. Every emoji here is one scalar drawn two columns wide,
+    /// except `warning`, which needs its variation selector and so is followed by two spaces wherever it is used.
+    public enum Mark: Sendable, CaseIterable {
+        case lock, iPhone, iPad, android, team, app, anyApp, time, keep, type, done, cancel, warning, another, digits
+
+        public var emoji: String {
+            switch self {
+            case .lock: return "🔐"
+            case .iPhone: return "📱"
+            case .iPad: return "📲"
+            case .android: return "🤖"
+            case .team: return "🏢"
+            case .app: return "📦"
+            case .anyApp: return "✨"
+            case .time: return "⏳"
+            case .keep: return "📌"
+            case .type: return "📝"
+            case .done: return "✅"
+            case .cancel: return "❌"
+            case .warning: return "⚠️"
+            case .another: return "➕"
+            case .digits: return "🔢"
+            }
+        }
+
+        public var tag: String {
+            switch self {
+            case .lock: return "[lock]"
+            case .iPhone: return "[iPhone]"
+            case .iPad: return "[iPad]"
+            case .android: return "[Android]"
+            case .team: return "[team]"
+            case .app: return "[app]"
+            case .anyApp: return "[any]"
+            case .time: return "[time]"
+            case .keep: return "[keep]"
+            case .type: return "[type]"
+            case .done: return "[OK]"
+            case .cancel: return "[x]"
+            case .warning: return "[!]"
+            case .another: return "[+]"
+            case .digits: return "[id]"
+            }
+        }
+    }
+
+    public func mark(_ mark: Mark) -> String { ascii ? mark.tag : mark.emoji }
 
     public func bold(_ text: String) -> String { sgr("1", text) }
     public func dim(_ text: String) -> String { sgr("2", text) }
@@ -21,6 +90,7 @@ public struct TerminalStyle: Equatable, Sendable {
     public func red(_ text: String) -> String { sgr("31", text) }
     public func yellow(_ text: String) -> String { sgr("33", text) }
     public func cyan(_ text: String) -> String { sgr("36", text) }
+    public func magenta(_ text: String) -> String { sgr("35", text) }
 
     private func sgr(_ code: String, _ text: String) -> String {
         colours ? "\u{1B}[\(code)m\(text)\u{1B}[0m" : text

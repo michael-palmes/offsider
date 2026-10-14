@@ -93,10 +93,10 @@ struct UnlockCodeCommand: AsyncParsableCommand {
     }
 
     static func pipedTitle(name: String) -> String {
-        "🔐 Save the unlock code from standard input for \(name)? wake --unlock will type it on that device."
+        "Save the code for \(name)?"
     }
 
-    static let pipedOptions = ["🔐 Save it", "✋ Cancel"]
+    static let pipedOptions = ["🔐  Save it", "❌  Cancel"]
 
     /// `set` on a listed phone needs the allow-list's consent before its label is read; `status` and `remove` stay open and skip the label (false) unless the phone is allowed.
     @MainActor
@@ -175,7 +175,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
 
     /// Asks twice on the terminal, showing a dot for each character.
     static func ask(_ prompt: TerminalPrompt, name: String) throws -> UnlockCode {
-        prompt.lines(UnlockCodeScreen.header(name: name, style: prompt.style))
+        prompt.lines(UnlockCodeScreen.header(name: name, width: prompt.width, style: prompt.style))
         let labels = PromptScreen.labels([UnlockCodeScreen.codeLabel, UnlockCodeScreen.againLabel])
         let text = try prompt.askSecret(labels[0], again: labels[1], check: UnlockCodeScreen.codeProblem)
         guard let code = UnlockCode(text) else { throw CLIError(errorDescription: "\(formatMessage) Nothing was saved.", reason: .usage) }

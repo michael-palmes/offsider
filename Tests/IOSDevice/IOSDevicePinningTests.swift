@@ -53,7 +53,8 @@ struct IOSDevicePinningTests {
         backend.targetApp = "com.example.other"
         let other = await #expect(throws: IOSDeviceError.self) { _ = try await backend.rawAccessibilitySource(for: Self.phone) }
         #expect(other?.reason == .appNotAllowed)
-        #expect(other?.message.contains("`offsider device-access allow --device \(IOSDeviceFixtures.phone) --app com.example.other`") == true)
+        #expect(other?.message.contains("`offsider device-access allow` in their own terminal, choose") == true)
+        #expect(other?.message.contains("(\(IOSDeviceFixtures.phone)) and pin com.example.other") == true)
         #expect(transport.calls.isEmpty)
     }
 

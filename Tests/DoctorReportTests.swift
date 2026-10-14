@@ -133,6 +133,7 @@ struct DoctorReportTests {
             "host.disk",
             "host.sessions",
             "install.bundle",
+            "install.skill",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)

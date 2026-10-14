@@ -30,7 +30,7 @@ struct AndroidErrorReasonTests {
     func hints() {
         #expect(AndroidError.avdNotRunning("Pixel").hint == "offsider boot Pixel")
         #expect(AndroidError.serialNotRunning("emulator-5554").hint == "offsider list-devices")
-        #expect(AndroidError.adbServerNotRunning(endpoint: "tcp:5037").hint == "adb start-server")
+        #expect(AndroidError.adbServerNotRunning(endpoint: "tcp:5037").hint == nil)
         #expect(AndroidError.adbCommandFailed(serial: "emulator-5554", command: "shell input text S3NT1NEL", detail: "").hint == nil)
         #expect(AndroidError.appNotInstalled("com.example", serial: "emulator-5554").hint == "adb -s emulator-5554 install <path-to-apk>")
         #expect(AndroidError.ambiguousDeviceName("Pixel", emulatorSerial: "emulator-5554").hint == "offsider list-devices")

@@ -154,7 +154,7 @@ struct Doctor: AsyncParsableCommand {
     static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
         DoctorReport(
             offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
-            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck()], fixes: report.fixes, host: host, policy: report.policy
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck(), Init.doctorCheck()], fixes: report.fixes, host: host, policy: report.policy
         )
     }
 
@@ -248,7 +248,7 @@ struct Doctor: AsyncParsableCommand {
     }
 
     private func write(_ report: DoctorReport) throws {
-        let human = Data(DoctorRenderer.render(report).utf8)
+        let human = Data((DoctorRenderer.render(report) + (report.nextStep.map { "\($0)\n" } ?? "")).utf8)
         if json {
             FileHandle.standardError.write(human)
             FileHandle.standardOutput.write(try report.jsonData() + Data("\n".utf8))

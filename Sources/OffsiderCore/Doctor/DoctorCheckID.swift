@@ -60,6 +60,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case hostDisk = "host.disk"
     case hostSessions = "host.sessions"
     case installBundle = "install.bundle"
+    case installSkill = "install.skill"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -137,6 +138,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .hostDisk: return "Free disk"
         case .hostSessions: return "Offsider commands"
         case .installBundle: return "Bundled resources"
+        case .installSkill: return "Agent skill"
         }
     }
 }

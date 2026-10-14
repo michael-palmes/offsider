@@ -46,18 +46,18 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
 
     static func deviceNotBooted(id: String, state: String) -> CLIError {
         CLIError(
-            errorDescription: "Simulator \(id) is not booted. Current state: \(state).",
+            errorDescription: "Simulator \(id) is not booted (\(state)).",
             reason: .deviceNotBooted,
-            hint: "xcrun simctl boot \(id)"
+            hint: "offsider boot \(id)"
         )
     }
 
     static func xcodeMissing(_ message: String) -> CLIError {
-        CLIError(errorDescription: message, reason: .xcodeMissing, hint: "xcode-select -s <Xcode.app>/Contents/Developer")
+        CLIError(errorDescription: message, reason: .xcodeMissing, hint: XcodeSuggestion.current.select)
     }
 
     static func xcodeUnusable(_ message: String) -> CLIError {
-        CLIError(errorDescription: message, reason: .xcodeUnusable, hint: "xcode-select -s <Xcode.app>/Contents/Developer")
+        CLIError(errorDescription: message, reason: .xcodeUnusable, hint: XcodeSuggestion.current.select)
     }
 
     static func notSupported(_ message: String) -> CLIError {
@@ -85,9 +85,9 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
     }
 
     /// A physical device the allow-list or managed policy refuses; only a person (or an administrator) can change that.
-    static func deviceNotAllowed(name: String?, key: String, refusal: DeviceRefusal) -> CLIError {
+    static func deviceNotAllowed(name: String?, key: String, refusal: DeviceRefusal, audience: ErrorAudience = .current) -> CLIError {
         let device = name.map { "\($0) (\(key))" } ?? key
-        let command = "offsider device-access allow --device \(key)"
+        let command = "offsider device-access allow"
         if refusal.isManaged {
             return CLIError(
                 errorDescription: "\(device) is a physical device and \(refusal.explanation). Nothing was sent to it. Ask the administrator of this Mac.",
@@ -95,9 +95,9 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
             )
         }
         let again = refusal == .notAllowed ? "" : " again"
+        let step = audience.personStep(command, agentTail: "\(again) and choose \(device); an agent cannot allow a device")
         return CLIError(
-            errorDescription: "\(device) is a physical device and \(refusal.explanation), so Offsider will not drive it. Nothing was sent to it. "
-                + "Ask the user to run `\(command)` in their own terminal\(again); an agent cannot allow a device.",
+            errorDescription: "\(device) is a physical device and \(refusal.explanation), so nothing was sent to it.\(step)",
             reason: .deviceNotAllowed,
             hint: command
         )

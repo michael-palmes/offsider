@@ -103,7 +103,8 @@ struct AdbClientTests {
         let timedOut = await #expect(throws: AndroidError.self) {
             try await Self.client(FakeAdbServer(connect: .timeOut) { _ in .hang }).serverVersion()
         }
-        #expect(timedOut?.message == "The adb server on 127.0.0.1:5037 did not answer within 1 s. Restart it with `adb kill-server && adb start-server`.")
+        #expect(timedOut?.message == "The adb server on 127.0.0.1:5037 did not answer within 1 s. Stop it, then run the command again.")
+        #expect(timedOut?.hint == "adb kill-server")
     }
 
     @Test("a shell command that never answers fails with its name and the timeout")

@@ -8,61 +8,13 @@ struct CredentialCommand: AsyncParsableCommand {
         commandName: "credential",
         abstract: "Save, describe, check, remove or share a test username and password for one app, and track who is signed in.",
         discussion: """
-        The password is kept in your login Keychain, never in a file, an argument or Offsider's output. \
-        The first login saved for an app is the default, so login with no name uses it. A name such as dev \
-        or qa saves another login for that same app. The same name may be saved again for a different app, \
-        and login types a credential only into an app it was saved for. The name default means the login \
-        saved without a name, as status lists it, which is not the default when the first login had a name.
-
-        set asks for the username or email, then the password twice, showing a dot for each character, or \
-        reads two lines with --stdin. Both must be characters the keyboard can type: the username 1 to 254, \
-        the password 1 to 128. When a login is already saved, a terminal shows a menu to update one or add a \
-        named one, and asks before replacing a saved name. For a new login and no describe flags, it then \
-        asks what the login is for and its tags, and both may be left empty. Without a terminal, pass --update \
-        or a name. Save test development credentials only. Anything that can run commands as you can then \
-        type them into this app.
-
-        join links the app in front to an app that already has saved logins, so both bundle ids share them. \
-        Only a person runs it: it needs a terminal, shows both ids, asks Link or Cancel, then asks for Touch ID \
-        or your password. It does not ask for the saved password. --app names the saved app, else a menu \
-        lists them. Browsers and system apps are refused (app_not_allowed).
-
-        --devices virtual (the default) keeps a login to simulators and emulators; --devices any also allows \
-        physical phones on the allow-list, and turns on --confirm unless --no-confirm comes with it. --confirm \
-        makes login ask for Touch ID or your password before it reads the login. --web-login lets login type \
-        into a web view, when offsider.login.json also sets "webLogin": true. Loosening (--devices any, \
-        --no-confirm, --web-login) needs a terminal and Touch ID or your password; tightening needs neither. \
-        describe with these flags rewrites the saved item, which may show a Keychain prompt.
-
-        describe sets a saved login's notes and tags without reading its password: --about (what it can do, \
-        and when to use it), --avoid (tests it must not be used for), --state (what the account holds now), \
-        and --tag or --untag, each repeatable. A note is one line of at most 200 characters with no email \
-        address, and "" clears it. A tag is a word or key=value, such as credit or role=admin, and a login \
-        holds at most 16. set takes the same flags. Notes and tags are not secret: status shows them.
-
-        status with no name lists every saved login with its tags and notes, read without decrypting \
-        anything, so it shows no username. status with a name also shows that login's username. status \
-        --where shows the one login that login --where would choose, without its username: no match exits 2 \
-        (user_not_found) and several exit 6 (user_ambiguous).
-
-        login records which saved login it last signed in on each device. status shows where each login was \
-        last signed in, and which one is signed in on --device. signed-out clears that record for the app on \
-        --device after you sign out in the app itself, and exits 0 even when nothing was recorded. It needs \
-        --device and takes no name. remove also clears the login's records on every device.
-
-        Without --app, set, status, describe, remove and signed-out use the app in front on --device (or \
-        OFFSIDER_DEVICE). --app names a bundle id or package when that app is not in front, and then --device \
-        is not required, except by signed-out. join always reads the app in front. A physical iPhone or iPad \
-        is refused when the command would read it, and by signed-out. login fills the form.
-
+        Passwords stay in your login Keychain, never in a file, an argument or the output. Details: `offsider guide login`.
         Examples:
-          offsider credential set --device DEVICE_ID
           offsider credential set dev --device DEVICE_ID
-          offsider credential set qa --update --app com.example.app
-          offsider credential describe qa-admin --tag role=admin --app com.example.app
-          offsider credential describe qa --devices any --app com.example.app
+          offsider credential status --app com.example.app
+          offsider credential describe dev --tag role=admin --app com.example.app
+          offsider credential remove dev --app com.example.app
           offsider credential join --device DEVICE_ID
-          offsider credential status --json --app com.example.app
           offsider credential signed-out --device DEVICE_ID
         """
     )
@@ -199,7 +151,7 @@ struct CredentialCommand: AsyncParsableCommand {
             return
         }
         print(try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
-            prompt.lines(CredentialScreen.header(app: app, key: key, style: prompt.style))
+            prompt.lines(CredentialScreen.header(app: app, key: key, width: prompt.width, style: prompt.style))
             let questions = TerminalCredentialQuestions(prompt: prompt)
             return try Self.perform(
                 .set, app: app, key: key, update: update, edit: edit, settings: settings, personConfirmed: confirmed, json: json, styled: styled, store: store,
@@ -243,10 +195,9 @@ struct CredentialCommand: AsyncParsableCommand {
     /// A rebuilt offsider changing an item's attributes waits on a macOS prompt, so the wait is never timed out.
     static let keychainWriteNotice = "Waiting for macOS to let offsider change the saved login's notes and tags. Answer the Keychain prompt.\n"
 
-    /// How a suggested command names this device: nothing when `OFFSIDER_DEVICE` already does.
+    /// How a suggested command names this device, always filled in: the person's own terminal may not set `OFFSIDER_DEVICE`.
     var suggestedDevice: String {
-        guard let resolved = device.resolved else { return "--device <id>" }
-        return resolved.source == .environment ? "" : "--device \(resolved.id)"
+        device.resolved.map { "--device \($0.id)" } ?? "--device <id>"
     }
 
     private func finding<T>(_ spin: Bool, _ work: () async throws -> T) async throws -> T {
@@ -688,7 +639,7 @@ protocol CredentialQuestions {
     func replaces(_ entry: LoginCredentialSummary) throws -> Bool
     func newName(taken: [String]) throws -> String
     func credential() throws -> LoginCredential
-    /// The optional about line and tags for a new login, asked after the password.
+    /// The optional about line for a new login, asked after the password; its tags only when the about line was given.
     func context() throws -> LoginContextEdit
 }
 
@@ -718,7 +669,8 @@ struct TerminalCredentialQuestions: CredentialQuestions {
     }
 
     func context() throws -> LoginContextEdit {
-        let about = try prompt.ask(CredentialScreen.padded(CredentialScreen.aboutLabel), placeholder: CredentialScreen.aboutPlaceholder, check: CredentialScreen.aboutProblem)
+        let about = try prompt.ask(CredentialScreen.padded(CredentialScreen.aboutLabel), placeholder: "optional, Return to skip", check: CredentialScreen.aboutProblem)
+        guard !about.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return LoginContextEdit() }
         let tags = try prompt.ask(CredentialScreen.padded(CredentialScreen.tagsLabel), placeholder: CredentialScreen.tagsPlaceholder, check: CredentialScreen.tagsProblem)
         do {
             return try CredentialScreen.contextEdit(about: about, tags: tags)

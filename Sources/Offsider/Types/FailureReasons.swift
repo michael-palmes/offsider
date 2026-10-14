@@ -41,7 +41,10 @@ extension ListDevices: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Batch: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Displays: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension AppearanceCommand: JSONReportingCommand { var wantsJSON: Bool { json } }
-extension DescribeUI: JSONReportingCommand { var wantsJSON: Bool { !diff && output.writesJSON } }
+/// JSON by default only for a pipe; on a terminal the default prints the plain error, and an explicit format keeps JSON.
+extension DescribeUI: JSONReportingCommand {
+    var wantsJSON: Bool { !diff && output.writesJSON && (output.format != nil || output.compact || isatty(STDOUT_FILENO) == 0) }
+}
 extension RunStart: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension RunStop: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension RunStatus: JSONReportingCommand { var wantsJSON: Bool { json } }

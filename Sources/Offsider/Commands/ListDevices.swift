@@ -18,13 +18,21 @@ struct ListDevices: AsyncParsableCommand {
     @Flag(name: .customLong("physical"), help: "List only physical devices, including the ones no one has allowed with `offsider device-access allow`.")
     var physical = false
 
+    @Flag(name: .customLong("booted"), help: "List only booted or booting devices.")
+    var booted = false
+
     func run() async throws {
         let listed = try await Self.listDevices(platform: platform, logger: OffsiderLogger())
         let (shown, hidden) = Self.applyPolicy(listed, physicalOnly: physical, gate: DevicePolicyGate.current)
-        let devices = Self.withLeases(Self.withHolders(shown))
+        let ordered = DeviceListOrder.sorted(shown)
+        let devices = Self.withLeases(Self.withHolders(booted ? DeviceListOrder.running(ordered) : ordered))
         print(json ? DeviceListRenderer.json(devices, hiddenPhysical: hidden) : DeviceListRenderer.table(devices), terminator: "")
-        for hint in Self.phoneHints(devices) + Self.holderNotes(devices) + Self.leaseNotes(devices) + Self.hiddenNote(hidden) {
-            FileHandle.standardError.write(Data("\(hint)\n".utf8))
+        var notes = Self.phoneHints(devices) + Self.holderNotes(devices) + Self.leaseNotes(devices) + Self.hiddenNote(hidden)
+        if !json, isatty(STDERR_FILENO) != 0, let next = DeviceListOrder.nextStep(devices, currentDefault: DeviceDefault.environment()) {
+            notes.append(next)
+        }
+        for note in notes {
+            FileHandle.standardError.write(Data("\(note)\n".utf8))
         }
     }
 

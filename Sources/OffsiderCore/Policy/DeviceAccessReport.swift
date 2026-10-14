@@ -42,7 +42,7 @@ public enum DeviceAccessReport {
             lines.append("The allow-list at \(path) was changed outside Offsider; no physical device is allowed until a person runs `offsider device-access allow` again.")
         }
         if policy.list.entries.isEmpty {
-            lines.append("No physical device is allowed. A person allows one with `offsider device-access allow --device <id>` in their own terminal.")
+            lines.append("No physical device is allowed. A person allows one by running `offsider device-access allow` in their own terminal.")
         }
         for entry in policy.list.entries {
             let state: String

@@ -57,7 +57,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let (sdk, client) = try await host.timing.measure(.prepare) {
             let sdk = try AndroidSDK.locate(host: host)
             let endpoint = try LoopbackEndpoint.adbServer(environment: host.environment)
-            let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
+            let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing, adb: sdk.adb.path)
             log(.debug, "Android SDK at \(sdk.root.path); adb server at \(endpoint)")
             try await AdbServerLauncher(adb: sdk.adb).ensureRunning(client: client, host: host)
             return (sdk, client)
@@ -69,7 +69,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// The SDK's adb, for the emulator console commands the adb server protocol does not carry.
     func adbExecutable() async throws -> URL {
         try await prepare()
-        guard let sdk else { throw PlatformUnavailable(platform: .android, message: "The Android SDK was not found.") }
+        guard let sdk else { throw PlatformUnavailable(platform: .android, message: AndroidSDK.notFoundMessage) }
         return sdk.adb
     }
 

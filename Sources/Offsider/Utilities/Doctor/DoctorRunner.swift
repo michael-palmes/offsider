@@ -45,7 +45,7 @@ struct DoctorRunner {
                 id: .developerDir,
                 status: .fail,
                 detail: error.localizedDescription,
-                hint: "Select Xcode with xcode-select -s <path> or set DEVELOPER_DIR."
+                hint: XcodeSuggestion.current.advice
             ))
         }
 

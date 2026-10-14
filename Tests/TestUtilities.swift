@@ -170,13 +170,18 @@ struct TestHelpers {
 
     /// Get the path to the offsider binary using #file to find source root
     static func listedSubcommands(in help: String) -> [String] {
-        let lines = help.components(separatedBy: .newlines)
-        guard let header = lines.firstIndex(of: "SUBCOMMANDS:") else { return [] }
-
         var names: [String] = []
-        for line in lines[(header + 1)...] {
-            if line.trimmingCharacters(in: .whitespaces).isEmpty { break }
-            guard let match = line.range(of: #"^  [a-z][a-z0-9-]*"#, options: .regularExpression) else { continue }
+        var inSection = false
+        for line in help.components(separatedBy: .newlines) {
+            if line.hasSuffix("SUBCOMMANDS:"), !line.hasPrefix(" ") {
+                inSection = true
+                continue
+            }
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                inSection = false
+                continue
+            }
+            guard inSection, let match = line.range(of: #"^  [a-z][a-z0-9-]*"#, options: .regularExpression) else { continue }
             names.append(line[match].trimmingCharacters(in: .whitespaces))
         }
         return names

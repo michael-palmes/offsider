@@ -20,7 +20,7 @@ extension IOSDeviceBackend {
             let active = answer.activeBundleID.map { "\($0) is in front" } ?? "another app or the system is in front"
             throw IOSDeviceError(
                 .appNotAllowed,
-                "\(app) is not the app in front on \(id.rawValue) (\(active)), so Offsider did not read or touch the screen. Ask the user to open \(app), then retry."
+                "\(app) is not the app in front on \(id.rawValue) (\(active)), so Offsider did not read or touch the screen. \(ErrorAudience.current == .person ? "Open" : "Ask the user to open") \(app), then retry."
             )
         }
         state.pinConfirmed[id.rawValue] = Date()
@@ -37,7 +37,7 @@ extension IOSDeviceBackend {
             )
         }
         if let refusal = policy(app) {
-            throw IOSDeviceError(.appNotAllowed, refusal)
+            throw IOSDeviceError(.appNotAllowed, refusal, hint: refusal.contains(" is not among the apps allowed on ") ? "offsider device-access allow" : nil)
         }
         return app
     }

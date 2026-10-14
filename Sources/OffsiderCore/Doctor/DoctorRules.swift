@@ -101,9 +101,10 @@ public enum DoctorRules {
 
     /// Pass for an Apple-signed Xcode in /Applications; warn when it is elsewhere or chosen through DEVELOPER_DIR; fail when it is not Apple's.
     public static func xcodeTrust(
-        _ result: Result<TrustedDeveloperDirectory, UntrustedDeveloperDirectory.Problem>, path: String, source: DeveloperDirectorySource
+        _ result: Result<TrustedDeveloperDirectory, UntrustedDeveloperDirectory.Problem>, path: String, source: DeveloperDirectorySource,
+        suggestion: @autoclosure () -> XcodeSuggestion = .current
     ) -> Verdict {
-        let hint = "xcode-select -s <Xcode.app>/Contents/Developer"
+        let hint = suggestion().select
         switch result {
         case .failure(.notInAppBundle):
             return (.fail, "\(path) (\(source.rawValue)) is not the Contents/Developer folder of an Xcode app, so Offsider will not use it", hint)

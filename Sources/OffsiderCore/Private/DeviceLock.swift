@@ -81,7 +81,7 @@ extension DeviceBusy: OffsiderFailure {
         return "Device \(device) is in use by \(who). Retry when it finishes, or pass --wait-lock <seconds>."
     }
 
-    public var hint: String? { "offsider \(command) ... --wait-lock 30" }
+    public var hint: String? { "offsider \(command) --device \(device) --wait-lock 30" }
 
     private static func seconds(_ duration: Duration) -> String {
         let value = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18

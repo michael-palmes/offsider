@@ -86,7 +86,7 @@ public enum IOSDeviceDoctorRules {
     public static func xcode(_ fact: IOSDeviceDoctorFacts.XcodeFact) -> Verdict {
         switch fact {
         case .notFound(let message):
-            return (.fail, message, "Select Xcode with xcode-select -s <Xcode.app>/Contents/Developer.")
+            return (.fail, message, XcodeSuggestion.current.advice)
         case .found(let developerDir, let version, let build):
             let description = "Xcode \(version ?? "unknown")" + (build.map { " (\($0))" } ?? "") + " at \(developerDir)"
             guard let major = DoctorRules.majorVersion(version) else {
@@ -276,7 +276,9 @@ public enum IOSDeviceDoctorRules {
             return (
                 .warn,
                 "No team is chosen for the runner app (Xcode is signed in to \(count) \(count == 1 ? "team" : "teams"), and Offsider never picks one)",
-                "Set OFFSIDER_IOS_TEAM_ID to your personal or test team's ID, or allow the device with `offsider device-access allow --device <udid> --team <id>`."
+                ErrorAudience.current == .person
+                    ? "Run offsider device-access allow and choose a team."
+                    : "Ask the user to run `offsider device-access allow` in their own terminal and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID to your team's ID."
             )
         }
     }

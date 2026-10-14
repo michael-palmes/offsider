@@ -557,7 +557,8 @@ struct RunnerBuilderTests {
             _ = try XcodeRunnerBuilder.resolveTeam(environment: [:], allowanceTeam: nil, signedInTeams: ["AAAAA11111"])
         }
         #expect(error?.reason == .teamMissing)
-        #expect(error?.message == "Offsider signs its runner app with an Apple development team you choose. Set OFFSIDER_IOS_TEAM_ID to your personal or test team's ID (Xcode is signed in to 1 team), or allow the device with --team.")
+        #expect(error?.message == "No Apple development team is chosen to sign the runner app (Xcode is signed in to 1 team, and Offsider never picks one). Ask the user to run `offsider device-access allow` in their own terminal and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID to the team's ID.")
+        #expect(error?.hint == "offsider device-access allow")
     }
 
     @Test("no team, several teams, a malformed variable or a malformed allowance team is team_missing naming the variable", arguments: [

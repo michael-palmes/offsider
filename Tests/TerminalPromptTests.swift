@@ -513,7 +513,7 @@ struct TerminalPromptTests {
             try prompt.choose("📋 Pick one", options: ["📝 Update dev", CredentialScreen.addAnother])
         }
         #expect(index == 1)
-        #expect(terminal.finish().contains("▸ " + CredentialScreen.addAnother))
+        #expect(terminal.finish().contains(TerminalStyle.detect(isTerminal: true).picked + " " + CredentialScreen.addAnother))
     }
 }
 
@@ -581,7 +581,7 @@ private final class SecretAudit: @unchecked Sendable {
 }
 
 /// A pseudo-terminal whose output is collected on a thread, so a prompt never blocks on a full buffer.
-private final class PseudoTerminal: @unchecked Sendable {
+final class PseudoTerminal: @unchecked Sendable {
     let primary: Int32
     let secondary: Int32
     private let lock = NSLock()

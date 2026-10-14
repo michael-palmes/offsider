@@ -44,9 +44,9 @@ public struct UntrustedDeveloperDirectory: OffsiderFailure, LocalizedError, Equa
 
     public var reason: FailureReason { .xcodeUnusable }
     public var failureMessage: String {
-        "\(source.rawValue) points at \(path), which is not inside an Apple-signed Xcode, so Offsider will not load simulator frameworks or run Xcode tools from it."
+        "\(source.rawValue) points at \(path), which is not inside an Apple-signed Xcode, so Offsider will not load simulator frameworks or run Xcode tools from it. \(XcodeSuggestion.current.withoutSudo)"
     }
-    public var hint: String? { "xcode-select -s <Xcode.app>/Contents/Developer" }
+    public var hint: String? { XcodeSuggestion.current.select }
     public var errorDescription: String? { failureMessage }
 }
 

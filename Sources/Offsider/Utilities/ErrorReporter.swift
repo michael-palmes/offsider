@@ -31,6 +31,7 @@ enum ErrorReporter {
         let name = command.map { CommandPath.of($0) } ?? arguments.first { !$0.hasPrefix("-") }
         let wantsJSON = (command as? any JSONReportingCommand)?.wantsJSON ?? arguments.contains("--json")
         context = Context(command: name, wantsJSON: wantsJSON, device: deviceArgument(in: arguments) ?? DeviceDefault.resolve(explicit: nil)?.id)
+        ErrorAudience.configure(jsonOutput: wantsJSON)
     }
 
     /// The JSON `error` object for `error`; `<DEVICE_ID>` in a hint becomes the `--device` value.
@@ -65,15 +66,16 @@ enum ErrorReporter {
 
     static func exit(_ error: any Error) -> Never {
         if let reported = error as? ReportedFailure {
-            writeErrorLine(OffsiderCommand.message(for: reported.underlying))
+            writeErrorLine(OffsiderCommand.message(for: reported.underlying), hint: payload(for: reported.underlying).hint)
             Darwin.exit(reported.exitCode.rawValue)
         }
         if error is ExitCode || OffsiderCommand.exitCode(for: error) == .success {
             OffsiderCommand.exit(withError: error)
         }
         if let failure = error as? any OffsiderFailure {
-            writeEnvelopeIfWanted(payload(for: error))
-            writeErrorLine(OffsiderCommand.message(for: error))
+            let payload = payload(for: error)
+            writeEnvelopeIfWanted(payload)
+            writeErrorLine(OffsiderCommand.message(for: error), hint: payload.hint)
             Darwin.exit(failure.exitCode.rawValue)
         }
         let payload = payload(for: error)
@@ -93,7 +95,7 @@ enum ErrorReporter {
     /// Reports and exits from a timer, while the main actor is blocked and cannot throw.
     @Sendable static func exitFromTimer(reason: FailureReason, message: String, hint: String?) {
         writeEnvelopeIfWanted(ErrorPayload(reason: reason, message: message, hint: hint))
-        writeErrorLine(message)
+        writeErrorLine(message, hint: hint)
         Darwin.exit(reason.exitCode.rawValue)
     }
 
@@ -103,13 +105,22 @@ enum ErrorReporter {
         FileHandle.standardOutput.write(Data(line.utf8))
     }
 
-    private static func writeErrorLine(_ message: String) {
-        FileHandle.standardError.write(Data(errorText(message).utf8))
+    private static func writeErrorLine(_ message: String, hint: String? = nil) {
+        let style = TerminalStyle.detect(isTerminal: isatty(STDERR_FILENO) != 0)
+        let text = errorText(message) + (context.wantsJSON ? "" : hintText(hint, message: message, style: style))
+        FileHandle.standardError.write(Data(text.utf8))
     }
 
     /// `Error: <message>` and a newline, with control and bidi characters escaped and continuation lines indented.
     static func errorText(_ message: String) -> String {
         "Error: \(TerminalText.block(message))\n"
+    }
+
+    /// `Try: <hint>` and a newline, dim on a terminal; empty when there is no hint or the message already names it.
+    static func hintText(_ hint: String?, message: String, style: TerminalStyle) -> String {
+        guard let hint, !hint.isEmpty, !message.contains(hint) else { return "" }
+        let line = "Try: \(TerminalText.line(hint, cap: nil, keepsTab: false))"
+        return (style.colours ? style.dim(line) : line) + "\n"
     }
 
     static func deviceArgument(in arguments: [String]) -> String? {

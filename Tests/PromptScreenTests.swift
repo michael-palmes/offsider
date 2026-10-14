@@ -1,0 +1,292 @@
+import Foundation
+import Testing
+@testable import Offsider
+@testable import OffsiderCore
+
+@Suite("Prompt screen", .serialized)
+struct PromptScreenTests {
+    static let unicode = TerminalStyle(colours: false)
+    static let ascii = TerminalStyle(colours: false, ascii: true)
+
+    @Test("prose wraps between words at the terminal width, never past 72 columns, with continuation lines indented")
+    func wrapping() {
+        #expect(PromptScreen.width(columns: 200) == 72)
+        #expect(PromptScreen.width(columns: 50) == 50)
+        #expect(PromptScreen.width(columns: nil) == 72)
+        let text = "Agents on this Mac can then tap, type and see it until it expires."
+        let narrow = PromptScreen.wrap(text, width: 30, indent: "  ")
+        #expect(narrow == ["Agents on this Mac can then", "  tap, type and see it until", "  it expires."])
+        #expect(narrow.allSatisfy { TerminalText.width($0) <= 30 })
+        #expect(narrow.joined(separator: " ").split(separator: " ") == text.split(separator: " "))
+        #expect(PromptScreen.wrap(text, width: 72) == [text])
+        #expect(PromptScreen.wrap("    a  b", width: 72) == ["    a  b"])
+        #expect(PromptScreen.wrap("unbreakable-word-longer-than-the-line", width: 10, indent: "  ") == ["unbreakable-word-longer-than-the-line"])
+    }
+
+    @Test("a summary breaks only between its parts")
+    func packing() {
+        let lines = PromptScreen.pack(["Test Tablet Large", "any app", "12 hours", "team ABCDE12345"], separator: " · ", width: 40, indent: "  ")
+        #expect(lines == ["Test Tablet Large · any app · 12 hours ·", "  team ABCDE12345"])
+    }
+
+    @Test("ASCII tags stand in for emoji with NO_COLOR or a locale that is not UTF-8, and the columns still line up")
+    func asciiFallback() {
+        #expect(!TerminalStyle.detect(isTerminal: true, environment: ["LANG": "en_AU.UTF-8"]).ascii)
+        #expect(!TerminalStyle.detect(isTerminal: true, environment: [:]).ascii)
+        #expect(TerminalStyle.detect(isTerminal: true, environment: ["LANG": "C"]).ascii)
+        #expect(TerminalStyle.detect(isTerminal: true, environment: ["LC_ALL": "C", "LANG": "en_AU.UTF-8"]).ascii)
+        #expect(TerminalStyle.detect(isTerminal: true, environment: ["NO_COLOR": "1", "LANG": "en_AU.UTF-8"]).ascii)
+        let rows = [Self.iPad, Self.phone].map { AllowScreen.deviceRow($0, key: $0.id, style: Self.ascii) } + [MenuRow(.cancel, [AllowScreen.done])]
+        let menu = TerminalUI.menu(AllowScreen.deviceQuestion, step: "1/4", rows: rows, selected: 0, controls: .init(rescan: true), width: 72, style: Self.ascii)
+        #expect(menu.unicodeScalars.allSatisfy { $0.isASCII })
+        #expect(menu == """
+            1/4 Which phone or tablet? (up/down, Enter, R rescan, Q quit)
+
+              > [iPad]     iPad Air  ...ABCD
+                [Android]  Pixel 9   ...3ABC
+                [x]        Done
+            """)
+        #expect(TerminalUI.receipt("Device", "iPad", style: Self.ascii) == "[OK] Device    iPad")
+        #expect(AllowScreen.header(width: 30, style: Self.ascii) == [
+            String(repeating: "=", count: 30), "  Allow agents to control which phone or tablet", String(repeating: "=", count: 30), "",
+        ])
+        #expect(TerminalUI.warning(AllowScreen.noDevice, width: 72, style: Self.ascii) == ["[!] " + AllowScreen.noDevice])
+    }
+
+    @Test("the banner is the whole intro: double rules as wide as the prose, the emoji and the title")
+    func banner() {
+        #expect(AllowScreen.header(width: 50, style: Self.unicode) == [
+            String(repeating: "═", count: 50), "  🔐  Allow agents to control which phone or tablet", String(repeating: "═", count: 50), "",
+        ])
+        let coloured = TerminalUI.banner("Save the unlock code for Test Pixel", mark: .lock, width: 20, style: TerminalStyle(colours: true))
+        #expect(coloured[0] == "\u{1B}[36m" + String(repeating: "═", count: 20) + "\u{1B}[0m")
+        #expect(coloured[1] == "\u{1B}[1m  🔐  Save the unlock code for Test Pixel\u{1B}[0m")
+    }
+
+    @Test("the question carries its dim step and controls on the same line, and drops the controls to the next only when both would pass the width")
+    func questionLine() {
+        #expect(TerminalUI.question("Which phone or tablet?", step: "1/4", controls: .init(rescan: true), width: 72, style: Self.unicode) == ["1/4 Which phone or tablet? (↑↓, Enter, R rescan, Q quit)"])
+        #expect(TerminalUI.question("Which phone or tablet?", controls: .init(choosing: false, rescan: true), width: 72, style: Self.unicode) == ["Which phone or tablet? (R rescan, Q quit)"])
+        #expect(TerminalUI.question("Allow another?", controls: .init(quit: "done"), width: 72, style: Self.unicode) == ["Allow another? (↑↓, Enter, Q done)"])
+        #expect(TerminalUI.question("Which phone or tablet?", step: "1/4", controls: .init(rescan: true), width: 40, style: Self.unicode) == ["1/4 Which phone or tablet?", "(↑↓, Enter, R rescan, Q quit)"])
+        let coloured = TerminalUI.question("Which app?", step: "3/4", controls: .init(), width: 72, style: TerminalStyle(colours: true))
+        #expect(coloured == ["\u{1B}[2m3/4\u{1B}[0m \u{1B}[1mWhich app?\u{1B}[0m \u{1B}[2m(↑↓, Enter, Q quit)\u{1B}[0m"])
+    }
+
+    @Test("rows lead with an emoji and two spaces, the recommended one carries a magenta badge, and only the cursor row is green")
+    func recommendedRow() {
+        let rows = AllowScreenRows.expiry
+        let plain = TerminalUI.rows(rows, selected: 1, style: Self.unicode)
+        #expect(plain == ["    ⏳  2 hours", "  ▸ ⏳  12 hours (Recommended)", "    📌  Until removed"])
+        let coloured = TerminalUI.rows(rows, selected: 1, style: TerminalStyle(colours: true))
+        #expect(coloured[1] == "  \u{1B}[32m▸ ⏳  12 hours\u{1B}[0m \u{1B}[35m(Recommended)\u{1B}[0m")
+        #expect(!coloured[0].contains("\u{1B}[32m"))
+    }
+
+    @Test("an answered question collapses to an aligned receipt line, and the summary before Touch ID is one bold line")
+    func receiptLines() {
+        let lines = ["Device", "Team", "App", "How long"].map { TerminalUI.receipt($0, "x", style: Self.unicode) }
+        #expect(lines == ["✅ Device    x", "✅ Team      x", "✅ App       x", "✅ How long  x"])
+        #expect(TerminalUI.receipt("Team", "Example Team", style: TerminalStyle(colours: true)) == "✅ \u{1B}[2mTeam    \u{1B}[0m  Example Team")
+        #expect(AllowScreen.summary(Self.iPad, apps: [], lifetime: 43_200, team: "Example Team", width: 72, style: Self.unicode) == ["📲 iPad Air · any app · 12 hours · Example Team"])
+        let narrow = AllowScreen.summary(Self.iPad, apps: [], lifetime: 43_200, team: "team ABCDE12345", width: 36, style: Self.unicode)
+        #expect(narrow == ["📲 iPad Air · any app · 12 hours ·", "   team ABCDE12345"])
+    }
+
+    @Test("a disabled row is drawn dim in the list, the cursor skips it, and its number chooses nothing")
+    func disabledRows() {
+        var menu = ChoiceMenu(count: 3, selected: 1, disabled: [1])
+        #expect(menu.selected == 2)
+        #expect(menu.apply(.down) == .moving)
+        #expect(menu.selected == 0)
+        #expect(menu.apply(.down) == .moving)
+        #expect(menu.selected == 2)
+        #expect(menu.apply(.up) == .moving)
+        #expect(menu.selected == 0)
+        #expect(menu.apply(.text(Array("2".utf8))) == .moving)
+        #expect(menu.apply(.enter) == .chosen(0))
+
+        var none = ChoiceMenu(count: 1, disabled: [0], refreshable: true)
+        #expect(none.selected == nil)
+        #expect(none.apply(.enter) == .moving)
+        #expect(none.apply(.text(Array("r".utf8))) == .refresh)
+        #expect(none.apply(.text(Array("q".utf8))) == .cancelled)
+    }
+
+    static let iPad = DeviceSummary(id: "00008140-000000000000ABCD", platform: .ios, state: "Booted", name: "Apple iPad Air", osVersion: nil, deviceType: "iPad Air", kind: .physical, connection: "usb")
+    static let wireless = DeviceSummary(id: "00008130-000000000000DEF0", platform: .ios, state: "Booted", name: "Apple iPhone 17", osVersion: nil, deviceType: "iPhone 17", kind: .physical, connection: "network")
+    static let phone = DeviceSummary(id: "R58M123ABC", platform: .android, state: "device", name: "Pixel 9", osVersion: nil, deviceType: nil, kind: .physical, connection: "usb")
+
+    @Test("device rows lead with an emoji, then the name and only the ID's last four characters; a Wi-Fi device is dim and cannot be chosen")
+    func deviceRows() {
+        #expect(AllowScreen.deviceRow(Self.iPad, key: Self.iPad.id, style: Self.unicode) == MenuRow(.iPad, ["iPad Air", "…ABCD"]))
+        #expect(AllowScreen.deviceRow(Self.phone, key: Self.phone.id, style: Self.ascii) == MenuRow(.android, ["Pixel 9", "...3ABC"]))
+        #expect(AllowScreen.deviceRow(Self.wireless, key: Self.wireless.id, style: Self.unicode) == MenuRow(.iPhone, ["iPhone 17", AllowScreen.wifiOnly], enabled: false))
+        let rows = [Self.iPad, Self.phone, Self.wireless].map { AllowScreen.deviceRow($0, key: $0.id, style: Self.unicode) }
+        let drawn = TerminalUI.menu(AllowScreen.deviceQuestion, step: "1/4", rows: rows, selected: 0, controls: .init(rescan: true), style: Self.unicode)
+        #expect(drawn == """
+            1/4 Which phone or tablet? (↑↓, Enter, R rescan, Q quit)
+
+              ▸ 📲  iPad Air   …ABCD
+                🤖  Pixel 9    …3ABC
+                📱  iPhone 17  Wi-Fi only, plug in a cable
+            """)
+        #expect(!drawn.contains(Self.iPad.id) && !drawn.contains(Self.phone.id))
+        let coloured = TerminalUI.rows(rows, selected: 0, style: TerminalStyle(colours: true))
+        #expect(coloured[0] == "  \u{1B}[32m▸ 📲  iPad Air \u{1B}[0m  \u{1B}[2m…ABCD\u{1B}[0m")
+        #expect(coloured[2] == "    \u{1B}[2m📱  iPhone 17  Wi-Fi only, plug in a cable\u{1B}[0m")
+    }
+
+    @Test("with nothing to choose, the menu offers only rescan and quit, and warns in one yellow line")
+    func emptyMenu() {
+        let drawn = TerminalUI.menu(AllowScreen.deviceQuestion, step: "1/4", rows: [], selected: nil, controls: .init(choosing: false, rescan: true), warning: AllowScreen.noDevice, style: Self.unicode)
+        #expect(drawn == "1/4 Which phone or tablet? (R rescan, Q quit)\n\n  ⚠️  \(AllowScreen.noDevice)")
+        let coloured = TerminalUI.warning(AllowScreen.noDevice, width: 72, style: TerminalStyle(colours: true))
+        #expect(coloured == ["\u{1B}[33m⚠️  \(AllowScreen.noDevice)\u{1B}[0m"])
+    }
+
+    @Test("the closing block names the full ID only in the commands, with the labels aligned and the commands never wrapped")
+    func receipt() {
+        let key = "00008140-000000000000ABCD"
+        let lines = AllowScreen.allowed(name: "iPad Air", key: key, until: "until 22:14", apps: [], width: 72, style: Self.unicode)
+        #expect(lines == [
+            "✅ Allowed iPad Air until 22:14, any app.",
+            "   Withdraw  offsider device-access remove --device \(key)",
+            "   Next      offsider doctor --device \(key)",
+        ])
+        let narrow = AllowScreen.allowed(name: "iPad Air", key: key, until: "until 22:14", apps: [], width: 30, style: Self.unicode)
+        #expect(narrow.filter { $0.contains(key) }.count == 2)
+        #expect(narrow.last == "   Next      offsider doctor --device \(key)")
+        let coloured = AllowScreen.allowed(name: "iPad Air", key: key, until: "until 22:14", apps: [], width: 72, style: TerminalStyle(colours: true))
+        #expect(coloured[0] == "✅ \u{1B}[32m\u{1B}[1mAllowed iPad Air until 22:14, any app.\u{1B}[0m\u{1B}[0m")
+        #expect(coloured[1] == "   \u{1B}[2mWithdraw\u{1B}[0m  \u{1B}[36moffsider device-access remove --device \(key)\u{1B}[0m")
+        let ascii = AllowScreen.allowed(name: "iPad Air", key: key, until: "until 22:14", apps: [], width: 72, style: Self.ascii)
+        #expect(ascii.first == "[OK] Allowed iPad Air until 22:14, any app.")
+        #expect(ascii.last == "     Next      offsider doctor --device \(key)")
+        let utc = TimeZone(identifier: "UTC")!
+        let now = Date(timeIntervalSince1970: 1_790_000_060)
+        #expect(AllowScreen.until(now.addingTimeInterval(7_200), now: now, timeZone: utc) == "until 16:14")
+        #expect(AllowScreen.until(now.addingTimeInterval(7 * 86_400), now: now, timeZone: utc) == "until 28 Sep 14:14")
+        #expect(AllowScreen.until(nil, now: now, timeZone: utc) == "until you remove it")
+        #expect(AllowScreen.duration(3_600) == "1 hour")
+        #expect(AllowScreen.duration(nil) == "until removed")
+    }
+
+    @Test("init's results on a terminal: a bold tick line per client with its path dim under it, and the next command")
+    func initResults() {
+        let lines = ["Installed Offsider skill -> Claude Code: /Users/me/.claude/skills/offsider/SKILL.md", "Next: offsider doctor"]
+        #expect(InitScreen.styled(lines, style: Self.unicode) == [
+            "✅ Installed Offsider skill for Claude Code", "   /Users/me/.claude/skills/offsider/SKILL.md", "   Next  offsider doctor",
+        ])
+        #expect(InitScreen.styled(["No installed Offsider skill directories were found."], style: Self.unicode) == ["No installed Offsider skill directories were found."])
+    }
+
+    @Test("Enter collapses the menu to a one-line reminder: the erase climbs over every row it drew")
+    func collapse() throws {
+        let terminal = try PseudoTerminal()
+        terminal.type("\u{1B}[B\r")
+        let index = try TerminalPrompt.run(cancelled: "", descriptor: terminal.secondary, keeps: true) { prompt in
+            try prompt.choose("Pick one", rows: [MenuRow(["First"]), MenuRow(["Second"])])
+        }
+        let output = terminal.finish()
+        #expect(index == 1)
+        let style = TerminalStyle.detect(isTerminal: true)
+        let collapsed = try #require(output.range(of: "\u{1B}[3A\r\u{1B}[J", options: .backwards))
+        let after = String(output[collapsed.upperBound...]).replacingOccurrences(of: "\u{1B}\\[[0-9;?]*[A-Za-z]", with: "", options: .regularExpression)
+        #expect(after.trimmingCharacters(in: .whitespacesAndNewlines) == "\(style.picked) Second")
+    }
+
+    static let utc = TimeZone(identifier: "UTC")!
+
+    static func policy(_ entries: [DeviceAllowance], managed: ManagedDevicePolicy = .none, sealIntact: Bool = true) -> PhysicalDevicePolicy {
+        PhysicalDevicePolicy(managed: managed, list: DeviceAllowList(entries: entries), sealIntact: sealIntact)
+    }
+
+    @Test("the status screen lists each device agents may control with its apps, expiry and team, and hides expired ones")
+    func statusScreenRows() {
+        let iPad = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Apple Test iPad", added: PolicyFixtures.added, expires: PolicyFixtures.added.addingTimeInterval(3_600), apps: [], team: "ABCDE12345")
+        let phone = DeviceAllowance(platform: .android, key: PolicyFixtures.serial, name: "Test Pixel", added: PolicyFixtures.added, expires: nil, apps: ["com.example.app"])
+        let expired = DeviceAllowance(platform: .ios, key: "00008130-0000000000000DEF", name: "Old iPhone", added: PolicyFixtures.added, expires: PolicyFixtures.added, apps: [])
+        let lines = AccessStatusScreen.lines(Self.policy([iPad, phone, expired]), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
+        #expect(lines.contains("  🔐  \(AccessStatusScreen.title)"))
+        #expect(lines.contains("    📲  Test iPad   any app · until 15:13 · team ABCDE12345"))
+        #expect(lines.contains("    🤖  Test Pixel  com.example.app · until removed"))
+        #expect(!lines.joined().contains("Old iPhone"))
+        #expect(Array(lines.suffix(2)) == ["  Allow     offsider device-access allow", "  Withdraw  offsider device-access remove --device <id>"])
+        let single = AccessStatusScreen.lines(Self.policy([phone]), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
+        #expect(single.last == "  Withdraw  offsider device-access remove --device \(PolicyFixtures.serial)")
+    }
+
+    @Test("with nothing allowed the status screen says so and names the command that allows one")
+    func statusScreenEmpty() {
+        let lines = AccessStatusScreen.lines(Self.policy([]), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
+        #expect(Array(lines.suffix(2)) == ["⚠️  \(AccessStatusScreen.nothingAllowed)", "   Next  offsider device-access allow"])
+        #expect(!lines.joined().contains("Withdraw"))
+        let ascii = AccessStatusScreen.lines(Self.policy([]), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.ascii)
+        #expect(ascii.last == "    Next  offsider device-access allow")
+        #expect(ascii.allSatisfy { $0.unicodeScalars.allSatisfy(\.isASCII) })
+    }
+
+    @Test("a managed policy that forbids devices shows one warning line, and the devices it blocks are not listed")
+    func statusScreenManaged() {
+        let off = AccessStatusScreen.lines(Self.policy([PolicyFixtures.entry()], managed: ManagedDevicePolicy(allowPhysicalDevices: false)), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
+        #expect(off.filter { $0.hasPrefix("⚠️") } == ["⚠️  \(AccessStatusScreen.managedBlocksAll)", "⚠️  \(AccessStatusScreen.nothingAllowed)"])
+        let some = Self.policy(
+            [PolicyFixtures.entry(), PolicyFixtures.entry(.android, key: PolicyFixtures.serial)], managed: ManagedDevicePolicy(allowedDeviceIDs: [PolicyFixtures.serial])
+        )
+        let lines = AccessStatusScreen.lines(some, now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
+        #expect(lines.filter { $0.hasPrefix("⚠️") } == ["⚠️  \(AccessStatusScreen.managedBlocksSome)"])
+        #expect(lines.filter { $0.contains("Test iPhone") }.count == 1)
+        #expect(lines.contains { $0.hasPrefix("    🤖  Test iPhone") })
+    }
+
+    @Test("a menu longer than its window scrolls to keep the cursor in view and counts the rows it hides")
+    func menuWindow() {
+        let rows = (1...20).map { MenuRow(["Row \($0)"]) }
+        let menu = TerminalUI.menu(nil, rows: rows, selected: 10, controls: .init(), window: 5, style: Self.unicode).split(separator: "\n").map(String.init)
+        #expect(menu == ["    8 more above", "    Row 9", "    Row 10", "  ▸ Row 11", "    Row 12", "    Row 13", "    7 more below"])
+        #expect(TerminalUI.menu(nil, rows: Array(rows.prefix(4)), selected: 0, controls: .init(), window: 5, style: Self.unicode).split(separator: "\n").count == 4)
+    }
+
+    @Test("a tick menu toggles with Space, takes every ticked row on Enter, and ignores Enter with none ticked")
+    func checkMenu() {
+        var menu = CheckMenu(count: 3, ticked: [0, 1, 2])
+        #expect(menu.apply(.text([UInt8(ascii: " ")])) == .moving)
+        #expect(menu.apply(.down) == .moving)
+        #expect(menu.apply(.down) == .moving)
+        #expect(menu.apply(.text([UInt8(ascii: " ")])) == .moving)
+        #expect(menu.apply(.enter) == .chosen([1]))
+        var empty = CheckMenu(count: 1, ticked: [0])
+        _ = empty.apply(.text([UInt8(ascii: " ")]))
+        #expect(empty.apply(.enter) == .moving)
+        #expect(empty.apply(.text([UInt8(ascii: "q")])) == .cancelled)
+        #expect(TerminalUI.Controls(ticking: true).text(style: Self.unicode) == "(↑↓, Space, Enter, Q quit)")
+    }
+
+    static func summary(_ id: String, _ kind: DeviceKind, state: String = "Booted", platform: DevicePlatform = .ios, name: String, os: String? = nil, avd: String? = nil) -> DeviceSummary {
+        var row = DeviceSummary(id: id, platform: platform, state: state, name: name, osVersion: os, deviceType: nil, kind: kind, connection: kind == .physical ? "usb" : nil)
+        row.avd = avd
+        return row
+    }
+
+    @Test("the boot picker offers simulators and AVDs, running ones first and marked, never a physical device")
+    func bootPicker() {
+        let rows = [
+            Self.summary("ABCDEF00-0000-4000-8000-000000000001", .simulator, state: "Shutdown", name: "Old Sim", os: "iOS 18.5"),
+            Self.summary("ABCDEF00-0000-4000-8000-000000000002", .simulator, state: "Shutdown", name: "New Sim", os: "iOS 27.1"),
+            Self.summary("Test_AVD", .avd, state: "Shutdown", platform: .android, name: "Test_AVD", os: "Android 16", avd: "Test_AVD"),
+            Self.summary("emulator-5554", .emulator, platform: .android, name: "Running_AVD", os: "Android 16", avd: "Running_AVD"),
+            Self.summary("Running_AVD", .avd, state: "Shutdown", platform: .android, name: "Running_AVD", avd: "Running_AVD"),
+            Self.summary(PolicyFixtures.phone, .physical, name: "Test iPhone"),
+        ]
+        let offered = DevicePickerScreen.bootable(rows)
+        #expect(offered.map(\.name) == ["Running_AVD", "Test_AVD", "New Sim", "Old Sim"])
+        #expect(DevicePickerScreen.bootRow(offered[0]).columns == ["Running_AVD", DevicePickerScreen.running])
+        #expect(offered.map(DevicePickerScreen.bootName) == ["Running_AVD", "Test_AVD", "ABCDEF00-0000-4000-8000-000000000002", "ABCDEF00-0000-4000-8000-000000000001"])
+        #expect(DevicePickerScreen.runningDevices(rows).map(\.id) == ["emulator-5554"])
+    }
+}
+
+private enum AllowScreenRows {
+    static let expiry = [MenuRow(.time, ["2 hours"]), MenuRow(.time, ["12 hours"], recommended: true), MenuRow(.keep, ["Until removed"])]
+}

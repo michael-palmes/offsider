@@ -6,7 +6,10 @@ import OffsiderCore
 /// Escape, Control-C or a closed terminal at a prompt. Nothing was saved.
 struct PromptCancelled: Error {}
 
-/// A block of questions on the terminal. Closing it erases every line it drew.
+/// R at a menu or wait that offers a rescan: the caller looks again and redraws.
+struct PromptRefresh: Error {}
+
+/// A block of questions on the terminal. Closing it erases every line it drew since the last `settle()`.
 final class TerminalPrompt {
     let style: TerminalStyle
     /// The way round a terminal Offsider cannot use, for its errors.
@@ -25,6 +28,8 @@ final class TerminalPrompt {
     /// The row of that live region the cursor is on.
     private var cursorRow = 0
     private var pending: [TerminalKey] = []
+    /// Rows `close` leaves on screen.
+    private var settled = 0
 
     /// Opens `/dev/tty`, or uses `descriptor` (a pseudo-terminal in tests).
     init(descriptor: Int32? = nil, instead: String = TerminalPrompt.pipeInstead, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
@@ -54,20 +59,58 @@ final class TerminalPrompt {
     static let pipeInstead = "Pass --stdin to pipe the answers in instead."
 
     /// Runs `body` in a block that is erased afterwards. A cancel says `cancelled` and exits 130.
-    static func run<T>(cancelled: String, instead: String = pipeInstead, descriptor: Int32? = nil, _ body: (TerminalPrompt) throws -> T) throws -> T {
+    static func run<T>(cancelled: @autoclosure () -> String, instead: String = pipeInstead, descriptor: Int32? = nil, keeps: Bool = false, _ body: (TerminalPrompt) throws -> T) throws -> T {
         let prompt = try TerminalPrompt(descriptor: descriptor, instead: instead)
         do {
             let result = try body(prompt)
+            if keeps { prompt.settle() }
             prompt.close()
             return result
         } catch is PromptCancelled {
-            prompt.close(saying: prompt.style.dim(cancelled))
+            prompt.close(saying: prompt.style.dim(cancelled()))
             throw ExitCode(130)
         } catch {
             prompt.close()
             throw error
         }
     }
+
+    /// Runs async `body` in a block that is erased afterwards, as `run` does.
+    @MainActor
+    static func runAsync<T>(cancelled: @autoclosure () -> String, instead: String = pipeInstead, descriptor: Int32? = nil, keeps: Bool = false, _ body: @MainActor (TerminalPrompt) async throws -> T) async throws -> T {
+        let prompt = try TerminalPrompt(descriptor: descriptor, instead: instead)
+        do {
+            let result = try await body(prompt)
+            if keeps { prompt.settle() }
+            prompt.close()
+            return result
+        } catch is PromptCancelled {
+            prompt.close(saying: prompt.style.dim(cancelled()))
+            throw ExitCode(130)
+        } catch {
+            prompt.close()
+            throw error
+        }
+    }
+
+    /// The rows drawn so far, for `rewind(to:)`.
+    var mark: Int { rows }
+
+    /// Erases every line drawn since `mark`.
+    func rewind(to mark: Int) {
+        erase(to: max(mark, settled))
+    }
+
+    /// Keeps every line drawn so far on screen when the block closes, even on a cancel.
+    func settle() {
+        settled = rows
+    }
+
+    /// How wide to wrap prose: the terminal, at most 72 columns.
+    var width: Int { PromptScreen.width(columns: terminalColumns) }
+
+    /// The prompt's terminal, for a spinner drawn while it waits.
+    var terminalDescriptor: Int32 { descriptor }
 
     func lines(_ texts: [String]) {
         for text in texts {
@@ -111,24 +154,69 @@ final class TerminalPrompt {
         }
     }
 
-    /// An arrow-key menu. The chosen row stays as a one-line reminder.
-    func choose(_ title: String, options: [String]) throws -> Int {
+    /// An arrow-key menu starting on `selected`, under a bold question with its controls beside it. The chosen row stays as a one-line reminder.
+    func choose(_ question: String, options: [String], selected: Int = 0) throws -> Int {
+        try choose(question, rows: options.map { MenuRow(nil, [$0]) }, selected: selected)
+    }
+
+    /// A menu of `rows` drawn by `TerminalUI.menu`; disabled rows are drawn but never chosen, and with none to choose only R and Q work.
+    /// With `rescan`, R throws `PromptRefresh`; `quit` names what Q does. `keepsChoice` false erases the menu on Enter, for a caller that draws its own receipt.
+    func choose(
+        _ question: String?, step: String? = nil, rows: [MenuRow], selected: Int = 0, warning: String? = nil, notes: [String] = [],
+        commands: [(label: String, command: String)] = [], rescan: Bool = false, quit: String = "quit", keepsChoice: Bool = true
+    ) throws -> Int {
         try enterRaw()
         defer { leaveRaw() }
-        var menu = ChoiceMenu(count: options.count)
+        let disabled = Set(rows.indices.filter { !rows[$0].enabled })
+        var menu = ChoiceMenu(count: rows.count, selected: selected, disabled: disabled, refreshable: rescan)
+        let controls = TerminalUI.Controls(choosing: rows.contains(where: \.enabled), rescan: rescan, quit: quit)
         write("\u{1B}[?25l")
         defer { write("\u{1B}[?25h") }
-        draw(PromptScreen.menu(title, options: options, selected: menu.selected, style: style))
+        let window = max((terminalRows ?? 24) - 8 - notes.count - commands.count, 3)
+        func render() {
+            draw(TerminalUI.menu(question, step: step, rows: rows, selected: menu.selected, controls: controls, warning: warning, notes: notes, commands: commands, width: width, window: window, style: style))
+        }
+        render()
         while true {
             switch try nextKey({ menu.apply($0) }) {
             case .chosen(let index):
-                erase(to: rows)
-                lines([PromptScreen.chosen(options[index], style: style)])
+                erase(to: self.rows)
+                if keepsChoice { lines([TerminalUI.chosen(rows[index].columns.first ?? "", style: style)]) }
                 return index
             case .cancelled:
                 throw PromptCancelled()
+            case .refresh:
+                erase(to: self.rows)
+                throw PromptRefresh()
             case .moving:
-                if pending.isEmpty { draw(PromptScreen.menu(title, options: options, selected: menu.selected, style: style)) }
+                if pending.isEmpty { render() }
+            }
+        }
+    }
+
+    /// A menu of `rows` where Space ticks and Enter takes every ticked row, starting with `ticked`. The menu is erased on Enter.
+    func chooseMany(_ question: String, rows: [MenuRow], ticked: Set<Int>) throws -> [Int] {
+        try enterRaw()
+        defer { leaveRaw() }
+        var menu = CheckMenu(count: rows.count, ticked: ticked)
+        let controls = TerminalUI.Controls(ticking: true)
+        write("\u{1B}[?25l")
+        defer { write("\u{1B}[?25h") }
+        func render() {
+            var shown = rows
+            for index in shown.indices { shown[index].columns.insert(TerminalUI.box(menu.ticked.contains(index)), at: 0) }
+            draw(TerminalUI.menu(question, rows: shown, selected: menu.selected, controls: controls, width: width, style: style))
+        }
+        render()
+        while true {
+            switch try nextKey({ menu.apply($0) }) {
+            case .chosen(let indices):
+                erase(to: self.rows)
+                return indices
+            case .cancelled:
+                throw PromptCancelled()
+            case .moving:
+                if pending.isEmpty { render() }
             }
         }
     }
@@ -243,7 +331,7 @@ final class TerminalPrompt {
     }
 
     private func close(saying message: String? = nil) {
-        erase(to: 0)
+        erase(to: settled)
         if let message { write(message + "\n") }
         write("\u{1B}[?25h")
         for index in pending.indices { pending[index].wipe() }
@@ -253,9 +341,17 @@ final class TerminalPrompt {
         if ownsDescriptor { Darwin.close(descriptor) }
     }
 
-    private var columns: Int {
+    private var columns: Int { terminalColumns ?? 80 }
+
+    private var terminalRows: Int? {
         var size = winsize()
-        guard ioctl(descriptor, TIOCGWINSZ, &size) == 0, size.ws_col > 0 else { return 80 }
+        guard ioctl(descriptor, TIOCGWINSZ, &size) == 0, size.ws_row > 0 else { return nil }
+        return Int(size.ws_row)
+    }
+
+    private var terminalColumns: Int? {
+        var size = winsize()
+        guard ioctl(descriptor, TIOCGWINSZ, &size) == 0, size.ws_col > 0 else { return nil }
         return Int(size.ws_col)
     }
 
@@ -331,17 +427,23 @@ private enum TerminalRestore {
     }
 }
 
-/// A spinner on the terminal while `work` runs, drawn only when it takes longer than a moment.
+/// A spinner on the terminal while `work` runs, drawn only when it takes longer than a moment, and erased when it ends.
 enum TerminalSpinner {
     private final class State: @unchecked Sendable {
         var stopped = false
+        var drawn = false
     }
 
-    static func run<T>(_ label: String, _ work: () async throws -> T) async throws -> T {
-        let descriptor = open("/dev/tty", O_WRONLY | O_CLOEXEC)
+    /// Draws on `terminal` (a copy of the prompt's descriptor) when given, else on `/dev/tty`.
+    static func run<T>(_ label: String, terminal: Int32? = nil, _ work: () async throws -> T) async throws -> T {
+        let descriptor = terminal.map { fcntl($0, F_DUPFD_CLOEXEC, 0) } ?? open("/dev/tty", O_WRONLY | O_CLOEXEC)
         guard descriptor >= 0 else { return try await work() }
         let style = TerminalStyle.detect(isTerminal: true)
-        let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        let frames = TerminalUI.spinnerFrames(style: style)
+        var size = winsize()
+        let columns = ioctl(descriptor, TIOCGWINSZ, &size) == 0 && size.ws_col > 0 ? Int(size.ws_col) : 80
+        // One row at most, so the erase reaches all of it.
+        let shown = TerminalText.width(label) + 3 < columns ? label : String(label.prefix(max(columns - 6, 1))) + style.ellipsis
         let queue = DispatchQueue(label: "offsider.spinner")
         let state = State()
         let start = Date()
@@ -350,7 +452,8 @@ enum TerminalSpinner {
         timer.setEventHandler {
             guard !state.stopped else { return }
             let frame = frames[Int(Date().timeIntervalSince(start) * 12.5) % frames.count]
-            let line = "\r\u{1B}[K" + style.cyan(frame) + " " + style.dim(label)
+            let line = (state.drawn ? "" : "\u{1B}[?25l") + "\r\u{1B}[2K" + style.cyan(frame) + " " + style.dim(shown)
+            state.drawn = true
             _ = line.withCString { Darwin.write(descriptor, $0, strlen($0)) }
         }
         timer.setCancelHandler { Darwin.close(descriptor) }
@@ -358,7 +461,7 @@ enum TerminalSpinner {
         defer {
             queue.sync {
                 state.stopped = true
-                _ = "\r\u{1B}[K".withCString { Darwin.write(descriptor, $0, strlen($0)) }
+                if state.drawn { _ = "\r\u{1B}[2K\u{1B}[?25h".withCString { Darwin.write(descriptor, $0, strlen($0)) } }
             }
             timer.cancel()
         }
