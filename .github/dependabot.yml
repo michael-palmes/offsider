@@ -12,21 +12,5 @@ updates:
       github-actions:
         patterns:
           - "*"
-  - package-ecosystem: swift
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    cooldown:
-      default-days: 7
-    open-pull-requests-limit: 5
-    # The gRPC and protobuf pins match checked-in generated code and change only by hand.
-    ignore:
-      - dependency-name: "github.com/grpc/grpc-swift-2"
-      - dependency-name: "github.com/grpc/grpc-swift-nio-transport"
-      - dependency-name: "github.com/grpc/grpc-swift-protobuf"
-      - dependency-name: "github.com/apple/swift-protobuf"
-    groups:
-      swift:
-        patterns:
-          - "*"
+# Swift packages are not watched: Package.swift declares binary targets under build_products/,
+# which scripts/build.sh produces, so Dependabot cannot load the manifest.
