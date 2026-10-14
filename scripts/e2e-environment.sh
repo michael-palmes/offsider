@@ -1,4 +1,7 @@
 #!/bin/bash
+# shellcheck disable=SC2034 # the SELECTED_* and SIMULATOR_* values are read by test-runner.sh
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/lib/ui.sh"
 
 e2e_xcode_version() {
     DEVELOPER_DIR="$1" xcodebuild -version | awk 'NR == 1 { print $2 }'
@@ -65,9 +68,9 @@ select_e2e_simulator() {
                  -.major, -.minor])
              | .[0] // empty | "\(.udid)\t\(.name)"' <<< "$devices")"
         if [[ -z "$selected" ]]; then
-            printf 'No available iOS simulator is named "%s". Available iOS simulators:\n' \
-                "$OFFSIDER_SIMULATOR_NAME" >&2
+            print_error "No available iOS simulator is named \"$OFFSIDER_SIMULATOR_NAME\". These are:"
             jq -r '.[] | "  \(.name) (\(.udid), iOS \(.major).\(.minor), \(.state))"' <<< "$devices" >&2
+            ui_try "OFFSIDER_SIMULATOR_NAME=\"<one of these>\" ./test-runner.sh"
             return 1
         fi
     else
@@ -105,13 +108,14 @@ create_e2e_simulator() {
          | sort_by(.version) | last // empty
          | "\(.identifier) \(.types | sort_by(.model) | last | .identifier)"')"
     if [[ -z "$runtime_and_type" ]]; then
-        printf 'No iOS %s runtime with an iPhone Pro device type is installed.\n' "$SELECTED_XCODE_MAJOR" >&2
+        print_error "No iOS ${SELECTED_XCODE_MAJOR} runtime with an iPhone Pro device type is installed."
+        ui_try "xcodebuild -downloadPlatform iOS"
         return 1
     fi
 
     local runtime="${runtime_and_type%% *}"
     local device_type="${runtime_and_type#* }"
-    printf 'Creating simulator "%s" (%s, %s)\n' "$E2E_FALLBACK_SIMULATOR_NAME" "$device_type" "$runtime" >&2
+    log "Creating simulator \"$E2E_FALLBACK_SIMULATOR_NAME\" ($device_type, $runtime)"
     local udid
     udid="$(xcrun simctl create "$E2E_FALLBACK_SIMULATOR_NAME" "$device_type" "$runtime")" || return 1
     printf '%s\t%s\n' "$udid" "$E2E_FALLBACK_SIMULATOR_NAME"
@@ -123,7 +127,8 @@ ensure_e2e_runtime_host() {
     local device_hub_app="${SELECTED_DEVELOPER_DIR%/Contents/Developer}/Contents/Applications/DeviceHub.app"
     [[ -d "$device_hub_app" ]] || return 1
     if pgrep -x Simulator >/dev/null; then
-        printf 'Simulator.app is running; quit it before testing Xcode 27 through Device Hub.\n' >&2
+        print_error "Simulator.app is running: Xcode 27 tests run through Device Hub instead."
+        ui_try "osascript -e 'quit app \"Simulator\"'"
         return 1
     fi
     open -g "$device_hub_app"
