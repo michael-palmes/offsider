@@ -11,6 +11,9 @@ enum AndroidPhase: String, CaseIterable, Sendable {
     case helperLaunch = "helper-launch"
     case dexPush = "dex-push"
     case helperHello = "helper-hello"
+    /// Reaching the warm helper's broker, including any broker start.
+    case helperAttach = "helper-attach"
+    case brokerStart = "broker-start"
     case helperDump = "helper-dump"
     case treeMap = "tree-map"
     case helperClose = "helper-close"

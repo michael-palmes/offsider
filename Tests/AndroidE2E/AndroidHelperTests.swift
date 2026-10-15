@@ -12,8 +12,9 @@ extension AndroidE2E {
         try await shell("settings get secure accessibility_enabled").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Waits for earlier commands' helpers to exit, so a test starts with the UiAutomation slot free.
+    /// Stops the warm helper and waits for earlier commands' helpers to exit, so a test starts with the UiAutomation slot free.
     static func waitForNoHelper(timeout: TimeInterval = 15) async throws {
+        try await run("session stop")
         guard try await eventually(timeout: timeout, { try await helperPids().isEmpty }) else {
             throw AndroidE2EError(description: "an Offsider helper was still running after \(Int(timeout)) s: \(try await helperPids())")
         }
@@ -57,13 +58,13 @@ struct AndroidHelperTests {
         #expect(median < 3000, "median \(median) ms over \(times)")
     }
 
-    @Test("a command leaves no helper running and puts accessibility_enabled back")
+    @Test("with OFFSIDER_ANDROID_SESSION=off a command leaves no helper running and puts accessibility_enabled back")
     func cleansUp() async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
         try await AndroidE2E.waitForNoHelper()
         let before = try await AndroidE2E.accessibilityEnabled()
 
-        try await AndroidE2E.run("describe-ui")
+        try await AndroidE2E.run("describe-ui", environment: [Self.sessionVariable: "off"])
 
         var pids = ""
         var after = ""
@@ -73,6 +74,64 @@ struct AndroidHelperTests {
             return pids.isEmpty && after == before
         }
         #expect(clean, "helper pids '\(pids)', accessibility_enabled \(after) (was \(before))")
+    }
+
+    static let sessionVariable = "OFFSIDER_ANDROID_SESSION"
+
+    @Test("the warm helper serves the next command, and session stop frees the slot")
+    func warmHelperServesNextCommand() async throws {
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await AndroidE2E.waitForNoHelper()
+        let before = try await AndroidE2E.accessibilityEnabled()
+
+        try await AndroidE2E.run("describe-ui")
+        let first = try await AndroidE2E.helperPids()
+        #expect(!first.isEmpty, "no helper stayed warm after the command")
+        #expect(try await AndroidE2E.accessibilityEnabled() == "1")
+        let tapped = try await AndroidE2E.run("tap --id tap-test-area")
+        #expect(tapped.stdout.contains("tap-test-area"))
+        #expect(try await AndroidE2E.helperPids() == first, "the next command started another helper")
+        let status = try await AndroidE2E.run("session status --json")
+        #expect(status.stdout.contains(#""devicePid":\#(first)"#), "session status: \(status.stdout)")
+
+        let stopped = try await AndroidE2E.run("session stop")
+        #expect(stopped.stdout.contains("Stopped the warm helper"), "session stop: \(stopped.stdout)")
+        var pids = ""
+        var after = ""
+        let clean = try await AndroidE2E.eventually(timeout: 3) {
+            pids = try await AndroidE2E.helperPids()
+            after = try await AndroidE2E.accessibilityEnabled()
+            return pids.isEmpty && after == before
+        }
+        #expect(clean, "helper pids '\(pids)', accessibility_enabled \(after) (was \(before))")
+    }
+
+    @Test("the warm helper stops by itself after OFFSIDER_ANDROID_SESSION_IDLE seconds")
+    func warmHelperIdlesOut() async throws {
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await AndroidE2E.waitForNoHelper()
+        let before = try await AndroidE2E.accessibilityEnabled()
+
+        try await AndroidE2E.run("describe-ui", environment: ["OFFSIDER_ANDROID_SESSION_IDLE": "2"])
+        #expect(!(try await AndroidE2E.helperPids()).isEmpty, "no helper stayed warm after the command")
+        var pids = ""
+        let idled = try await AndroidE2E.eventually(timeout: 10) {
+            pids = try await AndroidE2E.helperPids()
+            return pids.isEmpty
+        }
+        #expect(idled, "the warm helper was still running 10 s after a 2 s idle timeout: \(pids)")
+        #expect(try await AndroidE2E.accessibilityEnabled() == before)
+    }
+
+    @Test("a command that reads with uiautomator stops the warm helper first")
+    func uiautomatorStopsWarmHelper() async throws {
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await AndroidE2E.run("describe-ui")
+        #expect(!(try await AndroidE2E.helperPids()).isEmpty, "no helper stayed warm after the command")
+
+        let forced = try await AndroidE2E.run("describe-ui", environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"])
+        #expect(try AndroidE2E.ids(inDescribeUI: forced.stdout).contains("tap-test-area"))
+        #expect(try await AndroidE2E.helperPids().isEmpty)
     }
 
     @Test("helper and uiautomator trees carry the same ids", arguments: [
@@ -165,7 +224,7 @@ struct AndroidHelperTests {
         #expect(freed, "describe-ui still failed after the other client stopped")
     }
 
-    @Test("Ctrl+C on a waiting tap stops its helper within 3 s")
+    @Test("with OFFSIDER_ANDROID_SESSION=off, Ctrl+C on a waiting tap stops its helper within 3 s")
     func interruptStopsHelper() async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
         try await AndroidE2E.waitForNoHelper()
@@ -173,6 +232,7 @@ struct AndroidHelperTests {
         let tap = Process()
         tap.executableURL = URL(fileURLWithPath: try TestHelpers.getOffsiderPath())
         tap.arguments = ["tap", "--id", "never-there", "--wait-timeout", "30", "--device", try await AndroidE2E.serial()]
+        tap.environment = TestHelpers.childEnvironment().merging([Self.sessionVariable: "off"]) { _, new in new }
         tap.standardOutput = FileHandle.nullDevice
         tap.standardError = FileHandle.nullDevice
         try tap.run()

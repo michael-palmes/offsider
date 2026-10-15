@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Android emulators keep the UiAutomation helper warm between commands, so a later command skips the helper's start and Android's wait for a quiet screen: a `tap --id` took 0.09 s instead of 0.30 s and a `describe-ui` 0.11 s instead of 0.29 s (medians of 20 paired runs on an API 36 emulator), and the first command, which starts the broker, about 0.03 s longer. A broker, `offsider` started detached for each emulator, keeps the helper and passes commands' requests to it over a 0600 Unix socket in the private `sessions/` folder; it stops 60 s after the last command (`OFFSIDER_ANDROID_SESSION_IDLE`, at most 3600, and a command asking for another replaces it), when the helper stops answering, or at its next idle moment once 12 hours old. `OFFSIDER_ANDROID_SESSION=off` starts a helper for each command as before, and `on` keeps it warm on an allowed USB phone too, which otherwise starts one per command.
+- `session status` lists warm Android helpers beside iPhone and iPad sessions (`helper` in `--json`), and `session stop` stops them; `--device` takes the serial or the AVD name.
+- `OFFSIDER_TIMINGS=1` adds `helper-attach` (reaching the warm helper) and `broker-start` (starting its broker).
+- `scripts/bench-ab.sh` adds `android-describe-first` and `android-tap-id-first`, which time a first command, with no warm helper.
+
+### Changed
+
+- On an emulator the helper now holds Android's single UiAutomation slot, with `accessibility_enabled` reading 1, until its broker stops rather than only while one command runs. Until then Appium, Maestro, `uiautomator`, instrumentation tests and Layout Inspector cannot connect: `offsider session stop --device <serial>` frees the slot at once. A command that reads the screen another way (`OFFSIDER_ANDROID_TREE=uiautomator`, `OFFSIDER_ANDROID_SESSION=off`) stops the warm helper on that device first once no other command is using it, and `doctor` passes the UiAutomation check when only the warm helper holds the slot.
+- Warm commands follow each other within milliseconds, so a tap sent just after a launch or a navigation can reach a screen that drops it, which a helper's start used to hide. Plain taps stay fire-and-forget: use `tap --verify` or `wait --settled` after a screen changes.
+- `device-access remove` also stops a removed phone's warm helper.
+- `scripts/bench-ab.sh` reads the screen untimed 2 s before each Android sample, as an agent's previous command would, and stops the checkout's warm helper before every base sample and when it finishes.
+
 ## [0.12.0] - 2026-10-15
 
 ### Added

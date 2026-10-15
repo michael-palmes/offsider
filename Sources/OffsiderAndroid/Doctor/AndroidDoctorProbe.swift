@@ -227,10 +227,36 @@ public struct AndroidDoctorProbe {
         if let listing = try? await client.deviceQuery("reverse:list-forward", on: serial) {
             facts.reverses = listing.split(whereSeparator: \.isNewline).map(String.init)
         }
+        var warm: (status: HelperBrokerWire.Status, milliseconds: Int)?
+        if let socket = warmHelperSocket(serial) {
+            let start = ContinuousClock.now
+            if let status = await HelperBrokerClient.status(at: socket) {
+                warm = (status, HelperLauncher.milliseconds(since: start))
+                facts.uiAutomation?.warmHelperPid = status.helperPid
+            }
+        }
         if facts.uiAutomation?.offsiderHelperPids.isEmpty == true {
             facts.helper = await helperFact(serial, client: client)
+        } else if facts.uiAutomation?.onlyWarmHelper == true, let warm {
+            facts.helper = Self.warmHelperFact(warm.status, milliseconds: warm.milliseconds)
         }
         return facts
+    }
+
+    private func warmHelperSocket(_ serial: String) -> String? {
+        guard let directory = try? host.helperBroker?.directory() else { return nil }
+        return HelperBrokerPaths(serial: serial, directory: directory).socket
+    }
+
+    /// The warm helper as its broker's `status` describes it, which neither counts as use nor replaces the broker.
+    static func warmHelperFact(_ status: HelperBrokerWire.Status, milliseconds: Int) -> HelperProbeFact {
+        guard status.state == .ready, let number = status.protocol, let sdkInt = status.sdkInt else {
+            return .unavailable("the warm helper is \(status.state.rawValue)")
+        }
+        return .ready(
+            launchMilliseconds: status.launchMs ?? 0, pushed: status.pushed ?? false, helloMilliseconds: milliseconds,
+            pingMilliseconds: milliseconds, protocolVersion: number, sdkInt: sdkInt
+        )
     }
 
     static func state(_ emulator: RunningEmulator) -> AndroidDeviceStateFact {

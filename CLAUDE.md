@@ -27,7 +27,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | Android stack | `OffsiderAndroid` (never imports idb), for emulators and USB phones: a Swift adb server client over loopback plus the emulator gRPC service (grpc-swift-2, generated code checked in from a trimmed proto) |
 | iOS device stack | `OffsiderIOSDevice` (never imports idb), for USB iPhones and iPads: `devicectl` for listing, settings and fallback screenshots; on Xcode 27 a detached per-device session broker (`offsider device-session serve`, Unix socket under the private `sessions/`) holding the CoreDevice screen stream, UniversalHID touch and keyboard reports and the HID button socket; and an XCUITest runner reached over usbmuxd |
 | Android toolchain | Android SDK with Platform-Tools and the Emulator, found through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` or `adb` on `PATH`; `arm64-v8a` images, tested on API 36 |
-| Android helper | Java 8 in `AndroidHelper/src/`, compiled by `scripts/build.sh helper` (JDK 17, build-tools 37.0.0 d8, android-37.0) to a committed dex and manifest in `Sources/Offsider/Resources/helper/`; pushed through a 0700 folder and SHA-256 checked by its start script on every start (size only without `sha256sum`); run with `app_process` as the shell user for one command; Swift-only work needs no JDK |
+| Android helper | Java 8 in `AndroidHelper/src/`, compiled by `scripts/build.sh helper` (JDK 17, build-tools 37.0.0 d8, android-37.0) to a committed dex and manifest in `Sources/Offsider/Resources/helper/`; pushed through a 0700 folder and SHA-256 checked by its start script on every start (size only without `sha256sum`); run with `app_process` as the shell user, kept warm between commands on emulators by a detached broker (`offsider android-session serve`, Unix socket under the private `sessions/`); Swift-only work needs no JDK |
 | Fixture app | `OffsiderPlaygroundApp` (XcodeGen `project.yml`) |
 | RN fixture app | `OffsiderPlaygroundRN`: Expo SDK 57, pnpm 11, same screens and ids for iOS and Android; `/ios`, `/android` and `/build` are generated and git-ignored; dev Metro on 8742 |
 
@@ -94,6 +94,8 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
+| `OFFSIDER_ANDROID_SESSION` | `auto` (default: emulators keep the helper warm, phones start one per command), `on` (allowed phones too) or `off` (one helper per command) |
+| `OFFSIDER_ANDROID_SESSION_IDLE` | Seconds the warm helper stays after the last command (default 60, at most 3600); a broker stops after 12 hours at its next idle moment |
 | `OFFSIDER_ANDROID_INPUT` | `helper` or `input` forces how input reaches a device without gRPC; default `auto` (the helper only when the command already runs it) |
 | `OFFSIDER_ANDROID_CAPTURE` | `screencap`, `raw` or `helper` forces how a device without gRPC is captured; `raw` and `helper` fall back to `screencap -p`; default `auto` (`screencap -p`) |
 | `OFFSIDER_IOS_RUNNER_IDLE` | Seconds an iPhone runner session stays up after its last request (default 300, at most 3600); a session is restarted after 12 hours |
@@ -168,7 +170,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 - `permission`, `status-bar` and `biometric` change state that outlives the command on both platforms, as `stay-awake` does on Android; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).
 - React Native E2E saves test users only for the RN playground's app id, refuses to start when that id already has saved users, and removes them and their sign-in records afterwards.
 - Never type, pipe or ask for a device's unlock code: the user saves it with `offsider unlock-code set` in their own terminal. `wake --unlock` types a saved code once; never loop on it.
-- The helper holds Android's single UiAutomation slot only while one command runs, and `accessibility_enabled` reads 1 until it exits. Keep its reflection to the four UiAutomation members and the display probe with its public fallback; never implement a hidden Binder interface.
+- On an emulator the helper stays warm, holding Android's single UiAutomation slot with `accessibility_enabled` reading 1, until 60 s after the last command; on a phone only while one command runs, unless `OFFSIDER_ANDROID_SESSION=on`. After Android E2E or a manual check, run `offsider session stop --device <serial>` so other UiAutomation clients can connect. Keep its reflection to the four UiAutomation members and the display probe with its public fallback; never implement a hidden Binder interface.
 
 ## Collaboration
 

@@ -35,6 +35,26 @@ extension AndroidHost {
         var host = AndroidHost.live(helperDex: { try HelperBundle.load() }, timing: Timings.android)
         host.claimDevice = { serial in try await DeviceClaims.current.claim(DeviceLockKey(platform: .android, id: serial)) }
         host.displayCacheDirectory = AndroidHost.privateDisplayCache(environment: host.environment)
+        host.helperBroker = AndroidHost.detachedHelperBroker(environment: host.environment)
         return host
     }
+
+    /// Brokers are this executable, started detached with `android-session serve`; sockets and logs live in the private `sessions/`.
+    static func detachedHelperBroker(environment: [String: String]) -> HelperBrokerHost {
+        let executable = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        let childEnvironment = ChildEnvironment.make(.androidBroker, from: environment)
+        return HelperBrokerHost(
+            directory: { try OffsiderPrivateDirectory.ensureSubdirectory(sessionsDirectoryName) },
+            spawn: { serial, logPath in
+                try DetachedProcess().launch(
+                    executable: executable, arguments: ["android-session", "serve", "--device", serial], environment: childEnvironment, logPath: logPath
+                )
+            },
+            exitStatus: { DetachedProcess().exitStatus(of: $0) },
+            lockRoot: OffsiderPrivateDirectory.root
+        )
+    }
+
+    /// Shared with the iPhone session brokers' sockets.
+    static let sessionsDirectoryName = "sessions"
 }

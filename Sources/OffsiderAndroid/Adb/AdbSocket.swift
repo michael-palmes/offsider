@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OffsiderCore
 
 /// Why a connection to the adb server failed; `refused` and `noSuchSocket` mean no server is listening.
 enum AdbConnectError: Error, Equatable, Sendable {
@@ -90,6 +91,19 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
             guard uid == ownerUID else { throw AdbConnectError.foreignPeer(uid: uid) }
         }
         return stream
+    }
+
+    /// A connection a listener accepted, made non-blocking like an opened one.
+    static func adopting(_ fd: Int32) -> PosixAdbStream {
+        var noSigPipe: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+        return PosixAdbStream(fd: fd)
+    }
+
+    /// True once the peer has closed its end; peeks without consuming or blocking.
+    func peerClosed() -> Bool {
+        SocketPeer.closed(fd)
     }
 
     private static func mapConnectError(_ code: Int32) -> AdbConnectError {
