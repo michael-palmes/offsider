@@ -194,11 +194,14 @@ struct Screenshot: AsyncParsableCommand {
     func take(
         _ request: ScreenshotRequest,
         on route: DeviceRouter.Route,
-        masks: MaskPlan,
+        masks requested: MaskPlan,
         plain: Bool = false,
         tree treeSource: @MainActor () async throws -> UITree
     ) async throws -> ScreenshotReport {
         let backend = route.backend
+        let own = requested
+        let config = try MaskConfigs.current()?.config
+        let masks = config.map { requested.union($0.plan) } ?? requested
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
         let recorder = EvidenceRecorder.current
@@ -223,6 +226,7 @@ struct Screenshot: AsyncParsableCommand {
             // Read before the capture, so the frames describe the screen the pixels show.
             tree = try await Timings.measure("accessibility") { try await treeSource() }
         }
+        let revealed = tree != nil && masks.secure ? await TreeCache.revealedSecrets(for: booted.id, backend: backend) : nil
         var capture: CapturedScreen
         if let devicePNG {
             capture = try ScreenCapture.make(png: devicePNG, platform: route.device.platform, screen: try? await backend.screenInfo(for: booted.id))
@@ -236,7 +240,12 @@ struct Screenshot: AsyncParsableCommand {
         }
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
-            let result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree) }
+            var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed) }
+            if let config {
+                // The file's selectors are standing masks, so one that matches nothing on this screen is not worth a warning.
+                let quiet = config.selectorNames.subtracting(Self.selectorNames(own))
+                result.unmatched.removeAll(where: quiet.contains)
+            }
             capture = result.capture
             masked = result
             if !result.unmatched.isEmpty {
@@ -365,6 +374,11 @@ struct Screenshot: AsyncParsableCommand {
     func masksWithRunDefaults(_ own: MaskPlan) -> MaskPlan {
         guard let defaults = EvidenceRecorder.current.defaultMasks else { return own }
         return own.union(defaults)
+    }
+
+    /// `--mask-id x` and the like, as `MaskResult.unmatched` names them.
+    static func selectorNames(_ plan: MaskPlan) -> Set<String> {
+        MaskConfig(ids: plan.ids, labels: plan.labels, labelContains: plan.labelsContaining, valuePatterns: plan.texts).selectorNames
     }
 
     private static func writeError(_ line: String) {

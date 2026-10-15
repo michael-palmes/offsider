@@ -345,4 +345,66 @@ struct TreeCacheTests {
         #expect(!TreeCacheEnvironment.isEnabled(["OFFSIDER_TREE_CACHE": "OFF"]))
         #expect(TreeCacheEnvironment.isEnabled([:]))
     }
+
+    @Test("a command that only reads the cache also deletes other devices' expired files, in one sweep")
+    func loadSweepsExpired() async throws {
+        let fixture = try TreeCacheFixture()
+        let stale = (fixture.directory as NSString).appendingPathComponent(TreeCacheRecord.fileName(platform: .android, device: "emulator-5554"))
+        let staleSecure = (fixture.directory as NSString).appendingPathComponent(SecureFieldRecord.fileName(platform: .android, device: "emulator-5554"))
+        for path in [stale, staleSecure] {
+            #expect(FileManager.default.createFile(atPath: path, contents: Data("{}".utf8), attributes: [.posixPermissions: 0o600]))
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-TreeCacheRecord.lifetime - 1)], ofItemAtPath: path)
+        }
+        let backend = FakeDeviceBackend(trees: [Self.screen()])
+        _ = try await fixture.run { await TreeCache.load(for: Self.device, backend: backend) }
+
+        #expect(!FileManager.default.fileExists(atPath: stale))
+        #expect(!FileManager.default.fileExists(atPath: staleSecure))
+    }
+
+    @Test("masked ids from offsider.mask.json never reach a cache file, and labels stay for identity")
+    func configMaskedValueNeverCached() async throws {
+        let fixture = try TreeCacheFixture()
+        let tree = FakeUI.tree([FakeUI.node(.text, id: "balance", label: "Balance", value: "$4,210.55", frame: FakeUI.frame(20, 100, 350, 30))])
+        let loaded = MaskConfigs.Loaded(config: MaskConfig(ids: ["balance"], valuePatterns: ["[0-9]{3}-[0-9]{3}"]), path: "/repo/offsider.mask.json")
+        let record = try await MaskConfigs.$source.withValue({ loaded }) {
+            try await self.commit(fixture, command: "describe-ui", effect: .read) { ledger in
+                ledger.recordTreeRead(tree, on: Self.device, startedAt: fixture.now)
+            }
+        }
+        let bytes = String(decoding: try #require(FileManager.default.contents(atPath: fixture.path(for: Self.device))), as: UTF8.self)
+        #expect(!bytes.contains("4,210"))
+        #expect(record?.tree?.roots[0].children[0].label == "Balance")
+        #expect(record?.tree?.roots[0].children[0].value == LogRedactor.marker)
+    }
+
+    @Test("a broken offsider.mask.json caches no tree at all")
+    func brokenConfigCachesNothing() async throws {
+        let fixture = try TreeCacheFixture()
+        let record = try await MaskConfigs.$source.withValue({ throw CLIError(errorDescription: "broken", reason: .usage) }) {
+            try await self.commit(fixture, command: "tap", effect: .input) { ledger in
+                ledger.recordTreeRead(Self.screen(value: "secret"), on: Self.device, startedAt: fixture.now)
+            }
+        }
+        #expect(record?.roots == nil)
+        #expect(record?.lastInputAt != nil)
+    }
+
+    @Test("password fields are recorded beside the cache, kept while revealed, and dropped once gone")
+    func secureRecord() async throws {
+        let fixture = try TreeCacheFixture()
+        let secure = FakeUI.tree([FakeUI.node(.secureTextField, id: "password", label: "Password", value: "••", frame: FakeUI.frame(16, 270, 361, 44))])
+        let revealed = FakeUI.tree([FakeUI.node(.textField, id: "password", label: "Password", value: "hi", frame: FakeUI.frame(16, 270, 361, 44))])
+        let elsewhere = FakeUI.tree([FakeUI.node(.button, id: "done", label: "Done", frame: FakeUI.frame(16, 270, 361, 44))])
+        let backend = FakeDeviceBackend(trees: [secure])
+        var found: [Bool] = []
+        for tree in [secure, revealed, elsewhere] {
+            _ = try await commit(fixture, command: "describe-ui", effect: .read) { ledger in
+                ledger.recordTreeRead(tree, on: Self.device, startedAt: fixture.now)
+            }
+            let secrets = try await fixture.run { await TreeCache.revealedSecrets(for: Self.device, backend: backend) }
+            found.append(secrets?.ids == ["password"])
+        }
+        #expect(found == [true, true, false])
+    }
 }

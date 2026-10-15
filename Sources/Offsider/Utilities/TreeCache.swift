@@ -30,13 +30,49 @@ struct TreeCacheEnvironment: Sendable {
 /// Reads and writes the per-device tree cache: one 0600 file per device under the private directory's `trees/`.
 @MainActor
 enum TreeCache {
-    /// The device's usable record, or nil; an expired or foreign-boot record is deleted.
+    /// The device's usable record, or nil; an expired or foreign-boot record is deleted, and so is every other device's expired file.
     static func load(for device: DeviceID, backend: any DeviceBackend, environment: TreeCacheEnvironment = .current) async -> TreeCacheRecord? {
         guard let directory = environment.directory() else { return nil }
         return await Timings.measure("tree-cache") {
             let marker = await (backend as? any BootMarking)?.bootMarker(for: device)
-            return read(device, in: directory, bootMarker: marker, now: environment.now())
+            let record = read(device, in: directory, bootMarker: marker, now: environment.now())
+            sweepOnce(directory)
+            return record
         }
+    }
+
+    /// The device's password fields from earlier reads in this boot, which a plain text field at the same id or frame reveals; nil with none or no cache.
+    static func revealedSecrets(for device: DeviceID, backend: any DeviceBackend, environment: TreeCacheEnvironment = .current) async -> RevealedSecrets? {
+        guard let directory = environment.directory() else { return nil }
+        return await Timings.measure("tree-cache") {
+            let marker = await (backend as? any BootMarking)?.bootMarker(for: device)
+            let record = readSecure(device, in: directory, bootMarker: marker, now: environment.now())
+            sweepOnce(directory)
+            return record.map(RevealedSecrets.init)
+        }
+    }
+
+    private static func readSecure(_ device: DeviceID, in directory: String, bootMarker: String?, now: Date) -> SecureFieldRecord? {
+        let name = SecureFieldRecord.fileName(platform: device.platform, device: device.rawValue)
+        guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: SecureFieldRecord.maximumBytes) else {
+            return nil
+        }
+        guard let record = try? SecureFieldRecord(data: data),
+              record.platform == device.platform, record.device == device.rawValue,
+              record.isUsable(now: now, bootMarker: bootMarker) else {
+            OffsiderPrivateDirectory.removeFile(named: name, in: directory)
+            return nil
+        }
+        return record
+    }
+
+    /// Directories this process has swept, so a command that reads the cache twice lists it once.
+    private static var swept: Set<String> = []
+
+    private static func sweepOnce(_ directory: String) {
+        guard swept.insert(directory).inserted else { return }
+        // File times are wall-clock times, whatever clock the cache runs on.
+        sweep(directory, now: Date())
     }
 
     private static func read(_ device: DeviceID, in directory: String, bootMarker: String?, now: Date) -> TreeCacheRecord? {
@@ -78,6 +114,10 @@ enum TreeCache {
                 let marker = await marking?.bootMarker(for: device)
                 let now = environment.now()
                 let previous = read(device, in: directory, bootMarker: marker, now: now)
+                var activity = activity
+                if let tree = activity.tree {
+                    activity.tree = maskedForCache(tree, device: device, directory: directory, bootMarker: marker, now: now, written: &written)
+                }
                 guard let record = TreeCacheRecord.committing(
                     activity, previous: previous, command: command,
                     inputAtEnd: effect == .input && !sentNothing, bootMarker: marker, now: now
@@ -93,6 +133,23 @@ enum TreeCache {
         }
         // File times are wall-clock times, whatever clock the cache runs on.
         sweep(directory, now: Date(), keeping: written)
+    }
+
+    /// The tree with the config's and run's masked values and revealed password fields hidden, and the device's password
+    /// fields recorded beside it; nil, so no tree is cached, when `offsider.mask.json` cannot be used.
+    private static func maskedForCache(
+        _ tree: UITree, device: DeviceID, directory: String, bootMarker: String?, now: Date, written: inout Set<String>
+    ) -> UITree? {
+        let previous = readSecure(device, in: directory, bootMarker: bootMarker, now: now)
+        guard let mask = try? AmbientMasks.treeMask(revealed: previous.map(RevealedSecrets.init)) else { return nil }
+        let name = SecureFieldRecord.fileName(platform: device.platform, device: device.rawValue)
+        if let next = SecureFieldRecord.next(previous: previous, tree: tree, bootMarker: bootMarker, now: now) {
+            try? OffsiderPrivateDirectory.writeAtomically(next.encoded(), named: name, in: directory)
+            written.insert(name)
+        } else if previous != nil {
+            OffsiderPrivateDirectory.removeFile(named: name, in: directory)
+        }
+        return tree.redacted(mask, scope: .cache)
     }
 
     /// Deletes every device's cache file last written a lifetime ago, so a device no command touches again keeps no tree on disk.

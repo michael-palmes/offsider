@@ -92,7 +92,7 @@ public enum UITreeRenderer {
             ("device", .string(tree.device)),
             ("screen", tree.screen.map { $0.jsonValue(on: tree.platform) } ?? .null),
             ("context", tree.context.jsonValue),
-        ]
+        ] + tree.redactionMembers
     }
 
     static func json(_ tree: UITree, _ options: UITreeRenderOptions, fields: Set<UIField>?) -> OrderedJSON {
@@ -128,7 +128,7 @@ public enum UITreeRenderer {
         let result = UITreeEconomy.lines(tree, options, fields: shown) { node, label, value in
             line(node, shown, label: label, value: value)
         }
-        return UITreeEconomy.budgeted(
+        let body = UITreeEconomy.budgeted(
             result.lines,
             header: ([header(tree)] + tree.context.headerLines).joined(separator: "\n"),
             folded: result.folded,
@@ -137,6 +137,8 @@ public enum UITreeRenderer {
             beneath: result.beneath,
             offScreen: result.offScreen
         )
+        guard let redaction = tree.redaction, !redaction.isEmpty else { return body }
+        return body + redaction.footer + "\n"
     }
 
     static func header(_ tree: UITree) -> String {

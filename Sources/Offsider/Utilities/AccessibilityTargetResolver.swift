@@ -109,13 +109,13 @@ struct MatchSummary: Equatable {
         self.init(
             role: node.role,
             id: node.normalizedID,
-            label: node.normalizedLabel.map { SelectorText.truncated($0) },
+            label: node.normalizedLabel.map { SelectorText.truncated(LogRedactor.redactValue($0).text) },
             frame: node.frame,
             isOnScreen: viewport.map { node.frame?.isVisible(in: $0) == true }
         )
         self.index = index
         let ancestors = AccessibilityTargetResolver.ancestorsOf(node, in: roots)
-        window = ancestors.first?.normalizedLabel.map { SelectorText.truncated($0) }
+        window = ancestors.first?.normalizedLabel.map { SelectorText.truncated(LogRedactor.redactValue($0).text) }
         if let viewport {
             screen = ancestors.reversed().first { ancestor in
                 ancestor.normalizedID != nil && ancestor.frame.map { AccessibilityTargetResolver.isBackdrop($0, in: viewport) } == true

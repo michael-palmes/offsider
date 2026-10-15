@@ -27,6 +27,17 @@ struct BatchReadResult {
             unmet = failure.hasPrefix("✗ ") ? String(failure.dropFirst(2)) : failure
         }
     }
+
+    /// The outcome as `Wait.report` shows it: screen text redacted, with the note when the check matched on hidden text.
+    @MainActor
+    static func redacted(_ outcome: WaitOutcome, success: String, failure: String, checked: ElementSelectorOptions?) -> BatchReadResult {
+        let mask = (try? AmbientMasks.treeMask()) ?? .none
+        return BatchReadResult(
+            Wait.shown(outcome, mask: mask),
+            success: success + Wait.redactionNote(outcome, checked: checked, mask: mask),
+            failure: LogRedactor.redactValue(failure).text
+        )
+    }
 }
 
 /// A command that can run as a batch step after the previous step's input has been sent.
@@ -51,7 +62,7 @@ extension Wait: BatchReadable {
             // Time passed without a tree read, so the cached tree may be stale.
             context.invalidateTree()
         }
-        return BatchReadResult(outcome, success: successLine(outcome), failure: failureLine(outcome))
+        return .redacted(outcome, success: successLine(outcome), failure: failureLine(outcome), checked: selector.query == nil ? nil : selector)
     }
 }
 
@@ -60,7 +71,7 @@ extension Assert: BatchReadable {
         let outcome = try await context.watchdog.guarding(bound: 0, device: context.device.rawValue) {
             try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
         }
-        return BatchReadResult(outcome, success: successLine(outcome), failure: failureLine(outcome))
+        return .redacted(outcome, success: successLine(outcome), failure: failureLine(outcome), checked: selector)
     }
 }
 
@@ -77,7 +88,7 @@ extension DescribeUI: BatchReadable {
             tree = try await context.accessibilityTree()
             tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: context.backend, device: context.device)
         }
-        let described = await Self.withScreen(tree, on: context.route)
+        let described = try await Self.shown(await Self.withScreen(tree, on: context.route), on: context.route)
         let rendered = String(decoding: try output.render(described), as: UTF8.self)
         return BatchReadResult(detail: .describe(described, try output.renderOptions()), output: rendered)
     }
