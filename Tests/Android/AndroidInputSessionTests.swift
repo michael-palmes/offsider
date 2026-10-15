@@ -7,7 +7,7 @@ import Testing
 @MainActor
 struct AndroidInputSessionTests {
     /// Answers the display probe and records every other shell script; `failing` scripts exit 1.
-    static func server(failing: @escaping @Sendable (String) -> Bool = { _ in false }) -> FakeAdbServer {
+    static func server(failing: @escaping @Sendable (String) -> Bool = { _ in false }, uiautomatorDump: String? = nil) -> FakeAdbServer {
         FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556"],
             host: { service in
@@ -24,6 +24,7 @@ struct AndroidInputSessionTests {
                 if service.hasSuffix(AndroidDeviceDirectory.propertiesScript) {
                     return FakeAdbServer.shell(stdout: "Offsider_E2E\n\n1\n16\n36\n")
                 }
+                if let uiautomatorDump, service.contains("uiautomator dump") { return FakeAdbServer.shell(stdout: uiautomatorDump) }
                 let script = String(service.dropFirst("shell,v2,raw:".count))
                 return failing(script) ? FakeAdbServer.shell(stderr: "Error: injection failed\n", status: 1) : FakeAdbServer.shell()
             }
@@ -80,9 +81,9 @@ struct AndroidInputSessionTests {
         #expect(Self.scripts(server) == ["input tap 1 1"])
     }
 
-    @Test("ASCII text goes as input text and key events in one script, after a read for a focused password field")
+    @Test("ASCII text goes as input text and key events in one script, after a read that finds a plain field focused")
     func typeASCII() async throws {
-        let server = Self.server()
+        let server = Self.server(uiautomatorDump: AndroidGrpcTextTests.plainFocus)
         let session = try #require(try await AndroidBackendTests.backend(server).openInputSession(for: Self.device) as? any TextInputSession)
         try await session.typeText("hello world\n")
 

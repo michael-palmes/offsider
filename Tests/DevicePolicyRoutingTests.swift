@@ -119,8 +119,36 @@ struct DevicePolicyRoutingTests {
         #expect(scope.permitted == ["com.example.app"])
         #expect(scope.managedCeiling == ["com.example.app"])
 
-        let open = try await Self.route("R58M123ABC", gate: Self.gate([PolicyFixtures.entry(.android, key: "R58M123ABC")]), host: host)
-        #expect((open.backend as? AndroidBackend)?.appScopes.isEmpty == true)
+        let open = try await DeviceRouter.$profilePackage.withValue({ nil }) {
+            try await Self.route("R58M123ABC", gate: Self.gate([PolicyFixtures.entry(.android, key: "R58M123ABC")]), host: host)
+        }
+        let any = try #require((open.backend as? AndroidBackend)?.appScopes["R58M123ABC"])
+        #expect(any.needsTarget)
+        #expect(any.target == nil)
+    }
+
+    @Test("a phone allowed for any app takes offsider.login.json's package as this command's app; a pinned phone ignores it; the whole-device pin pins nothing")
+    func anyAppScope() {
+        let policy = PhysicalDevicePolicy(managed: .none, list: .empty)
+        let any = DeviceRouter.appScope(for: PolicyFixtures.entry(.android, key: "R58M123ABC"), policy: policy, profilePackage: { "com.example.app" })
+        #expect(any == AndroidAppScope(permitted: [], managedCeiling: nil, needsTarget: true, target: "com.example.app"))
+        let pinned = DeviceRouter.appScope(for: PolicyFixtures.entry(.android, key: "R58M123ABC", apps: ["com.example.pinned"]), policy: policy, profilePackage: { "com.example.app" })
+        #expect(pinned == AndroidAppScope(permitted: ["com.example.pinned"], managedCeiling: nil))
+        let whole = DeviceRouter.appScope(for: PolicyFixtures.entry(.android, key: "R58M123ABC", apps: [DeviceAllowance.wholeDevicePin]), policy: policy, profilePackage: { nil })
+        #expect(whole.needsTarget)
+    }
+
+    @Test("an emulator serial is refused when adb lists it over USB or cannot list devices at all, naming how to start adb")
+    func emulatorSerialFailsClosed() async throws {
+        struct Unreadable: Error {}
+        let unreadable = await #expect(throws: CLIError.self) { try await DeviceRouter.requireEmulator("emulator-5554") { _ in throw Unreadable() } }
+        #expect(unreadable?.reason == .deviceListFailed)
+        #expect(unreadable?.hint == "ADB_MDNS=0 adb start-server")
+        #expect(unreadable?.userFacingDescription.contains("cannot confirm emulator-5554 is an emulator") == true)
+
+        let usb = await #expect(throws: CLIError.self) { try await DeviceRouter.requireEmulator("emulator-5554") { _ in true } }
+        #expect(usb?.reason == .deviceNotAllowed)
+        try await DeviceRouter.requireEmulator("emulator-5554") { _ in false }
     }
 
     @Test("a USB device reporting an emulator serial is refused")
@@ -183,6 +211,18 @@ struct DoctorDevicePolicyTests {
         #expect(await target("Offsider_E2E", avd: true) == nil)
         #expect(await target("emulator-5554") == nil)
         #expect(await target("ABCDEF00-0000-4000-8000-00000000ABCD", listed: true) == nil)
+    }
+
+    @Test("doctor runs the router's USB check for an emulator serial: a USB row or an unreadable list fails device.policy alone")
+    func emulatorSerialChecked() async {
+        struct Unreadable: Error {}
+        let unreadable = await Doctor.emulatorSerialReport("emulator-5554", source: .option) { _ in throw Unreadable() }
+        #expect(unreadable?.checks.map(\.id) == [.devicePolicy])
+        #expect(unreadable?.checks.first?.status == .fail)
+        #expect(unreadable?.checks.first?.hint == "ADB_MDNS=0 adb start-server")
+        let usb = await Doctor.emulatorSerialReport("emulator-5554", source: .option) { _ in true }
+        #expect(usb?.checks.first?.detail.contains("reporting an emulator's serial") == true)
+        #expect(await Doctor.emulatorSerialReport("emulator-5554", source: .option) { _ in false } == nil)
     }
 
     @Test("doctor --fix on a serial no one allowed, with no adb server answering, reports only device.policy and starts no server")
@@ -274,6 +314,23 @@ struct StopCleanPolicyTests {
         #expect(error?.hint == "offsider device-access allow")
     }
 
+    @Test("--clean works for a device allowed once, expired or removed, whose runner this Mac built; never past managed policy or for a device it never served")
+    func cleanAfterAllowanceLapsed() throws {
+        let expired = DevicePolicyRoutingTests.gate([PolicyFixtures.entry(expires: PolicyFixtures.now.addingTimeInterval(-60))])
+        let removed = DevicePolicyRoutingTests.gate([])
+        for gate in [expired, removed] {
+            #expect(try RunnerSessions.cleanableUDID(PolicyFixtures.phone, command: "session stop --clean", gate: gate, hasRunnerRecord: { _ in true }) == PolicyFixtures.phone)
+            let never = #expect(throws: CLIError.self) {
+                try RunnerSessions.cleanableUDID(PolicyFixtures.phone, command: "session stop --clean", gate: gate, hasRunnerRecord: { _ in false })
+            }
+            #expect(never?.reason == .deviceNotAllowed)
+        }
+        let managed = DevicePolicyRoutingTests.gate([PolicyFixtures.entry()], managed: ManagedDevicePolicy(allowPhysicalDevices: false))
+        #expect(throws: CLIError.self) {
+            try RunnerSessions.cleanableUDID(PolicyFixtures.phone, command: "session stop --clean", gate: managed, hasRunnerRecord: { _ in true })
+        }
+    }
+
     @Test("--clean on an allowed UDID passes the gate; a plain stop never reads the policy")
     func cleanAllowedAndPlainStopExempt() async throws {
         let allowed = DevicePolicyRoutingTests.gate([PolicyFixtures.entry()])
@@ -282,5 +339,41 @@ struct StopCleanPolicyTests {
         try await DevicePolicyGate.$current.withValue(unread) {
             try await RunnerStop.parse(["--device", PolicyFixtures.phone, "--json"]).run()
         }
+    }
+}
+
+@Suite("permission on an allowed phone")
+@MainActor
+struct PermissionPhoneScopeTests {
+    static let pinned = PolicyFixtures.entry(.android, key: "R58M123ABC", apps: ["com.example.app"])
+
+    @Test("grant, revoke, reset and show on a phone take only an app within its pins, never a deny-listed one; simulators and emulators are unchecked")
+    func scope() throws {
+        let gate = DevicePolicyRoutingTests.gate([Self.pinned])
+        let grant = PermissionCommand.Plan.change(.grant, [.service(.camera)], app: "com.example.app", device: "R58M123ABC")
+        try PermissionCommand.requireAppScope(grant, allowance: Self.pinned, gate: gate)
+
+        for plan in [
+            PermissionCommand.Plan.change(.grant, [.service(.location)], app: "com.example.other", device: "R58M123ABC"),
+            .change(.reset, [.service(.camera)], app: "com.google.android.apps.messaging", device: "R58M123ABC"),
+            .show(app: "com.example.other", device: "R58M123ABC"),
+        ] {
+            let error = #expect(throws: CLIError.self) { try PermissionCommand.requireAppScope(plan, allowance: Self.pinned, gate: gate) }
+            #expect(error?.reason == .appNotAllowed)
+        }
+        let open = PolicyFixtures.entry(.android, key: "R58M123ABC")
+        #expect(throws: CLIError.self) {
+            try PermissionCommand.requireAppScope(.change(.grant, [.service(.sms)], app: "com.android.chrome", device: "R58M123ABC"), allowance: open, gate: DevicePolicyRoutingTests.gate([open]))
+        }
+        try PermissionCommand.requireAppScope(.change(.grant, [.service(.camera)], app: "com.example.other", device: "emulator-5554"), allowance: nil, gate: gate)
+    }
+}
+
+@Suite("doctor emulator serial setup")
+struct DoctorEmulatorSetupTests {
+    @Test("with no SDK the emulator check steps aside so the Android checks name what is missing")
+    func noSDK() async {
+        let report = await Doctor.emulatorSerialReport("emulator-5554", source: .option) { _ in throw PlatformUnavailable(platform: .android, message: "no SDK") }
+        #expect(report == nil)
     }
 }

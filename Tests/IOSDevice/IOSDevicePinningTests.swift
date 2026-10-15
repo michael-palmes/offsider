@@ -11,12 +11,13 @@ struct IOSDevicePinningTests {
     static let playground = "com.mpalmes.offsider.playground"
     static let allowance = DeviceAllowance(platform: .ios, key: IOSDeviceFixtures.phone, name: "Test iPhone", added: Date(), expires: nil, apps: [playground])
 
-    static func backend(_ transport: FakeRunnerTransport, onUSB: Bool = true, apps: [String] = [playground]) throws -> IOSDeviceBackend {
+    static func backend(_ transport: FakeRunnerTransport, onUSB: Bool = true, apps: [String] = [playground], timings: LockedBox<[String]>? = nil) throws -> IOSDeviceBackend {
         var host = IOSDeviceHost.fake(
             try FakeDevicectl.listing("devicectl-list-xcode26.json"),
             usbmux: onUSB ? FakeUsbmuxListing.onUSB(IOSDeviceFixtures.phone) : FakeUsbmuxListing([])
         )
         host.runnerConnector = FakeRunnerConnector(transport: transport)
+        if let timings { host.timing = .printing { line in timings.value.append(line) } }
         let backend = IOSDeviceBackend(host: host) { _, _ in }
         backend.input.coreDeviceVersion = { CoreDeviceVersion("518.24") }
         let allowance = DeviceAllowance(platform: .ios, key: IOSDeviceFixtures.phone, name: "Test iPhone", added: Date(), expires: nil, apps: apps)
@@ -72,6 +73,47 @@ struct IOSDevicePinningTests {
         try await backend.openInputSession(for: Self.phone).perform(.tapAt(x: 10, y: 20))
         #expect(transport.calls.last?.path == "/tap-point")
         #expect(transport.calls.last?.body["app"] == AnyHashable(Self.playground))
+    }
+
+    static func foregroundChecks(_ transport: FakeRunnerTransport) -> Int {
+        transport.calls.filter { $0.path == "/foreground" }.count
+    }
+
+    @Test("a capture after input asks the runner again, timed as foreground-recheck; captures alone keep the two-second reuse video relies on")
+    func recheckAfterInput() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = Self.playground
+        let timings = LockedBox<[String]>([])
+        let backend = try Self.backend(transport, timings: timings)
+
+        try await backend.requirePinnedAppInFront(Self.phone, maxAge: 2)
+        try await backend.requirePinnedAppInFront(Self.phone, maxAge: 2)
+        #expect(Self.foregroundChecks(transport) == 1)
+
+        let session = try await backend.openInputSession(for: Self.phone)
+        try await session.perform(.tapAt(x: 10, y: 20))
+        let afterOpen = Self.foregroundChecks(transport)
+        try await backend.requirePinnedAppInFront(Self.phone, maxAge: 2)
+        #expect(Self.foregroundChecks(transport) == afterOpen + 1)
+        #expect(timings.value.contains { $0.hasPrefix("offsider timing: foreground-recheck ") })
+
+        try await backend.requirePinnedAppInFront(Self.phone, maxAge: 2)
+        try await session.perform(.tapAt(x: 10, y: 20))
+        try await backend.requirePinnedAppInFront(Self.phone, maxAge: 2)
+        #expect(Self.foregroundChecks(transport) == afterOpen + 2)
+    }
+
+    @Test("a tap that opens another app is caught by the capture that follows it")
+    func tapThenCaptureRefused() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = Self.playground
+        let backend = try Self.backend(transport)
+        let session = try await backend.openInputSession(for: Self.phone)
+        try await backend.requirePinnedAppInFront(Self.phone, maxAge: 2)
+        try await session.perform(.tapAt(x: 10, y: 20))
+        transport.foregroundApp = "com.apple.mobilesafari"
+        let error = await #expect(throws: IOSDeviceError.self) { try await backend.requirePinnedAppInFront(Self.phone, maxAge: 2) }
+        #expect(error?.reason == .appNotAllowed)
     }
 
     @Test("a device usbmuxd no longer lists on USB gets no input")

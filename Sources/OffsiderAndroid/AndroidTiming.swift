@@ -21,6 +21,7 @@ enum AndroidPhase: String, CaseIterable, Sendable {
     case grpcCall = "grpc-call"
     case input
     case capture
+    case foregroundRecheck = "foreground-recheck"
 }
 
 /// Off by default: then `measure` is one `Bool` check and a plain call, with no clock read.

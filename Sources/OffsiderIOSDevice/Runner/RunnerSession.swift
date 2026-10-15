@@ -124,6 +124,14 @@ public struct RunnerSessionStore: Sendable {
         IOSDevicePaths.knownDevices(root: root).compactMap { try? read(udid: $0) }
     }
 
+    /// Deletes `runner.log` for a device this Mac keeps a folder for; never creates one.
+    public func removeLog(udid: String) {
+        let name = IOSDevicePaths.safeName(udid)
+        guard let known = IOSDevicePaths.knownDevices(root: root).first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return }
+        let devices = (root as NSString).appendingPathComponent(IOSDevicePaths.directoryName)
+        OffsiderPrivateDirectory.removeFile(named: Self.logName, in: (devices as NSString).appendingPathComponent(known))
+    }
+
     public func logPath(udid: String) throws -> String {
         (try IOSDevicePaths.device(udid, root: root) as NSString).appendingPathComponent(Self.logName)
     }
@@ -458,7 +466,7 @@ public final class RunnerSessionManager {
     }
 
     nonisolated static func logTail(_ path: String) -> String {
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return "" }
+        guard let data = UntrustedRead.contents(atPath: path, maxBytes: 32 << 20), let text = String(data: data, encoding: .utf8) else { return "" }
         let tail = text.split(separator: "\n").suffix(10).joined(separator: "\n")
         return tail.isEmpty ? "" : "\n\(tail)"
     }

@@ -84,9 +84,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private let focusedSecureField: @MainActor () async -> FocusedSecureField
     /// The helper for a password: started if needed, else `helper_unavailable`.
     private let secretHelper: @MainActor () async throws -> HelperInputDriver
-    /// On a phone, refuses a browser or system app in front; checked before text and before the first other input.
+    /// On a phone, refuses a browser or system app in front; checked afresh before text and before every other input but buttons.
     private let requireForeground: @MainActor () async throws -> Void
-    private var foregroundChecked = false
     /// Set once the command's own focus verdict has served a dispatch; later dispatches read the screen again.
     private var knownFocusUsed = false
     /// The focused field after a key replacement; nil when it cannot be read.
@@ -160,9 +159,9 @@ final class AndroidInputSession: InputSession, TextInputSession {
     static let pasteKeyCode = 279
 
     func perform(_ event: InputEvent) async throws {
-        if !foregroundChecked, !Self.onlyButtons(event) {
-            try await requireForeground()
-            foregroundChecked = true
+        // A finger already down was checked when it went down; refusing its move or lift would leave it held.
+        if !Self.onlyButtons(event), !touchIsDown {
+            try await checkForeground()
         }
         try await timing.measure(.input) {
             try await dispatch(event)
@@ -281,9 +280,15 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
+    /// A batch step can open another app, so each input step reads the front app again on a phone; an emulator returns at once.
+    private func checkForeground() async throws {
+        try await AndroidForegroundCheck.$beforeInput.withValue(true) {
+            try await requireForeground()
+        }
+    }
+
     private func dispatchText(_ text: String) async throws {
-        try await requireForeground()
-        foregroundChecked = true
+        try await checkForeground()
         let route = try await route()
         let secret = InputSecrecy.isSecret
         switch try AndroidTextPlan.make(for: text) {
@@ -309,21 +314,21 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 try await driver.type(chunks)
                 return
             }
-            // A password never becomes an `input text` argument, which the device's process list shows.
+            // A password never becomes an `input text` argument, which the device's process list shows; nor does text for a field that may be one.
             switch secret ? .secure : await currentFocus() {
             case .secure:
                 try await secretHelper().type(chunks)
                 return
-            case .unknown where InputSecrecy.fromArgument:
+            case .unknown:
                 let helper: HelperInputDriver
                 do {
                     helper = try await secretHelper()
                 } catch let error as AndroidError where error.kind == .helperUnavailable {
-                    throw AndroidError.unreadableFocusNeedsHelper(device.rawValue)
+                    throw Self.unreadableFocusNeedsHelper(device.rawValue)
                 }
                 try await helper.type(chunks)
                 return
-            case .unknown, .notSecure:
+            case .notSecure:
                 break
             }
             let commands = try chunks.flatMap { chunk -> [String] in
@@ -335,6 +340,14 @@ final class AndroidInputSession: InputSession, TextInputSession {
             guard !commands.isEmpty else { return }
             try await shell.run(commands.joined(separator: " && "), redactedLabel: "input text (\(text.count) character\(text.count == 1 ? "" : "s"))")
         }
+    }
+
+    /// Text for a field that cannot be read goes only through the helper, as a password would, whether it came as an argument, piped or from a batch.
+    static func unreadableFocusNeedsHelper(_ serial: String) -> AndroidError {
+        AndroidError(
+            .helperUnavailable,
+            "Offsider could not read the focused field on \(serial), so it may be a password field, and text then goes only through the UiAutomation helper, which is unavailable. The text was not sent. Check the screen with `offsider describe-ui --device \(serial)`, then retry."
+        )
     }
 
     /// The command's own verdict for the first dispatch, so a positional `type` reads the screen once; else a fresh read.
@@ -466,7 +479,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
                     log(.warning, "Could not lift the touch left down on \(device.rawValue): `input` there has no motionevent (Android 10, API 29, added it), so it stays down until the next touch.")
                     return
                 }
-                try await shell.run("input motionevent UP \(Int(point.x.rounded())) \(Int(point.y.rounded()))")
+                try await shell.run("input motionevent UP \(PixelMath.roundedPixel(point.x)) \(PixelMath.roundedPixel(point.y))")
             case .grpc(let driver):
                 try await driver.touch(point, down: false)
             case .helper(let driver):

@@ -46,6 +46,9 @@ struct Doctor: AsyncParsableCommand {
         }
         if let target, let policy, !policy.allowed {
             report = Self.policyReport(policy, target: target, source: deviceOption.source)
+        } else if let id = deviceOption.id, case .androidSerial(let port) = DeviceIDClassifier.classify(id),
+                  let refused = await Self.emulatorSerialReport("emulator-\(port)", source: deviceOption.source, isUSBRow: { try await Self.liveUSBRow($0, host: host) }) {
+            report = refused
         } else if let id = deviceOption.id, case .iosDevice(let udid) = DeviceIDClassifier.classify(id) {
             report = await iosDeviceReport(udid)
         } else if let id = deviceOption.id, DeviceIDClassifier.classify(id).platform == .android {
@@ -154,7 +157,7 @@ struct Doctor: AsyncParsableCommand {
     static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
         DoctorReport(
             offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
-            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck(), Init.doctorCheck()], fixes: report.fixes, host: host, policy: report.policy
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict())], fixes: report.fixes, host: host, policy: report.policy
         )
     }
 
@@ -170,6 +173,40 @@ struct Doctor: AsyncParsableCommand {
             if await isListedPhone(name) { return (.android, name) }
             return isDefinedAVD(name) ? nil : (.android, name)
         default: return nil
+        }
+    }
+
+    /// The router's check for an `emulator-N` serial: a USB row, or a device list that cannot be read, fails `device.policy` and no device check runs.
+    static func emulatorSerialReport(_ serial: String, source: DeviceSource?, isUSBRow: (String) async throws -> Bool) async -> DoctorReport? {
+        do {
+            try await DeviceRouter.requireEmulator(serial, isUSBRow: isUSBRow)
+            return nil
+        } catch let setup where setup is PlatformUnavailable || setup is AndroidError {
+            // No SDK or no usable adb server: the Android checks report it, and no device probe runs without one.
+            return nil
+        } catch {
+            let payload = ErrorReporter.payload(for: error)
+            return DoctorReport(
+                offsiderVersion: VERSION,
+                udid: nil,
+                device: DoctorDevice(id: serial, platform: "android", name: nil, kind: nil, source: source?.rawValue),
+                xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil),
+                booted: [],
+                checks: [DoctorCheckResult(id: .devicePolicy, status: .fail, detail: OffsiderCommand.message(for: error), hint: payload.hint)]
+            )
+        }
+    }
+
+    @MainActor
+    private static func liveUSBRow(_ serial: String, host: AndroidHost) async throws -> Bool {
+        let backend = AndroidBackend.make(logger: OffsiderLogger(), host: host)
+        do {
+            let usb = try await backend.isUSBRow(serial: serial)
+            await backend.close()
+            return usb
+        } catch {
+            await backend.close()
+            throw error
         }
     }
 

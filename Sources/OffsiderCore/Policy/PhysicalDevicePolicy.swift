@@ -86,7 +86,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
 
     /// The apps the entry pins, within the managed bundle list; nil when neither limits them.
     public func permittedApps(for allowance: DeviceAllowance) -> Set<String>? {
-        let pinned = allowance.apps.isEmpty ? nil : Set(allowance.apps)
+        let pinned = allowance.pinnedApps.isEmpty ? nil : Set(allowance.pinnedApps)
         let ceiling = managed.allowedBundleIDs.map(Set.init)
         switch (pinned, ceiling) {
         case (nil, nil): return nil
@@ -100,6 +100,21 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
     public func permits(app: String, on allowance: DeviceAllowance) -> Bool {
         guard !SystemAppDenyList.isDenied(app, platform: allowance.platform) else { return false }
         return permittedApps(for: allowance)?.contains(app) ?? true
+    }
+
+    /// Why `app` may not be driven or read on the device, in one sentence ending "Nothing was read or sent."; nil when it may.
+    public func appRefusal(_ app: String, on allowance: DeviceAllowance, audience: ErrorAudience = .current) -> String? {
+        if let why = SystemAppDenyList.refusal(app, platform: allowance.platform) {
+            return "\(app) is \(why); Offsider never drives it on a physical device. Nothing was read or sent."
+        }
+        guard permits(app: app, on: allowance) else {
+            if managed.allowedBundleIDs.map({ !$0.contains(app) }) ?? false {
+                return "Managed policy on this Mac does not list \(app), and the allow-list cannot override it. Nothing was read or sent."
+            }
+            return "\(app) is not among the apps allowed on \(allowance.name) (\(allowance.key)). Nothing was read or sent."
+                + audience.personStep("offsider device-access allow", agentTail: ", choose \(allowance.name) (\(allowance.key)) and pin \(app)")
+        }
+        return nil
     }
 
     /// `device-access status --json`, version 1.

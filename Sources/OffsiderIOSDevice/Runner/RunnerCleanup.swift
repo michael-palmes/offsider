@@ -62,6 +62,11 @@ public enum RunnerCleanup {
         return report
     }
 
+    /// True when a cached build names this device: the runner was built for it while it was allowed.
+    public static func hasBuild(for udid: String, cacheRoot: URL) -> Bool {
+        !buildDirectories(for: udid, cacheRoot: cacheRoot).isEmpty
+    }
+
     /// The cached builds whose `products.json` names this device.
     static func buildDirectories(for udid: String, cacheRoot: URL) -> [URL] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: cacheRoot.path)) ?? []

@@ -254,3 +254,38 @@ struct PhysicalDevicePolicyTests {
         #expect(devices.first?["active"] as? Bool == true)
     }
 }
+
+@Suite("Whole-device pin and app refusals")
+struct DeviceAppScopeTests {
+    static func file(_ platform: String, apps: String) -> Data {
+        let id = platform == "ios" ? PolicyFixtures.phone : PolicyFixtures.serial
+        return Data(#"{"version":1,"devices":[{"platform":"\#(platform)","id":"\#(id)","name":"Test","added":"2026-09-21T14:13:20Z","expires":null,"apps":\#(apps)}]}"#.utf8)
+    }
+
+    @Test("the whole-device pin parses only on an Android entry, pins no app and permits any app the deny-list allows")
+    func wholeDevicePin() throws {
+        let entry = try #require(try DeviceAllowList.parse(Self.file("android", apps: #"["*"]"#)).entries.first)
+        #expect(entry.allowsWholeDevice)
+        #expect(entry.pinnedApps.isEmpty)
+        let policy = PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [entry]))
+        #expect(policy.permittedApps(for: entry) == nil)
+        #expect(policy.permits(app: "com.example.app", on: entry))
+        #expect(!policy.permits(app: "com.android.chrome", on: entry))
+        #expect(try DeviceAllowList.parse(DeviceAllowList(entries: [entry]).encoded()).entries == [entry])
+        #expect(throws: DeviceAllowListError.self) { try DeviceAllowList.parse(Self.file("ios", apps: #"["*"]"#)) }
+        #expect(!DeviceAllowance.isAppID(DeviceAllowance.wholeDevicePin))
+    }
+
+    @Test("an app outside the pins names the allow command for an agent; a deny-listed app names why; a pinned app passes")
+    func appRefusal() {
+        let entry = PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: ["com.example.app"])
+        let policy = PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [entry]))
+        #expect(policy.appRefusal("com.example.app", on: entry) == nil)
+        let other = policy.appRefusal("com.example.bank", on: entry, audience: .agent)
+        #expect(other?.contains("com.example.bank is not among the apps allowed on Test iPhone (R58M123ABC)") == true)
+        #expect(other?.contains("Ask the user to run `offsider device-access allow`") == true)
+        #expect(policy.appRefusal("com.android.chrome", on: entry)?.contains("Offsider never drives it on a physical device") == true)
+        let ceiling = PhysicalDevicePolicy(managed: ManagedDevicePolicy(allowedBundleIDs: ["com.example.managed"]), list: DeviceAllowList(entries: [entry]))
+        #expect(ceiling.appRefusal("com.example.app", on: entry)?.hasPrefix("Managed policy on this Mac does not list com.example.app") == true)
+    }
+}

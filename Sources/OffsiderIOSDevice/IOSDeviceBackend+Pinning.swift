@@ -14,7 +14,8 @@ extension IOSDeviceBackend {
         let app = try requirePermittedPin(id)
         if maxAge > 0, let confirmed = state.pinConfirmed[id.rawValue], Date().timeIntervalSince(confirmed) < maxAge { return }
         let client = try await runner(for: id)
-        let answer = try await host.timing.measure("foreground") { try await client.foreground(app: app) }
+        let phase = state.inputSincePinCheck.contains(id.rawValue) ? "foreground-recheck" : "foreground"
+        let answer = try await host.timing.measure(phase) { try await client.foreground(app: app) }
         guard answer.inFront else {
             state.pinConfirmed[id.rawValue] = nil
             let active = answer.activeBundleID.map { "\($0) is in front" } ?? "another app or the system is in front"
@@ -24,6 +25,14 @@ extension IOSDeviceBackend {
             )
         }
         state.pinConfirmed[id.rawValue] = Date()
+        state.inputSincePinCheck.remove(id.rawValue)
+    }
+
+    /// Input can open another app, so the next screenshot in this command asks the runner again instead of reusing the last answer.
+    func forgetPinConfirmation(_ id: DeviceID) {
+        guard state.pinPolicy != nil else { return }
+        state.pinConfirmed[id.rawValue] = nil
+        state.inputSincePinCheck.insert(id.rawValue)
     }
 
     /// The pinned app, checked against the policy without asking the device.

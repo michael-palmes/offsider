@@ -21,8 +21,10 @@ struct Logs: AsyncParsableCommand {
         (--last, --since, --duration or --follow). ANSI escape sequences, including escaped colour codes such as \\u001b[32m, \
         are removed; --raw keeps colour codes only. Text output keeps each entry on one line, a newline showing as \\n. \
         Passwords, tokens, keys, cookies, JWTs, email addresses, wallet addresses, card numbers, recovery phrases and one-time \
-        codes are replaced with markers such as [redacted]; --grep and --exclude match the text before redaction. Without \
-        --rn, --app or --process the whole device's log is read, and stderr says so. Exits 0 even when nothing matches. On iOS this reads the simulator's unified log, which keeps about 1 KB of a message \
+        codes are replaced with markers such as [redacted]; --grep and --exclude match the text after redaction. Without \
+        --rn, --app or --process, offsider.login.json's app is read when it names one, else the whole device's log, and stderr says which; \
+        --all reads the whole device. On a physical phone the log is read one allowed app at a time (the only pinned app by default); \
+        its whole log needs a person to choose "Any app and all logs" in `offsider device-access allow`. Exits 0 even when nothing matches. On iOS this reads the simulator's unified log, which keeps about 1 KB of a message \
         and ends a longer one <…> (marked [truncated], or "truncated": true in JSON); on Android, logcat.
 
         --rn reads React Native's own log (the com.facebook.react.log subsystem on iOS, the ReactNativeJS and \
@@ -56,7 +58,10 @@ struct Logs: AsyncParsableCommand {
     @Flag(help: "Print live entries as they arrive until interrupted (Ctrl+C). With --json, one compact entry object per line.")
     var follow = false
 
-    @Option(help: ArgumentHelp("Only entries whose message matches this case-insensitive regular expression, after ANSI codes are removed.", valueName: "regex"))
+    @Flag(name: .customLong("all"), help: "Read the whole device's log, every app's included, even when offsider.login.json names an app.")
+    var all = false
+
+    @Option(help: ArgumentHelp("Only entries whose message matches this case-insensitive regular expression, after ANSI codes are removed and values redacted.", valueName: "regex"))
     var grep: String?
 
     @Option(name: .customLong("exclude"), help: ArgumentHelp("Drop entries whose message matches this case-insensitive regular expression, as --grep matches; repeat for more. Dropped entries reach neither stdout nor an evidence run.", valueName: "regex"))
@@ -90,6 +95,9 @@ struct Logs: AsyncParsableCommand {
     /// The source and window the flags ask for; throws a `LogOptionError` for conflicts and bad values.
     func query() throws -> LogQuery {
         let sources = [(reactNative, "--rn"), (app != nil, "--app"), (process != nil, "--process")].filter(\.0).map(\.1)
+        if all, !sources.isEmpty {
+            throw LogOptionError("--all reads the whole device's log: drop \(Self.list(sources)), or drop --all.")
+        }
         if process != nil, sources.count > 1 {
             throw LogOptionError("--process reads one process alone: drop \(Self.list(sources.filter { $0 != "--process" })), or drop --process. --rn and --app combine.")
         }
@@ -168,8 +176,14 @@ struct Logs: AsyncParsableCommand {
         guard let reader = backend as? any LogReading else {
             throw CLIError(errorDescription: "logs is not available for \(booted.id.platform.rawValue) devices in this build.", reason: .notSupported)
         }
-        let query = try Self.options { try self.query() }
-        if query.source == .all {
+        let asked = try Self.options { try self.query() }
+        let (query, scopeNote) = try Self.scoped(
+            asked, all: all, platform: booted.id.platform, allowance: route.allowance,
+            policy: route.allowance.map { _ in DevicePolicyGate.current.policy() }, profile: Self.profile
+        )
+        if let scopeNote {
+            note(scopeNote)
+        } else if query.source == .all {
             note(Self.wholeLogNote)
         }
         let sink = LogSink(try Self.options { try self.collector() })
@@ -252,6 +266,65 @@ struct Logs: AsyncParsableCommand {
 
     /// The stderr line before a read of the whole device's log.
     static let wholeLogNote = "Reading the whole device's log, every app's included; pass --app, --rn or --process to read only the app under test."
+
+    /// offsider.login.json in this folder or above; tests bind their own.
+    @TaskLocal static var profile: @Sendable () -> LoginProfile? = { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil }
+
+    /// The app offsider.login.json names for this platform.
+    static func profileApp(_ profile: LoginProfile?, platform: DevicePlatform) -> String? {
+        (platform == .ios ? profile?.bundleID : profile?.package).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// The source a read may use, and the stderr line that says what changed. On a physical phone every app must be within the allowance,
+    /// and the whole log needs its `*` pin; elsewhere offsider.login.json's app replaces the whole log unless `--all` asks for it.
+    static func scoped(
+        _ query: LogQuery, all: Bool, platform: DevicePlatform, allowance: DeviceAllowance?, policy: PhysicalDevicePolicy?, profile: () -> LoginProfile?
+    ) throws -> (LogQuery, note: String?) {
+        guard let allowance, let policy else {
+            guard !all, query.source == .all, let profileApp = profileApp(profile(), platform: platform) else { return (query, nil) }
+            var scoped = query
+            scoped.source = .app(profileApp)
+            return (scoped, "Reading only \(profileApp)'s log, which offsider.login.json names; pass --all for the whole device's.")
+        }
+        let gate = DevicePolicyGate.fixed(policy)
+        let whole = allowance.allowsWholeDevice
+        let pins = allowance.pinnedApps.filter { policy.permits(app: $0, on: allowance) }
+        let fallback = pins.count == 1 ? pins[0] : profileApp(profile(), platform: platform).flatMap { policy.permits(app: $0, on: allowance) ? $0 : nil }
+        var scoped = query
+        switch query.source {
+        case .app(let app), .reactNative(app: let app?):
+            try gate.requireApp(app, on: allowance)
+            return (query, nil)
+        case .all where whole && (all || fallback == nil):
+            return (query, nil)
+        case .reactNative(nil) where whole:
+            return (query, nil)
+        case .process where whole:
+            return (query, nil)
+        case .all where !all, .reactNative(nil):
+            guard let fallback else { throw phoneAppRequired(allowance) }
+            scoped.source = query.source == .all ? .app(fallback) : .reactNative(app: fallback)
+            let tail = whole ? "pass --all for the whole log" : "a phone's log is read one allowed app at a time"
+            return (scoped, "Reading only \(fallback)'s log on \(allowance.name); \(tail).")
+        case .all, .process:
+            throw phoneWholeLogRefused(allowance)
+        }
+    }
+
+    static func phoneAppRequired(_ allowance: DeviceAllowance) -> CLIError {
+        CLIError(
+            errorDescription: "A phone's log is read one allowed app at a time, and none is named for \(allowance.name) (\(allowance.key)). Nothing was read. Pass --app <package>.",
+            reason: .appNotAllowed, hint: "offsider device-access allow"
+        )
+    }
+
+    static func phoneWholeLogRefused(_ allowance: DeviceAllowance, audience: ErrorAudience = .current) -> CLIError {
+        CLIError(
+            errorDescription: "Reading the whole log of \(allowance.name) (\(allowance.key)) needs a person to choose \"Any app and all logs\" for it, so nothing was read. Pass --app <package> to read one allowed app."
+                + audience.personStep("offsider device-access allow", agentTail: ", choose \(allowance.name) and \"Any app and all logs\""),
+            reason: .appNotAllowed, hint: "offsider device-access allow"
+        )
+    }
 
     /// The stderr line after a read whose entries the device's log cut short; nil when none were.
     static func cutFooter(_ count: Int) -> String? {
