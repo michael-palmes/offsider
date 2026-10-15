@@ -215,6 +215,16 @@ struct AndroidTreeMappingTests {
         #expect(root.label == "Gboard")
     }
 
+    @Test("a helper tree 200 levels deep maps without exhausting the stack and is cut to 64")
+    func deepTree() {
+        var raw = RawAndroidNode(attributes: ["class": "android.widget.TextView", "text": "leaf"])
+        for level in 1..<200 { raw = RawAndroidNode(attributes: ["class": "android.view.ViewGroup", "content-desc": "level \(level)"], children: [raw]) }
+        let tree = UITree(platform: .android, device: "D", roots: [AndroidTreeMapping.node(from: raw, scale: 1, rootRole: .application)])
+        func depth(_ nodes: [UINode]) -> Int { nodes.map { 1 + depth($0.children) }.max() ?? 0 }
+        #expect(depth(tree.roots) == 64)
+        #expect(tree.truncated == UITreeTruncation(depth: true))
+    }
+
     @Test("inverted bounds from clipped rows become a zero-height frame")
     func invertedBounds() {
         #expect(AndroidTreeMapping.pixelFrame("[42,2424][1038,2380]") == UIFrame(x: 42, y: 2424, width: 996, height: 0))

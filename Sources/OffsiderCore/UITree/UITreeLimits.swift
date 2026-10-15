@@ -63,3 +63,35 @@ public enum UITreeLimits {
         return result
     }
 }
+
+extension UITreeLimits {
+    /// Maps a source tree without recursion: `shallow` maps one element (depth 1 is the root) and `children` lists its children.
+    /// Mapping stops one level past `maxDepth`, so a deep tree cannot exhaust the stack and `limit` still notes the cut.
+    public static func map<Source>(_ root: Source, maxDepth: Int = maxDepth, shallow: (Source, Int) -> UINode, children: (Source) -> [Source]) -> UINode {
+        func level(_ source: Source, depth: Int) -> MappingLevel<Source> {
+            MappingLevel(node: shallow(source, depth), sources: depth > maxDepth ? [] : children(source))
+        }
+        var stack = [level(root, depth: 1)]
+        while let last = stack.indices.last {
+            if stack[last].next < stack[last].sources.count {
+                let source = stack[last].sources[stack[last].next]
+                stack[last].next += 1
+                stack.append(level(source, depth: stack.count + 1))
+                continue
+            }
+            var done = stack.removeLast()
+            done.node.children = done.mapped
+            guard let parent = stack.indices.last else { return done.node }
+            stack[parent].mapped.append(done.node)
+        }
+        preconditionFailure("the root is always on the stack")
+    }
+}
+
+/// One element `UITreeLimits.map` is mapping: its children still to visit and those already mapped.
+private struct MappingLevel<Source> {
+    var node: UINode
+    var sources: [Source]
+    var next = 0
+    var mapped: [UINode] = []
+}

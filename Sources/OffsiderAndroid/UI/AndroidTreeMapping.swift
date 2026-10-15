@@ -11,6 +11,15 @@ enum AndroidTreeMapping {
 
     /// A root takes `rootRole`, `rootLabel` and `windowLayer` (a window's); other nodes map from their attributes.
     static func node(from raw: RawAndroidNode, scale: Double, rootRole: UIRole? = nil, rootLabel: String? = nil, windowLayer: Int? = nil) -> UINode {
+        UITreeLimits.map(raw, shallow: { element, depth in
+            depth == 1
+                ? shallowNode(from: element, scale: scale, rootRole: rootRole, rootLabel: rootLabel, windowLayer: windowLayer)
+                : shallowNode(from: element, scale: scale)
+        }, children: \.children)
+    }
+
+    /// One node without its children.
+    private static func shallowNode(from raw: RawAndroidNode, scale: Double, rootRole: UIRole? = nil, rootLabel: String? = nil, windowLayer: Int? = nil) -> UINode {
         let role = rootRole ?? self.role(for: raw)
         let pixels = pixelFrame(raw["bounds"])
         let secure = role == .secureTextField || raw.flag("password")
@@ -46,8 +55,7 @@ enum AndroidTreeMapping {
                 visibleToUser: nonEmpty(raw["visible-to-user"]).map { $0 == "true" },
                 drawingOrder: nonEmpty(raw["drawing-order"]).flatMap { Int($0) },
                 windowLayer: rootRole == nil ? nil : windowLayer
-            )),
-            children: raw.children.map { node(from: $0, scale: scale) }
+            ))
         )
     }
 
