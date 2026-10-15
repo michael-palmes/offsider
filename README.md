@@ -192,7 +192,7 @@ Offsider enforces, whatever the agent does:
 Each release publishes `offsider-<version>-arm64.tar.gz`, a `SHA256SUMS` file and a GitHub build provenance attestation from `.github/workflows/release.yml`. The binary is signed with a Developer ID certificate, runs with library validation on (it loads only frameworks signed by the same team or by Apple) and is notarised. `--signer-workflow` and `--source-ref` check that the attestation came from the release workflow building that tag.
 
 ```bash
-VERSION=0.11.0
+VERSION=0.12.0
 gh release download "v${VERSION}" --repo michael-palmes/offsider \
   --pattern "offsider-${VERSION}-arm64.tar.gz" --pattern SHA256SUMS
 shasum -a 256 -c SHA256SUMS

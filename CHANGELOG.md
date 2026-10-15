@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-15
+
 ### Added
 
 - On a terminal, a device command with no `--device` and no `OFFSIDER_DEVICE` asks which booted simulator or running emulator to use, runs with it, and prints `Using <name> · add --device <id> to skip this`; it never offers a physical device. `offsider boot` with no name asks which simulator or AVD to boot, `offsider init` with two or more agents' folders asks which to install into (all ticked by default), and `credential set` with no `--app` or `--device` gets the same device menu. Without a terminal, or with `--json`, `--format` or `--compact`, the exit 64 is unchanged. Every prompt closes when no key comes within 60 s (`device-access allow` waits 10 minutes), so an agent driving a pseudo-terminal never hangs: an unanswered device picker exits 64 with the missing-device error and `No device chosen within 60 s; pass --device <id>.`
@@ -645,7 +647,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/michael-palmes/offsider/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/michael-palmes/offsider/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/michael-palmes/offsider/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/michael-palmes/offsider/compare/v0.8.0...v0.9.0
