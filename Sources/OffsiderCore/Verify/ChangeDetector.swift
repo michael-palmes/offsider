@@ -263,7 +263,7 @@ public struct ChangeDetector: Sendable {
                 key: key,
                 liveKey: liveKey,
                 name: Self.displayName(node, identifier: identifier),
-                element: identifier.map { "\(node.type)#\(TerminalText.bareOrQuoted($0))" } ?? Self.displayName(node, identifier: nil),
+                element: identifier.map { "\(TerminalText.line(node.type, cap: 64))#\(TerminalText.field($0))" } ?? Self.displayName(node, identifier: nil),
                 node: node,
                 signature: signature(node)
             ))
@@ -310,11 +310,11 @@ public struct ChangeDetector: Sendable {
     }
 
     private static func displayName(_ node: AccessibilitySnapshot.Node, identifier: String?) -> String {
-        if let identifier { return TerminalText.bareOrQuoted(identifier) }
+        if let identifier { return TerminalText.field(identifier) }
         if let label = node.label?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
-            return "\(node.type) \(TerminalText.quoted(label))"
+            return "\(TerminalText.line(node.type, cap: 64)) \(TerminalText.quoted(label))"
         }
-        return node.type
+        return TerminalText.line(node.type, cap: 64)
     }
 
     private static func quoted(_ value: String?) -> String {

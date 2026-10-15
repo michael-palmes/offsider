@@ -105,7 +105,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
     /// Why `app` may not be driven or read on the device, in one sentence ending "Nothing was read or sent."; nil when it may.
     public func appRefusal(_ app: String, on allowance: DeviceAllowance, audience: ErrorAudience = .current) -> String? {
         if let why = SystemAppDenyList.refusal(app, platform: allowance.platform) {
-            return "\(app) is \(why); Offsider never drives it on a physical device. Nothing was read or sent."
+            return "\(why). Nothing was read or sent."
         }
         guard permits(app: app, on: allowance) else {
             if managed.allowedBundleIDs.map({ !$0.contains(app) }) ?? false {

@@ -140,7 +140,7 @@ final class EvidenceRecorder {
         do {
             try run.folder.append(manifestLine)
         } catch {
-            FileHandle.standardError.write(Data("Warning: could not add to \(run.folder.file(RunFolder.manifestName)): \(OffsiderCommand.message(for: error))\n".utf8))
+            FileHandle.standardError.write(Data("Warning: could not add to \(run.folder.file(RunFolder.manifestName)): \(TerminalText.line(OffsiderCommand.message(for: error), cap: TerminalText.maxErrorCharacters))\n".utf8))
         }
     }
 

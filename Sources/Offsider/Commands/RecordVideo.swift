@@ -100,7 +100,7 @@ struct RecordVideo: AsyncParsableCommand {
         } catch let failure as CLIError where failure.reason == .maskUnproven {
             throw failure
         } catch {
-            throw CLIError(errorDescription: "Failed to record video: \(error.localizedDescription)", reason: .videoFailed)
+            throw CLIError(errorDescription: "Failed to record video: \(TerminalText.line(error.localizedDescription))", reason: .videoFailed)
         }
         do {
             outputURL = URL(fileURLWithPath: try OutputFile.commit(stagedURL.path, to: target.url.path, replacing: target.userNamed))
@@ -178,7 +178,7 @@ struct RecordVideo: AsyncParsableCommand {
                     FileHandle.standardError.write(Data(String(format: "Captured %lld frames (%.1f FPS actual)\n", frameCount, actualFPS).utf8))
                 }
             } catch {
-                FileHandle.standardError.write(Data("Error capturing frame: \(error.localizedDescription)\n".utf8))
+                FileHandle.standardError.write(Data("Error capturing frame: \(TerminalText.line(error.localizedDescription))\n".utf8))
             }
 
             let elapsed = Date().timeIntervalSince(frameStart)

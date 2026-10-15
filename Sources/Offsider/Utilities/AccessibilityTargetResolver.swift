@@ -129,11 +129,11 @@ struct MatchSummary: Equatable {
 
     var text: String {
         var parts = [role.rawValue]
-        if let id { parts.append("id=\(TerminalText.bareOrQuoted(id))") }
+        if let id { parts.append("id=\(TerminalText.field(id))") }
         if let label { parts.append("label=\(TerminalText.quoted(label))") }
         parts.append(frame?.summary ?? "with no frame")
         if isOnScreen == false { parts.append("off screen") }
-        if let screen { parts.append("in screen=\(TerminalText.bareOrQuoted(screen))") }
+        if let screen { parts.append("in screen=\(TerminalText.field(screen))") }
         if beneath == true { parts.append("(beneath another screen)") }
         if let index { parts.append("(--nth \(index))") }
         return parts.joined(separator: " ")
@@ -152,7 +152,7 @@ enum NearMissPhrase {
         guard isLabel(kind), let contained = SelectorText.containedText(of: query, in: near.text) else {
             return " (\(relation) your text)"
         }
-        let selector = contained == SelectorText.folded(query) ? "--label-contains" : "--label-contains '\(TerminalText.line(contained, keepsTab: false))'"
+        let selector = contained == SelectorText.folded(query) ? "--label-contains" : "--label-contains \(TerminalText.quoted(contained))"
         return " (\(relation) your text; \(selector) matches it)"
     }
 
@@ -167,9 +167,9 @@ enum NearMissPhrase {
         }
         if holding(near.closeness) != nil, isLabel(kind),
            let contained = SelectorText.containedText(of: query, in: near.text) {
-            return "\(said), use --label-contains '\(TerminalText.line(contained, keepsTab: false))'"
+            return "\(said), use --label-contains \(TerminalText.quoted(contained))"
         }
-        return "\(said), use \(kind == "--label-contains" ? "--label" : kind) '\(TerminalText.line(near.text, keepsTab: false))'"
+        return "\(said), use \(kind == "--label-contains" ? "--label" : kind) \(TerminalText.quoted(near.text))"
     }
 
     private static func isLabel(_ kind: String) -> Bool {
@@ -210,7 +210,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
             guard !suggestions.isEmpty else {
                 return "No accessibility element matched \(kind) '\(value)'. \(tip)"
             }
-            let quoted = suggestions.map { "'\(TerminalText.line(SelectorText.truncated($0.text), keepsTab: false))'" + NearMissPhrase.annotation($0, kind: kind, query: value) }
+            let quoted = suggestions.map { TerminalText.quoted(SelectorText.truncated($0.text)) + NearMissPhrase.annotation($0, kind: kind, query: value) }
             return "No accessibility element matched \(kind) '\(value)'. Did you mean \(Self.alternatives(quoted))? \(tip)"
         case .filteredByElementType(let kind, let value, let elementType, let roles, _):
             let field = kind.hasPrefix("--") ? String(kind.dropFirst(2)) : kind
@@ -451,7 +451,7 @@ struct AccessibilityTargetResolver {
         }
 
         if found.folded, let logger {
-            logger.info().log("Matched \(query.selectorDescription) after folding quotes and spaces (describe-ui shows '\(query.field(of: element) ?? "")')")
+            logger.info().log("Matched \(query.selectorDescription) after folding quotes and spaces (describe-ui shows \(TerminalText.quoted(query.field(of: element) ?? "")))")
         }
 
         return AccessibilityMatch(
@@ -779,7 +779,7 @@ struct AccessibilityTargetResolver {
         let near = nearMatches(roots: roots, query: query, viewport: UITree.viewport(in: roots))
         guard let first = near.first, let summary = first.summary else { return nil }
         let shown = query.kind == "--id"
-            ? summary.id.map { "id=\(TerminalText.bareOrQuoted($0))" }
+            ? summary.id.map { "id=\(TerminalText.field($0))" }
             : summary.label.map { TerminalText.quoted(SelectorText.truncated($0, limit: 44)) }
         let subject = ([summary.role.rawValue] + [shown].compactMap { $0 }).joined(separator: " ")
         return WaitNearMiss(

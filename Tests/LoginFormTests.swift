@@ -442,6 +442,15 @@ struct LoginFormWebViewTests {
         #expect(try LoginForm.detect(in: androidForm(container: "android.webkit.WebView")).webContainer == .webView)
     }
 
+    @Test("GeckoView and Crosswalk containers are web content on Android, with or without the app in front", arguments: [
+        "org.mozilla.geckoview.GeckoView", "org.mozilla.gecko.GeckoLayerClient", "org.xwalk.core.XWalkView", "org.crosswalk.engine.CrosswalkView",
+    ])
+    func otherWebEngines(container: String) throws {
+        #expect(try LoginForm.detect(in: androidForm(container: container), origin: LoginForm.Origin(foreground: "com.example.app")).webContainer == .webView)
+        #expect(try LoginForm.detect(in: androidForm(container: container)).webContainer == .webView)
+        #expect(try LoginForm.detect(in: androidForm(container: "com.example.app.TipsPanel")).webContainer == nil)
+    }
+
     @Test("an iOS password field under a runner WebView or a web area is web content; one in another process maps by bundle id")
     func ios() throws {
         let origin = LoginForm.Origin(foreground: "com.example.app") { $0 == 100 ? "com.example.app" : nil }

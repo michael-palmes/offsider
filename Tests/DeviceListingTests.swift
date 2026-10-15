@@ -40,7 +40,7 @@ private final class ListingBackend: DeviceBackend {
     func volatileScreenBands(for id: DeviceID) async -> ScreenBands { ScreenBands(top: 0, bottom: 0) }
 }
 
-@Suite("Device Listing Tests")
+@Suite("Device Listing Tests", .personOutput)
 @MainActor
 struct DeviceListingTests {
     private let phone = DeviceSummary(

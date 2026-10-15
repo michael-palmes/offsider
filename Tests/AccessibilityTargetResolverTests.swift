@@ -3,7 +3,7 @@ import OffsiderCore
 import Testing
 @testable import Offsider
 
-@Suite("Accessibility Target Resolver Tests")
+@Suite("Accessibility Target Resolver Tests", .personOutput)
 struct AccessibilityTargetResolverTests {
     @Test("Selector tap point uses contained switch activation frame")
     func selectorTapPointUsesContainedSwitchActivationFrame() throws {
@@ -548,7 +548,7 @@ struct AccessibilityTargetResolverTests {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Sign in"))
         }?.userFacingDescription ?? ""
 
-        #expect(message.hasPrefix("No accessibility element matched --label 'Sign in'. Did you mean 'Sign In' or 'Sign in with Apple' (starts with your text; --label-contains matches it)? "))
+        #expect(message.hasPrefix(#"No accessibility element matched --label 'Sign in'. Did you mean "Sign In" or "Sign in with Apple" (starts with your text; --label-contains matches it)? "#))
         #expect(message.hasSuffix(AccessibilityTargetResolver.describeUITip))
     }
 
@@ -572,7 +572,7 @@ struct AccessibilityTargetResolverTests {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("choose a layout"))
         }
         #expect(lowercase?.reason == .selectorNotFound)
-        #expect(lowercase?.userFacingDescription.contains("(starts with your text; --label-contains 'Choose a layout' matches it)") == true)
+        #expect(lowercase?.userFacingDescription.contains(#"(starts with your text; --label-contains "Choose a layout" matches it)"#) == true)
         #expect(lowercase?.candidates.first?.closeness == .prefix)
     }
 
@@ -584,7 +584,7 @@ struct AccessibilityTargetResolverTests {
             _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Choose a layout"))
         })
 
-        #expect(error.userFacingDescription.hasPrefix("No accessibility element matched --label 'Choose a layout'. Did you mean 'Choose a layout. Rows can show as a list or a grid, and the…' (starts with your text; --label-contains matches it)? "))
+        #expect(error.userFacingDescription.hasPrefix(#"No accessibility element matched --label 'Choose a layout'. Did you mean "Choose a layout. Rows can show as a list or a grid, and the…" (starts with your text; --label-contains matches it)? "#))
         #expect(error.candidates.map(\.closeness) == [.prefix])
         #expect(error.candidates.first?.id == "layout-sheet-title")
     }
@@ -976,7 +976,7 @@ struct AccessibilityTargetResolverTests {
     }
 }
 
-@Suite("Stacked screens, --nth and --topmost")
+@Suite("Stacked screens, --nth and --topmost", .personOutput)
 struct StackedScreenTests {
     /// Two pages of a JavaScript stack, page 1 kept mounted under page 2 and offset to the left.
     static func stack(platform: DevicePlatform, hidePageOne: Bool = false) -> [UINode] {
@@ -1197,7 +1197,7 @@ struct StackedScreenTests {
 }
 
 
-@Suite("Resolver text from the screen")
+@Suite("Resolver text from the screen", .personOutput)
 struct ResolverUntrustedTextTests {
     @Test("a candidate's id, label and screen show escaped, and a clean one prints as before")
     func candidateText() {
@@ -1212,6 +1212,6 @@ struct ResolverUntrustedTextTests {
     func nearMiss() {
         let near = SelectorText.NearMatch(text: "Settings\u{1B}]0;x\u{07}", closeness: .similar)
         let relation = NearMissPhrase.relation(near, kind: "--label", query: "Setings")
-        #expect(relation == #"is close, use --label 'Settings\u001b]0;x\u0007'"#)
+        #expect(relation == #"is close, use --label "Settings\u001b]0;x\u0007""#)
     }
 }

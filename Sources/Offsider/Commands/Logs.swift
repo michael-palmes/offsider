@@ -255,7 +255,7 @@ struct Logs: AsyncParsableCommand {
     }
 
     static func warnRunWriteFailed(_ error: any Error) {
-        print("Warning: could not write the logs into the run: \(OffsiderCommand.message(for: error)).", to: &standardError)
+        print("Warning: could not write the logs into the run: \(TerminalText.line(OffsiderCommand.message(for: error), cap: TerminalText.maxErrorCharacters)).", to: &standardError)
     }
 
     /// The stderr line after a read that redacted something; nil when nothing was.

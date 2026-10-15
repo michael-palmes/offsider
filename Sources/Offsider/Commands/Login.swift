@@ -87,7 +87,12 @@ struct LoginCommand: AsyncParsableCommand {
         } catch {
             throw await Self.failure(error, json: json)
         }
-        print(json ? report.jsonLine() : report.textLine())
+        print(json ? Self.jsonText(report) : report.textLine())
+    }
+
+    /// The report with its `untrusted` list: an error built from the screen can quote it.
+    static func jsonText(_ report: LoginReport) -> String {
+        UntrustedPaths.appending(report.error?.untrustedPaths() ?? [], to: report.jsonLine())
     }
 
     /// Under --json, a login that began typing prints its own report of how far it got; an earlier failure keeps the error envelope.
@@ -97,7 +102,7 @@ struct LoginCommand: AsyncParsableCommand {
         let annotated = await scope.screenHint(for: stopped)
         var report = stopped.report
         report.error = ErrorReporter.payload(for: annotated)
-        write(report.jsonLine())
+        write(Self.jsonText(report))
         return ReportedFailure(underlying: annotated, exitCode: report.exitCode)
     }
 

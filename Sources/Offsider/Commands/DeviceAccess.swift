@@ -600,7 +600,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     /// Why Offsider may not drive `app` on the device, or nil.
     static func appProblem(_ app: String, platform: DevicePlatform, policy: PhysicalDevicePolicy) -> String? {
         if let why = SystemAppDenyList.refusal(app, platform: platform) {
-            return "\(app) is \(why); Offsider never drives it on a physical device."
+            return "\(why)."
         }
         if let ceiling = policy.managed.allowedBundleIDs, !ceiling.contains(app) {
             return "Managed policy on this Mac does not list \(app), and the allow-list cannot override it."
