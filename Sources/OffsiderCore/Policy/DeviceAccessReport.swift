@@ -50,7 +50,7 @@ public enum DeviceAccessReport {
             case .allowed: state = entry.expires.map { "allowed until \(ProcessStamp.timestamp($0))" } ?? "allowed until removed"
             case .refused(let refusal): state = "refused: \(refusal.explanation)"
             }
-            let apps = entry.apps.isEmpty ? "" : ", apps \(entry.apps.joined(separator: ", "))"
+            let apps = entry.apps.isEmpty ? "" : entry.allowsWholeDevice && entry.pinnedApps.isEmpty ? ", any app and all logs" : ", apps \(entry.apps.joined(separator: ", "))"
             let team = entry.team.map { ", runner team \($0)" } ?? ""
             lines.append("\(entry.platform.rawValue)  \(entry.key)  \(entry.name): \(state)\(apps)\(team)")
         }
