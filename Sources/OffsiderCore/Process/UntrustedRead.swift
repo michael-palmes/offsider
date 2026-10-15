@@ -21,7 +21,7 @@ public enum UntrustedRead {
 
     /// The file's bytes, at most `maxBytes`; a larger file is refused unless `truncate`, which keeps its first `maxBytes`.
     public static func data(atPath path: String, maxBytes: Int = defaultMaxBytes, truncate: Bool = false) throws(Failure) -> Data {
-        let descriptor = open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        let descriptor = unsafe open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else {
             switch errno {
             case ENOENT, ENOTDIR: throw .missing
@@ -31,7 +31,7 @@ public enum UntrustedRead {
         }
         defer { close(descriptor) }
         var status = stat()
-        guard fstat(descriptor, &status) == 0 else { throw .system(code: errno) }
+        guard unsafe fstat(descriptor, &status) == 0 else { throw .system(code: errno) }
         guard (status.st_mode & S_IFMT) == S_IFREG else { throw .notRegularFile }
         let cap = max(0, maxBytes)
         if !truncate, status.st_size > off_t(cap) { throw .tooLarge(maxBytes: cap) }
@@ -41,7 +41,7 @@ public enum UntrustedRead {
         var buffer = [UInt8](repeating: 0, count: min(65_536, max(1, limit)))
         while data.count < limit {
             let wanted = min(buffer.count, limit - data.count)
-            let count = buffer.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress, wanted) }
+            let count = buffer.withUnsafeMutableBytes { unsafe Darwin.read(descriptor, $0.baseAddress, wanted) }
             if count < 0 {
                 if errno == EINTR { continue }
                 throw .system(code: errno)

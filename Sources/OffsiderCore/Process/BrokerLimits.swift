@@ -16,9 +16,9 @@ public enum BrokerLimits {
     @discardableResult
     public static func apply() -> Bool {
         var current = rlimit()
-        guard getrlimit(RLIMIT_NOFILE, &current) == 0 else { return false }
+        guard unsafe getrlimit(RLIMIT_NOFILE, &current) == 0 else { return false }
         var (core, files) = limits(currentFiles: current)
-        let coreSet = setrlimit(RLIMIT_CORE, &core) == 0
-        return setrlimit(RLIMIT_NOFILE, &files) == 0 && coreSet
+        let coreSet = unsafe setrlimit(RLIMIT_CORE, &core) == 0
+        return unsafe setrlimit(RLIMIT_NOFILE, &files) == 0 && coreSet
     }
 }

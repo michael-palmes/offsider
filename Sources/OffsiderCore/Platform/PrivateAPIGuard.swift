@@ -70,8 +70,8 @@ public enum PrivateAPIGuard {
 
     /// The method's encoding with offsets removed; nil when `type` has no such method. Pass the metaclass for a class method.
     public static func encoding(of type: AnyClass, _ selector: Selector) -> String? {
-        guard let method = class_getInstanceMethod(type, selector), let raw = method_getTypeEncoding(method) else { return nil }
-        return strippedEncoding(String(cString: raw))
+        guard let method = unsafe class_getInstanceMethod(type, selector), let raw = unsafe method_getTypeEncoding(method) else { return nil }
+        return unsafe strippedEncoding(String(cString: raw))
     }
 
     /// The encoding `table` records for `selector`; a selector with none throws `PrivateAPIUnrecorded`, so nothing is cast unchecked.
@@ -82,9 +82,9 @@ public enum PrivateAPIGuard {
 
     /// The encoding `protocolName` declares for a required instance `selector`, offsets removed; nil when either is missing.
     public static func encoding(inProtocol protocolName: String, _ selector: Selector) -> String? {
-        guard let declared = objc_getProtocol(protocolName) else { return nil }
-        let description = protocol_getMethodDescription(declared, selector, true, true)
-        return description.types.map { strippedEncoding(String(cString: $0)) }
+        guard let declared = unsafe objc_getProtocol(protocolName) else { return nil }
+        let description = unsafe protocol_getMethodDescription(declared, selector, true, true)
+        return unsafe description.types.map { unsafe strippedEncoding(String(cString: $0)) }
     }
 
     /// For an object that may be a proxy: its class's method when it has one, and always the encoding `protocolName` declares, must both match.
@@ -94,7 +94,7 @@ public enum PrivateAPIGuard {
         let wanted = strippedEncoding(expected)
         let changed = PrivateAPIChanged(framework: framework, selector: NSStringFromSelector(selector), owner: owner)
         guard encoding(inProtocol: protocolName, selector) == wanted else { throw changed }
-        if let type = object_getClass(object), class_getInstanceMethod(type, selector) != nil, encoding(of: type, selector) != wanted {
+        if let type = object_getClass(object), unsafe class_getInstanceMethod(type, selector) != nil, encoding(of: type, selector) != wanted {
             throw changed
         }
     }

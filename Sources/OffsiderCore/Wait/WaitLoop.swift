@@ -255,7 +255,7 @@ public enum WaitLoop {
         if tenths == tenths.rounded() {
             return "\(Int(tenths)) s"
         }
-        return String(format: "%.1f s", tenths)
+        return unsafe String(format: "%.1f s", tenths)
     }
 
     private struct Step {

@@ -29,18 +29,18 @@ public struct RunFolder: Equatable, Sendable {
         }
         var info = stat()
         var created = false
-        if lstat(path, &info) != 0 {
+        if unsafe lstat(path, &info) != 0 {
             guard errno == ENOENT else { throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path) }
-            if mkdir(path, S_IRWXU) == 0 {
+            if unsafe mkdir(path, S_IRWXU) == 0 {
                 created = true
             } else if errno != EEXIST {
                 throw PrivateDirectoryError(.system(operation: "mkdir", code: errno), path: path)
             }
-            guard lstat(path, &info) == 0 else { throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path) }
+            guard unsafe lstat(path, &info) == 0 else { throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path) }
         }
         guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else { throw PrivateDirectoryError(.unsafeDirectory, path: path) }
         if created {
-            guard chmod(path, S_IRWXU) == 0 else { throw PrivateDirectoryError(.system(operation: "chmod", code: errno), path: path) }
+            guard unsafe chmod(path, S_IRWXU) == 0 else { throw PrivateDirectoryError(.system(operation: "chmod", code: errno), path: path) }
             let folder = RunFolder(path: path)
             try writeNew(Data("*\n".utf8), toPath: folder.file(gitignoreName))
             return Prepared(folder: folder, writableByOthers: false)
@@ -63,8 +63,8 @@ public struct RunFolder: Equatable, Sendable {
             throw RecordedFolderError(path: path, detail: "is not an absolute, standardised path")
         }
         var info = stat()
-        guard lstat(path, &info) == 0 else {
-            throw RecordedFolderError(path: path, detail: "cannot be read: \(String(cString: strerror(errno)))")
+        guard unsafe lstat(path, &info) == 0 else {
+            throw RecordedFolderError(path: path, detail: unsafe "cannot be read: \(String(cString: strerror(errno)))")
         }
         guard (info.st_mode & S_IFMT) == S_IFDIR else { throw RecordedFolderError(path: path, detail: "is not a directory (a link or a file stands there)") }
         guard info.st_uid == uid else { throw RecordedFolderError(path: path, detail: "belongs to another user") }
@@ -121,12 +121,12 @@ public struct RunFolder: Equatable, Sendable {
 
     /// `NNN-<kind>-<HH.MM.SS>.<ext>` in local time.
     public static func fileName(number: Int, kind: String, at date: Date, extension pathExtension: String, suffix: String = "", timeZone: TimeZone = .current) -> String {
-        String(format: "%03d", number) + "-\(kind)-\(RunClock.clock(date, separator: ".", timeZone: timeZone))\(suffix).\(pathExtension)"
+        unsafe String(format: "%03d", number) + "-\(kind)-\(RunClock.clock(date, separator: ".", timeZone: timeZone))\(suffix).\(pathExtension)"
     }
 
     /// Creates a new run file readable only by its owner, as the manifest is, and returns its descriptor; an existing file or a symlink is an error.
     public static func createNew(_ target: String) throws -> Int32 {
-        let descriptor = Darwin.open(target, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        let descriptor = unsafe Darwin.open(target, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw PrivateDirectoryError(.system(operation: "open", code: errno), path: target) }
         return descriptor
     }
@@ -137,7 +137,7 @@ public struct RunFolder: Equatable, Sendable {
         defer { Darwin.close(descriptor) }
         var offset = 0
         while offset < data.count {
-            let written = data.withUnsafeBytes { Darwin.write(descriptor, $0.baseAddress! + offset, $0.count - offset) }
+            let written = unsafe data.withUnsafeBytes { unsafe Darwin.write(descriptor, $0.baseAddress! + offset, $0.count - offset) }
             guard written > 0 else { throw PrivateDirectoryError(.system(operation: "write", code: errno), path: target) }
             offset += written
         }
@@ -146,11 +146,11 @@ public struct RunFolder: Equatable, Sendable {
     public func append(_ line: RunManifestLine) throws {
         try locked {
             let target = file(Self.manifestName)
-            let descriptor = Darwin.open(target, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+            let descriptor = unsafe Darwin.open(target, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
             guard descriptor >= 0 else { throw PrivateDirectoryError(.system(operation: "open", code: errno), path: target) }
             defer { Darwin.close(descriptor) }
             let data = Data((line.jsonLine() + "\n").utf8)
-            let written = data.withUnsafeBytes { Darwin.write(descriptor, $0.baseAddress, $0.count) }
+            let written = unsafe data.withUnsafeBytes { unsafe Darwin.write(descriptor, $0.baseAddress, $0.count) }
             guard written == data.count else { throw PrivateDirectoryError(.system(operation: "write", code: errno), path: target) }
         }
     }

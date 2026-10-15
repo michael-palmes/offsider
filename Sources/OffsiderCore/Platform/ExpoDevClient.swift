@@ -226,7 +226,7 @@ public enum ExpoDevClient {
 
     /// The `exp+` schemes in an app's `Info.plist` `CFBundleURLTypes`.
     public static func schemes(fromInfoPlist data: Data) -> [String] {
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+        guard let plist = unsafe try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let types = plist["CFBundleURLTypes"] as? [[String: Any]] else { return [] }
         var found: [String] = []
         for scheme in types.flatMap({ $0["CFBundleURLSchemes"] as? [String] ?? [] }) where scheme.hasPrefix("exp+") && !found.contains(scheme) {

@@ -70,7 +70,7 @@ public struct TreeCacheRecord: Equatable, Sendable {
     /// `<first 16 hex of SHA-256 of "platform:device">.json`, so device names never reach a file name.
     public static func fileName(platform: DevicePlatform, device: String) -> String {
         let digest = SHA256.hash(data: Data("\(platform.rawValue):\(device)".utf8))
-        return digest.prefix(8).map { String(format: "%02x", $0) }.joined() + ".json"
+        return digest.prefix(8).map { unsafe String(format: "%02x", $0) }.joined() + ".json"
     }
 
     /// Absent once 10 minutes old, when dated in the future, or from another boot of the device.

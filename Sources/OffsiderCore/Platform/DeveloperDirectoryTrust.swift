@@ -72,9 +72,9 @@ public final class DeveloperDirectoryTrust: @unchecked Sendable {
 
     /// `path` with symlinks resolved, or nil when it does not exist.
     public static func realPath(_ path: String) -> String? {
-        guard let resolved = realpath(path, nil) else { return nil }
-        defer { free(resolved) }
-        return String(cString: resolved)
+        guard let resolved = unsafe realpath(path, nil) else { return nil }
+        defer { unsafe free(resolved) }
+        return unsafe String(cString: resolved)
     }
 
     /// The `.app` that holds `resolved` as its `Contents/Developer`, or nil for any other shape.

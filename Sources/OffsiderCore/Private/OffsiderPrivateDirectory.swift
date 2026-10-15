@@ -31,7 +31,7 @@ extension PrivateDirectoryError: OffsiderFailure {
         case .unsafeFile:
             return "\(path) is not a private file owned by this user."
         case .system(let operation, let code):
-            return "\(operation) \(path) failed: \(String(cString: strerror(code)))"
+            return unsafe "\(operation) \(path) failed: \(String(cString: strerror(code)))"
         }
     }
 }
@@ -54,7 +54,7 @@ public enum OffsiderPrivateDirectory {
         let length = confstr(_CS_DARWIN_USER_TEMP_DIR, nil, 0)
         guard length > 0 else { return nil }
         var buffer = [CChar](repeating: 0, count: length)
-        guard confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, length) > 0 else { return nil }
+        guard unsafe confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, length) > 0 else { return nil }
         let path = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
         guard !path.isEmpty else { return nil }
         return resolved(path)
@@ -99,22 +99,22 @@ public enum OffsiderPrivateDirectory {
     public static func ensurePrivateDirectory(_ path: String, uid: uid_t) throws {
         if try existingPrivateDirectory(path, uid: uid) { return }
         var info = stat()
-        guard mkdir(path, S_IRWXU) == 0 || errno == EEXIST else { throw systemError("mkdir", path) }
-        guard lstat(path, &info) == 0 else { throw systemError("lstat", path) }
+        guard unsafe mkdir(path, S_IRWXU) == 0 || errno == EEXIST else { throw systemError("mkdir", path) }
+        guard unsafe lstat(path, &info) == 0 else { throw systemError("lstat", path) }
         guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else {
             throw PrivateDirectoryError(.unsafeDirectory, path: path)
         }
-        guard chmod(path, S_IRWXU) == 0 else { throw systemError("chmod", path) }
-        guard lstat(path, &info) == 0 else { throw systemError("lstat", path) }
+        guard unsafe chmod(path, S_IRWXU) == 0 else { throw systemError("chmod", path) }
+        guard unsafe lstat(path, &info) == 0 else { throw systemError("lstat", path) }
         guard isPrivateDirectory(info, uid: uid) else { throw PrivateDirectoryError(.unsafeDirectory, path: path) }
     }
 
     /// Opens or creates a 0600 regular file owned by `uid`, never through a symlink and never inherited by a child.
     public static func openPrivateFile(_ path: String, uid: uid_t = getuid()) throws -> Int32 {
-        let descriptor = Darwin.open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        let descriptor = unsafe Darwin.open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw systemError("open", path) }
         var info = stat()
-        guard fstat(descriptor, &info) == 0 else {
+        guard unsafe fstat(descriptor, &info) == 0 else {
             let error = systemError("fstat", path)
             Darwin.close(descriptor)
             throw error
@@ -130,19 +130,19 @@ public enum OffsiderPrivateDirectory {
     public static func writeAtomically(_ data: Data, named name: String, in directory: String, uid: uid_t = getuid()) throws {
         let target = (directory as NSString).appendingPathComponent(name)
         let temporary = (directory as NSString).appendingPathComponent(".\(name).\(getpid()).\(UInt32.random(in: 0...UInt32.max))")
-        let descriptor = Darwin.open(temporary, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        let descriptor = unsafe Darwin.open(temporary, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw systemError("open", temporary) }
         var info = stat()
-        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == uid,
+        guard unsafe fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == uid,
               info.st_mode & (S_IRWXG | S_IRWXO) == 0 else {
             Darwin.close(descriptor)
-            unlink(temporary)
+            unsafe unlink(temporary)
             throw PrivateDirectoryError(.unsafeFile, path: temporary)
         }
-        let written = data.withUnsafeBytes { buffer -> Bool in
+        let written = unsafe data.withUnsafeBytes { buffer -> Bool in
             var offset = 0
             while offset < buffer.count {
-                let count = Darwin.write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
+                let count = unsafe Darwin.write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
                 if count < 0 {
                     if errno == EINTR { continue }
                     return false
@@ -154,12 +154,12 @@ public enum OffsiderPrivateDirectory {
         let failure = written ? nil : systemError("write", temporary)
         Darwin.close(descriptor)
         if let failure {
-            unlink(temporary)
+            unsafe unlink(temporary)
             throw failure
         }
-        guard Darwin.rename(temporary, target) == 0 else {
+        guard unsafe Darwin.rename(temporary, target) == 0 else {
             let error = systemError("rename", target)
-            unlink(temporary)
+            unsafe unlink(temporary)
             throw error
         }
     }
@@ -168,7 +168,7 @@ public enum OffsiderPrivateDirectory {
     public static func readOwnedFile(named name: String, in directory: String, maxBytes: Int, uid: uid_t = getuid()) throws -> Data? {
         let path = (directory as NSString).appendingPathComponent(name)
         // O_NONBLOCK so a FIFO planted at the path is refused below instead of hanging the open.
-        let descriptor = Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        let descriptor = unsafe Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
         guard descriptor >= 0 else {
             if errno == ENOENT { return nil }
             if errno == ELOOP { throw PrivateDirectoryError(.unsafeFile, path: path) }
@@ -176,17 +176,17 @@ public enum OffsiderPrivateDirectory {
         }
         defer { Darwin.close(descriptor) }
         var info = stat()
-        guard fstat(descriptor, &info) == 0 else { throw systemError("fstat", path) }
+        guard unsafe fstat(descriptor, &info) == 0 else { throw systemError("fstat", path) }
         guard (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == uid, info.st_mode & (S_IRWXG | S_IRWXO) == 0,
               info.st_size <= off_t(maxBytes) else {
             throw PrivateDirectoryError(.unsafeFile, path: path)
         }
         var data = Data(count: Int(info.st_size))
-        let count = data.withUnsafeMutableBytes { buffer -> Int in
+        let count = unsafe data.withUnsafeMutableBytes { buffer -> Int in
             guard let base = buffer.baseAddress else { return 0 }
             var offset = 0
             while offset < buffer.count {
-                let read = Darwin.read(descriptor, base + offset, buffer.count - offset)
+                let read = unsafe Darwin.read(descriptor, base + offset, buffer.count - offset)
                 if read < 0 {
                     if errno == EINTR { continue }
                     return -1
@@ -201,13 +201,13 @@ public enum OffsiderPrivateDirectory {
     }
 
     public static func removeFile(named name: String, in directory: String) {
-        unlink((directory as NSString).appendingPathComponent(name))
+        unsafe unlink((directory as NSString).appendingPathComponent(name))
     }
 
     /// False when nothing is at `path`; refuses a symlink, another user's directory or one with group or other bits.
     private static func existingPrivateDirectory(_ path: String, uid: uid_t) throws -> Bool {
         var info = stat()
-        guard lstat(path, &info) == 0 else {
+        guard unsafe lstat(path, &info) == 0 else {
             if errno == ENOENT { return false }
             throw systemError("lstat", path)
         }

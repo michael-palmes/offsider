@@ -28,20 +28,20 @@ public enum PeerCodeIdentity {
     /// Read it once at start, before a rebuild can replace the executable on disk.
     public static func ownRequirement() throws -> Requirement {
         var own: SecCode?
-        var status = SecCodeCopySelf([], &own)
+        var status = unsafe SecCodeCopySelf([], &own)
         guard status == errSecSuccess, let own else { throw CodeSignatureCheck.Failure(step: "SecCodeCopySelf", status: status) }
         var designated: SecRequirement?
-        status = SecCodeCopyDesignatedRequirement(staticCode(own), [], &designated)
+        status = unsafe SecCodeCopyDesignatedRequirement(staticCode(own), [], &designated)
         guard status == errSecSuccess, let designated else { throw CodeSignatureCheck.Failure(step: "SecCodeCopyDesignatedRequirement", status: status) }
         var text: CFString?
-        status = SecRequirementCopyString(designated, [], &text)
+        status = unsafe SecRequirementCopyString(designated, [], &text)
         guard status == errSecSuccess, let text else { throw CodeSignatureCheck.Failure(step: "SecRequirementCopyString", status: status) }
         return Requirement(text: text as String, compiled: designated)
     }
 
     public static func requirement(_ text: String) throws -> Requirement {
         var compiled: SecRequirement?
-        let status = SecRequirementCreateWithString(text as CFString, [], &compiled)
+        let status = unsafe SecRequirementCreateWithString(text as CFString, [], &compiled)
         guard status == errSecSuccess, let compiled else { throw CodeSignatureCheck.Failure(step: "SecRequirementCreateWithString", status: status) }
         return Requirement(text: text, compiled: compiled)
     }
@@ -50,7 +50,7 @@ public enum PeerCodeIdentity {
     public static func auditToken(of descriptor: Int32) -> audit_token_t? {
         var token = audit_token_t()
         var length = socklen_t(MemoryLayout<audit_token_t>.size)
-        guard getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &length) == 0,
+        guard unsafe getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &length) == 0,
               length == socklen_t(MemoryLayout<audit_token_t>.size) else { return nil }
         return token
     }
@@ -58,7 +58,7 @@ public enum PeerCodeIdentity {
     public static func peerPID(of descriptor: Int32) -> pid_t? {
         var pid: pid_t = 0
         var length = socklen_t(MemoryLayout<pid_t>.size)
-        guard getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0, pid > 0 else { return nil }
+        guard unsafe getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0, pid > 0 else { return nil }
         return pid
     }
 
@@ -70,7 +70,7 @@ public enum PeerCodeIdentity {
     /// Checks the process the audit token names against `requirement`.
     public static func check(auditToken token: audit_token_t, requirement: Requirement) -> Verdict {
         var token = token
-        let data = withUnsafeBytes(of: &token) { Data($0) }
+        let data = withUnsafeBytes(of: &token) { unsafe Data($0) }
         return check(pid: pid(of: token), attributes: [kSecGuestAttributeAudit: data as CFData], requirement: requirement)
     }
 
@@ -92,7 +92,7 @@ public enum PeerCodeIdentity {
 
     private static func check(pid: pid_t, attributes: [CFString: Any], requirement: Requirement) -> Verdict {
         var guest: SecCode?
-        let status = SecCodeCopyGuestWithAttributes(nil, attributes as CFDictionary, [], &guest)
+        let status = unsafe SecCodeCopyGuestWithAttributes(nil, attributes as CFDictionary, [], &guest)
         guard status == errSecSuccess, let guest else {
             return Verdict(pid: pid, cdhash: nil, accepted: false, identified: false, detail: CodeSignatureCheck.Failure(step: "SecCodeCopyGuestWithAttributes", status: status).description)
         }
@@ -107,14 +107,14 @@ public enum PeerCodeIdentity {
 
     /// A running `SecCode` is also a `SecStaticCode` to every call that reads a signature.
     private static func staticCode(_ code: SecCode) -> SecStaticCode {
-        unsafeBitCast(code, to: SecStaticCode.self)
+        unsafe unsafeBitCast(code, to: SecStaticCode.self)
     }
 
     private static func cdhash(of code: SecCode) -> String? {
         var info: CFDictionary?
-        guard SecCodeCopySigningInformation(staticCode(code), [], &info) == errSecSuccess,
+        guard unsafe SecCodeCopySigningInformation(staticCode(code), [], &info) == errSecSuccess,
               let dictionary = info as? [String: Any],
               let unique = dictionary[kSecCodeInfoUnique as String] as? Data else { return nil }
-        return unique.map { String(format: "%02x", $0) }.joined()
+        return unique.map { unsafe String(format: "%02x", $0) }.joined()
     }
 }

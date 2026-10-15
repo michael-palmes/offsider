@@ -36,14 +36,14 @@ public struct ProcessTable: Sendable {
     /// `sysctl KERN_PROC_PID`; nil once the process has exited or is a zombie.
     public static let live = ProcessTable { pid in
         guard pid > 0 else { return nil }
-        var info = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.stride
+        var info = unsafe kinfo_proc()
+        var size = unsafe MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0, Int32(info.kp_proc.p_stat) != SZOMB else { return nil }
-        let start = info.kp_proc.p_starttime
-        let name = withUnsafeBytes(of: info.kp_proc.p_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        guard unsafe sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0, unsafe Int32(info.kp_proc.p_stat) != SZOMB else { return nil }
+        let start = unsafe info.kp_proc.p_starttime
+        let name = unsafe withUnsafeBytes(of: info.kp_proc.p_comm) { unsafe String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
         let identity = ProcessIdentity(pid: pid, startTime: UInt64(start.tv_sec) * 1_000_000 + UInt64(start.tv_usec), name: name)
-        return (identity, info.kp_eproc.e_ppid)
+        return unsafe (identity, info.kp_eproc.e_ppid)
     }
 
     /// True when the process is still the one `identity` names.
