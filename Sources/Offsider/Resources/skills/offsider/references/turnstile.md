@@ -16,4 +16,4 @@ Offsider never mints, reads or submits a token and never calls Cloudflare.
 
 ## Unattended tests
 
-A test that must pass without a person uses a build whose sitekey and server secret are Cloudflare's test pair, which always passes. The project's `OFFSIDER.md` names that build; without one, hand back.
+A test that must pass without a person uses a build whose sitekey and server secret are Cloudflare's test pair, which always passes (sitekey `1x00000000000000000000AA`, or `1x00000000000000000000BB` invisible; `3x00000000000000000000FF` forces a challenge). The project's `OFFSIDER.md` names that build; without one, hand back.
