@@ -46,12 +46,13 @@ struct InputNumberTests {
     @Test("tap -x 1e19 exits as a usage error and sends nothing")
     func tapRefusesHugeCoordinate() async throws {
         let backend = FakeDeviceBackend(trees: [FakeUI.tree([])])
-        await #expect(throws: CLIError.self) {
+        let error = await #expect(throws: (any Error).self) {
             try await DispatchTracker.$current.withValue(DispatchTracker()) {
                 try await Tap.parse(["-x", "1e19", "-y", "10", "--device", Self.device.rawValue])
                     .execute(on: DeviceRouter.Route(backend: backend, device: Self.device), progress: nil, logger: OffsiderLogger())
             }
         }
+        #expect(error.map { Tap.exitCode(for: $0) } == .validationFailure)
         #expect(backend.session.calls.isEmpty)
     }
 }

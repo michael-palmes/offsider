@@ -313,7 +313,7 @@ struct Batch: AsyncParsableCommand {
             FileHandle.standardError.write(Data((read.announcement + "\n").utf8))
             rawLines = read.text.components(separatedBy: .newlines)
         } else {
-            rawLines = readStdinLines()
+            rawLines = try Self.readStepLines(from: FileHandle.standardInput)
         }
 
         return rawLines
@@ -321,12 +321,22 @@ struct Batch: AsyncParsableCommand {
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
     }
 
-    private func readStdinLines() -> [String] {
-        var lines: [String] = []
-        while let line = readLine() {
-            lines.append(line)
+    /// The most `--stdin` reads; far more steps than any batch needs.
+    static let maxStdinBytes = 16 << 20
+
+    /// Every line `handle` holds, refusing more than `maxBytes` rather than buffering without end.
+    static func readStepLines(from handle: FileHandle, maxBytes: Int = maxStdinBytes) throws -> [String] {
+        var data = Data()
+        while let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty {
+            data.append(chunk)
+            guard data.count <= maxBytes else {
+                throw CLIError(
+                    errorDescription: "--stdin sent more than \(maxBytes >> 20) MB of steps. Split them across several batches.",
+                    reason: .usage
+                )
+            }
         }
-        return lines
+        return String(decoding: data, as: UTF8.self).components(separatedBy: .newlines)
     }
 }
 

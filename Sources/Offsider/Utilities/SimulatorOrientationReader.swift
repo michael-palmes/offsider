@@ -95,11 +95,23 @@ struct SimulatorOrientationReader {
             return nil
         }
 
+        do {
+            try PrivateAPIGuard.requireMessage(to: screen, NSSelectorFromString("screenProperties"), encoding: Encodings.screenProperties, protocol: Encodings.screenProtocol, framework: "SimulatorKit")
+        } catch {
+            logger.info().log("Orientation probe: \(error.localizedDescription)")
+            return nil
+        }
         guard let properties = sendObject(screen, selector: "screenProperties") else {
             logger.info().log("Orientation probe: screenProperties unavailable")
             return nil
         }
 
+        do {
+            try PrivateAPIGuard.requireMessage(to: properties, NSSelectorFromString("uiOrientation"), encoding: Encodings.uiOrientation, protocol: Encodings.screenPropertiesProtocol, framework: "SimulatorKit")
+        } catch {
+            logger.info().log("Orientation probe: \(error.localizedDescription)")
+            return nil
+        }
         guard let rawOrientation = sendUInt32(properties, selector: "uiOrientation") else {
             logger.info().log("Orientation probe: uiOrientation unavailable")
             return nil
@@ -114,6 +126,20 @@ struct SimulatorOrientationReader {
         static let alloc = "@@:"
         static let initWithDeviceScreenID = "@@:@I"
         static let screen = "@@:"
+        /// Declared by the `SimScreen` protocol, so a proxy for the screen is checked too.
+        static let screenProperties = "@@:"
+        /// Declared `unsigned int` by `SimScreenProperties`.
+        static let uiOrientation = "I@:"
+        static let screenProtocol = "SimScreen"
+        static let screenPropertiesProtocol = "SimScreenProperties"
+
+        /// Every guarded call as (class or protocol, selector, encoding), for `doctor` to check against the installed frameworks.
+        static let recorded: [(owner: String, isProtocol: Bool, selector: String, encoding: String)] = [
+            ("SimulatorKit.SimDeviceScreen", false, "initWithDevice:screenID:", initWithDeviceScreenID),
+            ("SimulatorKit.SimDeviceScreen", false, "screen", screen),
+            (screenProtocol, true, "screenProperties", screenProperties),
+            (screenPropertiesProtocol, true, "uiOrientation", uiOrientation),
+        ]
     }
 
     /// `[[SimDeviceScreen alloc] initWithDevice:screenID:]` with ownership balanced: `alloc` hands over +1, `init` consumes it and returns +1, or nil having released it.

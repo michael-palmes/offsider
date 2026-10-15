@@ -141,6 +141,9 @@ struct Gesture: AsyncParsableCommand {
         guard missing.isEmpty else {
             throw ValidationError("long-press-drag needs \(missing.joined(separator: ", ")).")
         }
+        if let problem = Coordinates.problem(points) {
+            throw ValidationError(problem)
+        }
         guard points.allSatisfy({ ($0.1 ?? 0) >= 0 }) else {
             throw ValidationError("Coordinates must be non-negative values.")
         }

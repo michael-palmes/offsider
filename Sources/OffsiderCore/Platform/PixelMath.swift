@@ -13,6 +13,17 @@ public enum PixelMath {
         return overflow || overflowBytes ? nil : bytes
     }
 
+    /// `value` rounded to a whole pixel and clamped to the `Int32` range, so no device or caller value can trap; NaN is 0.
+    public static func roundedPixel(_ value: Double) -> Int {
+        guard !value.isNaN else { return 0 }
+        return Int(min(max(value.rounded(), Double(Int32.min)), Double(Int32.max)))
+    }
+
+    /// Whether a side read from a device is one Offsider works with: 1 to `maxSide` pixels.
+    public static func isSide(_ value: Int) -> Bool {
+        (1...maxSide).contains(value)
+    }
+
     /// A step count from a `Double` ratio, clamped to 1 to `maxSwipeSteps` before it becomes an `Int`; NaN is 1.
     public static func swipeSteps(_ ratio: Double) -> Int {
         guard !ratio.isNaN else { return 1 }

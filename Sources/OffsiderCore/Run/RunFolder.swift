@@ -157,7 +157,7 @@ public struct RunFolder: Equatable, Sendable {
 
     /// Every manifest line that parses, oldest first.
     public func manifest() -> [RunManifestLine] {
-        guard let data = FileManager.default.contents(atPath: file(Self.manifestName)) else { return [] }
+        guard let data = UntrustedRead.contents(atPath: file(Self.manifestName), maxBytes: 16 << 20, truncate: true) else { return [] }
         return String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap { try? RunManifestLine(jsonLine: String($0)) }
     }
 

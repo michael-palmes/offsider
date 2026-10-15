@@ -20,12 +20,12 @@ public enum ForegroundApp {
     }
 
     /// `CFBundleIdentifier` from the `.app` that contains `path`.
-    public static func bundleIdentifier(atExecutable path: String, fileManager: FileManager = .default) -> String? {
+    public static func bundleIdentifier(atExecutable path: String) -> String? {
         var directory = (path as NSString).deletingLastPathComponent
         for _ in 0..<4 {
             if directory.hasSuffix(".app") {
                 let plist = (directory as NSString).appendingPathComponent("Info.plist")
-                guard let data = fileManager.contents(atPath: plist),
+                guard let data = UntrustedRead.contents(atPath: plist, maxBytes: 1 << 20),
                       let object = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
                       let identifier = object["CFBundleIdentifier"] as? String,
                       !identifier.isEmpty

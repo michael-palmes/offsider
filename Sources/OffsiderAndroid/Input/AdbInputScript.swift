@@ -183,7 +183,7 @@ enum AdbInputScript {
 
     /// Whole logical pixels: `input` takes floats, but fractions of a pixel only add noise.
     private static func pixels(_ point: AndroidPoint) -> String {
-        "\(Int(point.x.rounded())) \(Int(point.y.rounded()))"
+        "\(PixelMath.roundedPixel(point.x)) \(PixelMath.roundedPixel(point.y))"
     }
 
     private static func decimal(_ seconds: TimeInterval) -> String {

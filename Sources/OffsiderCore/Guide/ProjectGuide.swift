@@ -55,7 +55,7 @@ public enum ProjectGuide {
         guard let size = attributes?[.size] as? Int, size <= maximumBytes else {
             throw Failure.unreadable(path: path, detail: "it is larger than 256 KiB")
         }
-        guard let data = fileManager.contents(atPath: resolved), let text = String(data: data, encoding: .utf8) else {
+        guard let data = UntrustedRead.contents(atPath: resolved, maxBytes: maximumBytes), let text = String(data: data, encoding: .utf8) else {
             throw Failure.unreadable(path: path, detail: "it is not UTF-8 text")
         }
         return Found(path: path, text: text)
