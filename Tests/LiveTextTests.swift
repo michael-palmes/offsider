@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import OffsiderCore
 
-@Suite("Live text")
+@Suite("Live text", .personOutput)
 struct LiveTextTests {
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
 

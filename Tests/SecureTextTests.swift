@@ -4,7 +4,7 @@ import OffsiderCore
 import Testing
 @testable import Offsider
 
-@Suite("Secure text")
+@Suite("Secure text", .personOutput)
 @MainActor
 struct SecureTextTests {
     static let sentinel = "S3NT1NEL"

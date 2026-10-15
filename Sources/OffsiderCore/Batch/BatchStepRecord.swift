@@ -74,12 +74,26 @@ public struct BatchStepRecord: Sendable {
             members += report.jsonMembers
         case .describe(let tree, let options):
             if options.format == .json {
-                members.append(("tree", UITreeRenderer.json(tree, options, fields: options.fields.map(Set.init))))
+                let json = UITreeRenderer.json(tree, options, fields: options.fields.map(Set.init))
+                members.append(("tree", UntrustedPaths.marked(json, UITreeRenderer.untrustedPaths(flat: options.flat))))
             } else {
-                members.append(("output", .string(String(decoding: UITreeRenderer.render(tree, options), as: UTF8.self))))
+                members.append(("output", .string(String(decoding: UITreeRenderer.render(tree, options, marksUntrusted: true), as: UTF8.self))))
             }
         }
-        return OrderedJSON.object(members).rendered(compact: true)
+        return UntrustedPaths.marked(.object(members), untrustedPaths).rendered(compact: true)
+    }
+
+    /// The paths a step line can hold the app's text at: the error, a wait's match and near misses, the tree or its text.
+    private var untrustedPaths: [String] {
+        let error = UntrustedPaths.under("error", UntrustedPaths.errorFields)
+        switch detail {
+        case .none, .screenshot:
+            return error
+        case .wait:
+            return error + WaitReport.untrustedPaths
+        case .describe(_, let options):
+            return error + (options.format == .json ? UntrustedPaths.under("tree", UITreeRenderer.untrustedPaths(flat: options.flat)) : ["output"])
+        }
     }
 
     /// The final `batch --json` line: `{"step":null,"kind":"batch","ok":true,"ms":840,"steps":5,"failed":0,"dispatched":"yes"}`.

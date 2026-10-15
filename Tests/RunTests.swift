@@ -81,7 +81,7 @@ final class RunFixture {
     }
 }
 
-@Suite("Evidence runs")
+@Suite("Evidence runs", .personOutput)
 @MainActor
 struct RunTests {
     static let device = DeviceID(rawValue: "fake-device", platform: .ios)

@@ -162,7 +162,7 @@ struct DevicePolicyRoutingTests {
     }
 }
 
-@Suite("list-devices and the allow-list")
+@Suite("list-devices and the allow-list", .personOutput)
 struct ListDevicesPolicyTests {
     static let emulator = DeviceSummary(id: "emulator-5554", platform: .android, state: "Booted", name: "Offsider_E2E", osVersion: nil, deviceType: nil, kind: .emulator)
     static let phone = DeviceSummary(id: "R58M123ABC", platform: .android, state: "Booted", name: "Pixel 9", osVersion: nil, deviceType: nil, kind: .physical, connection: "usb")

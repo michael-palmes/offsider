@@ -121,6 +121,8 @@ struct Batch: AsyncParsableCommand {
     }
 
     func run() async throws {
+        if !Screenshot.masksSecure(flag: nil, batchDefault: maskSecure) { try await UnmaskedConsent.confirm(command: "batch") }
+        try await AllowPathConsent.confirm(path: file, allowPath: allowPath, command: "batch")
         let logger = OffsiderLogger(writeToStdErr: verbose)
         let watchdog = DeviceWatchdog()
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
@@ -309,7 +311,7 @@ struct Batch: AsyncParsableCommand {
         if !steps.isEmpty {
             rawLines = steps
         } else if let file {
-            let read = try TextFileInput.read(file, allowSensitive: allowPath)
+            let read = try TextFileInput.read(file, allowing: allowPath ? AllowPathConsent.confirmed : nil)
             FileHandle.standardError.write(Data((read.announcement + "\n").utf8))
             rawLines = read.text.components(separatedBy: .newlines)
         } else {

@@ -23,7 +23,7 @@ public struct LogReport: Equatable, Sendable {
 
     /// `{"version":1,"platform":"ios","device":"…","entries":[…],"truncated":0,"redacted":0,"excluded":0}`.
     public func jsonLine() -> String {
-        OrderedJSON.object([
+        UntrustedPaths.marked(.object([
             ("version", .integer(1)),
             ("platform", .string(platform.rawValue)),
             ("device", .string(device)),
@@ -31,12 +31,15 @@ public struct LogReport: Equatable, Sendable {
             ("truncated", .integer(truncated)),
             ("redacted", .integer(redacted)),
             ("excluded", .integer(excluded)),
-        ]).rendered(compact: true)
+        ]), UntrustedPaths.under("entries[]", Self.untrustedFields)).rendered(compact: true)
     }
+
+    /// An entry's keys that the device or app wrote.
+    static let untrustedFields = ["process", "tag", "message", "raw"]
 
     /// `{"timestamp":"2026-10-02T12:47:18.399Z","level":"Info","process":"…","pid":1,"tag":"…","message":"…","raw":"…","truncated":false}`; missing fields are null.
     public static func jsonLine(_ entry: LogEntry) -> String {
-        json(entry).rendered(compact: true)
+        UntrustedPaths.marked(json(entry), untrustedFields).rendered(compact: true)
     }
 
     private static func json(_ entry: LogEntry) -> OrderedJSON {

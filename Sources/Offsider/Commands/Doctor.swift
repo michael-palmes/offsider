@@ -284,11 +284,20 @@ struct Doctor: AsyncParsableCommand {
         return raw
     }
 
+    /// `JSONEncoder` escapes C0 only, so every other hazard is escaped after; `untrusted` names the text a device or adb reported.
+    static func jsonText(_ report: DoctorReport) throws -> String {
+        var paths = ["checks[].detail"]
+        if report.device?.name != nil { paths.append("device.name") }
+        if !report.booted.isEmpty { paths.append("booted[].name") }
+        let encoded = String(decoding: try report.jsonData(), as: UTF8.self)
+        return UntrustedPaths.appending(report.checks.isEmpty ? Array(paths.dropFirst()) : paths, to: TerminalText.escapingJSONHazards(encoded))
+    }
+
     private func write(_ report: DoctorReport) throws {
         let human = Data((DoctorRenderer.render(report) + (report.nextStep.map { "\($0)\n" } ?? "")).utf8)
         if json {
             FileHandle.standardError.write(human)
-            FileHandle.standardOutput.write(try report.jsonData() + Data("\n".utf8))
+            FileHandle.standardOutput.write(Data((try Self.jsonText(report) + "\n").utf8))
         } else {
             FileHandle.standardOutput.write(human)
         }

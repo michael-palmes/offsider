@@ -4,7 +4,7 @@ import OffsiderCore
 import Testing
 @testable import Offsider
 
-@Suite("Screenshot masks")
+@Suite("Screenshot masks", .personOutput)
 @MainActor
 struct ScreenshotMaskTests {
     static let device = DeviceID(rawValue: "fake-device", platform: .ios)

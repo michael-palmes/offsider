@@ -120,7 +120,7 @@ struct LogsCommandTests {
         ]
         let line = LogReport(platform: .ios, device: "UDID", entries: entries, truncated: 2).jsonLine()
 
-        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\"","truncated":false},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null,"truncated":false}],"truncated":2,"redacted":0,"excluded":0}"#)
+        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\"","truncated":false},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null,"truncated":false}],"truncated":2,"redacted":0,"excluded":0,"untrusted":["entries[].process","entries[].tag","entries[].message","entries[].raw"]}"#)
         let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         #expect((object["entries"] as? [Any])?.count == 2)
     }
@@ -150,8 +150,8 @@ struct LogsCommandTests {
             let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
             #expect(object.keys.contains("raw"))
         }
-        #expect(lines[0].hasSuffix(#""message":"one","raw":"1790945238.399  4100  4120 I ReactNativeJS: one","truncated":false}"#))
-        #expect(lines[1].hasSuffix(#""raw":null,"truncated":false}"#))
+        #expect(lines[0].hasSuffix(#""message":"one","raw":"1790945238.399  4100  4120 I ReactNativeJS: one","truncated":false,"untrusted":["tag","message","raw"]}"#))
+        #expect(lines[1].hasSuffix(#""raw":null,"truncated":false,"untrusted":["message"]}"#))
     }
 
     // MARK: Redaction
@@ -272,7 +272,7 @@ struct LogsCommandTests {
         lines = []
         try await Self.command(["--json", "--no-redact"]).read(from: DeviceRouter.Route(backend: backend, device: device)) { lines.append($0) }
         #expect(lines[0].contains("hunter22"))
-        #expect(lines[0].hasSuffix(#""redacted":0,"excluded":0}"#))
+        #expect(lines[0].contains(#""redacted":0,"excluded":0,"untrusted":["entries[]."#))
 
         #expect(Logs.redactionFooter(3) == "Redacted 3 values (passwords, tokens, emails, addresses, cards, phrases, codes).")
         #expect(Logs.redactionFooter(3)?.contains("--no-redact") == false)

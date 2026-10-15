@@ -65,6 +65,7 @@ struct DescribeUI: AsyncParsableCommand {
     }
 
     func run() async throws {
+        if rawSource { try Self.refuseRawSourceForAgent() }
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         await appOption.apply(to: route)
@@ -72,7 +73,7 @@ struct DescribeUI: AsyncParsableCommand {
         try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
 
         if rawSource {
-            print(String(decoding: try await Self.rawCapture(on: route), as: UTF8.self))
+            print(try Self.rawSourceText(try await Self.rawCapture(on: route)))
             return
         }
         let described = try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
@@ -138,6 +139,22 @@ struct DescribeUI: AsyncParsableCommand {
             selected.display, posture: selected.list.posture, platform: route.device.platform,
             physical: route.device.isPhysicalAndroidDevice, device: deviceName
         ), reason: .displayOff)
+    }
+
+    /// The raw tree is unredacted and uncapped device text, so only a person at a terminal reads it.
+    static func refuseRawSourceForAgent(profile: OutputProfile = .current) throws {
+        guard profile == .agent else { return }
+        throw CLIError.personRequired(
+            "--raw-source prints the device's unredacted tree, so it runs only for a person at a terminal. Nothing was read. Use describe-ui --json instead."
+        )
+    }
+
+    /// The raw capture as text: refused past the tree caps, and every hazard escaped.
+    static func rawSourceText(_ capture: Data) throws -> String {
+        if let refusal = JSONShape.refusal(capture) {
+            throw CLIError(errorDescription: "The raw tree was not printed: \(refusal). Use describe-ui --json, which trims it.", reason: .commandFailed)
+        }
+        return TerminalText.escapingJSONHazards(String(decoding: capture, as: UTF8.self))
     }
 
     /// The platform's unmapped tree with the screen, for the committed tree goldens.

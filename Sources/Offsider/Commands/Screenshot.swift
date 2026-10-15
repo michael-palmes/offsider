@@ -105,7 +105,7 @@ struct Screenshot: AsyncParsableCommand {
             throw ValidationError(error.userFacingDescription)
         }
         do {
-            _ = try maskPlan()
+            _ = try maskPlan(gated: false)
         } catch let error as MaskPatternError {
             throw ValidationError(error.description)
         } catch let error as ScreenRegionError {
@@ -136,12 +136,15 @@ struct Screenshot: AsyncParsableCommand {
     }
 
     /// The masks the flags ask for; `batchDefault` is `batch --mask-secure` or `--no-mask-secure`, which a step's own flag beats.
-    func maskPlan(batchDefault: Bool? = nil, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> MaskPlan {
+    /// When `gated`, password masking turned off is refused for an agent until a person confirmed it in this process.
+    func maskPlan(batchDefault: Bool? = nil, environment: [String: String] = ProcessInfo.processInfo.environment, gated: Bool = true) throws -> MaskPlan {
         for pattern in maskTexts {
             _ = try MaskPlan.compile(pattern)
         }
+        let secure = Self.masksSecure(flag: maskSecure, batchDefault: batchDefault, environment: environment)
+        if gated, !secure { try UnmaskedConsent.require() }
         return MaskPlan(
-            secure: Self.masksSecure(flag: maskSecure, batchDefault: batchDefault, environment: environment),
+            secure: secure,
             ids: maskIDs,
             labels: maskLabels,
             labelsContaining: maskLabelsContaining,
@@ -154,6 +157,7 @@ struct Screenshot: AsyncParsableCommand {
 
     func run() async throws {
         let request = try request()
+        if try !maskPlan(gated: false).secure { try await UnmaskedConsent.confirm(command: "screenshot") }
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan()), plain: !json)
@@ -317,7 +321,7 @@ struct Screenshot: AsyncParsableCommand {
                 try RunFolder.writeNew(ScreenImage.encode(diffImage, as: .png), toPath: diffPath)
             } catch {
                 recorder.update(token) { $0.diff = nil }
-                Self.writeError("Warning: could not write the run's diff to \(diffPath): \(error.localizedDescription)")
+                Self.writeError("Warning: could not write the run's diff to \(diffPath): \(TerminalText.line(error.localizedDescription))")
             }
         }
         return report
@@ -364,7 +368,7 @@ struct Screenshot: AsyncParsableCommand {
             guard otherCopy != nil else {
                 throw CLIError(errorDescription: message + ". Fix the run folder, or stop the run with `offsider run stop`.", reason: .runUnavailable, hint: "offsider run status")
             }
-            writeError("Warning: \(message); the --output copy was written.")
+            writeError("Warning: \(TerminalText.line(message, cap: TerminalText.maxErrorCharacters)); the --output copy was written.")
             return nil
         }
     }
@@ -383,5 +387,27 @@ struct Screenshot: AsyncParsableCommand {
 
     private static func writeError(_ line: String) {
         FileHandle.standardError.write(Data((line + "\n").utf8))
+    }
+}
+
+/// `--no-mask-secure` and `OFFSIDER_MASK_SECURE=0` show password fields, so for an agent a person confirms them first.
+enum UnmaskedConsent {
+    nonisolated(unsafe) static var confirmed = false
+
+    static let refusal = "Password fields stay masked when an agent runs this. Nothing was captured. "
+        + "Run it from your own terminal, or keep the mask and hide other fields with --mask-id."
+
+    /// Refuses for an agent unless a person confirmed in this process; a person at a terminal is never asked.
+    static func require(profile: OutputProfile = .current) throws {
+        guard profile == .agent, !confirmed else { return }
+        throw CLIError.personRequired(refusal)
+    }
+
+    /// For an agent: a terminal on standard input, then Touch ID or the password; refused without either.
+    static func confirm(command: String, profile: OutputProfile = .current) async throws {
+        guard profile == .agent, !confirmed else { return }
+        guard PersonPresence.terminal() else { throw CLIError.personRequired(refusal) }
+        try await PersonPresence.confirm(reason: "\(command) with password fields unmasked")
+        confirmed = true
     }
 }
