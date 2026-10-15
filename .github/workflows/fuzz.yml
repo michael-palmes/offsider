@@ -1,0 +1,127 @@
+name: Fuzz
+
+# Weekly: every parser that reads bytes from a device, a daemon or a file runs for a minute under
+# AddressSanitizer, seeded from Tests/Fixtures/fuzz. No devices, no secrets, not a required check.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+
+jobs:
+  fuzz:
+    name: Fuzz parsers (ASan)
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 75
+    env:
+      XCODE_APP: ${{ vars.XCODE_APP || '/Applications/Xcode_27.0.app' }}
+      FUZZ_SECONDS: "60"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        id: xcode
+        run: |
+          set -euo pipefail
+          [ -d "$XCODE_APP" ] || { echo "::error::$XCODE_APP not found"; exit 1; }
+          sudo xcode-select --switch "$XCODE_APP"
+          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
+          echo "build=$(xcodebuild -version | awk '/Build version/ { print $3 }')" >> "$GITHUB_OUTPUT"
+
+      - name: Install XcodeGen (pinned)
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/xcodegen.zip"
+          curl -fsSLo "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  $zip" | shasum -a 256 -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen"
+          dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)" >> "$GITHUB_PATH"
+
+      - name: Resolve idb pin
+        id: idb
+        run: |
+          set -euo pipefail
+          ref="$(sed -nE 's/^DEFAULT_IDB_GIT_REF="([0-9a-f]{40})"$/\1/p' scripts/build.sh)"
+          [ -n "$ref" ] || { echo "::error::DEFAULT_IDB_GIT_REF not found in scripts/build.sh"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      # The manifest declares the idb binary targets, so they must exist even though the driver links none of them.
+      - name: Cache idb checkout and frameworks
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            idb_checkout
+            build_products/Frameworks
+            build_products/XCFrameworks
+          key: idb-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-xcodegen-${{ env.XCODEGEN_VERSION }}-${{ hashFiles('scripts/build.sh', 'Package.swift') }}
+
+      - name: Build idb frameworks
+        env:
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          scripts/build.sh setup
+          if [ "$CACHE_HIT" = true ] && scripts/build.sh verify-xcframeworks; then
+            echo "Reusing cached idb frameworks"
+          else
+            for step in clean frameworks install strip xcframeworks verify-xcframeworks; do
+              scripts/build.sh "$step"
+            done
+          fi
+
+      - name: Build the fuzz driver (ASan)
+        env:
+          OFFSIDER_FUZZ: "1"
+        run: |
+          set -euo pipefail
+          swift build --product OffsiderFuzz --sanitize=address
+          echo "FUZZ_BIN=$(swift build --product OffsiderFuzz --sanitize=address --show-bin-path)/OffsiderFuzz" >> "$GITHUB_ENV"
+
+      - name: Replay the seeds
+        run: |
+          set -euo pipefail
+          for target in $("$FUZZ_BIN" --list); do
+            "$FUZZ_BIN" "$target" --replay "Tests/Fixtures/fuzz/$target" | tail -1
+          done
+
+      - name: Fuzz each parser
+        run: |
+          set -uo pipefail
+          mkdir -p fuzz-artifacts
+          failed=()
+          for target in $("$FUZZ_BIN" --list); do
+            if ! "$FUZZ_BIN" "$target" "Tests/Fixtures/fuzz/$target" --seconds "$FUZZ_SECONDS" --artifacts fuzz-artifacts \
+              > "fuzz-artifacts/$target.log" 2>&1; then
+              failed+=("$target")
+              echo "::error title=Fuzz::$target crashed; the input is in the fuzz-crashes artifact as crash-$target"
+              tail -40 "fuzz-artifacts/$target.log"
+            else
+              tail -1 "fuzz-artifacts/$target.log"
+            fi
+          done
+          [ "${#failed[@]}" -eq 0 ] || exit 1
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: fuzz-crashes
+          path: fuzz-artifacts
+          if-no-files-found: ignore
+          retention-days: 30
