@@ -44,6 +44,8 @@ enum HIDBroker {
     static let clientWriteTimeoutMilliseconds: Int = 2_000
     static let clientResponseTimeoutMilliseconds: Int = 30_000
     static let startupAttempts = 300
+    /// A broker this old exits at its next idle moment, so a long-lived one is renewed.
+    static let maxLifetimeNanoseconds: UInt64 = 12 * 3_600 * 1_000_000_000
     static let startupTimeoutNanoseconds: UInt64 = 30_000_000_000
     static func sendTouchPrimitives(
         _ primitives: [HIDBrokerPrimitive],
@@ -76,6 +78,8 @@ enum HIDBroker {
 
     @MainActor
     static func serve(simulatorUDID: String, logger: OffsiderLogger) async throws {
+        // Read before anything else, while the executable on disk is still the one running.
+        let requirement = try PeerCodeIdentity.ownRequirement()
         let endpoint = try endpointPath(simulatorUDID: simulatorUDID)
         let listener = try makeListener(at: endpoint)
         let endpointIdentity = try socketIdentity(at: endpoint)
@@ -89,6 +93,7 @@ enum HIDBroker {
         do {
             try await acceptClients(
                 on: listener,
+                requirement: requirement,
                 bootIdentity: bootIdentity,
                 session: session,
                 simulatorUDID: simulatorUDID,
@@ -104,12 +109,18 @@ enum HIDBroker {
     @MainActor
     private static func acceptClients(
         on listener: Int32,
+        requirement: PeerCodeIdentity.Requirement,
         bootIdentity: HIDBrokerBootIdentity,
         session: HIDInteractor.Session,
         simulatorUDID: String,
         logger: OffsiderLogger
     ) async throws {
+        let startedAt = monotonicTimeNanoseconds()
         while true {
+            if hasOutlived(startedAt: startedAt, now: monotonicTimeNanoseconds()) {
+                logger.info().log("HID broker stopping after 12 hours; the next command starts a fresh one")
+                return
+            }
             var pollDescriptor = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
             let result = Darwin.poll(&pollDescriptor, 1, idleTimeoutMilliseconds)
             if result == 0 {
@@ -126,7 +137,7 @@ enum HIDBroker {
                 throw posixError("accept")
             }
             // Another user's client gets no bytes at all, not even the handshake.
-            guard isSameUserPeer(client) else {
+            guard isSameUserPeer(client), admitsPeer(client, requirement: requirement) else {
                 Darwin.close(client)
                 continue
             }
@@ -166,7 +177,7 @@ enum HIDBroker {
     ) async -> Bool {
         var shouldContinue = true
         do {
-            let data = try readMessage(from: client)
+            let data = try readMessage(from: client, withinMilliseconds: serverIOTimeoutMilliseconds)
             let request = try JSONDecoder().decode(HIDBrokerRequest.self, from: data)
             try validate(request.primitives)
             let outcome = try await play(
@@ -276,6 +287,23 @@ enum HIDBroker {
         return .completed
     }
 
+    static func hasOutlived(startedAt: UInt64, now: UInt64) -> Bool {
+        now >= startedAt && now - startedAt >= maxLifetimeNanoseconds
+    }
+
+    /// Only a binary that satisfies this broker's own designated requirement gets a byte; a refusal is one line in the broker's log.
+    static func admitsPeer(
+        _ client: Int32,
+        requirement: PeerCodeIdentity.Requirement,
+        log: (String) -> Void = { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+    ) -> Bool {
+        let verdict = PeerCodeIdentity.check(peer: client, requirement: requirement)
+        if !verdict.accepted {
+            log("HID broker refused pid \(verdict.pid): it is not this Offsider build (\(verdict.detail ?? "no reason given"))")
+        }
+        return verdict.accepted
+    }
+
     static func isSameUserPeer(_ client: Int32, expectedUID: uid_t = getuid()) -> Bool {
         var peerUID: uid_t = 0
         var peerGID: gid_t = 0
@@ -347,14 +375,34 @@ enum HIDBroker {
         guard let executable = Bundle.main.executableURL else {
             throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.", reason: .hidBrokerFailed)
         }
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = ["hid-broker", "--udid", simulatorUDID]
-        process.environment = ChildEnvironment.make(.offsiderBroker, from: ProcessInfo.processInfo.environment)
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
+        let endpoint = try endpointPath(simulatorUDID: simulatorUDID)
+        _ = try launchDetached(executable: executable, arguments: ["hid-broker", "--udid", simulatorUDID], logPath: try logPath(endpoint: endpoint))
+    }
+
+    /// In its own session with no inherited descriptor and the broker's allow-listed environment; stdout and stderr go to `logPath`.
+    static func launchDetached(executable: URL, arguments: [String], logPath: String) throws -> Int32 {
+        do {
+            return try DetachedProcess().launch(
+                executable: executable,
+                arguments: arguments,
+                environment: ChildEnvironment.make(.offsiderBroker, from: ProcessInfo.processInfo.environment),
+                logPath: logPath
+            )
+        } catch let error as DetachedProcessError {
+            throw CLIError(errorDescription: "Offsider could not start the simulator input broker: \(error.detail).", reason: .hidBrokerFailed)
+        }
+    }
+
+    /// `<private>/logs/hid-<endpoint name>.log`, beside the emulator logs and outside the broker's socket folder.
+    static func logPath(endpoint: String) throws -> String {
+        let directory: String
+        do {
+            directory = try OffsiderPrivateDirectory.ensureSubdirectory("logs")
+        } catch let error as PrivateDirectoryError {
+            throw brokerError(error, subject: "log directory")
+        }
+        let name = (URL(fileURLWithPath: endpoint).deletingPathExtension().lastPathComponent)
+        return (directory as NSString).appendingPathComponent("hid-\(name).log")
     }
 
     private static func connectToReadyBroker(simulatorUDID: String, endpoint: String) throws -> Int32 {

@@ -161,7 +161,7 @@ struct HIDBrokerTests {
             #expect(cliError?.userFacingDescription.contains("was not replayed") == true)
         }
 
-        let request = try HIDBroker.readMessage(from: descriptors[1])
+        let request = try HIDBroker.readMessage(from: descriptors[1], withinMilliseconds: 2_000)
         #expect(descriptorRequests == 1)
         #expect(String(decoding: request, as: UTF8.self) == #"{"primitives":[]}"#)
     }
@@ -277,7 +277,7 @@ struct HIDBrokerTests {
                             let client = try Self.acceptClient(on: replacementListener)
                             defer { Darwin.close(client) }
                             try HIDBroker.writeAll(Data("{\"ready\":true}\n".utf8), to: client)
-                            state.recordReplacementRequest(try HIDBroker.readMessage(from: client))
+                            state.recordReplacementRequest(try HIDBroker.readMessage(from: client, withinMilliseconds: 2_000))
                             try HIDBroker.writeAll(Data("{\"error\":null}\n".utf8), to: client)
                         } catch {
                             state.record(error)
@@ -378,7 +378,7 @@ struct HIDBrokerTests {
 
         let start = Date()
         do {
-            _ = try HIDBroker.readMessage(from: descriptors[0])
+            _ = try HIDBroker.readMessage(from: descriptors[0], withinMilliseconds: 100)
             Issue.record("A partial message should time out")
         } catch {}
         #expect(Date().timeIntervalSince(start) < 1)
@@ -393,7 +393,7 @@ struct HIDBrokerTests {
 
         try HIDBroker.configureSocketTimeouts(descriptors[0], readMilliseconds: 100, writeMilliseconds: 100)
 
-        #expect(throws: CLIError.self) { try HIDBroker.readMessage(from: descriptors[0]) }
+        #expect(throws: HIDBrokerClosedError.self) { try HIDBroker.readMessage(from: descriptors[0], withinMilliseconds: 100) }
     }
 
     @Test("A client that does not read cannot block a broker write indefinitely")
