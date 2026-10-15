@@ -48,7 +48,8 @@ struct BatchReadStepTests {
         json: Bool = false,
         continueOnError: Bool = false,
         captured: Captured,
-        waitTimeout: TimeInterval = 0
+        waitTimeout: TimeInterval = 0,
+        noSettle: Bool = false
     ) async throws -> [BatchStepRecord] {
         let context = BatchContext(
             backend: backend,
@@ -56,7 +57,8 @@ struct BatchReadStepTests {
             axCachePolicy: .perBatch,
             typeSubmissionMode: .chunked,
             typeChunkSize: 200,
-            waitTimeout: waitTimeout
+            waitTimeout: waitTimeout,
+            noSettle: noSettle
         )
         let output = BatchOutput(json: json, write: { captured.out += $0 }, writeError: { captured.err += $0 })
         return try await Batch.runSteps(
@@ -179,6 +181,60 @@ struct BatchReadStepTests {
         #expect(captured.out.contains("sheet-title"))
         #expect(!captured.out.contains(#""step""#))
         #expect(FileManager.default.fileExists(atPath: shot))
+    }
+
+    @Test("assert and describe-ui steps straight after a tap see what it drew, waiting 100 ms once")
+    func readsAfterInputSeeItsScreen() async throws {
+        let fixture = try TreeCacheFixture()
+        let backend = FakeDeviceBackend(trees: [Self.closed, Self.opened], screen: Self.screen, advanceTreeOnInput: true)
+        backend.drawDelay = 0.05
+        let captured = Captured()
+
+        let code = try await fixture.run {
+            try await Self.exitCode(
+                ["tap -x 195 -y 122", "assert --id state --has-value Open", "describe-ui --summary"], on: backend, json: true, captured: captured
+            )
+        }
+
+        let records = try captured.records()
+        #expect(code == 0, "\(captured.err)")
+        #expect(records[1]["met"] as? Bool == true)
+        #expect((records[2]["output"] as? String)?.contains("sheet-title") == true)
+        #expect(fixture.sleeps == [.milliseconds(100)])
+    }
+
+    @Test("a screenshot step straight after a tap captures the frame the tap drew")
+    func screenshotAfterInputShowsItsFrame() async throws {
+        let fixture = try TreeCacheFixture()
+        let directory = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let shot = directory.appendingPathComponent("shot.png").path
+        let before = try ScreenImage.encode(TestImages.make(width: 40, height: 40), as: .png)
+        let after = try ScreenImage.encode(TestImages.make(width: 48, height: 48), as: .png)
+        let backend = FakeDeviceBackend(trees: [Self.closed, Self.opened], screenshots: [before, after], screen: Self.screen, advanceTreeOnInput: true)
+        backend.drawDelay = 0.05
+        let captured = Captured()
+
+        try await fixture.run {
+            try await Self.run(["tap -x 195 -y 122", "screenshot --output '\(shot)'"], on: backend, json: true, captured: captured)
+        }
+
+        let records = try captured.records()
+        #expect(records[1]["width"] as? Int == 48)
+    }
+
+    @Test("with --no-settle, a read step straight after input reads at once")
+    func noSettleReadsAtOnce() async throws {
+        let fixture = try TreeCacheFixture()
+        let backend = FakeDeviceBackend(trees: [Self.closed, Self.opened], screen: Self.screen, advanceTreeOnInput: true)
+        backend.drawDelay = 0.05
+        let captured = Captured()
+
+        try await fixture.run {
+            try await Self.run(["tap -x 195 -y 122", "describe-ui --summary"], on: backend, captured: captured, noSettle: true)
+        }
+
+        #expect(fixture.sleeps.isEmpty)
     }
 
     @Test("a describe-ui step names a prompt another process draws over an iOS app, as describe-ui does")

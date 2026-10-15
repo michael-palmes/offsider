@@ -7,7 +7,9 @@ struct Batch: AsyncParsableCommand {
         abstract: "Run ordered input and read steps using one device session.",
         discussion: """
         Batch runs a whole case (tap, wait, check, capture, read the tree) in one command. Steps run in order \
-        and are written like the standalone commands without --device. Read steps run after the previous step's input is sent.
+        and are written like the standalone commands without --device. A read step that starts within 100 ms of an input \
+        step waits out the rest of those 100 ms first, so it sees what the input drew; wait --settled, --region and --seconds \
+        steps start at once.
 
         Input steps:
           tap, swipe, gesture, touch, type, button, key, key-sequence, key-combo
@@ -86,7 +88,7 @@ struct Batch: AsyncParsableCommand {
     @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Whether screenshot steps paint password fields black, reusing the cached tree when it is fresh (the default; OFFSIDER_MASK_SECURE=0 turns it off). A step's own flag wins.")
     var maskSecure: Bool?
 
-    @Flag(name: .customLong("no-settle"), help: "Tap steps act at once, without waiting out a transition an earlier input may have started.")
+    @Flag(name: .customLong("no-settle"), help: "Steps act at once: tap steps do not wait out a transition an earlier input may have started, and read steps do not give an input 100 ms to draw.")
     var noSettle = false
 
     @Flag(name: .customLong("json"), help: "Print one NDJSON line per step to stdout, then a summary line; human text goes to stderr.")
@@ -253,6 +255,9 @@ struct Batch: AsyncParsableCommand {
                 try await runner.run(BatchPlan(primitives: primitives))
             case .read(let step):
                 sendsInput = false
+                if step.awaitsInputDrawn {
+                    try await context.awaitInputDrawn()
+                }
                 let result = try await step.runInBatch(context: context, logger: logger)
                 detail = result.detail
                 output.report(result)

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- A `batch` read step straight after an input step no longer sees the screen from before that input. `screenshot`, `describe-ui`, `assert` and selector `wait` steps that start within 100 ms of an input step now wait out the rest of those 100 ms, once per input, so a final screenshot shows the tap before it (on an emulator, 6 in 15 such screenshots were stale before; an app there drew a tap within 30 ms). `wait --settled`, `--region` and `--seconds` steps still start at once. `batch --no-settle` now also turns this wait off.
+
 ## [0.12.0] - 2026-10-15
 
 ### Added

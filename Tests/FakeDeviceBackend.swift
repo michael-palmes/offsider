@@ -14,6 +14,9 @@ class FakeDeviceBackend: DeviceBackend {
     var bands = ScreenBands(top: 0, bottom: 0)
     /// Called on every tree read, before the tree is served.
     var onTreeRead: (() -> Void)?
+    /// With `advanceTreeOnInput`, seconds on the tree cache clock before reads see an input's screen; screenshots then follow the trees.
+    var drawDelay: TimeInterval = 0
+    private var pendingDraws: [Date] = []
 
     private(set) var treeIndex = 0
     private(set) var screenshotIndex = 0
@@ -97,8 +100,21 @@ class FakeDeviceBackend: DeviceBackend {
         self.advanceTreeOnInput = advanceTreeOnInput
         if advanceTreeOnInput {
             session.onPerform = { [unowned self] _ in
-                treeIndex = min(treeIndex + 1, max(trees.count - 1, 0))
+                if drawDelay > 0 {
+                    pendingDraws.append(TreeCacheEnvironment.current.now() + drawDelay)
+                } else {
+                    treeIndex = min(treeIndex + 1, max(trees.count - 1, 0))
+                }
             }
+        }
+    }
+
+    /// Moves on past every input whose draw delay has passed.
+    private func landDraws() {
+        let now = TreeCacheEnvironment.current.now()
+        while let due = pendingDraws.first, due <= now {
+            pendingDraws.removeFirst()
+            treeIndex = min(treeIndex + 1, max(trees.count - 1, 0))
         }
     }
 
@@ -108,6 +124,7 @@ class FakeDeviceBackend: DeviceBackend {
     }
 
     private func readTree(for id: DeviceID) -> UITree {
+        landDraws()
         onTreeRead?()
         treeReads += 1
         let tree = currentTree ?? UITree(platform: platform, device: id.rawValue, roots: [])
@@ -159,6 +176,10 @@ class FakeDeviceBackend: DeviceBackend {
         screenshotReads += 1
         guard !screenshots.isEmpty else {
             throw CLIError(errorDescription: "no screenshot scripted")
+        }
+        if drawDelay > 0 {
+            landDraws()
+            return screenshots[min(treeIndex, screenshots.count - 1)]
         }
         let data = screenshots[min(screenshotIndex, screenshots.count - 1)]
         screenshotIndex = min(screenshotIndex + 1, screenshots.count - 1)
