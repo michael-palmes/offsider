@@ -1,0 +1,62 @@
+{
+  "info": {
+    "arguments": ["devicectl", "device", "info", "apps", "--device", "00008130-0000000000000ABC", "--timeout", "20", "--json-output", "-", "-q"],
+    "commandType": "devicectl.device.info.apps",
+    "environment": {},
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "651.13.4"
+  },
+  "result": {
+    "apps": [
+      {
+        "appClearable": true,
+        "builtByDeveloper": true,
+        "bundleIdentifier": "com.mpalmes.offsider.playground",
+        "bundleVersion": "1",
+        "defaultApp": false,
+        "hidden": false,
+        "internalApp": false,
+        "name": "Offsider Playground",
+        "removable": true,
+        "url": "file:///private/var/containers/Bundle/Application/00000000-0000-4000-8000-000000000001/OffsiderPlayground.app/",
+        "version": "1.0"
+      },
+      {
+        "appClearable": true,
+        "bundleIdentifier": "com.example.notes",
+        "hidden": false,
+        "name": "Example Notes",
+        "removable": true
+      },
+      {
+        "appClearable": true,
+        "bundleIdentifier": "com.apple.mobilesafari",
+        "hidden": false,
+        "name": "Safari",
+        "removable": false
+      },
+      {
+        "appClearable": false,
+        "bundleIdentifier": "com.example.systemish",
+        "hidden": false,
+        "name": "Not Clearable"
+      },
+      {
+        "appClearable": true,
+        "bundleIdentifier": "com.example.hidden",
+        "hidden": true,
+        "name": "Hidden Helper"
+      },
+      {
+        "bundleIdentifier": "com.example.unnamed"
+      }
+    ],
+    "defaultAppsIncluded": false,
+    "deviceIdentifier": "00000000-0000-4000-8000-0000000000A1",
+    "hiddenAppsIncluded": false,
+    "internalAppsIncluded": false,
+    "matchingBundleIdentifier": null,
+    "removableAppsIncluded": true
+  }
+}

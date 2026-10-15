@@ -63,7 +63,7 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
     }
 
     static func xcodeMissing(_ detail: String) -> IOSDeviceError {
-        IOSDeviceError(.xcodeMissing, "No usable Xcode is selected: \(detail). Select one with `xcode-select -s <Xcode.app>/Contents/Developer`.")
+        IOSDeviceError(.xcodeMissing, "No usable Xcode is selected: \(detail). \(XcodeSuggestion.current.withoutSudo)", hint: XcodeSuggestion.current.select)
     }
 
     static func devicectlFailed(_ command: String, udid: String?, detail: String) -> IOSDeviceError {
@@ -203,6 +203,6 @@ extension IOSDeviceError: OffsiderFailure {
     public var hint: String? {
         if let explicitHint { return explicitHint }
         let quoted = message.split(separator: "`", omittingEmptySubsequences: false).enumerated().filter { $0.offset % 2 == 1 }
-        return quoted.map { String($0.element) }.first { $0.hasPrefix("offsider ") || $0.hasPrefix("xcode-select ") }
+        return quoted.map { String($0.element) }.first { $0.hasPrefix("offsider ") || $0.hasPrefix("xcode-select ") || $0.hasPrefix("sudo xcode-select ") }
     }
 }

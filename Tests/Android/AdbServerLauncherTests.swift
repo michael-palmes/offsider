@@ -46,7 +46,8 @@ struct AdbServerLauncherTests {
         let error = await #expect(throws: AndroidError.self) {
             try await AdbServerLauncher(adb: Self.adb).ensureRunning(client: AdbClient(endpoint: .defaultAdbServer, connector: server), host: host)
         }
-        #expect(error?.message == "Could not start the adb server: `/sdk/platform-tools/adb start-server` exited 1 (cannot bind 'tcp:5037'). Run `adb start-server` to see why.")
+        #expect(error?.message == "Could not start the adb server: /sdk/platform-tools/adb start-server exited 1 (cannot bind 'tcp:5037').")
+        #expect(error?.hint == "ADB_MDNS=0 /sdk/platform-tools/adb start-server")
     }
 
     @Test("a server that never comes up stops waiting after 5 s of retries")

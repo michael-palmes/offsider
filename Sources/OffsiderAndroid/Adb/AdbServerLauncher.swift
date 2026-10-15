@@ -36,6 +36,6 @@ struct AdbServerLauncher {
                 try await host.sleep(Self.retryInterval)
             }
         }
-        throw AndroidError.adbServerNoAnswer(endpoint: client.endpoint.description, seconds: 5)
+        throw AndroidError.adbServerNoAnswer(endpoint: client.endpoint.description, seconds: 5, adb: adb.path)
     }
 }

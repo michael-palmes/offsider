@@ -81,7 +81,7 @@ enum DeviceRouter {
     /// Gates a physical device: it must be named with `--device`, and the allow-list and managed policy must both allow it.
     static func requireAllowed(platform: DevicePlatform, key: String, rawID: String, gate: DevicePolicyGate, displayName: String? = nil) throws -> DeviceAllowance {
         let allowance = try gate.require(platform: platform, key: key, displayName: displayName)
-        if DeviceDefault.lastSource(for: rawID) == .environment {
+        if let source = DeviceDefault.lastSource(for: rawID), source != .option {
             throw CLIError(
                 errorDescription: "\(DeviceDefault.environmentKey) names the physical device \(key); a physical device must be named with --device on each command. Pass --device \(key).",
                 reason: .usage,

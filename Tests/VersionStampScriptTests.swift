@@ -71,12 +71,12 @@ struct VersionStampScriptTests {
         defer { try? FileManager.default.removeItem(at: repo) }
         let output = try Self.directory().appendingPathComponent("Version.swift")
 
-        #expect(try await Self.stamp(repo, into: output) == "v1.2.3")
+        #expect(try await Self.stamp(repo, into: output) == "1.2.3")
         try Data("two\n".utf8).write(to: repo.appendingPathComponent("file.txt"))
-        #expect(try await Self.stamp(repo, into: output) == "v1.2.3-dirty")
+        #expect(try await Self.stamp(repo, into: output) == "1.2.3-dirty")
         try await Self.git(["commit", "-q", "-am", "second"], in: repo)
         let head = try await Self.git(["rev-parse", "--short", "HEAD"], in: repo)
-        #expect(try await Self.stamp(repo, into: output) == "v1.2.3-1-g\(head)")
+        #expect(try await Self.stamp(repo, into: output) == "1.2.3-1-g\(head)")
     }
 
     @Test("a git worktree, whose HEAD lives under the main repository, gets its own commit")
@@ -89,8 +89,8 @@ struct VersionStampScriptTests {
         try await Self.git(["commit", "-q", "-am", "in the worktree"], in: worktree)
         let head = try await Self.git(["rev-parse", "--short", "HEAD"], in: worktree)
 
-        #expect(try await Self.stamp(worktree, into: repo.appendingPathComponent("out/Version.swift")) == "v1.2.3-1-g\(head)")
-        #expect(try await Self.stamp(repo, into: repo.appendingPathComponent("out/Main.swift")) == "v1.2.3")
+        #expect(try await Self.stamp(worktree, into: repo.appendingPathComponent("out/Version.swift")) == "1.2.3-1-g\(head)")
+        #expect(try await Self.stamp(repo, into: repo.appendingPathComponent("out/Main.swift")) == "1.2.3")
     }
 
     @Test("outside a repository the version is dev")

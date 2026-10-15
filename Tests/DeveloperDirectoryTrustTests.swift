@@ -55,8 +55,8 @@ struct DeveloperDirectoryTrustTests {
         let error = #expect(throws: UntrustedDeveloperDirectory.self) { try trust.require(fake.root, source: .environment) }
         #expect(error?.problem == .notInAppBundle)
         #expect(error?.reason == .xcodeUnusable)
-        #expect(error?.failureMessage == "DEVELOPER_DIR points at \(fake.root), which is not inside an Apple-signed Xcode, so Offsider will not load simulator frameworks or run Xcode tools from it.")
-        #expect(error?.hint == "xcode-select -s <Xcode.app>/Contents/Developer")
+        #expect(error?.failureMessage.hasPrefix("DEVELOPER_DIR points at \(fake.root), which is not inside an Apple-signed Xcode, so Offsider will not load simulator frameworks or run Xcode tools from it.") == true)
+        #expect(error?.hint?.hasPrefix("sudo xcode-select -s /Applications/") == true)
         #expect(probe.calls.isEmpty)
         #expect(trust.evaluate("/nonexistent/Xcode.app/Contents/Developer") == .failure(.notInAppBundle))
     }
@@ -170,11 +170,11 @@ struct XcodeTrustDoctorRuleTests {
         (.failure(.notInAppBundle), .environment, .fail),
     ])
     func verdicts(result: Result<TrustedDeveloperDirectory, UntrustedDeveloperDirectory.Problem>, source: DeveloperDirectorySource, status: CheckStatus) {
-        let verdict = DoctorRules.xcodeTrust(result, path: "/X/Contents/Developer", source: source)
+        let verdict = DoctorRules.xcodeTrust(result, path: "/X/Contents/Developer", source: source, suggestion: XcodeSuggestion(developerDirectory: "/Applications/Xcode-27.0.app/Contents/Developer"))
         #expect(verdict.status == status)
         if status == .fail {
             #expect(verdict.detail.contains("/X/Contents/Developer (\(source.rawValue))"))
-            #expect(verdict.hint == "xcode-select -s <Xcode.app>/Contents/Developer")
+            #expect(verdict.hint == "sudo xcode-select -s /Applications/Xcode-27.0.app/Contents/Developer")
         }
         if status == .pass { #expect(verdict.hint == nil) }
     }

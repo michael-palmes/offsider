@@ -103,7 +103,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     }
 
     /// `OFFSIDER_IOS_TEAM_ID`, else the team the device's allowance names; never a team picked from Xcode's accounts.
-    public static func resolveTeam(environment: [String: String], allowanceTeam: String?, signedInTeams: [String]) throws -> String {
+    public static func resolveTeam(environment: [String: String], allowanceTeam: String?, signedInTeams: [String], audience: ErrorAudience = .current) throws -> String {
         if let team = environment[teamVariable]?.trimmingCharacters(in: .whitespaces), !team.isEmpty {
             guard DeviceAllowance.isTeamID(team) else {
                 throw IOSDeviceError(.teamMissing, "\(teamVariable) must be a 10-character team ID such as ABCDE12345, not \(team).")
@@ -114,7 +114,9 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         let count = Set(signedInTeams).count
         throw IOSDeviceError(
             .teamMissing,
-            "Offsider signs its runner app with an Apple development team you choose. Set \(teamVariable) to your personal or test team's ID (Xcode is signed in to \(count) \(count == 1 ? "team" : "teams")), or allow the device with --team."
+            "No Apple development team is chosen to sign the runner app (Xcode is signed in to \(count) \(count == 1 ? "team" : "teams"), and Offsider never picks one)."
+                + audience.personStep("offsider device-access allow", agentTail: " and choose a team in its menu, or set \(teamVariable) to the team's ID"),
+            hint: "offsider device-access allow"
         )
     }
 

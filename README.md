@@ -23,12 +23,13 @@ You need:
 - For Android: the Android SDK with Platform-Tools (and the Android Emulator for emulators) and `arm64-v8a` system images, tested on API 36 (the adb fallback needs API 33 or later); screen reads, selectors and taps are also checked on Android 9, API 28. Offsider finds the SDK through `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk` (where Android Studio installs it) or `adb` on your `PATH`.
 - For a physical iPhone or iPad: a USB cable. The host's Xcode decides which commands work; see [Physical iPhones and iPads](#physical-iphones-and-ipads).
 
-To install the signed release tarball by hand instead, see [Verified tarball](#verified-tarball).
+To install the signed release tarball by hand instead, see [Verified tarball](#verified-tarball). To build from source, run `make setup` in a clone ([Building from source](#building-from-source)).
 
 ## Quick start
 
 ```bash
-offsider list-devices                     # find a booted simulator and its ID
+offsider list-devices --booted            # booted simulators and emulators, then a Next: line
+offsider boot <simulator name or UDID>    # none booted? boot one; prints its UDID
 export OFFSIDER_DEVICE=<ID>               # later commands drive it; --device <ID> overrides
 offsider doctor                           # check Xcode, Device Hub and the simulator
 
@@ -56,13 +57,37 @@ offsider button back
 On a physical iPhone or iPad, connected by cable, allow it once from your own terminal, then pass its UDID and name the app to drive:
 
 ```bash
-# A person allows the device and pins the app (Touch ID or your password)
-offsider device-access allow --device <UDID> --app com.example.app
-# Check trust, Developer Mode, UI Automation and signing
+# A person picks the device, signing team, app and how long from menus, then Touch ID or your password
+offsider device-access allow
+# Check trust, Developer Mode, UI Automation and signing (allow prints this line with the UDID)
 offsider doctor --device <UDID>
 # Read the app's screen; the first read builds the runner
 offsider describe-ui --summary --app com.example.app --device <UDID>
 ```
+
+### First run
+
+`offsider` on its own prints where to start:
+
+```text
+  offsider list-devices    See devices and their IDs
+  offsider doctor          Check this Mac is ready
+  offsider init            Teach your agent to use Offsider
+  offsider guide           Read a topic in depth
+  offsider boot <AVD>      Start an emulator or simulator
+  offsider --help          Every command and option
+```
+
+On a terminal, `list-devices` ends with one `Next:` line on stderr: `export OFFSIDER_DEVICE=<ID>` for the one booted simulator or emulator, `offsider doctor --device <ID>` once that is set, or `offsider boot <AVD or UDID>` when none is booted. It never names a physical device. `doctor` ends with `Next: offsider doctor --device <ID>` when exactly one is booted, and `init` with `Next: offsider doctor`.
+
+Every failure prints `Error:` and the message on stderr, then the command to run next on a `Try:` line (dim on a terminal; left out with `--json`, whose `hint` carries it):
+
+```text
+Error: Simulator <UDID> is not booted (Shutdown).
+Try: offsider boot <UDID>
+```
+
+On a terminal, a device command with no `--device` and no `OFFSIDER_DEVICE` asks which booted simulator or running emulator to use (`Which device? (↑↓, Enter, R rescan, Q quit)`), runs with it, and prints `Using <name> · add --device <ID> to skip this`. It never offers a phone, iPhone or iPad. `offsider boot` with no name asks which simulator or AVD to boot, and `offsider init` with two or more agents' folders asks which to install into. Without a terminal, or with `--json`, `--format` or `--compact`, the command exits 64 as before, so agents never see a menu. A picker no key reaches within 60 s closes, and the command exits 64 with the same error and the line `No device chosen within 60 s; pass --device <id>.`
 
 ### Confirm the effect
 
@@ -119,14 +144,23 @@ Outside that directory, the allow-list of physical devices lives in `~/.config/o
 A physical iPhone, iPad or Android phone is refused until a person at the Mac allows it:
 
 ```bash
+offsider device-access allow                           # a person picks the device, team, app and how long, then Touch ID
+offsider device-access                                 # what is allowed, and any managed policy (same as status)
 offsider list-devices --physical                       # a person lists every connected device, allowed or not
-offsider device-access allow --device <ID> --app com.example.app --expires 2h
-offsider device-access status                          # what is allowed, and any managed policy
+offsider device-access allow --device <ID> --app com.example.app --expires 2h   # the same, for scripts
 offsider device-access remove --device <ID>            # withdraw it; stops its runner and session broker
 ```
 
-- `allow` needs a terminal on standard input: it shows the device's platform, name, model, ID, apps and expiry, asks for the last four characters of the ID, then for Touch ID or your login password. Without a terminal it exits 1 with `person_required` and writes nothing, so an agent cannot allow a device. Without `--device` it offers a menu of connected devices.
-- An allowance lasts `--expires` (`<n>m`, `<n>h` or `<n>d`, default `12h`, at most `30d`, or `never`), and expired entries are removed on the next write. `--app` (repeatable) pins the apps Offsider may drive there; a browser or system app is refused. For an iPhone or iPad, `--team <id>` records the Apple development team that signs its runner (`OFFSIDER_IOS_TEAM_ID` wins over it); an older Offsider refuses a list holding a team, so after a downgrade run `allow` again. An iPhone or iPad is always driven inside one app, as [Physical iPhones and iPads](#physical-iphones-and-ipads) says.
+- `allow` asks up to four questions, each a menu with its keys beside it (`1/4 Which phone or tablet? (↑↓, Enter, R rescan, Q quit)`), so nothing has to be looked up or pasted:
+  - **Device:** the USB-connected iPhones, iPads and Android phones, by name and the last four characters of their ID. A Wi-Fi-only one is dim and cannot be chosen. R rescans, Q quits with nothing saved.
+  - **Team** (iPhone or iPad): the code-signing identities in your login Keychain, or type a team ID.
+  - **App:** Any app (recommended) or one installed on that device; browsers and system apps are never offered. When the list cannot be read, type an app ID.
+  - **How long:** 2 hours, 12 hours (recommended), 24 hours, 7 days, until removed, or type one.
+- A one-line summary and Touch ID or your login password follow. Each answer stays as a receipt line, and a closing block shows the full ID only in its two commands: `Withdraw` (`device-access remove`) and `Next` (`offsider doctor --device <ID>`). When another connected device is not yet allowed, it offers that one too (Q is Done). With `NO_COLOR` or a locale that is not UTF-8 it shows ASCII tags such as `[iPhone]` in place of emoji, and `NO_COLOR` also drops colour.
+- The device menu shows a device that is already allowed dim, marked "allowed", and never offers it again (re-allow it with `--device`); `device-access` alone draws the allow-list in the same style on a terminal, plain text when piped or with `--json`.
+- `allow` needs a terminal on standard input: without one it exits 1 with `person_required` and writes nothing, so an agent cannot allow a device. `--device`, `--app`, `--team` and `--expires` skip their steps for scripts; a device pasted with `--device` also asks for the last four characters of its ID.
+- The same look carries over to the `credential set`, `credential join`, `credential describe`, `unlock-code set` and `login` prompts, and to `init` on a terminal.
+- An allowance lasts `--expires` (`<n>m`, `<n>h` or `<n>d`, default `12h`, at most `30d`, or `never`), and expired entries are removed on the next write. `--app` (repeatable) pins the apps Offsider may drive there; a browser or system app is refused, and the app menu never offers one or an app outside a managed `allowedBundleIDs`. For an iPhone or iPad, the team menu (or `--team <id>`) records the Apple development team that signs its runner (`OFFSIDER_IOS_TEAM_ID` wins over it); an older Offsider refuses a list holding a team, so after a downgrade run `allow` again. An iPhone or iPad is always driven inside one app, as [Physical iPhones and iPads](#physical-iphones-and-ipads) says.
 - Until a device is allowed, every command that names it exits 7 with `device_not_allowed` and sends it nothing: an iPhone is refused before any `devicectl` call, and a phone after reading only the adb server's own device list. `list-devices` leaves such rows out and says how many on stderr; `--physical` lists them for a person. `doctor --device` reports one failing `device.policy` check and runs no device checks. A USB device that reports an emulator's serial (`emulator-5554`) is refused too.
 - A physical device must be named with `--device` on every command. `OFFSIDER_DEVICE` never names one: a command that would use it that way exits 64.
 - Every command that drives an allowed device prints one line to stderr, also under `--json`: `Offsider: driving physical iPhone or iPad "<name>" (<ID>), allowed until <time> ... offsider device-access remove --device <ID> withdraws it.`
@@ -182,12 +216,12 @@ Every device command takes `--device <id>`, using an ID from `offsider list-devi
 
 | Command | What it does |
 | --- | --- |
-| `list-devices` | List iOS simulators (iPhone and iPad), allowed iPhones, iPads and USB Android phones, running Android emulators and shut-down AVDs with their IDs as a table, or as [JSON](#device-list-json) with `--json`; `--platform ios\|android` filters, and `--physical` lists every connected physical device, allowed or not, for a person |
-| `device-access` | `allow` (a person at a terminal), `status` or `remove` Offsider's access to a physical iPhone, iPad or Android phone (`--device`, `--app`, `--expires`, `--team` for an iPhone's runner, `--json`; [physical devices](#physical-devices)) |
-| `boot` | Start an Android emulator by AVD name, wait until it has booted and print its serial; an AVD that is already running is not started again ([starting an emulator](#starting-an-emulator)) |
+| `list-devices` | List iOS simulators (iPhone and iPad), allowed iPhones, iPads and USB Android phones, running Android emulators and shut-down AVDs with their IDs as a table, booted and booting ones first on each platform, or as [JSON](#device-list-json) with `--json`; `--platform ios\|android` filters, `--booted` keeps only booted and booting devices, and `--physical` lists every connected physical device, allowed or not, for a person. On a terminal it ends with a `Next:` line on stderr ([first run](#first-run)) |
+| `device-access` | `allow` (a person at a terminal picks from menus), `status` (also `device-access` alone) or `remove` Offsider's access to a physical iPhone, iPad or Android phone (`--device`, `--app`, `--expires`, `--team` for an iPhone's runner, for scripts; `--json`; [physical devices](#physical-devices)) |
+| `boot` | Start an Android emulator by AVD name, or an iOS simulator by name or UDID, wait until it has booted and print its serial or UDID; a device that is already running is not started again ([starting an emulator](#starting-an-emulator)) |
 | `doctor` | Check the host, Xcode, Device Hub, simulators and the Android SDK, or one device with `--device`; `--json` prints one object and `--fix` applies safe fixes ([doctor](#doctor-and-troubleshooting)) |
 | `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, a short text view (`--summary`), only what changed since the previous command (`--diff`), or the element at `--point x,y` ([reading the screen](#reading-the-screen)) |
-| `init` | Install the bundled agent skill (`--client auto\|claude\|agents`, `--dest`, `--force`, `--uninstall`, `--print`) |
+| `init` | Install or update the bundled agent skill once per skills folder (`--client auto\|claude\|agents`, `--dest`, `--force` to replace another skill named offsider, `--uninstall`, `--print`; [agent skill](#agent-skill-and-guide)) |
 | `guide` | Print one topic of the skill, matched to this version (`selectors`, `verify`, `errors`, `android`, `ios-device`, `react-native`, `turnstile`, `login`, `foldables`, `batch`, `screenshots`, `evidence`, `describe-ui`, `device-state`, `migrate`), or list the topics with no argument; `--project <path>` prints the repository's own `OFFSIDER.md` |
 | `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label`, `--label-contains` or `--value`; supports `--element-type`, `--nth`, `--topmost`, `--wait-timeout`, `--allow-offscreen`, `--allow-covered`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json`; `--app <bundle-id>` on an iPhone or iPad ([selectors and taps](#selectors-and-taps)) |
 | `turnstile` | Read the state of a Cloudflare Turnstile widget; it never taps it ([details](#cloudflare-turnstile)) |
@@ -511,7 +545,7 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 
 `doctor` checks Xcode (`xcode.trust` passes for an Apple-signed Xcode in `/Applications`, warns for one elsewhere or chosen through `DEVELOPER_DIR`, and fails, skipping the framework checks, when the developer directory is not inside an Apple-signed Xcode), Device Hub, CoreSimulator, HID settings, booted simulators and simulator crash loops, plus the Android SDK and adb server when an SDK is installed. With `--device` it checks one device instead: a simulator's state, Resize Mode, dtuhidd, HID transport, accessibility and recent crashes; an Android device (below); or an iPhone or iPad's `ios-device.*` checks (below). `--json` prints one object, and exit codes 3 and 4 mean warnings and failures.
 
-Every report ends with the host: `host.load` (warns when the 1-minute load passes 4 per CPU), `host.disk` (free space in your home folder's volume: warns under 10 GB, fails under 2 GB) and `host.sessions` (other Offsider commands of yours, by subcommand and device only), then `install.bundle`, which reads every file bundled with Offsider through the digest compiled into the binary and fails, naming the first file that differs, when the install was changed (`brew reinstall offsider`). `--json` adds a top-level `host` object (`loadAverage`, `cpuCount`, `memoryGB`, `diskFreeGB`, `diskPath`, `sessions`), and with `--device`, `device.lease` reports any lease.
+Every report ends with the host: `host.load` (warns when the 1-minute load passes 4 per CPU), `host.disk` (free space in your home folder's volume: warns under 10 GB, fails under 2 GB) and `host.sessions` (other Offsider commands of yours, by subcommand and device only), then `install.bundle`, which reads every file bundled with Offsider through the digest compiled into the binary and fails, naming the first file that differs, when the install was changed (`brew reinstall offsider`), and `install.skill`, which passes when every installed Offsider skill matches this version, warns `Run offsider init to update it.` when one differs, and skips when none is installed. Without `--device`, a report with exactly one booted simulator or emulator ends with `Next: offsider doctor --device <ID>`. `--json` adds a top-level `host` object (`loadAverage`, `cpuCount`, `memoryGB`, `diskFreeGB`, `diskPath`, `sessions`), and with `--device`, `device.lease` reports any lease.
 
 `--fix` applies safe fixes only: on Android, starting an absent adb server with `ADB_MDNS=0` (never when `--device` names a simulator); on an allowed iPhone or iPad named with `--device`, mounting the developer disk image.
 
@@ -655,6 +689,8 @@ After it has booted, `boot` reads the screen, lock screen, the user's unlock sta
 
 `memoryMB` is what the device sees, a little under its `-memory`; `ignored` lists launch options an already-running AVD did not take; `bootedBy` is the emulator process and when it started, as in `list-devices --json`; `lock.type` is `none`, `pin`, `pattern` or `password` (null when Android 9 says a credential is set but not which), and the `lock` fields are null when the state could not be read. A failure has `ok` false with `exitCode` and the [JSON error object](#json-errors). Keys may be added within a version.
 
+A name close to an AVD's exits 7 `avd_not_found` naming the closest, with `Try: offsider boot <closest>`. A UDID, or a name no AVD has, boots the iOS simulator it names through Xcode's frameworks, waits until it is usable and prints the UDID; `--json` prints `{"version":1,"ok":true,"platform":"ios","name":"<name>","udid":"<UDID>","alreadyRunning":false,"exitCode":0}`. `--memory`, `--no-snapshot-load` and `--emulator-arg` exit 64 for a simulator, and a name several simulators share exits 7 `device_ambiguous`: pass the UDID.
+
 ### Screen reads and the helper
 
 - Every screen read (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `gesture` presets, `slider` and `type --replace`) goes through a small helper that Offsider pushes to `/data/local/tmp/offsider-helper-<hash>.dex` when that copy is missing (through a private folder, then checked against its SHA-256 on every start), and runs with `app_process` as the shell user for the length of one command. A `describe-ui` takes about 0.3 s and a verified tap 1 to 1.5 s on a quiet Mac; both are slower while the Mac running the emulator is busy, because Android then starts the helper more slowly. `batch` starts the helper once and reuses it for every step, so several reads in one `batch` pay the helper start once; prefer it to separate commands when no reasoning is needed between reads.
@@ -690,7 +726,7 @@ After it has booted, `boot` reads the screen, lock screen, the user's unlock sta
 
 ### Physical Android phones
 
-- Offsider drives a phone connected over USB, only after a person allows it with `offsider device-access allow --device <serial>` ([Physical devices](#physical-devices)), and only when you pass its serial to `--device`. AVD names, `boot`, the playground scripts and the test suites only ever choose emulators, so an attached phone is never picked by accident. A name that is both a phone's serial and a running AVD's name is refused as ambiguous.
+- Offsider drives a phone connected over USB, only after a person runs `offsider device-access allow` and chooses it ([Physical devices](#physical-devices)), and only when you pass its serial to `--device`. AVD names, `boot`, the playground scripts and the test suites only ever choose emulators, so an attached phone is never picked by accident. A name that is both a phone's serial and a running AVD's name is refused as ambiguous.
 - Turn on Developer options and USB debugging on the phone, connect the cable, unlock it and accept the "Allow USB debugging?" prompt. Until then `list-devices` shows the phone as `Unauthorised` with a hint on stderr; Offsider never tries to accept the prompt. Some vendor builds (for example MIUI) also need a "USB debugging (security settings)" switch before input and screen reads work.
 - `list-devices` reads phones from adb's device list alone, with the model adb reports and no OS version, and never sends a listed phone a command. Wi-Fi and TCP adb connections (`adb connect`, wireless debugging) are listed as `Unsupported` and refused: connect the phone over USB.
 - A phone has no emulator gRPC endpoint, so every command uses adb: screenshots use `screencap -p`, input uses `input` (or the helper, below), and rotation, appearance and content size use `settings` and `cmd uimode`. Plain `type` of non-ASCII text is refused with a pointer to `type --replace`, which sets the field through the helper. `boot`, setting a `posture` (reading it works), `biometric`, `stream-video --format bgra` and `OFFSIDER_ANDROID_TRANSPORT=grpc` are refused on a phone with a message naming the alternative. `doctor` checks a phone as [Doctor](#android-devices) describes.
@@ -711,7 +747,7 @@ After it has booted, `boot` reads the screen, lock screen, the user's unlock sta
 
 ## Physical iPhones and iPads
 
-- Offsider drives an iPhone or iPad connected over USB, only after a person allows it with `offsider device-access allow --device <UDID> --app <bundle-id>` ([Physical devices](#physical-devices)), and only when you pass its UDID to `--device`; nothing else ever chooses one. Only a wired connection passes: a device on Wi-Fi, a network or an unknown transport is refused with `device_not_wired` (exit 7) and a hint to connect its cable, and before each input batch usbmuxd must still list it on USB.
+- Offsider drives an iPhone or iPad connected over USB, only after a person runs `offsider device-access allow`, chooses it and pins the app ([Physical devices](#physical-devices)), and only when you pass its UDID to `--device`; nothing else ever chooses one. Only a wired connection passes: a device on Wi-Fi, a network or an unknown transport is refused with `device_not_wired` (exit 7) and a hint to connect its cable, and before each input batch usbmuxd must still list it on USB.
 - The device can run iOS or iPadOS 26 or 27, and the host must be macOS 26.7 or later, or macOS 27, on Apple silicon. HID input needs Xcode 27's developer disk image on the device, which Xcode 27 mounts.
 - Prepare the device once: connect the cable, unlock it and tap Trust, turn on Developer Mode (Settings > Privacy & Security > Developer Mode, then restart it), and for input turn on Settings > Developer > UI Automation. Until then `list-devices` shows it as `Untrusted`, `Developer Mode off` or `Preparing` (while Xcode prepares it for development) with a hint on stderr. Keep it unlocked while Offsider drives it: a locked device refuses input with `device_locked` (exit 7). Unlock it by hand, as Offsider never types an iPhone passcode.
 - `list-devices` reads iPhones and iPads from `xcrun devicectl list devices`, with `kind` `physical` and `connection` `usb` or `network`. `doctor --device <UDID>` runs the [`ios-device.*` checks](#iphones-and-ipads) on an allowed device; `--fix` only mounts the developer disk image.
@@ -739,7 +775,7 @@ What works depends on the host's Xcode:
 
 ### Runner
 
-- The accessibility tree comes from a small XCUITest runner app. The first command that reads the screen builds it from source bundled with Offsider, with `xcodebuild` (about a minute, with a line on stderr), into `~/Library/Caches/offsider/runner/`; the build is reused until the source, Xcode, team or prefix changes. It is signed with the team in `OFFSIDER_IOS_TEAM_ID` (10 letters and digits), or the one recorded for the device with `device-access allow --team <id>`; Offsider never picks the team Xcode is signed in to, and with neither, commands exit 9 with `team_missing`. `OFFSIDER_IOS_RUNNER_PREFIX` sets the runner's bundle id prefix (default `com.mpalmes.offsider`; the apps are `<prefix>.runner` and `<prefix>.runner.uitests`; a reverse-DNS name of at most 100 characters, else exit 64). A failed build exits 1 with `runner_build_failed` and names its log.
+- The accessibility tree comes from a small XCUITest runner app. The first command that reads the screen builds it from source bundled with Offsider, with `xcodebuild` (about a minute, with a line on stderr), into `~/Library/Caches/offsider/runner/`; the build is reused until the source, Xcode, team or prefix changes. It is signed with the team in `OFFSIDER_IOS_TEAM_ID` (10 letters and digits), or the one a person chose for the device from `device-access allow`'s Keychain team menu (or `--team <id>`); Offsider never picks the team Xcode is signed in to, and with neither, commands exit 9 with `team_missing`. `OFFSIDER_IOS_RUNNER_PREFIX` sets the runner's bundle id prefix (default `com.mpalmes.offsider`; the apps are `<prefix>.runner` and `<prefix>.runner.uitests`; a reverse-DNS name of at most 100 characters, else exit 64). A failed build exits 1 with `runner_build_failed` and names its log.
 - Offsider never registers a device with your team on its own. When a build fails because the device is not registered, the hint is `offsider runner build --device <UDID> --register-device`, which needs a terminal and lets Xcode add the device to the team; `runner build` without it builds and checks the runner (`--json`).
 - The runner's source is checked file by file against digests compiled into Offsider when copied into the cache. After a build, `products.json` (0600) records the device, team, prefix and a SHA-256 per product; before each session starts, the products are hashed again and must be signed by that team, else the build is deleted and rebuilt once, then refused.
 - The runner is launched detached with `xcodebuild test-without-building` and listens only on the device's loopback, with a token per session. Offsider reaches it through usbmuxd (`/var/run/usbmuxd`), which connects USB devices only. When usbmuxd does not list the device on USB, a command that needs the runner exits 9 with `usbmux_unavailable` at once, or 10 s after usbmuxd drops the device while the runner starts, instead of waiting out the runner's 150 s start. Likewise, when `xcodebuild` reports that it is waiting for the device to be unlocked, the command exits 7 with `device_locked` at once, and an `xcodebuild` that exits early fails at once with `runner_unavailable` and the end of its log.
@@ -757,7 +793,7 @@ What works depends on the host's Xcode:
 
 ## Agent skill and guide
 
-`offsider init` installs one short `SKILL.md`: the core loop, the rules every session needs and a table of topics. The depth lives in topics printed on demand by `offsider guide <topic>`, so an agent reads only what the task needs and always gets the text that matches the installed binary. `offsider guide` lists the topics and when to read each; an unknown topic exits 64.
+`offsider init` installs one short `SKILL.md`: the core loop, the rules every session needs and a table of topics. It writes each real folder once (a `~/.claude/skills` symlinked to another client's folder counts once), says `Already up to date` when the skill matches, replaces an older Offsider skill without `--force` (which only replaces someone else's skill named offsider), and ends with `Next: offsider doctor`. The depth lives in topics printed on demand by `offsider guide <topic>`, so an agent reads only what the task needs and always gets the text that matches the installed binary. `offsider guide` lists the topics and when to read each; an unknown topic exits 64.
 
 A repository can add its own recipes for agents in an `OFFSIDER.md` (the test user tags each flow needs, never accounts; how to reach a screen; what not to tap). `offsider guide --project .` prints it, searching the path and its parents up to the repository root (the first directory holding `.git`), your home directory or `/`; it reads at most 256 KiB of UTF-8, follows a symlink only inside the repository, and exits 1 when there is none. Plain `offsider guide` names the file when it finds one from the current directory.
 
@@ -796,11 +832,11 @@ Installing and launching apps stays with `xcrun simctl` and `adb`, and Offsider 
 | 7 | The device was not found or is not booted, its lock screen stayed up, or it is a physical device no person has allowed |
 | 8 | The device is busy: another Offsider command holds it (see [Device lock and leases](#device-lock-and-leases)), or another UiAutomation client holds an Android emulator |
 | 9 | Xcode, adb or the Android SDK is missing or unusable |
-| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, an option the command lacks but a sibling has (`wait --wait-timeout`, `assert --timeout`, `tap --timeout`; the message names the right one and nothing is run), a malformed device ID, an unknown display, a key or `button` the device's platform lacks and `boot` with a simulator UDID |
+| 64 | Invalid arguments or options, including the renamed `--udid` and `list-simulators`, an option the command lacks but a sibling has (`wait --wait-timeout`, `assert --timeout`, `tap --timeout`; the message names the right one and nothing is run), a malformed device ID, an unknown display, a key or `button` the device's platform lacks and `boot`'s emulator options with a simulator |
 
 ### JSON errors
 
-With `--json`, a failure prints one object on stdout, where the success output goes, and the `Error:` line still goes to stderr. `describe-ui` does the same when its output is JSON or NDJSON:
+With `--json`, a failure prints one object on stdout, where the success output goes, and the `Error:` line still goes to stderr. `describe-ui` does the same when its output is JSON or NDJSON and `--format` or `--compact` was given or stdout is not a terminal:
 
 ```json
 {"version":1,"ok":false,"command":"screenshot","exitCode":7,"error":{"reason":"device_not_found","message":"No device with ID 5E1B... was found. Run `offsider list-devices` to see available devices.","hint":"offsider list-devices","dispatched":null,"candidates":[]}}
@@ -808,7 +844,8 @@ With `--json`, a failure prints one object on stdout, where the success output g
 
 `--verify --json` reports (version 2), `batch --json` step lines and a `login --json` that stopped after it began typing carry the same `error` object in place of their own envelope.
 
-- `hint` is the next command to run and never repeats typed text.
+- `hint` is the next command to run and never repeats typed text. Without `--json`, stderr prints it on a `Try:` line under the `Error:` line, unless the message already quotes it; `<DEVICE_ID>` in it becomes the `--device` value.
+- A refusal only a person can lift (`device_not_allowed`, `app_not_allowed`, `team_missing`, a `login` link no person confirmed, and `doctor`'s policy and team hints) asks an agent to fetch the user, naming what to choose. A person at a terminal, without `--json`, gets the same message without that sentence, and the `Try:` line names `offsider device-access allow`.
 - `candidates` lists up to five elements (`id`, `label`, `role`, `frame`, `onScreen`, `index`, `window`, `screen` and `beneath`, never a value) for selector errors, and `target_covered` adds `coveredBy`, the element the tap would have reached. `user_not_found` and `user_ambiguous` add `users`, up to 20 saved users as `name`, `tags` and `about`, never a username.
 - `dispatched` says whether input may have reached the device: `no` (nothing was sent, so resending is safe), `unknown` (a send began and failed, so check the screen first) or `yes`; it is null for commands that send no input.
 - A `--json` that is itself the mistake, such as `tap --json` without `--verify`, prints only the usage error.
@@ -832,31 +869,31 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `selector_ambiguous_switch` | 6 | The match holds several switches | Target the switch with `--id` or coordinates |
 | `user_ambiguous` | 6 | Several saved users match `--where`, or several are saved and none is the default; nothing was typed | Read `users`, then add a `--where` tag only one has (the `hint` adds `platform=` when that is enough) or pass its name |
 | `device_not_found` | 7 | No device has that ID | `offsider list-devices` |
-| `device_not_booted` | 7 | The device exists but is not running | Boot it (`xcrun simctl boot`, `offsider boot`) |
+| `device_not_booted` | 7 | The device exists but is not running | `offsider boot <ID>` |
 | `device_not_ready` | 7 | The emulator is offline or still booting | Wait, or `offsider boot <AVD>` |
 | `device_unauthorised` | 7 | adb is not authorised for the emulator | Accept the prompt, or restart it with `offsider boot` |
 | `device_locked` | 7 | A PIN, pattern or password lock screen stayed up after `wake`, or its saved code did not unlock it, or an iPhone or iPad is locked, so it refused input or Xcode could not start the runner | Unlock it on the device, or on Android `offsider wake --unlock` with a code saved by `offsider unlock-code set` |
-| `device_ambiguous` | 7 | An AVD name matches more than one running emulator, or names both a phone and an AVD | Pass one serial with `--device` |
-| `avd_not_found` | 7 | No AVD has that name | Check the name in Android Studio's Device Manager |
+| `device_ambiguous` | 7 | An AVD name matches more than one running emulator, names both a phone and an AVD, or `boot` names a simulator several share | Pass one serial or UDID |
+| `avd_not_found` | 7 | No AVD has that name | Run the `hint` when it names the closest AVD; else check the name in Android Studio's Device Manager |
 | `device_not_wired` | 7 | The iPhone or iPad is connected over Wi-Fi, and Offsider drives it over USB only | Connect its cable |
 | `device_untrusted` | 7 | The iPhone or iPad has not trusted this Mac | Unlock it and tap Trust |
 | `developer_mode_off` | 7 | Developer Mode is off on the iPhone or iPad | Turn it on in Settings > Privacy & Security, then restart the device |
 | `device_preparing` | 7 | Xcode is still preparing the iPhone or iPad for development | Wait for Xcode to finish, then retry; `offsider doctor --device <UDID>` shows progress |
 | `ui_automation_off` | 7 | UI Automation is off on the iPhone or iPad, or XCTest could not enable it because the device's `Enter Passcode for "XCTest"` prompt went unanswered | Enter the passcode on the device if it asks, else turn on UI Automation in Settings > Developer |
-| `device_not_allowed` | 7 | The command names a physical iPhone, iPad or Android phone that no person has allowed on this Mac, or that managed policy blocks; nothing was sent to it | Ask the user to run `offsider device-access allow --device <ID>` in their own terminal; never try to allow it yourself |
-| `device_busy` | 8 | Another Offsider command holds the device, `record-video` met `login` or `wake` holding it, or `login` found a recording running; the message names its pid | Wait and retry, or pass `--wait-lock <seconds>` |
+| `device_not_allowed` | 7 | The command names a physical iPhone, iPad or Android phone that no person has allowed on this Mac, or that managed policy blocks; nothing was sent to it | Ask the user to run `offsider device-access allow` in their own terminal and choose this device by name; never try to allow it yourself |
+| `device_busy` | 8 | Another Offsider command holds the device, `record-video` met `login` or `wake` holding it, or `login` found a recording running; the message names its pid | Wait and retry, or follow the `hint`: add `--wait-lock 30` to the same command |
 | `device_leased` | 8 | `lease set` or `lease check` found another session's live lease on the device | Choose another device; `offsider lease show`, or `--force` when that lease is stale |
 | `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |
-| `xcode_missing` | 9 | No usable Xcode is selected | `xcode-select -s <Xcode.app>/Contents/Developer` |
-| `xcode_unusable` | 9 | The selected Xcode cannot load simulator support, `DEVELOPER_DIR` points outside an Apple-signed Xcode, or a private method Offsider calls has changed | Select an Apple-signed Xcode 26 or later with `xcode-select -s`, or update Offsider |
+| `xcode_missing` | 9 | No usable Xcode is selected | Run the `hint`, `sudo xcode-select -s` with the newest Apple-signed Xcode in `/Applications`; without sudo, `export DEVELOPER_DIR=` that developer folder |
+| `xcode_unusable` | 9 | The selected Xcode cannot load simulator support, `DEVELOPER_DIR` points outside an Apple-signed Xcode, or a private method Offsider calls has changed | Select an Apple-signed Xcode 26 or later as for `xcode_missing`, or update Offsider |
 | `android_sdk_missing` | 9 | No Android SDK or adb was found | Install Platform-Tools or set `ANDROID_HOME` |
-| `adb_server_unavailable` | 9 | The adb server is not running or not answering | `adb start-server` |
+| `adb_server_unavailable` | 9 | The adb server is not running or not answering | Run the command again: Offsider starts one with `ADB_MDNS=0`. When one runs but does not answer, stop it first with the `hint` (the SDK's `adb kill-server`) |
 | `adb_server_misconfigured` | 9 | The adb server settings point off this Mac or cannot be read, or its Unix socket belongs to another user | Fix or unset the adb server variables |
-| `emulator_missing` | 9 | The Android Emulator is not installed | Install it with the SDK Manager |
+| `emulator_missing` | 9 | The Android Emulator is not installed | Run the `hint`: the SDK's `cmdline-tools/latest/bin/sdkmanager emulator` |
 | `emulator_grpc_required` | 9 | The command needs the emulator's gRPC endpoint and it is not reachable | Restart the emulator with `offsider boot` |
 | `helper_unavailable` | 9 | The UiAutomation helper cannot run on this device, including when a password or unlock code needs it; nothing was typed | Unset `OFFSIDER_ANDROID_TREE` or `OFFSIDER_ANDROID_INPUT`, or use another image |
 | `xcode_too_old` | 9 | The selected Xcode cannot drive this feature on an iPhone or iPad | Select Xcode 27 or later |
-| `team_missing` | 9 | No signing team was chosen for the iPhone runner; Xcode's signed-in team is never used on its own | Set `OFFSIDER_IOS_TEAM_ID`, or allow the device with `device-access allow --team <id>` |
+| `team_missing` | 9 | No signing team was chosen for the iPhone runner; Xcode's signed-in team is never used on its own | Ask the user to run `offsider device-access allow` and choose a team from its menu, or set `OFFSIDER_IOS_TEAM_ID` |
 | `usbmux_unavailable` | 9 | usbmuxd, which reaches iPhones over USB, is not answering, or does not list the device on USB | Unplug and replug the cable; restart the Mac if it persists |
 | `usage` | 64 | Invalid arguments or options, including `OFFSIDER_DEVICE` naming a physical device and an iPhone or iPad command with no app to pin | Fix the command line; see `--help` |
 | `invalid_device_id` | 64 | The device ID is empty or not a device ID | `offsider list-devices` |
@@ -900,14 +937,14 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `device_restarted` | 1 | The simulator restarted while Offsider connected | Retry |
 | `device_unresponsive` | 1 | The device stopped answering | `offsider doctor --device <ID>`, or restart the device |
 | `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
-| `app_not_installed` | 1 | `logs --app` or an Android permission command names an app that is not installed | Install it (`adb -s <serial> install <apk>` on Android), or drop `--app` |
+| `app_not_installed` | 1 | `logs --app` or an Android permission command names an app that is not installed | Install it (the `hint` names the SDK's `adb -s <serial> install <path-to-apk>` on Android), or drop `--app` |
 | `log_stream_failed` | 1 | The device's log could not be read | Retry |
 | `video_failed` | 1 | Recording or streaming video failed, `--output` names something other than a video file you own, or the device could not be marked as recording, so nothing was recorded | Check the output path and the private directory, then retry |
 | `video_unmasked` | 1 | `record-video` or `stream-video` was asked for tree masks, the evidence run masks emails or ids, or a password field is on screen (or the screen could not be read) as it starts | Use `screenshot` for masked evidence, or pass `--unmasked` to record anyway |
 | `helper_failed` | 1 | The UiAutomation helper stopped or failed | Retry; the `hint` names the log to read |
 | `helper_timed_out` | 1 | The UiAutomation helper did not answer in time | Retry when the emulator responds |
 | `adb_command_failed` | 1 | An adb command failed on the device, or printed more than 64 MB | Read `message` |
-| `adb_protocol_error` | 1 | The adb server sent a reply Offsider could not read | Restart the adb server |
+| `adb_protocol_error` | 1 | The adb server sent a reply Offsider could not read | Stop it with the `hint` (the SDK's `adb kill-server`), then run the command again |
 | `emulator_grpc_unavailable` | 1 | The emulator's gRPC endpoint did not answer | Check the emulator is still running |
 | `emulator_grpc_auth_failed` | 1 | The emulator rejected Offsider's gRPC credentials | Restart it with `offsider boot` |
 | `emulator_grpc_failed` | 1 | A gRPC call to the emulator failed | Retry |
@@ -942,25 +979,31 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 
 ## Building from source
 
-Building needs Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [jq](https://jqlang.org) (`brew install xcodegen jq`).
+Building needs Xcode 26 or later, [XcodeGen](https://github.com/yonaskolb/XcodeGen), [jq](https://jqlang.org), git and about 10 GB free; `make setup` checks them first and prints one `brew install` line for anything missing.
 
 ```bash
-make frameworks   # clone the pinned idb revision and build its XCFrameworks
+make setup        # first run: build the pinned idb frameworks, then swift build
 swift build       # build the offsider executable
 swift test        # unit tests; simulator suites are skipped
-make e2e          # rebuild everything and run the simulator end-to-end suites
-make e2e-android  # run the Android emulator end-to-end suites (see ./test-runner.sh --help)
+./test-runner.sh  # on a terminal, pick which end-to-end suites to run
+make e2e          # run the simulator end-to-end suites (./test-runner.sh --simulator)
+make e2e-devices  # show the E2E simulator and AVDs, and create the missing ones
+make e2e-android  # run the Android emulator end-to-end suites on Offsider_E2E, booted if needed
 make e2e-rn-ios   # run the React Native playground suites on a simulator (needs pnpm)
 make e2e-foldable # run the foldable suite on the iPhone Duo simulator OFFSIDER_FOLDABLE_SIMULATOR_NAME names (default "Offsider Duo")
 make e2e-android-fold  # run the foldable suite on the AVD OFFSIDER_ANDROID_FOLD_AVD names (default Offsider_E2E_Fold)
-OFFSIDER_ANDROID_PHONE=<serial> make e2e-android-phone  # run the phone suites on one USB phone
-OFFSIDER_IOS_DEVICE=<UDID> OFFSIDER_IOS_TEAM_ID=<team> make e2e-ios-device  # run the device suites on one iPhone or iPad
+make e2e-android-phone  # run the phone suites on the one allowed USB phone
+make e2e-ios-device     # run the device suites on the one allowed iPhone or iPad
 ```
 
+- `make setup` runs `./scripts/build.sh dev`, then `swift build`. `dev` builds the idb frameworks once per clone behind six progress lines, logging to `.build/idb-build.log` (`--verbose` streams it instead), and ends with `Next: swift build`. It reuses a `build_products/` that matches the pin and this Xcode, here or in another checkout of the repository (`git worktree list`), and `--rebuild` builds anyway. `./scripts/build.sh` alone prints where to start; `help` lists every step.
+- `./test-runner.sh --help` lists the modes and `--help-env` the settings, suite names and examples. With no mode on a terminal it asks which suites to run (the phone and iPhone modes need a device you allowed and are never the default); otherwise it runs `--simulator`.
+- `scripts/e2e-devices.sh` shows the devices the suites drive and offers to create the missing ones: the AVDs `Offsider_E2E` and `Offsider_E2E_Fold` and the `Offsider Duo` simulator. `create` makes them without asking. It never boots them or touches another device, and `scripts/e2e-devices-core.sh status|create [--dry-run]` does the same in JSON for scripts. A mode whose device is missing names `scripts/e2e-devices.sh create`.
+- `make e2e-android` (`./test-runner.sh --android`) drives `OFFSIDER_ANDROID_E2E_AVD` (default `Offsider_E2E`), booting it with `offsider boot` when it is not running; `OFFSIDER_ANDROID_DEVICE` names another serial or AVD. `make e2e-android-fold` boots its AVD the same way.
 - `test-runner.sh` loads a git-ignored `.env` from the repository root first, so the simulator and AVD names for your machine (`OFFSIDER_SIMULATOR_NAME`, `OFFSIDER_FOLDABLE_SIMULATOR_NAME`, `OFFSIDER_ANDROID_E2E_AVD`, `OFFSIDER_ANDROID_FOLD_AVD`) can live there; see `.env.example`.
 - `make e2e-foldable` sets `OFFSIDER_FOLDABLE_E2E=1` and runs `FoldableTests` on an iPhone Duo simulator, folding and unfolding it with `offsider posture`. `make e2e-android-fold` sets `OFFSIDER_ANDROID_FOLD_E2E=1` and `OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E_Fold`; the Android suites drive only that AVD and `Offsider_E2E`.
-- `make e2e-android-phone` (`./test-runner.sh --android-phone`) runs the `AndroidPhone*Tests` suites on the one USB phone whose exact serial `OFFSIDER_ANDROID_PHONE` names, and refuses beside `OFFSIDER_ANDROID_E2E`. You must allow the phone first, with `offsider device-access allow --device <serial> --expires 2h`: the runner checks the allow-list with the built binary (the entry must last at least 30 more minutes) and otherwise prints that command and stops. It installs the React Native playground APK on that phone and leaves it there; Google Play Protect may ask on the phone to send the app for a security check on the first install, so answer it there.
-- `make e2e-ios-device` (`./test-runner.sh --ios-device`) sets `OFFSIDER_IOS_DEVICE_E2E=1` and runs the device suites on the one iPhone or iPad whose UDID `OFFSIDER_IOS_DEVICE` names, signing the runner with `OFFSIDER_IOS_TEAM_ID`; the device must be on its cable, unlocked, with UI Automation on, and allowed with the playground pinned: `offsider device-access allow --device <UDID> --app com.mpalmes.offsider.playground --expires 2h`.
+- `make e2e-android-phone` (`./test-runner.sh --android-phone`) runs the `AndroidPhone*Tests` suites on one USB phone, and refuses beside `OFFSIDER_ANDROID_E2E`. You must allow the phone first: run `offsider device-access allow` with the build the runner tests (it prints that path), choose it, pin `com.mpalmes.offsider.playground.rn` and allow at least 2 hours. Without `OFFSIDER_ANDROID_PHONE=<serial>`, the runner uses the one active Android phone on the allow-list only when its allowance pins `com.mpalmes.offsider.playground.rn`, so a phone allowed for another app is never driven, checks the allowance with the built binary (it must last at least 30 more minutes) and otherwise says what to choose and stops. It installs the React Native playground APK on that phone and leaves it there; Google Play Protect may ask on the phone to send the app for a security check on the first install, so answer it there.
+- `make e2e-ios-device` (`./test-runner.sh --ios-device`) sets `OFFSIDER_IOS_DEVICE_E2E=1` and runs the device suites on the one active iPhone or iPad on the allow-list whose allowance pins `com.mpalmes.offsider.playground` (`OFFSIDER_IOS_DEVICE=<UDID>` names one otherwise), signing the runner with the team its allowance records (`OFFSIDER_IOS_TEAM_ID` overrides it); the device must be on its cable, unlocked, with UI Automation on, and allowed with the playground pinned: run `offsider device-access allow`, choose the device and a team, pin `com.mpalmes.offsider.playground` and allow at least 2 hours.
 - `make e2e-rn-debug-ios` and `make e2e-rn-debug-android` build the React Native debug app, run Metro on loopback port 8742 and run the debug smoke suite. `pnpm --dir OffsiderPlaygroundRN ios <udid>` or `android <serial|avd>` installs the debug app and runs it from the same background Metro (`scripts/rn-playground.sh metro stop` ends it).
 
 <details>

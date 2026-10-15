@@ -32,48 +32,10 @@ FRAMEWORK_SDK="macosx"
 FRAMEWORK_CONFIGURATION="Release"
 ARCHS="arm64"
 
-# --- Helper Functions ---
+# shellcheck source=/dev/null
+. "${SCRIPT_DIR}/lib/ui.sh"
 
-# Temporarily disable xcpretty to see actual errors in CI
-# if hash xcpretty 2>/dev/null; then
-#   HAS_XCPRETTY=true
-# fi
-
-# Function to print a section header with emoji
-function print_section() {
-  local emoji="$1"
-  local title="$2"
-  echo ""
-  echo ""
-  echo "${emoji} ${title}"
-  echo "$(printf '·%.0s' {1..60})"
-}
-
-# Function to print a subsection header
-function print_subsection() {
-  local emoji="$1"
-  local title="$2"
-  echo ""
-  echo "${emoji} ${title}"
-}
-
-# Function to print success message
-function print_success() {
-  local message="$1"
-  echo "✅ ${message}"
-}
-
-# Function to print info message
-function print_info() {
-  local message="$1"
-  echo "ℹ️  ${message}"
-}
-
-# Function to print warning message
-function print_warning() {
-  local message="$1"
-  echo "⚠️  ${message}"
-}
+IDB_BUILD_LOG="${REPO_ROOT}/.build/idb-build.log"
 
 function remove_idb_replacement() {
   local replacement_root="$1"
@@ -112,7 +74,13 @@ function cleanup_stale_idb_replacements() {
   done
 }
 
-trap cleanup_current_idb_replacement EXIT
+# shellcheck disable=SC2329 # run by the EXIT trap
+function on_exit() {
+  cleanup_current_idb_replacement
+  ui_cleanup
+}
+
+trap on_exit EXIT
 
 function resolve_framework_binary() {
   local framework_path="$1"
@@ -139,15 +107,15 @@ function verify_macho_has_arch() {
   local expected_arch="$2"
 
   if [[ ! -f "$binary_path" ]]; then
-    echo "❌ Error: Binary not found for architecture verification: $binary_path"
+    print_error "Binary not found for architecture verification: $binary_path"
     exit 1
   fi
 
   local arch_info
   arch_info=$(lipo -info "$binary_path" 2>/dev/null || true)
   if [[ "$arch_info" != *"$expected_arch"* ]]; then
-    echo "❌ Error: Missing architecture '${expected_arch}' in $binary_path"
-    echo "   lipo output: ${arch_info:-<empty>}"
+    print_error "Missing architecture '${expected_arch}' in $binary_path"
+    echo "   lipo output: ${arch_info:-<empty>}" >&2
     exit 1
   fi
 }
@@ -156,7 +124,7 @@ function verify_fbsimulatorcontrol_fork_features() {
   local binary_path="$1"
 
   if [[ ! -f "$binary_path" ]]; then
-    echo "❌ Error: FBSimulatorControl binary not found for fork feature verification: $binary_path"
+    print_error "FBSimulatorControl binary not found for fork feature verification: $binary_path"
     exit 1
   fi
 
@@ -171,10 +139,10 @@ function verify_fbsimulatorcontrol_fork_features() {
   local reference
   for reference in "${required_references[@]}"; do
     if ! strings -a "$binary_path" | grep -F "$reference" >/dev/null; then
-      echo "❌ Error: FBSimulatorControl is missing required fork feature evidence: ${reference}"
-      echo "   Checked binary: $binary_path"
-      echo "   Expected fork revision: ${IDB_GIT_URL}@${IDB_GIT_REF}"
-      echo "   Re-run setup, generation, and the framework build."
+      print_error "FBSimulatorControl is missing required fork feature evidence: ${reference}"
+      echo "   Checked binary: $binary_path" >&2
+      echo "   Expected fork revision: ${IDB_GIT_URL}@${IDB_GIT_REF}" >&2
+      ui_try "$0 dev --rebuild"
       exit 1
     fi
   done
@@ -191,21 +159,21 @@ function verify_fbsimulatorcontrol_fork_features() {
   local compiled_swift_module
   for compiled_swift_module in "${compiled_swift_modules[@]}"; do
     if [[ ! -f "${compiled_swift_module}" ]]; then
-      echo "❌ Error: FBSimulatorControl compiled Swift module is missing: ${compiled_swift_module}"
-      echo "   Textual reconstruction is not viable because the module and public class share a name."
+      print_error "FBSimulatorControl compiled Swift module is missing: ${compiled_swift_module}"
+      echo "   Textual reconstruction is not viable because the module and public class share a name." >&2
       exit 1
     fi
   done
   local artifact
   for artifact in "${public_module_artifacts[@]}"; do
     if [[ ! -f "$artifact" ]]; then
-      echo "❌ Error: FBSimulatorControl public module artifact is missing: ${artifact}"
+      print_error "FBSimulatorControl public module artifact is missing: ${artifact}"
       exit 1
     fi
     if grep -E 'AccessibilityPlatformTranslation|AXP[A-Za-z]' "$artifact" >/dev/null; then
-      echo "❌ Error: FBSimulatorControl leaks AccessibilityPlatformTranslation through its public interface"
-      echo "   Leaking artifact: ${artifact}"
-      echo "   Rebuild from the pinned Offsider IDB fork revision."
+      print_error "FBSimulatorControl leaks AccessibilityPlatformTranslation through its public interface"
+      echo "   Leaking artifact: ${artifact}" >&2
+      ui_try "$0 dev --rebuild"
       exit 1
     fi
   done
@@ -214,8 +182,8 @@ function verify_fbsimulatorcontrol_fork_features() {
     ! grep -F 'accessibilityElementForFrontmostApplication' "${public_module_artifacts[0]}" >/dev/null ||
     ! grep -F 'public func close() async' "${public_module_artifacts[0]}" >/dev/null
   then
-    echo "❌ Error: FBSimulatorControl lost the public Offsider accessibility command surface"
-    echo "   Checked: ${public_module_artifacts[0]}"
+    print_error "FBSimulatorControl lost the public Offsider accessibility command surface"
+    echo "   Checked: ${public_module_artifacts[0]}" >&2
     exit 1
   fi
 
@@ -236,7 +204,7 @@ function invoke_xcodebuild() {
     exit_code=$?
   fi
 
-  return $exit_code
+  return "$exit_code"
 }
 
 function swift_build_bin_path() {
@@ -253,7 +221,7 @@ function copy_resource_bundle() {
   bundle_source="$(swift_build_bin_path "release" "arm64")/${bundle_name}"
 
   if [[ ! -d "$bundle_source" ]]; then
-    echo "❌ Error: Offsider resource bundle not found in Swift build outputs"
+    print_error "Offsider resource bundle not found in Swift build outputs"
     exit 1
   fi
 
@@ -268,9 +236,7 @@ function fresh_clone_idb_repo() {
     existing_remote="$(git -C "$IDB_CHECKOUT_DIR" remote get-url origin 2>/dev/null || true)"
     if [[ ! -f "$IDB_CHECKOUT_DIR/.git/offsider-managed-checkout" &&
           ( "$IDB_CHECKOUT_DIR" != "$DEFAULT_IDB_CHECKOUT_DIR" || "$existing_remote" != "$IDB_GIT_URL" ) ]]; then
-      echo "❌ Error: Refusing to replace an unmanaged IDB checkout: $IDB_CHECKOUT_DIR" >&2
-      echo "   Remove or repair that checkout manually, then retry." >&2
-      return 1
+      die "$IDB_CHECKOUT_DIR was not made by this script, so it is left alone." "mv \"$IDB_CHECKOUT_DIR\" \"$IDB_CHECKOUT_DIR.bak\" && $0 dev"
     fi
   fi
 
@@ -306,9 +272,7 @@ function clone_idb_repo() {
       if [[ -n "$(git -C "$IDB_CHECKOUT_DIR" status --porcelain)" ]]; then
         if [[ "$IDB_CHECKOUT_DIR" != "$DEFAULT_IDB_CHECKOUT_DIR" &&
               ! -f "$IDB_CHECKOUT_DIR/.git/offsider-managed-checkout" ]]; then
-          echo "Error: Refusing to repair an unmanaged IDB checkout: $IDB_CHECKOUT_DIR" >&2
-          echo "   Clean or repair that checkout manually, then retry." >&2
-          return 1
+          die "$IDB_CHECKOUT_DIR has local changes and was not made by this script, so it is left alone." "mv \"$IDB_CHECKOUT_DIR\" \"$IDB_CHECKOUT_DIR.bak\" && $0 dev"
         fi
         print_warning "The pinned IDB checkout is dirty; repairing the managed checkout locally."
         if ! git -C "$IDB_CHECKOUT_DIR" restore --source=HEAD --staged --worktree -- . ||
@@ -316,7 +280,7 @@ function clone_idb_repo() {
           if [[ "$IDB_CHECKOUT_DIR" == "$DEFAULT_IDB_CHECKOUT_DIR" ]]; then
             fresh_clone_idb_repo
           else
-            echo "Error: Unable to repair managed IDB checkout: $IDB_CHECKOUT_DIR" >&2
+            print_error "Unable to repair managed IDB checkout: $IDB_CHECKOUT_DIR"
             return 1
           fi
         fi
@@ -343,22 +307,22 @@ function verify_idb_source_state() {
   local actual_ref
   actual_ref=$(git -C "$IDB_CHECKOUT_DIR" rev-parse HEAD)
   if [[ "$actual_ref" != "$IDB_GIT_REF" ]]; then
-    echo "❌ Error: IDB checkout SHA mismatch"
-    echo "   Expected: $IDB_GIT_REF"
-    echo "   Actual:   $actual_ref"
+    print_error "IDB checkout SHA mismatch"
+    echo "   Expected: $IDB_GIT_REF" >&2
+    echo "   Actual:   $actual_ref" >&2
     exit 1
   fi
 
   local actual_remote
   actual_remote=$(git -C "$IDB_CHECKOUT_DIR" remote get-url origin)
   if [[ "$actual_remote" != "$IDB_GIT_URL" ]]; then
-    echo "❌ Error: IDB checkout remote mismatch"
-    echo "   Expected: $IDB_GIT_URL"
-    echo "   Actual:   $actual_remote"
+    print_error "IDB checkout remote mismatch"
+    echo "   Expected: $IDB_GIT_URL" >&2
+    echo "   Actual:   $actual_remote" >&2
     exit 1
   fi
   if ! git -C "$IDB_CHECKOUT_DIR" merge-base --is-ancestor "$IDB_UPSTREAM_BASE_REF" "$actual_ref"; then
-    echo "❌ Error: Pinned IDB fork revision is not based on $IDB_UPSTREAM_BASE_REF"
+    print_error "Pinned IDB fork revision is not based on $IDB_UPSTREAM_BASE_REF"
     exit 1
   fi
 
@@ -378,19 +342,19 @@ function verify_idb_source_state() {
     source_file="${check%%|*}"
     source_marker="${check#*|}"
     if ! grep -Fq "$source_marker" "${IDB_CHECKOUT_DIR}/${source_file}"; then
-      echo "❌ Error: Pinned IDB fork verification failed"
-      echo "   Missing '${source_marker}' in ${source_file}"
-      echo "   Fork revision: ${IDB_GIT_URL}@${IDB_GIT_REF}"
+      print_error "Pinned IDB fork verification failed"
+      echo "   Missing '${source_marker}' in ${source_file}" >&2
+      echo "   Fork revision: ${IDB_GIT_URL}@${IDB_GIT_REF}" >&2
       exit 1
     fi
   done
 
   if ! git -C "$IDB_CHECKOUT_DIR" diff --check; then
-    echo "❌ Error: Pinned IDB fork checkout contains uncommitted whitespace errors"
+    print_error "Pinned IDB fork checkout contains uncommitted whitespace errors"
     exit 1
   fi
   if [[ -n "$(git -C "$IDB_CHECKOUT_DIR" status --porcelain)" ]]; then
-    echo "❌ Error: Pinned IDB fork checkout is not clean"
+    print_error "Pinned IDB fork checkout is not clean"
     exit 1
   fi
 
@@ -399,8 +363,8 @@ function verify_idb_source_state() {
 
 function generate_idb_projects() {
   if ! command -v xcodegen >/dev/null 2>&1; then
-    echo "❌ Error: XcodeGen is required to generate the pinned IDB fork projects."
-    echo "   Install XcodeGen or make an existing installation available in PATH."
+    print_error "XcodeGen is required to generate the pinned IDB fork projects."
+    ui_try "brew install xcodegen"
     exit 1
   fi
 
@@ -408,7 +372,7 @@ function generate_idb_projects() {
   print_info "Generating pinned IDB fork projects with $(xcodegen --version)..."
   (cd "$IDB_CHECKOUT_DIR" && ./build.sh generate)
   if [[ ! -f "${FBSIMCONTROL_PROJECT}/project.pbxproj" ]]; then
-    echo "❌ Error: IDB project generation did not produce ${FBSIMCONTROL_PROJECT}/project.pbxproj"
+    print_error "IDB project generation did not produce ${FBSIMCONTROL_PROJECT}/project.pbxproj"
     exit 1
   fi
   print_success "Generated pinned IDB fork projects before framework compilation"
@@ -441,9 +405,10 @@ function framework_build() {
   local project_file="$2"
   local output_base_dir="$3"
 
-  print_subsection "🔨" "Building framework: ${scheme_name}"
+  ui_heading "🔨" "Building framework: ${scheme_name}"
   print_info "Project: ${project_file}"
 
+  # shellcheck disable=SC2016 # $(inherited) is for xcodebuild, not the shell
   invoke_xcodebuild \
     -project "${project_file}" \
     -scheme "${scheme_name}" \
@@ -466,7 +431,7 @@ function framework_build() {
   if [ $build_exit_code -eq 0 ]; then
     print_success "Framework ${scheme_name} built successfully!"
   else
-    echo "❌ Error: Framework ${scheme_name} build failed with exit code ${build_exit_code}"
+    print_error "Framework ${scheme_name} build failed with exit code ${build_exit_code}"
     exit $build_exit_code
   fi
 }
@@ -482,7 +447,7 @@ function install_framework() {
 
   print_info "Installing framework ${scheme_name}.framework to ${final_framework_install_dir}..."
   if [[ ! -d "${built_framework_path}" ]]; then
-    echo "❌ Error: Built framework not found at ${built_framework_path} for installation."
+    print_error "Built framework not found at ${built_framework_path} for installation."
     exit 1
   fi
 
@@ -502,9 +467,9 @@ function create_xcframework() {
   local final_xcframework_output_dir="${output_base_dir}/XCFrameworks"
   local xcframework_path="${final_xcframework_output_dir}/${scheme_name}.xcframework"
 
-  print_subsection "📦" "Creating XCFramework for ${scheme_name}"
+  ui_heading "📦" "Creating XCFramework for ${scheme_name}"
   if [[ ! -d "${signed_framework_path}" ]]; then
-    echo "❌ Error: Signed framework not found at ${signed_framework_path} for XCFramework creation."
+    print_error "Signed framework not found at ${signed_framework_path} for XCFramework creation."
     exit 1
   fi
 
@@ -537,7 +502,7 @@ function create_xcframework() {
     fi
     print_success "XCFramework ${scheme_name}.xcframework created at ${xcframework_path}"
   else
-    echo "❌ Error: XCFramework creation for ${scheme_name} failed with exit code ${xcframework_exit_code}"
+    print_error "XCFramework creation for ${scheme_name} failed with exit code ${xcframework_exit_code}"
     exit $xcframework_exit_code
   fi
 }
@@ -578,7 +543,7 @@ function build_offsider_executable() {
   local executable_dest="${output_base_dir}/offsider"
   local bin_path
 
-  print_subsection "⚡" "Building Offsider executable"
+  ui_heading "⚡" "Building Offsider executable"
   print_info "Using Swift Package Manager to build Offsider..."
 
   # Clean any existing build products to ensure fresh build
@@ -589,7 +554,7 @@ function build_offsider_executable() {
   swift build --configuration "${build_config}" --arch arm64 --force-resolved-versions
   bin_path="$(swift_build_bin_path "$build_config" "arm64")/offsider"
   if [[ ! -f "${bin_path}" ]]; then
-    echo "❌ Error: arm64 Offsider executable not found at ${bin_path}"
+    print_error "arm64 Offsider executable not found at ${bin_path}"
     exit 1
   fi
   cp "${bin_path}" "${executable_dest}"
@@ -599,8 +564,8 @@ function build_offsider_executable() {
   verify_macho_has_arch "${executable_dest}" "arm64"
   print_success "Offsider executable installed to ${executable_dest}"
 
-  # Configure rpath for organized framework loading
-  print_info "Configuring executable rpath for organized framework loading..."
+  # Configure rpath for organised framework loading
+  print_info "Configuring executable rpath for organised framework loading..."
 
   # Remove any existing rpaths first
   install_name_tool -delete_rpath "@executable_path/Frameworks" "${executable_dest}" 2>/dev/null || true
@@ -619,7 +584,8 @@ function build_offsider_executable() {
 
   # Verify rpath configuration
   print_info "Verifying rpath configuration..."
-  local rpath_output=$(otool -l "${executable_dest}" | grep -A2 LC_RPATH | grep path | awk '{print $2}')
+  local rpath_output
+  rpath_output=$(otool -l "${executable_dest}" | grep -A2 LC_RPATH | grep path | awk '{print $2}')
   if [[ -n "$rpath_output" ]]; then
     print_success "Executable rpath configuration verified:"
     echo "$rpath_output" | while read -r path; do
@@ -629,7 +595,7 @@ function build_offsider_executable() {
     print_warning "No rpath entries found in executable"
   fi
 
-  print_success "Executable rpath configured for organized framework deployment"
+  print_success "Executable rpath configured for organised framework deployment"
 }
 
 function verify_xcframework_inputs() {
@@ -637,23 +603,23 @@ function verify_xcframework_inputs() {
   local xcframeworks_dir="${output_base_dir}/XCFrameworks"
   local expected_frameworks=("FBControlCore" "XCTestBootstrap" "FBSimulatorControl" "FBDeviceControl")
 
-  print_subsection "🧪" "Validating XCFramework inputs"
+  ui_heading "🧪" "Validating XCFramework inputs"
 
   if [[ ! -d "${xcframeworks_dir}" ]]; then
-    echo "❌ Error: XCFrameworks directory not found under ${output_base_dir}"
+    print_error "XCFrameworks directory not found under ${output_base_dir}"
     exit 1
   fi
 
   for framework_name in "${expected_frameworks[@]}"; do
     local xcframework_path="${xcframeworks_dir}/${framework_name}.xcframework"
     if [[ ! -d "${xcframework_path}" ]]; then
-      echo "❌ Error: Expected XCFramework missing from ${xcframeworks_dir}: ${framework_name}.xcframework"
+      print_error "Expected XCFramework missing from ${xcframeworks_dir}: ${framework_name}.xcframework"
       exit 1
     fi
     local framework_binary
     framework_binary="$(find "${xcframework_path}" -type f -name "${framework_name}" -path "*/macos-*/*.framework/*" | head -1)"
     if [[ -z "${framework_binary}" ]]; then
-      echo "❌ Error: Could not locate framework binary inside ${xcframework_path}"
+      print_error "Could not locate framework binary inside ${xcframework_path}"
       exit 1
     fi
     verify_macho_has_arch "${framework_binary}" "arm64"
@@ -671,24 +637,24 @@ function verify_release_architectures() {
   local executable_path="${output_base_dir}/offsider"
   local expected_frameworks=("FBControlCore" "XCTestBootstrap" "FBSimulatorControl" "FBDeviceControl")
 
-  print_subsection "🧪" "Validating release artifact architectures"
+  ui_heading "🧪" "Validating release artifact architectures"
   verify_macho_has_arch "${executable_path}" "arm64"
 
   if [[ ! -d "${frameworks_dir}" ]]; then
-    echo "❌ Error: Frameworks directory not found under ${output_base_dir}"
+    print_error "Frameworks directory not found under ${output_base_dir}"
     exit 1
   fi
 
   for framework_name in "${expected_frameworks[@]}"; do
     local framework_path="${frameworks_dir}/${framework_name}.framework"
     if [[ ! -d "${framework_path}" ]]; then
-      echo "❌ Error: Expected framework missing from ${frameworks_dir}: ${framework_name}.framework"
+      print_error "Expected framework missing from ${frameworks_dir}: ${framework_name}.framework"
       exit 1
     fi
     local framework_binary
     framework_binary="$(resolve_framework_binary "${framework_path}" "${framework_name}" || true)"
     if [[ -z "${framework_binary}" ]]; then
-      echo "❌ Error: Could not locate framework binary in ${framework_path}"
+      print_error "Could not locate framework binary in ${framework_path}"
       exit 1
     fi
     verify_macho_has_arch "${framework_binary}" "arm64"
@@ -714,7 +680,7 @@ HELPER_ANDROID_JAR_SHA256="bf1b4387cc7ca94fc6ef684f040d9d16fbf16248e181819f02073
 HELPER_MIN_API="26"
 
 function helper_fail() {
-  echo "❌ Error: $*" >&2
+  print_error "$*"
   exit 1
 }
 
@@ -746,7 +712,7 @@ function helper_resolve_toolchain() {
     HELPER_JDK="$(/usr/libexec/java_home -v "$HELPER_JDK_MAJOR" 2>/dev/null || true)"
   fi
   [[ -n "$HELPER_JDK" && -x "${HELPER_JDK}/bin/javac" && -x "${HELPER_JDK}/bin/java" ]] \
-    || helper_fail "No JDK ${HELPER_JDK_MAJOR} found: set OFFSIDER_HELPER_JDK to a JDK ${HELPER_JDK_MAJOR} home."
+    || die "No JDK ${HELPER_JDK_MAJOR} found." "brew install --cask zulu@${HELPER_JDK_MAJOR}"
   sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
   HELPER_D8_JAR="${sdk}/build-tools/${HELPER_BUILD_TOOLS}/lib/d8.jar"
   HELPER_ANDROID_JAR="${sdk}/platforms/${HELPER_PLATFORM}/android.jar"
@@ -818,7 +784,7 @@ function cmd_helper() {
     *) helper_fail "Unknown option for helper: $1 (use --check)" ;;
   esac
   [[ $# -le 1 ]] || helper_fail "helper takes at most one option (--check)"
-  print_section "☕" "Building the Android Helper"
+  ui_section "☕" "Building the Android Helper"
   helper_resolve_toolchain
   helper_build
   summary="offsider-helper.dex $(wc -c < "$built_dex" | tr -d ' ') bytes sha256 $(helper_sha256 "$built_dex")"
@@ -827,10 +793,10 @@ function cmd_helper() {
     cmp -s "$built_dex" "$committed_dex" || differs+=("offsider-helper.dex")
     cmp -s "$built_manifest" "$committed_manifest" || differs+=("manifest.json")
     if [[ ${#differs[@]} -gt 0 ]]; then
-      echo "❌ Error: the rebuilt helper differs from the committed ${differs[*]} in ${HELPER_OUTPUT_DIR}" >&2
+      print_error "the rebuilt helper differs from the committed ${differs[*]} in ${HELPER_OUTPUT_DIR}"
       echo "   Rebuilt: ${summary}" >&2
       diff "$committed_manifest" "$built_manifest" >&2 || true
-      echo "   Rebuild with scripts/build.sh helper (JDK ${HELPER_JDK_MAJOR}, build-tools ${HELPER_BUILD_TOOLS}, d8 ${HELPER_D8_VERSION}) and commit the dex and manifest with the Java source." >&2
+      echo "   Rebuild with $0 helper (JDK ${HELPER_JDK_MAJOR}, build-tools ${HELPER_BUILD_TOOLS}, d8 ${HELPER_D8_VERSION}) and commit the dex and manifest with the Java source." >&2
       exit 1
     fi
     print_success "${summary} matches the committed dex and manifest"
@@ -864,7 +830,7 @@ RUNNER_DIR="${REPO_ROOT}/Sources/Offsider/Resources/runner"
 RUNNER_TRACKED=("project.pbxproj" "xcshareddata/xcschemes/OffsiderRunner.xcscheme")
 
 function runner_fail() {
-  echo "❌ Error: $*" >&2
+  print_error "$*"
   exit 1
 }
 
@@ -877,8 +843,8 @@ function cmd_runner() {
     *) runner_fail "Unknown option for runner: $1 (use --check)" ;;
   esac
   [[ $# -le 1 ]] || runner_fail "runner takes at most one option (--check)"
-  command -v xcodegen > /dev/null || runner_fail "XcodeGen is not installed: brew install xcodegen"
-  print_section "🏃" "Generating the XCUITest runner project"
+  command -v xcodegen > /dev/null || die "XcodeGen is not installed." "brew install xcodegen"
+  ui_section "🏃" "Generating the XCUITest runner project"
   work="$(mktemp -d "${TMPDIR:-/tmp}/offsider-runner.XXXXXX")"
   cp "${RUNNER_DIR}/project.yml" "$work/"
   cp -R "${RUNNER_DIR}/Host" "${RUNNER_DIR}/UITests" "$work/"
@@ -893,8 +859,8 @@ function cmd_runner() {
     done
     rm -rf "$work"
     if [[ ${#differs[@]} -gt 0 ]]; then
-      echo "❌ Error: the regenerated runner project differs from the committed ${differs[*]}" >&2
-      echo "   Regenerate with scripts/build.sh runner and commit OffsiderRunner.xcodeproj with project.yml." >&2
+      print_error "the regenerated runner project differs from the committed ${differs[*]}"
+      echo "   Regenerate with $0 runner and commit OffsiderRunner.xcodeproj with project.yml." >&2
       exit 1
     fi
     print_success "OffsiderRunner.xcodeproj matches project.yml"
@@ -908,85 +874,74 @@ function cmd_runner() {
   print_success "OffsiderRunner.xcodeproj regenerated"
 }
 
-# Function to print usage information
+function print_start_here() {
+  cat <<EOF
+Start here:
+  $0 dev       Build the idb frameworks Offsider links (once per clone), then: swift build
+  $0 helper    Rebuild the Android helper after changing AndroidHelper/
+  $0 runner    Regenerate the iPhone runner project after changing its project.yml
+  $0 help      Every step and setting
+EOF
+}
+
 function print_usage() {
 cat <<EOF
-./build.sh usage:
-  ./build.sh <command>
+Usage: $0 <command>
 
-Commands:
-  help
-    Print this usage information.
-
-  setup
-    Clone the IDB repository and set up directories.
-
-  clean
-    Clean previous build products and derived data.
-
-  generate
-    Verify the pinned IDB fork revision, then regenerate projects using XcodeGen.
-
-  frameworks
-    Generate the pinned fork project, then build all IDB frameworks (FBControlCore, XCTestBootstrap, FBSimulatorControl, FBDeviceControl).
-
-  install
-    Install built frameworks to the Frameworks directory.
-
-  strip
-    Strip nested frameworks from the built frameworks.
-
-  xcframeworks
-    Create XCFrameworks from the built frameworks.
-
-  dev
-    Run setup, clean, frameworks, install, strip and xcframeworks. Frameworks stay unsigned beyond the linker's ad hoc signature.
-
-  executable
-    Build the arm64 Offsider executable using Swift Package Manager.
-
-  verify-xcframeworks
-    Verify XCFramework inputs include the arm64 slice.
-
-  verify-arches
-    Verify the executable and frameworks include the arm64 slice.
-
+Everyday:
+  dev [--rebuild] [--verbose]
+      Check the tools, fetch the pinned idb fork and build its XCFrameworks into build_products/.
+      Reuses build_products/ when it already matches the pin and this Xcode, or copies a matching one
+      from another checkout of this repository (git worktree list), verified the same way.
+      --rebuild always builds; --verbose streams xcodebuild instead of logging to .build/idb-build.log.
   helper [--check]
-    Rebuild the Android helper dex from AndroidHelper/src with JDK 17, build-tools 37.0.0 (d8) and android-37.0
-    in .build/offsider-helper/, then update Sources/Offsider/Resources/helper/ when the Java source changed.
-    --check rebuilds and compares with the committed dex and manifest without writing them.
-
+      Rebuild the Android helper dex from AndroidHelper/src with JDK ${HELPER_JDK_MAJOR}, build-tools ${HELPER_BUILD_TOOLS} (d8) and ${HELPER_PLATFORM}
+      in .build/offsider-helper/, then update Sources/Offsider/Resources/helper/ when the Java source changed.
+      --check rebuilds and compares with the committed dex and manifest without writing them.
   runner [--check]
-    Regenerate Sources/Offsider/Resources/runner/OffsiderRunner.xcodeproj from its project.yml with XcodeGen.
-    --check regenerates in a temporary directory and compares with the committed project without writing it.
+      Regenerate Sources/Offsider/Resources/runner/OffsiderRunner.xcodeproj from its project.yml with XcodeGen.
+      --check regenerates in a temporary directory and compares with the committed project without writing it.
 
-Environment Variables:
-  IDB_CHECKOUT_DIR       Directory for IDB repository (default: ./idb_checkout)
-  IDB_GIT_URL            IDB fork URL (default: https://github.com/michael-palmes/idb.git)
+The steps dev runs, one at a time (CI uses these):
+  setup                Clone the pinned idb fork into idb_checkout/.
+  clean                Remove build_products/ and build_derived_data/.
+  generate             Verify the pinned fork, then generate its projects with XcodeGen.
+  frameworks           Generate, then build FBControlCore, XCTestBootstrap, FBSimulatorControl and FBDeviceControl.
+  install              Copy the built frameworks to build_products/Frameworks.
+  strip                Remove nested frameworks from the built frameworks.
+  xcframeworks         Package the XCFrameworks and record IDB_BUILD_EVIDENCE.txt.
+  verify-xcframeworks  Check the XCFrameworks came from the pin and have the arm64 slice.
+
+Release:
+  executable           Build build_products/offsider (arm64) with Swift Package Manager.
+  verify-arches        Check the executable and frameworks have the arm64 slice.
+
+Environment:
+  IDB_CHECKOUT_DIR       Folder for the idb fork (default: idb_checkout/ in the repository)
+  IDB_GIT_URL            idb fork URL (default: https://github.com/michael-palmes/idb.git)
   IDB_GIT_REF            Exact fork revision (default: ${DEFAULT_IDB_GIT_REF})
   IDB_UPSTREAM_BASE_REF  Verified upstream base (default: e682506725e9efefb9c43b8b917c0b12eb2a5939)
-  BUILD_OUTPUT_DIR       Directory for build outputs (default: ./build_products)
-  DERIVED_DATA_PATH      Directory for derived data (default: ./build_derived_data)
-  OFFSIDER_HELPER_JDK    JDK 17 home for helper (default: JAVA_HOME, then /usr/libexec/java_home -v 17)
+  BUILD_OUTPUT_DIR       Build outputs (default: ./build_products)
+  DERIVED_DATA_PATH      Derived data (default: ./build_derived_data)
+  OFFSIDER_HELPER_JDK    JDK ${HELPER_JDK_MAJOR} home for helper (default: JAVA_HOME, then /usr/libexec/java_home -v ${HELPER_JDK_MAJOR})
   ANDROID_HOME           Android SDK for helper (default: ANDROID_SDK_ROOT, then ~/Library/Android/sdk)
 
 Examples:
-  ./build.sh dev                # Build the IDB frameworks and XCFrameworks
-  ./build.sh executable         # Build build_products/offsider
-  ./build.sh verify-arches      # Check the built payload
-  ./build.sh helper --check     # Rebuild the Android helper and compare it with the committed dex
-  ./build.sh runner --check     # Regenerate the XCUITest runner project and compare it with the committed one
+  $0 dev                  # Build the idb XCFrameworks, then run: swift build
+  $0 dev --rebuild        # Build them from scratch even when a matching build exists
+  $0 helper --check       # Rebuild the Android helper and compare it with the committed dex
+  $0 runner --check       # Regenerate the runner project and compare it with the committed one
 EOF
 }
 
 # Individual command functions
 function cmd_setup() {
-  print_section "📥" "Repository Setup"
+  ui_section "📥" "Repository Setup"
   clone_idb_repo
 }
 
 function cmd_clean() {
-  print_section "🧹" "Cleaning Previous Build Products"
+  ui_section "🧹" "Cleaning Previous Build Products"
   print_info "Cleaning previous build products and derived data..."
   rm -rf "${BUILD_OUTPUT_DIR}"
   rm -rf "${DERIVED_DATA_PATH}"
@@ -997,7 +952,7 @@ function cmd_clean() {
 }
 
 function cmd_frameworks() {
-  print_section "🔧" "Building Frameworks"
+  ui_section "🔧" "Building Frameworks"
   generate_idb_projects
   framework_build "FBControlCore" "${FBSIMCONTROL_PROJECT}" "${BUILD_OUTPUT_DIR}"
   framework_build "XCTestBootstrap" "${FBSIMCONTROL_PROJECT}" "${BUILD_OUTPUT_DIR}"
@@ -1006,7 +961,7 @@ function cmd_frameworks() {
 }
 
 function cmd_install() {
-  print_section "📦" "Installing Frameworks"
+  ui_section "📦" "Installing Frameworks"
   install_framework "FBControlCore" "${BUILD_OUTPUT_DIR}"
   install_framework "XCTestBootstrap" "${BUILD_OUTPUT_DIR}"
   install_framework "FBSimulatorControl" "${BUILD_OUTPUT_DIR}"
@@ -1014,7 +969,7 @@ function cmd_install() {
 }
 
 function cmd_strip() {
-  print_section "✂️" "Stripping Nested Frameworks"
+  ui_section "✂️" "Stripping Nested Frameworks"
   strip_framework "${BUILD_OUTPUT_DIR}" "FBSimulatorControl.framework/Versions/Current/Frameworks/XCTestBootstrap.framework"
   strip_framework "${BUILD_OUTPUT_DIR}" "FBSimulatorControl.framework/Versions/Current/Frameworks/FBControlCore.framework"
   strip_framework "${BUILD_OUTPUT_DIR}" "FBDeviceControl.framework/Versions/Current/Frameworks/XCTestBootstrap.framework"
@@ -1023,7 +978,7 @@ function cmd_strip() {
 }
 
 function cmd_xcframeworks() {
-  print_section "📦" "Creating XCFrameworks"
+  ui_section "📦" "Creating XCFrameworks"
   create_xcframework "FBControlCore" "${BUILD_OUTPUT_DIR}"
   create_xcframework "XCTestBootstrap" "${BUILD_OUTPUT_DIR}"
   create_xcframework "FBSimulatorControl" "${BUILD_OUTPUT_DIR}"
@@ -1032,38 +987,183 @@ function cmd_xcframeworks() {
 }
 
 function cmd_generate() {
-  print_section "🧬" "Generating Candidate IDB Projects"
+  ui_section "🧬" "Generating Candidate IDB Projects"
   generate_idb_projects
 }
 
 function cmd_executable() {
-  print_section "⚡" "Building Offsider Executable"
+  ui_section "⚡" "Building Offsider Executable"
   build_offsider_executable "${BUILD_OUTPUT_DIR}"
 }
 
 function cmd_verify_xcframeworks() {
-  print_section "🧪" "Verifying XCFramework Inputs"
+  ui_section "🧪" "Verifying XCFramework Inputs"
   if ! grep -Fxq "IDB_SHA=${IDB_GIT_REF}" "${BUILD_XCFRAMEWORK_DIR}/IDB_BUILD_EVIDENCE.txt" 2>/dev/null; then
-    echo "❌ Error: XCFrameworks were not built from the pinned IDB fork revision ${IDB_GIT_REF}"
+    print_error "XCFrameworks were not built from the pinned IDB fork revision ${IDB_GIT_REF}"
+    ui_try "$0 dev --rebuild"
     exit 1
   fi
   verify_xcframework_inputs "${BUILD_OUTPUT_DIR}"
 }
 
 function cmd_verify_arches() {
-  print_section "🧪" "Verifying Architecture Slices"
+  ui_section "🧪" "Verifying Architecture Slices"
   verify_release_architectures "${BUILD_OUTPUT_DIR}"
+}
+
+# Every missing tool is listed once, with one command that installs them all.
+function preflight() {
+  local problems=0 missing=() tool developer_dir xcode_version="" free_gb xcode_app
+  developer_dir="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || true)}"
+  if [[ "$developer_dir" == *.app/Contents/Developer && -d "$developer_dir" ]]; then
+    xcode_version="$(DEVELOPER_DIR="$developer_dir" xcodebuild -version 2>/dev/null | awk 'NR == 1 { print $2 }')"
+  fi
+  if [[ -z "$xcode_version" ]]; then
+    problems=1
+    xcode_app="$(mdfind "kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'" 2>/dev/null | head -1)"
+    if [[ -n "$xcode_app" ]]; then
+      print_error "Xcode is installed but not selected."
+      ui_try "sudo xcode-select -s \"${xcode_app}/Contents/Developer\""
+    else
+      print_error "Xcode is not installed."
+      ui_try "open macappstore://apps.apple.com/app/id497799835"
+    fi
+  elif [[ "${xcode_version%%.*}" -lt 26 ]]; then
+    problems=1
+    print_error "Xcode ${xcode_version} is too old: Offsider needs 26 or later."
+    ui_try "open macappstore://apps.apple.com/app/id497799835"
+  fi
+  for tool in xcodegen jq git; do
+    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    problems=1
+    print_error "Missing: ${missing[*]}"
+    if command -v brew >/dev/null 2>&1; then
+      ui_try "brew install ${missing[*]}"
+    else
+      ui_try "open https://brew.sh   (then: brew install ${missing[*]})"
+    fi
+  fi
+  free_gb="$(df -g "$REPO_ROOT" | awk 'NR == 2 { print $4 }')"
+  if [[ "$free_gb" =~ ^[0-9]+$ && "$free_gb" -lt 10 ]]; then
+    problems=1
+    print_error "Only ${free_gb} GB free: the idb build needs about 10 GB."
+    ui_try "open x-apple.systempreferences:com.apple.settings.Storage"
+  fi
+  [[ "$problems" == 0 ]] || exit 1
+  print_success "Tools ready: Xcode ${xcode_version}, xcodegen, jq, git, ${free_gb} GB free"
+}
+
+# True when <build_products> holds XCFrameworks recorded for this pin, fork URL and Xcode.
+function build_matches_pin() {
+  local evidence="$1/XCFrameworks/IDB_BUILD_EVIDENCE.txt"
+  [[ -f "$evidence" && ! -L "$1" ]] || return 1
+  grep -Fxq "IDB_SHA=${IDB_GIT_REF}" "$evidence" &&
+    grep -Fxq "IDB_GIT_URL=${IDB_GIT_URL}" "$evidence" &&
+    grep -Fxq "XCODE_VERSION=$(xcodebuild -version | tr '\n' ' ')" "$evidence"
+}
+
+# Another checkout of this repository whose build_products matches the pin, or nothing.
+function matching_build_elsewhere() {
+  local tree own
+  own="$(cd "$BUILD_OUTPUT_DIR" 2>/dev/null && pwd -P || true)"
+  while IFS= read -r tree; do
+    [[ -n "$tree" && -d "$tree/build_products" ]] || continue
+    [[ "$(cd "$tree/build_products" && pwd -P)" != "$own" ]] || continue
+    if build_matches_pin "$tree/build_products"; then
+      printf '%s\n' "$tree/build_products"
+      return 0
+    fi
+  done < <(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+  return 0
+}
+
+function verify_xcframeworks_quietly() {
+  cmd_verify_xcframeworks >>"$IDB_BUILD_LOG" 2>&1
+}
+
+# shellcheck disable=SC2329 # run through dev_step
+function package_frameworks() {
+  cmd_install
+  cmd_strip
+  cmd_xcframeworks
+}
+
+# Quiet mode logs a step behind a spinner; verbose mode (CI, a pipe or --verbose) streams it as before.
+function dev_step() {
+  local label="$1"
+  shift
+  if [[ "$DEV_QUIET" == 1 ]]; then
+    ui_run_logged "$label" "$IDB_BUILD_LOG" "$@" || die "Could not finish: ${label#\[*\] }." "$0 dev --verbose"
+  else
+    ui_section "" "$label"
+    "$@"
+  fi
+}
+
+function cmd_dev() {
+  local rebuild=0 donor
+  DEV_QUIET=1
+  [[ -t 1 && -z "${CI:-}" ]] || DEV_QUIET=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --rebuild) rebuild=1 ;;
+      --verbose) DEV_QUIET=0 ;;
+      *) die "Unknown option for dev: $1" "$0 dev --rebuild" ;;
+    esac
+    shift
+  done
+  mkdir -p "$(dirname "$IDB_BUILD_LOG")"
+  : > "$IDB_BUILD_LOG"
+  ui_banner "🛠️" "Offsider dev build"
+  preflight
+  dev_step "Fetching the pinned idb fork" cmd_setup
+
+  if [[ "$rebuild" == 0 ]]; then
+    if build_matches_pin "$BUILD_OUTPUT_DIR" && verify_xcframeworks_quietly; then
+      print_success "build_products already matches the idb pin"
+      ui_next "swift build"
+      return 0
+    fi
+    donor="$(matching_build_elsewhere)"
+    if [[ -n "$donor" ]]; then
+      rm -rf "$BUILD_OUTPUT_DIR"
+      cp -R "$donor" "$BUILD_OUTPUT_DIR"
+      if verify_xcframeworks_quietly; then
+        print_success "Reused the matching build from ${donor}"
+        ui_next "swift build"
+        return 0
+      fi
+      print_warning "The build in ${donor} failed verification, so this one builds from scratch."
+    fi
+  fi
+
+  if [[ "$DEV_QUIET" == 1 ]]; then
+    cmd_clean >>"$IDB_BUILD_LOG" 2>&1
+  else
+    cmd_clean
+  fi
+  dev_step "[1/6] Generating the idb projects" generate_idb_projects
+  dev_step "[2/6] Building FBControlCore" framework_build "FBControlCore" "${FBSIMCONTROL_PROJECT}" "${BUILD_OUTPUT_DIR}"
+  dev_step "[3/6] Building XCTestBootstrap" framework_build "XCTestBootstrap" "${FBSIMCONTROL_PROJECT}" "${BUILD_OUTPUT_DIR}"
+  dev_step "[4/6] Building FBSimulatorControl" framework_build "FBSimulatorControl" "${FBSIMCONTROL_PROJECT}" "${BUILD_OUTPUT_DIR}"
+  dev_step "[5/6] Building FBDeviceControl" framework_build "FBDeviceControl" "${FBSIMCONTROL_PROJECT}" "${BUILD_OUTPUT_DIR}"
+  dev_step "[6/6] Packaging the XCFrameworks" package_frameworks
+  print_success "Frameworks ready in ${BUILD_XCFRAMEWORK_DIR}"
+  if [[ "$DEV_QUIET" == 1 ]]; then log "Build log: ${IDB_BUILD_LOG}"; fi
+  ui_next "swift build"
 }
 
 # Parse command line arguments
 if [[ $# -eq 0 ]]; then
-  print_usage
-  exit 1
+  print_start_here
+  exit 0
 fi
 COMMAND="$1"
 
 case $COMMAND in
-  help)
+  help|-h|--help)
     print_usage
     exit 0;;
   setup)
@@ -1081,12 +1181,8 @@ case $COMMAND in
   xcframeworks)
     cmd_xcframeworks;;
   dev)
-    cmd_setup
-    cmd_clean
-    cmd_frameworks
-    cmd_install
-    cmd_strip
-    cmd_xcframeworks;;
+    shift
+    cmd_dev "$@";;
   executable)
     cmd_executable;;
   verify-xcframeworks)
@@ -1100,10 +1196,7 @@ case $COMMAND in
     shift
     cmd_runner "$@";;
   *)
-    echo "Unknown command: $COMMAND"
-    echo ""
-    print_usage
-    exit 1;;
+    die "Unknown command: $COMMAND" "$0 help";;
 esac
 
 exit 0

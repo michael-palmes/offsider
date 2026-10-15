@@ -213,40 +213,51 @@ public final class LineEditor {
     }
 }
 
-/// An arrow-key list: Up and Down wrap, Enter or a digit chooses, Escape or q cancels.
+/// An arrow-key list: Up and Down wrap past disabled rows, Enter or a digit chooses, Escape or q cancels.
 public struct ChoiceMenu: Sendable {
     public enum Outcome: Equatable, Sendable {
         case moving
         case chosen(Int)
         case cancelled
+        /// R in a menu that offers a rescan.
+        case refresh
     }
 
     public let count: Int
-    public private(set) var selected = 0
+    /// The row under the cursor; nil when no row can be chosen.
+    public private(set) var selected: Int?
+    public let refreshable: Bool
+    private let enabled: [Bool]
 
-    public init(count: Int) {
-        self.count = max(count, 1)
+    /// `disabled` rows are drawn but the cursor never lands on them; `selected` falls forward to the next enabled row.
+    public init(count: Int, selected: Int = 0, disabled: Set<Int> = [], refreshable: Bool = false) {
+        self.count = max(count, 0)
+        enabled = (0..<self.count).map { !disabled.contains($0) }
+        self.refreshable = refreshable
+        let start = min(max(selected, 0), max(self.count - 1, 0))
+        self.selected = (0..<self.count).map { (start + $0) % self.count }.first { enabled[$0] }
     }
 
     public mutating func apply(_ key: TerminalKey) -> Outcome {
         switch key {
         case .up:
-            selected = (selected + count - 1) % count
+            step(-1)
         case .down:
-            selected = (selected + 1) % count
+            step(1)
         case .enter:
-            return .chosen(selected)
+            if let selected { return .chosen(selected) }
         case .cancel, .endOfInput:
             return .cancelled
         case .text(let typed):
             for byte in typed {
                 switch byte {
-                case UInt8(ascii: "k"): selected = (selected + count - 1) % count
-                case UInt8(ascii: "j"): selected = (selected + 1) % count
+                case UInt8(ascii: "k"): step(-1)
+                case UInt8(ascii: "j"): step(1)
                 case UInt8(ascii: "q"), UInt8(ascii: "Q"): return .cancelled
-                case UInt8(ascii: "1")...UInt8(ascii: "9") where Int(byte - UInt8(ascii: "0")) <= count:
+                case UInt8(ascii: "r"), UInt8(ascii: "R") where refreshable: return .refresh
+                case UInt8(ascii: "1")...UInt8(ascii: "9") where Int(byte - UInt8(ascii: "0")) <= count && enabled[Int(byte - UInt8(ascii: "1"))]:
                     selected = Int(byte - UInt8(ascii: "1"))
-                    return .chosen(selected)
+                    return .chosen(Int(byte - UInt8(ascii: "1")))
                 default: break
                 }
             }
@@ -254,5 +265,63 @@ public struct ChoiceMenu: Sendable {
             break
         }
         return .moving
+    }
+
+    private mutating func step(_ by: Int) {
+        guard let current = selected else { return }
+        var index = current
+        repeat {
+            index = (index + by + count) % count
+        } while !enabled[index] && index != current
+        selected = index
+    }
+}
+
+/// A menu where Space ticks rows and Enter takes every ticked one; Enter with none ticked does nothing.
+public struct CheckMenu: Sendable {
+    public enum Outcome: Equatable, Sendable {
+        case moving
+        case chosen([Int])
+        case cancelled
+    }
+
+    public let count: Int
+    public private(set) var selected: Int
+    public private(set) var ticked: Set<Int>
+
+    public init(count: Int, ticked: Set<Int>) {
+        self.count = max(count, 0)
+        selected = 0
+        self.ticked = ticked.filter { (0..<max(count, 0)).contains($0) }
+    }
+
+    public mutating func apply(_ key: TerminalKey) -> Outcome {
+        guard count > 0 else { return key == .cancel || key == .endOfInput ? .cancelled : .moving }
+        switch key {
+        case .up: selected = (selected - 1 + count) % count
+        case .down: selected = (selected + 1) % count
+        case .enter: if !ticked.isEmpty { return .chosen(ticked.sorted()) }
+        case .cancel, .endOfInput: return .cancelled
+        case .text(let typed):
+            for byte in typed {
+                switch byte {
+                case UInt8(ascii: " "): toggle(selected)
+                case UInt8(ascii: "k"): selected = (selected - 1 + count) % count
+                case UInt8(ascii: "j"): selected = (selected + 1) % count
+                case UInt8(ascii: "q"), UInt8(ascii: "Q"): return .cancelled
+                case UInt8(ascii: "1")...UInt8(ascii: "9") where Int(byte - UInt8(ascii: "0")) <= count:
+                    selected = Int(byte - UInt8(ascii: "1"))
+                    toggle(selected)
+                default: break
+                }
+            }
+        case .backspace, .clearLine, .deleteWord, .left, .right, .ignored:
+            break
+        }
+        return .moving
+    }
+
+    private mutating func toggle(_ index: Int) {
+        if ticked.contains(index) { ticked.remove(index) } else { ticked.insert(index) }
     }
 }

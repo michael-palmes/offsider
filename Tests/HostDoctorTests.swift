@@ -41,7 +41,7 @@ struct HostDoctorRulesTests {
     func withHost() throws {
         let base = DoctorReport(offsiderVersion: "0.8.0", udid: nil, xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil), booted: [], checks: [])
         let report = Doctor.withHost(base, Self.facts())
-        #expect(report.checks.map(\.id) == [.hostLoad, .hostDisk, .hostSessions, .installBundle])
+        #expect(report.checks.map(\.id) == [.hostLoad, .hostDisk, .hostSessions, .installBundle, .installSkill])
         let object = try #require(try JSONSerialization.jsonObject(with: try report.jsonData()) as? [String: Any])
         let host = try #require(object["host"] as? [String: Any])
         #expect(Set(host.keys) == ["loadAverage", "cpuCount", "memoryGB", "diskFreeGB", "diskPath", "sessions"])

@@ -7,37 +7,12 @@ struct LoginCommand: AsyncParsableCommand {
         commandName: "login",
         abstract: "Fill the sign-in form in front with a saved test credential and tap submit once.",
         discussion: """
-        The fields are detected: one email or username field, one password field, and one Log in, Sign in, \
-        Continue or Next button below the password. A control covered by another screen is ignored. Zero or \
-        two matches type nothing. offsider.login.json, found like OFFSIDER.md, can pin ids for one app. \
-        --project names the directory to search. Without it, a missing file is not an error.
-
-        --timeout (default 15 seconds, from 1 to 60) is how long login waits for the submit button to enable.
-
-        Exit 0 means the submit button was tapped. It does not mean the server accepted the login. The \
-        password is never printed. A physical iPhone or iPad is refused, and an allowed Android phone needs a \
-        login saved with --devices any. Browsers, system apps and a password field inside a web view are \
-        refused (app_not_allowed). A login saved with --confirm asks for Touch ID or your password first.
-
-        login never taps Cloudflare Turnstile. A checkbox or challenge on screen stops it with \
-        turnstile_required, before typing, before submit or just after it, so a person can complete it. \
-        A different app in front before the password or before submit stops it with foreground_changed.
-
-        With no name, login uses the default. One saved login is the default, including one saved earlier under a name such as dev.
-
-        --where picks the saved login with every tag given (credential describe sets tags). One match is used. \
-        None exits 2 (user_not_found), and several exit 6 (user_ambiguous), as do several saved logins with no \
-        default. Both list each login's name, tags and about note, never a username, and the default never \
-        breaks a tie. A name and --where do not go together.
-
-        After the tap, login records which saved login it signed in on this device (credential status shows \
-        it). When no form is in front, the error names that login and how to switch users: sign out in the \
-        app, run credential signed-out, then login again.
-
+        Types the saved login into the form in front and taps submit once; exit 0 means it tapped, not that the \
+        server accepted it. The password stays in your login Keychain and is never printed. Details: `offsider guide login`.
         Examples:
+          offsider login --device DEVICE_ID
           offsider login dev --device DEVICE_ID
-          offsider login --where role=admin --where env=staging --device DEVICE_ID
-          offsider login dev --project . --json --device DEVICE_ID
+          offsider login --where role=admin --device DEVICE_ID
         """
     )
 
@@ -325,8 +300,8 @@ struct LoginCommand: AsyncParsableCommand {
         guard canonical != app, !saved.links.contains(app) else { return }
         let command = "offsider credential join --app \(canonical) --device \(device.rawValue)"
         throw CLIError.personRequired(
-            "\(app) shares the saved logins of \(canonical), but no person has confirmed that link, so nothing was typed. "
-                + "Ask the user to run `\(command)` in their own terminal.",
+            "\(app) shares the saved logins of \(canonical), but no person has confirmed that link, so nothing was typed."
+                + ErrorAudience.current.personStep(command),
             hint: command
         )
     }
@@ -337,7 +312,7 @@ struct LoginCommand: AsyncParsableCommand {
         let command = "offsider credential describe \(LoginCredential.displayKey(key)) --devices any --app \(app)"
         throw CLIError(
             errorDescription: "The saved login \(LoginCredential.displayKey(key)) for \(app) is for simulators and emulators only, and \(device.rawValue) is a physical phone. "
-                + "Nothing was typed. Ask the user to run `\(command)` in their own terminal if this login may be used there.",
+                + "Nothing was typed." + ErrorAudience.current.personStep(command, agentTail: " if this login may be used there"),
             reason: .deviceNotAllowed,
             hint: command
         )

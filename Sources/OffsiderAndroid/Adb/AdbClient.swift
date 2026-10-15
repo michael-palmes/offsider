@@ -31,6 +31,8 @@ actor AdbClient {
     private let hostTimeout: Duration
     let timing: AndroidTiming
     let maxOutputBytes: Int
+    /// The SDK's adb, named in advice when the server misbehaves.
+    let adb: String?
 
     init(
         endpoint: LoopbackEndpoint,
@@ -38,8 +40,10 @@ actor AdbClient {
         connectTimeout: Duration = .seconds(1),
         hostTimeout: Duration = .seconds(3),
         timing: AndroidTiming = .disabled,
-        maxOutputBytes: Int = AdbClient.maxOutputBytes
+        maxOutputBytes: Int = AdbClient.maxOutputBytes,
+        adb: String? = nil
     ) {
+        self.adb = adb
         self.maxOutputBytes = maxOutputBytes
         self.endpoint = endpoint
         self.connector = connector
@@ -51,7 +55,7 @@ actor AdbClient {
     func serverVersion() async throws -> Int {
         let payload = try await hostQuery("host:version")
         guard let version = Int(payload.trimmingCharacters(in: .whitespacesAndNewlines), radix: 16) else {
-            throw AndroidError.adbProtocol("host:version replied \(payload.prefix(16))")
+            throw AndroidError.adbProtocol("host:version replied \(payload.prefix(16))", adb: adb)
         }
         return version
     }
@@ -139,7 +143,7 @@ actor AdbClient {
         do {
             try await connection.send(service)
             if case .fail(let message) = try await connection.readStatus() {
-                throw AndroidError.adbProtocol("\(service) failed: \(message)")
+                throw AndroidError.adbProtocol("\(service) failed: \(message)", adb: adb)
             }
             let length = try AdbWire.length(fromHex: try await connection.readExactly(4))
             let payload = String(decoding: try await connection.readExactly(length), as: UTF8.self)
@@ -210,7 +214,7 @@ actor AdbClient {
         case .refused, .noSuchSocket:
             return .adbServerNotRunning(endpoint: endpoint.description)
         case .timedOut, .failed:
-            return .adbServerNoAnswer(endpoint: endpoint.description, seconds: seconds)
+            return .adbServerNoAnswer(endpoint: endpoint.description, seconds: seconds, adb: adb)
         case .foreignPeer(let uid):
             return .foreignAdbServer(endpoint: endpoint.description, uid: uid)
         }

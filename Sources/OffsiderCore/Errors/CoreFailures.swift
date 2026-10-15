@@ -3,7 +3,7 @@ import Foundation
 extension PlatformUnavailable: OffsiderFailure {
     public var reason: FailureReason { platform == .ios ? .xcodeMissing : .androidSdkMissing }
     public var failureMessage: String { message }
-    public var hint: String? { platform == .ios ? "xcode-select -s <Xcode.app>/Contents/Developer" : nil }
+    public var hint: String? { platform == .ios ? XcodeSuggestion.current.select : nil }
 }
 
 extension WaitUnreadableError: OffsiderFailure {

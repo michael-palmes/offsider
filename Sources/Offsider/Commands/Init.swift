@@ -1,6 +1,7 @@
 import ArgumentParser
 import Darwin
 import Foundation
+import OffsiderCore
 
 struct Init: AsyncParsableCommand {
     private static let skillFolderName = "offsider"
@@ -22,7 +23,7 @@ struct Init: AsyncParsableCommand {
     @Option(help: "Custom destination skills directory (overrides --client).")
     var dest: String?
 
-    @Flag(help: "Overwrite an existing installed skill.")
+    @Flag(help: "Replace a skill named offsider that is not Offsider's; Offsider's own is updated without it.")
     var force: Bool = false
 
     @Flag(help: "Remove installed Offsider skill from target directories.")
@@ -62,7 +63,10 @@ struct Init: AsyncParsableCommand {
             return
         }
 
-        let targets = try resolveTargets(for: uninstall ? .uninstall : .install)
+        var targets = try resolveTargets(for: uninstall ? .uninstall : .install)
+        if !uninstall, dest == nil, client == .auto, isInteractiveTTY() {
+            targets = try Self.chooseAgents(targets)
+        }
 
         if uninstall {
             try uninstallSkill(from: targets)
@@ -70,6 +74,24 @@ struct Init: AsyncParsableCommand {
         }
 
         try installSkill(to: targets)
+    }
+
+    /// With more than one skills folder detected, a person ticks which to install into; every one starts ticked.
+    static func chooseAgents<Target>(_ targets: [Target], descriptor: Int32? = nil, name: (Target) -> String, folder: (Target) -> String) throws -> [Target] {
+        let folders = SkillInstall.distinct(targets, resolvedPath: folder)
+        guard folders.count > 1 else { return targets }
+        let rows = folders.map { first in
+            MenuRow([targets.filter { folder($0) == folder(first) }.map(name).joined(separator: " and "), InitScreen.shortPath(folder(first), home: homeDirectoryPath())])
+        }
+        let chosen = try TerminalPrompt.run(cancelled: InitScreen.cancelled, descriptor: descriptor) { prompt in
+            try prompt.chooseMany(InitScreen.agentsQuestion, rows: rows, ticked: Set(rows.indices))
+        }
+        let kept = Set(chosen.map { folder(folders[$0]) })
+        return targets.filter { kept.contains(folder($0)) }
+    }
+
+    private static func chooseAgents(_ targets: [ClientInfo]) throws -> [ClientInfo] {
+        try chooseAgents(targets, name: \.name) { $0.skillsDirectory.resolvingSymlinksInPath().standardizedFileURL.path }
     }
 
     private enum Operation {
@@ -89,24 +111,30 @@ struct Init: AsyncParsableCommand {
     }
 
     private func installSkill(to targets: [ClientInfo]) throws {
-        let skillMarkdown = try Self.loadSkillMarkdown()
-        var installedPaths: [String] = []
+        let bundled = Data(try Self.loadSkillMarkdown().utf8)
+        var lines: [String] = []
 
-        for target in targets {
+        for (target, names) in Self.distinctFolders(targets) {
             let targetDirectory = target.skillsDirectory.appendingPathComponent(Self.skillFolderName, isDirectory: true)
             let targetFile = targetDirectory.appendingPathComponent("SKILL.md", isDirectory: false)
-
-            if FileManager.default.fileExists(atPath: targetFile.path), !force {
+            let action = SkillInstall.action(existing: FileManager.default.contents(atPath: targetFile.path), bundled: bundled, force: force)
+            let label = "\(names.joined(separator: " and ")): \(targetFile.path)"
+            switch action {
+            case .upToDate:
+                lines.append("Already up to date -> \(label)")
+                continue
+            case .refuse:
                 throw CLIError(
-                    errorDescription: "Skill already installed at \(targetFile.path). Re-run with --force to overwrite.",
+                    errorDescription: "Another skill named offsider is at \(targetFile.path). Re-run with --force to replace it.",
                     reason: .initFailed
                 )
+            case .install, .update:
+                break
             }
-
             do {
                 try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
-                try skillMarkdown.write(to: targetFile, atomically: true, encoding: .utf8)
-                installedPaths.append("\(target.name): \(targetFile.path)")
+                try bundled.write(to: targetFile, options: .atomic)
+                lines.append("\(action == .install ? "Installed" : "Updated") Offsider skill -> \(label)")
             } catch {
                 throw CLIError(
                     errorDescription: "Failed to install Offsider skill for \(target.name): \(error.localizedDescription)",
@@ -115,13 +143,36 @@ struct Init: AsyncParsableCommand {
             }
         }
 
-        if installedPaths.isEmpty {
+        if lines.isEmpty {
             throw CLIError(errorDescription: "No install targets resolved.", reason: .initFailed)
         }
 
-        for entry in installedPaths {
-            fputs("Installed Offsider skill -> \(entry)\n", stdout)
+        Self.write(lines + ["Next: offsider doctor"])
+    }
+
+    /// One entry per real folder, naming every client that shares it (a symlinked `~/.claude/skills` is one folder).
+    private static func distinctFolders(_ targets: [ClientInfo]) -> [(ClientInfo, [String])] {
+        let resolved = { (target: ClientInfo) in target.skillsDirectory.resolvingSymlinksInPath().standardizedFileURL.path }
+        return SkillInstall.distinct(targets, resolvedPath: resolved).map { first in
+            (first, targets.filter { resolved($0) == resolved(first) }.map(\.name))
         }
+    }
+
+    /// `doctor`'s `install.skill` check over the clients' skill folders that hold an Offsider skill.
+    static func doctorCheck() -> DoctorCheckResult {
+        guard let bundled = try? Data(loadSkillMarkdown().utf8) else {
+            return DoctorCheckResult(id: .installSkill, status: .skip, detail: "the bundled skill could not be read")
+        }
+        let clients = Client.allCases.filter { $0 != .auto }.compactMap { try? clientInfo(for: $0) }
+        var installed: [String] = []
+        var stale: [String] = []
+        for (client, _) in distinctFolders(clients) {
+            let file = client.skillsDirectory.appendingPathComponent("\(skillFolderName)/SKILL.md").path
+            guard let data = FileManager.default.contents(atPath: file), SkillInstall.isOffsiderSkill(data) else { continue }
+            installed.append(file)
+            if data != bundled { stale.append(file) }
+        }
+        return DoctorCheckResult(id: .installSkill, verdict: SkillInstall.doctorVerdict(installed: installed, stale: stale))
     }
 
     private func uninstallSkill(from targets: [ClientInfo]) throws {
@@ -149,9 +200,14 @@ struct Init: AsyncParsableCommand {
             return
         }
 
-        for entry in removedPaths {
-            fputs("Removed Offsider skill -> \(entry)\n", stdout)
-        }
+        Self.write(removedPaths.map { "Removed Offsider skill -> \($0)" })
+    }
+
+    /// Plain lines to a pipe; on a terminal, the same results drawn with the terminal UI kit.
+    private static func write(_ lines: [String]) {
+        let terminal = isatty(STDOUT_FILENO) != 0
+        let shown = terminal ? InitScreen.styled(lines, style: .detect(isTerminal: true)) : lines
+        for line in shown { fputs("\(line)\n", stdout) }
     }
 
     private func resolveTargets(for operation: Operation) throws -> [ClientInfo] {
@@ -226,7 +282,7 @@ struct Init: AsyncParsableCommand {
         }
     }
 
-    private static func homeDirectoryPath() -> String {
+    static func homeDirectoryPath() -> String {
         ProcessInfo.processInfo.environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path
     }
 

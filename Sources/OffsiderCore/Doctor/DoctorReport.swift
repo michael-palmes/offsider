@@ -309,7 +309,17 @@ public struct DoctorPolicy: Codable, Equatable, Sendable {
         return DoctorCheckResult(
             id: .devicePolicy, status: .fail,
             detail: "\(id) is a physical device no one has allowed (\(refusal ?? "not_allowed")); no device checks ran",
-            hint: "Ask the user to run `offsider device-access allow --device \(id)` in their own terminal."
+            hint: ErrorAudience.current == .person ? "Run offsider device-access allow." : "Ask the user to run `offsider device-access allow` in their own terminal and choose \(id)."
         )
+    }
+}
+
+extension DoctorReport {
+    /// For a host-only report, the device check to run next when exactly one simulator or emulator is booted.
+    public var nextStep: String? {
+        guard device == nil else { return nil }
+        let emulators = (android?.devices ?? []).filter { $0.kind == "emulator" && $0.state == "device" }.map(\.serial)
+        let ids = booted.map(\.udid) + emulators
+        return ids.count == 1 ? "Next: offsider doctor --device \(ids[0])" : nil
     }
 }

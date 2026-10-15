@@ -8,6 +8,8 @@ IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for Sw
 
 You are a macOS tooling engineer maintaining a small, local-only Swift CLI built on Xcode private frameworks and the Android SDK's local daemons. Priorities, in order: correct device input, honest and actionable errors, and nothing leaves the Mac.
 
+Dead simple, secure by default. Performance, security and privacy are the focuses, delivered with no effort from the developer: one command, nothing to look up or paste, a picker for every choice, a spinner over every pause, secure defaults nobody has to choose, and every dead end naming its fix in one line. Use words anyone understands and as few as possible: people do not read.
+
 ## Origin
 
 Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed independently. Nothing flows either way: no upstream remote, syncs or cherry-picks from AXe, and no PRs, issues or patches to AXe or `cameroncooke/idb`. Keep AXe's credit in `LICENSE`, `NOTICE.md` and `README.md`.
@@ -33,22 +35,25 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 
 | Command | Purpose |
 | --- | --- |
-| `./scripts/build.sh dev` or `make frameworks` | Clone idb at the pin and build the XCFrameworks; run once per clone before `swift build` |
+| `make setup` | First run: `./scripts/build.sh dev`, then `swift build` |
+| `./scripts/build.sh dev [--rebuild] [--verbose]` or `make frameworks` | Check the tools (Xcode 26+, XcodeGen, jq, git, 10 GB), clone idb at the pin and build the XCFrameworks, reusing a `build_products/` that matches the pin and Xcode here or in another worktree; logs to `.build/idb-build.log` (`--verbose` streams), `--rebuild` always builds; run once per clone before `swift build` |
 | `swift build` | Build the `offsider` executable |
 | `swift test` | Unit tests; no simulator needed, E2E suites skip |
-| `./scripts/build.sh help` | List build steps (`setup`, `clean`, `generate`, `frameworks`, `install`, `strip`, `xcframeworks`, `dev`, `executable`, `verify-xcframeworks`, `verify-arches`, `helper`) |
+| `./scripts/build.sh help` | List build steps (`setup`, `clean`, `generate`, `frameworks`, `install`, `strip`, `xcframeworks`, `dev`, `executable`, `verify-xcframeworks`, `verify-arches`, `helper`, `runner`); bare `./scripts/build.sh` prints where to start |
 | `./scripts/build.sh helper` or `make helper` | Rebuild the Android helper dex and manifest after changing `AndroidHelper/`; refuses toolchain drift |
 | `./scripts/build.sh helper --check` or `make helper-check` | Rebuild the helper and compare it with the committed dex and manifest, as CI does |
-| `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, package, verify and Homebrew-gate a local build without secrets |
+| `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, package, verify and Homebrew-gate a local build without secrets; without `--version` it uses `git describe`'s |
 | `scripts/release.sh pack-payload`, `unpack-payload`, `unpack-archive` | Move the unsigned payload and the signed archive between the release workflow's build, sign and verify jobs |
-| `make e2e` or `./test-runner.sh` | Rebuild idb, build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
+| `make e2e` or `./test-runner.sh --simulator` | Rebuild idb (unless `OFFSIDER_REUSE_IDB=1`), build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
+| `./test-runner.sh` | On a terminal, a mode picker (phone and iPhone modes never the default); otherwise `--simulator`. `--help` lists modes, `--help-env` settings, suites and examples |
+| `scripts/e2e-devices.sh [status\|create]` or `make e2e-devices` | Show the E2E devices (`Offsider_E2E`, `Offsider_E2E_Fold`, the `Offsider Duo` simulator) and create the missing ones; never boots them. `scripts/e2e-devices-core.sh status\|create [--dry-run]` is its JSON core |
 | `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
-| `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites (needs `OFFSIDER_ANDROID_DEVICE`) |
+| `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites on `OFFSIDER_ANDROID_DEVICE` (default `OFFSIDER_ANDROID_E2E_AVD`, booted if not running) |
 | `./test-runner.sh --foldable` or `make e2e-foldable` | Build Offsider and the playground, run `FoldableTests` on the iPhone Duo simulator `OFFSIDER_FOLDABLE_SIMULATOR_NAME` names (default `Offsider Duo`, or `SIMULATOR_UDID`) |
-| `./test-runner.sh --android-fold` or `make e2e-android-fold` | Build Offsider and run `AndroidFoldableTests` on the AVD `OFFSIDER_ANDROID_FOLD_AVD` names (default `Offsider_E2E_Fold`) |
-| `OFFSIDER_ANDROID_PHONE=<serial> ./test-runner.sh --android-phone` or `make e2e-android-phone` | Build Offsider and run the `AndroidPhone*Tests` suites on that one USB phone (only when the user names it and has run `offsider device-access allow --device <serial>`) |
-| `OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> ./test-runner.sh --ios-device` or `make e2e-ios-device` | Build Offsider and run the `IOSDevice*E2ETests` suites on that one wired iPhone or iPad (only when the user names it and has allowed it with the playground pinned); input, tree and runner suites skip while its screen is off |
+| `./test-runner.sh --android-fold` or `make e2e-android-fold` | Build Offsider and run `AndroidFoldableTests` on the AVD `OFFSIDER_ANDROID_FOLD_AVD` names (default `Offsider_E2E_Fold`, booted if not running) |
+| `./test-runner.sh --android-phone` or `make e2e-android-phone` | Build Offsider and run the `AndroidPhone*Tests` suites on one USB phone: the one active allowance, only when it pins `com.mpalmes.offsider.playground.rn`, or `OFFSIDER_ANDROID_PHONE=<serial>` (only when the user names it and has allowed it with `offsider device-access allow`) |
+| `./test-runner.sh --ios-device` or `make e2e-ios-device` | Build Offsider and run the `IOSDevice*E2ETests` suites on one wired iPhone or iPad, with the device and team from its allowance, picked only when it pins `com.mpalmes.offsider.playground` (`OFFSIDER_IOS_DEVICE=<udid>` and `OFFSIDER_IOS_TEAM_ID=<team>` override them; only when the user names it and has allowed it with the playground pinned); input, tree and runner suites skip while its screen is off |
 | `./test-runner.sh --rn-ios` or `make e2e-rn-ios` | Build Offsider and the RN playground, run the React Native suites on a simulator (needs pnpm) |
 | `./test-runner.sh --rn-ios --rn-debug` or `--android --rn-debug` | Build the RN debug app, start Metro on 8742 and run the debug smoke suite (`make e2e-rn-debug-ios`, `make e2e-rn-debug-android`) |
 | `scripts/generate-emulator-grpc.sh [--check]` or `make grpc-generate` | Regenerate the emulator gRPC client from the vendored proto; `--check` compares with the checked-in code |
@@ -64,7 +69,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_E2E=1` | Enables simulator E2E suites in `swift test` |
 | `OFFSIDER_LANDSCAPE_E2E=1` | Adds landscape precision suites (needs `OFFSIDER_E2E=1`) |
 | `OFFSIDER_BIN_PATH` | Prebuilt `offsider` for `--tests-only`; its `Frameworks/` must sit beside it |
-| `OFFSIDER_REUSE_IDB=1` | `test-runner.sh` skips the idb rebuild when existing XCFrameworks verify |
+| `OFFSIDER_REUSE_IDB=1` | `test-runner.sh` runs `build.sh dev` instead of `dev --rebuild`, reusing a `build_products/` that matches the pin and Xcode (here or in another worktree) |
 | `SIMULATOR_UDID` | Pins E2E runs to one simulator |
 | `OFFSIDER_SIGNING_IDENTITY` | Developer ID identity for `scripts/release.sh`; set it in git-ignored `.env` (copy `.env.example`) |
 | `OFFSIDER_RN_E2E=1` | Enables the React Native suites on iOS (`test-runner.sh --rn-ios` sets it) |
@@ -72,7 +77,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_RN_DEBUG_E2E=1` | Enables the RN debug smoke suite (`--rn-debug` sets it; needs Metro on 8742) |
 | `OFFSIDER_RN_IOS_DEBUG_APP`, `OFFSIDER_ANDROID_DEBUG_APK` | The RN playground's debug builds for the debug smoke suite |
 | `OFFSIDER_ANDROID_E2E=1` | Enables the Android E2E suites in `swift test` (`test-runner.sh --android` sets it) |
-| `OFFSIDER_ANDROID_DEVICE` | The E2E emulator's serial or AVD name (required for Android E2E) |
+| `OFFSIDER_ANDROID_DEVICE` | The E2E emulator's serial or AVD name (default `OFFSIDER_ANDROID_E2E_AVD`, which `--android` boots if needed) |
 | `OFFSIDER_ANDROID_APK` | The React Native playground's release APK the Android suites install |
 | `OFFSIDER_ANDROID_E2E_AVD` | The only AVD Android E2E may drive (default `Offsider_E2E`) |
 | `OFFSIDER_ANDROID_FOLD_AVD` | The fold AVD `--android-fold` drives (default `Offsider_E2E_Fold`) |
@@ -81,10 +86,10 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD |
 | `OFFSIDER_FOLDABLE_E2E=1` | Enables `FoldableTests` on the iPhone Duo simulator named by `SIMULATOR_UDID` |
 | `OFFSIDER_ANDROID_FOLD_E2E=1` | Enables `AndroidFoldableTests` (needs `OFFSIDER_ANDROID_E2E_AVD` set to the fold AVD) |
-| `OFFSIDER_ANDROID_PHONE` | The exact USB serial the `AndroidPhone*Tests` suites drive (an `adb devices -l` row with `usb:` and state `device`; refused beside `OFFSIDER_ANDROID_E2E`) |
+| `OFFSIDER_ANDROID_PHONE` | The exact USB serial the `AndroidPhone*Tests` suites drive (an `adb devices -l` row with `usb:` and state `device`; refused beside `OFFSIDER_ANDROID_E2E`); unset, `--android-phone` uses the one active Android allowance, only when it pins `com.mpalmes.offsider.playground.rn` |
 | `OFFSIDER_IOS_DEVICE_E2E=1` | Enables the `IOSDevice*E2ETests` suites in `swift test` (`test-runner.sh --ios-device` sets it) |
-| `OFFSIDER_IOS_DEVICE` | The exact UDID the iOS device suites drive (a physical iOS or iPadOS row in `devicectl list devices`; never a simulator) |
-| `OFFSIDER_IOS_TEAM_ID` | The team (10 letters and digits) that signs the runner and the OffsiderPlaygroundApp for a device; required unless the device's allowance names one with `device-access allow --team`, and by `--ios-device`; Xcode's signed-in team is never picked |
+| `OFFSIDER_IOS_DEVICE` | The exact UDID the iOS device suites drive (a physical iOS or iPadOS row in `devicectl list devices`; never a simulator); unset, `--ios-device` uses the one active iPhone or iPad allowance, only when it pins `com.mpalmes.offsider.playground` |
+| `OFFSIDER_IOS_TEAM_ID` | The team (10 letters and digits) that signs the runner and the OffsiderPlaygroundApp for a device; overrides the team a person chose in `device-access allow`'s Keychain menu (or `--team`), which `--ios-device` also reads; required when the allowance names none; Xcode's signed-in team is never picked silently |
 | `OFFSIDER_IOS_RUNNER_PREFIX` | The iPhone runner's bundle id prefix (default `com.mpalmes.offsider`; apps `<prefix>.runner` and `<prefix>.runner.uitests`; reverse-DNS, at most 100 characters, else exit 64); part of the runner cache key |
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
@@ -116,6 +121,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | iPhone runner | `Sources/Offsider/Resources/runner/` (`project.yml` and the generated `OffsiderRunner.xcodeproj`); regenerate with `scripts/build.sh runner` |
 | Android helper (Java) | `AndroidHelper/src/`; never edit the dex or manifest in `Sources/Offsider/Resources/helper/` by hand |
 | HID broker, accessibility resolution, errors | `Sources/Offsider/Utilities/` |
+| Terminal prompts and styling | `Sources/OffsiderCore/Terminal/` (`TerminalUI`, `PromptScreen`, `AllowScreen`); scripts use `scripts/lib/ui.sh` |
 | The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` (a router under 10 KB); topics `offsider guide` prints are `references/<topic>.md` beside it, listed in `Types/GuideTopic.swift` |
 | Version string | `Plugins/VersionPlugin` (generates git-ignored `Version.swift`) |
 | Tests | `Tests/<Name>Tests.swift`; E2E fixture screens in `OffsiderPlaygroundApp/` |
@@ -131,6 +137,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 ## Simulator caveats
 
 - Xcode 27 has no Simulator.app; simulators run under Device Hub. Quit Simulator.app before E2E runs.
+- `offsider boot <name or UDID>` boots a simulator through FBSimulatorControl and prints its UDID; emulator options exit 64 for one.
 - Resolve Xcode through `xcode-select -p` or `DEVELOPER_DIR`, never a hard-coded path. Offsider refuses a developer directory that is not `<Xcode>.app/Contents/Developer` of an Apple-signed app (exit 9 `xcode_unusable`).
 - Input commands, setters and `batch` lock the device for their run (exit 8, `device_busy`, when another holds it); locks live under `offsider-<uid>/locks/` in the `confstr` user temp directory.
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
@@ -141,7 +148,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 ## Physical iPhone caveats
 
 - Drive an iPhone or iPad only when the user names its UDID; never pick one from `list-devices`. Reading its `devicectl` row is fine.
-- Every physical device must first be on the allow-list: the user runs `offsider device-access allow --device <udid> --app com.mpalmes.offsider.playground` in their own terminal (Touch ID or their password). Agents never run `allow`, never edit `~/.config/offsider/allowed-devices.json` and never add a bypass; `test-runner.sh` checks the list and prints the command.
+- Every physical device must first be on the allow-list: the user runs `offsider device-access allow` in their own terminal, chooses the device, a team and `com.mpalmes.offsider.playground` from its menus, then Touch ID or their password. Tell them which device and app to choose by name, never an id to paste. Agents never run `allow`, never edit `~/.config/offsider/allowed-devices.json` and never add a bypass; `test-runner.sh` checks the list and says what to choose.
 - Offsider never pairs a device or accepts a prompt on it, and refuses Wi-Fi connections (`device_not_wired`); keep it that way, USB only through usbmuxd.
 - The runner source lives under `Sources/Offsider/Resources/runner`; after changing `project.yml`, regenerate the committed project with `scripts/build.sh runner` and check it with `scripts/build.sh runner --check`.
 - Never type, store or ask for an iPhone passcode; a locked device fails with `device_locked`.
@@ -154,7 +161,7 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 - Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
 - `boot --emulator-arg` takes only the flags in `EmulatorArguments.allowed`, each value checked, and refuses Offsider's own flags (`ownedFlags`) and everything else. Never add a listener, port, gRPC, metrics, network or host-path flag to the allow-list, nor `webcam` to the camera values.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
-- A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names its serial and has run `offsider device-access allow --device <serial>` themselves. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
+- A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names it and has run `offsider device-access allow` and chosen it themselves. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
 - E2E and manual checks drive only the AVDs `OFFSIDER_ANDROID_E2E_AVD` and `OFFSIDER_ANDROID_FOLD_AVD` name (defaults `Offsider_E2E` and `Offsider_E2E_Fold`), and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
 - Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
 - The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
@@ -167,6 +174,8 @@ A command or option change also updates `README.md`, the bundled `SKILL.md` and 
 
 Ask focused multiple-choice questions when a decision materially changes the implementation: `AskUserQuestion` in Claude Code, `request_user_input` in Codex. Read every comment on a GitHub issue (`gh issue view <n> --comments`) before acting on it.
 
+When the user must run something themselves, put the complete command in the ask itself, on its own line in a code block: the absolute path when it is not on `PATH`, every value filled in, nothing to look up. Never a fragment such as `device-access allow`, never "the command above" (a summarised message loses it), never a placeholder promised later. One command per ask, one line saying what it will prompt for, then read the result back before the next step. The same rule binds the hints Offsider prints and the bundled skill: a busy developer will not read a paragraph.
+
 ## Committing
 
 **Always use the `offsider-commit` skill** to review and create commits; never hand-roll `git commit`. Do not push unless asked. Use `offsider-skill-creator` for any change under `.agents/skills/`.
@@ -176,7 +185,7 @@ Branch names are `type/short-kebab-description` (for example `fix/tap-landscape-
 ## Writing rules
 
 - Keep `AGENTS.md` and `CLAUDE.md` byte-identical: edit both together and verify with `cmp -s AGENTS.md CLAUDE.md`.
-- All text is Australian English, short, with no em dashes: use commas, colons, parentheses or full stops.
+- All text is modern Australian English (spelling and usage, never slang: no "G'day", no "mate"), short, sharp and warm, with no em dashes: use commas, colons, parentheses or full stops. On screen: a title of at most eight words, no intro sentences, questions of at most five words, rows of at most five words plus a dim detail, and nothing the person does not act on.
 - Comments are a last resort: one line max, only for context the code cannot show.
 - Write tests that can fail for a reason we care about: assert behaviour and contracts, mock boundaries only, never restate implementation.
 

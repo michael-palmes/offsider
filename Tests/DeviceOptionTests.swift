@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import Testing
 @testable import Offsider
+@testable import OffsiderCore
 
 @Suite("Device Option Tests")
 struct DeviceOptionTests {
@@ -125,5 +126,87 @@ struct DeviceOptionTests {
     func batchStepTextIsAllowed() throws {
         try BatchStepParser.rejectPerStepDevice(["--device-name", "x"])
         try BatchStepParser.rejectPerStepDevice(["hello --udid"])
+    }
+
+    @Test("the device picker lists booted simulators and running emulators, never a physical device even when it is allowed")
+    @MainActor
+    func pickerNeverListsPhysical() async throws {
+        var phone = DeviceSummary(
+            id: PolicyFixtures.phone, platform: .ios, state: "Booted", name: "Test iPhone", osVersion: "iOS 27.2", deviceType: "iPhone 17 Pro", kind: .physical, connection: "usb"
+        )
+        phone.allowed = true
+        let simulator = DeviceSummary(id: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios, state: "Booted", name: "Test Sim", osVersion: "iOS 27.1", deviceType: nil, kind: .simulator, connection: nil)
+        let stopped = DeviceSummary(id: "ABCDEF00-0000-4000-8000-00000000ABCE", platform: .ios, state: "Shutdown", name: "Stopped Sim", osVersion: "iOS 27.1", deviceType: nil, kind: .simulator, connection: nil)
+        let terminal = try AccessTerminal()
+        terminal.type(["\r"])
+        let picked = try await DevicePicker.pickRunning(descriptor: terminal.secondary) { [phone, simulator, stopped] }
+        #expect(picked == simulator)
+        let transcript = terminal.transcript
+        #expect(transcript.contains("\(DevicePickerScreen.deviceQuestion) \(TerminalUI.Controls(rescan: true).text(style: .detect(isTerminal: true)))"))
+        #expect(transcript.contains("Test Sim  iOS 27.1"))
+        #expect(!transcript.contains("Test iPhone"))
+        #expect(!transcript.contains("Stopped Sim"))
+        #expect(DevicePickerScreen.using(simulator, style: .plain) == "Using Test Sim · add --device \(simulator.id) to skip this")
+    }
+
+    @Test("a picker no one answers closes after its idle time, and the missing-device error stands with exit 64")
+    @MainActor
+    func unansweredPickerTimesOut() async throws {
+        let simulator = DeviceSummary(id: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios, state: "Booted", name: "Test Sim", osVersion: "iOS 27.1", deviceType: nil, kind: .simulator, connection: nil)
+        let terminal = try AccessTerminal()
+        let missing = Self.parseError(["tap", "-x", "1", "-y", "1"])
+        let started = Date()
+        let timedOut = await #expect(throws: PromptTimedOut.self) {
+            _ = try await DevicePicker.pickRunning(descriptor: terminal.secondary, idle: 0.3) { [simulator] }
+        }
+        #expect(timedOut?.exitCode.rawValue == 64)
+        let error = await #expect(throws: (any Error).self) {
+            _ = try await DevicePicker.orUnanswered(missing) { try await DevicePicker.pickRunning(descriptor: terminal.secondary, idle: 0.3) { [simulator] } }
+        }
+        #expect(Date().timeIntervalSince(started) < 10)
+        #expect(OffsiderCommand.exitCode(for: try #require(error)).rawValue == 64)
+        #expect(OffsiderCommand.message(for: try #require(error)).contains(DeviceDefault.missingMessage))
+        #expect(DevicePickerScreen.unanswered(within: PromptTimedOut.duration(TerminalPrompt.defaultIdle)) == "No device chosen within 60 s; pass --device <id>.")
+        #expect(PromptTimedOut.duration(DeviceAccessAllow.promptIdle) == "10 minutes")
+    }
+
+    @Test("without a terminal, or under JSON output, a command with no device still exits 64 and no picker is offered")
+    func noPickerForAgents() async throws {
+        #expect(DevicePicker.offers(arguments: ["tap", "-x", "1", "-y", "1"], terminal: true))
+        #expect(!DevicePicker.offers(arguments: ["tap", "-x", "1", "-y", "1"], terminal: false))
+        for flag in ["--json", "--format", "--format=json", "--compact"] {
+            #expect(!DevicePicker.offers(arguments: ["screenshot", flag], terminal: true))
+        }
+        let piped = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1", unsetting: ["OFFSIDER_DEVICE"])
+        #expect(piped.exitCode == 64)
+        #expect(piped.stderr.contains(DeviceDefault.missingMessage))
+        let json = try await TestHelpers.runOffsiderCommandSeparated("screenshot --json", unsetting: ["OFFSIDER_DEVICE"])
+        #expect(json.exitCode == 64)
+        #expect(json.stdout.contains("\"exitCode\":64"))
+        let boot = try await TestHelpers.runOffsiderCommandSeparated("boot")
+        #expect(boot.exitCode == 64)
+    }
+
+    @Test("a parse that fails only for want of a device or boot name is the one the picker answers")
+    func pickerAnswersOnlyMissingDevice() {
+        func need(_ arguments: [String]) -> DevicePicker.Need? { Self.withDefault(nil) { DevicePicker.need(for: Self.parseError(arguments), arguments: arguments) } }
+        #expect(need(["tap", "-x", "1", "-y", "1"]) == .device)
+        #expect(need(["tap", "-x", "1", "-y", "1", "--bogus"]) == nil)
+        #expect(need(["credential", "set"]) == .device)
+        #expect(need(["credential", "set", "--app", "com.example.app"]) == nil)
+        #expect(need(["boot"]) == .boot)
+        #expect(need(["boot", "--timeout", "1"]) == nil)
+        #expect(need(["tap", "-x", "1", "-y", "1", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD", "--bogus"]) == nil)
+    }
+
+    private static func parseError(_ arguments: [String]) -> any Error {
+        Self.withDefault(nil) {
+            do {
+                _ = try OffsiderCommand.parseAsRoot(arguments)
+                return CancellationError()
+            } catch {
+                return error
+            }
+        }
     }
 }

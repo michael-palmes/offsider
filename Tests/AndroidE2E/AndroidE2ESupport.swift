@@ -106,9 +106,16 @@ enum AndroidE2E {
     static func run(_ arguments: String, environment: [String: String]? = nil, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
         let result = try await offsider(arguments, environment: environment, timeout: timeout)
         guard result.exitCode == 0 else {
-            throw AndroidE2EError(description: "offsider \(arguments) exited \(result.exitCode): \(result.stderr)")
+            throw AndroidE2EError(description: "offsider \(arguments) exited \(result.exitCode): \(result.stderr)" + installAdvice(result.stderr))
         }
         return result
+    }
+
+    /// The repository's install script, for a failure that says the playground is missing; Offsider's own hint stays generic.
+    static func installAdvice(_ stderr: String) -> String {
+        guard let range = stderr.range(of: "\(package) is not installed on ") else { return "" }
+        let serial = stderr[range.upperBound...].prefix { $0.isLetter || $0.isNumber || "-_:".contains($0) }
+        return serial.isEmpty ? "" : " Install the playground with scripts/rn-playground.sh install-android \(serial)."
     }
 
     /// OFFSIDER_ANDROID_APK, or OFFSIDER_ANDROID_DEBUG_APK with OFFSIDER_RN_DEBUG_E2E.
@@ -355,14 +362,14 @@ enum E2EDeviceAllowance {
     /// Minutes the allowance must still have, so a run does not lapse half way.
     static let minimumMinutes: TimeInterval = 30
 
-    static func allowCommand(device: String, app: String?) -> String {
-        "offsider device-access allow --device \(device) --expires 2h" + (app.map { " --app \($0)" } ?? "")
+    /// What the person does in the walkthrough: the bare command, then the device, the pin and at least 2 hours.
+    static func allowSteps(device: String, app: String?) -> String {
+        "run `offsider device-access allow` in their own terminal, choose \(device)" + (app.map { ", pin \($0)" } ?? "") + " and allow at least 2 hours"
     }
 
     /// Nil when `device-access status --device <device> --json` exited 0 with an entry lasting past 30 minutes from `now` (and pinning `app`); otherwise the refusal, quoting the command a person runs.
     static func verdict(device: String, exitCode: Int32, json: String, now: Date, app: String? = nil) -> String? {
-        let command = allowCommand(device: device, app: app)
-        let ask = "Ask the user to run `\(command)` in their own terminal, then run the suites again."
+        let ask = "Ask the user to \(allowSteps(device: device, app: app)), then run the suites again."
         guard exitCode == 0 else { return "Refusing \(device): it is not on the Offsider allow-list (device-access status exited \(exitCode)). \(ask)" }
         guard let root = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
               root["allowed"] as? Bool == true,

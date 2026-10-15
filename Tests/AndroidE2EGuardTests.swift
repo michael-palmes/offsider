@@ -171,7 +171,7 @@ struct E2EDeviceAllowanceTests {
     @Test("a device the CLI refuses stops the run and quotes the exact command a person runs")
     func notAllowed() {
         let message = E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 7, json: "", now: Self.now)
-        #expect(message?.contains("`offsider device-access allow --device R58M123ABC --expires 2h`") == true)
+        #expect(message?.contains("run `offsider device-access allow` in their own terminal, choose R58M123ABC and allow at least 2 hours") == true)
         #expect(message?.contains("Ask the user") == true)
     }
 
@@ -194,6 +194,13 @@ struct E2EDeviceAllowanceTests {
 struct AndroidInstallMarkerTests {
     private let digest = "4f1c0de2"
     private let package = AndroidE2E.package
+
+    @Test("a suite failure for a missing playground names the repository's install script; any other app gets nothing")
+    func installAdviceForThePlayground() {
+        let missing = "Error: \(package) is not installed on emulator-5554. Install it with `adb -s emulator-5554 install <path-to-apk>`.\n"
+        #expect(AndroidE2E.installAdvice(missing) == " Install the playground with scripts/rn-playground.sh install-android emulator-5554.")
+        #expect(AndroidE2E.installAdvice("Error: com.example.app is not installed on emulator-5554.\n").isEmpty)
+    }
 
     @Test("a marker written for an install is current for that install", arguments: [
         "package:/data/app/\(AndroidE2E.package)-AbC_12-x==/base.apk",

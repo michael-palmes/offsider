@@ -7,6 +7,22 @@ import Testing
 
 @Suite("Terminal prompt", .serialized)
 struct TerminalPromptTests {
+    @Test("a line and a tick menu with no key within the idle time close with prompt timed out, exit 64")
+    func idlePromptsTimeOut() throws {
+        let terminal = try AccessTerminal()
+        let started = Date()
+        let asked = #expect(throws: PromptTimedOut.self) {
+            _ = try TerminalPrompt.run(cancelled: "cancelled", descriptor: terminal.secondary, idle: 0.2) { try $0.ask("Name: ") { _ in nil } }
+        }
+        #expect(asked?.exitCode.rawValue == 64)
+        #expect(throws: PromptTimedOut.self) {
+            _ = try TerminalPrompt.run(cancelled: "cancelled", descriptor: terminal.secondary, idle: 0.2) {
+                try $0.chooseMany("Which?", rows: [MenuRow(nil, ["One"])], ticked: [])
+            }
+        }
+        #expect(Date().timeIntervalSince(started) < 10)
+    }
+
     @Test("a key burst splits into text, Enter and arrows, and only a trailing escape cancels")
     func keyParsing() {
         #expect(TerminalKey.parse(Array("ada\rpw\r".utf8)) == [.text(Array("ada".utf8)), .enter, .text(Array("pw".utf8)), .enter])
@@ -513,7 +529,7 @@ struct TerminalPromptTests {
             try prompt.choose("📋 Pick one", options: ["📝 Update dev", CredentialScreen.addAnother])
         }
         #expect(index == 1)
-        #expect(terminal.finish().contains("▸ " + CredentialScreen.addAnother))
+        #expect(terminal.finish().contains(TerminalStyle.detect(isTerminal: true).picked + " " + CredentialScreen.addAnother))
     }
 }
 
@@ -581,7 +597,7 @@ private final class SecretAudit: @unchecked Sendable {
 }
 
 /// A pseudo-terminal whose output is collected on a thread, so a prompt never blocks on a full buffer.
-private final class PseudoTerminal: @unchecked Sendable {
+final class PseudoTerminal: @unchecked Sendable {
     let primary: Int32
     let secondary: Int32
     private let lock = NSLock()

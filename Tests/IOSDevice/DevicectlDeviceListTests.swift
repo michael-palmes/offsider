@@ -99,3 +99,22 @@ struct DevicectlDeviceListTests {
         #expect(try DevicectlDeviceList.parse(Data(text.utf8)).devices.count == 2)
     }
 }
+
+@Suite("devicectl app list")
+struct DevicectlAppListTests {
+    @Test("installed apps keep the person's own and drop Apple's, hidden and system apps")
+    func keepsThirdPartyApps() throws {
+        let apps = try DevicectlAppList.parse(try IOSDeviceFixtures.data("devicectl-info-apps.json"))
+        #expect(apps == [
+            DevicectlApp(bundleIdentifier: "com.mpalmes.offsider.playground", name: "Offsider Playground"),
+            DevicectlApp(bundleIdentifier: "com.example.notes", name: "Example Notes"),
+            DevicectlApp(bundleIdentifier: "com.example.unnamed", name: nil),
+        ])
+    }
+
+    @Test("a failed or shapeless reply is an error, not an empty list")
+    func failedReply() {
+        #expect(throws: DevicectlDeviceList.ParseError.self) { try DevicectlAppList.parse(Data(#"{"info":{"outcome":"failed"}}"#.utf8)) }
+        #expect(throws: DevicectlDeviceList.ParseError.self) { try DevicectlAppList.parse(Data(#"{"result":{}}"#.utf8)) }
+    }
+}

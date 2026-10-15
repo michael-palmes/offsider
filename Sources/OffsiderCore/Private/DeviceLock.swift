@@ -81,7 +81,10 @@ extension DeviceBusy: OffsiderFailure {
         return "Device \(device) is in use by \(who). Retry when it finishes, or pass --wait-lock <seconds>."
     }
 
-    public var hint: String? { "offsider \(command) ... --wait-lock 30" }
+    public var hint: String? { Self.retryHint }
+
+    /// Plain words, never a rebuilt command line, so no typed text is echoed back.
+    public static let retryHint = "add --wait-lock 30 to the same command"
 
     private static func seconds(_ duration: Duration) -> String {
         let value = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18

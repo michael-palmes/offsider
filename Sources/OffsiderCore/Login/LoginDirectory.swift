@@ -126,8 +126,8 @@ public enum LoginDirectory {
 extension CredentialScreen {
     /// The question `credential join` asks a person, naming both ids.
     public static func linkTitle(member: String, canonical: String) -> String {
-        "🔗 Let \(member) use the saved logins of \(canonical)? login will type them into either app."
+        "Link \(member) to \(canonical)?"
     }
 
-    public static let linkOptions = ["🔗 Link", "✋ Cancel"]
+    public static let linkOptions = ["🔗  Link", "❌  Cancel"]
 }

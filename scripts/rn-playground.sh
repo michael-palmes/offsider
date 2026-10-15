@@ -5,6 +5,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=/dev/null
+. "${SCRIPT_DIR}/lib/ui.sh"
 APP_DIR="${REPO_ROOT}/OffsiderPlaygroundRN"
 BUILD_DIR="${APP_DIR}/build"
 IOS_DERIVED_DATA="${BUILD_DIR}/ios/DerivedData"
@@ -72,18 +74,13 @@ Metro:
 EOF
 }
 
-die() {
-  echo "error: $*" >&2
-  exit 1
-}
-
 require_arg() {
-  [ -n "${2:-}" ] || die "$1 is required. Run 'scripts/rn-playground.sh help'."
+  [ -n "${2:-}" ] || die "$1 is required." "$0 help"
 }
 
 require_screen() {
   require_arg "<screen>" "${1:-}"
-  [[ "$1" =~ ^[a-z][a-z-]*$ ]] || die "screen '$1' is not a fixture id such as tap-test."
+  [[ "$1" =~ ^[a-z][a-z-]*$ ]] || die "'$1' is not a fixture screen." "--screen tap-test"
 }
 
 adb_bin() {
@@ -92,12 +89,12 @@ adb_bin() {
   elif command -v adb >/dev/null 2>&1; then
     command -v adb
   else
-    die "adb not found. Install Android SDK platform-tools or set ANDROID_HOME."
+    die "adb not found." "Install Platform-Tools in Android Studio's SDK Manager, or set ANDROID_HOME"
   fi
 }
 
 install_node_modules() {
-  command -v pnpm >/dev/null 2>&1 || die "pnpm not found. Install pnpm 11 (brew install pnpm)."
+  command -v pnpm >/dev/null 2>&1 || die "pnpm not found." "brew install pnpm"
   (cd "${APP_DIR}" && pnpm install --frozen-lockfile)
 }
 
@@ -106,7 +103,7 @@ elapsed_since() {
 }
 
 jdk17_home() {
-  /usr/libexec/java_home -v 17 2>/dev/null || die "JDK 17 not found. Install one (for example Zulu 17)."
+  /usr/libexec/java_home -v 17 2>/dev/null || die "JDK 17 not found." "brew install --cask zulu@17"
 }
 
 # Parsed by parse_build_flags: DEBUG, IF_CHANGED and the remaining positional POSITIONAL_ARG.
@@ -121,10 +118,10 @@ parse_build_flags() {
     case "$1" in
       --debug) DEBUG=true ;;
       --if-changed) IF_CHANGED=true ;;
-      -*) die "unknown option '$1'. Run 'scripts/rn-playground.sh help'." ;;
+      -*) die "Unknown option: $1" "$0 help" ;;
       *)
         [ "${allow_positional}" = true ] && [ -z "${POSITIONAL_ARG}" ] ||
-          die "unexpected argument '$1'. Run 'scripts/rn-playground.sh help'."
+          die "Unexpected argument: $1" "$0 help"
         POSITIONAL_ARG="$1"
         ;;
     esac
@@ -225,7 +222,7 @@ build_ios() {
     -derivedDataPath "${IOS_DERIVED_DATA}" \
     ARCHS=arm64 \
     build
-  [ -d "${app}" ] || die "xcodebuild finished but ${app} is missing."
+  [ -d "${app}" ] || die "xcodebuild finished but ${app} is missing." "$0 build-ios${POSITIONAL_ARG:+ ${POSITIONAL_ARG}}"
   store_fingerprint ios "${fingerprint}"
   echo "Built ${app} in $(elapsed_since "${started}")"
 }
@@ -262,12 +259,12 @@ build_android() {
     if "${build_tools}/zipalign" -c -P 16 -v 4 "${apk}" >/dev/null; then
       echo "zipalign: 16 KB page alignment verified"
     elif [ "${DEBUG}" = true ]; then
-      echo "warning: ${apk} is not aligned for 16 KB pages (debug build, continuing)" >&2
+      warn "${apk} is not aligned for 16 KB pages (debug build, continuing)."
     else
-      die "${apk} is not aligned for 16 KB pages."
+      die "${apk} is not aligned for 16 KB pages." "$0 build-android"
     fi
   else
-    echo "warning: zipalign not found under ${ANDROID_HOME}/build-tools, skipped the 16 KB page check" >&2
+    warn "zipalign not found under ${ANDROID_HOME}/build-tools, so the 16 KB page check was skipped."
   fi
   store_fingerprint android "${fingerprint}"
   echo "Built ${apk} in $(elapsed_since "${started}")"
@@ -279,7 +276,7 @@ install_ios() {
   local app flag=""
   app=$(ios_app_path)
   [ "${DEBUG}" = true ] && flag=" --debug"
-  [ -d "${app}" ] || die "${app} not found. Run 'scripts/rn-playground.sh build-ios${flag}' first."
+  [ -d "${app}" ] || die "${app} not found." "$0 build-ios${flag}"
   xcrun simctl install "${POSITIONAL_ARG}" "${app}"
 }
 
@@ -289,7 +286,7 @@ install_android() {
   local apk adb flag=""
   apk=$(android_apk_path)
   [ "${DEBUG}" = true ] && flag=" --debug"
-  [ -f "${apk}" ] || die "${apk} not found. Run 'scripts/rn-playground.sh build-android${flag}' first."
+  [ -f "${apk}" ] || die "${apk} not found." "$0 build-android${flag}"
   adb=$(adb_bin)
   "${adb}" -s "${POSITIONAL_ARG}" install -r "${apk}"
 }
@@ -308,7 +305,7 @@ print_fingerprint() {
   local platform="${1:-}"
   case "${platform}" in
     ios | android) ;;
-    *) die "fingerprint needs a platform: ios or android." ;;
+    *) die "fingerprint needs a platform." "$0 fingerprint ios" ;;
   esac
   shift
   parse_build_flags false "$@"
@@ -340,20 +337,20 @@ parse_dev_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --screen)
-        [ $# -ge 2 ] || die "--screen needs a fixture screen such as tap-test."
+        [ $# -ge 2 ] || die "--screen needs a fixture screen." "--screen tap-test"
         require_screen "$2"
         DEV_SCREEN="$2"
         shift
         ;;
-      -*) die "unknown option '$1'. Run 'scripts/rn-playground.sh help'." ;;
+      -*) die "Unknown option: $1" "$0 help" ;;
       *)
-        [ -z "${DEV_DEVICE}" ] || die "unexpected argument '$1'. Run 'scripts/rn-playground.sh help'."
+        [ -z "${DEV_DEVICE}" ] || die "Unexpected argument: $1" "$0 help"
         DEV_DEVICE="$1"
         ;;
     esac
     shift
   done
-  [ -n "${DEV_DEVICE}" ] || die "${usage} No default device is used."
+  [ -n "${DEV_DEVICE}" ] || die "No device named: no default is used." "${usage}"
 }
 
 reset_build_flags() {
@@ -363,13 +360,31 @@ reset_build_flags() {
 }
 
 offsider_bin() {
+  local bin
   if [ -x "${REPO_ROOT}/.build/debug/offsider" ]; then
-    echo "${REPO_ROOT}/.build/debug/offsider"
+    bin="${REPO_ROOT}/.build/debug/offsider"
   elif command -v offsider >/dev/null 2>&1; then
-    command -v offsider
+    bin="$(command -v offsider)"
   else
-    die "offsider not found at .build/debug/offsider or on PATH. Run 'swift build' first."
+    die "offsider not found in .build/debug or on PATH." "swift build"
   fi
+  log "Using ${bin}"
+  echo "${bin}"
+}
+
+# The available iPhone simulators, booted first, as "  name  udid  state" lines; the first UDID goes in IOS_SUGGESTED_UDID.
+list_ios_simulators() {
+  local rows
+  IOS_SUGGESTED_UDID=""
+  command -v jq >/dev/null 2>&1 || return 0
+  rows=$(xcrun simctl list devices available -j 2>/dev/null | jq -r \
+    '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | test("^iPhone"))]
+     | sort_by(if .state == "Booted" then 0 else 1 end) | .[] | "\(.udid)\t\(.name)\t\(.state)"') || return 0
+  [ -n "${rows}" ] || return 0
+  IOS_SUGGESTED_UDID="${rows%%$'\t'*}"
+  printf '%s\n' "${rows}" | while IFS=$'\t' read -r udid name state; do
+    printf '  %s  %s%s%s  %s\n' "${name}" "${DIM}" "${udid}" "${NC}" "${state}" >&2
+  done
 }
 
 # The serial of the running emulator whose AVD is $1, else nothing.
@@ -392,10 +407,16 @@ print_metro_help() {
 }
 
 dev_ios() {
-  parse_dev_args "a simulator is required: pnpm ios <udid> [--screen <screen>] (UDIDs from 'xcrun simctl list devices')." "$@"
+  if [ $# -eq 0 ]; then
+    print_error "Name a simulator. These are available:"
+    list_ios_simulators
+    ui_try "pnpm --dir OffsiderPlaygroundRN ios ${IOS_SUGGESTED_UDID:-<udid>}"
+    exit 1
+  fi
+  parse_dev_args "pnpm --dir OffsiderPlaygroundRN ios <udid>" "$@"
   local udid="${DEV_DEVICE}"
-  [[ "${udid}" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || die "'${udid}' is not a simulator UDID."
-  xcrun simctl list devices booted | grep -qi "${udid}" || die "simulator ${udid} is not booted. Boot it first (xcrun simctl boot ${udid})."
+  [[ "${udid}" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || die "'${udid}' is not a simulator UDID." "xcrun simctl list devices available"
+  xcrun simctl list devices booted | grep -qi "${udid}" || die "Simulator ${udid} is not booted." "xcrun simctl boot ${udid}"
   metro_start
   reset_build_flags
   build_ios "${udid}" --debug --if-changed
@@ -410,19 +431,19 @@ dev_ios() {
 }
 
 dev_android() {
-  parse_dev_args "an emulator is required: pnpm android <serial|avd> [--screen <screen>] (serials from 'adb devices')." "$@"
+  parse_dev_args "pnpm --dir OffsiderPlaygroundRN android Offsider_E2E" "$@"
   local adb serial="" offsider
   adb=$(adb_bin)
   if [[ "${DEV_DEVICE}" =~ ^emulator-[0-9]+$ ]]; then
-    "${adb}" -s "${DEV_DEVICE}" emu avd name >/dev/null 2>&1 || die "${DEV_DEVICE} is not a running emulator ('adb devices' lists them)."
+    "${adb}" -s "${DEV_DEVICE}" emu avd name >/dev/null 2>&1 || die "${DEV_DEVICE} is not a running emulator." "${adb} devices"
     serial="${DEV_DEVICE}"
   else
     serial=$(running_serial_for_avd "${adb}" "${DEV_DEVICE}")
     if [ -z "${serial}" ]; then
       offsider=$(offsider_bin)
-      echo "Booting ${DEV_DEVICE} with offsider boot"
+      log "Booting ${DEV_DEVICE} with offsider boot"
       serial=$("${offsider}" boot "${DEV_DEVICE}" | tail -1 | tr -d '\r')
-      [[ "${serial}" =~ ^emulator-[0-9]+$ ]] || die "offsider boot ${DEV_DEVICE} printed no emulator serial."
+      [[ "${serial}" =~ ^emulator-[0-9]+$ ]] || die "offsider boot ${DEV_DEVICE} printed no emulator serial." "${offsider} boot ${DEV_DEVICE}"
     fi
   fi
   metro_start
@@ -430,7 +451,7 @@ dev_android() {
   build_android --debug --if-changed
   reset_build_flags
   install_android "${serial}" --debug ||
-    die "install failed on ${serial}. A release build signed with another key needs 'adb -s ${serial} uninstall ${APP_ID}' first."
+    die "Install failed on ${serial} (a build signed with another key is in the way)." "${adb} -s ${serial} uninstall ${APP_ID}"
   "${adb}" -s "${serial}" reverse "tcp:${METRO_PORT}" "tcp:${METRO_PORT}" >/dev/null
   grep -qx "${serial}" "${METRO_REVERSES}" 2>/dev/null || echo "${serial}" >>"${METRO_REVERSES}"
   echo "adb reverse: ${serial}'s 127.0.0.1:${METRO_PORT} reaches Metro on this Mac until 'metro stop'"
@@ -440,7 +461,7 @@ dev_android() {
   if [ -n "${DEV_SCREEN}" ]; then
     offsider=$(offsider_bin)
     "${offsider}" wait --id menu-title --timeout 180 --device "${serial}" ||
-      die "the app did not show its menu within 180 s. Check ${METRO_LOG}."
+      die "The app did not show its menu within 180 s." "tail -40 ${METRO_LOG}"
     "${adb}" -s "${serial}" shell am start -W -a android.intent.action.VIEW -d "${SCREEN_URL}/${DEV_SCREEN}" "${APP_ID}"
   fi
   print_metro_help
@@ -472,7 +493,7 @@ metro_check_port() {
   for pid in $(metro_listeners); do
     pgid=$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ') || pgid=""
     if [ -z "${ours}" ] || [ "${pgid}" != "${ours}" ]; then
-      die "port ${METRO_PORT} is already in use by pid ${pid} ($(ps -o comm= -p "${pid}" 2>/dev/null || echo unknown)). Stop it first; this script only manages the Metro it started."
+      die "Port ${METRO_PORT} is in use by pid ${pid} ($(ps -o comm= -p "${pid}" 2>/dev/null || echo unknown)), not by this script's Metro." "kill ${pid}"
     fi
   done
 }
@@ -484,12 +505,12 @@ exec_in_new_session() {
   elif command -v python3 >/dev/null 2>&1; then
     exec python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
   else
-    die "perl or python3 is required to start Metro in its own process group."
+    die "perl or python3 is needed to start Metro." "xcode-select --install"
   fi
 }
 
 metro_start() {
-  command -v pnpm >/dev/null 2>&1 || die "pnpm not found. Install pnpm 11 (brew install pnpm)."
+  command -v pnpm >/dev/null 2>&1 || die "pnpm not found." "brew install pnpm"
   [ -d "${APP_DIR}/node_modules" ] || install_node_modules
   local pgid pid waited=0
   pgid=$(metro_pgid)
@@ -499,7 +520,7 @@ metro_start() {
       echo "Metro is already running (process group ${pgid}) on 127.0.0.1:${METRO_PORT}"
       return
     fi
-    die "Metro (process group ${pgid}) is running but does not answer ${METRO_STATUS_URL}. Run 'scripts/rn-playground.sh metro stop' first."
+    die "Metro (process group ${pgid}) does not answer ${METRO_STATUS_URL}." "$0 metro stop"
   fi
   mkdir -p "${BUILD_DIR}"
   (
@@ -518,18 +539,18 @@ metro_start() {
     kill -- "${pid}" 2>/dev/null || true
     rm -f "${METRO_PIDFILE}"
     tail -20 "${METRO_LOG}" >&2 || true
-    die "Metro did not start in its own process group (pid ${pid}, group ${pgid:-none})."
+    die "Metro did not start in its own process group (pid ${pid}, group ${pgid:-none})." "$0 metro start"
   fi
   while ! metro_answers; do
     if ! kill -0 -- "-${pgid}" 2>/dev/null; then
       rm -f "${METRO_PIDFILE}"
       tail -40 "${METRO_LOG}" >&2 || true
-      die "Metro exited before it answered ${METRO_STATUS_URL}. Log: ${METRO_LOG}"
+      die "Metro exited before it answered ${METRO_STATUS_URL}." "tail -40 ${METRO_LOG}"
     fi
     if [ "${waited}" -ge "${METRO_START_TIMEOUT}" ]; then
       metro_stop >/dev/null
       tail -40 "${METRO_LOG}" >&2 || true
-      die "Metro did not answer ${METRO_STATUS_URL} within ${METRO_START_TIMEOUT}s. Log: ${METRO_LOG}"
+      die "Metro did not answer within ${METRO_START_TIMEOUT}s." "tail -40 ${METRO_LOG}"
     fi
     sleep 1
     waited=$((waited + 1))
@@ -595,7 +616,7 @@ metro() {
     start) metro_start ;;
     stop) metro_stop ;;
     status) metro_status ;;
-    *) die "metro needs start, stop or status." ;;
+    *) die "metro needs start, stop or status." "$0 metro start" ;;
   esac
 }
 

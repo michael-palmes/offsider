@@ -70,10 +70,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     public let kind: Kind
     public let message: String
+    /// The command to run next, when the message does not quote it.
+    public let explicitHint: String?
 
-    public init(_ kind: Kind, _ message: String) {
+    public init(_ kind: Kind, _ message: String, hint: String? = nil) {
         self.kind = kind
         self.message = message
+        self.explicitHint = hint
     }
 
     public var errorDescription: String? { message }
@@ -111,28 +114,34 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func adbServerNotRunning(endpoint: String) -> AndroidError {
-        AndroidError(.adbServerNotRunning, "No adb server is running on \(endpoint). Start it with `adb start-server`, then retry.")
+        AndroidError(.adbServerNotRunning, "No adb server is running on \(endpoint). Run the command again and Offsider starts one.")
     }
+
+    /// Stopping a stuck server is the one manual step; the next command starts a fresh one with mDNS off.
+    static func restartHint(adb: String?) -> String { "\(adb ?? "adb") kill-server" }
 
     static func adbServerStartFailed(adb: String, status: Int32, detail: String) -> AndroidError {
         let reason = detail.isEmpty ? "" : " (\(detail))"
         return AndroidError(
             .adbServerStartFailed,
-            "Could not start the adb server: `\(adb) start-server` exited \(status)\(reason). Run `adb start-server` to see why."
+            "Could not start the adb server: \(adb) start-server exited \(status)\(reason).",
+            hint: "ADB_MDNS=0 \(adb) start-server"
         )
     }
 
-    static func adbServerNoAnswer(endpoint: String, seconds: Int) -> AndroidError {
+    static func adbServerNoAnswer(endpoint: String, seconds: Int, adb: String? = nil) -> AndroidError {
         AndroidError(
             .adbServerNoAnswer,
-            "The adb server on \(endpoint) did not answer within \(seconds) s. Restart it with `adb kill-server && adb start-server`."
+            "The adb server on \(endpoint) did not answer within \(seconds) s. Stop it, then run the command again.",
+            hint: restartHint(adb: adb)
         )
     }
 
-    static func adbProtocol(_ detail: String) -> AndroidError {
+    static func adbProtocol(_ detail: String, adb: String? = nil) -> AndroidError {
         AndroidError(
             .adbProtocol,
-            "The adb server sent a reply Offsider could not read (\(detail)). Restart it with `adb kill-server && adb start-server`."
+            "The adb server sent a reply Offsider could not read (\(detail)). Stop it, then run the command again.",
+            hint: restartHint(adb: adb)
         )
     }
 
@@ -184,10 +193,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    static func appNotInstalled(_ package: String, serial: String) -> AndroidError {
-        AndroidError(
+    /// `adb` is the SDK's adb by its full path when known, so the hint runs as printed.
+    static func appNotInstalled(_ package: String, serial: String, adb: String? = nil) -> AndroidError {
+        let adb = adb ?? "adb"
+        return AndroidError(
             .appNotInstalled,
-            "\(package) is not installed on \(serial). Install it with `adb -s \(serial) install <path-to-apk>`, or check the package name with adb -s \(serial) shell pm list packages."
+            "\(package) is not installed on \(serial). Install it with `\(adb) -s \(serial) install <path-to-apk>`, or check the package name with \(adb) -s \(serial) shell pm list packages.",
+            hint: "\(adb) -s \(serial) install <path-to-apk>"
         )
     }
 
@@ -512,7 +524,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    static func appNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool) -> AndroidError {
+    static func appNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool, audience: ErrorAudience = .current) -> AndroidError {
         if byManagedPolicy {
             return AndroidError(
                 .appNotAllowed,
@@ -521,7 +533,11 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         }
         return AndroidError(
             .appNotAllowed,
-            "\(package) is in front on \(serial), and it is not among the apps allowed on this phone, so Offsider did nothing. Bring an allowed app to the front, or ask the user to run `offsider device-access allow --device \(serial) --app \(package)` in their own terminal."
+            "\(package) is in front on \(serial), and it is not among the apps allowed on this phone, so Offsider did nothing. "
+                + (audience == .person
+                    ? "Bring an allowed app to the front, or pin this one."
+                    : "Bring an allowed app to the front, or ask the user to run `offsider device-access allow` in their own terminal, choose \(serial) and pin \(package)."),
+            hint: "offsider device-access allow"
         )
     }
 
@@ -636,12 +652,19 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func noAVDNamed(_ name: String, available: [String]) -> AndroidError {
+        if let closest = SelectorText.nearMatches(for: name, among: available, limit: 1).first?.text {
+            return AndroidError(.noAVDNamed, "No AVD named \(name); the closest is \(closest).", hint: "offsider boot \(closest)")
+        }
         let list = available.isEmpty ? "This Mac has no AVDs." : "AVDs on this Mac: \(available.joined(separator: ", "))."
         return AndroidError(.noAVDNamed, "No AVD named \(name). \(list) Create one in Android Studio's Device Manager.")
     }
 
     static func emulatorMissing(sdkRoot: String) -> AndroidError {
-        AndroidError(.emulatorMissing, "The Android Emulator is not installed in \(sdkRoot)/emulator. Install it with Android Studio's SDK Manager.")
+        AndroidError(
+            .emulatorMissing,
+            "The Android Emulator is not installed in \(sdkRoot)/emulator.",
+            hint: "\(sdkRoot)/cmdline-tools/latest/bin/sdkmanager emulator"
+        )
     }
 
     static func emulatorLaunchFailed(path: String, detail: String) -> AndroidError {
@@ -651,7 +674,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     /// Names the stale lock files boot removed before this launch, which the failure may be about.
     func namingStaleLocks(_ names: [String], in directory: String) -> AndroidError {
         guard !names.isEmpty else { return self }
-        return AndroidError(kind, message + " Before this launch Offsider removed \(names.joined(separator: " and ")) from \(directory), left by an emulator that was no longer running.")
+        return AndroidError(kind, message + " Before this launch Offsider removed \(names.joined(separator: " and ")) from \(directory), left by an emulator that was no longer running.", hint: explicitHint)
     }
 
     static func emulatorExited(status: Int32, logPath: String, tail: String) -> AndroidError {
@@ -759,6 +782,7 @@ extension AndroidError: OffsiderFailure {
 
     /// The message's first backticked Offsider or adb command; never the failed command itself, which can carry typed text.
     public var hint: String? {
+        if let explicitHint { return explicitHint }
         switch reason.exitCode {
         case .deviceUnavailable where kind == .deviceLocked:
             return Self.firstCommand(in: message)

@@ -34,8 +34,8 @@ struct HIDInteractor {
         } catch {
             logger.error().log("Failed to load private frameworks: \(error)")
             throw CLIError(
-                errorDescription: "Offsider could not initialize simulator input using the selected Xcode installation. Confirm Xcode 26 or later is selected and try again.",
-                reason: .xcodeUnusable, hint: "xcode-select -s <Xcode.app>/Contents/Developer"
+                errorDescription: "Offsider could not start simulator input with the selected Xcode. Xcode 26 or later is needed. \(XcodeSuggestion.current.withoutSudo)",
+                reason: .xcodeUnusable, hint: XcodeSuggestion.current.select
             )
         }
 

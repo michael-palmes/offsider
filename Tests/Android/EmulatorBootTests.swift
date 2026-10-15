@@ -470,14 +470,15 @@ struct EmulatorBootTests {
         #expect(launcher.launches.count == 1)
     }
 
-    @Test("an unknown AVD lists the AVDs on this Mac, asking adb only for its device list")
+    @Test("an unknown AVD close to one on this Mac suggests it, asking adb only for its device list")
     func unknownAVD() async throws {
         let server = Self.server(AdbState())
         let host = AndroidTestHost.make(home: try Self.home(), adb: server)
         let request = EmulatorBootRequest(avdName: "Pixel_10", headless: false, timeout: .seconds(240))
 
         let error = await #expect(throws: AndroidError.self) { try await EmulatorBooter(host: host) { _, _ in }.boot(request) { _ in } }
-        #expect(error?.message == "No AVD named Pixel_10. AVDs on this Mac: Offsider_E2E, Pixel_9a. Create one in Android Studio's Device Manager.")
+        #expect(error?.message == "No AVD named Pixel_10; the closest is Pixel_9a.")
+        #expect(error?.hint == "offsider boot Pixel_9a")
         #expect(server.services == ["host:devices-l"])
     }
 
@@ -505,14 +506,15 @@ struct EmulatorBootTests {
             Issue.record("expected the boot to fail")
             return
         }
-        #expect(error.message == "The Android Emulator is not installed in \(home.path)/Library/Android/sdk/emulator. Install it with Android Studio's SDK Manager.")
+        #expect(error.message == "The Android Emulator is not installed in \(home.path)/Library/Android/sdk/emulator.")
+        #expect(error.hint == "\(home.path)/Library/Android/sdk/cmdline-tools/latest/bin/sdkmanager emulator")
     }
 }
 
 @Suite("boot command")
 struct BootCommandTests {
     @Test("boot refuses a simulator UUID, a serial and an out-of-range timeout with usage errors", arguments: [
-        ("boot \(UUID().uuidString)", "boot starts Android emulators. Boot an iOS simulator with `xcrun simctl boot <udid>`."),
+        ("boot \(UUID().uuidString) --memory 2048", "--memory, --no-snapshot-load and --emulator-arg start emulators only"),
         ("boot emulator-5556", "boot takes an AVD name, not a serial."),
         ("boot Pixel_9 --timeout 5", "--timeout must be between 10 and 1800 seconds."),
         ("boot Pixel_9 --emulator-arg -grpc", "--emulator-arg -grpc is refused: "),

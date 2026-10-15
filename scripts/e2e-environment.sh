@@ -1,4 +1,7 @@
 #!/bin/bash
+# shellcheck disable=SC2034 # the SELECTED_* and SIMULATOR_* values are read by test-runner.sh
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/lib/ui.sh"
 
 e2e_xcode_version() {
     DEVELOPER_DIR="$1" xcodebuild -version | awk 'NR == 1 { print $2 }'
@@ -65,9 +68,9 @@ select_e2e_simulator() {
                  -.major, -.minor])
              | .[0] // empty | "\(.udid)\t\(.name)"' <<< "$devices")"
         if [[ -z "$selected" ]]; then
-            printf 'No available iOS simulator is named "%s". Available iOS simulators:\n' \
-                "$OFFSIDER_SIMULATOR_NAME" >&2
+            print_error "No available iOS simulator is named \"$OFFSIDER_SIMULATOR_NAME\". These are:"
             jq -r '.[] | "  \(.name) (\(.udid), iOS \(.major).\(.minor), \(.state))"' <<< "$devices" >&2
+            ui_try "OFFSIDER_SIMULATOR_NAME=\"<one of these>\" ./test-runner.sh"
             return 1
         fi
     else
@@ -105,13 +108,14 @@ create_e2e_simulator() {
          | sort_by(.version) | last // empty
          | "\(.identifier) \(.types | sort_by(.model) | last | .identifier)"')"
     if [[ -z "$runtime_and_type" ]]; then
-        printf 'No iOS %s runtime with an iPhone Pro device type is installed.\n' "$SELECTED_XCODE_MAJOR" >&2
+        print_error "No iOS ${SELECTED_XCODE_MAJOR} runtime with an iPhone Pro device type is installed."
+        ui_try "xcodebuild -downloadPlatform iOS"
         return 1
     fi
 
     local runtime="${runtime_and_type%% *}"
     local device_type="${runtime_and_type#* }"
-    printf 'Creating simulator "%s" (%s, %s)\n' "$E2E_FALLBACK_SIMULATOR_NAME" "$device_type" "$runtime" >&2
+    log "Creating simulator \"$E2E_FALLBACK_SIMULATOR_NAME\" ($device_type, $runtime)"
     local udid
     udid="$(xcrun simctl create "$E2E_FALLBACK_SIMULATOR_NAME" "$device_type" "$runtime")" || return 1
     printf '%s\t%s\n' "$udid" "$E2E_FALLBACK_SIMULATOR_NAME"
@@ -123,7 +127,8 @@ ensure_e2e_runtime_host() {
     local device_hub_app="${SELECTED_DEVELOPER_DIR%/Contents/Developer}/Contents/Applications/DeviceHub.app"
     [[ -d "$device_hub_app" ]] || return 1
     if pgrep -x Simulator >/dev/null; then
-        printf 'Simulator.app is running; quit it before testing Xcode 27 through Device Hub.\n' >&2
+        print_error "Simulator.app is running: Xcode 27 tests run through Device Hub instead."
+        ui_try "osascript -e 'quit app \"Simulator\"'"
         return 1
     fi
     open -g "$device_hub_app"
@@ -135,4 +140,60 @@ ensure_e2e_runtime_host() {
         attempts_remaining=$((attempts_remaining - 1))
     done
     return 1
+}
+
+# The Offsider this run tests, as a command a person can paste: an older offsider on PATH may lack what the runner asks for.
+offsider_command() {
+    printf '%q' "${OFFSIDER_BIN_PATH:-offsider}"
+}
+
+# Prints "id<TAB>name" of the one active allowance for a platform (ios or android) that pins `app`.
+# Anything else prints why in one line and fails, so a device a person allowed for another app is never driven.
+allowed_device_for() {
+    local platform="$1" app="$2"
+    local status count i
+    status="$("$OFFSIDER_BIN_PATH" device-access status --json 2>/dev/null)" || status=""
+    count="$(printf '%s' "$status" | plutil -extract devices raw -o - - 2>/dev/null)" || count=0
+    local ids=() names=() apps=()
+    for (( i = 0; i < count; i++ )); do
+        [[ "$(printf '%s' "$status" | plutil -extract "devices.$i.platform" raw -o - - 2>/dev/null)" == "$platform" ]] || continue
+        [[ "$(printf '%s' "$status" | plutil -extract "devices.$i.active" raw -o - - 2>/dev/null)" == true ]] || continue
+        ids+=("$(printf '%s' "$status" | plutil -extract "devices.$i.id" raw -o - - 2>/dev/null)")
+        names+=("$(printf '%s' "$status" | plutil -extract "devices.$i.name" raw -o - - 2>/dev/null)")
+        apps+=("$(printf '%s' "$status" | plutil -extract "devices.$i.apps" json -o - - 2>/dev/null || echo '[]')")
+    done
+    local label="Android phone"
+    [[ "$platform" == ios ]] && label="iPhone or iPad"
+    if (( ${#ids[@]} == 0 )); then
+        printf 'No %s is allowed now.\n' "$label"
+        return 1
+    fi
+    if (( ${#ids[@]} > 1 )); then
+        local joined
+        joined="$(printf '%s, ' "${names[@]}")"
+        printf 'More than one %s is allowed (%s), so none is picked.\n' "$label" "${joined%, }"
+        return 1
+    fi
+    if [[ "${apps[0]}" != *"\"$app\""* ]]; then
+        printf '%s is allowed, but its allowance does not pin %s, so it is not picked.\n' "${names[0]}" "$app"
+        return 1
+    fi
+    printf '%s\t%s\n' "${ids[0]}" "${names[0]}"
+}
+
+# The team an iPhone or iPad's allowance records, or nothing.
+allowance_team() {
+    "$OFFSIDER_BIN_PATH" device-access status --device "$1" --json 2>/dev/null | plutil -extract devices.0.team raw -o - - 2>/dev/null || true
+}
+
+# The command a person runs to allow a device, with what to choose in its menus.
+print_device_allow() {
+    local name="$1"
+    local app="${2:-}"
+    print_error "  $(offsider_command) device-access allow"
+    if [[ -n "$app" ]]; then
+        print_error "  Then choose $name, pin $app, and allow at least 2 hours."
+    else
+        print_error "  Then choose $name and allow at least 2 hours."
+    fi
 }

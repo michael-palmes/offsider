@@ -152,7 +152,7 @@ private final class OperationBox: @unchecked Sendable {
     init(_ operation: any AsyncLogOperation) { self.operation = operation }
 }
 
-private final class FutureBox: @unchecked Sendable {
+final class FutureBox: @unchecked Sendable {
     let future: FBFuture<NSNull>
     init(_ future: FBFuture<NSNull>) { self.future = future }
 }

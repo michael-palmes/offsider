@@ -2,17 +2,11 @@ import Foundation
 
 /// The words and layout of the prompts Offsider shows a person at a terminal. Nothing here prints a secret.
 public enum PromptScreen {
-    public static let keychainLine = "🔒 Stays in your Mac's Keychain, never shown"
-    public static let cancelledNothingSaved = "👋 No worries, nothing saved."
-    public static let cancelledNothingLinked = "👋 No worries, nothing linked."
-    public static let menuHint = "↑↓ move · ⏎ choose · esc cancel"
+    public static let cancelledNothingSaved = "👋 Cancelled, nothing saved."
+    public static let cancelledNothingLinked = "👋 Cancelled, nothing linked."
     public static let mismatch = "❌ Those didn't match. Try again."
     public static let untypeable = "❗ Use characters a keyboard can type (no accents or emoji)."
 
-    /// A bold title, then dim reassurance lines under it.
-    public static func header(_ title: String, _ notes: [String], style: TerminalStyle) -> [String] {
-        [style.bold(title)] + notes.map { "   " + style.dim($0) } + [""]
-    }
 
     /// Prompt labels padded to one width, so the answers line up.
     public static func labels(_ labels: [String]) -> [String] {
@@ -20,18 +14,56 @@ public enum PromptScreen {
         return labels.map { $0 + String(repeating: " ", count: widest - TerminalText.width($0) + 2) }
     }
 
-    /// The menu with `selected` marked: a title, one row per option and the key hint.
-    public static func menu(_ title: String, options: [String], selected: Int, style: TerminalStyle) -> String {
-        var lines = [style.bold(title)]
-        for (index, option) in options.enumerated() {
-            lines.append(index == selected ? "  " + style.green("❯ " + option) : "    " + option)
-        }
-        lines.append("  " + style.dim(menuHint))
-        return lines.joined(separator: "\n")
+    /// The widest a block of prose runs: the terminal, at most 72 columns, never under 20.
+    public static func width(columns: Int?) -> Int {
+        min(max(columns ?? 72, 20), 72)
     }
 
-    public static func chosen(_ option: String, style: TerminalStyle) -> String {
-        "  " + style.green("▸ " + option)
+    /// `text` broken between words to fit `width`; continuation lines start with `indent`. Runs of spaces inside a line stay,
+    /// so columns keep their alignment; a word wider than a line stays whole.
+    public static func wrap(_ text: String, width: Int, indent: String = "") -> [String] {
+        var lines: [String] = []
+        var line = ""
+        var gap = ""
+        var word = ""
+        func place() {
+            guard !word.isEmpty else { return }
+            if line.isEmpty || TerminalText.width(line + gap + word) <= width {
+                line += gap + word
+            } else {
+                lines.append(line)
+                line = indent + word
+            }
+            gap = ""
+            word = ""
+        }
+        for character in text {
+            if character == " " {
+                if !word.isEmpty { place() }
+                gap.append(character)
+            } else {
+                word.append(character)
+            }
+        }
+        place()
+        return lines + [line]
+    }
+
+    /// `parts` joined by `separator`, breaking lines only between parts, so a phrase such as `team ABCDE12345` stays whole.
+    public static func pack(_ parts: [String], separator: String, width: Int, indent: String = "") -> [String] {
+        var lines: [String] = []
+        var line = ""
+        for part in parts {
+            if line.isEmpty {
+                line = (lines.isEmpty ? "" : indent) + part
+            } else if TerminalText.width(line + separator + part) <= width {
+                line += separator + part
+            } else {
+                lines.append(line + String(separator.reversed().drop { $0 == " " }.reversed()))
+                line = indent + part
+            }
+        }
+        return lines + [line]
     }
 
     /// One bullet per character typed, never the characters.
@@ -39,13 +71,23 @@ public enum PromptScreen {
         String(repeating: "•", count: count)
     }
 
-    /// Typed text as drawn: a control character shows as `?`, never as itself.
+    /// Typed text as drawn: a control, bidi, zero-width or other invisible character shows as `?`, never as itself.
     public static func visible(_ text: String) -> String {
-        String(String.UnicodeScalarView(text.unicodeScalars.map { $0.value < 0x20 || $0.value == 0x7F ? "?" : $0 }))
+        var previous: Unicode.Scalar?
+        return String(String.UnicodeScalarView(text.unicodeScalars.map { scalar in
+            defer { previous = scalar }
+            return TerminalText.isHazard(scalar, after: previous) ? "?" : scalar
+        }))
     }
 
+    /// A name or ID from a device or the Keychain, for a menu row, receipt or summary: `visible`, and cut so it stays on one row.
+    public static func label(_ text: String, cap: Int = 60) -> String {
+        visible(TerminalText.capped(text, cap: cap))
+    }
+
+    /// A command to run next under a report's headline: the label dim, the command cyan and never wrapped.
     public static func nextStep(_ label: String, command: String, style: TerminalStyle) -> String {
-        "   " + style.dim("▶ \(label): ") + style.cyan(command)
+        "   " + style.dim(label) + "  " + style.cyan(command)
     }
 }
 
@@ -60,7 +102,7 @@ public enum CredentialScreen {
     public static let aboutPlaceholder = "optional, like Admin on staging"
     public static let tagsLabel = "🔖 Tags"
     public static let tagsPlaceholder = "optional, like role=admin env=staging"
-    public static let addAnother = "➕ Add another login"
+    public static let addAnother = "➕  Add another login"
 
     /// Every `credential set` question, so the answers line up across the whole block.
     public static let promptLabels = [nameLabel, usernameLabel, passwordLabel, againLabel, aboutLabel, tagsLabel]
@@ -70,34 +112,34 @@ public enum CredentialScreen {
         Dictionary(uniqueKeysWithValues: zip(promptLabels, PromptScreen.labels(promptLabels)))[label] ?? label
     }
 
-    public static func header(app: String, key: String?, style: TerminalStyle) -> [String] {
-        let name = key.map { " · " + LoginCredential.displayKey($0) } ?? ""
-        return PromptScreen.header("🔐 Save a test login · \(app)\(name)", [PromptScreen.keychainLine, "🧪 Use a test account, not your own"], style: style)
+    public static func header(app: String, key: String?, width: Int, style: TerminalStyle) -> [String] {
+        let title = key.map { "Save the \(LoginCredential.displayKey($0)) login for \(app)" } ?? "Save a test login for \(app)"
+        return TerminalUI.banner(title, mark: .lock, width: width, style: style) + [""]
     }
 
     public static func menuTitle(entries: [LoginCredentialSummary]) -> String {
-        entries.count == 1 ? "📋 This app already has a login" : "📋 This app already has \(entries.count) logins"
+        "Update or add a login?"
     }
 
     /// One row per saved login to update, then a row to add another. The order matches `LoginDirectory.setChoice(at:entries:)`.
     public static func menuOptions(entries: [LoginCredentialSummary]) -> [String] {
         entries.map { entry in
             let mark = entry.isDefault && entry.key != LoginCredential.defaultAccountKey ? " (default)" : ""
-            return "📝 Update \(LoginCredential.displayKey(entry.key))\(mark) · \(entry.username)"
+            return "📝  Update \(LoginCredential.displayKey(entry.key))\(mark) · \(entry.username)"
         } + [addAnother]
     }
 
     public static func replaceTitle(_ entry: LoginCredentialSummary) -> String {
-        "📋 \(LoginCredential.displayKey(entry.key)) is already saved · \(entry.username)"
+        "Replace the saved \(LoginCredential.displayKey(entry.key))?"
     }
 
-    public static let replaceOptions = ["📝 Replace it", "✋ Keep it"]
+    public static let replaceOptions = ["📝  Replace it", "✋  Keep it"]
 
-    public static let joinTitle = "🔗 Share logins with which app?"
+    public static let joinTitle = "Share logins with which app?"
 
     public static func joinOptions(groups: [LoginAppGroup]) -> [String] {
         groups.map { group in
-            group.members.isEmpty ? "📱 \(group.canonical)" : "📱 \(group.canonical) (also \(group.members.joined(separator: ", ")))"
+            group.members.isEmpty ? "📱  \(group.canonical)" : "📱  \(group.canonical) (also \(group.members.joined(separator: ", ")))"
         }
     }
 
@@ -246,8 +288,8 @@ public enum UnlockCodeScreen {
     public static let codeLabel = "🔑 PIN or password"
     public static let againLabel = "🔁 Once more"
 
-    public static func header(name: String, style: TerminalStyle) -> [String] {
-        PromptScreen.header("🔐 Save the unlock code · \(name)", [PromptScreen.keychainLine, "🧪 Use on test devices only"], style: style)
+    public static func header(name: String, width: Int, style: TerminalStyle) -> [String] {
+        TerminalUI.banner("Save the unlock code for \(name)", mark: .lock, width: width, style: style) + [""]
     }
 
     public static func codeProblem(_ code: String) -> String? {
@@ -272,5 +314,26 @@ public enum UnlockCodeScreen {
 
     public static func removed(name: String, removed: Bool, style: TerminalStyle) -> String {
         style.bold(removed ? "🧹 Removed the unlock code for \(name)" : "🤷 No unlock code saved for \(name)")
+    }
+}
+
+/// What `init` prints on a terminal: each `Installed Offsider skill -> Client: path` line as a bold `✅` line with the path dim
+/// under it, and `Next: <command>` as a next step. Piped output keeps the plain lines.
+public enum InitScreen {
+    public static let agentsQuestion = "Which agents?"
+    public static let cancelled = "👋 Cancelled, nothing installed."
+
+    /// `path` with the home folder written as `~`.
+    public static func shortPath(_ path: String, home: String) -> String {
+        path == home || path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
+    }
+
+    public static func styled(_ lines: [String], style: TerminalStyle) -> [String] {
+        lines.flatMap { line -> [String] in
+            if line.hasPrefix("Next: ") { return [PromptScreen.nextStep("Next", command: String(line.dropFirst(6)), style: style)] }
+            guard let arrow = line.range(of: " -> "), let colon = line.range(of: ": ", range: arrow.upperBound..<line.endIndex) else { return [line] }
+            let head = "\(line[..<arrow.lowerBound]) for \(line[arrow.upperBound..<colon.lowerBound])"
+            return [style.mark(.done) + " " + style.bold(head), "   " + style.dim(String(line[colon.upperBound...]))]
+        }
     }
 }

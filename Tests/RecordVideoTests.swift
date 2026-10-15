@@ -235,7 +235,7 @@ struct VideoRecordingStartTests {
         }
         #expect(error?.reason.exitCode.rawValue == 8)
         #expect(error?.failureMessage.contains("offsider login") == true)
-        #expect(error?.hint == "offsider \(command) ... --wait-lock 30")
+        #expect(error?.hint == "add --wait-lock 30 to the same command")
         #expect(!RecordingMarker.isLive(Self.key, root: root))
     }
 
