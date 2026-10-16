@@ -72,8 +72,9 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
         self.roots = roots
     }
 
-    public init(tree: UITree) {
-        roots = tree.roots.map(Node.init(node:))
+    /// With `native` false, only the fields a cached tree keeps, so a live read compares alike with one.
+    public init(tree: UITree, native: Bool = true) {
+        roots = tree.roots.map { Node(node: $0, native: native) }
     }
 
     public init(jsonData: Data) throws {
@@ -102,15 +103,15 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
 
 extension AccessibilitySnapshot.Node {
     /// Keys stay `type#identifier` with the native type, so iOS results match the JSON path.
-    init(node: UINode) {
+    init(node: UINode, native: Bool = true) {
         let ios: IOSNativeAttributes?
-        if case .ios(let attributes) = node.native {
+        if native, case .ios(let attributes) = node.native {
             ios = attributes
         } else {
             ios = nil
         }
         self.init(
-            type: node.native.typeName ?? node.role.rawValue,
+            type: (native ? node.native.typeName : nil) ?? node.role.rawValue,
             identifier: node.id,
             uiRole: node.role.rawValue,
             role: ios?.role ?? node.role.rawValue,
@@ -122,7 +123,7 @@ extension AccessibilitySnapshot.Node {
             frame: node.frame.map { AccessibilitySnapshot.Frame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) },
             state: node.state,
             isSecure: node.isSecure,
-            children: node.children.map(Self.init(node:))
+            children: node.children.map { Self(node: $0, native: native) }
         )
     }
 

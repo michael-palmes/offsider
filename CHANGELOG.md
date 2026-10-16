@@ -20,6 +20,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `device-access remove` also stops a removed phone's warm helper.
 - `scripts/bench-ab.sh` reads the screen untimed 2 s before each Android sample, as an agent's previous command would, and stops the checkout's warm helper before every base sample and when it finishes.
 
+### Fixed
+
+- `wait --settled` straight after an unverified tap or other input no longer ends before the input's effect shows, on iOS and Android. It compared the screen kept from before the input, which leaves out native types, with live reads that carry them, so the first read always looked changed and the hold of up to 2 s ended at once.
+
 ## [0.12.0] - 2026-10-15
 
 ### Added
