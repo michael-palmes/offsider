@@ -163,7 +163,8 @@ struct DeviceOptionTests {
         let error = await #expect(throws: (any Error).self) {
             _ = try await DevicePicker.orUnanswered(missing) { try await DevicePicker.pickRunning(descriptor: terminal.secondary, idle: 0.3) { [simulator] } }
         }
-        #expect(Date().timeIntervalSince(started) < 10)
+        // Two prompts left to the default idle would take twice this; a full parallel run can hold the main actor for many seconds.
+        #expect(Date().timeIntervalSince(started) < TerminalPrompt.defaultIdle)
         #expect(OffsiderCommand.exitCode(for: try #require(error)).rawValue == 64)
         #expect(OffsiderCommand.message(for: try #require(error)).contains(DeviceDefault.missingMessage))
         #expect(DevicePickerScreen.unanswered(within: PromptTimedOut.duration(TerminalPrompt.defaultIdle)) == "No device chosen within 60 s; pass --device <id>.")

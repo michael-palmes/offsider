@@ -167,7 +167,7 @@ struct DeviceSessionClientTests {
         let server = DeviceSessionChannel(descriptor: pair[1])
         let link = SocketSessionLink(channel: DeviceSessionChannel(descriptor: pair[0]))
         let thread = Thread {
-            _ = try? server.readFrame(limit: DeviceSessionWire.maxJSONBytes, timeout: .seconds(5))
+            _ = try? server.readFrame(limit: DeviceSessionWire.maxJSONBytes, timeout: .seconds(60))
             server.close()
         }
         thread.start()

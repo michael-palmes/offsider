@@ -101,7 +101,8 @@ struct BatchReadStepTests {
     @Test("wait and assert steps read the tree with the hung-device watchdog armed, and disarm it after")
     func readStepsArmWatchdog() async throws {
         let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
-        let watchdog = DeviceWatchdog(fire: { _ in Issue.record("the watchdog fired") })
+        // Far past any stall of a full parallel run, which has held the main actor for over 15 s.
+        let watchdog = DeviceWatchdog(grace: 600, fire: { _ in Issue.record("the watchdog fired") })
         var armedOnRead: [Bool] = []
         backend.onTreeRead = { armedOnRead.append(watchdog.isArmed) }
         let context = BatchContext(

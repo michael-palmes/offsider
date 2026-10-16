@@ -39,6 +39,8 @@ final class AccessTerminal: @unchecked Sendable {
     let secondary: Int32
     private let lock = NSLock()
     private var drawn = Data()
+    private var secondaryOpen = true
+    private let drained = DispatchSemaphore(value: 0)
 
     init() throws {
         var primary: Int32 = -1
@@ -53,6 +55,22 @@ final class AccessTerminal: @unchecked Sendable {
                 guard count > 0 else { break }
                 lock.withLock { drawn.append(contentsOf: buffer[0..<count]) }
             }
+            drained.signal()
+        }
+    }
+
+    /// Closes this end once the prompt is done, waits for the reader to take everything the prompt drew, and returns it.
+    func finish() -> String {
+        closeSecondary()
+        _ = drained.wait(timeout: .now() + PseudoTerminal.patience)
+        return transcript
+    }
+
+    private func closeSecondary() {
+        lock.withLock {
+            guard secondaryOpen else { return }
+            secondaryOpen = false
+            close(secondary)
         }
     }
 
@@ -62,28 +80,31 @@ final class AccessTerminal: @unchecked Sendable {
         return text.replacingOccurrences(of: "\u{1B}\\[[0-9;?]*[A-Za-z]", with: "", options: .regularExpression)
     }
 
-    private func echoing(_ on: Bool, tries: Int) {
+    private func echoing(_ on: Bool, within seconds: TimeInterval) {
         var settings = termios()
-        for _ in 0..<tries {
-            if tcgetattr(secondary, &settings) == 0, (settings.c_lflag & tcflag_t(ECHO) != 0) == on { return }
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            guard tcgetattr(secondary, &settings) == 0 else { return }
+            if (settings.c_lflag & tcflag_t(ECHO) != 0) == on { return }
             usleep(1000)
-        }
+        } while Date() < deadline
     }
 
     /// Sends each answer after the prompt has gone raw again, then waits for it to leave raw mode.
     func type(_ answers: [String]) {
         Thread.detachNewThread { [self] in
             for answer in answers {
-                echoing(false, tries: 5000)
+                // A key typed before the first raw switch is flushed, and a full parallel run can hold the prompt back for many seconds.
+                echoing(false, within: PseudoTerminal.patience)
                 usleep(20_000)
                 _ = answer.withCString { write(primary, $0, strlen($0)) }
-                echoing(true, tries: 300)
+                echoing(true, within: 0.3)
             }
         }
     }
 
     deinit {
-        close(secondary)
+        closeSecondary()
         close(primary)
     }
 }
@@ -146,7 +167,7 @@ struct DeviceAccessCommandTests {
                 try await command.perform(context: context(terminal))
             }
         }
-        return (output, terminal.transcript)
+        return (output, terminal.finish())
     }
 
     static func entries(_ home: String) throws -> [DeviceAllowance] {
