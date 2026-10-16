@@ -199,6 +199,19 @@ struct DeviceOptionTests {
         #expect(need(["tap", "-x", "1", "-y", "1", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD", "--bogus"]) == nil)
     }
 
+    @Test("checking whether a pick would mend a line never lends a device to a parse running alongside it")
+    func pickerCheckStaysInItsTask() async {
+        let line = ["tap", "-x", "1", "-y", "1"]
+        let parsedWithoutDevice = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<20 {
+                group.addTask { Self.withDefault(nil) { _ = DevicePicker.need(for: Self.parseError(line), arguments: line) }; return false }
+                group.addTask { Self.withDefault(nil) { (try? Tap.parse(Array(line.dropFirst()))) != nil } }
+            }
+            return await group.contains(true)
+        }
+        #expect(!parsedWithoutDevice)
+    }
+
     private static func parseError(_ arguments: [String]) -> any Error {
         Self.withDefault(nil) {
             do {
