@@ -86,6 +86,10 @@ struct RNApp: Sendable {
         }
         let marker = id ?? "\(route)-screen"
         _ = try await waitForNode(timeout: timeout) { $0["id"] as? String == marker }
+        if platform == .android {
+            // A warm helper reads within milliseconds, so let the new screen finish laying out, ticking text aside.
+            _ = try await offsider("wait --settled --ignore-values --timeout 10")
+        }
     }
 
     /// Runs offsider on this platform's device; a non-zero exit is an error carrying stderr.
