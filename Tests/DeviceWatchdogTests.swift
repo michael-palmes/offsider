@@ -25,6 +25,16 @@ struct DeviceWatchdogTests {
         while !done(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
     }
 
+    @Test("a watchdog made in-process with no fire of its own goes off without ending the process")
+    func defaultLeavesProcessRunning() async throws {
+        let watchdog = DeviceWatchdog(grace: 0.05)
+        watchdog.arm(bound: 0, device: "SIM-1")
+
+        try await waitBriefly { !watchdog.isArmed }
+
+        #expect(!watchdog.isArmed)
+    }
+
     @Test("a hung command past its bound fires once with an actionable message")
     func firesAfterBound() async throws {
         let fired = Fired()

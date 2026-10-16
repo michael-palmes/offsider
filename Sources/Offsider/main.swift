@@ -46,6 +46,7 @@ struct OffsiderCommand: AsyncParsableCommand {
         """
 
     static func main() async {
+        DeviceWatchdog.defaultFire = DeviceWatchdog.exitProcess
         Timings.installTotal()
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.isEmpty {
