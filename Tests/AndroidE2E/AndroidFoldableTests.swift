@@ -133,6 +133,20 @@ struct AndroidFoldableTests {
         }
     }
 
+    @Test("every describe-ui reads the fold's displays and posture from the shell, even with the helper warm")
+    func postureReadEachCommand() async throws {
+        try Self.requireFoldAVD()
+        try await AndroidE2E.run("posture open --timeout 30")
+        let timed = ["OFFSIDER_TIMINGS": "1"]
+
+        _ = try await AndroidE2E.run("describe-ui", environment: timed)
+        let second = try await AndroidE2E.run("describe-ui", environment: timed)
+
+        #expect(AndroidE2E.timingPhases(second.stderr).contains("display-status"), "\(AndroidE2E.timingPhases(second.stderr))")
+        let screen = try JSONDecoder().decode(Tree.self, from: Data(second.stdout.utf8)).screen
+        #expect(screen.posture == "open" && screen.display?.id == Self.open.display)
+    }
+
     @Test("displays lists the cover and inner displays with the active one marked")
     func displays() async throws {
         try Self.requireFoldAVD()

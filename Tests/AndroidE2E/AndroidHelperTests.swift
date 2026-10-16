@@ -106,6 +106,25 @@ struct AndroidHelperTests {
         #expect(clean, "helper pids '\(pids)', accessibility_enabled \(after) (was \(before))")
     }
 
+    @Test("a warm emulator's later describe-ui takes its displays from the warm helper, and reports the same screen")
+    func warmHelperKeepsDisplays() async throws {
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await AndroidE2E.waitForNoHelper()
+        let timed = ["OFFSIDER_TIMINGS": "1"]
+
+        let first = try await AndroidE2E.run("describe-ui", environment: timed)
+        let second = try await AndroidE2E.run("describe-ui", environment: timed)
+
+        #expect(AndroidE2E.timingPhases(first.stderr).contains("display-status"), "\(AndroidE2E.timingPhases(first.stderr))")
+        #expect(!AndroidE2E.timingPhases(second.stderr).contains("display-status"), "\(AndroidE2E.timingPhases(second.stderr))")
+        #expect(try Self.screen(inDescribeUI: second.stdout) == Self.screen(inDescribeUI: first.stdout))
+    }
+
+    static func screen(inDescribeUI output: String) throws -> NSDictionary {
+        let tree = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any]
+        return try #require(tree?["screen"] as? NSDictionary, "describe-ui printed no screen")
+    }
+
     @Test("the warm helper stops by itself after OFFSIDER_ANDROID_SESSION_IDLE seconds")
     func warmHelperIdlesOut() async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")

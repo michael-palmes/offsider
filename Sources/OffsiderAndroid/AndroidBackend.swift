@@ -22,6 +22,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var statusTicket = 0
     /// The latest `cmd device_state state` of each device, from a status read.
     var stateReadings: [String: AndroidDeviceState.Reading] = [:]
+    /// Where this command's display facts came from, and what to leave with each warm helper.
+    var screenFacts: [String: ScreenFactsSource] = [:]
     /// The active panel the display cache named and this command's capture confirmed.
     var cachedDisplayIds: [String: String] = [:]
     /// The display cache entry this command loaded or last saved, so an unchanged one is not written again.
@@ -238,6 +240,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             status = await screenStatus(serial)
         }
         var geometry = try await geometry(for: serial)
+        if dropsBorrowedScreenFacts(notFitting: geometry, on: serial) {
+            status = await screenStatus(serial)
+            geometry = try await self.geometry(for: serial)
+        }
         if (knownDeviceStates[serial]?.count ?? 0) >= 2 {
             let settled = try await settledGeometry(serial)
             if settled != geometry {
@@ -759,8 +765,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         }
     }
 
-    /// Stops helpers first (freeing the UiAutomation slot), then gRPC clients and their keys; a second call does nothing.
+    /// Leaves learnt display facts with the warm helpers, stops helpers (freeing the UiAutomation slot), then gRPC clients and their keys; a second call does nothing.
     public func close() async {
+        await leaveScreenFacts()
         let helpers = treeSources.sorted { $0.key < $1.key }.compactMap { _, source -> HelperSession? in
             guard case .helper(let session) = source else { return nil }
             return session

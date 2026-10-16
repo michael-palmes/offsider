@@ -203,11 +203,11 @@ struct HelperBrokerClient {
         }
     }
 
-    /// One `status` or `stop` to the broker at `path`, which neither counts as use; nil when nothing answered.
-    static func control(_ op: String, at path: String) async -> Data? {
+    /// One op the broker at `path` answers itself, which never counts as use; nil when nothing answered.
+    static func control(_ op: String, fields: [String: HelperValue] = [:], at path: String) async -> Data? {
         guard let stream = await open(path) else { return nil }
         let connection = HelperConnection(shell: nil, socket: stream, ready: unknownReady)
-        let outcome = try? await connection.exchange(HelperRequest(op: op, fields: [:]), id: 1, timeout: controlTimeout)
+        let outcome = try? await connection.exchange(HelperRequest(op: op, fields: fields), id: 1, timeout: controlTimeout)
         // Closed before returning, so a status read never holds one of the broker's client slots afterwards.
         await connection.close()
         guard case .reply(let frame)? = outcome else { return nil }
@@ -217,5 +217,18 @@ struct HelperBrokerClient {
     static func status(at path: String) async -> HelperBrokerWire.Status? {
         guard let frame = await control("status", at: path) else { return nil }
         return try? JSONDecoder().decode(HelperBrokerWire.StatusReply.self, from: frame).status
+    }
+
+    /// The display facts a command left with the broker at `path`; nil when it has none or nothing answered.
+    static func screen(at path: String) async -> String? {
+        guard let frame = await control("screen", at: path) else { return nil }
+        return try? JSONDecoder().decode(HelperBrokerWire.ScreenReply.self, from: frame).screen
+    }
+
+    /// Leaves `screen` with the broker at `path` for later commands; false when nothing answered.
+    @discardableResult
+    static func rememberScreen(_ screen: String, at path: String) async -> Bool {
+        guard let frame = await control("rememberScreen", fields: ["screen": .string(screen)], at: path) else { return false }
+        return HelperBrokerWire.isOK(frame)
     }
 }

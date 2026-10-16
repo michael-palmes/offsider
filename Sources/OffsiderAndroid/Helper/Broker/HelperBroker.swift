@@ -41,6 +41,8 @@ final class HelperBroker {
     private var failureDelivered = false
     private var probeID = 1_000_000_000
     private let startedAt = Date()
+    /// The display facts a command read from the shell, which hold while this helper runs on the same boot.
+    private var screen: String?
 
     init(
         serial: String, socketPath: String, dexSha256: String, limits: Limits,
@@ -208,6 +210,12 @@ final class HelperBroker {
             return [HelperBrokerWire.statusReply(id: request.id, status())]
         case "stop":
             stopping = true
+            return [HelperBrokerWire.ok(id: request.id)]
+        case "screen":
+            guard case .ready = state, !stopping, helperGone == nil, let screen else { return [HelperBrokerWire.ok(id: request.id)] }
+            return [HelperBrokerWire.ok(id: request.id, fields: ["screen": .string(screen)])]
+        case "rememberScreen":
+            screen = request.screen
             return [HelperBrokerWire.ok(id: request.id)]
         case "quit":
             return [HelperBrokerWire.error(id: request.id, code: HelperBrokerWire.Code.refused, message: "the warm helper stops by itself; `offsider session stop` stops it now")]

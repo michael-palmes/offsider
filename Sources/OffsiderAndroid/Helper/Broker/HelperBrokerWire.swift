@@ -1,9 +1,9 @@
 import Foundation
 
-/// The helper's framing, every op passed through but `hello`, `status` and `stop`, which the broker answers, and `quit`, which it refuses.
+/// The helper's framing, every op passed through but `hello`, `status`, `stop`, `screen` and `rememberScreen`, which the broker answers, and `quit`, which it refuses.
 enum HelperBrokerWire {
     /// Part of the `hello` check: a broker from another build is stopped and replaced.
-    static let protocolVersion = 1
+    static let protocolVersion = 2
     static let timeoutField = "brokerTimeoutMs"
     /// The largest request a command may send; replies may be as large as the helper's frames.
     static let maxRequestBytes = 1 << 20
@@ -15,6 +15,8 @@ enum HelperBrokerWire {
         let waitMs: Int?
         /// How long the command waits for this reply; the broker gives up on the helper at the same moment.
         let brokerTimeoutMs: Int?
+        /// `rememberScreen`'s display facts, kept for later commands.
+        var screen: String? = nil
 
         static func parse(_ payload: Data) -> Request? {
             try? JSONDecoder().decode(Request.self, from: payload)
@@ -115,6 +117,11 @@ enum HelperBrokerWire {
     /// The `status` reply's body.
     struct StatusReply: Decodable, Sendable {
         let status: Status
+    }
+
+    /// The `screen` reply's body: the display facts a command left, absent when none or the helper has gone.
+    struct ScreenReply: Decodable, Sendable {
+        let screen: String?
     }
 
     static func error(id: Int, code: String, message: String, extra: [String: HelperValue] = [:]) -> Data {

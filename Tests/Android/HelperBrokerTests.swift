@@ -46,21 +46,25 @@ final class BrokerFixture {
 
     /// A command's client; it never spawns a broker, so a test sees when one would have been started.
     func client(idleSeconds: Int? = nil) throws -> HelperBrokerClient {
+        try HelperBrokerClient(
+            serial: FakeHelperDevice.serial, dexSha256: FakeHelperDevice.dex.sha256, idleSeconds: idleSeconds ?? Int(idle.components.seconds),
+            host: try brokerHost(), log: { _, _ in }
+        )
+    }
+
+    /// What a command's host needs to reach this broker; it never spawns one.
+    func brokerHost() throws -> HelperBrokerHost {
         let lockRoot = root.appendingPathComponent("l").path
         try FileManager.default.createDirectory(atPath: lockRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let directory = self.directory
-        return try HelperBrokerClient(
-            serial: FakeHelperDevice.serial, dexSha256: FakeHelperDevice.dex.sha256, idleSeconds: idleSeconds ?? Int(idle.components.seconds),
-            host: HelperBrokerHost(
-                directory: { directory },
-                spawn: { [weak self] _, _ in
-                    MainActor.assumeIsolated { self?.spawns += 1 }
-                    throw HelperBrokerUnavailable(detail: "no spawning in tests")
-                },
-                exitStatus: { _ in nil },
-                lockRoot: lockRoot
-            ),
-            log: { _, _ in }
+        return HelperBrokerHost(
+            directory: { directory },
+            spawn: { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.spawns += 1 }
+                throw HelperBrokerUnavailable(detail: "no spawning in tests")
+            },
+            exitStatus: { _ in nil },
+            lockRoot: lockRoot
         )
     }
 
