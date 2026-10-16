@@ -309,8 +309,9 @@ public struct ChangeDetector: Sendable {
         return nil
     }
 
+    /// The JSON `node` value: bare, since JSON strings carry their own escaping and the `untrusted` list names the field.
     private static func displayName(_ node: AccessibilitySnapshot.Node, identifier: String?) -> String {
-        if let identifier { return TerminalText.field(identifier) }
+        if let identifier { return TerminalText.bareOrQuoted(identifier) }
         if let label = node.label?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
             return "\(TerminalText.line(node.type, cap: 64)) \(TerminalText.quoted(label))"
         }

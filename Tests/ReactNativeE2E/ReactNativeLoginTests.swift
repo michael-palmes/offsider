@@ -356,7 +356,14 @@ enum RNLogin {
     }
 
     static func expectSignedIn(_ app: RNApp, as user: RNLoginUsers.User, signIns: Int) async throws {
-        _ = try await app.waitForLabel(of: "user-switch-test-state") { $0 == "Session: Signed in" }
+        do {
+            _ = try await app.waitForLabel(of: "user-switch-test-state") { $0 == "Session: Signed in" }
+        } catch {
+            // Name what the app shows instead, so a sign-in that did not take effect is not just a timeout.
+            let state = (try? await app.label(of: "user-switch-test-state")) ?? "<no state>"
+            let shown = (try? await app.label(of: "user-switch-test-error")) ?? "<no error row>"
+            throw DescribeUIError(description: "not signed in within 20 s: state \(state), error row \(shown): \(error)")
+        }
         #expect(try await app.label(of: "user-switch-test-current") == "Signed in as \(user.username)")
         #expect(try await app.label(of: "user-switch-test-sign-ins") == "Sign-ins: \(signIns)")
     }

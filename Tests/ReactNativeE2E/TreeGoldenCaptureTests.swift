@@ -82,7 +82,8 @@ struct TreeGoldenCaptureTests {
     static func settledCapture(_ app: RNApp) async throws -> Any {
         var previous: (raw: Any, summary: [String])?
         for _ in 0..<6 {
-            let output = try await app.run("describe-ui --raw-source").stdout
+            // A golden recapture is a person's own check, so the raw tree is read as one.
+            let output = try await app.run("describe-ui --raw-source", environment: ["OFFSIDER_OUTPUT": "person"]).stdout
             let raw = try JSONSerialization.jsonObject(with: Data(output.utf8))
             let tree = try TreeGoldens.tree(from: try RawTreeCapture(jsonData: Data(output.utf8)))
             let summary = tree.roots.flatMap { $0.flattened() }.map { "\($0.role) \($0.label ?? "") \($0.value ?? "")" }

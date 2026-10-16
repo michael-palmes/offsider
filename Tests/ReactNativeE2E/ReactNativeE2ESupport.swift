@@ -90,8 +90,8 @@ struct RNApp: Sendable {
 
     /// Runs offsider on this platform's device; a non-zero exit is an error carrying stderr.
     @discardableResult
-    func run(_ arguments: String, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
-        let result = try await offsider(arguments, timeout: timeout)
+    func run(_ arguments: String, environment: [String: String]? = nil, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
+        let result = try await offsider(arguments, environment: environment, timeout: timeout)
         guard result.exitCode == 0 else {
             throw DescribeUIError(description: "offsider \(arguments) on \(platform.rawValue) exited \(result.exitCode): \(result.stderr)")
         }
@@ -99,13 +99,13 @@ struct RNApp: Sendable {
     }
 
     /// Runs offsider on this platform's device and returns whatever it exits with; on Android, first answers an ANR dialog.
-    func offsider(_ arguments: String, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
+    func offsider(_ arguments: String, environment: [String: String]? = nil, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
         switch platform {
         case .android:
             try await AndroidE2E.dismissANRDialog()
-            return try await AndroidE2E.offsider(arguments, timeout: timeout)
+            return try await AndroidE2E.offsider(arguments, environment: environment, timeout: timeout)
         case .ios:
-            return try await TestHelpers.runOffsiderCommandSeparated(arguments, simulatorUDID: try IOSRNPlayground.udid(), timeout: timeout)
+            return try await TestHelpers.runOffsiderCommandSeparated(arguments, simulatorUDID: try IOSRNPlayground.udid(), environment: environment, timeout: timeout)
         }
     }
 
