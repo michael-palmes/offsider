@@ -101,6 +101,8 @@ public struct UITree: Equatable, Sendable {
     public var systemPrompt: SystemPrompt?
     /// The context a decoded describe-ui JSON carried, which its windows no longer can.
     var decodedContext: UITreeContext?
+    /// Set by `redacted(_:)` for output: what it hid. JSON carries `redacted` and `revealed` only when either is above zero.
+    public var redaction: UITreeRedactionCounts?
 
     public var context: UITreeContext { decodedContext ?? UITreeContext(tree: self) }
 
@@ -134,8 +136,15 @@ public struct UITree: Equatable, Sendable {
             ("device", .string(device)),
             ("screen", screen.map { $0.jsonValue(on: platform) } ?? .null),
             ("context", context.jsonValue),
+        ] + redactionMembers + [
             ("roots", .array(roots.map(\.jsonValue))),
         ])
+    }
+
+    /// `redacted` and `revealed` after `context`, only when the output hid something.
+    var redactionMembers: [(String, OrderedJSON)] {
+        guard let redaction, !redaction.isEmpty else { return [] }
+        return [("redacted", .integer(redaction.redacted)), ("revealed", .integer(redaction.revealed))]
     }
 }
 

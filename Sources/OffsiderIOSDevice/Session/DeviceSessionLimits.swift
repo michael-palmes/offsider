@@ -15,6 +15,10 @@ public enum DeviceSessionLimits {
     public static let maxIdleSeconds = 3600
     /// A broker this old stops at its next idle moment, so a long-lived one is renewed.
     public static let maxLifetime: Duration = .seconds(12 * 3600)
+    /// How often a running broker re-reads its device's allowance and checks the device is still on USB.
+    public static let recheckInterval: Duration = .seconds(30)
+    /// How long a new client may stay silent before its first request, whatever the idle setting.
+    public static let firstRequestTimeout: Duration = .seconds(10)
     /// Pinned to `Drag.maxSteps` by a test.
     public static let maxSwipeSteps = PixelMath.maxSwipeSteps
     public static let maxSwipeSeconds: Double = 30

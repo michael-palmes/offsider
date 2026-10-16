@@ -4,7 +4,7 @@ import OffsiderIOSDevice
 import Testing
 @testable import Offsider
 
-@Suite("Physical iOS device routing")
+@Suite("Physical iOS device routing", .personOutput)
 @MainActor
 struct IOSDeviceRoutingTests {
     static let phone = "00008130-0000000000000ABC"

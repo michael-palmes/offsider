@@ -59,11 +59,17 @@ public struct DeviceSummary: Equatable, Sendable {
 public enum DeviceListRenderer {
     public static let jsonVersion = 1
 
-    public static func table(_ devices: [DeviceSummary]) -> String {
+    /// The most characters a device name, state or OS shows in the table.
+    public static let maxNameCharacters = 80
+
+    /// Names come from the device, so they are escaped, and quoted for an agent.
+    public static func table(_ devices: [DeviceSummary], profile: OutputProfile = .current) -> String {
         let header = ["PLATFORM", "STATE", "ID", "NAME", "OS"]
         let rows: [[String]] = [header] + devices.map { device -> [String] in
-            let name: String = device.allowed == true ? device.name + " (allowed)" : device.name
-            return [device.platform.rawValue, device.state, device.id, name, device.osVersion ?? "-"]
+            let shown = TerminalText.field(device.name, cap: maxNameCharacters, profile: profile)
+            let name: String = device.allowed == true ? shown + " (allowed)" : shown
+            return [device.platform.rawValue, TerminalText.line(device.state, cap: maxNameCharacters), TerminalText.line(device.id, cap: maxNameCharacters), name,
+                    device.osVersion.map { TerminalText.line($0, cap: maxNameCharacters) } ?? "-"]
         }
         let widths = header.indices.map { column in rows.map { $0[column].count }.max() ?? 0 }
         return rows.map { row in
@@ -81,6 +87,10 @@ public enum DeviceListRenderer {
         guard !devices.isEmpty else {
             return "{\n  \"version\": \(jsonVersion),\n  \"devices\": [],\n  \"hiddenPhysical\": \(hiddenPhysical)\n}\n"
         }
+        // The values each device reports about itself.
+        let paths = ["devices[].name"]
+            + (devices.contains { $0.osVersion != nil } ? ["devices[].osVersion"] : [])
+            + (devices.contains { $0.deviceType != nil } ? ["devices[].deviceType"] : [])
         let objects = devices.map { device -> String in
             let allowed: String = device.allowed.map { $0 ? "true" : "false" } ?? "null"
             let fields: [(String, String)] = [
@@ -101,7 +111,8 @@ public enum DeviceListRenderer {
             let body = fields.map { "      \(string($0.0)): \($0.1)" }.joined(separator: ",\n")
             return "    {\n\(body)\n    }"
         }
-        return "{\n  \"version\": \(jsonVersion),\n  \"devices\": [\n\(objects.joined(separator: ",\n"))\n  ],\n  \"hiddenPhysical\": \(hiddenPhysical)\n}\n"
+        let document = "{\n  \"version\": \(jsonVersion),\n  \"devices\": [\n\(objects.joined(separator: ",\n"))\n  ],\n  \"hiddenPhysical\": \(hiddenPhysical)\n}\n"
+        return UntrustedPaths.appending(paths, to: document)
     }
 
     static func stamp(_ stamp: ProcessStamp) -> String {
@@ -122,10 +133,10 @@ public enum DeviceListRenderer {
         return "{\"label\": \(label), \"since\": \(since), \"expiresAt\": \(expiresAt), \"mine\": \(mine)}"
     }
 
+    /// Escaped as `OrderedJSON` escapes, so DEL, C1, bidi and tag characters never pass.
     private static func string(_ value: String) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .withoutEscapingSlashes
-        let data = (try? encoder.encode(value)) ?? Data("\"\"".utf8)
-        return String(decoding: data, as: UTF8.self)
+        var output = ""
+        OrderedJSON.writeString(value, to: &output)
+        return output
     }
 }

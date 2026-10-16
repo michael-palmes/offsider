@@ -83,9 +83,8 @@ private enum Runtime {
         guard class_respondsToSelector(type, NSSelectorFromString(selector)), let method = class_getMethodImplementation(type, NSSelectorFromString(selector)) else {
             throw MediaStreamRuntimeError(description: "\(NSStringFromClass(type)) has no \(selector)")
         }
-        if let expected = MediaStreamSymbols.encodings[selector] {
-            try PrivateAPIGuard.requireMethod(type, NSSelectorFromString(selector), encoding: expected, framework: "AVConference", owner: "macOS")
-        }
+        let expected = try PrivateAPIGuard.recordedEncoding(selector, in: MediaStreamSymbols.encodings, framework: "AVConference")
+        try PrivateAPIGuard.requireMethod(type, NSSelectorFromString(selector), encoding: expected, framework: "AVConference", owner: "macOS")
         return unsafeBitCast(method, to: F.self)
     }
 
@@ -278,7 +277,7 @@ enum ImageQueueTap {
                 _ = try Runtime.implementation(type, selector, as: IMP.self)
             }
             _ = try Runtime.implementation(try Runtime.type(MediaStreamSymbols.streamOutputClass), MediaStreamSymbols.streamOutputInit, as: IMP.self)
-            try PrivateAPIGuard.requireMethod(type, NSSelectorFromString(MediaStreamSymbols.start), encoding: MediaStreamSymbols.encodings[MediaStreamSymbols.start]!, framework: "AVConference", owner: "macOS")
+            try PrivateAPIGuard.requireMethod(type, NSSelectorFromString(MediaStreamSymbols.start), encoding: try PrivateAPIGuard.recordedEncoding(MediaStreamSymbols.start, in: MediaStreamSymbols.encodings, framework: "AVConference"), framework: "AVConference", owner: "macOS")
             guard let method = class_getInstanceMethod(type, NSSelectorFromString(MediaStreamSymbols.start)) else {
                 throw MediaStreamRuntimeError(description: "\(MediaStreamSymbols.imageQueueClass) has no \(MediaStreamSymbols.start)")
             }

@@ -148,7 +148,7 @@ struct ElementSelectorOptions: ParsableArguments {
             if let hasValue {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
                 guard !valued.isEmpty else {
-                    let actual = pool[0].normalizedValue.map { "has value '\(TerminalText.line($0, keepsTab: false))'" } ?? "has no value"
+                    let actual = pool[0].normalizedValue.map { "has value '\(LogRedactor.redactValue(TerminalText.line($0, keepsTab: false)).text)'" } ?? "has no value"
                     let labelled = pool.contains { AccessibilityQuery.label(hasValue).matches($0) }
                     let hint = labelled ? "; '\(hasValue)' is its label: use --label '\(hasValue)'" : ""
                     return absent("\(actual), expected '\(hasValue)'\(hint)")

@@ -41,6 +41,9 @@ enum HIDBrokerLiveness: Equatable {
     case absent
 }
 
+/// The broker closed the connection before sending a byte: the way it refuses a peer whose code it does not accept.
+struct HIDBrokerClosedError: Error {}
+
 struct HIDBrokerSocketIdentity: Equatable {
     let device: dev_t
     let inode: ino_t
@@ -84,15 +87,18 @@ extension HIDBroker {
         let descriptor = try connector(endpoint)
         do {
             try configureReceiveTimeout(descriptor, milliseconds: timeoutMilliseconds)
-            let data = try readMessage(from: descriptor)
+            let data = try readMessage(from: descriptor, withinMilliseconds: timeoutMilliseconds)
             let handshake = try JSONDecoder().decode(HIDBrokerHandshake.self, from: data)
             guard handshake.ready else { throw HIDBrokerNotReadyError() }
             try configureReceiveTimeout(descriptor, milliseconds: clientResponseTimeoutMilliseconds)
             return descriptor
         } catch {
-            Darwin.close(descriptor)
+            defer { Darwin.close(descriptor) }
             if let notReady = error as? HIDBrokerNotReadyError {
                 throw notReady
+            }
+            if error is HIDBrokerClosedError {
+                try replaceRefusingBroker(on: descriptor, reconnect: { try connector(endpoint) })
             }
             throw HIDBrokerNotReadyError(
                 diagnosticDescription: "The broker readiness handshake failed: \(error.localizedDescription)",
@@ -100,6 +106,38 @@ extension HIDBroker {
                 allowsReplacementAfterProcessExit: true
             )
         }
+    }
+
+    /// A broker that closed before its handshake may have refused this command's code. One from another build is stopped so a fresh one
+    /// starts; one from this build that refuses a second connection too is a dead end named in one line. Anything else is left to the retry loop.
+    static func replaceRefusingBroker(
+        on descriptor: Int32,
+        reconnect: () throws -> Int32,
+        requirement: () throws -> PeerCodeIdentity.Requirement = { try PeerCodeIdentity.ownRequirement() },
+        stop: (pid_t) -> Void = { _ = kill($0, SIGTERM) }
+    ) throws {
+        guard isSameUserPeer(descriptor), let requirement = try? requirement() else { return }
+        let verdict = PeerCodeIdentity.check(peer: descriptor, requirement: requirement)
+        guard verdict.identified, verdict.pid > 0, verdict.pid != getpid() else { return }
+        guard verdict.accepted else {
+            stop(verdict.pid)
+            throw HIDBrokerNotReadyError(diagnosticDescription: "A broker from another Offsider build refused this command; it was stopped so a fresh one starts.")
+        }
+        guard let again = try? reconnect() else { return }
+        defer { Darwin.close(again) }
+        do {
+            _ = try readMessage(from: again, withinMilliseconds: serverIOTimeoutMilliseconds)
+            return
+        } catch is HIDBrokerClosedError {
+            guard PeerCodeIdentity.peerPID(of: again) == verdict.pid else { return }
+        } catch {
+            return
+        }
+        throw CLIError(
+            errorDescription: "The simulator input broker refused this command although both are the same Offsider build. Run `offsider doctor`.",
+            reason: .hidBrokerFailed,
+            hint: "offsider doctor"
+        )
     }
 
     static func acquireStartupLock(
@@ -196,7 +234,7 @@ extension HIDBroker {
         let response: HIDBrokerResponse
         do {
             try writeAll(requestData, to: descriptor)
-            let responseData = try readMessage(from: descriptor)
+            let responseData = try readMessage(from: descriptor, withinMilliseconds: clientResponseTimeoutMilliseconds)
             response = try JSONDecoder().decode(HIDBrokerResponse.self, from: responseData)
         } catch {
             throw CLIError(errorDescription: "HID request outcome is unknown and was not replayed: \(error.localizedDescription)", reason: .inputOutcomeUnknown)
@@ -293,19 +331,36 @@ extension HIDBroker {
         guard unlink(path) == 0 || errno == ENOENT else { throw posixError("unlink") }
     }
 
-    static func readMessage(from descriptor: Int32) throws -> Data {
+    /// One newline-ended message, read before one deadline for all of it, so a peer trickling bytes cannot stretch it.
+    static func readMessage(
+        from descriptor: Int32,
+        withinMilliseconds milliseconds: Int,
+        monotonicNow: () -> UInt64 = monotonicTimeNanoseconds
+    ) throws -> Data {
+        let deadline = monotonicNow() + UInt64(max(1, milliseconds)) * 1_000_000
+        let timedOut = CLIError(errorDescription: "HID broker read timed out.", reason: .hidBrokerFailed)
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
         while data.count <= maximumMessageBytes {
+            let now = monotonicNow()
+            guard now < deadline else { throw timedOut }
+            var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+            let ready = Darwin.poll(&poller, 1, Int32(clamping: max(1, (deadline - now) / 1_000_000)))
+            if ready == 0 { throw timedOut }
+            if ready < 0 {
+                if errno == EINTR { continue }
+                throw posixError("poll")
+            }
             let count = Darwin.read(descriptor, &buffer, buffer.count)
             if count < 0 {
                 if errno == EINTR { continue }
-                if errno == EAGAIN || errno == EWOULDBLOCK {
-                    throw CLIError(errorDescription: "HID broker read timed out.", reason: .hidBrokerFailed)
-                }
+                if errno == EAGAIN || errno == EWOULDBLOCK { throw timedOut }
                 throw posixError("read")
             }
-            if count == 0 { break }
+            if count == 0 {
+                if data.isEmpty { throw HIDBrokerClosedError() }
+                break
+            }
             if let newline = buffer[..<count].firstIndex(of: 0x0A) {
                 data.append(contentsOf: buffer[..<newline])
                 return data

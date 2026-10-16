@@ -6,6 +6,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `offsider.mask.json`, found like `offsider.login.json` (from the working directory up to the repository root), names what every capture and tree hides: `ids`, `labels`, `labelContains`, `valuePatterns` (case-insensitive, bounded counts only) and `emails`. Screenshots, batch screenshot steps and evidence runs paint what it names, `describe-ui`, `--verify` change lists and `wait` and `assert` output show those values as `[redacted]`, the tree cache never stores them, and `record-video` and `stream-video` refuse with `video_unmasked` while a named element is on screen. A broken file stops the command (exit 64) with the line and key to fix. `offsider.mask.example.json` at the repository root shows every key.
+- `describe-ui` hides one-time codes, card numbers, wallet addresses and recovery phrases in labels and values (`[redacted]`, `[redacted card]`, `[redacted address]`, `[redacted phrase]`), never ids. Text output ends `# redacted: N values`, and JSON adds `redacted` and `revealed` after `context` when either is above zero. `--has-value` and `--label-contains` still compare the real text, and a match only the real text holds says so.
+- A password field whose show-password toggle turned it into plain text is caught: the tree cache records each password field's id and frame, and a later read on the same boot that finds a plain field there shows its value as bullets, counts it as `revealed`, paints it in screenshots and keeps it out of the cache.
+- `offsider init` adds permission rules for the agents installed on this Mac, ticked by default: Claude Code's `~/.claude/settings.json` (merged into `permissions.deny` and `permissions.ask`, nothing else touched) when `~/.claude` exists, and `~/.codex/rules/offsider.rules` when `~/.codex` exists. They deny `credential join`, `describe-ui --raw-source`, `device-access`, `runner build --register-device`, `unlock-code` and `wake --unlock`, and ask before `login`, `credential`, `permission`, `type --file`, `--no-mask-secure` captures and raw `adb` and `devicectl`. `--no-rules` installs the skill only, `--rules-only` adds the rules alone and `--print-rules` prints them as JSON. A second run adds only what is missing, and a malformed file is left as is with one line naming the fix.
+- `doctor` checks `install.rules` (warns when an installed agent lacks the rules: `offsider init --rules-only`) and `xcode.private-api`, which compares the private method types Offsider recorded with the selected Xcode's and warns when CoreDevice is newer than the last version tested.
+- `logs --all` reads the whole device's log, every app's included.
+- `device-access allow` offers "Any app and all logs" for an Android phone (stored as the app `*`): any app the deny-list allows, plus whole-device `logs`.
+- An agent output profile: when standard output is not a terminal, untrusted names in text are always quoted, and `screenshot --no-mask-secure`, `batch --no-mask-secure`, `OFFSIDER_MASK_SECURE=0` and `describe-ui --raw-source` need a person at a terminal (`person_required` otherwise). `OFFSIDER_OUTPUT=person` or `agent` overrides the check.
+- JSON output adds a top-level `untrusted` list of the paths whose values came from a device, an app or an agent-written note (`devices[].name`, `error.message`, `users[].about` and so on), only when one is present, so existing output is unchanged.
+- A managed `deniedBundleIDs` key (forced values only) extends the deny-list on every platform; an entry ending in `.` is a prefix.
+- `OFFSIDER_TIMINGS=1` prints a `foreground-recheck` phase for the app check that follows input.
+- CI runs the unit tests under AddressSanitizer, and a weekly job fuzzes every parser that reads device, daemon or file bytes.
+- `device-access remove` on a terminal asks whether to uninstall an iPhone's runner too; off a terminal it prints the `session stop --clean` command.
+
+### Changed
+
+- `device-access allow` preselects one app: `offsider.login.json`'s app when it is installed, else on Android the app in front. "Any app" is never preselected and reads "every app on the phone, banking and messages included". An Android phone allowed for any app now drives only the app each command names (`--app`, else `offsider.login.json`'s `package`), as an iPhone does, and exits 1 `app_not_allowed` with neither.
+- `--app` on `describe-ui`, `tap`, `type`, `wait`, `assert` and their batch steps names the app on an allowed Android phone too.
+- On an allowed Android phone, a tree read also checks the active window, so the notification shade or quick settings open over the app is refused with `app_not_allowed`; the app's own dialogs pass. It costs no extra device read.
+- Input clears the iPhone or iPad's "app in front" check, so a screenshot or frame after input in the same command checks again (one `/foreground` request, about 20 ms). On an Android phone the app in front is read before every input step, not once per command, and again for a capture after input.
+- `logs` on a simulator or emulator with no `--app`, `--rn` or `--process` reads only the app `offsider.login.json` names, when it names one, and says so; `--all` reads the whole device. On an allowed Android phone `logs` reads one allowed app (the single pin, else `offsider.login.json`'s package) and `--app` must be allowed; `--all`, `--process` and a read with no app need "Any app and all logs" (`app_not_allowed` otherwise).
+- `logs --grep` and `--exclude` match the message after redaction, so they can no longer test for a redacted value.
+- `permission ... --app <package>` on an allowed Android phone, `show` included, needs an allowed app that is not on the deny-list (`app_not_allowed` otherwise).
+- `OFFSIDER_IOS_TEAM_ID` no longer overrides the team a person chose in `device-access allow`: a different value exits 64; with no team in the allowance it still serves.
+- `runner build --register-device` asks for Touch ID or the login password, and the first device build under a new `OFFSIDER_IOS_RUNNER_PREFIX` needs a person to run `offsider runner build --device <udid>` once (`person_required` from any other command).
+- `session stop --clean` and `runner stop --clean` work for a device whose allowance expired or was removed, when this Mac holds its runner build or session record.
+- `runner.log` is deleted on every `session stop` and `runner stop`, not only with `--clean`.
+- The simulator HID broker and the iPhone session broker serve only the Offsider build they run from: each checks the connecting process's code signature against its own designated requirement, once per connection (well under a millisecond on a debug build). After `swift build`, the first command replaces a broker from the previous build.
+- The iPhone session broker rechecks the device's allowance, its seal and USB every 30 s, and stops (clearing the screen-sharing indicator) when any lapses; a new client must send its first request within 10 s.
+- The simulator HID broker gives each message one 2 s deadline, stops at its next idle moment once 12 hours old, starts in its own session, and writes its output to `logs/hid-<name>.log` in the private directory. Both brokers turn off core dumps and keep at most 256 open files.
+- Short-lived tools Offsider runs (`simctl`, `devicectl`, adb biometrics and doctor probes) get the allow-listed environment instead of the caller's whole one.
+- Every coordinate, delta and distance on `tap`, `swipe`, `drag`, `touch`, `gesture` and their batch steps must be a finite number from -100000 to 100000 (exit 64). Display sizes a device reports above 16,384 pixels a side are refused.
+- Text from the screen inside an error is double-quoted: `Did you mean "Sign In"`, `covered by other "Promo banner"`, `use --label "Done"`. The caller's own selector keeps single quotes.
+- `Error:` and `Try:` lines and a JSON error's `message` and `hint` show at most 4,096 characters, ending `…(+N)`.
+- `list-devices --json`, `doctor --json` and `describe-ui --raw-source` escape DEL, C1, bidi, invisible and tag characters as `\uXXXX`, and `list-devices` cuts names to 80 characters in its table.
+- `describe-ui --raw-source` refuses a capture deeper than 136 levels or holding more than 200,000 objects (`command_failed`).
+- The browser and system app deny-list matches by prefix (Chrome Beta, Dev and Canary, Firefox and Focus, Samsung's apps) and adds Outlook, Gmail on iOS, 1Password, Bitwarden, Authy, Microsoft and Google Authenticator and Find My.
+- `type --file` and `batch --file` also refuse `~/.android/adbkey`, shell history files, `*.jks`, `*.keystore`, `credentials*.json` and `*.tfstate`. `--allow-path` on such a file asks for Touch ID or the login password, and without a terminal exits 1 `person_required`.
+- On Android, text typed from `--stdin`, `--file` or a batch step into a field whose focus cannot be read goes only through the UiAutomation helper (exit 9 `helper_unavailable`, nothing sent, without it), never `input text`.
+- On Android, a password field inside GeckoView or Crosswalk counts as web content, as a WebView does.
+- `credential status`, `describe` and `set` `--json` add `untrusted`, naming the notes present, since agents write them.
+- `doctor --device emulator-N` checks that the serial is not a USB device before any other check.
+- The tree cache masks the evidence run's and `offsider.mask.json`'s ids and emails before it writes, and every command that reads the cache sweeps expired files.
+- Swift tools version 6.2: `OffsiderCore` builds with strict memory safety checking, and every target stays in Swift 5 language mode.
+- A pull request's head commit must be signed by a key in the base branch's `.github/allowed_signers`, whatever it changes.
+- The release verify job runs the signed binary through commands that load CoreSimulator and SimulatorKit and fails on any library validation rejection in the system log. The release notes and the README's attestation check add `--deny-self-hosted-runners`.
+
+### Fixed
+
+- `credential join` repairs a link that existed only in the index, such as one saved before 0.12, instead of answering "already linked" while `login` kept refusing it.
+- `logs` masks a sensitive key's whole array or object value (`{"mnemonic":["abandon", …]}`, `privateKey: {…}`) and a recovery phrase logged as a quoted list.
+- `tap -x inf` or `-x 1e19` on Android no longer crashes Offsider.
+- A FIFO, device or symlink in the emulator's `running/` folder, an AVD's `.ini` files or another Android host file no longer hangs or floods every Android command: these files are read as regular files of at most 1 MiB.
+- An adb packet announcing more than 64 MB is refused at its header, a streamed line or error over 1 MB stops the read, and `batch --stdin` reads at most 16 MB.
+- If adb cannot list devices, an `emulator-N` serial is refused (`device_list_failed`) instead of being driven unchecked.
+- A private method whose type Offsider never recorded is refused (`xcode_unusable`) instead of called, and the simulator orientation reader checks its two casts.
+- `logs --raw` drops the conceal code (`ESC[8m`), and more blank-looking characters (U+034F, U+115F, U+1160, U+17B4, U+17B5, U+180B to U+180D, U+2800, U+3164, U+FFA0) print as escapes.
+- Device names, error text from capture, video and log copies, and Android and iPhone warnings are escaped before they print.
+
+### Removed
+
+- "Any app" as the recommended row of `device-access allow`.
+- The advice to pipe text with `--stdin` when an Android field's focus cannot be read: piped text now takes the same path.
+
 ## [0.12.0] - 2026-10-15
 
 ### Added

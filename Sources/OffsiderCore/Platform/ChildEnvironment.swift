@@ -4,6 +4,8 @@ import Foundation
 public enum ChildEnvironment {
     public enum Profile: Sendable {
         case base
+        /// A short-lived Apple tool such as `xcrun simctl`, `devicectl` or `open`: the basics and Xcode's location.
+        case appleTool
         /// The Android Emulator: SDK and AVD locations, adb's port, mDNS and crash reporting off.
         case androidEmulator
         /// `adb start-server`: SDK and key locations, the server's socket and USB backend, mDNS off.
@@ -35,7 +37,7 @@ public enum ChildEnvironment {
     public static func make(_ profile: Profile, from environment: [String: String]) -> [String: String] {
         var result = environment.filter { allows(profile, $0.key) }
         switch profile {
-        case .base, .offsiderBroker, .xcodebuild:
+        case .base, .appleTool, .offsiderBroker, .xcodebuild:
             break
         case .androidEmulator:
             result["ADB_MDNS"] = "0"
@@ -50,6 +52,7 @@ public enum ChildEnvironment {
         if baseNames.contains(name) || name.hasPrefix("LC_") { return true }
         switch profile {
         case .base: return false
+        case .appleTool: return name == "DEVELOPER_DIR"
         case .androidEmulator: return androidSDKNames.contains(name)
         case .adbServer: return adbServerNames.contains(name)
         case .offsiderBroker: return name == "DEVELOPER_DIR" || name.hasPrefix("OFFSIDER_")

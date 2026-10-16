@@ -84,8 +84,10 @@ struct DoctorRunner {
         if frameworksLoaded {
             coreSimulator = DoctorProbes.coreSimulatorVersion()
             run.checks.append(DoctorCheckResult(id: .coreSimulator, verdict: DoctorRules.coreSimulator(version: coreSimulator, xcodeMajor: xcodeMajor)))
+            run.checks.append(DoctorCheckResult(id: .privateAPI, verdict: PrivateAPIDoctorRule.check()))
         } else {
             run.checks.append(.skipped(.coreSimulator, "requires xcode.frameworks"))
+            run.checks.append(.skipped(.privateAPI, "requires xcode.frameworks"))
         }
 
         var deviceHubProcessIdentifier: pid_t?

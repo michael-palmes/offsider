@@ -108,4 +108,32 @@ struct AssertCommandTests {
             try Assert.parse(["--gone", "--device", Self.device.rawValue])
         }
     }
+
+    // MARK: Redaction
+
+    @Test("--has-value compares the real value, and the report shows it redacted with a note")
+    func hasValueRedacted() async throws {
+        let card = "4111 1111 1111 1111"
+        let (command, outcome, _) = try await Self.check(["--id", "count", "--has-value", card], on: Self.screen(countValue: card))
+
+        #expect(outcome.met)
+        #expect(Wait.redactionNote(outcome, checked: command.selector) == " (matched on the real text; describe-ui shows it redacted)")
+        let json = WaitReport(Wait.shown(outcome)).jsonLine()
+        #expect(json.contains("[redacted card]") && !json.contains("4111"))
+    }
+
+    @Test("a mismatch never prints a secret value the tree output hides")
+    func mismatchRedacted() async throws {
+        let (command, outcome, _) = try await Self.check(["--id", "count", "--has-value", "3"], on: Self.screen(countValue: "4111 1111 1111 1111"))
+
+        #expect(!outcome.met)
+        #expect(LogRedactor.redactValue(command.failureLine(outcome)).text == "✗ Assertion failed: --id 'count' has value '[redacted card]', expected '3'.")
+        #expect(!WaitReport(Wait.shown(outcome)).jsonLine().contains("4111"))
+    }
+
+    @Test("an ordinary match carries no redaction note")
+    func noNote() async throws {
+        let (command, outcome, _) = try await Self.check(["--id", "count", "--has-value", "3"], on: Self.screen(countValue: "3"))
+        #expect(Wait.redactionNote(outcome, checked: command.selector).isEmpty)
+    }
 }

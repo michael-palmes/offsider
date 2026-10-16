@@ -118,7 +118,7 @@ public struct TreeDiff: Equatable, Sendable {
         for root in tree.roots {
             visit(root, depth: 0)
         }
-        return SHA256.hash(data: Data(canonical.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return SHA256.hash(data: Data(canonical.utf8)).prefix(8).map { unsafe String(format: "%02x", $0) }.joined()
     }
 
     private static let lineFields = Set(UIField.allCases).subtracting([.native])

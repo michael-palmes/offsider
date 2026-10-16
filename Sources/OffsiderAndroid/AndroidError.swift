@@ -509,14 +509,6 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    /// Text from a command argument goes through the helper when the focused field cannot be read, since it may be a password field.
-    static func unreadableFocusNeedsHelper(_ serial: String) -> AndroidError {
-        AndroidError(
-            .helperUnavailable,
-            "Offsider could not read the focused field on \(serial), so it may be a password field, and text given as an argument then goes only through the UiAutomation helper, which is unavailable. The text was not sent. Check the screen with `offsider describe-ui --device \(serial)`, or pipe the text in with --stdin, then retry."
-        )
-    }
-
     static func appNotAllowed(_ serial: String, refusal: String) -> AndroidError {
         AndroidError(
             .appNotAllowed,

@@ -22,16 +22,6 @@ enum IOSDevicePinning {
 
     /// Why `app` may not be driven on the device, or nil when it may.
     static func refusal(_ app: String, allowance: DeviceAllowance, policy: PhysicalDevicePolicy, audience: ErrorAudience = .current) -> String? {
-        if let why = SystemAppDenyList.refusal(app, platform: .ios) {
-            return "\(app) is \(why); Offsider never drives it on a physical device. Nothing was read or sent."
-        }
-        guard policy.permits(app: app, on: allowance) else {
-            let managed = policy.managed.allowedBundleIDs.map { !$0.contains(app) } ?? false
-            return managed
-                ? "Managed policy on this Mac does not list \(app), and the allow-list cannot override it. Nothing was read or sent."
-                : "\(app) is not among the apps allowed on \(allowance.name) (\(allowance.key)). Nothing was read or sent."
-                    + audience.personStep("offsider device-access allow", agentTail: ", choose \(allowance.name) (\(allowance.key)) and pin \(app)")
-        }
-        return nil
+        policy.appRefusal(app, on: allowance, audience: audience)
     }
 }

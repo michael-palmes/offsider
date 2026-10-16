@@ -1,4 +1,4 @@
-// swift-tools-version:5.10
+// swift-tools-version:6.2
 import Foundation
 import PackageDescription
 
@@ -49,7 +49,11 @@ let package = Package(
     targets: [
         .target(
             name: "OffsiderCore",
-            path: "Sources/OffsiderCore"
+            path: "Sources/OffsiderCore",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+                .strictMemorySafety()
+            ]
         ),
         .target(
             name: "OffsiderAndroid",
@@ -62,12 +66,14 @@ let package = Package(
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
             path: "Sources/OffsiderAndroid",
-            exclude: ["Grpc/Proto"]
+            exclude: ["Grpc/Proto"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
             name: "OffsiderIOSDevice",
             dependencies: ["OffsiderCore"],
-            path: "Sources/OffsiderIOSDevice"
+            path: "Sources/OffsiderIOSDevice",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
             name: "Offsider",
@@ -88,6 +94,7 @@ let package = Package(
                 .copy("Resources/runner")
             ],
             swiftSettings: [
+                .swiftLanguageMode(.v5),
                 .unsafeFlags(["-parse-as-library"] + idbPrivateHeaderSearchFlags)
             ],
             linkerSettings: [
@@ -108,6 +115,7 @@ let package = Package(
             path: "Tests",
             exclude: ["Fixtures", "Goldens", "IOSDevice/Fixtures"],
             swiftSettings: [
+                .swiftLanguageMode(.v5),
                 .unsafeFlags(idbPrivateHeaderSearchFlags)
             ]
         ),
@@ -134,3 +142,16 @@ let package = Package(
         ),
     ]
 )
+
+// The fuzz driver builds only on request (OFFSIDER_FUZZ=1, debug builds for its @testable imports) and never ships.
+if ProcessInfo.processInfo.environment["OFFSIDER_FUZZ"] == "1" {
+    package.products.append(.executable(name: "OffsiderFuzz", targets: ["OffsiderFuzz"]))
+    package.targets.append(
+        .executableTarget(
+            name: "OffsiderFuzz",
+            dependencies: ["OffsiderCore", "OffsiderAndroid", "OffsiderIOSDevice"],
+            path: "Sources/OffsiderFuzz",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        )
+    )
+}

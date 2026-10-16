@@ -52,12 +52,11 @@ struct Swipe: AsyncParsableCommand {
 
 
     func validate() throws {
-        // Validate coordinates are non-negative
+        if let problem = Coordinates.problem([("--start-x", startX), ("--start-y", startY), ("--end-x", endX), ("--end-y", endY), ("--delta", delta)]) {
+            throw ValidationError(problem)
+        }
         guard startX >= 0, startY >= 0, endX >= 0, endY >= 0 else {
             throw ValidationError("Coordinates must be non-negative values.")
-        }
-        guard [startX, startY, endX, endY].allSatisfy(\.isFinite) else {
-            throw ValidationError("Coordinates must be finite numbers.")
         }
         
         // Validate duration if provided

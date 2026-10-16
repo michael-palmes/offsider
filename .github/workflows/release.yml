@@ -347,6 +347,33 @@ jobs:
           scripts/release.sh unpack-archive --version "$VERSION"
           scripts/release.sh verify --version "$VERSION" --check-notarization
 
+      # Library validation proof: run the signed binary through the commands that load CoreSimulator
+      # and SimulatorKit, then fail on any library validation or Team ID rejection in the unified log.
+      - name: Prove library validation on the signed binary
+        run: |
+          set -uo pipefail
+          bin="dist/offsider-${VERSION}-arm64/offsider"
+          [ -x "$bin" ] || { echo "::error::$bin not found"; exit 1; }
+          since="$(date '+%Y-%m-%d %H:%M:%S')"
+          "$bin" --version || { echo "::error::offsider --version failed (exit $?)"; exit 1; }
+          "$bin" doctor --json > "$RUNNER_TEMP/doctor.json"; rc=$?
+          # 3 and 4 are doctor's warning and failure exits on a runner with no devices; a signal or a load failure is not.
+          case "$rc" in 0|3|4) ;; *) echo "::error::offsider doctor --json exited $rc"; exit 1 ;; esac
+          bundle="$(jq -r '.checks[] | select(.id == "install.bundle") | .status' "$RUNNER_TEMP/doctor.json")"
+          [ "$bundle" = pass ] || { echo "::error::doctor's install.bundle check is '${bundle:-missing}', not pass"; exit 1; }
+          "$bin" list-devices --json > "$RUNNER_TEMP/devices.json"; rc=$?
+          # 9 is tool_missing: no Android SDK on the runner.
+          case "$rc" in 0) jq -e 'type == "array" or type == "object"' "$RUNNER_TEMP/devices.json" > /dev/null || { echo "::error::list-devices printed no JSON"; exit 1; } ;; 9) ;; *) echo "::error::offsider list-devices --json exited $rc"; exit 1 ;; esac
+          hits="$(log show --start "$since" --style compact \
+            --predicate '(eventMessage CONTAINS[c] "library validation" OR eventMessage CONTAINS[c] "different Team IDs") AND (process == "offsider" OR eventMessage CONTAINS[c] "offsider")' \
+            | grep -Ei 'library validation|different Team IDs' || true)"
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::the unified log shows a library validation rejection for offsider; check the frameworks' Team ID and signature"
+            exit 1
+          fi
+          echo "Library validation held: no rejection logged since $since"
+
       # Pre-publish gate: install the exact tarball through a local tap with the same formula
       # template, then prove Homebrew left every byte and the Developer ID signatures intact.
       - name: Homebrew gate
@@ -475,7 +502,8 @@ jobs:
 
               shasum -a 256 -c SHA256SUMS
               gh attestation verify ${ARCHIVE} --repo ${GITHUB_REPOSITORY} \\
-                --signer-workflow ${GITHUB_REPOSITORY}/.github/workflows/release.yml --source-ref refs/tags/${TAG}
+                --signer-workflow ${GITHUB_REPOSITORY}/.github/workflows/release.yml --source-ref refs/tags/${TAG} \\
+                --deny-self-hosted-runners
 
           Signed with a Developer ID Application certificate, hardened runtime, notarised by Apple.
           EOF

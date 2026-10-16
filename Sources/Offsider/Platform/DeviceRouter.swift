@@ -91,6 +91,42 @@ enum DeviceRouter {
         return allowance
     }
 
+    /// The phone's offsider.login.json package, read only when a phone allowed for any app needs one.
+    @TaskLocal static var profilePackage: @Sendable () -> String? = { (try? LoginProfiles.load(project: nil, warn: { _ in }))??.package }
+
+    /// Pinned apps within the managed ceiling; a phone allowed for any app drives only the app each command names, offsider.login.json's package by default.
+    static func appScope(for allowance: DeviceAllowance, policy: PhysicalDevicePolicy, profilePackage: () -> String?) -> AndroidAppScope {
+        let ceiling = policy.managed.allowedBundleIDs.map(Set.init)
+        guard allowance.pinnedApps.isEmpty else {
+            return AndroidAppScope(permitted: policy.permittedApps(for: allowance) ?? [], managedCeiling: ceiling)
+        }
+        return AndroidAppScope(permitted: [], managedCeiling: ceiling, needsTarget: true, target: profilePackage().flatMap { $0.isEmpty ? nil : $0 })
+    }
+
+    /// An `emulator-N` serial the adb server lists over USB is a phone in disguise; a list that cannot be read refuses too, so nothing reaches an unchecked device.
+    nonisolated static func requireEmulator(_ serial: String, isUSBRow: (String) async throws -> Bool) async throws {
+        let usb: Bool
+        do {
+            usb = try await isUSBRow(serial)
+        } catch let error as PlatformUnavailable {
+            throw error
+        } catch let error as AndroidError where [.sdkVariableWithoutAdb, .nonLoopbackAdbServer, .invalidAdbServerSetting, .foreignAdbServer, .adbServerStartFailed].contains(error.kind) {
+            throw error
+        } catch {
+            throw CLIError(
+                errorDescription: "adb could not list devices, so Offsider cannot confirm \(serial) is an emulator and sent nothing to it. Start adb with `ADB_MDNS=0 adb start-server`, then retry.",
+                reason: .deviceListFailed,
+                hint: "ADB_MDNS=0 adb start-server"
+            )
+        }
+        if usb {
+            throw CLIError(
+                errorDescription: "\(serial) is connected over USB: it is a physical device reporting an emulator's serial, so Offsider will not drive it. Nothing was sent to it.",
+                reason: .deviceNotAllowed
+            )
+        }
+    }
+
     private static func resolve(
         _ rawID: String,
         logger: OffsiderLogger,
@@ -112,12 +148,7 @@ enum DeviceRouter {
         case .androidSerial(let port):
             let serial = "emulator-\(port)"
             let backend = scope.adopt(AndroidBackend.make(logger: logger, host: host))
-            if (try? await backend.isUSBRow(serial: serial)) == true {
-                throw CLIError(
-                    errorDescription: "\(serial) is connected over USB: it is a physical device reporting an emulator's serial, so Offsider will not drive it. Nothing was sent to it.",
-                    reason: .deviceNotAllowed
-                )
-            }
+            try await requireEmulator(serial, isUSBRow: { try await backend.isUSBRow(serial: $0) })
             return Route(backend: backend, device: DeviceID(rawValue: serial, platform: .android))
         case .androidNetworkSerial(let serial):
             throw AndroidError.networkDevice(serial)
@@ -129,10 +160,7 @@ enum DeviceRouter {
             guard device.isPhysicalAndroidDevice else { return Route(backend: backend, device: device) }
             // Only the host-side device list has been read; nothing reaches the phone before this check.
             let allowance = try requireAllowed(platform: .android, key: serial, rawID: rawID, gate: gate)
-            let policy = gate.policy()
-            if let permitted = policy.permittedApps(for: allowance) {
-                backend.appScopes[serial] = AndroidAppScope(permitted: permitted, managedCeiling: policy.managed.allowedBundleIDs.map(Set.init))
-            }
+            backend.appScopes[serial] = appScope(for: allowance, policy: gate.policy(), profilePackage: profilePackage)
             return Route(backend: backend, device: device, allowance: allowance)
         case .empty:
             throw CLIError(errorDescription: "Device ID cannot be empty. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")

@@ -48,8 +48,9 @@ struct LocalFileSystem: FileSystemProbe {
             && FileManager.default.isExecutableFile(atPath: path)
     }
 
+    /// Through `UntrustedRead`: the emulator's `running/` folder and AVD files are anyone's to plant a FIFO or symlink in.
     func contents(atPath path: String) -> Data? {
-        FileManager.default.contents(atPath: path)
+        UntrustedRead.contents(atPath: path)
     }
 
     func contentsOfDirectory(atPath path: String) -> [String] {

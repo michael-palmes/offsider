@@ -156,11 +156,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// The helper's dump (else `uiautomator dump --compressed`) mapped to dp; with `point`, the deepest node there as the only root.
     public func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         try await requireDrivableForeground(id.rawValue)
-        return try await readTree(id, point: point)
+        return try await readTree(id, point: point, checkingWindows: true)
     }
 
     /// The tree without the phone deny-list check, for the lock screen `wake --unlock` reads.
-    func readTree(_ id: DeviceID, point: UIPoint?) async throws -> UITree {
+    func readTree(_ id: DeviceID, point: UIPoint?, checkingWindows: Bool = false) async throws -> UITree {
         let serial = id.rawValue
         let startedAt = Date()
         let roots: [UINode]
@@ -180,6 +180,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         tree.windows = windows
         tree.hiddenBranches = hidden
         tree.namedHiddenBranches = namedHidden
+        if checkingWindows {
+            try requireDrivableWindows(tree, on: serial)
+        }
         guard let point else {
             DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
             return tree

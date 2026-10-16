@@ -17,10 +17,10 @@ public enum CodeSignatureCheck {
     /// Throws unless the code at `path` is validly signed and satisfies `requirement`; `resources: false` skips sealed resources, which is what keeps a check on Xcode to tens of milliseconds.
     public static func validate(path: String, requirement: String, resources: Bool) throws {
         var code: SecStaticCode?
-        var status = SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code)
+        var status = unsafe SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code)
         guard status == errSecSuccess, let code else { throw Failure(step: "SecStaticCodeCreateWithPath", status: status) }
         var compiled: SecRequirement?
-        status = SecRequirementCreateWithString(requirement as CFString, [], &compiled)
+        status = unsafe SecRequirementCreateWithString(requirement as CFString, [], &compiled)
         guard status == errSecSuccess, let compiled else { throw Failure(step: "SecRequirementCreateWithString", status: status) }
         let flags: SecCSFlags = resources ? [] : SecCSFlags(rawValue: kSecCSDoNotValidateResources)
         status = SecStaticCodeCheckValidity(code, flags, compiled)

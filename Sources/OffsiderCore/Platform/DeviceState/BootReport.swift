@@ -79,6 +79,6 @@ public struct BootReport: Equatable, Sendable {
 
     /// `2.0 GB`.
     public static func memorySummary(_ kilobytes: Int) -> String {
-        String(format: "%.1f GB", Double(kilobytes) / 1_048_576)
+        unsafe String(format: "%.1f GB", Double(kilobytes) / 1_048_576)
     }
 }

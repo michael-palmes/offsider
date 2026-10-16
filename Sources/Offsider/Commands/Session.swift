@@ -78,6 +78,10 @@ struct SessionStop: AsyncParsableCommand {
         )
         for record in runners {
             await runnerManager.stop(record)
+            RunnerSessions.removeLog(udid: record.udid)
+        }
+        if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            RunnerSessions.removeLog(udid: udid)
         }
         let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid))
         var cleaned: RunnerCleanupReport?

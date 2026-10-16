@@ -4,7 +4,7 @@ import OffsiderCore
 import Testing
 @testable import Offsider
 
-@Suite("Screenshot masks")
+@Suite("Screenshot masks", .personOutput)
 @MainActor
 struct ScreenshotMaskTests {
     static let device = DeviceID(rawValue: "fake-device", platform: .ios)
@@ -459,5 +459,39 @@ struct ScreenshotMaskTests {
 
         #expect(records.allSatisfy { $0.ok })
         #expect(records.last?.jsonLine().contains(#""maskedBy":{"emails":1},"skippedBeneath":{"emails":0}"#) == true)
+    }
+
+    // MARK: - offsider.mask.json and revealed password fields
+
+    @Test("offsider.mask.json's ids are painted with the capture's own masks, and one that matches nothing is not a warning")
+    func configJoins() async throws {
+        let backend = try Self.backend([FakeUI.node(.text, id: "balance", label: "Balance", value: "$12", frame: FakeUI.frame(20, 100, 350, 30))])
+        let loaded = MaskConfigs.Loaded(config: MaskConfig(ids: ["balance", "elsewhere"]), path: "/repo/offsider.mask.json")
+        let result = try await MaskConfigs.$source.withValue({ loaded }) { try await Self.capture([], on: backend) }
+        defer { try? FileManager.default.removeItem(atPath: result.path) }
+
+        #expect(result.report.jsonLine().contains(#""maskedBy":{"id":1}"#))
+        #expect(result.report.maskUnmatched.isEmpty)
+        #expect(Self.point(result.image, 100, 115) == Self.black)
+        #expect(Self.point(result.image, 100, 300) == Self.white)
+    }
+
+    @Test("a password field revealed as plain text is painted as a password field")
+    func revealedPainted() async throws {
+        let fixture = try TreeCacheFixture()
+        let record = SecureFieldRecord(
+            platform: .ios, device: Self.device.rawValue, writtenAt: fixture.now, bootMarker: nil,
+            entries: [SecureFieldRecord.Entry(id: "password-field", frame: FakeUI.frame(16, 270, 361, 44))]
+        )
+        try OffsiderPrivateDirectory.writeAtomically(
+            record.encoded(), named: SecureFieldRecord.fileName(platform: .ios, device: Self.device.rawValue), in: fixture.directory
+        )
+        let revealed = FakeUI.node(.textField, id: "password-field", label: "Password", value: "hunter22", frame: FakeUI.frame(16, 270, 361, 44))
+        let backend = try Self.backend([revealed])
+        let result = try await fixture.run { try await Self.capture([], on: backend, environment: [:]) }
+        defer { try? FileManager.default.removeItem(atPath: result.path) }
+
+        #expect(result.report.jsonLine().contains(#""maskedBy":{"secure":1}"#))
+        #expect(Self.point(result.image, 200, 290) == Self.black)
     }
 }

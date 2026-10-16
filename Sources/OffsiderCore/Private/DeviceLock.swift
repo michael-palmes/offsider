@@ -88,7 +88,7 @@ extension DeviceBusy: OffsiderFailure {
 
     private static func seconds(_ duration: Duration) -> String {
         let value = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
-        return value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+        return unsafe value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
     }
 }
 
@@ -130,7 +130,7 @@ public final class DeviceLock: @unchecked Sendable {
             }
             let holder = DeviceLockHolder(pid: getpid(), command: command, startedAt: Date())
             let bytes = Array(holder.fileContents.utf8)
-            guard ftruncate(descriptor, 0) == 0, pwrite(descriptor, bytes, bytes.count, 0) == bytes.count else {
+            guard ftruncate(descriptor, 0) == 0, unsafe pwrite(descriptor, bytes, bytes.count, 0) == bytes.count else {
                 throw PrivateDirectoryError(.system(operation: "write", code: errno), path: path)
             }
             return DeviceLock(key: key, path: path, descriptor: descriptor)
@@ -159,7 +159,7 @@ public final class DeviceLock: @unchecked Sendable {
         startTime: (Int32) -> Date? = { ProcessStartTime.date(of: $0) }
     ) -> DeviceLockHolder? {
         let path = ((root as NSString).appendingPathComponent(OffsiderPrivateDirectory.locksDirectoryName) as NSString).appendingPathComponent(key.fileName)
-        let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let descriptor = unsafe open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { return nil }
         defer { Darwin.close(descriptor) }
         guard let holder = readHolder(descriptor),
@@ -188,7 +188,7 @@ public final class DeviceLock: @unchecked Sendable {
 
     private static func readHolder(_ descriptor: Int32) -> DeviceLockHolder? {
         var buffer = [UInt8](repeating: 0, count: 256)
-        let count = pread(descriptor, &buffer, buffer.count, 0)
+        let count = unsafe pread(descriptor, &buffer, buffer.count, 0)
         guard count > 0 else { return nil }
         return DeviceLockHolder.parse(String(decoding: buffer.prefix(count), as: UTF8.self))
     }

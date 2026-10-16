@@ -29,7 +29,7 @@ private final class AndroidLogSink: @unchecked Sendable {
         case .info:
             logger.info().log(message)
         case .warning:
-            FileHandle.standardError.write(Data("Warning: \(message)\n".utf8))
+            FileHandle.standardError.write(Data("Warning: \(TerminalText.block(TerminalText.capped(message, cap: TerminalText.maxErrorCharacters)))\n".utf8))
         }
     }
 }

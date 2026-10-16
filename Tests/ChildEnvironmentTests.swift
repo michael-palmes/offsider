@@ -42,4 +42,23 @@ struct ChildEnvironmentTests {
         #expect(Set(ChildEnvironment.make(.offsiderBroker, from: Self.caller).keys) == Self.base.union(["DEVELOPER_DIR", "OFFSIDER_IOS_SESSION_IDLE"]))
         #expect(Set(ChildEnvironment.make(.xcodebuild, from: Self.caller).keys) == Self.base.union(["DEVELOPER_DIR", "TEST_RUNNER_OFFSIDER_RUNNER_PORT", "HTTPS_PROXY", "NO_PROXY"]))
     }
+
+    @Test("a short-lived Apple tool keeps Xcode's location and nothing else beyond the basics")
+    func appleToolProfile() {
+        #expect(Set(ChildEnvironment.make(.appleTool, from: Self.caller).keys) == Self.base.union(["DEVELOPER_DIR"]))
+    }
+
+    @Test("a capture with no environment hands the child only the allow-list, never this process's whole environment")
+    func captureDefaultsToAllowList() async throws {
+        let result = try await ProcessCapture.run(executable: "/usr/bin/env", arguments: [], timeout: 10)
+        let names = Set(result.stdout.split(separator: "\n").compactMap { $0.split(separator: "=", maxSplits: 1).first.map(String.init) })
+        #expect(!names.isEmpty)
+        #expect(names.allSatisfy { ChildEnvironment.allows(.appleTool, $0) }, "\(names.sorted())")
+    }
+
+    @Test("a capture given an environment passes exactly that one")
+    func captureExplicitEnvironment() async throws {
+        let result = try await ProcessCapture.run(executable: "/usr/bin/env", arguments: [], environment: ["ANDROID_HOME": "/sdk"], timeout: 10)
+        #expect(result.stdout == "ANDROID_HOME=/sdk\n")
+    }
 }

@@ -69,15 +69,17 @@ public struct UITreeRenderOptions: Equatable, Sendable {
 
 public enum UITreeRenderer {
     /// Output for `describe-ui`, ending in a newline; default options give exactly `tree.jsonData()`.
-    public static func render(_ tree: UITree, _ options: UITreeRenderOptions) -> Data {
+    /// `marksUntrusted` adds each JSON document's `untrusted` list, naming the app's text it holds.
+    public static func render(_ tree: UITree, _ options: UITreeRenderOptions, marksUntrusted: Bool = false) -> Data {
         let fields = options.fields.map(Set.init)
+        let mark: (OrderedJSON, [String]) -> OrderedJSON = marksUntrusted ? UntrustedPaths.marked : { document, _ in document }
         let output: String
         switch options.format {
         case .json:
-            output = json(tree, options, fields: fields).rendered(compact: options.compact) + "\n"
+            output = mark(json(tree, options, fields: fields), untrustedPaths(flat: options.flat)).rendered(compact: options.compact) + "\n"
         case .ndjson:
-            let lines = [OrderedJSON.object(envelope(tree))]
-                + tree.flatEntries(options.filter).map { flatJSON($0, fields: fields) }
+            let lines = [mark(.object(envelope(tree)), contextUntrustedPaths)]
+                + tree.flatEntries(options.filter).map { mark(flatJSON($0, fields: fields), UntrustedPaths.nodeFields) }
             output = lines.map { $0.rendered(compact: true) + "\n" }.joined()
         case .text:
             output = text(tree, options, fields: fields)
@@ -92,7 +94,18 @@ public enum UITreeRenderer {
             ("device", .string(tree.device)),
             ("screen", tree.screen.map { $0.jsonValue(on: tree.platform) } ?? .null),
             ("context", tree.context.jsonValue),
-        ]
+        ] + tree.redactionMembers
+    }
+
+    /// The context's keys that carry the app's text.
+    static let contextUntrustedPaths = UntrustedPaths.under("context", [
+        "window.title", "presented.label", "presented.process", "staleFrame.id", "staleFrame.label",
+        "hiddenBranches[].id", "hiddenBranches[].label",
+    ])
+
+    /// Every path in a describe-ui JSON document that can carry the app's text: `nodes[]` when flat, else every node under `roots[]`.
+    static func untrustedPaths(flat: Bool) -> [String] {
+        contextUntrustedPaths + UntrustedPaths.under(flat ? "nodes[]" : "roots[].children[]**", UntrustedPaths.nodeFields)
     }
 
     static func json(_ tree: UITree, _ options: UITreeRenderOptions, fields: Set<UIField>?) -> OrderedJSON {
@@ -128,7 +141,7 @@ public enum UITreeRenderer {
         let result = UITreeEconomy.lines(tree, options, fields: shown) { node, label, value in
             line(node, shown, label: label, value: value)
         }
-        return UITreeEconomy.budgeted(
+        let body = UITreeEconomy.budgeted(
             result.lines,
             header: ([header(tree)] + tree.context.headerLines).joined(separator: "\n"),
             folded: result.folded,
@@ -137,6 +150,8 @@ public enum UITreeRenderer {
             beneath: result.beneath,
             offScreen: result.offScreen
         )
+        guard let redaction = tree.redaction, !redaction.isEmpty else { return body }
+        return body + redaction.footer + "\n"
     }
 
     static func header(_ tree: UITree) -> String {

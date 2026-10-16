@@ -120,7 +120,7 @@ struct LogsCommandTests {
         ]
         let line = LogReport(platform: .ios, device: "UDID", entries: entries, truncated: 2).jsonLine()
 
-        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\"","truncated":false},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null,"truncated":false}],"truncated":2,"redacted":0,"excluded":0}"#)
+        #expect(line == #"{"version":1,"platform":"ios","device":"UDID","entries":[{"timestamp":"2026-10-02T12:47:18.250Z","level":"Info","process":"Playground","pid":4100,"tag":"javascript","message":"saved \"draft\"","raw":"\u001b[32msaved\u001b[39m \"draft\"","truncated":false},{"timestamp":null,"level":null,"process":null,"pid":null,"tag":null,"message":"bare","raw":null,"truncated":false}],"truncated":2,"redacted":0,"excluded":0,"untrusted":["entries[].process","entries[].tag","entries[].message","entries[].raw"]}"#)
         let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         #expect((object["entries"] as? [Any])?.count == 2)
     }
@@ -150,8 +150,8 @@ struct LogsCommandTests {
             let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
             #expect(object.keys.contains("raw"))
         }
-        #expect(lines[0].hasSuffix(#""message":"one","raw":"1790945238.399  4100  4120 I ReactNativeJS: one","truncated":false}"#))
-        #expect(lines[1].hasSuffix(#""raw":null,"truncated":false}"#))
+        #expect(lines[0].hasSuffix(#""message":"one","raw":"1790945238.399  4100  4120 I ReactNativeJS: one","truncated":false,"untrusted":["tag","message","raw"]}"#))
+        #expect(lines[1].hasSuffix(#""raw":null,"truncated":false,"untrusted":["message"]}"#))
     }
 
     // MARK: Redaction
@@ -165,15 +165,96 @@ struct LogsCommandTests {
         #expect(try Self.command(arguments).collector().redacts == redacts)
     }
 
-    @Test("--grep matches the unredacted text, then the message and raw line are redacted and counted")
-    func grepBeforeRedaction() throws {
-        var collector = try LogCollector(maxLines: 10, grep: "hunter22", keepsANSI: false, redacts: true)
-        collector.add(LogEntry(message: Self.secretLine, raw: "1790945238.399  4100  4120 I ReactNativeJS: " + Self.secretLine))
+    @Test("redaction runs before --grep and --exclude, so a pattern matching only a redacted value matches nothing")
+    func grepAfterRedaction() throws {
+        var hidden = try LogCollector(maxLines: 10, grep: "hunter22", keepsANSI: false, redacts: true)
+        hidden.add(LogEntry(message: Self.secretLine))
+        #expect(hidden.entries.isEmpty)
+        #expect(hidden.matched == 0)
+        #expect(hidden.redacted == 0)
 
-        let entry = try #require(collector.entries.first)
+        var excluding = try LogCollector(maxLines: 10, grep: nil, exclude: ["hunter2"], keepsANSI: false, redacts: true)
+        excluding.add(LogEntry(message: Self.secretLine))
+        #expect(excluding.excluded == 0)
+        #expect(excluding.entries.count == 1)
+
+        var shown = try LogCollector(maxLines: 10, grep: "batch-login", keepsANSI: false, redacts: true)
+        shown.add(LogEntry(message: Self.secretLine, raw: "1790945238.399  4100  4120 I ReactNativeJS: " + Self.secretLine))
+        let entry = try #require(shown.entries.first)
         #expect(entry.message == #"batch-login {"email":"[redacted]","password":"[redacted]"}"#)
         #expect(entry.raw?.hasSuffix(#"{"email":"[redacted]","password":"[redacted]"}"#) == true)
-        #expect(collector.redacted == 2)
+        #expect(shown.redacted == 2)
+
+        var raw = try LogCollector(maxLines: 10, grep: "hunter22", keepsANSI: false, redacts: false)
+        raw.add(LogEntry(message: Self.secretLine))
+        #expect(raw.entries.count == 1)
+    }
+
+    // MARK: Scope
+
+    static let profile = LoginProfile(bundleID: "com.example.ios", package: "com.example.android")
+    static let window = LogQuery(window: .last(.seconds(30)))
+
+    static func scoped(_ source: LogSource, all: Bool = false, platform: DevicePlatform = .android, apps: [String]? = nil, profile: LoginProfile? = nil) throws -> (LogQuery, note: String?) {
+        var query = Self.window
+        query.source = source
+        let allowance = apps.map { PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: $0) }
+        let policy = allowance.map { PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [$0])) }
+        return try Logs.scoped(query, all: all, platform: platform, allowance: allowance, policy: policy, profile: { profile })
+    }
+
+    @Test("on a simulator or emulator offsider.login.json's app replaces the whole log, saying so; --all and named sources are kept")
+    func profileDefault() throws {
+        let android = try Self.scoped(.all, profile: Self.profile)
+        #expect(android.0.source == .app("com.example.android"))
+        #expect(android.note == "Reading only com.example.android's log, which offsider.login.json names; pass --all for the whole device's.")
+        #expect(try Self.scoped(.all, platform: .ios, profile: Self.profile).0.source == .app("com.example.ios"))
+        #expect(try Self.scoped(.all, all: true, profile: Self.profile).0.source == .all)
+        #expect(try Self.scoped(.all).0.source == .all)
+        #expect(try Self.scoped(.process("SpringBoard"), platform: .ios, profile: Self.profile).0.source == .process("SpringBoard"))
+    }
+
+    @Test("on a phone the only pin is the default, --rn reads it too, and an app outside the pins is app_not_allowed")
+    func phonePins() throws {
+        let pinned = try Self.scoped(.all, apps: ["com.example.app"])
+        #expect(pinned.0.source == .app("com.example.app"))
+        #expect(pinned.note?.hasPrefix("Reading only com.example.app's log on Test iPhone") == true)
+        #expect(try Self.scoped(.reactNative(app: nil), apps: ["com.example.app"]).0.source == .reactNative(app: "com.example.app"))
+        #expect(try Self.scoped(.app("com.example.app"), apps: ["com.example.app"]).0.source == .app("com.example.app"))
+
+        let other = #expect(throws: CLIError.self) { try Self.scoped(.app("com.example.bank"), apps: ["com.example.app"]) }
+        #expect(other?.reason == .appNotAllowed)
+        #expect(other?.hint == "offsider device-access allow")
+        let denied = #expect(throws: CLIError.self) { try Self.scoped(.app("com.android.chrome"), apps: []) }
+        #expect(denied?.reason == .appNotAllowed)
+
+        let two = #expect(throws: CLIError.self) { try Self.scoped(.all, apps: ["com.example.app", "com.example.two"]) }
+        #expect(two?.reason == .appNotAllowed)
+        #expect(two?.userFacingDescription.contains("Pass --app <package>") == true)
+        #expect(try Self.scoped(.all, apps: ["com.example.app", "com.example.android"], profile: Self.profile).0.source == .app("com.example.android"))
+    }
+
+    @Test("a phone's whole log, --process or --all needs the person's whole-device pin")
+    func phoneWholeLog() throws {
+        for (source, all) in [(LogSource.all, true), (.process("system_server"), false)] {
+            let error = #expect(throws: CLIError.self) { try Self.scoped(source, all: all, apps: ["com.example.app"]) }
+            #expect(error?.reason == .appNotAllowed)
+            #expect(error?.userFacingDescription.contains("Any app and all logs") == true)
+        }
+        let unpinned = #expect(throws: CLIError.self) { try Self.scoped(.all, apps: []) }
+        #expect(unpinned?.reason == .appNotAllowed)
+
+        let whole = [DeviceAllowance.wholeDevicePin]
+        #expect(try Self.scoped(.all, apps: whole).0.source == .all)
+        #expect(try Self.scoped(.all, apps: whole).note == nil)
+        #expect(try Self.scoped(.process("system_server"), apps: whole).0.source == .process("system_server"))
+        #expect(try Self.scoped(.all, apps: whole, profile: Self.profile).0.source == .app("com.example.android"))
+        #expect(try Self.scoped(.all, all: true, apps: whole, profile: Self.profile).0.source == .all)
+    }
+
+    @Test("--all cannot be combined with a source")
+    func allConflicts() {
+        #expect(Self.validationMessage(["--all", "--app", "com.example.app"])?.contains("--all reads the whole device's log") == true)
     }
 
     @Test("the report counts redacted values, and the stderr footer names what was redacted without a way round it")
@@ -191,7 +272,7 @@ struct LogsCommandTests {
         lines = []
         try await Self.command(["--json", "--no-redact"]).read(from: DeviceRouter.Route(backend: backend, device: device)) { lines.append($0) }
         #expect(lines[0].contains("hunter22"))
-        #expect(lines[0].hasSuffix(#""redacted":0,"excluded":0}"#))
+        #expect(lines[0].contains(#""redacted":0,"excluded":0,"untrusted":["entries[]."#))
 
         #expect(Logs.redactionFooter(3) == "Redacted 3 values (passwords, tokens, emails, addresses, cards, phrases, codes).")
         #expect(Logs.redactionFooter(3)?.contains("--no-redact") == false)

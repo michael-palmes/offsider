@@ -30,7 +30,7 @@ public struct RunTimeline: Equatable, Sendable {
 
     /// `001 14:03:22 screenshot emulator-5554 ok 001-screenshot-14.03.22.png (masked 2)`, or `--- … exit 1 mask_unproven` for a failure without a file.
     func line(for entry: RunManifestLine, timeZone: TimeZone) -> String {
-        var parts = [entry.n.map { String(format: "%03d", $0) } ?? "---", RunClock.clock(entry.time, separator: ":", timeZone: timeZone)]
+        var parts = [entry.n.map { unsafe String(format: "%03d", $0) } ?? "---", RunClock.clock(entry.time, separator: ":", timeZone: timeZone)]
         parts.append(entry.step.map { "\(entry.command) step \($0)" } ?? entry.command)
         if let device = entry.device { parts.append(device) }
         if entry.exit == 0 {

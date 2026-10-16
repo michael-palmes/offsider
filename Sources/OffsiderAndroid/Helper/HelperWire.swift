@@ -21,6 +21,9 @@ enum HelperWire {
     struct FrameDecoder: Sendable {
         private var buffer = Data()
 
+        /// Bytes held for a frame not yet complete.
+        var bufferedCount: Int { buffer.count }
+
         mutating func feed(_ bytes: Data) throws -> [Data] {
             buffer.append(bytes)
             var payloads: [Data] = []

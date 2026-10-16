@@ -313,6 +313,22 @@ struct DeviceSessionManagerTests {
         #expect(processes.launches.isEmpty)
     }
 
+    @Test("a live broker that closes every connection unanswered, as one from another build does, is signalled at once and replaced")
+    func refusingBroker() async throws {
+        let root = SessionTestPaths.root()
+        try DeviceSessionStore(root: root).write(Self.record(pid: 700, root: root))
+        let processes = FakeRunnerProcesses(alive: [700])
+        let manager = Self.manager(processes, root: root) { _ in
+            guard processes.launches.isEmpty else { return FakeSessionLink.broker(udid: Self.udid) }
+            return FakeSessionLink { _ in throw DeviceSessionLinkError.lost("the broker closed the connection") }
+        }
+        let started = ContinuousClock.now
+        _ = try await manager.connect(udid: Self.udid)
+        #expect(ContinuousClock.now - started < .seconds(3))
+        #expect(processes.terminations == [700])
+        #expect(processes.launches.count == 1)
+    }
+
     @Test("stop asks the broker to stop, signals one that lingers, and forgets it")
     func stop() async throws {
         let root = SessionTestPaths.root()
@@ -506,6 +522,67 @@ struct DeviceSessionServerTests {
             #expect(hardware.closed)
         }
     }
+
+    @Test("a client that is not code this broker accepts is closed before it gets a byte, and the refusal is one log line")
+    func refusesOtherCode() async throws {
+        let socket = NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8)).sock"
+        let lines = SessionLogLines()
+        let other = try PeerCodeIdentity.requirement("identifier \"com.example.not-offsider\"")
+        let server = DeviceSessionServer(
+            udid: "U", socketPath: socket, hardware: FakeSessionHardware(), store: nil, idleTimeout: .seconds(30), peers: .requirement(other),
+            log: { _, line in lines.append(line) }
+        )
+        let running = Task { try await server.run() }
+        let channel = try await Self.whenListening { try DeviceSessionChannel.connect(to: socket) }
+        defer { channel.close() }
+        #expect(try channel.readFrame(limit: DeviceSessionWire.maxJSONBytes, timeout: .seconds(10)) == nil)
+        #expect(lines.all.contains { $0.contains("Refused pid \(getpid())") && $0.contains("not this Offsider build") })
+        server.requestStop()
+        try await running.value
+    }
+
+    @Test("a broker whose allowance lapses stops, releasing the device, and answers anything after with that refusal")
+    func allowanceLapses() async throws {
+        let hardware = FakeSessionHardware()
+        let refusal = IOSDeviceError(.sessionFailed, "U is a physical device and its allowance has expired, so nothing was sent to it.", hint: "offsider device-access allow")
+        let checks = SessionCounter()
+        let server = DeviceSessionServer(
+            udid: "U", socketPath: Self.socket(), hardware: hardware, store: nil, idleTimeout: .seconds(30),
+            recheck: { checks.increment() >= 2 ? refusal : nil }, recheckInterval: .milliseconds(100), log: { _, _ in }
+        )
+        let started = ContinuousClock.now
+        try await server.run()
+        #expect(hardware.closed)
+        #expect(checks.value >= 2)
+        #expect(ContinuousClock.now - started < .seconds(10))
+        let (reply, _) = await server.handle(id: 3, request: .touch([.touch(.down, x: 1, y: 1), .touch(.up, x: 1, y: 1)]))
+        #expect(reply.ok == false)
+        #expect(reply.error?.error.hint == "offsider device-access allow")
+        #expect(hardware.touches.isEmpty)
+    }
+
+    @Test("a silent new client is dropped after the first-request wait, while a client that has spoken may pause longer")
+    func silentClientDropped() async throws {
+        let socket = Self.socket()
+        let server = DeviceSessionServer(
+            udid: "U", socketPath: socket, hardware: FakeSessionHardware(), store: nil, idleTimeout: .seconds(30), firstRequestTimeout: .milliseconds(300), log: { _, _ in }
+        )
+        let running = Task { try await server.run() }
+        let silent = try await Self.whenListening { try DeviceSessionChannel.connect(to: socket) }
+        let talker = DeviceSessionClient(udid: "U", link: try SocketSessionLink.connect(socket))
+        _ = try await talker.ping(timeout: Self.replyTimeout)
+        let started = ContinuousClock.now
+        try await Self.until { silent.peerClosed() }
+        #expect(silent.peerClosed())
+        #expect(ContinuousClock.now - started < .seconds(10))
+        silent.close()
+        try await Task.sleep(for: .milliseconds(600))
+        _ = try await talker.ping(timeout: Self.replyTimeout)
+        try await talker.stop(timeout: Self.replyTimeout)
+        try await running.value
+    }
+
+    static func socket() -> String { NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8)).sock" }
 
     @Test("OFFSIDER_IOS_SESSION_IDLE sets the idle timeout, at most 3600 s; anything but a positive number keeps 300 s", arguments: [
         ("60", 60), ("0", 300), ("soon", 300), ("999999", 3600),
@@ -768,4 +845,19 @@ final class ClosingLink: DeviceSessionLink, @unchecked Sendable {
         try await inner.exchange(request, timeout: timeout)
     }
     func close() { inner.close() }
+}
+
+final class SessionLogLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    func append(_ line: String) { lock.withLock { lines.append(line) } }
+    var all: [String] { lock.withLock { lines } }
+}
+
+final class SessionCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    /// The count after this call.
+    func increment() -> Int { lock.withLock { count += 1; return count } }
+    var value: Int { lock.withLock { count } }
 }

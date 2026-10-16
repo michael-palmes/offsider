@@ -91,13 +91,19 @@ actor AdbClient {
     private func runShell(_ command: String, on serial: String, timeout: Duration, label: String?) async throws -> AdbShellResult {
         let name = label ?? command
         let connection = try await openDevice(serial, service: "shell,v2,raw:" + command, label: name, timeout: timeout)
-        var decoder = AdbWire.ShellV2Decoder()
+        var decoder = AdbWire.ShellV2Decoder(maxPacketBytes: maxOutputBytes)
         var stdout = Data()
         var stderr = Data()
         return try await closing(connection, serial: serial, command: name, timeout: timeout) {
             var chunk = connection.takeBuffered()
             while true {
-                for packet in try decoder.feed(chunk) {
+                let packets: [AdbWire.ShellPacket]
+                do {
+                    packets = try decoder.feed(chunk)
+                } catch is AdbWire.PacketTooLarge {
+                    throw Self.outputTooLarge(serial: serial, command: name)
+                }
+                for packet in packets {
                     switch packet.kind {
                     case .stdout: stdout.append(packet.payload)
                     case .stderr: stderr.append(packet.payload)
@@ -105,6 +111,9 @@ actor AdbClient {
                     default: continue
                     }
                     guard stdout.count + stderr.count <= maxOutputBytes else { throw Self.outputTooLarge(serial: serial, command: name) }
+                }
+                guard stdout.count + stderr.count + max(0, decoder.bufferedCount - 5) <= maxOutputBytes else {
+                    throw Self.outputTooLarge(serial: serial, command: name)
                 }
                 chunk = try await connection.stream.read(upTo: 64 * 1024, deadline: connection.deadline)
                 if chunk.isEmpty {

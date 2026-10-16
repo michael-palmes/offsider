@@ -114,7 +114,7 @@ struct SystemPromptCoverTests {
         }
 
         #expect(error?.reason == .targetCovered)
-        #expect(error?.userFacingDescription == "--id 'sign-out' at (201, 241) is under the system prompt 'Save Password?' from SafariViewService, so the tap would land on its backdrop and only dismiss it. Nothing was sent. Answer the prompt (its buttons are not in describe-ui, so take a screenshot to find them) or dismiss it with a tap on its backdrop (`offsider tap -x 201 -y 241 --device fake-device`), then retry; or pass --allow-covered to tap anyway.")
+        #expect(error?.userFacingDescription == "--id 'sign-out' at (201, 241) is under the system prompt \"Save Password?\" from SafariViewService, so the tap would land on its backdrop and only dismiss it. Nothing was sent. Answer the prompt (its buttons are not in describe-ui, so take a screenshot to find them) or dismiss it with a tap on its backdrop (`offsider tap -x 201 -y 241 --device fake-device`), then retry; or pass --allow-covered to tap anyway.")
         #expect(error?.coveredBy == CoverReport(role: "group", id: nil, label: nil, frame: Self.screen, screen: "Save Password?", evidence: .otherProcess, process: "SafariViewService"))
         #expect(error?.hint == "offsider screenshot --device fake-device")
         #expect(backend.hitAppPIDs == [[Self.appPID], [Self.appPID]], "each read must take another process's empty backdrop as its answer")
@@ -147,7 +147,7 @@ struct SystemPromptCoverTests {
             try await Self.tap(["--id", "under-save"], on: backend)
         }
 
-        #expect(error?.userFacingDescription == "--id 'under-save' at (275, 547) is under the system prompt 'Save Password?' from SafariViewService, so the tap would land on its button 'Save' (205, 523) 140x48. Nothing was sent. Answer the prompt (its buttons are not in describe-ui, so take a screenshot to find them), then retry; or pass --allow-covered to tap anyway.")
+        #expect(error?.userFacingDescription == "--id 'under-save' at (275, 547) is under the system prompt \"Save Password?\" from SafariViewService, so the tap would land on its button \"Save\" (205, 523) 140x48. Nothing was sent. Answer the prompt (its buttons are not in describe-ui, so take a screenshot to find them), then retry; or pass --allow-covered to tap anyway.")
         #expect(error?.coveredBy?.label == "Save")
         #expect(backend.session.calls.isEmpty)
     }

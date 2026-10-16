@@ -60,9 +60,23 @@ enum AdbWire {
         let payload: Data
     }
 
+    /// A shell packet whose header announces more than the reader's cap; thrown before any of it is buffered.
+    struct PacketTooLarge: Error, Equatable, Sendable {
+        let announced: Int
+        let limit: Int
+    }
+
     /// Shell protocol v2: a 1-byte id, a 4-byte little-endian length, then the payload; packets may split across reads.
     struct ShellV2Decoder: Sendable {
         private var pending = Data()
+        let maxPacketBytes: Int
+
+        init(maxPacketBytes: Int = AdbClient.maxOutputBytes) {
+            self.maxPacketBytes = maxPacketBytes
+        }
+
+        /// Bytes held for a packet not yet complete: at most a header and `maxPacketBytes` plus one read.
+        var bufferedCount: Int { pending.count }
 
         mutating func feed(_ bytes: Data) throws -> [ShellPacket] {
             pending.append(bytes)
@@ -73,6 +87,10 @@ enum AdbWire {
                     throw AndroidError.adbProtocol("unknown shell packet id \(header[0])")
                 }
                 let count = Int(header[1]) | Int(header[2]) << 8 | Int(header[3]) << 16 | Int(header[4]) << 24
+                guard count <= maxPacketBytes else {
+                    pending = Data()
+                    throw PacketTooLarge(announced: count, limit: maxPacketBytes)
+                }
                 guard pending.count >= 5 + count else { break }
                 packets.append(ShellPacket(kind: kind, payload: Data(pending.dropFirst(5).prefix(count))))
                 pending = Data(pending.dropFirst(5 + count))

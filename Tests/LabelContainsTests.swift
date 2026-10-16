@@ -6,7 +6,7 @@ import Testing
 @testable import Offsider
 
 /// `--label-contains` across commands, and the near misses a wait or assert names when a selector finds nothing.
-@Suite("Label contains and near misses")
+@Suite("Label contains and near misses", .personOutput)
 @MainActor
 struct LabelContainsTests {
     static let device = DeviceID(rawValue: "fake-device", platform: .ios)
@@ -56,7 +56,7 @@ struct LabelContainsTests {
 
         #expect(!outcome.met)
         #expect(outcome.reason == "not found")
-        #expect(wait.failureLine(outcome) == "✗ Timed out after 0.2 s waiting for --label 'Choose a layout' (last: not found; nearest: header \"Choose a layout. Rows can show as a list or…\" starts with it, use --label-contains 'Choose a layout').")
+        #expect(wait.failureLine(outcome) == "✗ Timed out after 0.2 s waiting for --label 'Choose a layout' (last: not found; nearest: header \"Choose a layout. Rows can show as a list or…\" starts with it, use --label-contains \"Choose a layout\").")
         let nearest = try Self.nearest(outcome)
         #expect(nearest.count == 1)
         #expect(nearest.first?["id"] as? String == "layout-sheet-title")
@@ -79,7 +79,7 @@ struct LabelContainsTests {
     @Test("a typo is named with the exact selector to use, and a miss with nothing close names none")
     func nearestForTypoAndNothing() async throws {
         let (wait, typo) = try await Self.wait(["--label", "Dome", "--timeout", "0"])
-        #expect(wait.failureLine(typo).contains("(last: not found; nearest: button \"Done\" is close, use --label 'Done')"))
+        #expect(wait.failureLine(typo).contains("(last: not found; nearest: button \"Done\" is close, use --label \"Done\")"))
         #expect(try Self.nearest(typo).first?["closeness"] as? String == "similar")
 
         let (other, nothing) = try await Self.wait(["--id", "settings-tab", "--timeout", "0"])
@@ -93,7 +93,7 @@ struct LabelContainsTests {
         let (wait, outcome) = try await Self.wait(["--any", "--label", "Choose a layout", "--label-contains", "Dome", "--timeout", "0"])
 
         #expect(outcome.reason == "--label 'Choose a layout' not found; --label-contains 'Dome' not found")
-        #expect(wait.failureLine(outcome).contains("nearest: --label 'Choose a layout': header \"Choose a layout. Rows can show as a list or…\" starts with it, use --label-contains 'Choose a layout'; --label-contains 'Dome': button \"Done\" is close, use --label 'Done')"))
+        #expect(wait.failureLine(outcome).contains("nearest: --label 'Choose a layout': header \"Choose a layout. Rows can show as a list or…\" starts with it, use --label-contains \"Choose a layout\"; --label-contains 'Dome': button \"Done\" is close, use --label \"Done\")"))
         #expect(try Self.nearest(outcome).compactMap { $0["id"] as? String } == ["layout-sheet-title", "layout-done"])
 
         let (_, met) = try await Self.wait(["--any", "--label", "Nope", "--label-contains", "list or a grid", "--timeout", "0"])
@@ -103,7 +103,7 @@ struct LabelContainsTests {
     @Test("assert --label names the nearest on a miss, and assert --label-contains passes")
     func assertNamesNearest() async throws {
         let (command, missed) = try await Self.assert(["--label", "Choose a layout"])
-        #expect(command.failureLine(missed) == "✗ Assertion failed: --label 'Choose a layout' was not found (nearest: header \"Choose a layout. Rows can show as a list or…\" starts with it, use --label-contains 'Choose a layout').")
+        #expect(command.failureLine(missed) == "✗ Assertion failed: --label 'Choose a layout' was not found (nearest: header \"Choose a layout. Rows can show as a list or…\" starts with it, use --label-contains \"Choose a layout\").")
 
         let (passing, met) = try await Self.assert(["--label-contains", "as a list"])
         #expect(met.met)

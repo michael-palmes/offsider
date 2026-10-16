@@ -1,6 +1,7 @@
 import ArgumentParser
 import Darwin
 import FBControlCore
+import OffsiderCore
 
 struct HIDBrokerCommand: AsyncParsableCommand {
     // This hidden command is the process entry point used by Offsider's HID client. It is an internal
@@ -14,6 +15,7 @@ struct HIDBrokerCommand: AsyncParsableCommand {
     var simulatorUDID: String
 
     func run() async throws {
+        BrokerLimits.apply()
         let endpoint = try HIDBroker.endpointPath(simulatorUDID: simulatorUDID)
         let lifetimeLock = try HIDBroker.acquireLifetimeLock(endpoint: endpoint)
         defer {

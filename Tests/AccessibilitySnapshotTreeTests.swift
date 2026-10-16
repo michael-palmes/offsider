@@ -2,7 +2,7 @@ import Foundation
 import OffsiderCore
 import Testing
 
-@Suite("Accessibility Snapshot Tree Tests")
+@Suite("Accessibility Snapshot Tree Tests", .personOutput)
 struct AccessibilitySnapshotTreeTests {
     private let detector = ChangeDetector()
 

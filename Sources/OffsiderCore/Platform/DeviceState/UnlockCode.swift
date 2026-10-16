@@ -35,7 +35,7 @@ public struct UnlockAttemptLedger: Sendable {
 
     public func hasFailed(_ device: String) -> Bool {
         var info = stat()
-        return lstat(path(device), &info) == 0
+        return unsafe lstat(path(device), &info) == 0
     }
 
     public func recordFailure(_ device: String) throws {
@@ -44,7 +44,7 @@ public struct UnlockAttemptLedger: Sendable {
     }
 
     public func clear(_ device: String) {
-        unlink(path(device))
+        unsafe unlink(path(device))
     }
 
     /// `device-<key>.failed`, with anything outside letters, digits, `.`, `_` and `-` replaced by `_`.

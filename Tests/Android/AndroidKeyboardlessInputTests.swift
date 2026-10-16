@@ -15,7 +15,7 @@ struct AndroidKeyboardlessInputTests {
 
     @Test("ASCII text and its Return go over adb, since the guest drops every gRPC key", arguments: [noKeyboard, "hw.keyboard=no\n"])
     func textOverAdb(hardware: String) async throws {
-        let rig = try AndroidGrpcInputTests.rig(avdHardware: hardware)
+        let rig = try AndroidGrpcInputTests.rig(uiautomatorDump: AndroidGrpcTextTests.plainFocus, avdHardware: hardware)
         try await Self.session(rig).typeText("abc\n")
 
         // The tree read before `input text` checks that no password field has focus; the text itself goes over adb.

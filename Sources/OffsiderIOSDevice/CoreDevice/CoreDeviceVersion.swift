@@ -6,6 +6,8 @@ public struct CoreDeviceVersion: Comparable, CustomStringConvertible, Sendable {
     public static let frameworkPath = "/Library/Developer/PrivateFrameworks/CoreDevice.framework"
     /// The first CoreDevice whose disk image carries the device's HID daemon (Xcode 27).
     public static let hidFloor = CoreDeviceVersion(components: [636])
+    /// The newest CoreDevice major Offsider was tested with; `doctor` warns on a newer one.
+    public static let lastTestedMajor = 651
 
     public let components: [Int]
 

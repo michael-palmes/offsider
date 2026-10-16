@@ -1,0 +1,13 @@
+{
+  "//": "Copy to offsider.mask.json at your repository root. Every screenshot, batch screenshot and evidence run paints what it names, describe-ui hides those values, record-video refuses while one is on screen, and the tree cache never stores them.",
+  "//ids": "Accessibility ids (testID on React Native): the element is painted black and its value shown as [redacted].",
+  "ids": ["batch-login-email-field", "user-switch-test-email"],
+  "//labels": "Exact labels, matched as --label matches: the element is painted and its value hidden.",
+  "labels": ["Account number"],
+  "//labelContains": "Text a label holds, matched as --label-contains matches.",
+  "labelContains": ["Balance"],
+  "//valuePatterns": "Case-insensitive regular expressions with bounded counts ({1,40}, never * or +): matching text is painted and redacted.",
+  "valuePatterns": ["[0-9]{3}-[0-9]{3}", "member [0-9]{6,10}"],
+  "//emails": "true paints and redacts every email address.",
+  "emails": true
+}

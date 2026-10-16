@@ -61,3 +61,14 @@ enum DevicePolicySources {
         UserConfigDirectory.live().map(DeviceAllowListStore.init(directory:))
     }
 }
+
+extension DevicePolicyGate {
+    /// On an allowed physical device, `app_not_allowed` unless `app` is within its pins (or any app is) and not deny-listed.
+    func requireApp(_ app: String, on allowance: DeviceAllowance) throws {
+        guard let refusal = policy().appRefusal(app, on: allowance) else { return }
+        throw CLIError(
+            errorDescription: refusal, reason: .appNotAllowed,
+            hint: refusal.contains(" is not among the apps allowed on ") ? "offsider device-access allow" : nil
+        )
+    }
+}

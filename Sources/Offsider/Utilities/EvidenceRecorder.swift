@@ -74,6 +74,21 @@ final class EvidenceRecorder {
         return masks.plan
     }
 
+    /// The caller's run masks for a command that records nothing, such as `describe-ui` or `tap`, so its tree output and the
+    /// tree cache honour them too; nil without a run. Costs one directory listing when no run is recorded.
+    nonisolated static func ambientMasks(environment: EvidenceRunEnvironment = .live()) -> RunMasks? {
+        switch environment.override {
+        case .off:
+            return nil
+        case .folder(let path):
+            return (try? RunFolder(path: path).readState())?.masks ?? .defaults
+        case .none:
+            guard let directory = try? environment.runsDirectory(),
+                  let names = try? FileManager.default.contentsOfDirectory(atPath: directory), !names.isEmpty else { return nil }
+            return (try? RunRegistry.record(of: environment))?.masks
+        }
+    }
+
     /// Starts an entry; nil when there is no run.
     func begin(device: DeviceID?, kind: String) throws -> Token? {
         guard let environment, try run() != nil else { return nil }
@@ -125,7 +140,7 @@ final class EvidenceRecorder {
         do {
             try run.folder.append(manifestLine)
         } catch {
-            FileHandle.standardError.write(Data("Warning: could not add to \(run.folder.file(RunFolder.manifestName)): \(OffsiderCommand.message(for: error))\n".utf8))
+            FileHandle.standardError.write(Data("Warning: could not add to \(run.folder.file(RunFolder.manifestName)): \(TerminalText.line(OffsiderCommand.message(for: error), cap: TerminalText.maxErrorCharacters))\n".utf8))
         }
     }
 

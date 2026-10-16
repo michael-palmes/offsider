@@ -32,9 +32,9 @@ private final class IOSDeviceLogSink: @unchecked Sendable {
         case .info:
             logger.info().log(message)
         case .notice:
-            FileHandle.standardError.write(Data("\(message)\n".utf8))
+            FileHandle.standardError.write(Data("\(TerminalText.block(TerminalText.capped(message, cap: TerminalText.maxErrorCharacters)))\n".utf8))
         case .warning:
-            FileHandle.standardError.write(Data("Warning: \(message)\n".utf8))
+            FileHandle.standardError.write(Data("Warning: \(TerminalText.block(TerminalText.capped(message, cap: TerminalText.maxErrorCharacters)))\n".utf8))
         }
     }
 }

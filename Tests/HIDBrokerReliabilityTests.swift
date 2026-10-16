@@ -1,6 +1,7 @@
 import Darwin
 import FBSimulatorControl
 import Foundation
+import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -214,6 +215,36 @@ struct HIDBrokerReliabilityTests {
 
         #expect(now > 2_000_000_000)
         #expect(spawnCount == 1)
+    }
+
+    @Test("A peer trickling one byte at a time cannot stretch a read past its one deadline")
+    func tricklingPeerTimesOut() throws {
+        var descriptors = [Int32](repeating: -1, count: 2)
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+        defer { Darwin.close(descriptors[0]) }
+        let writer = descriptors[1]
+        let done = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            defer { Darwin.close(writer); done.signal() }
+            var byte: UInt8 = 0x20
+            for _ in 0..<10 {
+                guard Darwin.write(writer, &byte, 1) == 1 else { return }
+                usleep(100_000)
+            }
+        }
+        let start = Date()
+        #expect(throws: CLIError.self) { try HIDBroker.readMessage(from: descriptors[0], withinMilliseconds: 500) }
+        #expect(Date().timeIntervalSince(start) < 1.5)
+        done.wait()
+    }
+
+    @Test("Brokers drop core dumps entirely and lower, never raise, the open-file limit to 256")
+    func brokerLimits() {
+        let generous = BrokerLimits.limits(currentFiles: rlimit(rlim_cur: 10_240, rlim_max: rlim_t.max))
+        #expect(generous.core.rlim_cur == 0 && generous.core.rlim_max == 0)
+        #expect(generous.files.rlim_cur == 256)
+        #expect(generous.files.rlim_max == rlim_t.max)
+        #expect(BrokerLimits.limits(currentFiles: rlimit(rlim_cur: 128, rlim_max: 128)).files.rlim_cur == 128)
     }
 
     @Test("Handshake failures preserve diagnostics without exposing them to users")

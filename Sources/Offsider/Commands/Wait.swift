@@ -168,7 +168,8 @@ struct Wait: AsyncParsableCommand {
         let outcome = try await watchdog.guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
             try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
         }
-        try Self.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
+        let mask = (try? await AmbientMasks.treeMask()) ?? .none
+        try Self.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, checked: selector, mask: mask)
     }
 
     var readsTree: Bool {
@@ -343,6 +344,39 @@ struct Wait: AsyncParsableCommand {
         )
     }
 
+    /// The outcome with its reason, near miss and matched element's screen text redacted.
+    static func shown(_ outcome: WaitOutcome, mask: TreeValueMask = .none) -> WaitOutcome {
+        var shown = WaitOutcome(
+            met: outcome.met, elapsed: outcome.elapsed, reason: LogRedactor.redactValue(outcome.reason).text,
+            match: outcome.match.map { redacted($0, mask: mask) }, matched: outcome.matched
+        )
+        shown.onlyTextMoved = outcome.onlyTextMoved
+        shown.nearMiss = outcome.nearMiss.map { WaitNearMiss(summary: LogRedactor.redactValue($0.summary).text, candidates: $0.candidates) }
+        return shown
+    }
+
+    /// `; describe-ui shows it redacted` when the check compared a value or label the tree output hides: it decides with the real text.
+    static func redactionNote(_ outcome: WaitOutcome, checked: ElementSelectorOptions?, mask: TreeValueMask = .none) -> String {
+        guard let checked, checked.hasValue != nil || !checked.elementLabelsContaining.isEmpty else { return "" }
+        let hidden: Bool
+        if let match = outcome.match {
+            let shown = redacted(match, mask: mask)
+            hidden = (checked.hasValue != nil && shown.value != match.value)
+                || checked.elementLabelsContaining.contains { query in
+                    SelectorText.folded(match.label ?? "", contains: query) && !SelectorText.folded(shown.label ?? "", contains: query)
+                }
+        } else {
+            hidden = ([checked.hasValue].compactMap { $0 } + checked.elementLabelsContaining).contains { LogRedactor.redactValue($0).count > 0 }
+        }
+        return hidden ? " (matched on the real text; describe-ui shows it redacted)" : ""
+    }
+
+    private static func redacted(_ node: UINode, mask: TreeValueMask) -> UINode {
+        var single = node
+        single.children = []
+        return UITree(platform: .ios, device: "", roots: [single]).redacted(mask).roots.first ?? single
+    }
+
     private static func fingerprint(_ rendered: RenderedScreenshot, excludingTop top: Int = 0, bottom: Int = 0, tolerance: Int = 0) throws -> ImageFingerprint {
         guard let fingerprint = ImageFingerprint(image: rendered.image, excludingTopPixels: top, excludingBottomPixels: bottom, tolerance: tolerance) else {
             throw ImageFailure(detail: "could not read the screenshot's pixels")
@@ -351,10 +385,13 @@ struct Wait: AsyncParsableCommand {
     }
 
     /// Prints the outcome (the JSON report on stdout with `json`, human text on stderr) and exits 5 when it was not met.
-    static func report(_ outcome: WaitOutcome, success: String, failure: String, json: Bool) throws {
-        let line = outcome.met ? success : failure
+    /// Screen text in it is redacted as `describe-ui` redacts it; `checked` adds a note when the value or label it matched is text the tree output hides.
+    static func report(
+        _ outcome: WaitOutcome, success: String, failure: String, json: Bool, checked: ElementSelectorOptions? = nil, mask: TreeValueMask = .none
+    ) throws {
+        let line = outcome.met ? success + redactionNote(outcome, checked: checked, mask: mask) : LogRedactor.redactValue(failure).text
         if json {
-            print(WaitReport(outcome).jsonLine())
+            print(WaitReport(shown(outcome, mask: mask)).jsonLine())
             print(line, to: &standardError)
         } else if outcome.met {
             print(line)

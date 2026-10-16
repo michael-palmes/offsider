@@ -80,4 +80,14 @@ struct AdbWireTests {
             try decoder.feed(Data(Self.packet(9, [1])))
         }
     }
+
+    @Test("a packet announcing more than the cap throws at its header and holds nothing for it")
+    func shellPacketHeaderCap() throws {
+        var decoder = AdbWire.ShellV2Decoder(maxPacketBytes: 16)
+        #expect(try decoder.feed(Data(Self.packet(1, Array(repeating: 0x41, count: 16)))).count == 1)
+        #expect(throws: AdbWire.PacketTooLarge(announced: 17, limit: 16)) {
+            try decoder.feed(Data([1, 17, 0, 0, 0]))
+        }
+        #expect(decoder.bufferedCount == 0)
+    }
 }

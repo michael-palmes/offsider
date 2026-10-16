@@ -8,8 +8,8 @@ struct ReactNativeOverlayTests {
     /// iOS maps the accessible banner View to `other`; Android maps it to a labelled `group`.
     private static func coverText(_ platform: RNPlatform) -> String {
         switch platform {
-        case .ios: return "is covered by other '\(bannerText)'"
-        case .android: return "is covered by group '\(bannerText)'"
+        case .ios: return "is covered by other \"\(bannerText)\""
+        case .android: return "is covered by group \"\(bannerText)\""
         }
     }
 
