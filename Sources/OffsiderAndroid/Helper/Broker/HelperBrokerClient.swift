@@ -257,6 +257,18 @@ struct HelperBrokerClient {
         return try? JSONDecoder().decode(HelperBrokerWire.StatusReply.self, from: frame).status
     }
 
+    /// The serial the broker at `path` serves, from its status or else its log, for one whose full status this build cannot read.
+    static func servedSerial(at path: String) async -> String? {
+        struct Reply: Decodable {
+            struct Body: Decodable { let serial: String }
+            let status: Body
+        }
+        if let frame = await control("status", at: path), let reply = try? JSONDecoder().decode(Reply.self, from: frame) {
+            return reply.status.serial
+        }
+        return HelperBrokerPaths.servedSerial(inLog: (path as NSString).deletingPathExtension + ".log")
+    }
+
     /// The display facts a command left with the broker at `path`; nil when it has none or nothing answered.
     static func screen(at path: String) async -> String? {
         guard let frame = await control("screen", at: path) else { return nil }

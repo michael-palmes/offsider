@@ -65,6 +65,15 @@ struct HelperBrokerPaths: Equatable, Sendable {
         log = (directory as NSString).appendingPathComponent("\(name).log")
     }
 
+    /// The serial a broker's log names in its `Serving <serial> on` line; nil when it has none.
+    static func servedSerial(inLog path: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        let head = String(decoding: handle.readData(ofLength: 4096), as: UTF8.self)
+        guard let range = head.range(of: #"Serving \S+ on "#, options: .regularExpression) else { return nil }
+        return String(head[range].dropFirst("Serving ".count).dropLast(" on ".count))
+    }
+
     /// Every Android broker socket in `directory`, whichever serial it serves.
     static func sockets(in directory: String) -> [String] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []

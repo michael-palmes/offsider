@@ -76,17 +76,16 @@ extension AndroidBackend {
         return found
     }
 
-    /// Stops every warm helper, or `serial`'s alone, each once its UiAutomation slot is free; returns the serials stopped.
-    /// A broker whose status does not read, such as another build's, is stopped all the same and named by its socket.
+    /// Stops every warm helper, or `serial`'s alone, another build's too, each once its UiAutomation slot is free; returns the serials stopped.
     public static func stopWarmHelpers(host: AndroidHost, serial: String? = nil) async -> [String] {
         var stopped: [String] = []
         for socket in host.warmHelperSockets(serial: serial) {
             var name = serial
             if name == nil {
-                name = await HelperBrokerClient.status(at: socket)?.serial
+                name = await HelperBrokerClient.servedSerial(at: socket)
             }
             guard await HelperBrokerClient.stop(at: socket) else { continue }
-            stopped.append(name ?? ((socket as NSString).lastPathComponent as NSString).deletingPathExtension)
+            stopped.append(name ?? "unknown")
         }
         return stopped
     }

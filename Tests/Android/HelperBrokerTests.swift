@@ -518,15 +518,21 @@ struct HelperBrokerTests {
         #expect(status.attached == 0 && status.helperPid == nil)
     }
 
-    @Test("session stop stops a broker whose status does not read, so another build's helper never keeps the slot")
-    func stopsUnreadableBroker() async throws {
+    @Test("session stop stops a broker whose status does not read, named by the serial it gives or its log names", arguments: [
+        (#"{"serial":"emulator-5556","state":"draining"}"#, nil),
+        (#"{"state":"draining"}"#, "2026-10-18T09:00:00Z Serving emulator-5556 on /tmp/s/android-x.sock\n"),
+    ] as [(String, String?)])
+    func stopsUnreadableBroker(status: String, log: String?) async throws {
         let fixture = BrokerFixture()
-        let other = try OtherBuildBroker(path: fixture.socket)
+        let other = try OtherBuildBroker(path: fixture.socket, status: status)
+        if let log {
+            try log.write(toFile: (fixture.socket as NSString).deletingPathExtension + ".log", atomically: true, encoding: .utf8)
+        }
         var host = AndroidTestHost.make()
         host.helperBroker = try fixture.brokerHost()
 
         let stopped = await AndroidBackend.stopWarmHelpers(host: host)
-        #expect(stopped.count == 1)
+        #expect(stopped == ["emulator-5556"])
         #expect(!UnixSocket.answers(fixture.socket))
         other.cancel()
         try? FileManager.default.removeItem(at: fixture.root)
@@ -539,7 +545,7 @@ final class OtherBuildBroker {
     private let listener: UnixSocketListener
     private var serving: Task<Void, Never>?
 
-    init(path: String, answersStop: Bool = true) throws {
+    init(path: String, status: String = #"{"state":"draining"}"#, answersStop: Bool = true) throws {
         let listener = try UnixSocketListener(path: path)
         self.listener = listener
         serving = Task {
@@ -556,7 +562,7 @@ final class OtherBuildBroker {
                     await stream.close()
                     continue
                 }
-                let reply = request.op == "status" ? #"{"id":\#(request.id),"ok":true,"status":{"state":"draining"}}"# : #"{"id":\#(request.id),"ok":true}"#
+                let reply = request.op == "status" ? #"{"id":\#(request.id),"ok":true,"status":\#(status)}"# : #"{"id":\#(request.id),"ok":true}"#
                 if let frame = try? HelperWire.frame(Data(reply.utf8)) {
                     try? await stream.write(frame, deadline: .now + .seconds(2))
                 }
