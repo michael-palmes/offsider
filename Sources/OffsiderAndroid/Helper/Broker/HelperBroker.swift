@@ -334,7 +334,7 @@ final class HelperBroker {
                 broker: HelperBrokerWire.Hello(
                     brokerProtocol: HelperBrokerWire.protocolVersion, brokerPid: getpid(), dexSha256: dexSha256,
                     helperPid: session.ready.pid, sdkInt: session.ready.sdkInt, idleSeconds: Int(limits.idle.components.seconds),
-                    launchMs: session.launchMilliseconds, pushed: session.pushed, eventSeq: seq
+                    launchMs: session.launchMilliseconds, pushed: session.pushed, eventSeq: seq, attached: attached
                 )
             )
         }

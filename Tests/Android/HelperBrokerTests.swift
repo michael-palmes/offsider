@@ -399,6 +399,39 @@ struct HelperBrokerTests {
     func unsentRules(op: String, peerClosed: Bool, waited: Duration, timeout: Duration, expected: HelperBroker.Unsent?) {
         #expect(HelperBroker.unsent(op: op, peerClosed: peerClosed, waited: waited, timeout: timeout) == expected)
     }
+
+    @Test("a broker with another idle timeout that serves another command is kept, so neither command cuts the other off")
+    func otherIdleInUseIsKept() async throws {
+        let fixture = BrokerFixture(idle: .seconds(30))
+        try await fixture.start()
+        let first = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+
+        let second = try #require(try await fixture.client(idleSeconds: 5).existing(helloID: 1))
+        #expect(await HelperBrokerClient.status(at: fixture.socket)?.attached == 2)
+        await second.close()
+        await first.close()
+        #expect(fixture.device.startedProcesses == 1)
+        try await fixture.stop()
+    }
+
+    @Test("a broker of another build that serves another command is left running, and this command is told to start its own helper")
+    func otherBuildInUseIsLeft() async throws {
+        let fixture = BrokerFixture(dexSha256: String(repeating: "0", count: 64))
+        try await fixture.start()
+        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+        let other = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+        guard case .reply = try await other.exchange(.hello(token: ""), id: 1, timeout: .seconds(5)) else {
+            Issue.record("no hello reply")
+            return
+        }
+        var client = try fixture.client()
+        client.freeWait = .milliseconds(300)
+
+        await #expect(throws: HelperBrokerUnavailable.self) { _ = try await client.existing(helloID: 2) }
+        #expect(UnixSocket.answers(fixture.socket))
+        await other.close()
+        try await fixture.stop()
+    }
 }
 
 @Suite("Android warm helper settings")

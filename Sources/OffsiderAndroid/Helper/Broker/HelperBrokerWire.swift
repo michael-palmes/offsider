@@ -35,6 +35,8 @@ enum HelperBrokerWire {
         let launchMs: Int
         let pushed: Bool
         let eventSeq: Int64
+        /// Other commands attached when this one said `hello`; absent from an earlier build's broker.
+        var attached: Int? = nil
     }
 
     /// The `status` reply, read without counting as use.
@@ -92,6 +94,7 @@ enum HelperBrokerWire {
             "launchMs": .int(broker.launchMs),
             "pushed": .bool(broker.pushed),
             "eventSeq": .int(Int(broker.eventSeq)),
+            "attached": .int(broker.attached ?? 0),
         ])
     }
 

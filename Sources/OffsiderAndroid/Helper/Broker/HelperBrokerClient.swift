@@ -22,6 +22,8 @@ struct HelperBrokerClient {
     let host: HelperBrokerHost
     let log: AndroidLog
     var timing: AndroidTiming = .disabled
+    /// How long a broker of another build may keep serving other commands before this one gives up replacing it.
+    var freeWait: Duration = AndroidBackend.warmHelperFreeWait
 
     init(
         serial: String, dexSha256: String, idleSeconds: Int, host: HelperBrokerHost, log: @escaping AndroidLog, timing: AndroidTiming = .disabled
@@ -64,15 +66,26 @@ struct HelperBrokerClient {
         }
     }
 
-    /// The answering broker's connection when it runs this build's helper and idle timeout; any other is stopped. Never starts one.
+    /// The answering broker's connection when it runs this build's helper; one with another idle timeout is replaced unless it serves
+    /// other commands, and another build's once none uses it. Never starts one.
     func existing(helloID: Int) async throws -> HelperConnection? {
         guard let stream = await open() else { return nil }
         switch try await hello(stream, helloID: helloID) {
         case .ready(let connection):
             return connection
-        case .replace(let detail):
-            log(.debug, "The warm helper on \(serial) does not match this command (\(detail)); replacing it")
+        case .otherIdle(let connection, let others, let detail) where others > 0:
+            log(.debug, "The warm helper on \(serial) \(detail), but other commands use it, so this one keeps it as it is")
+            return connection
+        case .otherIdle(let connection, _, let detail):
+            await connection.close()
+            log(.debug, "The warm helper on \(serial) \(detail); replacing it")
             await stop()
+            return nil
+        case .replace(let detail):
+            log(.debug, "The warm helper on \(serial) does not match this command (\(detail)); replacing it once no other command uses it")
+            guard await Self.stopWhenFree(at: paths.socket, wait: freeWait) else {
+                throw HelperBrokerUnavailable(detail: "a warm helper from another Offsider build is serving another command")
+            }
             return nil
         case .ended:
             await untilGone()
@@ -92,7 +105,7 @@ struct HelperBrokerClient {
         while true {
             if let stream = await open() {
                 switch try await hello(stream, helloID: helloID) {
-                case .ready(let connection): return connection
+                case .ready(let connection), .otherIdle(let connection, _, _): return connection
                 case .replace(let detail): throw HelperBrokerUnavailable(detail: "the broker it started does not match this command (\(detail))")
                 case .ended: throw HelperBrokerUnavailable(detail: "the broker stopped before its helper was ready; see \(paths.log)")
                 }
@@ -124,6 +137,17 @@ struct HelperBrokerClient {
         return true
     }
 
+    /// Stops the broker at `path` once no command is attached, waiting up to `wait`; false, leaving it running, while one still is.
+    static func stopWhenFree(at path: String, wait: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + wait
+        while let status = await status(at: path), status.attached > 0 {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        await stop(at: path)
+        return true
+    }
+
     static func untilGone(_ path: String) async {
         let deadline = ContinuousClock.now + goneTimeout
         while UnixSocket.answers(path), ContinuousClock.now < deadline {
@@ -137,7 +161,9 @@ struct HelperBrokerClient {
 
     private enum Greeting {
         case ready(HelperConnection)
-        /// Another build's broker, or one with another idle timeout.
+        /// This build's broker with another idle timeout, still connected, and how many other commands it serves.
+        case otherIdle(HelperConnection, others: Int, detail: String)
+        /// Another build's broker.
         case replace(String)
         case ended
     }
@@ -179,10 +205,6 @@ struct HelperBrokerClient {
             await connection.close()
             return .replace("broker protocol \(broker.brokerProtocol), helper protocol \(hello.protocol), helper \(broker.dexSha256.prefix(12))")
         }
-        guard broker.idleSeconds == idleSeconds else {
-            await connection.close()
-            return .replace("it stops after \(broker.idleSeconds) idle seconds, this command asks for \(idleSeconds)")
-        }
         connection.adopt(HelperReady(
             event: "ready", protocol: hello.protocol, helper: hello.helper, pid: broker.helperPid, socket: "", token: "", sdkInt: broker.sdkInt
         ))
@@ -190,6 +212,10 @@ struct HelperBrokerClient {
         connection.eventSeq = broker.eventSeq
         connection.launchMilliseconds = broker.launchMs
         connection.pushed = broker.pushed
+        guard broker.idleSeconds == idleSeconds else {
+            let detail = "stops after \(broker.idleSeconds) idle seconds where this command asks for \(idleSeconds)"
+            return .otherIdle(connection, others: broker.attached ?? 0, detail: detail)
+        }
         return .ready(connection)
     }
 
