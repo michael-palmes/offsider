@@ -21,4 +21,19 @@ struct AndroidPostureCommandTests {
         #expect(line == "Posture: closed (cover, 443.08 x 994.46 dp)")
         #expect(clock.now < 2)
     }
+
+    @Test("posture closed whose first read after the state commits already shows the cover reports it without waiting or reading again")
+    func closedPanelSwappedAtOnce() async throws {
+        let rig = try AndroidFoldableBackendTests.rig(grpc: false)
+        let clock = ScriptedClock()
+
+        let line = try await PostureCommand.report(
+            .closed, json: false, timeout: 10, on: AndroidFoldableBackendTests.device, backend: rig.backend, deviceName: "emulator-5556",
+            sleep: clock.poll.sleep, now: clock.poll.now
+        )
+
+        #expect(line == "Posture: closed (cover, 443.08 x 994.46 dp)")
+        #expect(clock.now == 0)
+        #expect(rig.shellCommands.filter { $0.hasPrefix(AndroidDisplayStatus.script) }.count == 2, "\(rig.shellCommands)")
+    }
 }
