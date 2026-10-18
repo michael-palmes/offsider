@@ -219,6 +219,10 @@ extension AndroidBackend: PostureControlling, PostureStateNaming {
         stateReadings[id.rawValue]?.committed.name
     }
 
+    public func forgetScreen(of id: DeviceID) {
+        forgetDisplay(of: id.rawValue)
+    }
+
     /// gRPC `setPosture` moves the hinge as the extended controls do; without gRPC, a `cmd device_state` override.
     public func requestPosture(_ posture: Posture, on id: DeviceID) async throws {
         let serial = id.rawValue

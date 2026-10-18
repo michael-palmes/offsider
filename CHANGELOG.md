@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --settled` straight after an unverified tap or other input no longer ends before the input's effect shows, on iOS and Android. It compared the screen kept from before the input, which leaves out native types, with live reads that carry them, so the first read always looked changed and the hold of up to 2 s ended at once.
 - `tap --verify` and the other verified commands on iOS no longer treat an element with an accessibility title as live text after a recent read. The kept screen leaves titles out, so every titled element looked changed, and its real changes were then ignored.
 - `describe-ui --diff --actionable` on iOS no longer lists an element that is actionable only through custom actions as added on every read. The kept screen has no custom actions, so both reads now go by role.
+- `posture` on an Android foldable no longer prints the panel it is leaving after a 10 s wait: when its first read after the fold still showed the old panel, every later read reused it; it now reads the screen again until the panel swaps.
 
 ## [0.12.0] - 2026-10-15
 
