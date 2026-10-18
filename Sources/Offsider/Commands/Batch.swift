@@ -8,8 +8,8 @@ struct Batch: AsyncParsableCommand {
         discussion: """
         Batch runs a whole case (tap, wait, check, capture, read the tree) in one command. Steps run in order \
         and are written like the standalone commands without --device. A read step that starts within 100 ms of input, from \
-        an earlier step or the command just before the batch, waits out the rest of those 100 ms first, so it sees what the \
-        input drew; wait --settled, --region and --seconds steps start at once.
+        an earlier step or the command just before the batch (unless OFFSIDER_TREE_CACHE=off), waits out the rest of those \
+        100 ms first, so it sees what the input drew; wait --settled, --region and --seconds steps start at once.
 
         Input steps:
           tap, swipe, gesture, touch, type, button, key, key-sequence, key-combo
