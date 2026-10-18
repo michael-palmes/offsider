@@ -74,6 +74,31 @@ struct AndroidWarmScreenTests {
         try await rig.fixture.stop()
     }
 
+    static let externalDisplay = #"  DisplayDeviceInfo{"HDMI Screen": uniqueId="local:7", 1920 x 1080, density 160, 160.0 x 160.0 dpi, type EXTERNAL, state ON, installOrientation 0}"#
+
+    @Test(
+        "kept facts without the viewport give the same screen, with or without an external display and an id for display 0's panel",
+        arguments: [
+            WarmScreenRig.pixel9Status,
+            WarmScreenRig.pixel9Status.replacingOccurrences(of: "Display Devices: size=1", with: "Display Devices: size=2\n\(externalDisplay)"),
+            WarmScreenRig.pixel9Status
+                .replacingOccurrences(of: "Display Devices: size=1", with: "Display Devices: size=2\n\(externalDisplay)")
+                .replacingOccurrences(of: "Built-in Screen(local:\(FoldableFixtures.pixel9Id))", with: "Built-in Screen"),
+        ]
+    )
+    func factsWithoutViewport(status: String) async throws {
+        let rig = try await WarmScreenRig(status: status, probe: FoldableFixtures.pixel9Geometry)
+        _ = try await rig.describe()
+        let kept = WarmScreenFacts(status: status, viewport: nil, apiLevel: 36)
+        #expect(await HelperBrokerClient.rememberScreen(try #require(kept.encoded), at: rig.fixture.socket))
+
+        let screen = try await rig.describe()
+
+        #expect(rig.statusReads == 1)
+        #expect(screen == Self.pixel9Screen)
+        try await rig.fixture.stop()
+    }
+
     @Test("an Android 9 emulator, which has no device_state, reads its displays from the shell once, then from the warm helper")
     func android9ReadsShellOnce() async throws {
         let separator = AndroidDisplayStatus.separator + "\n"
