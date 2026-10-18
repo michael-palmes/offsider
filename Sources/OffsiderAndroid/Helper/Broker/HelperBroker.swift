@@ -9,8 +9,8 @@ final class HelperBroker {
         var maxLifetime: Duration = HelperBrokerSettings.maxLifetime
         var healthInterval: Duration = .seconds(2)
         var maxClients = 8
-        /// Longer than any request a command sends; a helper silent this long is taken as wedged.
-        var relayTimeout: Duration = .seconds(60)
+        /// Longer than any request a command sends, an inject's 60 s of gestures and its typing included; it bounds a request's own timeout.
+        var relayTimeout: Duration = .seconds(120)
         /// How long a failed start waits for a command to read why, then for it to disconnect.
         var failureLinger: Duration = .seconds(3)
     }
@@ -236,9 +236,6 @@ final class HelperBroker {
             guard case .ready(let session) = state, !stopping else {
                 return [HelperBrokerWire.bye(reason: "broker-ended", detail: "the warm helper is stopping")]
             }
-            if request.op == "inject", stream.peerClosed() {
-                return nil
-            }
             inFlight += 1
             lastRequest = .now
             defer {
@@ -257,8 +254,10 @@ final class HelperBroker {
         case late(waited: Duration)
     }
 
-    /// A command gives input 5 s beyond its gesture, so input that waited more than half of that for its turn is dropped unsent.
-    nonisolated static let staleInputAge: Duration = .milliseconds(2500)
+    /// A command gives input `requestTimeout` beyond its gesture; input that waited all but 1 s of that for its turn is dropped unsent.
+    nonisolated static let staleInputAge: Duration = HelperSession.requestTimeout - .seconds(1)
+    /// A request whose turn came with less time left still gets this long, so a late turn never makes a healthy helper look wedged.
+    nonisolated static let minimumReplyWait: Duration = .seconds(1)
 
     nonisolated static func unsent(op: String, peerClosed: Bool, waited: Duration, timeout: Duration) -> Unsent? {
         if op == "inject", peerClosed { return .gone }
@@ -275,7 +274,9 @@ final class HelperBroker {
         var unsent: Unsent?
         let outcome: HelperConnection.Outcome?
         do {
-            outcome = try await session.relay(payload: payload, op: request.op, id: request.id, deadline: arrival + timeout) {
+            outcome = try await session.relay(
+                payload: payload, op: request.op, id: request.id, deadline: arrival + timeout, atLeast: Self.minimumReplyWait
+            ) {
                 unsent = Self.unsent(op: request.op, peerClosed: stream.peerClosed(), waited: .now - arrival, timeout: timeout)
                 return unsent != nil
             }

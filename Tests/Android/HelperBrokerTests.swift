@@ -390,7 +390,8 @@ struct HelperBrokerTests {
 
     @Test("a request's turn drops it when its command has gone or given up, and input that waited long enough to land late", arguments: [
         ("inject", true, Duration.milliseconds(10), Duration.seconds(5), HelperBroker.Unsent.gone),
-        ("inject", false, .seconds(3), .seconds(25), .late(waited: .seconds(3))),
+        ("inject", false, .milliseconds(4500), .seconds(25), .late(waited: .milliseconds(4500))),
+        ("inject", false, .seconds(3), .seconds(5), nil),
         ("dump", false, .seconds(16), .seconds(15), .late(waited: .seconds(16))),
         ("dump", true, .seconds(1), .seconds(15), nil),
         ("dump", false, .seconds(3), .seconds(15), nil),
@@ -398,6 +399,45 @@ struct HelperBrokerTests {
     ] as [(String, Bool, Duration, Duration, HelperBroker.Unsent?)])
     func unsentRules(op: String, peerClosed: Bool, waited: Duration, timeout: Duration, expected: HelperBroker.Unsent?) {
         #expect(HelperBroker.unsent(op: op, peerClosed: peerClosed, waited: waited, timeout: timeout) == expected)
+    }
+
+    @Test("the relay cap outlasts the longest inject a command sends, so a full-length gesture is never cut off")
+    func relayCapOutlastsLongestInject() {
+        let longest = HelperSession.requestTimeout + .milliseconds(HelperInjectPlan.maxRequestMilliseconds)
+        #expect(HelperBroker.Limits(idle: .seconds(60)).relayTimeout > longest)
+    }
+
+    @Test("a request whose turn comes with almost no time left still gets its reply, and the helper is not taken as wedged")
+    func lateTurnKeepsHealthyHelper() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in
+            switch op {
+            case "dump": .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800))
+            case "display": .okAfter(FakeHelperDevice.displayReply, .milliseconds(600))
+            default: nil
+            }
+        }
+        let fixture = BrokerFixture(device: device)
+        try await fixture.start()
+        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+        let slow = Task { _ = try await reader.dump() }
+        try await Task.sleep(for: .milliseconds(100))
+
+        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+        let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+        let display = HelperRequest.display.adding(HelperBrokerWire.timeoutField, .int(850))
+        let outcome = try await connection.exchange(display, id: 9, timeout: .seconds(5))
+        try await slow.value
+
+        guard case .reply(let frame) = outcome else {
+            Issue.record("no reply to the late turn: \(outcome)")
+            return
+        }
+        #expect(HelperBrokerWire.isOK(frame))
+        #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
+        await connection.close()
+        await reader.close()
+        try await fixture.stop()
     }
 
     @Test("a broker with another idle timeout that serves another command is kept, so neither command cuts the other off")

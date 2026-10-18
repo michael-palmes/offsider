@@ -20,7 +20,7 @@ enum HelperOrigin {
 final class HelperSession {
     static let helloTimeout: Duration = .seconds(2)
     static let dumpTimeout: Duration = .seconds(15)
-    static let requestTimeout: Duration = .seconds(5)
+    nonisolated static let requestTimeout: Duration = .seconds(5)
     static let quitTimeout: Duration = .milliseconds(500)
     static let exitTimeout: Duration = .seconds(1)
     static let killTimeout: Duration = .seconds(2)
@@ -274,17 +274,16 @@ final class HelperSession {
         }
     }
 
-    /// A command's request passed on as it came, for the broker, answered by `deadline`; nil, unsent, when `skip` says so once its turn comes.
-    /// Never restarts the helper, so a lost one ends every later relay.
+    /// A broker's relay of a command's request, waiting until `deadline` but `atLeast` once sent; nil, unsent, when `skip` says so on its turn.
     func relay(
-        payload: Data, op: String, id: Int, deadline: ContinuousClock.Instant, skip: () -> Bool = { false }
+        payload: Data, op: String, id: Int, deadline: ContinuousClock.Instant, atLeast minimum: Duration = .zero, skip: () -> Bool = { false }
     ) async throws -> HelperConnection.Outcome? {
         await queue.acquire()
         defer { queue.release() }
         guard !skip() else { return nil }
         guard !isClosed, let connection else { return .lost("the warm helper has stopped") }
         let outcome = try await connection.exchange(
-            payload: payload, op: op, id: id, timeout: deadline - .now, expectingPayload: op == "screenshot"
+            payload: payload, op: op, id: id, timeout: max(deadline - .now, minimum), expectingPayload: op == "screenshot"
         )
         switch outcome {
         case .reply, .replyWithPayload: break
