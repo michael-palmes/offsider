@@ -33,6 +33,7 @@ final class HelperBroker {
     private var lastRequest = ContinuousClock.now
     private var inFlight = 0
     private var clients = 0
+    private var refusing = 0
     /// Clients past `hello`, so a command that reads another way does not stop a helper in use.
     private var attached = 0
     private var stopping = false
@@ -141,7 +142,16 @@ final class HelperBroker {
             guard let descriptor = await listener.accept(timeout: .milliseconds(100)) else { continue }
             let stream = PosixAdbStream.adopting(descriptor)
             guard clients < limits.maxClients else {
-                Task { await refuse(stream) }
+                // As many refusals as clients at once; past that a connection is closed unanswered, so a flood cannot pile up tasks.
+                guard refusing < limits.maxClients else {
+                    await stream.close()
+                    continue
+                }
+                refusing += 1
+                Task {
+                    await refuse(stream)
+                    refusing -= 1
+                }
                 continue
             }
             clients += 1

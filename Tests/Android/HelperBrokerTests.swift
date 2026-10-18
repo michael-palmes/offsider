@@ -433,6 +433,32 @@ struct HelperBrokerTests {
         try await fixture.stop()
     }
 
+    @Test("past the client and refusal limits a connection is closed unanswered, so a flood cannot pile up work")
+    func refusalsAreCapped() async throws {
+        let fixture = BrokerFixture(maxClients: 1)
+        try await fixture.start()
+        let free = ContinuousClock.now + .seconds(5)
+        while await HelperBrokerClient.status(at: fixture.socket) == nil, ContinuousClock.now < free {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+        // Refused but silent, it holds the one refusal slot while the broker waits for its request.
+        let silent = try #require(await HelperBrokerClient.open(fixture.socket))
+        try await Task.sleep(for: .milliseconds(300))
+
+        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+        let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+        let outcome = try await connection.exchange(.ping, id: 42, timeout: .seconds(5))
+        guard case .lost = outcome else {
+            Issue.record("answered past the refusal limit: \(outcome)")
+            return
+        }
+        await connection.close()
+        await silent.close()
+        await session.close()
+        try await fixture.stop()
+    }
+
     @Test("a status from another build missing newer fields still reads, so session stop finds its broker")
     func statusReadsLeniently() throws {
         let frame = Data(#"{"id":1,"ok":true,"status":{"serial":"emulator-5556","state":"ready","brokerPid":12}}"#.utf8)
