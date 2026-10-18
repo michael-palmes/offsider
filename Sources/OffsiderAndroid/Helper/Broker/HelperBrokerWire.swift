@@ -239,3 +239,27 @@ extension HelperUnavailableReason {
         }
     }
 }
+
+extension HelperBrokerWire.Status {
+    private enum CodingKeys: String, CodingKey {
+        case serial, state, brokerPid, helperPid, startedAt, idleSeconds, idleFor, attached, helper, `protocol`, sdkInt, launchMs, pushed
+    }
+
+    /// Only `serial`, `state` and `brokerPid` are required, so a broker of another build still reads and stops.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        serial = try container.decode(String.self, forKey: .serial)
+        state = try container.decode(State.self, forKey: .state)
+        brokerPid = try container.decode(Int32.self, forKey: .brokerPid)
+        helperPid = try? container.decodeIfPresent(Int32.self, forKey: .helperPid)
+        startedAt = (try? container.decodeIfPresent(Double.self, forKey: .startedAt)) ?? 0
+        idleSeconds = (try? container.decodeIfPresent(Int.self, forKey: .idleSeconds)) ?? 0
+        idleFor = (try? container.decodeIfPresent(Int.self, forKey: .idleFor)) ?? 0
+        attached = (try? container.decodeIfPresent(Int.self, forKey: .attached)) ?? 0
+        helper = try? container.decodeIfPresent(String.self, forKey: .helper)
+        `protocol` = try? container.decodeIfPresent(Int.self, forKey: .protocol)
+        sdkInt = try? container.decodeIfPresent(Int.self, forKey: .sdkInt)
+        launchMs = try? container.decodeIfPresent(Int.self, forKey: .launchMs)
+        pushed = try? container.decodeIfPresent(Bool.self, forKey: .pushed)
+    }
+}

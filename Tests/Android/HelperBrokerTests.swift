@@ -432,6 +432,66 @@ struct HelperBrokerTests {
         await other.close()
         try await fixture.stop()
     }
+
+    @Test("a status from another build missing newer fields still reads, so session stop finds its broker")
+    func statusReadsLeniently() throws {
+        let frame = Data(#"{"id":1,"ok":true,"status":{"serial":"emulator-5556","state":"ready","brokerPid":12}}"#.utf8)
+        let status = try JSONDecoder().decode(HelperBrokerWire.StatusReply.self, from: frame).status
+        #expect(status.serial == "emulator-5556")
+        #expect(status.attached == 0 && status.helperPid == nil)
+    }
+
+    @Test("session stop stops a broker whose status does not read, so another build's helper never keeps the slot")
+    func stopsUnreadableBroker() async throws {
+        let fixture = BrokerFixture()
+        let other = try OtherBuildBroker(path: fixture.socket)
+        var host = AndroidTestHost.make()
+        host.helperBroker = try fixture.brokerHost()
+
+        let stopped = await AndroidBackend.stopWarmHelpers(host: host)
+        #expect(stopped.count == 1)
+        #expect(!UnixSocket.answers(fixture.socket))
+        other.cancel()
+        try? FileManager.default.removeItem(at: fixture.root)
+    }
+}
+
+/// A broker of a build whose `status` this one cannot read; `stop` closes it.
+@MainActor
+final class OtherBuildBroker {
+    private let listener: UnixSocketListener
+    private var serving: Task<Void, Never>?
+
+    init(path: String) throws {
+        let listener = try UnixSocketListener(path: path)
+        self.listener = listener
+        serving = Task {
+            while !Task.isCancelled {
+                guard let descriptor = await listener.accept(timeout: .milliseconds(50)) else { continue }
+                let stream = PosixAdbStream.adopting(descriptor)
+                var decoder = HelperWire.FrameDecoder()
+                let chunk = (try? await stream.read(upTo: 64 * 1024, deadline: .now + .seconds(2))) ?? Data()
+                guard let request = (try? decoder.feed(chunk))?.first.flatMap(HelperBrokerWire.Request.parse) else {
+                    await stream.close()
+                    continue
+                }
+                let reply = request.op == "status" ? #"{"id":\#(request.id),"ok":true,"status":{"state":"draining"}}"# : #"{"id":\#(request.id),"ok":true}"#
+                if let frame = try? HelperWire.frame(Data(reply.utf8)) {
+                    try? await stream.write(frame, deadline: .now + .seconds(2))
+                }
+                await stream.close()
+                if request.op == "stop" {
+                    listener.close()
+                    return
+                }
+            }
+        }
+    }
+
+    func cancel() {
+        serving?.cancel()
+        listener.close()
+    }
 }
 
 @Suite("Android warm helper settings")
