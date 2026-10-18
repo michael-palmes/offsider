@@ -108,8 +108,9 @@ struct InitTests {
         terminal.type([" \r"])
         let chosen = try Init.chooseAgents(targets, descriptor: terminal.secondary, name: \.0, folder: \.1)
         #expect(chosen.map(\.0) == ["Agents Skills"])
-        #expect(terminal.transcript.contains("\(InitScreen.agentsQuestion) \(TerminalUI.Controls(ticking: true).text(style: .detect(isTerminal: true)))"))
-        #expect(terminal.transcript.contains("[x]  Claude Code"))
+        let transcript = terminal.finish()
+        #expect(transcript.contains("\(InitScreen.agentsQuestion) \(TerminalUI.Controls(ticking: true).text(style: .detect(isTerminal: true)))"))
+        #expect(transcript.contains("[x]  Claude Code"))
         let shared = [("Claude Code", "/Users/me/.agents/skills"), ("Agents Skills", "/Users/me/.agents/skills")]
         #expect(try Init.chooseAgents(shared, descriptor: -1, name: \.0, folder: \.1).count == 2)
     }

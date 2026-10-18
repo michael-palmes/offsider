@@ -93,7 +93,8 @@ struct DeviceWatchdogTests {
     @Test("slow setup is covered by the setup bound, not the condition's bound of 0")
     func setupHasItsOwnBound() async throws {
         let fired = Fired()
-        let watchdog = DeviceWatchdog(grace: 0.1, setupBound: 10) { fired.record($0) }
+        // Far past any stall of a full parallel run, which has held a 200 ms sleep for over 10 s.
+        let watchdog = DeviceWatchdog(grace: 0.1, setupBound: 600) { fired.record($0) }
         let value = await watchdog.guarding(setupThen: 0, device: "SIM-1") { ready in
             try? await Task.sleep(for: .milliseconds(200))
             #expect(fired.all.isEmpty)

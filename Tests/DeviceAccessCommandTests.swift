@@ -216,7 +216,7 @@ struct DeviceAccessCommandTests {
             "Withdraw  offsider device-access remove --device \(PolicyFixtures.phone)", "Next      offsider doctor --device \(PolicyFixtures.phone)",
         ])
         #expect(Set(closing.map { $0.prefix { $0 == " " }.count }).count == 1)
-        #expect(terminal.transcript.contains(DeviceAccessAllow.suffixMismatch))
+        #expect(terminal.finish().contains(DeviceAccessAllow.suffixMismatch))
         #expect(presence.reasons == ["allow Offsider to drive Test iPhone (\(PolicyFixtures.phone))"])
         let snapshot = try DeviceAllowListStore(directory: UserConfigDirectory(home: home)).load()
         #expect(snapshot.list.entries.map(\.apps) == [["com.mpalmes.offsider.playground"]])
@@ -239,7 +239,8 @@ struct DeviceAccessCommandTests {
             }
         }
         #expect(output.contains("Allowed Test iPhone until 22 Sep 02:14, any app."))
-        #expect(terminal.transcript.contains("Test iPhone · any app · 12 hours · team ABCDE12345") || terminal.transcript.contains("Test iPhone - any app - 12 hours - team ABCDE12345"))
+        let transcript = terminal.finish()
+        #expect(transcript.contains("Test iPhone · any app · 12 hours · team ABCDE12345") || transcript.contains("Test iPhone - any app - 12 hours - team ABCDE12345"))
         let snapshot = try DeviceAllowListStore(directory: UserConfigDirectory(home: home)).load()
         #expect(snapshot.list.entries.map(\.team) == ["ABCDE12345"])
         #expect(seal.isIntact(snapshot))
@@ -636,7 +637,7 @@ struct DeviceAccessCommandTests {
                 _ = try await DeviceAccessAllow.parse([]).perform(context: Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.row] }))
             }
         }
-        let transcript = terminal.transcript
+        let transcript = terminal.finish()
         #expect(transcript.contains("\(AllowScreen.deviceQuestion) (R rescan, Q quit)"))
         #expect(transcript.contains(AllowScreen.allAllowed))
         #expect(transcript.contains("Withdraw  offsider device-access remove --device \(PolicyFixtures.phone)"))

@@ -141,7 +141,7 @@ struct DeviceOptionTests {
         terminal.type(["\r"])
         let picked = try await DevicePicker.pickRunning(descriptor: terminal.secondary) { [phone, simulator, stopped] }
         #expect(picked == simulator)
-        let transcript = terminal.transcript
+        let transcript = terminal.finish()
         #expect(transcript.contains("\(DevicePickerScreen.deviceQuestion) \(TerminalUI.Controls(rescan: true).text(style: .detect(isTerminal: true)))"))
         #expect(transcript.contains("Test Sim  iOS 27.1"))
         #expect(!transcript.contains("Test iPhone"))
