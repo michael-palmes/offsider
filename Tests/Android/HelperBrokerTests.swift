@@ -523,6 +523,17 @@ struct HelperBrokerTests {
         try await fixture.stop()
     }
 
+    @Test("a broker whose status does not read is left running by a stop that waits for it to be free")
+    func unreadableStatusIsInUse() async throws {
+        let fixture = BrokerFixture()
+        let broker = try ScriptedBroker(path: fixture.socket)
+
+        #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(300)) == .inUse)
+        #expect(!broker.ops.contains("stop"))
+        broker.cancel()
+        try? FileManager.default.removeItem(at: fixture.root)
+    }
+
     @Test("the relay cap outlasts the longest inject a command sends, so a full-length gesture is never cut off")
     func relayCapOutlastsLongestInject() {
         let longest = HelperSession.requestTimeout + .milliseconds(HelperInjectPlan.maxRequestMilliseconds)
@@ -565,7 +576,8 @@ struct HelperBrokerTests {
     @Test("a broker that answers but does not stop is reported as still serving, never as stopped")
     func unstoppableBrokerIsNotStopped() async throws {
         let fixture = BrokerFixture()
-        let other = try ScriptedBroker(path: fixture.socket, answersStop: false)
+        let free = #"{"serial":"emulator-5556","state":"ready","brokerPid":3,"attached":0}"#
+        let other = try ScriptedBroker(path: fixture.socket, status: free, answersStop: false)
 
         #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(200)) == .stillServing)
         #expect(UnixSocket.answers(fixture.socket))

@@ -154,8 +154,8 @@ struct HelperBrokerClient {
     /// Stops the broker at `path` once no command is attached, waiting up to `wait`.
     static func stopWhenFree(at path: String, wait: Duration) async -> FreeStop {
         let deadline = ContinuousClock.now + wait
-        // A broker that does not report its commands is taken as in use.
-        while let status = await status(at: path), (status.attached ?? 1) > 0 {
+        // A broker whose status does not read, or that does not report its commands, is taken as in use while it answers.
+        while await status(at: path)?.attached != 0, UnixSocket.answers(path) {
             guard ContinuousClock.now < deadline else { return .inUse }
             try? await Task.sleep(for: .milliseconds(100))
         }
