@@ -8,6 +8,8 @@ final class HelperBroker {
         var idle: Duration
         var maxLifetime: Duration = HelperBrokerSettings.maxLifetime
         var healthInterval: Duration = .seconds(2)
+        /// How long the helper has to answer a ping once its turn comes, however long the ping waited behind another command's request.
+        var pingTimeout: Duration = HelperSession.requestTimeout
         var maxClients = 8
         /// Longer than any request a command sends, an inject's 60 s of gestures and its typing included; it bounds a request's own timeout.
         var relayTimeout: Duration = .seconds(120)
@@ -397,7 +399,7 @@ final class HelperBroker {
     private func latestEventSeq(_ session: HelperSession) async -> Int64? {
         probeID += 1
         let ping = (try? HelperRequest.ping.payload(id: probeID)) ?? Data()
-        let outcome = try? await session.relay(payload: ping, op: "ping", id: probeID, deadline: .now + HelperSession.requestTimeout)
+        let outcome = try? await session.relay(payload: ping, op: "ping", id: probeID, deadline: .now, atLeast: limits.pingTimeout)
         guard case .reply(let frame)? = outcome, let envelope = try? JSONDecoder().decode(HelperEnvelope.self, from: frame), envelope.ok == true else {
             if helperGone == nil { helperGone = "it did not answer ping" }
             return nil

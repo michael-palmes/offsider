@@ -17,7 +17,7 @@ final class BrokerFixture {
 
     init(
         device: FakeHelperDevice = FakeHelperDevice(), idle: Duration = .seconds(30), dexSha256: String = FakeHelperDevice.dex.sha256, maxClients: Int = 8,
-        startDelay: Duration = .zero
+        startDelay: Duration = .zero, pingTimeout: Duration = HelperSession.requestTimeout
     ) {
         self.idle = idle
         self.device = device
@@ -27,7 +27,7 @@ final class BrokerFixture {
         let socket = HelperBrokerPaths(serial: FakeHelperDevice.serial, directory: directory).socket
         broker = HelperBroker(
             serial: FakeHelperDevice.serial, socketPath: socket, dexSha256: dexSha256,
-            limits: HelperBroker.Limits(idle: idle, healthInterval: .seconds(60), maxClients: maxClients, failureLinger: .seconds(1)),
+            limits: HelperBroker.Limits(idle: idle, healthInterval: .seconds(60), pingTimeout: pingTimeout, maxClients: maxClients, failureLinger: .seconds(1)),
             startHelper: {
                 if startDelay > .zero { try await Task.sleep(for: startDelay) }
                 return try await HelperSessionTests.start(device)
@@ -473,6 +473,32 @@ struct HelperBrokerTests {
         try await wedged.untilReady()
         #expect(await HelperBrokerClient.health(at: wedged.socket) == nil)
         #expect(try await wedged.finished())
+    }
+
+    @Test("a ping queued behind another command's slow request still gets its full time, so a new command attaches and the helper stays")
+    func queuedPingKeepsTheHelper() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in
+            switch op {
+            case "dump": .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800))
+            case "ping": .okAfter("{}", .milliseconds(100))
+            default: nil
+            }
+        }
+        let fixture = BrokerFixture(device: device, pingTimeout: .milliseconds(300))
+        try await fixture.start()
+        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+        let slow = Task { _ = try await reader.dump() }
+        try await Task.sleep(for: .milliseconds(100))
+
+        let second = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+        try await slow.value
+        #expect(second.isWarm)
+        #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
+        #expect(fixture.device.startedProcesses == 1)
+        await second.close()
+        await reader.close()
+        try await fixture.stop()
     }
 
     @Test("the relay cap outlasts the longest inject a command sends, so a full-length gesture is never cut off")
