@@ -277,7 +277,7 @@ struct WaitLoopTests {
             platform: platform, device: "fake-device", command: "tap", writtenAt: now, treeReadAt: now.addingTimeInterval(-0.2),
             lastInputAt: now.addingTimeInterval(-0.1), treeRole: .preAction, roots: Self.liveTicker("$1.00", platform: platform).roots
         )
-        let gate = try #require(SettleGate.after(try TreeCacheRecord(data: record.encoded()), now: now))
+        let gate = try #require(SettleGate.after(try record.reloaded(), now: now))
         let script = Script()
         script.trees = (2...5).map { .success(Self.liveTicker("$\($0).00", platform: platform)) }
             + [.success(Self.liveTicker("$6.00", platform: platform, pushed: true))]
@@ -288,27 +288,11 @@ struct WaitLoopTests {
 
     /// The live-ticker screen as a live read gives it, with the native types a cached tree leaves out.
     private static func liveTicker(_ price: String, platform: DevicePlatform, pushed: Bool = false) -> UITree {
-        func dressed(_ node: UINode) -> UINode {
-            let (className, type, role) = switch node.role {
-            case .application: ("android.widget.FrameLayout", "Application", "AXApplication")
-            case .button: ("android.view.ViewGroup", "Button", "AXButton")
-            case .header: ("android.widget.TextView", "Heading", "AXHeading")
-            default: ("android.widget.TextView", "StaticText", "AXStaticText")
-            }
-            var live = node
-            live.native = platform == .android
-                ? .android(AndroidNativeAttributes(className: className, resourceId: node.id))
-                : .ios(IOSNativeAttributes(type: type, role: role))
-            live.children = node.children.map(dressed)
-            return live
-        }
         let detail = FakeUI.node(.header, id: "live-ticker-detail", label: "Detail", frame: FakeUI.frame(0, 60, 402, 44))
-        var tree = FakeUI.tree(platform: platform, [
+        return FakeUI.live(FakeUI.tree(platform: platform, [
             FakeUI.node(.text, id: "live-ticker-price", label: price, frame: FakeUI.frame(300, 100, 80, 30)),
             FakeUI.node(.button, id: "live-ticker-open-detail", label: "Open Detail", frame: FakeUI.frame(20, 600, 350, 44)),
-        ] + (pushed ? [detail] : []))
-        tree.roots = tree.roots.map(dressed)
-        return tree
+        ] + (pushed ? [detail] : [])))
     }
 
     @Test("the gate follows the last input's record: none after a verified input or an old one, the tree before an unverified one")

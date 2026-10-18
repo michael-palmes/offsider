@@ -261,6 +261,40 @@ enum FakeUI {
         let root = node(.application, label: label, frame: frame(0, 0, width, height), platform: platform, children: children)
         return UITree(platform: platform, device: device, roots: [root])
     }
+
+    /// `tree` as a live read gives it, with the class names, iOS types and AX roles a cached tree leaves out; other native attributes stay.
+    static func live(_ tree: UITree) -> UITree {
+        func dressed(_ node: UINode) -> UINode {
+            let (className, type, role) = switch node.role {
+            case .application: ("android.widget.FrameLayout", "Application", "AXApplication")
+            case .button: ("android.view.ViewGroup", "Button", "AXButton")
+            case .header: ("android.widget.TextView", "Heading", "AXHeading")
+            case .text: ("android.widget.TextView", "StaticText", "AXStaticText")
+            case .textField: ("android.widget.EditText", "TextField", "AXTextField")
+            case .switch: ("android.widget.Switch", "CheckBox", "AXCheckBox")
+            case .slider: ("android.widget.SeekBar", "Slider", "AXSlider")
+            default: ("android.view.ViewGroup", "Group", "AXGroup")
+            }
+            var live = node
+            switch (tree.platform, node.native) {
+            case (.android, .android(var attributes)):
+                attributes.className = className
+                live.native = .android(attributes)
+            case (.android, .ios):
+                live.native = .android(AndroidNativeAttributes(className: className, resourceId: node.id))
+            case (.ios, .ios(var attributes)):
+                (attributes.type, attributes.role) = (type, role)
+                live.native = .ios(attributes)
+            case (.ios, .android):
+                live.native = .ios(IOSNativeAttributes(type: type, role: role))
+            }
+            live.children = node.children.map(dressed)
+            return live
+        }
+        var live = tree
+        live.roots = tree.roots.map(dressed)
+        return live
+    }
 }
 
 extension FakeDeviceBackend: PermissionControlling, StatusBarControlling, BiometricControlling {

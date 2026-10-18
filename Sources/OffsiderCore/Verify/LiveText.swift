@@ -20,8 +20,8 @@ public enum LiveText {
               isUsable(record, readAt: readAt) else {
             return []
         }
-        let old = AccessibilitySnapshot(tree: withoutLogBoxToasts(cachedTree).tree)
-        let new = AccessibilitySnapshot(tree: withoutLogBoxToasts(first).tree)
+        let old = AccessibilitySnapshot(tree: withoutLogBoxToasts(cachedTree).tree, native: false)
+        let new = AccessibilitySnapshot(tree: withoutLogBoxToasts(first).tree, native: false)
         guard old.isKnown, new.isKnown, detector.sharedKeyFraction(old, new) >= minimumSharedKeys else {
             return []
         }

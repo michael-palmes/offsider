@@ -18,7 +18,8 @@ public struct UITreeFilter: Equatable, Sendable {
 
     /// Whether `node` itself passes; a nil `visibleRect` makes `onScreen` keep everything.
     /// On screen means at least 1 pt visible on both axes, the rule selectors, `wait` and `assert` use.
-    public func matches(_ node: UINode, visibleRect: UIFrame?) -> Bool {
+    /// With `native` false, actionable goes by role alone, as a cached tree keeps no iOS custom actions.
+    public func matches(_ node: UINode, visibleRect: UIFrame?, native: Bool = true) -> Bool {
         if onScreen, let visibleRect {
             guard let frame = node.frame, frame.isVisible(in: visibleRect) else {
                 return false
@@ -27,7 +28,7 @@ public struct UITreeFilter: Equatable, Sendable {
         if labelled, ![node.label, node.id, node.value].contains(where: Self.hasText) {
             return false
         }
-        if actionable, !node.isActionable {
+        if actionable, !(native ? node.isActionable : node.role.isActionable) {
             return false
         }
         return true
