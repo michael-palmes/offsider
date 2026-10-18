@@ -127,6 +127,22 @@ struct AndroidFoldableParsingTests {
         #expect(try AndroidDisplayGeometry.parse(FoldableFixtures.foldGeometryOpen).rotated(to: 1).fits(inner))
     }
 
+    @Test("Android 9's BUILT_IN panel is main and active, and its HDMI display is external")
+    func android9Displays() throws {
+        let list = AndroidDisplayList.parse(dumpsys: Android9Fixtures.dumpsysDisplay)
+        let display = try #require(list.displays.first)
+        #expect(list.displays.count == 1)
+        #expect(display.descriptor == DisplayDescriptor(
+            role: .main, platformId: "0", name: "Built-in Screen", pixelWidth: 1080, pixelHeight: 2280, scale: 2.75, nativeOrientation: 0
+        ))
+        #expect(list.active?.uniqueId == "local:0")
+
+        let hdmi = #"  DisplayDeviceInfo{"HDMI Screen": uniqueId="local:1", 1920 x 1080, density 160, 160.0 x 160.0 dpi, type HDMI, state ON}"#
+        let withHDMI = AndroidDisplayList.parse(dumpsys: Android9Fixtures.dumpsysDisplay + hdmi + "\n")
+        #expect(withHDMI.displays.map(\.descriptor.role) == [.main, .external])
+        #expect(withHDMI.soleLitPanel?.uniqueId == "local:0")
+    }
+
     @Test("an external display keeps its role beside a single built-in one")
     func externalDisplay() {
         let output = FoldableFixtures.pixel9Dumpsys.replacingOccurrences(

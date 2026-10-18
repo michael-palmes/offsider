@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `tap --verify` and the other verified commands on iOS no longer treat an element with an accessibility title as live text after a recent read. The kept screen leaves titles out, so every titled element looked changed, and its real changes were then ignored.
 - `describe-ui --diff --actionable` on iOS no longer lists an element that is actionable only through custom actions as added on every read. The kept screen has no custom actions, so both reads now go by role.
 - `posture` on an Android foldable no longer prints the panel it is leaving after a 10 s wait: when its first read after the fold still showed the old panel, every later read reused it; it now reads the screen again until the panel swaps.
+- On Android 9, `displays`, `describe-ui --display` and `screenshot --display` find the screen instead of failing with "Could not find a built-in display", and a warm helper keeps the emulator's displays as on later Android releases: Android 9 names the panel type `BUILT_IN`.
 
 ## [0.12.0] - 2026-10-15
 

@@ -74,6 +74,23 @@ struct AndroidWarmScreenTests {
         try await rig.fixture.stop()
     }
 
+    @Test("an Android 9 emulator, which has no device_state, reads its displays from the shell once, then from the warm helper")
+    func android9ReadsShellOnce() async throws {
+        let separator = AndroidDisplayStatus.separator + "\n"
+        let rig = try await WarmScreenRig(status: separator + separator + Android9Fixtures.dumpsysDisplay, probe: Android9Fixtures.portraitProbe)
+        let android9Display = #""display":{"displayId":0,"source":"DisplayManagerGlobal","logicalWidthPx":1080,"logicalHeightPx":2280,"rotation":0,"physicalWidthPx":1080,"physicalHeightPx":2280,"densityDpi":440,"densityStableDpi":440}"#
+        rig.fixture.device.dump = FakeHelperDevice.tapTestDump.replacingOccurrences(of: FakeHelperDevice.display, with: android9Display)
+
+        let first = try await rig.describe()
+        let second = try await rig.describe()
+        let third = try await rig.describe()
+
+        #expect(rig.statusReads == 1)
+        #expect(first?.display == ScreenDisplay(id: "main", platformId: "0"))
+        #expect(second == first && third == first)
+        try await rig.fixture.stop()
+    }
+
     @Test("a foldable reads its displays from the shell every command, so its posture stays live")
     func foldableReadsShellEachCommand() async throws {
         let status = FoldableFixtures.status(FoldableFixtures.foldPrintStates, FoldableFixtures.foldStateClosed, FoldableFixtures.foldDumpsysClosed)
