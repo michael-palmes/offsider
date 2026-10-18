@@ -334,10 +334,10 @@ extension AndroidBackend {
     /// Stops Offsider's own warm helper on `serial` once no other command uses it, so this command finds the UiAutomation slot free.
     func stopWarmHelper(_ serial: String) async {
         guard let socket = host.warmHelperSocket(for: serial), UnixSocket.answers(socket) else { return }
-        if await HelperBrokerClient.stopWhenFree(at: socket, wait: Self.warmHelperFreeWait) {
-            log(.debug, "Stopped the warm helper on \(serial), which this command does not use")
-        } else {
-            log(.debug, "The warm helper on \(serial) is serving another command, so this one leaves it running")
+        switch await HelperBrokerClient.stopWhenFree(at: socket, wait: Self.warmHelperFreeWait) {
+        case .stopped: log(.debug, "Stopped the warm helper on \(serial), which this command does not use")
+        case .inUse: log(.debug, "The warm helper on \(serial) is serving another command, so this one leaves it running")
+        case .stillServing: log(.debug, "The warm helper on \(serial) did not stop when asked")
         }
     }
 

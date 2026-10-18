@@ -66,8 +66,7 @@ struct HelperBrokerClient {
         }
     }
 
-    /// The answering broker's connection when it runs this build's helper; one with another idle timeout is replaced unless it serves
-    /// other commands, and another build's once none uses it. Never starts one.
+    /// This build's answering broker, even with another idle timeout while it serves others; any other replaced once free. Never starts one.
     func existing(helloID: Int) async throws -> HelperConnection? {
         guard let stream = await open() else { return nil }
         switch try await hello(stream, helloID: helloID) {
@@ -83,10 +82,11 @@ struct HelperBrokerClient {
             return nil
         case .replace(let detail):
             log(.debug, "The warm helper on \(serial) does not match this command (\(detail)); replacing it once no other command uses it")
-            guard await Self.stopWhenFree(at: paths.socket, wait: freeWait) else {
-                throw HelperBrokerUnavailable(detail: "a warm helper from another Offsider build is serving another command")
+            switch await Self.stopWhenFree(at: paths.socket, wait: freeWait) {
+            case .stopped: return nil
+            case .inUse: throw HelperBrokerUnavailable(detail: "a warm helper from another Offsider build is serving another command")
+            case .stillServing: throw HelperBrokerUnavailable(detail: "a warm helper from another Offsider build did not stop when asked")
             }
-            return nil
         case .ended:
             await untilGone()
             return nil
@@ -137,20 +137,32 @@ struct HelperBrokerClient {
         return true
     }
 
-    /// Stops the broker at `path` once no command is attached, waiting up to `wait`; false, leaving it running, while one still is.
-    static func stopWhenFree(at path: String, wait: Duration) async -> Bool {
-        let deadline = ContinuousClock.now + wait
-        while let status = await status(at: path), status.attached > 0 {
-            guard ContinuousClock.now < deadline else { return false }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        await stop(at: path)
-        return true
+    enum FreeStop: Equatable, Sendable {
+        /// Nothing serves the socket any more.
+        case stopped
+        /// A command was still attached when the wait ran out, so it was left running.
+        case inUse
+        /// It still answers after being asked to stop.
+        case stillServing
     }
 
+    /// Stops the broker at `path` once no command is attached, waiting up to `wait`.
+    static func stopWhenFree(at path: String, wait: Duration) async -> FreeStop {
+        let deadline = ContinuousClock.now + wait
+        while let status = await status(at: path), status.attached > 0 {
+            guard ContinuousClock.now < deadline else { return .inUse }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return await stop(at: path) || !UnixSocket.answers(path) ? .stopped : .stillServing
+    }
+
+    /// Watches for the socket file, which a broker removes last, so waiting costs it no connections; a file a dead broker left is probed now and then.
     static func untilGone(_ path: String) async {
         let deadline = ContinuousClock.now + goneTimeout
-        while UnixSocket.answers(path), ContinuousClock.now < deadline {
+        var polls = 0
+        while FileManager.default.fileExists(atPath: path), ContinuousClock.now < deadline {
+            polls += 1
+            if polls.isMultiple(of: 10), !UnixSocket.answers(path) { return }
             try? await Task.sleep(for: .milliseconds(20))
         }
     }

@@ -440,6 +440,17 @@ struct HelperBrokerTests {
         try await fixture.stop()
     }
 
+    @Test("a broker that answers but does not stop is reported as still serving, never as stopped")
+    func unstoppableBrokerIsNotStopped() async throws {
+        let fixture = BrokerFixture()
+        let other = try OtherBuildBroker(path: fixture.socket, answersStop: false)
+
+        #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(200)) == .stillServing)
+        #expect(UnixSocket.answers(fixture.socket))
+        other.cancel()
+        try? FileManager.default.removeItem(at: fixture.root)
+    }
+
     @Test("a broker with another idle timeout that serves another command is kept, so neither command cuts the other off")
     func otherIdleInUseIsKept() async throws {
         let fixture = BrokerFixture(idle: .seconds(30))
@@ -522,13 +533,13 @@ struct HelperBrokerTests {
     }
 }
 
-/// A broker of a build whose `status` this one cannot read; `stop` closes it.
+/// A broker of a build whose `status` this one cannot read; `stop` closes it, unless it ignores stops.
 @MainActor
 final class OtherBuildBroker {
     private let listener: UnixSocketListener
     private var serving: Task<Void, Never>?
 
-    init(path: String) throws {
+    init(path: String, answersStop: Bool = true) throws {
         let listener = try UnixSocketListener(path: path)
         self.listener = listener
         serving = Task {
@@ -538,6 +549,10 @@ final class OtherBuildBroker {
                 var decoder = HelperWire.FrameDecoder()
                 let chunk = (try? await stream.read(upTo: 64 * 1024, deadline: .now + .seconds(2))) ?? Data()
                 guard let request = (try? decoder.feed(chunk))?.first.flatMap(HelperBrokerWire.Request.parse) else {
+                    await stream.close()
+                    continue
+                }
+                if request.op == "stop", !answersStop {
                     await stream.close()
                     continue
                 }
