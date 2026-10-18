@@ -7,9 +7,9 @@ struct Batch: AsyncParsableCommand {
         abstract: "Run ordered input and read steps using one device session.",
         discussion: """
         Batch runs a whole case (tap, wait, check, capture, read the tree) in one command. Steps run in order \
-        and are written like the standalone commands without --device. A read step that starts within 100 ms of an input \
-        step waits out the rest of those 100 ms first, so it sees what the input drew; wait --settled, --region and --seconds \
-        steps start at once.
+        and are written like the standalone commands without --device. A read step that starts within 100 ms of input, from \
+        an earlier step or the command just before the batch, waits out the rest of those 100 ms first, so it sees what the \
+        input drew; wait --settled, --region and --seconds steps start at once.
 
         Input steps:
           tap, swipe, gesture, touch, type, button, key, key-sequence, key-combo
@@ -26,7 +26,7 @@ struct Batch: AsyncParsableCommand {
         with focus where the device reports it) is refused with exit 64 (secure_field_argument): sign in with \
         `offsider login` instead.
 
-        With --json, stdout is NDJSON: one line per finished step, in this key order: step, kind, line, ok, ms; \
+        With --json, stdout is NDJSON: one line per finished step, in this key order: step, kind, line, ok, ms (a read step's includes that 100 ms wait); \
         a type step's line shows its text as <N characters>, never the text; \
         a failure adds exitCode and error; wait and assert add met, reason, match; screenshot adds its --json keys; \
         describe-ui adds tree (json format) or output (ndjson or text). A last line follows: \
@@ -247,7 +247,7 @@ struct Batch: AsyncParsableCommand {
             // Also after a failure: a step can send input before it fails.
             defer {
                 if let kind = BatchStepKind(rawValue: stepName), kind.mayChangeScreen {
-                    context.invalidateTree(sentInput: kind != .sleep)
+                    context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
                 }
             }
             switch try await BatchStepParser.parseStep(tokens, deviceID: context.device.rawValue, context: context, logger: logger) {

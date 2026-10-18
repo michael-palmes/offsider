@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `batch --no-settle` now also stops read steps waiting for an input to draw (see Fixed), as well as tap steps' transition guard. A read step's `ms` in `batch --json` includes that wait.
+
 ### Fixed
 
-- A `batch` read step straight after an input step no longer sees the screen from before that input. `screenshot`, `describe-ui`, `assert` and selector `wait` steps that start within 100 ms of an input step now wait out the rest of those 100 ms, once per input, so a final screenshot shows the tap before it (on an emulator, 6 in 15 such screenshots were stale before; an app there drew a tap within 30 ms). `wait --settled`, `--region` and `--seconds` steps still start at once. `batch --no-settle` now also turns this wait off.
+- A `batch` read step straight after an input no longer sees the screen from before that input. `screenshot`, `describe-ui`, `assert` and selector `wait` steps that start within 100 ms of input, from an earlier step or the command just before the batch, now wait out the rest of those 100 ms, once per input, so a final screenshot shows the tap before it (on an emulator, 6 in 15 such screenshots were stale before; an app there drew a tap within 30 ms). A step that failed before sending anything does not count, and `wait --settled`, `--region` and `--seconds` steps still start at once.
 - `rn devmenu` now counts its held tap on a dev menu switch as sent input, so a failure after it no longer reports `dispatched: no`.
 
 ## [0.12.0] - 2026-10-15

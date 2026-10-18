@@ -49,7 +49,8 @@ struct BatchReadStepTests {
         continueOnError: Bool = false,
         captured: Captured,
         waitTimeout: TimeInterval = 0,
-        noSettle: Bool = false
+        noSettle: Bool = false,
+        cachedRecord: TreeCacheRecord? = nil
     ) async throws -> [BatchStepRecord] {
         let context = BatchContext(
             backend: backend,
@@ -58,12 +59,16 @@ struct BatchReadStepTests {
             typeSubmissionMode: .chunked,
             typeChunkSize: 200,
             waitTimeout: waitTimeout,
-            noSettle: noSettle
+            noSettle: noSettle,
+            cachedRecord: cachedRecord
         )
         let output = BatchOutput(json: json, write: { captured.out += $0 }, writeError: { captured.err += $0 })
-        return try await Batch.runSteps(
-            steps, context: context, session: backend.session, continueOnError: continueOnError, output: output, logger: OffsiderLogger()
-        )
+        // Its own tracker: whether a step sent input decides the draw gap, and parallel tests share the default one.
+        return try await DispatchTracker.$current.withValue(DispatchTracker()) {
+            try await Batch.runSteps(
+                steps, context: context, session: backend.session, continueOnError: continueOnError, output: output, logger: OffsiderLogger()
+            )
+        }
     }
 
     /// Runs and returns the exit code the batch would end with: 0, 5 (`ExitCode`) or the first failed step's code (`ReportedFailure`).
@@ -235,6 +240,39 @@ struct BatchReadStepTests {
             try await Self.run(["tap -x 195 -y 122", "describe-ui --summary"], on: backend, captured: captured, noSettle: true)
         }
 
+        #expect(fixture.sleeps.isEmpty)
+    }
+
+    @Test("read steps at the start of a batch give the command just before it the rest of 100 ms to draw, once")
+    func readsAfterEarlierCommandWaitOutItsGap() async throws {
+        let fixture = try TreeCacheFixture()
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        let captured = Captured()
+        let record = fixture.settledRecord(Self.closed, age: 0.02, inputAge: 0.02)
+
+        try await fixture.run {
+            try await Self.run(["describe-ui --summary", "describe-ui --summary"], on: backend, captured: captured, cachedRecord: record)
+        }
+
+        let sleep = try #require(fixture.sleeps.first)
+        #expect(fixture.sleeps.count == 1)
+        #expect(abs(TransitionGuard.seconds(sleep) - 0.08) < 0.002)
+    }
+
+    @Test("a read step after an input step that failed before sending anything reads at once")
+    func readAfterUnsentInputReadsAtOnce() async throws {
+        let fixture = try TreeCacheFixture()
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        let captured = Captured()
+
+        let code = try await fixture.run {
+            try await Self.exitCode(["tap --id missing", "describe-ui --summary"], on: backend, json: true, continueOnError: true, captured: captured)
+        }
+
+        let records = try captured.records()
+        #expect(code != 0)
+        #expect(records.first?["ok"] as? Bool == false)
+        #expect(backend.session.calls.isEmpty)
         #expect(fixture.sleeps.isEmpty)
     }
 

@@ -31,7 +31,7 @@ final class BatchContext {
     let maskSecure: Bool?
     /// `batch --no-settle`: tap steps skip the transition guard and read steps the draw gap.
     let noSettle: Bool
-    /// The device's cached record from before the batch, for the guard until a step sends input.
+    /// The device's cached record from before the batch, for the guard and the draw gap until a step sends input.
     let cachedRecord: TreeCacheRecord?
 
     private var cachedTree: UITree?
@@ -94,9 +94,9 @@ final class BatchContext {
         }
     }
 
-    /// Waits out the rest of `drawGap` after the last input step, so a read sees what that input drew; `--no-settle` reads at once.
+    /// Waits out the rest of `drawGap` after the last input, a step's or else the command's before the batch, so a read sees what it drew; `--no-settle` reads at once.
     func awaitInputDrawn() async throws {
-        guard !noSettle, let lastInputAt else { return }
+        guard !noSettle, let lastInputAt = lastInputAt ?? cachedRecord?.lastInputAt else { return }
         let environment = TreeCacheEnvironment.current
         let elapsed = max(0, environment.now().timeIntervalSince(lastInputAt))
         let remaining = TransitionGuard.seconds(Self.drawGap) - elapsed
