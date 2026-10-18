@@ -534,6 +534,19 @@ struct HelperBrokerTests {
         try? FileManager.default.removeItem(at: fixture.root)
     }
 
+    @Test("a stop returns once its broker's socket goes, even when another broker takes the path at once")
+    func stopEndsWhenAnotherBrokerTakesThePath() async throws {
+        let fixture = BrokerFixture()
+        let broker = try ScriptedBroker(path: fixture.socket, replaceOnStop: true)
+
+        let asked = ContinuousClock.now
+        #expect(await HelperBrokerClient.stop(at: fixture.socket))
+        #expect(ContinuousClock.now - asked < .milliseconds(1500))
+        #expect(UnixSocket.answers(fixture.socket))
+        broker.cancel()
+        try? FileManager.default.removeItem(at: fixture.root)
+    }
+
     @Test("the relay cap outlasts the longest inject a command sends, so a full-length gesture is never cut off")
     func relayCapOutlastsLongestInject() {
         let longest = HelperSession.requestTimeout + .milliseconds(HelperInjectPlan.maxRequestMilliseconds)
@@ -679,9 +692,12 @@ final class ScriptedBroker {
     private let listener: UnixSocketListener
     private var serving: Task<Void, Never>?
     private(set) var ops: [String] = []
+    /// The broker that took the path when this one stopped, moved over the old socket so the path never goes.
+    private var replacement: UnixSocketListener?
 
     init(
-        path: String, status: String = #"{"state":"draining"}"#, hello: (@Sendable (Int) -> Data)? = nil, answersStop: Bool = true
+        path: String, status: String = #"{"state":"draining"}"#, hello: (@Sendable (Int) -> Data)? = nil, answersStop: Bool = true,
+        replaceOnStop: Bool = false
     ) throws {
         let listener = try UnixSocketListener(path: path)
         self.listener = listener
@@ -707,6 +723,10 @@ final class ScriptedBroker {
                 }
                 await stream.close()
                 if request.op == "stop" {
+                    if replaceOnStop, let fresh = try? UnixSocketListener(path: path + ".new") {
+                        rename(path + ".new", path)
+                        self?.replacement = fresh
+                    }
                     listener.close()
                     return
                 }
@@ -717,6 +737,7 @@ final class ScriptedBroker {
     func cancel() {
         serving?.cancel()
         listener.close()
+        replacement?.close()
     }
 }
 

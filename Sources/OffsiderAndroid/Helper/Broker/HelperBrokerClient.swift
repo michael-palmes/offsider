@@ -135,10 +135,11 @@ struct HelperBrokerClient {
     /// Asks the broker at `path` to stop and waits until its socket is gone, which is after its helper has freed the UiAutomation slot.
     @discardableResult
     static func stop(at path: String) async -> Bool {
+        let bound = UnixSocket.identity(path)
         guard UnixSocket.answers(path), let reply = await control("stop", at: path) else { return false }
         // One still starting its helper stops once the start ends, which takes as long as a cold start.
         let starting = (try? JSONDecoder().decode(HelperBrokerWire.StopReply.self, from: reply))?.starting == true
-        await untilGone(path, within: starting ? HelperLauncher.readyTimeout + goneTimeout : goneTimeout)
+        await untilGone(path, within: starting ? HelperLauncher.readyTimeout + goneTimeout : goneTimeout, bound: bound)
         return true
     }
 
@@ -162,11 +163,12 @@ struct HelperBrokerClient {
         return await stop(at: path) || !UnixSocket.answers(path) ? .stopped : .stillServing
     }
 
-    /// Watches for the socket file, which a broker removes last, so waiting costs it no connections; a file a dead broker left is probed now and then.
-    static func untilGone(_ path: String, within timeout: Duration = goneTimeout) async {
+    /// Watches the socket file `bound` names, removed last and never connected to, until it goes or another broker's replaces it; a dead broker's is probed.
+    static func untilGone(_ path: String, within timeout: Duration = goneTimeout, bound: [UInt64]? = nil) async {
         let deadline = ContinuousClock.now + timeout
+        let bound = bound ?? UnixSocket.identity(path)
         var polls = 0
-        while FileManager.default.fileExists(atPath: path), ContinuousClock.now < deadline {
+        while let current = UnixSocket.identity(path), current == bound, ContinuousClock.now < deadline {
             polls += 1
             if polls.isMultiple(of: 10), !UnixSocket.answers(path) { return }
             try? await Task.sleep(for: .milliseconds(20))
