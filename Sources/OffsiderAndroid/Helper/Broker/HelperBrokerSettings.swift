@@ -96,3 +96,18 @@ public struct HelperBrokerHost: Sendable {
         self.lockRoot = lockRoot
     }
 }
+
+extension AndroidHost {
+    /// `serial`'s warm helper socket; nil when this host keeps no warm helper.
+    func warmHelperSocket(for serial: String) -> String? {
+        guard let directory = try? helperBroker?.directory() else { return nil }
+        return HelperBrokerPaths(serial: serial, directory: directory).socket
+    }
+
+    /// Every warm helper socket, or `serial`'s alone.
+    func warmHelperSockets(serial: String?) -> [String] {
+        if let serial { return warmHelperSocket(for: serial).map { [$0] } ?? [] }
+        guard let directory = try? helperBroker?.directory() else { return [] }
+        return HelperBrokerPaths.sockets(in: directory)
+    }
+}

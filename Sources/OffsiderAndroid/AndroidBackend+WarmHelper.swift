@@ -66,7 +66,7 @@ extension AndroidBackend {
     /// Every answering warm helper, or `serial`'s alone; never starts one and never counts as use.
     public static func warmHelpers(host: AndroidHost, serial: String? = nil) async -> [WarmHelperStatus] {
         var found: [WarmHelperStatus] = []
-        for socket in warmHelperSockets(host: host, serial: serial) {
+        for socket in host.warmHelperSockets(serial: serial) {
             guard let status = await HelperBrokerClient.status(at: socket) else { continue }
             found.append(WarmHelperStatus(
                 serial: status.serial, state: status.state.rawValue, brokerPid: status.brokerPid, helperPid: status.helperPid,
@@ -79,18 +79,10 @@ extension AndroidBackend {
     /// Stops every warm helper, or `serial`'s alone, each once its UiAutomation slot is free; returns the serials stopped.
     public static func stopWarmHelpers(host: AndroidHost, serial: String? = nil) async -> [String] {
         var stopped: [String] = []
-        for socket in warmHelperSockets(host: host, serial: serial) {
+        for socket in host.warmHelperSockets(serial: serial) {
             guard let status = await HelperBrokerClient.status(at: socket), await HelperBrokerClient.stop(at: socket) else { continue }
             stopped.append(status.serial)
         }
         return stopped
-    }
-
-    private static func warmHelperSockets(host: AndroidHost, serial: String?) -> [String] {
-        guard let directory = try? host.helperBroker?.directory() else { return [] }
-        if let serial {
-            return [HelperBrokerPaths(serial: serial, directory: directory).socket]
-        }
-        return HelperBrokerPaths.sockets(in: directory)
     }
 }

@@ -228,7 +228,7 @@ public struct AndroidDoctorProbe {
             facts.reverses = listing.split(whereSeparator: \.isNewline).map(String.init)
         }
         var warm: (status: HelperBrokerWire.Status, milliseconds: Int)?
-        if let socket = warmHelperSocket(serial) {
+        if let socket = host.warmHelperSocket(for: serial) {
             let start = ContinuousClock.now
             if let status = await HelperBrokerClient.status(at: socket) {
                 warm = (status, HelperLauncher.milliseconds(since: start))
@@ -241,11 +241,6 @@ public struct AndroidDoctorProbe {
             facts.helper = Self.warmHelperFact(warm.status, milliseconds: warm.milliseconds)
         }
         return facts
-    }
-
-    private func warmHelperSocket(_ serial: String) -> String? {
-        guard let directory = try? host.helperBroker?.directory() else { return nil }
-        return HelperBrokerPaths(serial: serial, directory: directory).socket
     }
 
     /// The warm helper as its broker's `status` describes it, which neither counts as use nor replaces the broker.

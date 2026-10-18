@@ -333,7 +333,7 @@ extension AndroidBackend {
 
     /// Stops Offsider's own warm helper on `serial` once no other command uses it, so this command finds the UiAutomation slot free.
     func stopWarmHelper(_ serial: String) async {
-        guard let socket = warmHelperSocket(serial), UnixSocket.answers(socket) else { return }
+        guard let socket = host.warmHelperSocket(for: serial), UnixSocket.answers(socket) else { return }
         let deadline = host.uptime() + Self.warmHelperFreeWait
         while let status = await HelperBrokerClient.status(at: socket), status.attached > 0 {
             guard host.uptime() < deadline else {
@@ -347,14 +347,9 @@ extension AndroidBackend {
         }
     }
 
-    func warmHelperSocket(_ serial: String) -> String? {
-        guard let directory = try? host.helperBroker?.directory() else { return nil }
-        return HelperBrokerPaths(serial: serial, directory: directory).socket
-    }
-
     /// The device pid of the warm helper on `serial`, read without counting as use.
     private func warmHelperPid(_ serial: String) async -> Int32? {
-        guard let socket = warmHelperSocket(serial) else { return nil }
+        guard let socket = host.warmHelperSocket(for: serial) else { return nil }
         return await HelperBrokerClient.status(at: socket)?.helperPid
     }
 

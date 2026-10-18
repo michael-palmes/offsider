@@ -50,7 +50,7 @@ extension AndroidBackend {
     /// The warm helper's socket when `serial` is an emulator that keeps one; a phone always reads its displays from the shell.
     private func warmScreenSocket(_ serial: String) -> String? {
         guard phones[serial] == nil, HelperBrokerSettings.isEmulatorSerial(serial), (try? keepsHelperWarm(serial)) == true else { return nil }
-        return warmHelperSocket(serial)
+        return host.warmHelperSocket(for: serial)
     }
 
     /// The facts the warm helper keeps for `serial`, asked once a command; nil when it keeps none.

@@ -38,7 +38,7 @@ struct SessionStatus: AsyncParsableCommand {
         for record in DeviceSessions.records(device: device) {
             brokers.append(await manager.status(of: record))
         }
-        let helpers = await AndroidBackend.warmHelpers(host: .cli(), serial: await AndroidWarmHelpers.serial(for: device))
+        let helpers = await AndroidWarmHelpers.statuses(for: device)
         let rows = DeviceSessionRow.rows(runners: runners, brokers: brokers, helpers: helpers)
         print(json ? DeviceSessionRow.json(rows) : DeviceSessionRow.text(rows), terminator: "")
     }
@@ -82,7 +82,7 @@ struct SessionStop: AsyncParsableCommand {
         for record in runners {
             await runnerManager.stop(record)
         }
-        let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: await AndroidWarmHelpers.serial(for: device))
+        let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: await AndroidWarmHelpers.serial(for: device).serial)
         let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers)
         var cleaned: RunnerCleanupReport?
         if let cleanUDID { cleaned = await RunnerSessions.clean(udid: cleanUDID) }
@@ -124,16 +124,25 @@ enum DeviceSessions {
 
 /// `--device` as a warm helper's serial; an AVD name goes to adb only while a warm helper runs, so a status read never starts an adb server.
 enum AndroidWarmHelpers {
+    /// The serial, with every warm helper's status when an AVD name needed them read.
     @MainActor
-    static func serial(for device: String?) async -> String? {
-        guard let device = device?.trimmingCharacters(in: .whitespaces), !device.isEmpty else { return nil }
-        guard case .androidName = DeviceIDClassifier.classify(device) else { return device }
+    static func serial(for device: String?) async -> (serial: String?, running: [WarmHelperStatus]?) {
+        guard let device = device?.trimmingCharacters(in: .whitespaces), !device.isEmpty else { return (nil, nil) }
+        guard case .androidName = DeviceIDClassifier.classify(device) else { return (device, nil) }
         let running = await AndroidBackend.warmHelpers(host: .cli())
-        guard !running.isEmpty, !running.contains(where: { $0.serial == device }) else { return device }
+        guard !running.isEmpty, !running.contains(where: { $0.serial == device }) else { return (device, running) }
         let backend = AndroidBackend(host: .cli(), log: { _, _ in })
         let serial = try? await backend.resolveAndroidName(device)
         await backend.close()
-        return serial ?? device
+        return (serial ?? device, running)
+    }
+
+    /// `--device`'s warm helper, or every one without it, reading each broker's status once.
+    @MainActor
+    static func statuses(for device: String?) async -> [WarmHelperStatus] {
+        let (serial, running) = await serial(for: device)
+        if let running { return running.filter { $0.serial == serial } }
+        return await AndroidBackend.warmHelpers(host: .cli(), serial: serial)
     }
 }
 
