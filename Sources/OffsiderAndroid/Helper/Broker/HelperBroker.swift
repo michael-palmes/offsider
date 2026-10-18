@@ -235,17 +235,51 @@ final class HelperBroker {
                 inFlight -= 1
                 lastRequest = .now
             }
-            return await relay(request, payload: payload, through: session)
+            return await relay(request, payload: payload, through: session, from: stream)
         }
     }
 
-    private func relay(_ request: HelperBrokerWire.Request, payload: Data, through session: HelperSession) async -> [Data] {
+    /// Why a request is not sent once its turn on the helper comes.
+    enum Unsent: Equatable, Sendable {
+        /// Input whose command has gone: closed without a reply.
+        case gone
+        /// Its command has given up, or it is input that waited so long it could land after its command gave up.
+        case late(waited: Duration)
+    }
+
+    /// A command gives input 5 s beyond its gesture, so input that waited more than half of that for its turn is dropped unsent.
+    nonisolated static let staleInputAge: Duration = .milliseconds(2500)
+
+    nonisolated static func unsent(op: String, peerClosed: Bool, waited: Duration, timeout: Duration) -> Unsent? {
+        if op == "inject", peerClosed { return .gone }
+        if waited >= timeout || (op == "inject" && waited > staleInputAge) { return .late(waited: waited) }
+        return nil
+    }
+
+    /// The command's timeout counts from the request's arrival, as the command's own does, so time spent behind another command's request is part of it.
+    private func relay(
+        _ request: HelperBrokerWire.Request, payload: Data, through session: HelperSession, from stream: PosixAdbStream
+    ) async -> [Data]? {
+        let arrival = ContinuousClock.now
         let timeout = Self.relayTimeout(for: request, cap: limits.relayTimeout)
-        let outcome: HelperConnection.Outcome
+        var unsent: Unsent?
+        let outcome: HelperConnection.Outcome?
         do {
-            outcome = try await session.relay(payload: payload, op: request.op, id: request.id, timeout: timeout)
+            outcome = try await session.relay(payload: payload, op: request.op, id: request.id, deadline: arrival + timeout) {
+                unsent = Self.unsent(op: request.op, peerClosed: stream.peerClosed(), waited: .now - arrival, timeout: timeout)
+                return unsent != nil
+            }
         } catch {
             outcome = .lost(String(describing: error))
+        }
+        guard let outcome else {
+            guard case .late(let waited)? = unsent else { return nil }
+            let seconds = (waited / .milliseconds(100)).rounded() / 10
+            log(.debug, "Dropped `\(request.op)` unsent after it waited \(seconds) s for the helper")
+            return [HelperBrokerWire.error(
+                id: request.id, code: HelperBrokerWire.Code.refused,
+                message: "the warm helper was busy with another command for \(seconds) s, so this \(request.op == "inject" ? "input" : "request") was not sent; retry"
+            )]
         }
         switch outcome {
         case .reply(let frame):
@@ -342,7 +376,7 @@ final class HelperBroker {
     private func latestEventSeq(_ session: HelperSession) async -> Int64? {
         probeID += 1
         let ping = (try? HelperRequest.ping.payload(id: probeID)) ?? Data()
-        let outcome = try? await session.relay(payload: ping, op: "ping", id: probeID, timeout: HelperSession.requestTimeout)
+        let outcome = try? await session.relay(payload: ping, op: "ping", id: probeID, deadline: .now + HelperSession.requestTimeout)
         guard case .reply(let frame)? = outcome, let envelope = try? JSONDecoder().decode(HelperEnvelope.self, from: frame), envelope.ok == true else {
             if helperGone == nil { helperGone = "it did not answer ping" }
             return nil

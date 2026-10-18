@@ -186,20 +186,25 @@ final class FakeAdbStream: AdbByteStream, @unchecked Sendable {
     }
 
     func read(upTo count: Int, deadline: ContinuousClock.Instant) async throws -> Data {
-        if let chunk = takeOutbound(upTo: count) {
-            return chunk
-        }
-        // Nothing queued: a session may have something to say on its own, such as a `bye` or a late line.
-        if let session = lock.withLock({ self.session }), let later = session.pull(), !later.bytes.isEmpty || later.close {
-            lock.withLock {
-                outbound.append(later.bytes)
-                endOfStream = endOfStream || later.close
-            }
+        while true {
             if let chunk = takeOutbound(upTo: count) {
                 return chunk
             }
+            // Nothing queued: a session may have something to say on its own, such as a `bye` or a late line.
+            let session = lock.withLock { self.session }
+            if let session, let later = session.pull(), !later.bytes.isEmpty || later.close {
+                lock.withLock {
+                    outbound.append(later.bytes)
+                    endOfStream = endOfStream || later.close
+                }
+                if let chunk = takeOutbound(upTo: count) {
+                    return chunk
+                }
+            }
+            // A session that promised a slow reply is waited for, until the read's own deadline.
+            guard let at = session?.nextPull, at < deadline else { throw AdbConnectError.timedOut }
+            try await Task.sleep(until: at, clock: .continuous)
         }
-        throw AdbConnectError.timedOut
     }
 
     private func takeOutbound(upTo count: Int) -> Data? {
@@ -229,10 +234,13 @@ protocol FakeServiceSession: AnyObject, Sendable {
     func closed()
     /// Bytes the device sends unasked when nothing is queued, and whether it then hangs up; nil makes the read time out.
     func pull() -> (bytes: Data, close: Bool)?
+    /// When `pull` next has bytes, for a reply sent late; nil when none is promised.
+    var nextPull: ContinuousClock.Instant? { get }
 }
 
 extension FakeServiceSession {
     func opened() -> Data { Data() }
     func closed() {}
     func pull() -> (bytes: Data, close: Bool)? { nil }
+    var nextPull: ContinuousClock.Instant? { nil }
 }

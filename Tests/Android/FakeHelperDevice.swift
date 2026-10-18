@@ -39,6 +39,8 @@ final class FakeHelperDevice: @unchecked Sendable {
         /// The socket closes with no reply: the helper died.
         case hangUp
         case silence
+        /// An ok reply with these fields, sent only once `delay` has passed, as a slow `dump` answers.
+        case okAfter(String, Duration)
     }
 
     struct Received: Equatable {
@@ -358,6 +360,7 @@ final class FakeHelperSocket: FakeServiceSession, @unchecked Sendable {
     private let lock = NSLock()
     private var buffer = Data()
     private var authorised = false
+    private var later: [(at: ContinuousClock.Instant, bytes: Data)] = []
 
     init(device: FakeHelperDevice, process: FakeHelperDevice.Process) {
         self.device = device
@@ -405,9 +408,26 @@ final class FakeHelperSocket: FakeServiceSession, @unchecked Sendable {
                 return (out, true)
             case .silence:
                 continue
+            case .okAfter(let fields, let delay):
+                let reply = Self.frame(Self.ok(id: id, fields: fields))
+                lock.withLock { later.append((ContinuousClock.now + delay, reply)) }
             }
         }
         return (out, false)
+    }
+
+    func pull() -> (bytes: Data, close: Bool)? {
+        let due = lock.withLock { () -> Data in
+            let now = ContinuousClock.now
+            let ready = later.filter { $0.at <= now }
+            later.removeAll { $0.at <= now }
+            return ready.reduce(Data()) { $0 + $1.bytes }
+        }
+        return due.isEmpty ? nil : (due, false)
+    }
+
+    var nextPull: ContinuousClock.Instant? {
+        lock.withLock { later.map(\.at).min() }
     }
 
     func closed() {

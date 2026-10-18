@@ -336,6 +336,69 @@ struct HelperBrokerTests {
         #expect(!fixture.device.ops.contains("inject"))
         try await fixture.stop()
     }
+
+    @Test("input queued behind another command's slow request is dropped unsent once its command has gone, so a late tap never lands")
+    func queuedInputOfGoneCommandIsDropped() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800)) : nil }
+        let fixture = BrokerFixture(device: device)
+        try await fixture.start()
+        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+        let slow = Task { _ = try await reader.dump() }
+        try await Task.sleep(for: .milliseconds(100))
+
+        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+        let inject = try HelperRequest.inject([], sync: true).adding(HelperBrokerWire.timeoutField, .int(5000)).payload(id: 7)
+        try await stream.write(try HelperWire.frame(inject), deadline: .now + .seconds(2))
+        try await Task.sleep(for: .milliseconds(200))
+        await stream.close()
+        try await slow.value
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(!fixture.device.ops.contains("inject"))
+        await reader.close()
+        try await fixture.stop()
+    }
+
+    @Test("a request still queued when its command's timeout passes is refused unsent, and the helper keeps serving")
+    func lateRequestIsRefusedUnsent() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800)) : nil }
+        let fixture = BrokerFixture(device: device)
+        try await fixture.start()
+        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+        let slow = Task { _ = try await reader.dump() }
+        try await Task.sleep(for: .milliseconds(100))
+
+        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+        let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+        let display = HelperRequest.display.adding(HelperBrokerWire.timeoutField, .int(300))
+        let outcome = try await connection.exchange(display, id: 9, timeout: .seconds(5))
+        guard case .reply(let frame) = outcome else {
+            Issue.record("no reply to the late request: \(outcome)")
+            return
+        }
+        #expect(try JSONDecoder().decode(HelperBrokerWire.ErrorReply.self, from: frame).error.code == HelperBrokerWire.Code.refused)
+        try await slow.value
+
+        #expect(!fixture.device.ops.contains("display"))
+        #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
+        await connection.close()
+        await reader.close()
+        try await fixture.stop()
+    }
+
+    @Test("a request's turn drops it when its command has gone or given up, and input that waited long enough to land late", arguments: [
+        ("inject", true, Duration.milliseconds(10), Duration.seconds(5), HelperBroker.Unsent.gone),
+        ("inject", false, .seconds(3), .seconds(25), .late(waited: .seconds(3))),
+        ("dump", false, .seconds(16), .seconds(15), .late(waited: .seconds(16))),
+        ("dump", true, .seconds(1), .seconds(15), nil),
+        ("dump", false, .seconds(3), .seconds(15), nil),
+        ("inject", false, .seconds(1), .seconds(5), nil),
+    ] as [(String, Bool, Duration, Duration, HelperBroker.Unsent?)])
+    func unsentRules(op: String, peerClosed: Bool, waited: Duration, timeout: Duration, expected: HelperBroker.Unsent?) {
+        #expect(HelperBroker.unsent(op: op, peerClosed: peerClosed, waited: waited, timeout: timeout) == expected)
+    }
 }
 
 @Suite("Android warm helper settings")

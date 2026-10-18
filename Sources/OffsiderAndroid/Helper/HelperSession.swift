@@ -274,12 +274,18 @@ final class HelperSession {
         }
     }
 
-    /// A command's request passed on as it came, for the broker; never restarts the helper, so a lost one ends every later relay.
-    func relay(payload: Data, op: String, id: Int, timeout: Duration) async throws -> HelperConnection.Outcome {
+    /// A command's request passed on as it came, for the broker, answered by `deadline`; nil, unsent, when `skip` says so once its turn comes.
+    /// Never restarts the helper, so a lost one ends every later relay.
+    func relay(
+        payload: Data, op: String, id: Int, deadline: ContinuousClock.Instant, skip: () -> Bool = { false }
+    ) async throws -> HelperConnection.Outcome? {
         await queue.acquire()
         defer { queue.release() }
+        guard !skip() else { return nil }
         guard !isClosed, let connection else { return .lost("the warm helper has stopped") }
-        let outcome = try await connection.exchange(payload: payload, op: op, id: id, timeout: timeout, expectingPayload: op == "screenshot")
+        let outcome = try await connection.exchange(
+            payload: payload, op: op, id: id, timeout: deadline - .now, expectingPayload: op == "screenshot"
+        )
         switch outcome {
         case .reply, .replyWithPayload: break
         case .bye, .lost, .timedOut: await drop(connection)
