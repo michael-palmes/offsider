@@ -261,6 +261,12 @@ struct HelperBrokerClient {
         return try? JSONDecoder().decode(HelperBrokerWire.StatusReply.self, from: frame).status
     }
 
+    /// The warm helper's own ping through the broker at `path`, in milliseconds, which never counts as use; nil when it did not answer.
+    static func health(at path: String) async -> Int? {
+        guard let frame = await control("health", at: path) else { return nil }
+        return try? JSONDecoder().decode(HelperBrokerWire.HealthReply.self, from: frame).pingMs
+    }
+
     /// The serial the broker at `path` serves, from its status or else its log, for one whose full status this build cannot read.
     static func servedSerial(at path: String) async -> String? {
         struct Reply: Decodable {

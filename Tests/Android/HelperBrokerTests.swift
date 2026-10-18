@@ -48,6 +48,15 @@ final class BrokerFixture {
         }
     }
 
+    /// Returns once the broker's status says its helper is ready.
+    func untilReady() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while await HelperBrokerClient.status(at: socket)?.state != .ready {
+            guard ContinuousClock.now < deadline else { throw HelperBrokerUnavailable(detail: "the helper never got ready") }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
     /// A command's client; it never spawns a broker, so a test sees when one would have been started.
     func client(idleSeconds: Int? = nil) throws -> HelperBrokerClient {
         try HelperBrokerClient(
@@ -321,10 +330,11 @@ struct HelperBrokerTests {
                 sdkInt: state == .ready ? 36 : nil, launchMs: state == .ready ? 112 : nil, pushed: state == .ready ? false : nil
             )
         }
-        #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), milliseconds: 2) == .ready(
+        #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), helloMilliseconds: 2, pingMilliseconds: 2) == .ready(
             launchMilliseconds: 112, pushed: false, helloMilliseconds: 2, pingMilliseconds: 2, protocolVersion: 2, sdkInt: 36
         ))
-        #expect(AndroidDoctorProbe.warmHelperFact(status(.starting), milliseconds: 2) == .unavailable("the warm helper is starting"))
+        #expect(AndroidDoctorProbe.warmHelperFact(status(.starting), helloMilliseconds: 2, pingMilliseconds: nil) == .unavailable("the warm helper is starting"))
+        #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), helloMilliseconds: 2, pingMilliseconds: nil) == .unavailable("the warm helper did not answer its ping"))
     }
 
     @Test("input whose command has gone is never sent")
@@ -445,6 +455,24 @@ struct HelperBrokerTests {
         #expect(!UnixSocket.answers(fixture.socket))
         #expect(fixture.device.ops.last == "quit")
         #expect(try await fixture.finished())
+    }
+
+    @Test("health pings the warm helper itself, so a helper that stopped answering never looks ready")
+    func healthPingsTheHelper() async throws {
+        let healthy = BrokerFixture()
+        try await healthy.start()
+        try await healthy.untilReady()
+        #expect(await HelperBrokerClient.health(at: healthy.socket) != nil)
+        #expect(healthy.device.ops.last == "ping")
+        try await healthy.stop()
+
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "ping" ? .silence : nil }
+        let wedged = BrokerFixture(device: device)
+        try await wedged.start()
+        try await wedged.untilReady()
+        #expect(await HelperBrokerClient.health(at: wedged.socket) == nil)
+        #expect(try await wedged.finished())
     }
 
     @Test("the relay cap outlasts the longest inject a command sends, so a full-length gesture is never cut off")

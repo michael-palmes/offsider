@@ -1,6 +1,6 @@
 import Foundation
 
-/// The helper's framing, every op passed through but `hello`, `status`, `stop`, `screen` and `rememberScreen`, which the broker answers, and `quit`, which it refuses.
+/// The helper's framing, every op passed through but `hello`, `status`, `stop`, `health`, `screen` and `rememberScreen`, which the broker answers, and `quit`, which it refuses.
 enum HelperBrokerWire {
     /// Part of the `hello` check: a broker from another build is stopped and replaced.
     static let protocolVersion = 2
@@ -120,6 +120,11 @@ enum HelperBrokerWire {
     /// The `status` reply's body.
     struct StatusReply: Decodable, Sendable {
         let status: Status
+    }
+
+    /// The `health` reply's body: the helper's ping through the broker.
+    struct HealthReply: Decodable, Sendable {
+        let pingMs: Int
     }
 
     /// `stop`'s reply: `starting` when the helper had not started yet, so the broker stops once its start ends.

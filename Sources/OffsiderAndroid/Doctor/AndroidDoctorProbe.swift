@@ -227,30 +227,32 @@ public struct AndroidDoctorProbe {
         if let listing = try? await client.deviceQuery("reverse:list-forward", on: serial) {
             facts.reverses = listing.split(whereSeparator: \.isNewline).map(String.init)
         }
-        var warm: (status: HelperBrokerWire.Status, milliseconds: Int)?
+        var warm: (status: HelperBrokerWire.Status, milliseconds: Int, socket: String)?
         if let socket = host.warmHelperSocket(for: serial) {
             let start = ContinuousClock.now
             if let status = await HelperBrokerClient.status(at: socket) {
-                warm = (status, HelperLauncher.milliseconds(since: start))
+                warm = (status, HelperLauncher.milliseconds(since: start), socket)
                 facts.uiAutomation?.warmHelperPid = status.helperPid
             }
         }
         if facts.uiAutomation?.offsiderHelperPids.isEmpty == true {
             facts.helper = await helperFact(serial, client: client)
         } else if facts.uiAutomation?.onlyWarmHelper == true, let warm {
-            facts.helper = Self.warmHelperFact(warm.status, milliseconds: warm.milliseconds)
+            let ping = warm.status.state == .ready ? await HelperBrokerClient.health(at: warm.socket) : nil
+            facts.helper = Self.warmHelperFact(warm.status, helloMilliseconds: warm.milliseconds, pingMilliseconds: ping)
         }
         return facts
     }
 
-    /// The warm helper as its broker's `status` describes it, which neither counts as use nor replaces the broker.
-    static func warmHelperFact(_ status: HelperBrokerWire.Status, milliseconds: Int) -> HelperProbeFact {
+    /// The warm helper from its broker's `status` (the hello time) and its own ping through the broker, neither counting as use.
+    static func warmHelperFact(_ status: HelperBrokerWire.Status, helloMilliseconds: Int, pingMilliseconds: Int?) -> HelperProbeFact {
         guard status.state == .ready, let number = status.protocol, let sdkInt = status.sdkInt else {
             return .unavailable("the warm helper is \(status.state.rawValue)")
         }
+        guard let pingMilliseconds else { return .unavailable("the warm helper did not answer its ping") }
         return .ready(
-            launchMilliseconds: status.launchMs ?? 0, pushed: status.pushed ?? false, helloMilliseconds: milliseconds,
-            pingMilliseconds: milliseconds, protocolVersion: number, sdkInt: sdkInt
+            launchMilliseconds: status.launchMs ?? 0, pushed: status.pushed ?? false, helloMilliseconds: helloMilliseconds,
+            pingMilliseconds: pingMilliseconds, protocolVersion: number, sdkInt: sdkInt
         )
     }
 

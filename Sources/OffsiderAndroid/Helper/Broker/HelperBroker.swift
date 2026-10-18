@@ -222,6 +222,15 @@ final class HelperBroker {
             stopping = true
             guard case .starting = state else { return [HelperBrokerWire.ok(id: request.id)] }
             return [HelperBrokerWire.ok(id: request.id, fields: ["starting": .bool(true)])]
+        case "health":
+            guard case .ready(let session) = state, !stopping, helperGone == nil else {
+                return [HelperBrokerWire.error(id: request.id, code: HelperBrokerWire.Code.ended, message: "the warm helper is not ready")]
+            }
+            let started = ContinuousClock.now
+            if let lost = await probe(session) {
+                return [HelperBrokerWire.error(id: request.id, code: HelperBrokerWire.Code.ended, message: "the warm helper did not answer ping (\(lost))")]
+            }
+            return [HelperBrokerWire.ok(id: request.id, fields: ["pingMs": .int(HelperLauncher.milliseconds(since: started))])]
         case "screen":
             guard case .ready = state, !stopping, helperGone == nil, let screen else { return [HelperBrokerWire.ok(id: request.id)] }
             return [HelperBrokerWire.ok(id: request.id, fields: ["screen": .string(screen)])]
