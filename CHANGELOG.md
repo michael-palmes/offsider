@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `describe-ui --diff --actionable` on iOS no longer lists an element that is actionable only through custom actions as added on every read. The kept screen has no custom actions, so both reads now go by role.
 - `posture` on an Android foldable no longer prints the panel it is leaving after a 10 s wait: when its first read after the fold still showed the old panel, every later read reused it; it now reads the screen again until the panel swaps.
 - On Android 9, `displays`, `describe-ui --display` and `screenshot --display` find the screen instead of failing with "Could not find a built-in display", and a warm helper keeps the emulator's displays as on later Android releases: Android 9 names the panel type `BUILT_IN`.
+- Xcode installed from the Mac App Store is trusted instead of refused with `xcode_unusable` ("not inside an Apple-signed Xcode"): the store signs Xcode's app with its own Apple certificate, so the check also accepts Apple's Mac App Store signature on `com.apple.dt.Xcode`. The tools and frameworks inside are Apple's own as before.
 
 ## [0.12.0] - 2026-10-15
 
