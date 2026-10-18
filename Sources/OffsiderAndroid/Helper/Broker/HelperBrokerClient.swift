@@ -77,8 +77,9 @@ struct HelperBrokerClient {
             return connection
         case .otherIdle(let connection, _, let detail):
             await connection.close()
-            log(.debug, "The warm helper on \(serial) \(detail); replacing it")
-            await stop()
+            log(.debug, "The warm helper on \(serial) \(detail); replacing it once no other command uses it")
+            // One still in use is attached to by the look under the start lock, which then sees it serve others.
+            _ = await Self.stopWhenFree(at: paths.socket, wait: freeWait)
             return nil
         case .replace(let detail):
             log(.debug, "The warm helper on \(serial) does not match this command (\(detail)); replacing it once no other command uses it")
@@ -149,7 +150,8 @@ struct HelperBrokerClient {
     /// Stops the broker at `path` once no command is attached, waiting up to `wait`.
     static func stopWhenFree(at path: String, wait: Duration) async -> FreeStop {
         let deadline = ContinuousClock.now + wait
-        while let status = await status(at: path), status.attached > 0 {
+        // A broker that does not report its commands is taken as in use.
+        while let status = await status(at: path), (status.attached ?? 1) > 0 {
             guard ContinuousClock.now < deadline else { return .inUse }
             try? await Task.sleep(for: .milliseconds(100))
         }

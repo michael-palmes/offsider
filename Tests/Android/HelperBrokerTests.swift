@@ -401,6 +401,37 @@ struct HelperBrokerTests {
         #expect(HelperBroker.unsent(op: op, peerClosed: peerClosed, waited: waited, timeout: timeout) == expected)
     }
 
+    @Test("a broker with another idle timeout is stopped only once free, so a command that attached after the hello is never cut off")
+    func otherIdleWaitsForFree() async throws {
+        let fixture = BrokerFixture()
+        let dex = FakeHelperDevice.dex.sha256
+        let busy = #"{"serial":"emulator-5556","state":"ready","brokerPid":3,"attached":1}"#
+        let broker = try ScriptedBroker(path: fixture.socket, status: busy, hello: { id in
+            HelperBrokerWire.helloReply(id: id, helper: "1.5.0", protocol: HelperDex.protocolVersion, ops: ["dump"], broker: HelperBrokerWire.Hello(
+                brokerProtocol: HelperBrokerWire.protocolVersion, brokerPid: 3, dexSha256: dex, helperPid: 4001, sdkInt: 36, idleSeconds: 30,
+                launchMs: 100, pushed: false, eventSeq: 0, attached: 0
+            ))
+        })
+        var client = try fixture.client(idleSeconds: 5)
+        client.freeWait = .milliseconds(300)
+
+        #expect(try await client.existing(helloID: 1) == nil)
+        #expect(broker.ops.contains("hello") && !broker.ops.contains("stop"))
+        broker.cancel()
+        try? FileManager.default.removeItem(at: fixture.root)
+    }
+
+    @Test("a broker that does not report its commands is left running by a stop that waits for it to be free")
+    func unknownAttachedIsInUse() async throws {
+        let fixture = BrokerFixture()
+        let broker = try ScriptedBroker(path: fixture.socket, status: #"{"serial":"emulator-5556","state":"ready","brokerPid":3}"#)
+
+        #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(300)) == .inUse)
+        #expect(!broker.ops.contains("stop"))
+        broker.cancel()
+        try? FileManager.default.removeItem(at: fixture.root)
+    }
+
     @Test("the relay cap outlasts the longest inject a command sends, so a full-length gesture is never cut off")
     func relayCapOutlastsLongestInject() {
         let longest = HelperSession.requestTimeout + .milliseconds(HelperInjectPlan.maxRequestMilliseconds)
@@ -443,7 +474,7 @@ struct HelperBrokerTests {
     @Test("a broker that answers but does not stop is reported as still serving, never as stopped")
     func unstoppableBrokerIsNotStopped() async throws {
         let fixture = BrokerFixture()
-        let other = try OtherBuildBroker(path: fixture.socket, answersStop: false)
+        let other = try ScriptedBroker(path: fixture.socket, answersStop: false)
 
         #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(200)) == .stillServing)
         #expect(UnixSocket.answers(fixture.socket))
@@ -515,7 +546,7 @@ struct HelperBrokerTests {
         let frame = Data(#"{"id":1,"ok":true,"status":{"serial":"emulator-5556","state":"ready","brokerPid":12}}"#.utf8)
         let status = try JSONDecoder().decode(HelperBrokerWire.StatusReply.self, from: frame).status
         #expect(status.serial == "emulator-5556")
-        #expect(status.attached == 0 && status.helperPid == nil)
+        #expect(status.attached == nil && status.helperPid == nil)
     }
 
     @Test("session stop stops a broker whose status does not read, named by the serial it gives or its log names", arguments: [
@@ -524,7 +555,7 @@ struct HelperBrokerTests {
     ] as [(String, String?)])
     func stopsUnreadableBroker(status: String, log: String?) async throws {
         let fixture = BrokerFixture()
-        let other = try OtherBuildBroker(path: fixture.socket, status: status)
+        let other = try ScriptedBroker(path: fixture.socket, status: status)
         if let log {
             try log.write(toFile: (fixture.socket as NSString).deletingPathExtension + ".log", atomically: true, encoding: .utf8)
         }
@@ -539,16 +570,19 @@ struct HelperBrokerTests {
     }
 }
 
-/// A broker of a build whose `status` this one cannot read; `stop` closes it, unless it ignores stops.
+/// A broker answering `status` and `hello` as scripted (by default a status this build cannot read), recording each op; `stop` closes it unless it ignores stops.
 @MainActor
-final class OtherBuildBroker {
+final class ScriptedBroker {
     private let listener: UnixSocketListener
     private var serving: Task<Void, Never>?
+    private(set) var ops: [String] = []
 
-    init(path: String, status: String = #"{"state":"draining"}"#, answersStop: Bool = true) throws {
+    init(
+        path: String, status: String = #"{"state":"draining"}"#, hello: (@Sendable (Int) -> Data)? = nil, answersStop: Bool = true
+    ) throws {
         let listener = try UnixSocketListener(path: path)
         self.listener = listener
-        serving = Task {
+        serving = Task { [weak self] in
             while !Task.isCancelled {
                 guard let descriptor = await listener.accept(timeout: .milliseconds(50)) else { continue }
                 let stream = PosixAdbStream.adopting(descriptor)
@@ -558,12 +592,14 @@ final class OtherBuildBroker {
                     await stream.close()
                     continue
                 }
+                self?.ops.append(request.op)
                 if request.op == "stop", !answersStop {
                     await stream.close()
                     continue
                 }
-                let reply = request.op == "status" ? #"{"id":\#(request.id),"ok":true,"status":\#(status)}"# : #"{"id":\#(request.id),"ok":true}"#
-                if let frame = try? HelperWire.frame(Data(reply.utf8)) {
+                let reply = request.op == "hello" ? hello?(request.id)
+                    : Data((request.op == "status" ? #"{"id":\#(request.id),"ok":true,"status":\#(status)}"# : #"{"id":\#(request.id),"ok":true}"#).utf8)
+                if let reply, let frame = try? HelperWire.frame(reply) {
                     try? await stream.write(frame, deadline: .now + .seconds(2))
                 }
                 await stream.close()

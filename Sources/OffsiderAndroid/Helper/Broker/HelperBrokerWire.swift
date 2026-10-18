@@ -56,8 +56,8 @@ enum HelperBrokerWire {
         let idleSeconds: Int
         /// Seconds since the last command's request.
         let idleFor: Int
-        /// Commands connected after `hello`, which a stop would cut off.
-        let attached: Int
+        /// Commands connected after `hello`, which a stop would cut off; nil from a broker that does not say.
+        let attached: Int?
         let helper: String?
         let `protocol`: Int?
         let sdkInt: Int?
@@ -106,8 +106,8 @@ enum HelperBrokerWire {
             "startedAt": .double(status.startedAt),
             "idleSeconds": .int(status.idleSeconds),
             "idleFor": .int(status.idleFor),
-            "attached": .int(status.attached),
         ]
+        fields["attached"] = status.attached.map(HelperValue.int)
         fields["helperPid"] = status.helperPid.map { .int(Int($0)) }
         fields["helper"] = status.helper.map(HelperValue.string)
         fields["protocol"] = status.protocol.map(HelperValue.int)
@@ -255,7 +255,7 @@ extension HelperBrokerWire.Status {
         startedAt = (try? container.decodeIfPresent(Double.self, forKey: .startedAt)) ?? 0
         idleSeconds = (try? container.decodeIfPresent(Int.self, forKey: .idleSeconds)) ?? 0
         idleFor = (try? container.decodeIfPresent(Int.self, forKey: .idleFor)) ?? 0
-        attached = (try? container.decodeIfPresent(Int.self, forKey: .attached)) ?? 0
+        attached = try? container.decodeIfPresent(Int.self, forKey: .attached)
         helper = try? container.decodeIfPresent(String.self, forKey: .helper)
         `protocol` = try? container.decodeIfPresent(Int.self, forKey: .protocol)
         sdkInt = try? container.decodeIfPresent(Int.self, forKey: .sdkInt)
