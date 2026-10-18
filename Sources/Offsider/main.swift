@@ -46,7 +46,16 @@ struct OffsiderCommand: AsyncParsableCommand {
         """
 
     static func main() async {
-        DeviceWatchdog.defaultFire = DeviceWatchdog.exitProcess
+        await withCLIDefaults(runCommandLine)
+    }
+
+    /// Runs `body` as the CLI runs every command: a device watchdog that goes off ends the process.
+    static func withCLIDefaults<T>(_ body: () async throws -> T) async rethrows -> T {
+        try await DeviceWatchdog.$defaultAction.withValue(.exitProcess, operation: body)
+    }
+
+    @MainActor
+    private static func runCommandLine() async {
         Timings.installTotal()
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.isEmpty {

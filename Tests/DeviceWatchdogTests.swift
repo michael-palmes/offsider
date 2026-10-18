@@ -35,6 +35,14 @@ struct DeviceWatchdogTests {
         #expect(!watchdog.isArmed)
     }
 
+    @Test("a watchdog made as the CLI runs a command ends the process when it goes off; one made in-process only reports")
+    func cliWatchdogEndsProcess() async {
+        let cli = await OffsiderCommand.withCLIDefaults { DeviceWatchdog() }
+
+        #expect(cli.action == .exitProcess)
+        #expect(DeviceWatchdog().action == .report)
+    }
+
     @Test("a hung command past its bound fires once with an actionable message")
     func firesAfterBound() async throws {
         let fired = Fired()

@@ -12,8 +12,26 @@ final class DeviceWatchdog: @unchecked Sendable {
     private let fire: @Sendable (String) -> Void
     private var timer: DispatchSourceTimer?
 
-    /// What a watchdog made without its own `fire` does; `main` sets `exitProcess`, so code run in-process, as by tests, only reports.
-    nonisolated(unsafe) static var defaultFire: @Sendable (String) -> Void = DeviceWatchdog.report
+    /// What a watchdog made without its own `fire` does when it goes off.
+    enum Action: Sendable {
+        /// Writes the message to stderr and carries on, as code run in-process, such as a test, should.
+        case report
+        /// Reports and ends the process.
+        case exitProcess
+
+        var fire: @Sendable (String) -> Void {
+            switch self {
+            case .report: DeviceWatchdog.report
+            case .exitProcess: DeviceWatchdog.exitProcess
+            }
+        }
+    }
+
+    /// `OffsiderCommand.withCLIDefaults` runs every command under `exitProcess`.
+    @TaskLocal static var defaultAction = Action.report
+
+    /// What this watchdog does when it goes off; nil when it was made with its own `fire`.
+    let action: Action?
 
     init(
         grace: TimeInterval = DeviceWatchdog.grace,
@@ -22,7 +40,13 @@ final class DeviceWatchdog: @unchecked Sendable {
     ) {
         self.grace = grace
         self.setupBound = setupBound
-        self.fire = fire ?? Self.defaultFire
+        if let fire {
+            action = nil
+            self.fire = fire
+        } else {
+            action = Self.defaultAction
+            self.fire = Self.defaultAction.fire
+        }
     }
 
     /// Arms for `bound` plus the grace, replacing any earlier arming.
