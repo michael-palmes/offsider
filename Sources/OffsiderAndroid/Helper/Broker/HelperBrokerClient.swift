@@ -11,6 +11,8 @@ struct HelperBrokerClient {
     /// A starting broker answers `hello` once its helper is ready, which takes as long as a cold helper start.
     static let helloTimeout: Duration = HelperLauncher.readyTimeout + .seconds(5)
     static let controlTimeout: Duration = .seconds(2)
+    /// A ping can wait behind a request that started just before it.
+    static let healthTimeout: Duration = HelperSession.requestTimeout + .seconds(1)
     static let goneTimeout: Duration = .seconds(3)
     static let startLockWait: Duration = .seconds(45)
 
@@ -246,10 +248,10 @@ struct HelperBrokerClient {
     }
 
     /// One op the broker at `path` answers itself, which never counts as use; nil when nothing answered.
-    static func control(_ op: String, fields: [String: HelperValue] = [:], at path: String) async -> Data? {
+    static func control(_ op: String, fields: [String: HelperValue] = [:], at path: String, timeout: Duration = controlTimeout) async -> Data? {
         guard let stream = await open(path) else { return nil }
         let connection = HelperConnection(shell: nil, socket: stream, ready: unknownReady)
-        let outcome = try? await connection.exchange(HelperRequest(op: op, fields: fields), id: 1, timeout: controlTimeout)
+        let outcome = try? await connection.exchange(HelperRequest(op: op, fields: fields), id: 1, timeout: timeout)
         // Closed before returning, so a status read never holds one of the broker's client slots afterwards.
         await connection.close()
         guard case .reply(let frame)? = outcome else { return nil }
@@ -261,10 +263,18 @@ struct HelperBrokerClient {
         return try? JSONDecoder().decode(HelperBrokerWire.StatusReply.self, from: frame).status
     }
 
-    /// The warm helper's own ping through the broker at `path`, in milliseconds, which never counts as use; nil when it did not answer.
-    static func health(at path: String) async -> Int? {
-        guard let frame = await control("health", at: path) else { return nil }
-        return try? JSONDecoder().decode(HelperBrokerWire.HealthReply.self, from: frame).pingMs
+    enum Health: Equatable, Sendable {
+        case answered(milliseconds: Int)
+        /// A command's request was running on the helper, so it was not pinged.
+        case busy
+    }
+
+    /// The warm helper's own ping through the broker at `path`, which never counts as use; nil when it did not answer.
+    static func health(at path: String) async -> Health? {
+        guard let frame = await control("health", at: path, timeout: healthTimeout),
+              let reply = try? JSONDecoder().decode(HelperBrokerWire.HealthReply.self, from: frame) else { return nil }
+        if reply.busy == true { return .busy }
+        return reply.pingMs.map { .answered(milliseconds: $0) }
     }
 
     /// The serial the broker at `path` serves, from its status or else its log, for one whose full status this build cannot read.

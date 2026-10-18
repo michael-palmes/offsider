@@ -228,6 +228,8 @@ final class HelperBroker {
             guard case .ready(let session) = state, !stopping, helperGone == nil else {
                 return [HelperBrokerWire.error(id: request.id, code: HelperBrokerWire.Code.ended, message: "the warm helper is not ready")]
             }
+            // A command's request on the helper shows it working, and a ping would wait behind it.
+            guard inFlight == 0 else { return [HelperBrokerWire.ok(id: request.id, fields: ["busy": .bool(true)])] }
             let started = ContinuousClock.now
             if let lost = await probe(session) {
                 return [HelperBrokerWire.error(id: request.id, code: HelperBrokerWire.Code.ended, message: "the warm helper did not answer ping (\(lost))")]

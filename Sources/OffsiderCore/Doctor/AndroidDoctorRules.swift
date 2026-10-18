@@ -210,7 +210,8 @@ public enum AndroidDoctorRules {
     public static func helper(_ fact: HelperProbeFact) -> Verdict {
         switch fact {
         case .ready(let launch, let pushed, let hello, let ping, let protocolVersion, let sdkInt):
-            return (.pass, "Ready in \(launch) ms (pushed: \(pushed ? "yes" : "no")), hello \(hello) ms, ping \(ping) ms, protocol \(protocolVersion), API \(sdkInt)", nil)
+            let pinged = ping.map { "ping \($0) ms" } ?? "ping skipped while it serves a command"
+            return (.pass, "Ready in \(launch) ms (pushed: \(pushed ? "yes" : "no")), hello \(hello) ms, \(pinged), protocol \(protocolVersion), API \(sdkInt)", nil)
         case .busy(let detail):
             return (
                 .fail,

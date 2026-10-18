@@ -238,21 +238,22 @@ public struct AndroidDoctorProbe {
         if facts.uiAutomation?.offsiderHelperPids.isEmpty == true {
             facts.helper = await helperFact(serial, client: client)
         } else if facts.uiAutomation?.onlyWarmHelper == true, let warm {
-            let ping = warm.status.state == .ready ? await HelperBrokerClient.health(at: warm.socket) : nil
-            facts.helper = Self.warmHelperFact(warm.status, helloMilliseconds: warm.milliseconds, pingMilliseconds: ping)
+            let health = warm.status.state == .ready ? await HelperBrokerClient.health(at: warm.socket) : nil
+            facts.helper = Self.warmHelperFact(warm.status, helloMilliseconds: warm.milliseconds, health: health)
         }
         return facts
     }
 
     /// The warm helper from its broker's `status` (the hello time) and its own ping through the broker, neither counting as use.
-    static func warmHelperFact(_ status: HelperBrokerWire.Status, helloMilliseconds: Int, pingMilliseconds: Int?) -> HelperProbeFact {
+    static func warmHelperFact(_ status: HelperBrokerWire.Status, helloMilliseconds: Int, health: HelperBrokerClient.Health?) -> HelperProbeFact {
         guard status.state == .ready, let number = status.protocol, let sdkInt = status.sdkInt else {
             return .unavailable("the warm helper is \(status.state.rawValue)")
         }
-        guard let pingMilliseconds else { return .unavailable("the warm helper did not answer its ping") }
+        guard let health else { return .unavailable("the warm helper did not answer its ping") }
+        let ping: Int? = if case .answered(let milliseconds) = health { milliseconds } else { nil }
         return .ready(
             launchMilliseconds: status.launchMs ?? 0, pushed: status.pushed ?? false, helloMilliseconds: helloMilliseconds,
-            pingMilliseconds: pingMilliseconds, protocolVersion: number, sdkInt: sdkInt
+            pingMilliseconds: ping, protocolVersion: number, sdkInt: sdkInt
         )
     }
 

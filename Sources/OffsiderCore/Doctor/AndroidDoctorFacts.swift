@@ -130,7 +130,8 @@ public struct UiAutomationFact: Equatable, Sendable {
 }
 
 public enum HelperProbeFact: Equatable, Sendable {
-    case ready(launchMilliseconds: Int, pushed: Bool, helloMilliseconds: Int, pingMilliseconds: Int, protocolVersion: Int, sdkInt: Int)
+    /// `pingMilliseconds` is nil when a warm helper was serving a command, so it was not pinged.
+    case ready(launchMilliseconds: Int, pushed: Bool, helloMilliseconds: Int, pingMilliseconds: Int?, protocolVersion: Int, sdkInt: Int)
     case busy(String)
     case unavailable(String)
     case forcedOff

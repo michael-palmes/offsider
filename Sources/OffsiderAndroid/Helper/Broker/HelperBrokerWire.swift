@@ -122,9 +122,10 @@ enum HelperBrokerWire {
         let status: Status
     }
 
-    /// The `health` reply's body: the helper's ping through the broker.
+    /// The `health` reply's body: the helper's ping through the broker, or `busy` while a command's request runs on it.
     struct HealthReply: Decodable, Sendable {
-        let pingMs: Int
+        let pingMs: Int?
+        let busy: Bool?
     }
 
     /// `stop`'s reply: `starting` when the helper had not started yet, so the broker stops once its start ends.

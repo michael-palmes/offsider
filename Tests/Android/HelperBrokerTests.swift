@@ -330,11 +330,14 @@ struct HelperBrokerTests {
                 sdkInt: state == .ready ? 36 : nil, launchMs: state == .ready ? 112 : nil, pushed: state == .ready ? false : nil
             )
         }
-        #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), helloMilliseconds: 2, pingMilliseconds: 2) == .ready(
+        #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), helloMilliseconds: 2, health: .answered(milliseconds: 2)) == .ready(
             launchMilliseconds: 112, pushed: false, helloMilliseconds: 2, pingMilliseconds: 2, protocolVersion: 2, sdkInt: 36
         ))
-        #expect(AndroidDoctorProbe.warmHelperFact(status(.starting), helloMilliseconds: 2, pingMilliseconds: nil) == .unavailable("the warm helper is starting"))
-        #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), helloMilliseconds: 2, pingMilliseconds: nil) == .unavailable("the warm helper did not answer its ping"))
+        #expect(AndroidDoctorProbe.warmHelperFact(status(.starting), helloMilliseconds: 2, health: nil) == .unavailable("the warm helper is starting"))
+        #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), helloMilliseconds: 2, health: nil) == .unavailable("the warm helper did not answer its ping"))
+        #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), helloMilliseconds: 2, health: .busy) == .ready(
+            launchMilliseconds: 112, pushed: false, helloMilliseconds: 2, pingMilliseconds: nil, protocolVersion: 2, sdkInt: 36
+        ))
     }
 
     @Test("input whose command has gone is never sent")
@@ -497,6 +500,25 @@ struct HelperBrokerTests {
         #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
         #expect(fixture.device.startedProcesses == 1)
         await second.close()
+        await reader.close()
+        try await fixture.stop()
+    }
+
+    @Test("health answers busy at once while a command's request runs on the helper, instead of a ping that waits behind it")
+    func healthWhileBusyAnswersAtOnce() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(1500)) : nil }
+        let fixture = BrokerFixture(device: device)
+        try await fixture.start()
+        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+        let slow = Task { _ = try await reader.dump() }
+        try await Task.sleep(for: .milliseconds(100))
+
+        let asked = ContinuousClock.now
+        #expect(await HelperBrokerClient.health(at: fixture.socket) == .busy)
+        #expect(ContinuousClock.now - asked < .milliseconds(700))
+        try await slow.value
+        #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
         await reader.close()
         try await fixture.stop()
     }
