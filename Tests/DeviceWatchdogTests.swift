@@ -25,6 +25,24 @@ struct DeviceWatchdogTests {
         while !done(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
     }
 
+    @Test("a watchdog made in-process with no fire of its own goes off without ending the process")
+    func defaultLeavesProcessRunning() async throws {
+        let watchdog = DeviceWatchdog(grace: 0.05)
+        watchdog.arm(bound: 0, device: "SIM-1")
+
+        try await waitBriefly { !watchdog.isArmed }
+
+        #expect(!watchdog.isArmed)
+    }
+
+    @Test("a watchdog made as the CLI runs a command ends the process when it goes off; one made in-process only reports")
+    func cliWatchdogEndsProcess() async {
+        let cli = await OffsiderCommand.withCLIDefaults { DeviceWatchdog() }
+
+        #expect(cli.action == .exitProcess)
+        #expect(DeviceWatchdog().action == .report)
+    }
+
     @Test("a hung command past its bound fires once with an actionable message")
     func firesAfterBound() async throws {
         let fired = Fired()
@@ -75,7 +93,8 @@ struct DeviceWatchdogTests {
     @Test("slow setup is covered by the setup bound, not the condition's bound of 0")
     func setupHasItsOwnBound() async throws {
         let fired = Fired()
-        let watchdog = DeviceWatchdog(grace: 0.1, setupBound: 10) { fired.record($0) }
+        // Far past any stall of a full parallel run, which has held a 200 ms sleep for over 10 s.
+        let watchdog = DeviceWatchdog(grace: 0.1, setupBound: 600) { fired.record($0) }
         let value = await watchdog.guarding(setupThen: 0, device: "SIM-1") { ready in
             try? await Task.sleep(for: .milliseconds(200))
             #expect(fired.all.isEmpty)

@@ -25,8 +25,11 @@ enum DeviceDefault {
     /// The device a person chose from the picker when the command named none; set once, before the command parses again.
     nonisolated(unsafe) static var picked: String?
 
+    /// A pick `DevicePicker.need` tries the line with, seen only by its own task.
+    @TaskLocal static var trialPick: String?
+
     static func resolve(explicit: String?) -> (id: String, source: DeviceSource)? {
-        let resolved = resolve(explicit: explicit, environment: environment()) ?? picked.map { ($0, DeviceSource.picker) }
+        let resolved = resolve(explicit: explicit, environment: environment()) ?? (trialPick ?? picked).map { ($0, DeviceSource.picker) }
         if let resolved { record(resolved.id, source: resolved.source) }
         return resolved
     }

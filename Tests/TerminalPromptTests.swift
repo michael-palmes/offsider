@@ -629,31 +629,36 @@ final class PseudoTerminal: @unchecked Sendable {
         }
     }
 
-    /// Waits up to 5 s for the prompt's terminal settings to pass `ready`, and says whether they did.
+    /// How long the far end waits for the prompt: a full parallel run can hold the main actor, and so the prompt, for many seconds.
+    static let patience: TimeInterval = 60
+
+    /// Waits up to `patience` for the prompt's terminal settings to pass `ready`, and says whether they did.
     func wait(until ready: (termios) -> Bool) -> Bool {
         var settings = termios()
-        for _ in 0..<5000 {
+        let deadline = Date().addingTimeInterval(Self.patience)
+        repeat {
             if tcgetattr(secondary, &settings) == 0, ready(settings) { return true }
             usleep(1000)
-        }
+        } while Date() < deadline
         return false
     }
 
-    /// Waits up to 5 s for `text` to appear in what the prompt drew, and says whether it did.
+    /// Waits up to `patience` for `text` to appear in what the prompt drew, and says whether it did.
     func wait(forOutput text: String) -> Bool {
         poll { $0.contains(text) }
     }
 
-    /// Waits up to 5 s for the latest draw to end in exactly `count` dots, and says whether it did.
+    /// Waits up to `patience` for the latest draw to end in exactly `count` dots, and says whether it did.
     func wait(forDots count: Int) -> Bool {
         poll { !$0.isEmpty && $0.reversed().prefix { $0 == "•" }.count == count }
     }
 
     private func poll(_ ready: (String) -> Bool) -> Bool {
-        for _ in 0..<5000 {
+        let deadline = Date().addingTimeInterval(Self.patience)
+        repeat {
             if ready(lock.withLock { String(decoding: output, as: UTF8.self) }) { return true }
             usleep(1000)
-        }
+        } while Date() < deadline
         return false
     }
 

@@ -257,7 +257,7 @@ extension Type: BatchConvertible {
             try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
                 try await session.perform(event)
             }
-            context.invalidateTree(sentInput: true)
+            context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
         }
         return [focus] + typed
     }

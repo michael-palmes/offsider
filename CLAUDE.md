@@ -99,7 +99,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_IOS_RUNNER_IDLE` | Seconds an iPhone runner session stays up after its last request (default 300, at most 3600); a session is restarted after 12 hours |
 | `OFFSIDER_IOS_SESSION_IDLE` | Seconds an iPhone or iPad session broker stays up after its last command (default 300, at most 3600); a broker stops after 12 hours at its next idle moment |
 | `OFFSIDER_GOLDENS_UPDATE=1` | Re-renders the tree goldens offline (`--filter TreeGoldenRefresh`), or recaptures them with the RN device variables (`--filter TreeGoldenCaptureTests`) |
-| `OFFSIDER_TREE_CACHE` | `off` stops reading and writing the per-device tree cache under the private directory's `trees/` (`describe-ui --diff` and the tap guard then see no earlier tree) |
+| `OFFSIDER_TREE_CACHE` | `off` stops reading and writing the per-device tree cache under the private directory's `trees/` (`describe-ui --diff`, the tap guard and batch read steps then see no earlier tree or input) |
 | `OFFSIDER_DISPLAY_CACHE` | `off` stops reading and writing the per-phone display cache under the private directory's `displays/` (a foldable phone's active panel, its size and device state, so the next capture skips the display reads) |
 | `OFFSIDER_DEVICE` | The default `--device` for device commands (an explicit `--device` wins; blank is unset); it never names a physical device (exit 64: a phone, iPhone or iPad needs `--device` on each command); `test-runner.sh` and test child processes unset it |
 | `OFFSIDER_LEASE` | The label of this session's `lease set`; when set, `doctor`'s `device.lease` passes only when it matches. Unset, a lease passes for any later command of the session that set it |

@@ -141,7 +141,7 @@ struct DeviceOptionTests {
         terminal.type(["\r"])
         let picked = try await DevicePicker.pickRunning(descriptor: terminal.secondary) { [phone, simulator, stopped] }
         #expect(picked == simulator)
-        let transcript = terminal.transcript
+        let transcript = terminal.finish()
         #expect(transcript.contains("\(DevicePickerScreen.deviceQuestion) \(TerminalUI.Controls(rescan: true).text(style: .detect(isTerminal: true)))"))
         #expect(transcript.contains("Test Sim  iOS 27.1"))
         #expect(!transcript.contains("Test iPhone"))
@@ -163,7 +163,8 @@ struct DeviceOptionTests {
         let error = await #expect(throws: (any Error).self) {
             _ = try await DevicePicker.orUnanswered(missing) { try await DevicePicker.pickRunning(descriptor: terminal.secondary, idle: 0.3) { [simulator] } }
         }
-        #expect(Date().timeIntervalSince(started) < 10)
+        // Two prompts left to the default idle would take twice this; a full parallel run can hold the main actor for many seconds.
+        #expect(Date().timeIntervalSince(started) < TerminalPrompt.defaultIdle)
         #expect(OffsiderCommand.exitCode(for: try #require(error)).rawValue == 64)
         #expect(OffsiderCommand.message(for: try #require(error)).contains(DeviceDefault.missingMessage))
         #expect(DevicePickerScreen.unanswered(within: PromptTimedOut.duration(TerminalPrompt.defaultIdle)) == "No device chosen within 60 s; pass --device <id>.")
@@ -197,6 +198,19 @@ struct DeviceOptionTests {
         #expect(need(["boot"]) == .boot)
         #expect(need(["boot", "--timeout", "1"]) == nil)
         #expect(need(["tap", "-x", "1", "-y", "1", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD", "--bogus"]) == nil)
+    }
+
+    @Test("checking whether a pick would mend a line never lends a device to a parse running alongside it")
+    func pickerCheckStaysInItsTask() async {
+        let line = ["tap", "-x", "1", "-y", "1"]
+        let parsedWithoutDevice = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<20 {
+                group.addTask { Self.withDefault(nil) { _ = DevicePicker.need(for: Self.parseError(line), arguments: line) }; return false }
+                group.addTask { Self.withDefault(nil) { (try? Tap.parse(Array(line.dropFirst()))) != nil } }
+            }
+            return await group.contains(true)
+        }
+        #expect(!parsedWithoutDevice)
     }
 
     private static func parseError(_ arguments: [String]) -> any Error {
