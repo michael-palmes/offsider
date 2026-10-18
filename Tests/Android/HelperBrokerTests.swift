@@ -16,7 +16,8 @@ final class BrokerFixture {
     let idle: Duration
 
     init(
-        device: FakeHelperDevice = FakeHelperDevice(), idle: Duration = .seconds(30), dexSha256: String = FakeHelperDevice.dex.sha256, maxClients: Int = 8
+        device: FakeHelperDevice = FakeHelperDevice(), idle: Duration = .seconds(30), dexSha256: String = FakeHelperDevice.dex.sha256, maxClients: Int = 8,
+        startDelay: Duration = .zero
     ) {
         self.idle = idle
         self.device = device
@@ -27,7 +28,10 @@ final class BrokerFixture {
         broker = HelperBroker(
             serial: FakeHelperDevice.serial, socketPath: socket, dexSha256: dexSha256,
             limits: HelperBroker.Limits(idle: idle, healthInterval: .seconds(60), maxClients: maxClients, failureLinger: .seconds(1)),
-            startHelper: { try await HelperSessionTests.start(device) },
+            startHelper: {
+                if startDelay > .zero { try await Task.sleep(for: startDelay) }
+                return try await HelperSessionTests.start(device)
+            },
             log: { _, _ in }
         )
     }
@@ -430,6 +434,17 @@ struct HelperBrokerTests {
         #expect(!broker.ops.contains("stop"))
         broker.cancel()
         try? FileManager.default.removeItem(at: fixture.root)
+    }
+
+    @Test("a stop while the helper is still starting returns once the start has ended and the slot is free, never before")
+    func stopWhileStartingWaitsForTheStart() async throws {
+        let fixture = BrokerFixture(startDelay: .milliseconds(3500))
+        try await fixture.start()
+
+        #expect(await HelperBrokerClient.stop(at: fixture.socket))
+        #expect(!UnixSocket.answers(fixture.socket))
+        #expect(fixture.device.ops.last == "quit")
+        #expect(try await fixture.finished())
     }
 
     @Test("the relay cap outlasts the longest inject a command sends, so a full-length gesture is never cut off")

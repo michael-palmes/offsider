@@ -133,8 +133,10 @@ struct HelperBrokerClient {
     /// Asks the broker at `path` to stop and waits until its socket is gone, which is after its helper has freed the UiAutomation slot.
     @discardableResult
     static func stop(at path: String) async -> Bool {
-        guard UnixSocket.answers(path), await control("stop", at: path) != nil else { return false }
-        await untilGone(path)
+        guard UnixSocket.answers(path), let reply = await control("stop", at: path) else { return false }
+        // One still starting its helper stops once the start ends, which takes as long as a cold start.
+        let starting = (try? JSONDecoder().decode(HelperBrokerWire.StopReply.self, from: reply))?.starting == true
+        await untilGone(path, within: starting ? HelperLauncher.readyTimeout + goneTimeout : goneTimeout)
         return true
     }
 
@@ -159,8 +161,8 @@ struct HelperBrokerClient {
     }
 
     /// Watches for the socket file, which a broker removes last, so waiting costs it no connections; a file a dead broker left is probed now and then.
-    static func untilGone(_ path: String) async {
-        let deadline = ContinuousClock.now + goneTimeout
+    static func untilGone(_ path: String, within timeout: Duration = goneTimeout) async {
+        let deadline = ContinuousClock.now + timeout
         var polls = 0
         while FileManager.default.fileExists(atPath: path), ContinuousClock.now < deadline {
             polls += 1

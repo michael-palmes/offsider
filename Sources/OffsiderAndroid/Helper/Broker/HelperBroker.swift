@@ -220,7 +220,8 @@ final class HelperBroker {
             return [HelperBrokerWire.statusReply(id: request.id, status())]
         case "stop":
             stopping = true
-            return [HelperBrokerWire.ok(id: request.id)]
+            guard case .starting = state else { return [HelperBrokerWire.ok(id: request.id)] }
+            return [HelperBrokerWire.ok(id: request.id, fields: ["starting": .bool(true)])]
         case "screen":
             guard case .ready = state, !stopping, helperGone == nil, let screen else { return [HelperBrokerWire.ok(id: request.id)] }
             return [HelperBrokerWire.ok(id: request.id, fields: ["screen": .string(screen)])]

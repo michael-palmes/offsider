@@ -122,6 +122,11 @@ enum HelperBrokerWire {
         let status: Status
     }
 
+    /// `stop`'s reply: `starting` when the helper had not started yet, so the broker stops once its start ends.
+    struct StopReply: Decodable, Sendable {
+        let starting: Bool?
+    }
+
     /// The `screen` reply's body: the display facts a command left, absent when none or the helper has gone.
     struct ScreenReply: Decodable, Sendable {
         let screen: String?
