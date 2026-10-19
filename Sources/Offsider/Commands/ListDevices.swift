@@ -173,7 +173,11 @@ struct ListDevices: AsyncParsableCommand {
             }
         }
 
-        if !failures.isEmpty, failures.count == backends.count - skipped {
+        let allFailed = !failures.isEmpty && failures.count == backends.count - skipped
+        // The iOS simulator and device backends share one Xcode, so they often fail alike.
+        var seen = Set<String>()
+        failures = failures.filter { seen.insert("\($0.platform.rawValue): \(message(for: $0.error))").inserted }
+        if allFailed {
             if failures.count == 1 {
                 throw failures[0].error
             }
