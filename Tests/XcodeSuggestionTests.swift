@@ -28,10 +28,31 @@ struct XcodeSuggestionTests {
         #expect(ordered.map(\.path) == ["/Applications/Xcode.app", "/Applications/Xcode-26.app", "/Applications/Xcode-26.2.app", "/Applications/Xcode-9.app"])
     }
 
-    @Test("with no signed Xcode the fix names the standard path")
-    func placeholder() {
+    @Test("with no signed Xcode the fix is to install one, and the message offers no DEVELOPER_DIR")
+    func nothingToSelect() {
         let suggestion = XcodeSuggestion(bundles: [XcodeBundle(path: "/Applications/Xcode-fake.app", version: "27.0", appleSigned: false)])
-        #expect(suggestion.select == "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer")
+        #expect(suggestion.select == "Install Xcode 26 or later from the Mac App Store or developer.apple.com.")
+        #expect(suggestion.advice == suggestion.select)
+        #expect(suggestion.adding(to: "No Xcode.") == "No Xcode.")
+        #expect(XcodeSuggestion(developerDirectory: "/Applications/Xcode.app/Contents/Developer").adding(to: "No Xcode.")
+            == "No Xcode. Without sudo, run `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` instead.")
+    }
+
+    @Test("the refused Xcode is skipped, also when a symlink names it, and the next newest is named")
+    func skipsRefused() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let real = root.appendingPathComponent("Xcode-27.1.app/Contents/Developer", isDirectory: true)
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Xcode.app"), withDestinationURL: root.appendingPathComponent("Xcode-27.1.app"))
+        let bundles = [
+            XcodeBundle(path: root.path + "/Xcode.app", version: "27.1", appleSigned: true),
+            XcodeBundle(path: root.path + "/Xcode-27.1.app", version: "27.1", appleSigned: true),
+            XcodeBundle(path: "/Applications/Xcode-26.4.app", version: "26.4", appleSigned: true),
+        ]
+        let suggestion = XcodeSuggestion(bundles: bundles, rejecting: real.path)
+        #expect(suggestion.developerDirectory == "/Applications/Xcode-26.4.app/Contents/Developer")
+        #expect(XcodeSuggestion(bundles: Array(bundles.prefix(2)), rejecting: root.path + "/Xcode.app/Contents/Developer").select == XcodeSuggestion.install)
     }
 
     @Test("a scan finds Xcode bundles with a developer folder and asks the validator about each")
@@ -47,7 +68,7 @@ struct XcodeSuggestionTests {
             let version = name == "Xcode-beta.app" ? "27.0" : "26.4"
             try (["CFBundleShortVersionString": version] as NSDictionary).write(to: contents.appendingPathComponent("Info.plist"))
         }
-        let bundles = XcodeSuggestion.scan(root.path) { $0.hasSuffix("/Xcode.app") }
+        let bundles = XcodeSuggestion.scan(root.path) { $0.hasSuffix("/Xcode.app") ? nil : .notAppleSigned }
         #expect(Set(bundles.map { ($0.path as NSString).lastPathComponent }) == ["Xcode.app", "Xcode-beta.app"])
         #expect(XcodeSuggestion(bundles: bundles).developerDirectory == root.path + "/Xcode.app/Contents/Developer")
     }
