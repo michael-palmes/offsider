@@ -34,7 +34,7 @@ A change to the iOS or Android tree mapping or to the `describe-ui` renderer sho
 
 A new or changed command or option also updates:
 
-- `README.md` (the Commands table)
+- `docs/commands.md` (the Commands table) and the `docs/` page that covers the command
 - `Sources/Offsider/Resources/skills/offsider/SKILL.md` (the skill `offsider init` installs)
 - `CHANGELOG.md`, under `## [Unreleased]`
 

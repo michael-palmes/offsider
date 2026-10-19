@@ -140,15 +140,15 @@ struct GuideTests {
         }
     }
 
-    @Test("every command is in the skill's Commands paragraph and the README's Commands table, by itself or a parent")
+    @Test("every command is in the skill's Commands paragraph and the docs' Commands table, by itself or a parent")
     func everyCommandIsDocumented() throws {
         let skillLines = try Self.read("SKILL.md").components(separatedBy: "\n")
         let paragraph = skillLines.drop { $0 != "## Commands" }.dropFirst().first { !$0.isEmpty } ?? ""
         let skillNames = Set(paragraph.matches(of: #/`([^`]+)`/#).map { String($0.output.1) })
 
-        let readme = try String(contentsOf: ErrorContractDocsTests.root.appendingPathComponent("README.md"), encoding: .utf8)
-        let readmeLines = readme.components(separatedBy: "\n").drop { $0 != "## Commands" }.dropFirst().prefix { !$0.hasPrefix("## ") }
-        let readmeNames = Set(readmeLines.filter { $0.hasPrefix("| `") }.compactMap { row in
+        let commandsPage = try String(contentsOf: ErrorContractDocsTests.root.appendingPathComponent("docs/commands.md"), encoding: .utf8)
+        let tableLines = commandsPage.components(separatedBy: "\n").drop { $0 != "# Commands" }.dropFirst().prefix { !$0.hasPrefix("#") }
+        let tableNames = Set(tableLines.filter { $0.hasPrefix("| `") }.compactMap { row in
             row.split(separator: "|").first.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " `")) }
         })
 
@@ -158,7 +158,7 @@ struct GuideTests {
             let words = path.split(separator: " ")
             let names = Set(words.indices.map { words[...$0].joined(separator: " ") })
             #expect(!skillNames.isDisjoint(with: names), "SKILL.md ## Commands does not name \(path)")
-            #expect(!readmeNames.isDisjoint(with: names), "README ## Commands does not list \(path)")
+            #expect(!tableNames.isDisjoint(with: names), "The Commands table in docs/commands.md does not list \(path)")
         }
     }
 

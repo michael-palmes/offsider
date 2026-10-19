@@ -37,7 +37,7 @@ Without `--json`, stderr shows `Error: <message>`, then `Try: <hint>` when the m
 
 ## JSON errors
 
-With `--json`, every failure prints one object on stdout: `exitCode` and `error` with `reason`, `message`, `hint` (the next command), `dispatched` and `candidates`, plus `coveredBy` for `target_covered` and `users` for `user_not_found` and `user_ambiguous`. The README lists every `reason`.
+With `--json`, every failure prints one object on stdout: `exitCode` and `error` with `reason`, `message`, `hint` (the next command), `dispatched` and `candidates`, plus `coveredBy` for `target_covered` and `users` for `user_not_found` and `user_ambiguous`. The repository's `docs/errors.md` lists every `reason`.
 
 ## The device lock
 

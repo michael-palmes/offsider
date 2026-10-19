@@ -13,5 +13,5 @@ Closes #
 - [ ] `swift build` and `swift test` pass
 - [ ] `make e2e` passes on a booted simulator (for input, accessibility or capture changes)
 - [ ] `bash -n` passes for any changed shell script
-- [ ] `README.md`, the bundled `SKILL.md` and `CHANGELOG.md` are updated for command or option changes
+- [ ] `docs/commands.md` (and the `docs/` page that covers it), the bundled `SKILL.md` and `CHANGELOG.md` are updated for command or option changes
 - [ ] No device ids, simulator or AVD names, local paths or private app content

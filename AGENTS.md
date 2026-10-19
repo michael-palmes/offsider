@@ -134,7 +134,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | CI and releases | `.github/workflows/ci.yml`, `.github/workflows/release.yml` |
 | Project skills | `.agents/skills/` (`.claude/skills` is a relative symlink to it) |
 
-A command or option change also updates `README.md`, the bundled `SKILL.md` and `CHANGELOG.md` (under `## [Unreleased]`: Added, Changed, Fixed, Removed; released sections are immutable).
+A command or option change also updates `docs/commands.md` (and the `docs/` page that covers it), the bundled `SKILL.md` and `CHANGELOG.md` (under `## [Unreleased]`: Added, Changed, Fixed, Removed; released sections are immutable).
 
 ## Simulator caveats
 
