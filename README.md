@@ -78,23 +78,24 @@ Real iPhones and Android phones work too, once you allow each one with `offsider
 
 - **Straight to the emulator.** Taps, keys and screenshots go to the Android Emulator's own gRPC endpoint on loopback, not through `adb shell`: a tap lands in about 0.1 s and a screenshot in 0.15 s.
 - **Warm on the emulator.** The screen reader stays running between commands, so after the first a `describe-ui --summary` takes 0.06 s and a `tap --id` 0.1 s.
-- **Straight to the simulator.** Offsider reads and drives the iOS Simulator through Xcode's own simulator frameworks, with nothing installed inside it: a screen read takes 0.44 s and a screenshot 0.29 s.
+- **Straight to the simulator.** Offsider reads and drives the iOS Simulator through Xcode's own simulator frameworks, with nothing installed inside it: a screen read takes 0.88 s and a screenshot 0.40 s.
+- **Warm on the simulator.** The input session stays open between commands, so after the first a tap skips the 1 s it takes to open: a `tap --id` takes 0.91 s instead of 2.4 s.
 - **Small reads.** A `--summary` is about 1 percent of the full JSON, and `--diff` sends only what changed, so your agent spends fewer tokens on every screen.
-- **One trip for a whole flow.** `batch` sets up once, then runs every step: five steps take a third to a half of the time on iOS. On Android, where every command is already warm, it still saves a quarter.
+- **One trip for a whole flow.** `batch` sets up once, then runs every step: five steps take about half the time on iOS, and on Android, where every command is already warm, it still saves a quarter.
 - **Warm sessions on real devices.** On a wired iPad, a session broker keeps the screen stream and touch open between commands: a tap in about 140 ms and a screenshot in about 230 ms.
 
 | Median | iOS Simulator | Android Emulator |
 | --- | --- | --- |
-| Read the screen: `describe-ui --summary` | 0.44 s | 0.06 s |
-| Tap a point: `tap -x -y` | 1.8 s | 0.10 s |
-| Tap by id: `tap --id` | 1.8 s | 0.10 s |
-| Tap and check it worked: `tap --id --verify` | 3.0 s | 0.53 s |
-| Screenshot | 0.29 s | 0.15 s |
-| Screenshot, password fields masked (the default) | 0.56 s | 0.13 s |
-| Five steps in one `batch` | 2.3 to 3.3 s | 0.42 s |
-| The same five steps as separate commands | 6.5 s | 0.56 s |
+| Read the screen: `describe-ui --summary` | 0.88 s | 0.06 s |
+| Tap a point: `tap -x -y` | 0.94 s | 0.10 s |
+| Tap by id: `tap --id` | 0.91 s | 0.10 s |
+| Tap and check it worked: `tap --id --verify` | 3.1 s | 0.53 s |
+| Screenshot | 0.40 s | 0.15 s |
+| Screenshot, password fields masked (the default) | 0.99 s | 0.13 s |
+| Five steps in one `batch` | 2.4 s | 0.42 s |
+| The same five steps as separate commands | 4.5 s | 0.56 s |
 
-<sub>An Apple M1 Max with Xcode 27.0, driving the React Native playground on an iOS 27 simulator (Offsider 0.12.0) and an API 36 emulator (the build after 0.12.0, which keeps the screen reader warm): medians of 20 runs back to back, or 10 for the five steps, after 3 warm-up runs. A session's first Android command starts the screen reader, so it takes about 0.3 s. On iOS, each input command spends about 1 s opening the simulator's input session, and a `batch` pays it once. The iPad figures were measured for 0.7.0.</sub>
+<sub>An Apple M1 Max driving the React Native playground on an iOS 27 simulator with Xcode 27.1 and an API 36 emulator, with the build after 0.12.0, which keeps the emulator's screen reader and the simulator's input session warm: medians of 20 runs back to back, or 10 for the five steps, after 3 warm-up runs. A session's first command opens what later ones reuse, so it takes about 0.3 s longer on Android and 1 s longer on iOS. The iPad figures were measured for 0.7.0.</sub>
 
 ## Secure
 
