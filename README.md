@@ -64,6 +64,16 @@ Real iPhones and Android phones work too, once you allow each one with `offsider
 
 ## Fast
 
+![Bars of median time on the Android Emulator, as an agent sends it. Tap by id: Offsider 0.09 s, Appium 0.09 s, agent-device 0.21 s, mobile-mcp 0.39 s, Maestro 2.1 s. Five steps: Offsider 0.49 s, Appium 0.99 s, mobile-mcp 1.6 s, agent-device 1.8 s, Maestro 4.5 s, so Offsider is 2x faster than Appium.](docs/assets/speed.png)
+
+| Median on the Android Emulator | Offsider | Appium | agent-device | mobile-mcp | Maestro |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Tap by id | 0.09 s | 0.09 s | 0.21 s | 0.39 s | 2.1 s |
+| Five steps | 0.49 s | 0.99 s | 1.8 s | 1.6 s | 4.5 s |
+| First tap, with nothing running | 0.33 s | 4.3 s | 1.8 s | 1.6 s | 6.9 s |
+
+<sub>Each tool driven the way an agent drives it, through its fastest warm route: Offsider's commands (the build after 0.12.0, with `batch` for the five steps), Appium 3.8.0 with UiAutomator2 over WebDriver, and agent-device 0.21.27, mobile-mcp 1.0.11 and Maestro 2.11.0 over MCP. The same React Native screen on an API 36 emulator, a 2 s pause before each tap, and every tap checked to have landed: medians of 20 taps or 10 runs of the five steps (tap, wait, assert, tap, screenshot) after 3 warm-ups. Appium's median tap matches Offsider's, but 4 of its 20 took about 0.7 s. Tapping a bare point, mobile-mcp (0.04 s) and Appium (0.09 s) are quicker than Offsider (0.11 s).</sub>
+
 ![Bars of output size for one screen: describe-ui prints 145 KB of JSON, describe-ui --compact prints 31 KB, and describe-ui --summary prints 1.5 KB, about 1 percent of the JSON.](docs/assets/summary.png)
 
 - **Straight to the emulator.** Taps, keys and screenshots go to the Android Emulator's own gRPC endpoint on loopback, not through `adb shell`: a tap lands in about 0.1 s and a screenshot in 0.15 s.
