@@ -229,9 +229,11 @@ enum AndroidE2E {
     }
 
     /// Opens a playground screen by deep link and waits until describe-ui shows `id`.
+    /// Launches the screen and lets it settle, ticking text aside: a warm helper acts fast enough that a screen still mounting would drop a tap.
     static func open(_ screen: String, waitingFor id: String) async throws {
         try await launch(screen)
         _ = try await waitForNode(timeout: 40) { $0["id"] as? String == id }
+        _ = try await offsider("wait --settled --ignore-values --timeout 10")
     }
 
     /// describe-ui on the guarded emulator; a miss answers a starved app's ANR dialog with Wait.

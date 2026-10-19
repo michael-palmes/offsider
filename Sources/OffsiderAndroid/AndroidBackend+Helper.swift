@@ -10,6 +10,10 @@ extension AndroidBackend {
         }
         try await host.claimDevice(serial)
         let mode = try AndroidTreeMode.mode(host: host)
+        let warm = try mode != .uiautomator && keepsHelperWarm(serial)
+        if !warm {
+            await stopWarmHelper(serial)
+        }
         let chosen: AndroidTreeSource
         if mode == .uiautomator {
             chosen = .uiautomator(.forcedOff)
@@ -268,7 +272,7 @@ extension AndroidBackend {
         }
         let client = try requireClient()
         do {
-            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing)
+            return try await openHelper(serial, client: client, dex: dex)
         } catch HelperStartFailure.busy(let detail) {
             log(.debug, "UiAutomation is busy on \(serial): \(detail)")
         }
@@ -283,18 +287,69 @@ extension AndroidBackend {
             pids = await helperPids(serial)
         }
         if let stale = pids.first {
-            throw AndroidError.helperBusy(serial, stalePid: stale)
+            throw await warmHelperPid(serial) == stale ? AndroidError.helperBusyWarm(serial) : AndroidError.helperBusy(serial, stalePid: stale)
         }
         do {
-            return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing)
+            return try await openHelper(serial, client: client, dex: dex)
         } catch HelperStartFailure.busy {
             throw await busyError(serial)
         }
     }
 
+    /// The warm helper when this serial keeps one, else a helper for this command; a broker that cannot be reached or started falls back to the latter.
+    private func openHelper(_ serial: String, client: AdbClient, dex: HelperDex) async throws -> HelperSession {
+        if try keepsHelperWarm(serial), let broker = brokerClient(serial, dex: dex) {
+            do {
+                return try await HelperSession.attach(broker, log: log)
+            } catch let error as HelperBrokerUnavailable {
+                log(.debug, "The warm helper on \(serial) is unavailable (\(error.detail)); starting one for this command")
+            }
+        }
+        return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing)
+    }
+
+    /// Emulators keep the helper warm unless `OFFSIDER_ANDROID_SESSION` is off; a USB phone only when it is on.
+    func keepsHelperWarm(_ serial: String) throws -> Bool {
+        guard host.helperBroker != nil else { return false }
+        let isEmulator = phones[serial] == nil && HelperBrokerSettings.isEmulatorSerial(serial)
+        return HelperBrokerSettings.keepsWarm(try HelperBrokerSettings.mode(host: host), isEmulator: isEmulator)
+    }
+
+    func brokerClient(_ serial: String, dex: HelperDex) -> HelperBrokerClient? {
+        guard let broker = host.helperBroker else { return nil }
+        do {
+            return try HelperBrokerClient(
+                serial: serial, dexSha256: dex.sha256, idleSeconds: HelperBrokerSettings.idleSeconds(host.environment), host: broker, log: log,
+                timing: host.timing
+            )
+        } catch {
+            log(.debug, "The warm helper cannot serve \(serial): \(error)")
+            return nil
+        }
+    }
+
+    /// How long a command that reads another way waits for the warm helper to finish serving others before it stops it.
+    static let warmHelperFreeWait: Duration = .seconds(2)
+
+    /// Stops Offsider's own warm helper on `serial` once no other command uses it, so this command finds the UiAutomation slot free.
+    func stopWarmHelper(_ serial: String) async {
+        guard let socket = host.warmHelperSocket(for: serial), UnixSocket.answers(socket) else { return }
+        switch await HelperBrokerClient.stopWhenFree(at: socket, wait: Self.warmHelperFreeWait) {
+        case .stopped: log(.debug, "Stopped the warm helper on \(serial), which this command does not use")
+        case .inUse: log(.debug, "The warm helper on \(serial) is serving another command, so this one leaves it running")
+        case .stillServing: log(.debug, "The warm helper on \(serial) did not stop when asked")
+        }
+    }
+
+    /// The device pid of the warm helper on `serial`, read without counting as use.
+    private func warmHelperPid(_ serial: String) async -> Int32? {
+        guard let socket = host.warmHelperSocket(for: serial) else { return nil }
+        return await HelperBrokerClient.status(at: socket)?.helperPid
+    }
+
     private func busyError(_ serial: String) async -> AndroidError {
         if let pid = await helperPids(serial).first {
-            return .helperBusy(serial, stalePid: pid)
+            return await warmHelperPid(serial) == pid ? .helperBusyWarm(serial) : .helperBusy(serial, stalePid: pid)
         }
         return .helperBusy(serial)
     }

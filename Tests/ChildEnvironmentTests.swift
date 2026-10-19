@@ -42,4 +42,14 @@ struct ChildEnvironmentTests {
         #expect(Set(ChildEnvironment.make(.offsiderBroker, from: Self.caller).keys) == Self.base.union(["DEVELOPER_DIR", "OFFSIDER_IOS_SESSION_IDLE"]))
         #expect(Set(ChildEnvironment.make(.xcodebuild, from: Self.caller).keys) == Self.base.union(["DEVELOPER_DIR", "TEST_RUNNER_OFFSIDER_RUNNER_PORT", "HTTPS_PROXY", "NO_PROXY"]))
     }
+
+    @Test("an Android broker finds the SDK and the adb server, keeps Offsider's settings, forces mDNS off and gets no secrets")
+    func androidBrokerProfile() {
+        let environment = ChildEnvironment.make(.androidBroker, from: Self.caller)
+        #expect(Set(environment.keys) == Self.base.union([
+            "ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_AVD_HOME", "ANDROID_ADB_SERVER_PORT", "ADB_SERVER_SOCKET", "ADB_LIBUSB", "ADB_VENDOR_KEYS",
+            "ADB_MDNS", "OFFSIDER_IOS_SESSION_IDLE",
+        ]))
+        #expect(environment["ADB_MDNS"] == "0")
+    }
 }

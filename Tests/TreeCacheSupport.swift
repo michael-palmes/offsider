@@ -64,3 +64,10 @@ final class TreeCacheFixture {
         )
     }
 }
+
+extension TreeCacheRecord {
+    /// The record as the next command reads it back from its file, so its tree has no native attributes.
+    func reloaded() throws -> TreeCacheRecord {
+        try TreeCacheRecord(data: encoded())
+    }
+}

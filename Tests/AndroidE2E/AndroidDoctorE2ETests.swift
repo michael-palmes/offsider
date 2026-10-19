@@ -45,19 +45,22 @@ struct AndroidDoctorE2ETests {
         #expect(detail.contains("token auth") || detail.contains("jwt auth"))
     }
 
-    @Test("describe-ui with OFFSIDER_TIMINGS=1 prints the helper phases in the iOS line format")
-    func describeTimings() async throws {
+    @Test("describe-ui with OFFSIDER_TIMINGS=1 prints the helper phases in the iOS line format, warm or per command", arguments: [
+        ("auto", ["helper-attach", "helper-dump", "tree-map", "helper-close"]),
+        ("off", ["helper-launch", "helper-hello", "helper-dump", "tree-map", "helper-close"]),
+    ])
+    func describeTimings(session: String, expected: [String]) async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
-        let result = try await AndroidE2E.run("describe-ui", environment: ["OFFSIDER_TIMINGS": "1"])
+        let result = try await AndroidE2E.run("describe-ui", environment: ["OFFSIDER_TIMINGS": "1", "OFFSIDER_ANDROID_SESSION": session])
         let phases = result.stderr.split(whereSeparator: \.isNewline).compactMap { line -> String? in
             let parts = line.split(separator: " ")
             guard line.hasPrefix("offsider timing: "), parts.count == 5, parts[4] == "ms", Int(parts[3]) != nil else { return nil }
             return String(parts[2])
         }
-        let helper = phases.filter { ["helper-launch", "helper-hello", "helper-dump", "tree-map", "helper-close"].contains($0) }
+        let helper = phases.filter { ["helper-launch", "helper-hello", "helper-attach", "helper-dump", "tree-map", "helper-close"].contains($0) }
 
         #expect(phases.first == "prepare")
-        #expect(helper == ["helper-launch", "helper-hello", "helper-dump", "tree-map", "helper-close"])
+        #expect(helper == expected)
         #expect(phases.last == "total")
     }
 }

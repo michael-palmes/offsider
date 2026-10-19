@@ -1,5 +1,6 @@
 import Foundation
 @testable import Offsider
+@testable import OffsiderAndroid
 import OffsiderIOSDevice
 import Testing
 
@@ -61,6 +62,34 @@ struct SessionCommandTests {
         #expect(stopped.count == 2)
         #expect(stopped[0]["device"] as? String == "A" && stopped[0]["runner"] as? Bool == true && stopped[0]["broker"] as? Bool == true)
         #expect(stopped[1]["device"] as? String == "B" && stopped[1]["runner"] as? Bool == false)
+    }
+
+    static func helper(_ serial: String) -> WarmHelperStatus {
+        WarmHelperStatus(serial: serial, state: "ready", brokerPid: 33, helperPid: 4567, startedAt: started, idleSeconds: 60, idleFor: 12)
+    }
+
+    @Test("a warm Android helper gets its own row: its broker, its device pid and how long it has idled")
+    func warmHelperRow() throws {
+        let rows = DeviceSessionRow.rows(runners: [Self.runner("A")], brokers: [], helpers: [Self.helper("emulator-5554")])
+        let text = DeviceSessionRow.text(rows)
+        #expect(text.contains("emulator-5554\n  helper  ready  pid 33  device pid 4567"))
+        #expect(text.contains("idle 12 s of 60 s"))
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.json(rows).utf8)) as? [String: Any])
+        let sessions = try #require(object["sessions"] as? [[String: Any]])
+        #expect(sessions.map { $0["device"] as? String } == ["A", "emulator-5554"])
+        #expect(sessions[0]["helper"] is NSNull)
+        let helper = try #require(sessions[1]["helper"] as? [String: Any])
+        #expect(helper["devicePid"] as? Int == 4567 && helper["pid"] as? Int == 33 && helper["idleFor"] as? Int == 12)
+        #expect(sessions[1]["runner"] is NSNull && sessions[1]["broker"] is NSNull)
+    }
+
+    @Test("stop JSON says when a device's warm helper was stopped")
+    func stopHelperJSON() throws {
+        let text = DeviceSessionRow.stoppedJSON(DeviceSessionRow.stopped(runners: [], brokers: [], helpers: ["emulator-5554"]))
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let stopped = try #require(object["stopped"] as? [[String: Any]])
+        #expect(stopped.count == 1)
+        #expect(stopped[0]["helper"] as? Bool == true && stopped[0]["runner"] as? Bool == false)
     }
 
     @Test("nested session commands keep their parent in the command path")

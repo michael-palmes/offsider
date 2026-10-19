@@ -8,9 +8,14 @@ enum AndroidPhase: String, CaseIterable, Sendable {
     case adbShell = "adb-shell"
     case displayProbe = "display-probe"
     case displayStatus = "display-status"
+    /// Reading the display facts the warm helper's broker keeps, in place of `display-status`.
+    case warmScreen = "warm-screen"
     case helperLaunch = "helper-launch"
     case dexPush = "dex-push"
     case helperHello = "helper-hello"
+    /// Reaching the warm helper's broker, including any broker start.
+    case helperAttach = "helper-attach"
+    case brokerStart = "broker-start"
     case helperDump = "helper-dump"
     case treeMap = "tree-map"
     case helperClose = "helper-close"

@@ -45,7 +45,7 @@ enum HelperStartFailure: Error, Equatable, Sendable {
 /// Starts the helper over one open shell stream, pushing the dex first when the device lacks this exact copy.
 @MainActor
 struct HelperLauncher {
-    static let idleTimeoutMs = 10_000
+    nonisolated static let idleTimeoutMs = 10_000
     static let acceptTimeoutMs = 10_000
     /// Cold starts on a loaded host took up to 13 s, so the wait for the ready line is generous.
     static let readyTimeout: Duration = .seconds(30)
@@ -61,10 +61,12 @@ struct HelperLauncher {
     let log: AndroidLog
     var hostPid: Int32 = getpid()
     var timing: AndroidTiming = .disabled
+    /// How long the helper waits for a request before it exits; the warm helper's broker raises it past its own idle timeout.
+    var idleTimeoutMs = HelperLauncher.idleTimeoutMs
 
     /// Exits 90 unless the dex matches the manifest's SHA-256 (its size where the device has no `sha256sum`); `exec` lets adbd's hang-up
     /// reach the helper. After a push it moves the copy out of the private push folder, makes it 644 and prunes older copies first.
-    static func startScript(_ dex: HelperDex, pushedFrom pushDirectory: String?) -> String {
+    static func startScript(_ dex: HelperDex, pushedFrom pushDirectory: String?, idleTimeoutMs: Int = idleTimeoutMs) -> String {
         var script = "f=\(AdbShellQuoting.quote(dex.devicePath)); "
         if let pushDirectory {
             let directory = AdbShellQuoting.quote(pushDirectory)
@@ -96,7 +98,7 @@ struct HelperLauncher {
     /// `milliseconds` runs from the first start script to the ready line, including any push.
     func launch() async throws -> (shell: ShellStream, ready: HelperReady, pushed: Bool, milliseconds: Int) {
         let started = ContinuousClock.now
-        if case .started(let shell, let ready) = try await attempt(Self.startScript(dex, pushedFrom: nil)) {
+        if case .started(let shell, let ready) = try await attempt(Self.startScript(dex, pushedFrom: nil, idleTimeoutMs: idleTimeoutMs)) {
             let elapsed = Self.milliseconds(since: started)
             log(.debug, "The UiAutomation helper on \(serial) was ready in \(elapsed) ms (pid \(ready.pid))")
             return (shell, ready, false, elapsed)
@@ -117,7 +119,7 @@ struct HelperLauncher {
         } catch let error as AndroidError where error.kind == .adbCommandFailed {
             throw HelperStartFailure.unavailable(.pushFailed(Self.pushDetail(error)))
         }
-        switch try await attempt(Self.startScript(dex, pushedFrom: pushDirectory)) {
+        switch try await attempt(Self.startScript(dex, pushedFrom: pushDirectory, idleTimeoutMs: idleTimeoutMs)) {
         case .started(let shell, let ready):
             let elapsed = Self.milliseconds(since: started)
             log(.debug, "The UiAutomation helper on \(serial) was pushed and ready in \(elapsed) ms (pid \(ready.pid))")

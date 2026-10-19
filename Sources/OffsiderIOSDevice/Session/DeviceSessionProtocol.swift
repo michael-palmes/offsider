@@ -353,15 +353,11 @@ final class DeviceSessionChannel: @unchecked Sendable {
     }
 
     static func unixAddress(_ path: String) throws -> sockaddr_un {
-        var address = sockaddr_un()
-        address.sun_family = sa_family_t(AF_UNIX)
-        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
-        let bytes = Array(path.utf8) + [0]
-        guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else {
+        do {
+            return try UnixSocket.address(path)
+        } catch {
             throw DeviceSessionWireError(detail: "the socket path \(path) is too long")
         }
-        withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
-        return address
     }
 }
 

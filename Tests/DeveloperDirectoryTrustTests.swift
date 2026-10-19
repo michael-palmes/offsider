@@ -117,7 +117,41 @@ struct DeveloperDirectoryTrustTests {
         #expect(Date().timeIntervalSince(started) < 1)
         #expect(trusted.app.hasSuffix(".app"))
     }
+
+    @Test("the Xcode requirement still takes Apple's own signature and refuses unsigned code")
+    func requirementKeepsAppleSignature() throws {
+        let file = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("offsider-unsigned-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("#!/bin/sh\n".utf8).write(to: file)
+        #expect(CodeSignatureCheck.satisfies(path: "/bin/ls", requirement: DeveloperDirectoryTrust.requirement, resources: false))
+        #expect(!CodeSignatureCheck.satisfies(path: file.path, requirement: DeveloperDirectoryTrust.requirement, resources: false))
+    }
+
+    @Test("an Xcode from the Mac App Store passes as com.apple.dt.Xcode only, which anchor apple alone refused", .enabled(if: appStoreXcodeApp != nil))
+    func appStoreXcodePasses() throws {
+        let app = try #require(appStoreXcodeApp)
+        let otherIdentifier = DeveloperDirectoryTrust.requirement.replacingOccurrences(of: "com.apple.dt.Xcode", with: "com.example.other")
+        #expect(CodeSignatureCheck.satisfies(path: app, requirement: DeveloperDirectoryTrust.requirement, resources: false))
+        #expect(!CodeSignatureCheck.satisfies(path: app, requirement: "anchor apple", resources: false))
+        #expect(!CodeSignatureCheck.satisfies(path: app, requirement: otherIdentifier, resources: false))
+    }
 }
+
+/// The selected Xcode's app when the Mac App Store signed it, else nil.
+private let appStoreXcodeApp: String? = {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+    process.arguments = ["-p"]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    guard (try? process.run()) != nil else { return nil }
+    let output = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    let path = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let app = DeveloperDirectoryTrust.realPath(path).flatMap(DeveloperDirectoryTrust.appBundle(of:)),
+          CodeSignatureCheck.satisfies(path: app, requirement: DeveloperDirectoryTrust.appStoreXcode, resources: false) else { return nil }
+    return app
+}()
 
 @Suite("Code signature check")
 struct CodeSignatureCheckTests {

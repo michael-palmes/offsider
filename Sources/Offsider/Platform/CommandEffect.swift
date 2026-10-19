@@ -71,6 +71,7 @@ enum CommandEffect: String, Sendable {
         "session status": .none,
         "session stop": .none,
         "device-session serve": .none,
+        "android-session serve": .none,
     ]
 
     /// Batch step kinds, so a new step cannot skip the cache rules.

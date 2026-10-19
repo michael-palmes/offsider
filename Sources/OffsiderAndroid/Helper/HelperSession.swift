@@ -1,12 +1,26 @@
 import Foundation
 import OffsiderCore
 
-/// One helper process per command: started on the first tree read, reused by every later read, stopped by `close()`.
+/// Where a session's helper comes from: one started for this command, or the warm helper a broker keeps between commands.
+@MainActor
+enum HelperOrigin {
+    case launched(HelperLauncher)
+    case brokered(HelperBrokerClient)
+
+    var timing: AndroidTiming {
+        switch self {
+        case .launched(let launcher): return launcher.timing
+        case .brokered(let broker): return broker.timing
+        }
+    }
+}
+
+/// One helper per command, or a connection to the warm one: opened on the first tree read, reused by every later read, released by `close()`.
 @MainActor
 final class HelperSession {
     static let helloTimeout: Duration = .seconds(2)
     static let dumpTimeout: Duration = .seconds(15)
-    static let requestTimeout: Duration = .seconds(5)
+    nonisolated static let requestTimeout: Duration = .seconds(5)
     static let quitTimeout: Duration = .milliseconds(500)
     static let exitTimeout: Duration = .seconds(1)
     static let killTimeout: Duration = .seconds(2)
@@ -26,7 +40,7 @@ final class HelperSession {
     /// The ops the running helper listed in `hello`.
     private(set) var ops: [String]
 
-    private let launcher: HelperLauncher
+    private let origin: HelperOrigin
     private let log: AndroidLog
     private var connection: HelperConnection?
     private var nextID: Int
@@ -35,14 +49,23 @@ final class HelperSession {
     /// One request on the socket at a time, in the order they came, so a capture and a tree read running together never interleave frames.
     private let queue = HelperRequestQueue()
 
-    private init(launcher: HelperLauncher, connection: HelperConnection, nextID: Int, log: @escaping AndroidLog) {
-        serial = launcher.serial
+    private var timing: AndroidTiming { origin.timing }
+
+    /// True when the helper is the broker's warm one, which outlives this command.
+    var isWarm: Bool {
+        if case .brokered = origin { return true }
+        return false
+    }
+
+    private init(origin: HelperOrigin, serial: String, connection: HelperConnection, nextID: Int, log: @escaping AndroidLog) {
+        self.serial = serial
         ready = connection.ready
         launchMilliseconds = connection.launchMilliseconds
         pushed = connection.pushed
         helloMilliseconds = connection.helloMilliseconds
         ops = connection.ops
-        self.launcher = launcher
+        eventCursor = connection.eventSeq ?? 0
+        self.origin = origin
         self.connection = connection
         self.nextID = nextID
         self.log = log
@@ -54,12 +77,27 @@ final class HelperSession {
         serial: String,
         dex: HelperDex,
         log: @escaping AndroidLog,
-        timing: AndroidTiming = .disabled
+        timing: AndroidTiming = .disabled,
+        idleTimeoutMs: Int = HelperLauncher.idleTimeoutMs
     ) async throws -> HelperSession {
         var launcher = HelperLauncher(client: client, serial: serial, dex: dex, log: log)
         launcher.timing = timing
+        launcher.idleTimeoutMs = idleTimeoutMs
         let connection = try await open(launcher, helloID: 1)
-        return HelperSession(launcher: launcher, connection: connection, nextID: 2, log: log)
+        return HelperSession(origin: .launched(launcher), serial: serial, connection: connection, nextID: 2, log: log)
+    }
+
+    /// Connects to the broker's warm helper, starting the broker when none serves `serial`; throws `HelperStartFailure` as `start` does.
+    static func attach(_ broker: HelperBrokerClient, log: @escaping AndroidLog) async throws -> HelperSession {
+        let connection = try await broker.connect(helloID: 1)
+        return HelperSession(origin: .brokered(broker), serial: broker.serial, connection: connection, nextID: 2, log: log)
+    }
+
+    private static func open(_ origin: HelperOrigin, helloID: Int) async throws -> HelperConnection {
+        switch origin {
+        case .launched(let launcher): return try await open(launcher, helloID: helloID)
+        case .brokered(let broker): return try await broker.connect(helloID: helloID)
+        }
     }
 
     private static func open(_ launcher: HelperLauncher, helloID: Int) async throws -> HelperConnection {
@@ -85,7 +123,7 @@ final class HelperSession {
             await shell.close()
             throw error
         }
-        let connection = HelperConnection(shell: shell, socket: opened, ready: ready)
+        let connection = HelperConnection(shell: shell, socket: opened.stream, pending: opened.pending, ready: ready)
         do {
             try await connection.hello(id: helloID)
         } catch {
@@ -100,7 +138,7 @@ final class HelperSession {
     }
 
     func dump(_ options: HelperDumpOptions = HelperDumpOptions()) async throws -> HelperDump {
-        let dump = try await launcher.timing.measure(.helperDump) {
+        let dump = try await timing.measure(.helperDump) {
             try await screenRequest(.dump(options), as: HelperDump.self, timeout: Self.dumpTimeout)
         }
         display = dump.display
@@ -160,14 +198,14 @@ final class HelperSession {
 
     /// Injects the steps; `extraWait` covers their pauses and swipes. Leaves the event cursor alone, so a verifier still wakes on the input's events.
     func inject(_ steps: [HelperValue], sync: Bool = true, extraWait: Duration) async throws -> HelperInjectReply {
-        try await launcher.timing.measure(.helperInject) {
+        try await timing.measure(.helperInject) {
             try await request(.inject(steps, sync: sync), as: HelperInjectReply.self, timeout: Self.requestTimeout + extraWait)
         }
     }
 
     /// Display 0 as raw RGBA pixels from `UiAutomation.takeScreenshot`; an error reply throws `HelperErrorBody`.
     func screenshot() async throws -> AndroidScreenCapture.Pixels {
-        let (reply, bytes) = try await launcher.timing.measure(.helperCapture) {
+        let (reply, bytes) = try await timing.measure(.helperCapture) {
             try await requestWithPayload(.screenshot(format: "raw"), as: HelperScreenshotReply.self, timeout: Self.dumpTimeout)
         }
         let frame = reply.frame
@@ -215,7 +253,8 @@ final class HelperSession {
             }
             let id = nextID
             nextID += 1
-            switch try await connection.exchange(request, id: id, timeout: timeout, expectingPayload: expectingPayload) {
+            let outgoing = isWarm ? request.adding(HelperBrokerWire.timeoutField, .int(Int(timeout / .milliseconds(1)))) : request
+            switch try await connection.exchange(outgoing, id: id, timeout: timeout, expectingPayload: expectingPayload) {
             case .reply(let frame):
                 return (frame, nil)
             case .replyWithPayload(let frame, let payload):
@@ -233,6 +272,24 @@ final class HelperSession {
                 throw AndroidError.helperTimedOut(serial, op: request.op, seconds: Int(timeout.components.seconds))
             }
         }
+    }
+
+    /// A broker's relay of a command's request, waiting until `deadline` but `atLeast` once sent; nil, unsent, when `skip` says so on its turn.
+    func relay(
+        payload: Data, op: String, id: Int, deadline: ContinuousClock.Instant, atLeast minimum: Duration = .zero, skip: () -> Bool = { false }
+    ) async throws -> HelperConnection.Outcome? {
+        await queue.acquire()
+        defer { queue.release() }
+        guard !skip() else { return nil }
+        guard !isClosed, let connection else { return .lost("the warm helper has stopped") }
+        let outcome = try await connection.exchange(
+            payload: payload, op: op, id: id, timeout: max(deadline - .now, minimum), expectingPayload: op == "screenshot"
+        )
+        switch outcome {
+        case .reply, .replyWithPayload: break
+        case .bye, .lost, .timedOut: await drop(connection)
+        }
+        return outcome
     }
 
     /// An `inject` may have reached the device before the helper went, so it is never sent again; a later request restarts the helper.
@@ -253,15 +310,18 @@ final class HelperSession {
         let id = nextID
         nextID += 1
         do {
-            let fresh = try await Self.open(launcher, helloID: id)
+            let fresh = try await Self.open(origin, helloID: id)
             connection = fresh
             ready = fresh.ready
             launchMilliseconds = fresh.launchMilliseconds
             pushed = fresh.pushed
             helloMilliseconds = fresh.helloMilliseconds
             ops = fresh.ops
+            if let seq = fresh.eventSeq { eventCursor = seq }
         } catch HelperStartFailure.unavailable(let reason) {
             throw AndroidError.helperCrashed(serial, detail: "it could not start again: \(reason)")
+        } catch let error as HelperBrokerUnavailable {
+            throw AndroidError.helperCrashed(serial, detail: "it could not start again: \(error.detail)")
         }
     }
 
@@ -289,12 +349,12 @@ final class HelperSession {
         }
     }
 
-    /// `quit`; without an `ok` reply, the shell's exit, then `kill <pid>` when none came. A second call does nothing.
+    /// `quit`; without an `ok` reply, the shell's exit, then `kill <pid>` when none came. A warm helper is left to its broker. A second call does nothing.
     func close() async {
         guard !isClosed else { return }
         isClosed = true
         guard connection != nil else { return }
-        await launcher.timing.measure(.helperClose) {
+        await timing.measure(.helperClose) {
             await shutdown()
         }
     }
@@ -302,6 +362,10 @@ final class HelperSession {
     private func shutdown() async {
         guard let connection else { return }
         self.connection = nil
+        guard case .launched(let launcher) = origin else {
+            await connection.close()
+            return
+        }
         let id = nextID
         nextID += 1
         // The helper frees the UiAutomation slot before it answers `quit`, then halts.
@@ -310,7 +374,7 @@ final class HelperSession {
             await connection.close()
             return
         }
-        let status = await connection.shell.exitStatus(deadline: ContinuousClock.now + Self.exitTimeout)
+        let status = await connection.shell?.exitStatus(deadline: ContinuousClock.now + Self.exitTimeout)
         await connection.close()
         guard status == nil else { return }
         let pid = connection.ready.pid
@@ -357,22 +421,30 @@ final class HelperConnection {
         case timedOut
     }
 
-    let shell: ShellStream
-    let ready: HelperReady
+    /// The start shell of a helper this command launched; nil for a broker's warm helper.
+    let shell: ShellStream?
+    private(set) var ready: HelperReady
     var launchMilliseconds = 0
     var pushed = false
     var helloMilliseconds = 0
     var ops: [String] = []
+    /// The helper's event sequence number when a broker's connection opened, so events from earlier commands are not taken as new.
+    var eventSeq: Int64?
     private let socket: any AdbByteStream
     private var unread: Data
     private var decoder = HelperWire.FrameDecoder()
     private var frames: [Data] = []
     private var isClosed = false
 
-    init(shell: ShellStream, socket: AdbServiceStream, ready: HelperReady) {
+    init(shell: ShellStream?, socket: any AdbByteStream, pending: Data = Data(), ready: HelperReady) {
         self.shell = shell
-        self.socket = socket.stream
-        unread = socket.pending
+        self.socket = socket
+        unread = pending
+        self.ready = ready
+    }
+
+    /// What a broker's `hello` said of its warm helper, which no ready line reached this command for.
+    func adopt(_ ready: HelperReady) {
         self.ready = ready
     }
 
@@ -405,9 +477,14 @@ final class HelperConnection {
 
     /// One request, then frames until its reply (and its binary frame when `expectingPayload`) or a `bye`; a lost or silent helper never throws.
     func exchange(_ request: HelperRequest, id: Int, timeout: Duration, expectingPayload: Bool = false) async throws -> Outcome {
+        try await exchange(payload: try request.payload(id: id), op: request.op, id: id, timeout: timeout, expectingPayload: expectingPayload)
+    }
+
+    /// As `exchange`, for a request already encoded, as the broker passes a command's frame on.
+    func exchange(payload: Data, op: String, id: Int, timeout: Duration, expectingPayload: Bool = false) async throws -> Outcome {
         let deadline = ContinuousClock.now + timeout
         var reply: Data?
-        let frame = try HelperWire.frame(try request.payload(id: id))
+        let frame = try HelperWire.frame(payload)
         do {
             try await socket.write(frame, deadline: deadline)
         } catch AdbConnectError.timedOut {
@@ -443,7 +520,7 @@ final class HelperConnection {
                     return .lost("reading its socket failed")
                 }
                 if chunk.isEmpty {
-                    return .lost("its socket closed before it answered `\(request.op)`")
+                    return .lost("its socket closed before it answered `\(op)`")
                 }
             }
             do {
@@ -458,6 +535,6 @@ final class HelperConnection {
         guard !isClosed else { return }
         isClosed = true
         await socket.close()
-        await shell.close()
+        await shell?.close()
     }
 }

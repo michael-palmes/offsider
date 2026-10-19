@@ -6,12 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Android emulators keep the UiAutomation helper warm between commands, so a later command skips the helper's start, Android's wait for a quiet screen and, on an emulator with one display, the shell read of its displays: a `tap --id` took 0.09 s instead of 0.30 s and a `describe-ui` 0.06 s instead of 0.30 s (medians of 20 paired runs on an API 36 emulator), and the first command, which starts the broker, about 0.03 s longer. A broker, `offsider` started detached for each emulator, keeps the helper and passes commands' requests to it over a 0600 Unix socket in the private `sessions/` folder; it stops 60 s after the last command (`OFFSIDER_ANDROID_SESSION_IDLE`, at most 3600, and a command asking for another replaces it unless another command is using it), when the helper stops answering, or at its next idle moment once 12 hours old. It also keeps the displays and device states a command read on an emulator with one display; a foldable and a USB phone read theirs every command. `OFFSIDER_ANDROID_SESSION=off` starts a helper for each command as before, and `on` keeps it warm on an allowed USB phone too, which otherwise starts one per command.
+- `session status` lists warm Android helpers beside iPhone and iPad sessions (`helper` in `--json`), and `session stop` stops them; `--device` takes the serial or the AVD name.
+- `OFFSIDER_TIMINGS=1` adds `helper-attach` (reaching the warm helper), `broker-start` (starting its broker) and `warm-screen` (the displays from the warm helper).
+- `scripts/bench-ab.sh` adds `android-describe-first` and `android-tap-id-first`, which time a first command, with no warm helper.
+
 ### Changed
 
+- On an emulator the helper now holds Android's single UiAutomation slot, with `accessibility_enabled` reading 1, until its broker stops rather than only while one command runs. Until then Appium, Maestro, `uiautomator`, instrumentation tests and Layout Inspector cannot connect: `offsider session stop --device <serial>` frees the slot at once. A command that reads the screen another way (`OFFSIDER_ANDROID_TREE=uiautomator`, `OFFSIDER_ANDROID_SESSION=off`) stops the warm helper on that device first once no other command is using it, and `doctor` passes the UiAutomation check when only the warm helper holds the slot.
+- Warm commands follow each other within milliseconds, so a tap sent just after a launch or a navigation can reach a screen that drops it, which a helper's start used to hide. Plain taps stay fire-and-forget: use `tap --verify` or `wait --settled` after a screen changes.
+- `device-access remove` also stops a removed phone's warm helper.
+- `scripts/bench-ab.sh` reads the screen untimed 2 s before each Android sample, as an agent's previous command would, and stops the checkout's warm helper before every base sample and when it finishes.
 - `batch --no-settle` now also stops read steps waiting for an input to draw (see Fixed), as well as tap steps' transition guard. A read step's `ms` in `batch --json` includes that wait.
 
 ### Fixed
 
+- `wait --settled` straight after an unverified tap or other input no longer ends before the input's effect shows, on iOS and Android. It compared the screen kept from before the input, which leaves out native types, with live reads that carry them, so the first read always looked changed and the hold of up to 2 s ended at once.
+- `tap --verify` and the other verified commands on iOS no longer treat an element with an accessibility title as live text after a recent read. The kept screen leaves titles out, so every titled element looked changed, and its real changes were then ignored.
+- `describe-ui --diff --actionable` on iOS no longer lists an element that is actionable only through custom actions as added on every read. The kept screen has no custom actions, so both reads now go by role.
+- `posture` on an Android foldable no longer prints the panel it is leaving after a 10 s wait: when its first read after the fold still showed the old panel, every later read reused it; it now reads the screen again until the panel swaps.
+- On Android 9, `displays`, `describe-ui --display` and `screenshot --display` find the screen instead of failing with "Could not find a built-in display", and a warm helper keeps the emulator's displays as on later Android releases: Android 9 names the panel type `BUILT_IN`.
+- Xcode installed from the Mac App Store is trusted instead of refused with `xcode_unusable` ("not inside an Apple-signed Xcode"): the store signs Xcode's app with its own Apple certificate, so the check also accepts Apple's Mac App Store signature on `com.apple.dt.Xcode`. The tools and frameworks inside are Apple's own as before.
 - A `batch` read step straight after an input no longer sees the screen from before that input. `screenshot`, `describe-ui`, `assert` and selector `wait` steps that start within 100 ms of input, from an earlier step or the command just before the batch (unless `OFFSIDER_TREE_CACHE=off`), now wait out the rest of those 100 ms, once per input, so a final screenshot shows the tap before it (on an emulator, 6 in 15 such screenshots were stale before; an app there drew a tap within 30 ms). A step that failed before sending anything does not count, and `wait --settled`, `--region` and `--seconds` steps still start at once.
 - `rn devmenu` now counts its held tap on a dev menu switch as sent input, so a failure after it no longer reports `dispatched: no`.
 

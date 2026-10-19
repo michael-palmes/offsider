@@ -10,6 +10,8 @@ public enum ChildEnvironment {
         case adbServer
         /// `offsider` started detached as a broker: Xcode's location and Offsider's own settings.
         case offsiderBroker
+        /// `offsider` started detached as an Android device's broker: the SDK, the adb server's address, Offsider's settings, mDNS off.
+        case androidBroker
         /// `xcodebuild`: Xcode's location, the runner's `TEST_RUNNER_*` settings and a proxy for provisioning.
         case xcodebuild
     }
@@ -40,7 +42,7 @@ public enum ChildEnvironment {
         case .androidEmulator:
             result["ADB_MDNS"] = "0"
             result[emulatorCrashReportingVariable] = "0"
-        case .adbServer:
+        case .adbServer, .androidBroker:
             result["ADB_MDNS"] = "0"
         }
         return result
@@ -53,6 +55,7 @@ public enum ChildEnvironment {
         case .androidEmulator: return androidSDKNames.contains(name)
         case .adbServer: return adbServerNames.contains(name)
         case .offsiderBroker: return name == "DEVELOPER_DIR" || name.hasPrefix("OFFSIDER_")
+        case .androidBroker: return adbServerNames.contains(name) || androidSDKNames.contains(name) || name.hasPrefix("OFFSIDER_")
         case .xcodebuild: return name == "DEVELOPER_DIR" || name.hasPrefix("TEST_RUNNER_") || proxyNames.contains(name)
         }
     }

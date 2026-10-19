@@ -143,6 +143,15 @@ struct AndroidDoctorRulesTests {
         #expect(Self.check(.androidDeviceHelper, in: checks)?.status == .skip)
     }
 
+    @Test("Offsider's warm helper holding the slot passes, but another helper beside it still warns")
+    func warmHelperHolds() {
+        let warm = AndroidDoctorRules.uiAutomation(UiAutomationFact(accessibilityEnabled: true, enabledServices: [], offsiderHelperPids: [4321], warmHelperPid: 4321))
+        #expect(warm.status == .pass)
+        #expect(warm.detail.contains("warm helper (pid 4321)"))
+        let crowded = AndroidDoctorRules.uiAutomation(UiAutomationFact(accessibilityEnabled: true, enabledServices: [], offsiderHelperPids: [4321, 99], warmHelperPid: 4321))
+        #expect(crowded.status == .warn)
+    }
+
     @Test("a busy UiAutomation slot fails and names the other clients")
     func busySlot() {
         let verdict = AndroidDoctorRules.helper(.busy("UiAutomation already registered"))

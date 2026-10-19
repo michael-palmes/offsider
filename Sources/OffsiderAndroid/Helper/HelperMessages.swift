@@ -77,6 +77,10 @@ struct HelperRequest: Equatable, Sendable {
         return HelperRequest(op: "screenshot", fields: fields)
     }
 
+    func adding(_ key: String, _ value: HelperValue) -> HelperRequest {
+        HelperRequest(op: op, fields: fields.merging([key: value]) { _, new in new })
+    }
+
     /// The JSON payload with sorted keys, so the same request always encodes the same way.
     func payload(id: Int) throws -> Data {
         var object = fields

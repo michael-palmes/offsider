@@ -97,22 +97,32 @@ extension AndroidBackend: DisplayControlling {
         return task
     }
 
-    /// Status and, while the geometry is unknown, the display probe, in one shell call (`display-status`).
+    /// The warm helper's facts for a device with one panel, else status and, while the geometry is unknown, the display probe, in one shell call (`display-status`).
     private func readScreenStatus(_ serial: String) async -> (display: ScreenDisplay?, posture: Posture?) {
         var reading: AndroidDeviceState.Reading?
         let known = knownDeviceStates[serial]
         if known == nil || known!.count >= 2 || (activeUniqueIds[serial] == nil && displayLists[serial] == nil) {
             let probing = geometries[serial] == nil
             do {
-                try await prepare()
-                let client = try requireClient()
-                let result = try await host.timing.measure(.displayStatus) {
-                    try await client.shell(
-                        probing ? AndroidDisplayStatus.scriptWithProbe : AndroidDisplayStatus.script, on: serial,
-                        label: probing ? "cmd device_state; dumpsys display; wm size; wm density; dumpsys input" : "cmd device_state; dumpsys display"
-                    )
+                let borrowed = await borrowScreenFacts(serial)
+                let output: String
+                if let borrowed {
+                    output = borrowed.status
+                    activeUniqueIds[serial] = activeUniqueIds[serial] ?? borrowed.viewport
+                    if apiLevels[serial] == nil, let level = borrowed.apiLevel {
+                        apiLevels[serial] = level
+                    }
+                } else {
+                    try await prepare()
+                    let client = try requireClient()
+                    output = try await host.timing.measure(.displayStatus) {
+                        try await client.shell(
+                            probing ? AndroidDisplayStatus.scriptWithProbe : AndroidDisplayStatus.script, on: serial,
+                            label: probing ? "cmd device_state; dumpsys display; wm size; wm density; dumpsys input" : "cmd device_state; dumpsys display"
+                        )
+                    }.stdoutText
                 }
-                let status = AndroidDisplayStatus.parse(result.stdoutText)
+                let status = AndroidDisplayStatus.parse(output)
                 knownDeviceStates[serial] = status.states
                 reading = status.reading
                 if let committed = status.reading {
@@ -125,6 +135,9 @@ extension AndroidBackend: DisplayControlling {
                     geometries[serial] = geometry
                     activeUniqueIds[serial] = AndroidDisplayGeometry.viewportUniqueId(in: probe)
                     noteAPILevel(in: probe, of: serial)
+                }
+                if borrowed == nil {
+                    learnScreenFacts(serial, output: output, status: status)
                 }
             } catch {
                 log(.debug, "Could not read the displays and posture of \(serial): \(error)")
@@ -167,14 +180,21 @@ enum AndroidDisplayStatus {
     static let script = "\(AndroidDeviceState.printStates); echo '\(separator)'; \(AndroidDeviceState.readState); echo '\(separator)'; \(AndroidDisplayList.command)"
     static let scriptWithProbe = "\(script); echo '\(separator)'; \(AndroidDisplayGeometry.probeScript)"
 
+    typealias Parsed = (states: [AndroidDeviceState.State], reading: AndroidDeviceState.Reading?, displays: AndroidDisplayList, probe: String?)
+
     /// `probe` is nil when the output has no fourth part.
-    static func parse(_ output: String) -> (states: [AndroidDeviceState.State], reading: AndroidDeviceState.Reading?, displays: AndroidDisplayList, probe: String?) {
+    static func parse(_ output: String) -> Parsed {
         let parts = output.components(separatedBy: separator + "\n")
         let part = { (index: Int) in index < parts.count ? parts[index] : "" }
         return (
             AndroidDeviceState.parseStates(part(0)), AndroidDeviceState.parseReading(part(1)), AndroidDisplayList.parse(dumpsys: part(2)),
             parts.count > 3 ? parts[3] : nil
         )
+    }
+
+    /// `script`'s part of a `scriptWithProbe` output.
+    static func withoutProbe(_ output: String) -> String {
+        output.components(separatedBy: separator + "\n").prefix(3).joined(separator: separator + "\n")
     }
 }
 
@@ -197,6 +217,10 @@ extension AndroidBackend: PostureControlling, PostureStateNaming {
 
     public func postureStateName(of id: DeviceID) async -> String? {
         stateReadings[id.rawValue]?.committed.name
+    }
+
+    public func forgetScreen(of id: DeviceID) {
+        forgetDisplay(of: id.rawValue)
     }
 
     /// gRPC `setPosture` moves the hinge as the extended controls do; without gRPC, a `cmd device_state` override.

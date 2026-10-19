@@ -124,9 +124,12 @@ extension DeviceAccessCommand {
         }
     }
 
-    /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator.
+    /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator, or a phone's warm helper.
     @MainActor
     static func stopSessions(udid: String) async -> [String] {
+        if case .androidName = DeviceIDClassifier.classify(udid) {
+            return await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
+        }
         var stopped: [String] = []
         let brokers = DeviceSessions.records(device: udid)
         let manager = DeviceSessions.manager()
@@ -627,7 +630,7 @@ struct DeviceAccessRemove: AsyncParsableCommand {
                 return base.pruned(now: context.now()).removing(platform: target.platform, key: target.key)
             }, commit: { try context.seal.seal($0) })
         }
-        let stopped = target.platform == .ios ? await context.stopSessions(target.key) : []
+        let stopped = await context.stopSessions(target.key)
         if json { return DeviceAccessReport.changeJSON(action: "remove", platform: target.platform, key: target.key, allowance: removed, stopped: stopped) }
         var text = removed.map { "Removed \($0.name) (\(target.key)) from the allow-list; Offsider will not drive it again until a person allows it." }
             ?? "\(target.key) was not on the allow-list."
