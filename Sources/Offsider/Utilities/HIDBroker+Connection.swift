@@ -240,14 +240,19 @@ extension HIDBroker {
         return try? exchange(data, on: descriptor, timeoutMilliseconds: serverIOTimeoutMilliseconds)
     }
 
-    /// The endpoints of live brokers speaking this build's protocol, whichever Xcode they serve, found by the lifetime lock each holds from its start.
-    static func liveEndpoints(root: String = brokerRootPath()) -> [String] {
+    /// The endpoints of live brokers speaking this build's protocol, whichever Xcode they serve, found by the lifetime lock each holds from its start; with `simulatorUDID`, only that simulator's.
+    static func liveEndpoints(root: String = brokerRootPath(), simulatorUDID: String? = nil) -> [String] {
         let suffix = "-v\(BrokerEndpointNaming.protocolVersion).\(BrokerEndpointNaming.socketExtension)"
+        // Commands name a broker by the UDID as typed, so every case of it may have one.
+        let prefixes = simulatorUDID.map { udid in
+            Set([udid, udid.uppercased(), udid.lowercased()].map { String(BrokerEndpointNaming.fnv1a64($0), radix: 36) + "-" })
+        }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []
         return names.compactMap { name -> String? in
             guard name.hasSuffix(lifetimeLockSuffix) else { return nil }
             let socket = String(name.dropLast(lifetimeLockSuffix.count))
-            return socket.hasSuffix(suffix) ? (root as NSString).appendingPathComponent(socket) : nil
+            guard socket.hasSuffix(suffix), prefixes.map({ $0.contains { socket.hasPrefix($0) } }) ?? true else { return nil }
+            return (root as NSString).appendingPathComponent(socket)
         }
         .sorted()
         .filter { liveness(endpoint: $0) == .alive }

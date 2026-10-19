@@ -42,11 +42,10 @@ struct HIDBrokerReliabilityTests {
         #expect(long.timeoutMilliseconds >= 30_000 + 40_000 + 2_000)
     }
 
-    @Test("Input too long for one request is refused before anything is sent")
-    func oversizedRequestIsRefused() {
-        let keys = FBSimulatorHIDEvent.composite(Array(repeating: .keyboard(direction: .down, keyCode: 4), count: 65_536))
-        let error = #expect(throws: CLIError.self) { try HIDBroker.request(for: .composite([keys, keys]), keepHeld: false, environment: [:]) }
-        #expect(error?.userFacingDescription.contains("Nothing was sent") == true)
+    @Test("Input too long for the broker, such as pages of typed text, is not sent to it, so the command types it through a session of its own")
+    func oversizedRequestGoesItsOwnWay() {
+        let keys = FBSimulatorHIDEvent.shortKeyPressSequence(Array(repeating: 4, count: 35_000))
+        #expect(throws: HIDBrokerNotSent.self) { try HIDBroker.request(for: keys, keepHeld: false, environment: [:]) }
     }
 
     @Test("A broker lifetime lock distinguishes a live process from a stale endpoint")

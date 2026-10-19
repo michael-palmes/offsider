@@ -57,7 +57,7 @@ enum HIDBroker {
         keepHeld: Bool,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> (data: Data, timeoutMilliseconds: Int) {
-        let summary = try HIDBrokerEvent.validate(event)
+        let summary = try HIDBrokerEvent.validate(event, limitingCount: false)
         let request = HIDBrokerRequest(
             op: .input,
             event: HIDBrokerEvent(event),
@@ -67,8 +67,9 @@ enum HIDBroker {
         )
         var data = try JSONEncoder().encode(request)
         data.append(0x0A)
-        guard data.count <= maximumRequestBytes else {
-            throw CLIError(errorDescription: "Refused simulator input: it is too long for one request. Nothing was sent. Send it in parts.", reason: .usage)
+        // Input too long for the broker, such as pages of typed text, goes through the command's own session.
+        guard summary.primitives <= HIDBrokerEvent.maxPrimitives, data.count <= maximumRequestBytes else {
+            throw HIDBrokerNotSent(detail: "\(summary.primitives) events are too many for one request")
         }
         // idb paces keys 10 ms apart and settles 50 ms after them.
         let seconds = summary.delaySeconds + Double(summary.keyboardEvents) * 0.01 + 0.05

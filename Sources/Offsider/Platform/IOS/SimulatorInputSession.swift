@@ -25,7 +25,7 @@ final class SimulatorInputSession: InputSession {
         do {
             try await Timings.measure("hid-send") { try await connection.send(hidEvent) }
         } catch let notSent as HIDBrokerNotSent {
-            logger.info().log("The simulator input broker went before this input reached it (\(notSent.detail)); opening a session of this command's own")
+            logger.info().log("The simulator input broker did not take this input (\(notSent.detail)); opening a session of this command's own")
             connection.close()
             let session = try await Timings.measure("hid-session") {
                 try await HIDInteractor.makeSession(for: device.rawValue, logger: logger)
@@ -46,6 +46,8 @@ final class SimulatorInputSession: InputSession {
 final class HIDBrokerConnection: @unchecked Sendable {
     private let descriptor: Int32
     private let queue = DispatchQueue(label: "offsider.hid-broker.client")
+    private let lock = NSLock()
+    private var isClosing = false
     private var isClosed = false
 
     init(descriptor: Int32) {
@@ -70,16 +72,22 @@ final class HIDBrokerConnection: @unchecked Sendable {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
                 continuation.resume(with: Result {
-                    guard !self.isClosed else { throw HIDBrokerNotSent(detail: "the connection is closed") }
+                    guard !self.isClosed, !self.lock.withLock({ self.isClosing }) else { throw HIDBrokerNotSent(detail: "the connection is closed") }
                     _ = try HIDBroker.exchange(request.data, on: self.descriptor, timeoutMilliseconds: request.timeoutMilliseconds)
                 })
             }
         }
     }
 
+    /// Returns at once: shutting the socket ends a reply still awaited, and the descriptor closes on the queue after it.
     func close() {
-        queue.sync {
-            guard !isClosed else { return }
+        let first = lock.withLock {
+            defer { isClosing = true }
+            return !isClosing
+        }
+        guard first else { return }
+        Darwin.shutdown(descriptor, SHUT_RDWR)
+        queue.async { [self] in
             isClosed = true
             Darwin.close(descriptor)
         }

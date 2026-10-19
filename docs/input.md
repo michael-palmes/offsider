@@ -66,6 +66,6 @@ The batch exits with the code of its first step that failed to run, else 5 when 
 ## Simulator input session
 
 - On an iOS simulator, opening an input session takes about 1 s, so it stays open between commands. The first input command opens its own, as before, then starts a broker (`offsider` started detached, one per simulator) that holds one for the commands after it.
-- The broker sends each command's input in turn and lifts any touch, key or button a command leaves down when it ends. `touch --down` and `--up` alone stay down until the matching command, as before.
+- The broker sends each command's input in turn and lifts any touch, key or button a command leaves down when it ends. `touch --down` and `--up` alone stay down until the matching command, as before. Input too long for it, such as pages of typed text, goes through the command's own session.
 - It stops 60 s after the last command (`OFFSIDER_SIMULATOR_SESSION_IDLE`, at most 3600), when the simulator restarts, or on `offsider session stop --device <UDID>`; `session status` lists it. `OFFSIDER_SIMULATOR_SESSION=off` opens an input session for every command instead.
 - A warm tap reaches the app within milliseconds of the command before it. On a screen that has only just appeared, use `tap --verify` or `wait --settled`.

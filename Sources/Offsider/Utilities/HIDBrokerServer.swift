@@ -119,8 +119,16 @@ final class HIDBrokerTurn {
     }
 }
 
-/// Reads newline-ended requests off one connection on a queue of its own: as long as it takes for a request to start, then 2 s for the rest of it.
+/// Reads newline-ended requests off one connection on a queue of its own: up to `silentWithin` for a request to start (forever when nil), then 2 s for the rest of it.
 final class HIDBrokerFrameReader: @unchecked Sendable {
+    enum Read: Equatable {
+        case frame(Data)
+        /// No request started within the wait.
+        case silent
+        /// The command closed, the broker shut the connection, or a request was too long or stalled.
+        case closed
+    }
+
     private let descriptor: Int32
     private let queue = DispatchQueue(label: "offsider.hid-broker.reader")
     private var buffer = Data()
@@ -129,35 +137,34 @@ final class HIDBrokerFrameReader: @unchecked Sendable {
         self.descriptor = descriptor
     }
 
-    /// The next request, nil once the command closes, the broker shuts the connection, or a request is too long or stalls.
-    func next() async -> Data? {
+    func next(silentWithin milliseconds: Int32? = nil) async -> Read {
         await withCheckedContinuation { continuation in
-            queue.async { continuation.resume(returning: self.readFrame()) }
+            queue.async { continuation.resume(returning: self.readFrame(silentWithin: milliseconds)) }
         }
     }
 
-    private func readFrame() -> Data? {
+    private func readFrame(silentWithin milliseconds: Int32?) -> Read {
         var chunk = [UInt8](repeating: 0, count: 16 * 1024)
         while true {
             if let newline = buffer.firstIndex(of: 0x0A) {
                 let frame = Data(buffer[buffer.startIndex..<newline])
                 buffer = Data(buffer[buffer.index(after: newline)...])
-                return frame
+                return .frame(frame)
             }
-            guard buffer.count < HIDBroker.maximumRequestBytes else { return nil }
+            guard buffer.count < HIDBroker.maximumRequestBytes else { return .closed }
             var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
-            let ready = poll(&poller, 1, buffer.isEmpty ? -1 : Int32(HIDBroker.serverIOTimeoutMilliseconds))
+            let ready = poll(&poller, 1, buffer.isEmpty ? (milliseconds ?? -1) : Int32(HIDBroker.serverIOTimeoutMilliseconds))
             if ready < 0 {
                 if errno == EINTR { continue }
-                return nil
+                return .closed
             }
-            guard ready > 0 else { return nil }
+            guard ready > 0 else { return buffer.isEmpty ? .silent : .closed }
             let count = Darwin.read(descriptor, &chunk, chunk.count)
             if count < 0 {
                 if errno == EINTR || errno == EAGAIN { continue }
-                return nil
+                return .closed
             }
-            guard count > 0 else { return nil }
+            guard count > 0 else { return .closed }
             buffer.append(contentsOf: chunk[..<count])
         }
     }
@@ -182,7 +189,11 @@ final class HIDBrokerServer {
     private let startedClock = ContinuousClock.now
     private var lastUse = ContinuousClock.now
     private var connections: [Int32: Task<Void, Never>] = [:]
+    /// Connections waiting for their command's next request, which a stop can close without cutting off any input.
+    private var waiting: Set<Int32> = []
     private var stopReason: String?
+    /// Whether the stop cuts off input still being sent, as `session stop` and a signal do; a failed input lets it finish.
+    private var cutsOff = false
     private let turn = HIDBrokerTurn()
 
     /// `endpoint` is unlinked on the way out, unless another broker has since bound it.
@@ -213,9 +224,10 @@ final class HIDBrokerServer {
         writeLog(line)
     }
 
-    /// Stops within one accept poll, lifting what each attached command left down.
-    func requestStop(_ reason: String) {
+    /// Stops within one accept poll, lifting what each attached command left down; without `cutOff`, input already under way finishes first.
+    func requestStop(_ reason: String, cutOff: Bool = true) {
         stopReason = stopReason ?? reason
+        cutsOff = cutsOff || cutOff
     }
 
     /// Serves until idle, asked to stop, the simulator restarts or input fails; returns why it stopped.
@@ -234,7 +246,8 @@ final class HIDBrokerServer {
         Darwin.close(listener)
         if let endpoint { try? HIDBroker.removeOwnedSocket(endpoint, matching: endpointIdentity) }
         let open = Array(connections)
-        for (descriptor, _) in open { Darwin.shutdown(descriptor, SHUT_RDWR) }
+        // A closed connection's next request fails as not sent, so its command opens its own session.
+        for (descriptor, _) in open where cutsOff || waiting.contains(descriptor) { Darwin.shutdown(descriptor, SHUT_RDWR) }
         for (_, task) in open { await task.value }
         return stopReason ?? "stopped"
     }
@@ -246,7 +259,8 @@ final class HIDBrokerServer {
             startedAt: startedAt.timeIntervalSince1970,
             idleSeconds: idleSeconds,
             idleFor: Int((ContinuousClock.now - lastUse).components.seconds),
-            attached: max(0, connections.count - 1)
+            attached: max(0, connections.count - 1),
+            state: stopReason == nil ? "ready" : "stopping"
         )
     }
 
@@ -294,7 +308,15 @@ final class HIDBrokerServer {
         var held = HIDHeldInput()
         // A command counts as use when it goes; `session status` and `stop` do not.
         var isCommand = true
-        requests: while let frame = await reader.next() {
+        requests: while true {
+            waiting.insert(client)
+            // A command silent for the idle time, holding nothing down, is closed; its next input opens a session of its own.
+            let read = await reader.next(silentWithin: held.isEmpty ? Int32(clamping: idleSeconds * 1000) : nil)
+            waiting.remove(client)
+            guard case .frame(let frame) = read, stopReason == nil || !cutsOff else {
+                if read == .silent { log("Closed a command silent for \(idleSeconds) s") }
+                break
+            }
             guard let request = try? JSONDecoder().decode(HIDBrokerRequest.self, from: frame) else {
                 reply(HIDBrokerReply(error: "The simulator input broker could not read a request. Nothing was sent."), to: client)
                 break
@@ -347,12 +369,13 @@ final class HIDBrokerServer {
                 switch outcome {
                 case .success(.completed):
                     reply(HIDBrokerReply(), to: client)
+                    if stopReason != nil { break requests }
                 case .success(.abandoned):
                     log("A command went part way through its input; lifted what it left down")
                     break requests
                 case .failure(let error):
                     log("Input failed: \(error.localizedDescription)")
-                    requestStop("input failed")
+                    requestStop("input failed", cutOff: false)
                     reply(HIDBrokerReply(error: HIDBroker.brokerResponseDescription(for: error)), to: client)
                     break requests
                 }

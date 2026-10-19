@@ -163,7 +163,7 @@ enum SimulatorInputSessions {
     static func statuses(device: String?, waitForStarting: Bool = false) async -> [(socket: String, status: HIDBrokerStatus)] {
         let udid = device?.trimmingCharacters(in: .whitespaces)
         var found: [(socket: String, status: HIDBrokerStatus)] = []
-        for socket in HIDBroker.liveEndpoints() {
+        for socket in HIDBroker.liveEndpoints(simulatorUDID: udid) {
             let deadline = ContinuousClock.now + startWait
             var status = await HIDBroker.offMain { HIDBroker.control(.status, at: socket)?.status }
             while status == nil, waitForStarting, HIDBroker.liveness(endpoint: socket) == .alive, ContinuousClock.now < deadline {
@@ -217,7 +217,7 @@ struct DeviceSessionRow: Equatable {
             var lines = ["\(row.device)"]
             if let input = row.input {
                 let started = formatter.string(from: Date(timeIntervalSince1970: input.startedAt))
-                lines.append("  input  ready  pid \(input.pid)  started \(started)  idle \(input.idleFor) s of \(input.idleSeconds) s")
+                lines.append("  input  \(input.state ?? "ready")  pid \(input.pid)  started \(started)  idle \(input.idleFor) s of \(input.idleSeconds) s")
                 return lines.joined(separator: "\n") + "\n"
             }
             if let helper = row.helper {
@@ -306,6 +306,7 @@ struct DeviceSessionRow: Equatable {
 
     static func inputFields(_ input: HIDBrokerStatus, _ formatter: ISO8601DateFormatter) -> [String: Any] {
         [
+            "state": input.state ?? "ready",
             "pid": Int(input.pid),
             "startedAt": formatter.string(from: Date(timeIntervalSince1970: input.startedAt)),
             "idleSeconds": input.idleSeconds,

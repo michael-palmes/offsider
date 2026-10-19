@@ -38,6 +38,8 @@ struct HIDBrokerStatus: Codable, Equatable {
     let idleFor: Int
     /// Other commands connected, which a stop would cut off.
     let attached: Int
+    /// `ready`, or `stopping` while it finishes.
+    var state: String? = nil
 }
 
 /// An `FBSimulatorHIDEvent` of the kinds input commands send, as compact arrays: `["t", true, x, y]` is a touch down.
@@ -135,9 +137,9 @@ extension HIDBrokerEvent {
         var keyboardEvents = 0
     }
 
-    /// Refuses, before anything is sent: too many primitives, a coordinate that is not finite or within ±100,000, a pause outside 0 to 3600 s, or pauses over 3600 s together.
+    /// Refuses, before anything is sent: too many primitives (unless `limitingCount` is false), a coordinate that is not finite or within ±100,000, a pause outside 0 to 3600 s, or pauses over 3600 s together.
     @discardableResult
-    static func validate(_ event: FBSimulatorHIDEvent) throws -> Summary {
+    static func validate(_ event: FBSimulatorHIDEvent, limitingCount: Bool = true) throws -> Summary {
         var summary = Summary()
         func refuse(_ detail: String) -> CLIError {
             CLIError(errorDescription: "Refused simulator input: \(detail). Nothing was sent.", reason: .hidBrokerFailed)
@@ -171,7 +173,7 @@ extension HIDBrokerEvent {
                 throw refuse("the broker carries touches, buttons, keys and pauses only")
             }
             summary.primitives += 1
-            guard summary.primitives <= maxPrimitives else {
+            guard !limitingCount || summary.primitives <= maxPrimitives else {
                 throw refuse("more than \(maxPrimitives) events in one request")
             }
         }

@@ -94,16 +94,17 @@ struct SessionCommandTests {
 
     @Test("a simulator's warm input session gets its own row: its broker, attached commands and how long it has idled")
     func simulatorInputRow() throws {
-        let input = HIDBrokerStatus(udid: "SIM-1", pid: 44, startedAt: Self.started.timeIntervalSince1970, idleSeconds: 60, idleFor: 7, attached: 1)
+        let input = HIDBrokerStatus(udid: "SIM-1", pid: 44, startedAt: Self.started.timeIntervalSince1970, idleSeconds: 60, idleFor: 7, attached: 1, state: "stopping")
         let rows = DeviceSessionRow.rows(runners: [Self.runner("A")], brokers: [], helpers: [Self.helper("emulator-5554")], inputs: [input])
         let text = DeviceSessionRow.text(rows)
-        #expect(text.contains("SIM-1\n  input  ready  pid 44  started 2027-01-15T08:00:00Z  idle 7 s of 60 s"))
+        #expect(text.contains("SIM-1\n  input  stopping  pid 44  started 2027-01-15T08:00:00Z  idle 7 s of 60 s"))
         let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.json(rows).utf8)) as? [String: Any])
         let sessions = try #require(object["sessions"] as? [[String: Any]])
         #expect(sessions.map { $0["device"] as? String } == ["A", "SIM-1", "emulator-5554"])
         #expect(sessions[0]["input"] is NSNull && sessions[2]["input"] is NSNull)
         let fields = try #require(sessions[1]["input"] as? [String: Any])
-        #expect(Set(fields.keys) == ["pid", "startedAt", "idleSeconds", "idleFor", "attached"])
+        #expect(Set(fields.keys) == ["state", "pid", "startedAt", "idleSeconds", "idleFor", "attached"])
+        #expect(fields["state"] as? String == "stopping")
         #expect(fields["pid"] as? Int == 44 && fields["attached"] as? Int == 1 && fields["idleFor"] as? Int == 7)
     }
 

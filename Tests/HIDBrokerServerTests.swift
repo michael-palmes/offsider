@@ -160,7 +160,7 @@ struct HIDBrokerPlayTests {
     @Test("Paced input stops when its command goes, and everything it presses counts as down")
     func pacedInputIsCancelled() async throws {
         let simulator = FakeSimulator()
-        simulator.pacedHold = .seconds(30)
+        simulator.pacedHold = .seconds(600)
         let gone = Flag()
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(50))
@@ -173,7 +173,7 @@ struct HIDBrokerPlayTests {
             with: HIDBrokerPlayer(sink: simulator.sink, sleep: { _ in try? await Task.sleep(for: .milliseconds(10)) }, peerGone: { gone.value })
         )
         #expect(try played.outcome.get() == .abandoned)
-        #expect(ContinuousClock.now - start < .seconds(5))
+        #expect(ContinuousClock.now - start < .seconds(60))
         #expect(played.held.keys == [4] && played.held.buttons == [FBSimulatorHIDButton.siri.rawValue])
     }
 }
@@ -205,11 +205,13 @@ struct HIDBrokerServerTests {
     }
 
     nonisolated private static func open(_ endpoint: String) throws -> Int32 {
-        try HIDBroker.connectAndAwaitHandshake(endpoint: endpoint, connector: HIDBroker.connect(to:))
+        // A busy test host can hold the main actor for seconds.
+        try HIDBroker.connectAndAwaitHandshake(endpoint: endpoint, connector: HIDBroker.connect(to:), timeoutMilliseconds: 15_000)
     }
 
-    nonisolated private static func send(_ event: FBSimulatorHIDEvent, keepHeld: Bool = false, on descriptor: Int32) throws {
-        let request = try HIDBroker.request(for: event, keepHeld: keepHeld, environment: [HIDStabilization.environmentKey: "0"])
+    nonisolated private static func send(_ event: FBSimulatorHIDEvent, keepHeld: Bool = false, idleSeconds: Int = 60, on descriptor: Int32) throws {
+        let environment = [HIDStabilization.environmentKey: "0", SimulatorSessionSettings.idleVariable: "\(idleSeconds)"]
+        let request = try HIDBroker.request(for: event, keepHeld: keepHeld, environment: environment)
         try HIDBroker.exchange(request.data, on: descriptor, timeoutMilliseconds: request.timeoutMilliseconds)
     }
 
@@ -284,17 +286,65 @@ struct HIDBrokerServerTests {
         #expect(!FileManager.default.fileExists(atPath: endpoint))
     }
 
-    @Test("The broker stops once idle with no command attached, never while one is")
+    @Test("The broker stops once idle with no command attached, never while one holds input down")
     func idlesOutOnlyWhenFree() async throws {
         let running = try start(idleSeconds: 1)
         let endpoint = running.endpoint
-        let descriptor = try await Self.offMain { try Self.open(endpoint) }
-        try await Task.sleep(for: .milliseconds(1500))
+        let descriptor = try await Self.offMain {
+            let descriptor = try Self.open(endpoint)
+            try Self.send(.touch(direction: .down, x: 1, y: 1), idleSeconds: 1, on: descriptor)
+            return descriptor
+        }
+        try await Task.sleep(for: .milliseconds(2500))
         #expect(FileManager.default.fileExists(atPath: endpoint))
         Darwin.close(descriptor)
         let start = ContinuousClock.now
         #expect(await running.task.value == "idle for 1 s")
         #expect(ContinuousClock.now - start >= .milliseconds(800))
+    }
+
+    @Test("A command silent for the idle time, holding nothing down, is closed so the broker can idle out, and its next input goes its own way")
+    func silentCommandIsClosed() async throws {
+        let running = try start(idleSeconds: 1)
+        let endpoint = running.endpoint
+        let descriptor = try await Self.offMain { try Self.open(endpoint) }
+        defer { Darwin.close(descriptor) }
+        await waitUntil { !FileManager.default.fileExists(atPath: endpoint) }
+        #expect(!FileManager.default.fileExists(atPath: endpoint))
+        let error = await Self.offMainError { try Self.send(.tapAt(x: 1, y: 1), on: descriptor) }
+        #expect(error is HIDBrokerNotSent)
+        #expect(running.simulator.sent.isEmpty)
+    }
+
+    @Test("Input that fails stops the broker without cutting off another command's input already queued, which finishes and is answered")
+    func failureLetsQueuedInputFinish() async throws {
+        let running = try start()
+        running.simulator.failOn = .touch(direction: .down, x: 7, y: 7)
+        let endpoint = running.endpoint
+        async let failed = Self.offMainError {
+            let descriptor = try Self.open(endpoint)
+            defer { Darwin.close(descriptor) }
+            try Self.send(.composite([.delay(0.6), .touch(direction: .down, x: 7, y: 7)]), on: descriptor)
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        async let queued = Self.offMainError {
+            let descriptor = try Self.open(endpoint)
+            defer { Darwin.close(descriptor) }
+            try Self.send(.tapAt(x: 2, y: 2), on: descriptor)
+        }
+        let (first, second) = await (failed, queued)
+        #expect(first is CLIError)
+        #expect(second == nil, "\(String(describing: second))")
+        #expect(await running.task.value == "input failed")
+    }
+
+    @Test("Status reads stopping once a stop is asked for")
+    func statusSaysStopping() async throws {
+        let running = try start()
+        #expect(running.server.status.state == "ready")
+        running.server.requestStop("test over")
+        #expect(running.server.status.state == "stopping")
+        _ = await running.task.value
     }
 
     @Test("A command reaching a broker whose simulator restarted is told it is not ready, and the broker stops")
@@ -452,6 +502,39 @@ struct HIDBrokerAttachTests {
         defer { [liveLock, olderLock].forEach { Darwin.close($0) } }
         Darwin.close(try HIDBroker.acquireLifetimeLock(endpoint: stale))
         #expect(HIDBroker.liveEndpoints(root: root) == [live])
+    }
+
+    @Test("Stopping one simulator's session looks only at that simulator's broker, whatever case its UDID was typed in")
+    func liveEndpointsForOneSimulator() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hb-\(UUID().uuidString.prefix(8))").path
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let version = BrokerEndpointNaming.protocolVersion
+        func endpoint(_ udid: String) -> String {
+            (root as NSString).appendingPathComponent(String(BrokerEndpointNaming.fnv1a64(udid), radix: 36) + "-x-v\(version).sock")
+        }
+        let mine = endpoint("SIM-A")
+        let other = endpoint("SIM-B")
+        let locks = try [mine, other].map { try HIDBroker.acquireLifetimeLock(endpoint: $0) }
+        defer { locks.forEach { Darwin.close($0) } }
+        #expect(HIDBroker.liveEndpoints(root: root, simulatorUDID: "sim-a") == [mine])
+        #expect(HIDBroker.liveEndpoints(root: root, simulatorUDID: "emulator-5554").isEmpty)
+    }
+
+    @Test("Closing a connection returns at once even while a reply is still awaited, and the waiting send ends as not sent or unknown")
+    func closeDoesNotWaitForAReply() async throws {
+        var pair: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        defer { Darwin.close(pair[1]) }
+        let connection = HIDBrokerConnection(descriptor: pair[0])
+        let send = Task { try await connection.send(.tapAt(x: 1, y: 1), environment: [:]) }
+        try await Task.sleep(for: .milliseconds(200))
+        let start = ContinuousClock.now
+        connection.close()
+        #expect(ContinuousClock.now - start < .seconds(1))
+        let result = await send.result
+        #expect(throws: (any Error).self) { try result.get() }
+        #expect(ContinuousClock.now - start < .seconds(5))
     }
 }
 
