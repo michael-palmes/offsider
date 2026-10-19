@@ -5,10 +5,12 @@ import OffsiderCore
 final class IOSInputSession: InputSession {
     let hidSession: HIDInteractor.Session
     private let logger: OffsiderLogger
+    private var onClose: (() -> Void)?
 
-    init(hidSession: HIDInteractor.Session, logger: OffsiderLogger) {
+    init(hidSession: HIDInteractor.Session, logger: OffsiderLogger, onClose: (() -> Void)? = nil) {
         self.hidSession = hidSession
         self.logger = logger
+        self.onClose = onClose
     }
 
     var device: DeviceID {
@@ -31,5 +33,7 @@ final class IOSInputSession: InputSession {
 
     func close() async {
         await HIDInteractor.closeSession(hidSession)
+        onClose?()
+        onClose = nil
     }
 }

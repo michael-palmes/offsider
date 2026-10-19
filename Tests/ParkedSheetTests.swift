@@ -33,6 +33,8 @@ struct ParkedSheetTests {
         try await TestHelpers.launchPlaygroundApp(to: "parked-sheet-test")
 
         try await TestHelpers.runOffsiderCommand("tap --id parked-sheet-test-open-slow", simulatorUDID: defaultSimulatorUDID)
+        // The tree shows the sheet's final frame at once, and UIKit drops taps until the slide ends.
+        try await TestHelpers.runOffsiderCommand("wait --settled", simulatorUDID: defaultSimulatorUDID)
         try await TestHelpers.runOffsiderCommand("tap --id parked-sheet-test-apply --wait-timeout 6", simulatorUDID: defaultSimulatorUDID)
 
         _ = try await TestHelpers.waitForLabel(containing: "Parked Sheet State:", timeout: 5) { $0 == "Parked Sheet State: Filters applied" }

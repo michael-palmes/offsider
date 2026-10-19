@@ -18,16 +18,16 @@ struct ErrorContractDocsTests {
         row.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
-    @Test("the README exit code table matches the source")
+    @Test("the docs exit code table matches the source")
     func exitCodeTable() throws {
-        let documented = try Self.section("### Exit codes", in: "README.md").compactMap { Int32(Self.cells($0)[0]) }
+        let documented = try Self.section("## Exit codes", in: "docs/errors.md").compactMap { Int32(Self.cells($0)[0]) }
         #expect(documented == OffsiderExitCode.allCases.map(\.rawValue))
     }
 
-    @Test("the README reason table lists every reason with its exit code, and nothing else")
+    @Test("the docs reason table lists every reason with its exit code, and nothing else")
     func reasonTable() throws {
         var documented: [String: Int32] = [:]
-        for row in try Self.section("### Error reasons", in: "README.md") {
+        for row in try Self.section("## Error reasons", in: "docs/errors.md") {
             let cells = Self.cells(row)
             let reason = cells[0].trimmingCharacters(in: CharacterSet(charactersIn: "`"))
             #expect(documented[reason] == nil, "\(reason) is listed twice")

@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `session status` lists warm Android helpers beside iPhone and iPad sessions (`helper` in `--json`), and `session stop` stops them; `--device` takes the serial or the AVD name.
 - `OFFSIDER_TIMINGS=1` adds `helper-attach` (reaching the warm helper), `broker-start` (starting its broker) and `warm-screen` (the displays from the warm helper).
 - `scripts/bench-ab.sh` adds `android-describe-first` and `android-tap-id-first`, which time a first command, with no warm helper.
+- iOS simulators keep their input session open between commands, so an input command after the first skips the 1 s it took to open one: a coordinate `tap` took 0.82 s instead of 2.05 s, a `tap --id` 0.76 s instead of 2.02 s and a `tap --id --verify` 3.1 s instead of 4.3 s (medians of 20 paired runs on an iOS 27 simulator), while the first input command opens its own session and takes as long as before. A broker, `offsider` started detached for each simulator once its first input command is done (as `touch --down` already used), holds the session on the per-user 0600 socket under `$TMPDIR/offsider-hid-<uid>`, sends each command's input in turn and lifts any touch, key or button a command leaves down when it ends. It stops 60 s after the last command (`OFFSIDER_SIMULATOR_SESSION_IDLE`, at most 3600, closing a command that sends nothing for that long while holding nothing down), when the simulator restarts, or at its next idle moment once 12 hours old. When input fails, it lets input already queued finish and the other commands open their own sessions, and input too long for it, such as pages of typed text, takes the command's own session. `OFFSIDER_SIMULATOR_SESSION=off` opens a session for each command as before.
+- `session status` lists simulators' warm input sessions (`input` in `--json`, with `state` `ready` or `stopping`), and `session stop` stops them, waiting for one that is still starting; `--device` waits only for that simulator's.
+- `OFFSIDER_TIMINGS=1` adds `hid-attach` (reaching the warm input session) and `hid-send` (one input through it) on simulators.
+- `scripts/bench-ab.sh` adds `ios-tap-xy`, and `ios-tap-id-first` and `ios-tap-xy-first`, which time a first input command with no warm session.
 
 ### Changed
 
@@ -19,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Warm commands follow each other within milliseconds, so a tap sent just after a launch or a navigation can reach a screen that drops it, which a helper's start used to hide. Plain taps stay fire-and-forget: use `tap --verify` or `wait --settled` after a screen changes.
 - `device-access remove` also stops a removed phone's warm helper.
 - `scripts/bench-ab.sh` reads the screen untimed 2 s before each Android sample, as an agent's previous command would, and stops the checkout's warm helper before every base sample and when it finishes.
+- The simulator HID broker takes every kind of simulator input (touches, two-finger touches, keys and buttons), not only `touch --down` and `--up` alone, up to 65,536 events and an hour of pauses in one request (it took touches only, with pauses up to 25 s together). Touches through it no longer wait idb's 80 ms drain, which only kept a closing connection open, and it now starts detached in its own session, logging its start and stop to `sessions/simulator-<hash>.log`.
+- Warm simulator input follows the command before it within milliseconds, so a tap just after a launch or a navigation can reach a screen that drops it. Use `tap --verify` or `wait --settled` after a screen changes.
 - `batch --no-settle` now also stops read steps waiting for an input to draw (see Fixed), as well as tap steps' transition guard. A read step's `ms` in `batch --json` includes that wait.
 
 ### Fixed
@@ -31,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Xcode installed from the Mac App Store is trusted instead of refused with `xcode_unusable` ("not inside an Apple-signed Xcode"): the store signs Xcode's app with its own Apple certificate, so the check also accepts Apple's Mac App Store signature on `com.apple.dt.Xcode`. The tools and frameworks inside are Apple's own as before.
 - A `batch` read step straight after an input no longer sees the screen from before that input. `screenshot`, `describe-ui`, `assert` and selector `wait` steps that start within 100 ms of input, from an earlier step or the command just before the batch (unless `OFFSIDER_TREE_CACHE=off`), now wait out the rest of those 100 ms, once per input, so a final screenshot shows the tap before it (on an emulator, 6 in 15 such screenshots were stale before; an app there drew a tap within 30 ms). A step that failed before sending anything does not count, and `wait --settled`, `--region` and `--seconds` steps still start at once.
 - `rn devmenu` now counts its held tap on a dev menu switch as sent input, so a failure after it no longer reports `dispatched: no`.
+- `scripts/bench-ab.sh` opens every iOS scenario's screen in the React Native playground, as it does on Android. It launched the native playground with an argument that app ignores, so iOS scenarios ran on whatever screen was showing.
 
 ## [0.12.0] - 2026-10-15
 

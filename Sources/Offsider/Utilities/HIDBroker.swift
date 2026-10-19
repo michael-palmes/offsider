@@ -2,32 +2,8 @@ import Darwin
 import Foundation
 import FBControlCore
 import FBSimulatorControl
+import OffsiderAndroid
 import OffsiderCore
-
-struct HIDBrokerPrimitive: Codable, Equatable {
-    enum Kind: String, Codable {
-        case down
-        case up
-        case delay
-    }
-
-    let kind: Kind
-    let x: Double?
-    let y: Double?
-    let duration: Double?
-
-    static func touch(_ kind: Kind, x: Double, y: Double) -> Self {
-        Self(kind: kind, x: x, y: y, duration: nil)
-    }
-
-    static func delay(_ duration: Double) -> Self {
-        Self(kind: .delay, x: nil, y: nil, duration: duration)
-    }
-}
-
-private struct HIDBrokerRequest: Codable {
-    let primitives: [HIDBrokerPrimitive]
-}
 
 struct HIDBrokerBootIdentity: Equatable {
     let processIdentifier: pid_t
@@ -38,242 +14,149 @@ struct HIDBrokerBootIdentity: Equatable {
 enum HIDBroker {
     static let inputDeliveryFailureDescription = "Offsider could not deliver simulator input. The simulator may have restarted or disconnected. Confirm it is booted and try again."
     static let dtuhidMinimumBootUptime: TimeInterval = 10
+    /// The largest handshake or reply; a request may be up to `maximumRequestBytes`.
     static let maximumMessageBytes = 64 * 1024
-    private static let idleTimeoutMilliseconds: Int32 = 60_000
+    static let maximumRequestBytes = 2 << 20
     static let serverIOTimeoutMilliseconds: Int = 2_000
     static let clientWriteTimeoutMilliseconds: Int = 2_000
     static let clientResponseTimeoutMilliseconds: Int = 30_000
+    /// How long a command waits for a running broker's handshake before opening its own input session.
+    static let attachTimeoutMilliseconds: Int = 2_000
     static let startupAttempts = 300
     static let startupTimeoutNanoseconds: UInt64 = 30_000_000_000
-    static func sendTouchPrimitives(
-        _ primitives: [HIDBrokerPrimitive],
-        simulatorUDID: String
-    ) throws {
+
+    /// `touch --down` or `--up` alone: one request on a connection of its own, waiting for a broker to start when none runs.
+    static func sendDetachedTouch(_ event: FBSimulatorHIDEvent, simulatorUDID: String) throws {
         let endpoint = try endpointPath(simulatorUDID: simulatorUDID)
-        try sendTouchPrimitives(primitives) {
+        try sendInput(event, keepHeld: true) {
             try connectToReadyBroker(simulatorUDID: simulatorUDID, endpoint: endpoint)
         }
     }
 
-    static func sendTouchPrimitives(
-        _ primitives: [HIDBrokerPrimitive],
+    static func sendInput(
+        _ event: FBSimulatorHIDEvent,
+        keepHeld: Bool,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
         descriptorProvider: () throws -> Int32
     ) throws {
-        try validate(primitives)
-        let request = HIDBrokerRequest(primitives: primitives)
-        var requestData = try JSONEncoder().encode(request)
-        requestData.append(0x0A)
-        guard requestData.count <= maximumMessageBytes else {
-            throw CLIError(errorDescription: "HID broker request exceeds the maximum size.", reason: .hidBrokerFailed)
-        }
-
+        let request = try request(for: event, keepHeld: keepHeld, environment: environment)
         // Recovery is limited to broker readiness. Once exchange starts, a lost response has an
         // ambiguous outcome, so the request must never be reconnected or replayed.
         let descriptor = try descriptorProvider()
         defer { Darwin.close(descriptor) }
-        try exchange(requestData, on: descriptor)
+        do {
+            try exchange(request.data, on: descriptor, timeoutMilliseconds: request.timeoutMilliseconds)
+        } catch let notSent as HIDBrokerNotSent {
+            throw CLIError(errorDescription: notSent.userFacingDescription, reason: .hidBrokerFailed)
+        }
     }
 
+    /// The encoded request, refused before anything is sent when the broker would refuse it, and how long its reply may take.
+    static func request(
+        for event: FBSimulatorHIDEvent,
+        keepHeld: Bool,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> (data: Data, timeoutMilliseconds: Int) {
+        let summary = try HIDBrokerEvent.validate(event, limitingCount: false)
+        let request = HIDBrokerRequest(
+            op: .input,
+            event: HIDBrokerEvent(event),
+            keepHeld: keepHeld ? true : nil,
+            stabilizationMs: HIDStabilization.resolve(environment: environment).milliseconds,
+            idleSeconds: SimulatorSessionSettings.idleSeconds(environment)
+        )
+        var data = try JSONEncoder().encode(request)
+        data.append(0x0A)
+        // Input too long for the broker, such as pages of typed text, goes through the command's own session.
+        guard summary.primitives <= HIDBrokerEvent.maxPrimitives, data.count <= maximumRequestBytes else {
+            throw HIDBrokerNotSent(detail: "\(summary.primitives) events are too many for one request")
+        }
+        // idb paces keys 10 ms apart and settles 50 ms after them.
+        let seconds = summary.delaySeconds + Double(summary.keyboardEvents) * 0.01 + 0.05
+        return (data, clientResponseTimeoutMilliseconds + Int(seconds * 1000))
+    }
+
+    enum Attachment: Equatable {
+        /// A ready broker's connection, its handshake read.
+        case ready(Int32)
+        /// No broker runs, so this command opens its own session and starts one for the next.
+        case absent
+        /// One is starting, stopping or did not answer in time; this command opens its own session.
+        case unavailable
+    }
+
+    /// A ready broker's connection for a command's input session, if one runs.
+    static func attach(simulatorUDID: String) -> Attachment {
+        guard let endpoint = try? endpointPath(simulatorUDID: simulatorUDID) else { return .unavailable }
+        return attach(endpoint: endpoint, connector: connect(to:))
+    }
+
+    static func attach(endpoint: String, connector: (String) throws -> Int32) -> Attachment {
+        do {
+            return .ready(try connectAndAwaitHandshake(endpoint: endpoint, connector: connector, timeoutMilliseconds: attachTimeoutMilliseconds))
+        } catch {
+            logDiagnostic(error)
+            // One whose simulator restarted stops by itself, so the next is started once this command is done.
+            if let notReady = error as? HIDBrokerNotReadyError {
+                return notReady.isSafeToReplaceBroker ? .absent : .unavailable
+            }
+            // A broker still starting holds the lifetime lock before it listens.
+            guard isBrokerUnavailable(error), liveness(endpoint: endpoint) != .alive else { return .unavailable }
+            return .absent
+        }
+    }
+
+    /// Starts a broker for the next command unless one already runs; a second one started at the same moment exits at the lifetime lock.
+    static func startInBackground(simulatorUDID: String) {
+        guard let endpoint = try? endpointPath(simulatorUDID: simulatorUDID), liveness(endpoint: endpoint) != .alive else { return }
+        do {
+            try spawnBroker(simulatorUDID: simulatorUDID)
+        } catch {
+            diagnosticLog("Could not start the simulator input broker: \(error.localizedDescription)")
+        }
+    }
+
+    /// Serves `simulatorUDID` until idle; this process holds the endpoint's lifetime lock.
     @MainActor
     static func serve(simulatorUDID: String, logger: OffsiderLogger) async throws {
         let endpoint = try endpointPath(simulatorUDID: simulatorUDID)
-        let listener = try makeListener(at: endpoint)
-        let endpointIdentity = try socketIdentity(at: endpoint)
-        defer {
-            Darwin.close(listener)
-            try? removeOwnedSocket(endpoint, matching: endpointIdentity)
-        }
-
-        let bootIdentity = try currentBootIdentity(simulatorUDID: simulatorUDID)
+        let boot = try currentBootIdentity(simulatorUDID: simulatorUDID)
         let session = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
+        let listener: Int32
         do {
-            try await acceptClients(
-                on: listener,
-                bootIdentity: bootIdentity,
-                session: session,
-                simulatorUDID: simulatorUDID,
-                logger: logger
-            )
+            // Only the lifetime lock's holder listens, so a socket left at the path is a dead broker's.
+            try removeOwnedSocket(endpoint)
+            listener = try makeListener(at: endpoint)
         } catch {
             await HIDInteractor.closeSession(session)
             throw error
         }
+        let server = HIDBrokerServer(
+            udid: simulatorUDID,
+            listener: listener,
+            endpoint: endpoint,
+            sink: .live(session, logger: logger),
+            isCurrentBoot: { bootIdentity(processIdentifier: boot.processIdentifier) == boot },
+            idleSeconds: SimulatorSessionSettings.idleSeconds(ProcessInfo.processInfo.environment),
+            log: { line in
+                let stamp = ISO8601DateFormatter().string(from: Date())
+                FileHandle.standardOutput.write(Data("\(stamp) \(line)\n".utf8))
+            }
+        )
+        // A command that leaves before its handshake must not end the broker with SIGPIPE.
+        signal(SIGPIPE, SIG_IGN)
+        let signals = [SIGTERM, SIGINT, SIGHUP].map { number -> DispatchSourceSignal in
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+            source.setEventHandler { MainActor.assumeIsolated { server.requestStop("signal \(number)") } }
+            source.resume()
+            return source
+        }
+        defer { signals.forEach { $0.cancel() } }
+        server.log("Serving \(simulatorUDID) on \(endpoint)")
+        let reason = await server.run()
+        server.log("Stopped: \(reason)")
         await HIDInteractor.closeSession(session)
-    }
-
-    @MainActor
-    private static func acceptClients(
-        on listener: Int32,
-        bootIdentity: HIDBrokerBootIdentity,
-        session: HIDInteractor.Session,
-        simulatorUDID: String,
-        logger: OffsiderLogger
-    ) async throws {
-        while true {
-            var pollDescriptor = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
-            let result = Darwin.poll(&pollDescriptor, 1, idleTimeoutMilliseconds)
-            if result == 0 {
-                return
-            }
-            guard result > 0 else {
-                if errno == EINTR { continue }
-                throw posixError("poll")
-            }
-
-            let client = Darwin.accept(listener, nil, nil)
-            guard client >= 0 else {
-                if errno == EINTR { continue }
-                throw posixError("accept")
-            }
-            // Another user's client gets no bytes at all, not even the handshake.
-            guard isSameUserPeer(client) else {
-                Darwin.close(client)
-                continue
-            }
-            configureNoSignalPipe(client)
-            try configureSocketTimeouts(
-                client,
-                readMilliseconds: serverIOTimeoutMilliseconds,
-                writeMilliseconds: serverIOTimeoutMilliseconds
-            )
-            guard shouldReuseSession(
-                sessionBootIdentity: bootIdentity,
-                currentBootIdentity: try currentBootIdentity(simulatorUDID: simulatorUDID)
-            ) else {
-                try? writeHandshake(ready: false, to: client)
-                Darwin.close(client)
-                return
-            }
-            do {
-                try writeHandshake(ready: true, to: client)
-            } catch {
-                Darwin.close(client)
-                continue
-            }
-            let shouldContinue = await handle(client: client, session: session, logger: logger)
-            Darwin.close(client)
-            if !shouldContinue {
-                return
-            }
-        }
-    }
-
-    @MainActor
-    private static func handle(
-        client: Int32,
-        session: HIDInteractor.Session,
-        logger: OffsiderLogger
-    ) async -> Bool {
-        var shouldContinue = true
-        do {
-            let data = try readMessage(from: client)
-            let request = try JSONDecoder().decode(HIDBrokerRequest.self, from: data)
-            try validate(request.primitives)
-            let outcome = try await play(
-                request.primitives,
-                peerGone: { SocketPeer.closed(client) },
-                touch: { direction, x, y in
-                    do {
-                        try await HIDInteractor.performHIDEvent(.touch(direction: direction, x: x, y: y), in: session, logger: logger)
-                    } catch {
-                        shouldContinue = false
-                        throw error
-                    }
-                },
-                sleep: { try? await Task.sleep(for: $0) }
-            )
-            if outcome == .abandoned {
-                logger.info().log("HID broker client disconnected mid-request; released its touch")
-                return shouldContinue
-            }
-            try writeResponse(error: nil, to: client)
-        } catch {
-            logger.error().log("HID broker request failed: \(error.localizedDescription)")
-            try? writeResponse(error: brokerResponseDescription(for: error), to: client)
-        }
-        return shouldContinue
-    }
-
-    static let maxPrimitives = 4096
-    static let maxDelaySeconds: Double = 10
-    static let maxTotalDelaySeconds: Double = 25
-    static let delaySlice: Duration = .milliseconds(100)
-
-    /// Refuses a request before any of it is sent: too many primitives, a touch without a finite point, a delay outside 0 to 10 s, or delays over 25 s together.
-    static func validate(_ primitives: [HIDBrokerPrimitive]) throws {
-        guard primitives.count <= maxPrimitives else {
-            throw CLIError(errorDescription: "HID broker request has \(primitives.count) primitives, more than \(maxPrimitives).", reason: .hidBrokerFailed)
-        }
-        var total = 0.0
-        for primitive in primitives {
-            switch primitive.kind {
-            case .down, .up:
-                guard let x = primitive.x, let y = primitive.y, x.isFinite, y.isFinite else {
-                    throw CLIError(errorDescription: "Touch primitive is missing coordinates.", reason: .hidBrokerFailed)
-                }
-            case .delay:
-                guard let duration = primitive.duration, duration.isFinite, duration >= 0, duration <= maxDelaySeconds else {
-                    throw CLIError(errorDescription: "HID broker delay is invalid.", reason: .hidBrokerFailed)
-                }
-                total += duration
-            }
-        }
-        guard total <= maxTotalDelaySeconds else {
-            throw CLIError(errorDescription: "HID broker delays add up to more than \(Int(maxTotalDelaySeconds)) seconds.", reason: .hidBrokerFailed)
-        }
-    }
-
-    enum PlayOutcome: Equatable {
-        case completed
-        /// The client went away; a touch it left down was lifted.
-        case abandoned
-    }
-
-    /// Sends the primitives in order, sleeping in 100 ms slices; stops once `peerGone`, and always lifts a touch it leaves down.
-    static func play(
-        _ primitives: [HIDBrokerPrimitive],
-        peerGone: () -> Bool,
-        touch: (FBSimulatorHIDDirection, Double, Double) async throws -> Void,
-        sleep: (Duration) async -> Void
-    ) async throws -> PlayOutcome {
-        var held: (x: Double, y: Double)?
-        func lift() async {
-            guard let point = held else { return }
-            held = nil
-            try? await touch(.up, point.x, point.y)
-        }
-        do {
-            for primitive in primitives {
-                if peerGone() {
-                    await lift()
-                    return .abandoned
-                }
-                switch primitive.kind {
-                case .down, .up:
-                    guard let x = primitive.x, let y = primitive.y else {
-                        throw CLIError(errorDescription: "Touch primitive is missing coordinates.", reason: .hidBrokerFailed)
-                    }
-                    let down = primitive.kind == .down
-                    try await touch(down ? .down : .up, x, y)
-                    held = down ? (x, y) : nil
-                case .delay:
-                    var remaining = Duration.seconds(primitive.duration ?? 0)
-                    while remaining > .zero {
-                        if peerGone() {
-                            await lift()
-                            return .abandoned
-                        }
-                        let slice = min(remaining, delaySlice)
-                        await sleep(slice)
-                        remaining -= slice
-                    }
-                }
-            }
-        } catch {
-            await lift()
-            throw error
-        }
-        return .completed
     }
 
     static func isSameUserPeer(_ client: Int32, expectedUID: uid_t = getuid()) -> Bool {
@@ -343,28 +226,37 @@ enum HIDBroker {
         }
     }
 
-    private static func spawnBroker(simulatorUDID: String) throws {
+    /// Starts `hid-broker` detached in its own session, logging to the private `sessions/`; returns its pid.
+    @discardableResult
+    static func spawnBroker(simulatorUDID: String) throws -> Int32 {
         guard let executable = Bundle.main.executableURL else {
             throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.", reason: .hidBrokerFailed)
         }
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = ["hid-broker", "--udid", simulatorUDID]
-        process.environment = ChildEnvironment.make(.offsiderBroker, from: ProcessInfo.processInfo.environment)
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
+        return try DetachedProcess().launch(
+            executable: executable,
+            arguments: ["hid-broker", "--udid", simulatorUDID],
+            environment: ChildEnvironment.make(.offsiderBroker, from: ProcessInfo.processInfo.environment).filter { $0.key != "OFFSIDER_TIMINGS" },
+            logPath: try logPath(simulatorUDID: simulatorUDID)
+        )
+    }
+
+    /// `sessions/simulator-<hash>.log` in the private directory, beside the other brokers' logs.
+    static func logPath(simulatorUDID: String) throws -> String {
+        let directory = try OffsiderPrivateDirectory.ensureSubdirectory(AndroidHost.sessionsDirectoryName)
+        let name = "simulator-" + String(BrokerEndpointNaming.fnv1a64(simulatorUDID), radix: 36) + ".log"
+        return (directory as NSString).appendingPathComponent(name)
     }
 
     private static func connectToReadyBroker(simulatorUDID: String, endpoint: String) throws -> Int32 {
+        var spawned: Int32?
         do {
             return try connectToReadyBroker(
                 simulatorUDID: simulatorUDID,
                 endpoint: endpoint,
                 connector: connect(to:),
-                spawner: spawnBroker(simulatorUDID:),
-                sleeper: { _ = usleep($0) }
+                spawner: { spawned = try spawnBroker(simulatorUDID: $0) },
+                sleeper: { _ = usleep($0) },
+                spawnedBrokerExited: { spawned.map { DetachedProcess().exitStatus(of: $0) != nil } ?? false }
             )
         } catch {
             logDiagnostic(error)
@@ -378,7 +270,8 @@ enum HIDBroker {
         connector: (String) throws -> Int32,
         spawner: (String) throws -> Void,
         sleeper: (useconds_t) -> Void,
-        monotonicNow: () -> UInt64 = monotonicTimeNanoseconds
+        monotonicNow: () -> UInt64 = monotonicTimeNanoseconds,
+        spawnedBrokerExited: () -> Bool = { false }
     ) throws -> Int32 {
         let startedAt = monotonicNow()
         let deadlineResult = startedAt.addingReportingOverflow(startupTimeoutNanoseconds)
@@ -445,6 +338,12 @@ enum HIDBroker {
             } catch {
                 guard isBrokerUnavailable(error) else { throw error }
                 lastError = error
+                if didSpawnBroker, !(error is HIDBrokerNotReadyError), spawnedBrokerExited(), try !isBrokerProcessAlive(endpoint: endpoint) {
+                    throw HIDBrokerNotReadyError(
+                        diagnosticDescription: "The broker exited before it listened; see \((try? logPath(simulatorUDID: simulatorUDID)) ?? "its log").",
+                        isSafeToReplaceBroker: false
+                    )
+                }
                 if let notReady = error as? HIDBrokerNotReadyError,
                    notReady.isSafeToReplaceBroker {
                     try waitForStaleEndpointShutdown(
