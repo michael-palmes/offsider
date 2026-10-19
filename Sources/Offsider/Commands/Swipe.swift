@@ -50,6 +50,9 @@ struct Swipe: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
 
     func validate() throws {
         // Validate coordinates are non-negative
@@ -103,6 +106,7 @@ struct Swipe: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

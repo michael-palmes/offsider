@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 @testable import Offsider
 import OffsiderCore
@@ -41,6 +42,36 @@ struct IOSDevicePinningTests {
         #expect(error?.reason == .usage)
         #expect(error?.message.contains("Pass --app <bundle-id>") == true)
         #expect(transport.calls.isEmpty)
+    }
+
+    @Test("a batch's --app counts before its input session opens, so a phone with no pinned app takes the batch, and without it nothing is sent")
+    func batchAppBeforeSession() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = Self.playground
+        let backend = try Self.backend(transport, apps: [Self.playground, "com.example.two"])
+        let route = DeviceRouter.Route(backend: backend, device: Self.phone)
+
+        let unnamed = try Batch.parse(["--device", IOSDeviceFixtures.phone, "--no-settle", "--step", "tap -x 10 -y 20"])
+        let error = await #expect(throws: IOSDeviceError.self) { try await unnamed.run(on: route, logger: OffsiderLogger()) }
+        #expect(error?.reason == .usage)
+        #expect(!transport.calls.contains { $0.path == "/tap-point" })
+
+        let named = try Batch.parse(["--device", IOSDeviceFixtures.phone, "--app", Self.playground, "--no-settle", "--step", "tap -x 10 -y 20"])
+        try await named.run(on: route, logger: OffsiderLogger())
+        #expect(transport.calls.last?.path == "/tap-point")
+        #expect(transport.calls.last?.body["app"] == AnyHashable(Self.playground))
+    }
+
+    @Test("every command that reads or drives a phone's screen takes --app, as the refusal without one says")
+    func appOptionOnEveryPhoneCommand() {
+        let commands: [any ParsableCommand.Type] = [
+            Tap.self, Type.self, Wait.self, Assert.self, DescribeUI.self, Screenshot.self, RecordVideo.self, StreamVideo.self,
+            Swipe.self, Drag.self, Gesture.self, Touch.self, Slider.self, Key.self, KeySequence.self, KeyCombo.self, Button.self,
+            Turnstile.self, RNDevMenu.self, RNToolsOff.self, RNLogBoxStatus.self, RNLogBoxOpen.self, RNLogBoxDismiss.self, Batch.self,
+        ]
+        for command in commands {
+            #expect(command.helpMessage(columns: 400).contains("--app <bundle-id>"), "\(command)")
+        }
     }
 
     @Test("a deny-listed or unpinned app is app_not_allowed before the runner is asked")

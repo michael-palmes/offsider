@@ -23,6 +23,9 @@ struct RecordVideo: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: ReadDeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     @Option(help: "Frames per second (1-30, default: 10)")
     var fps: Int = 10
 
@@ -61,6 +64,7 @@ struct RecordVideo: AsyncParsableCommand {
         let regions = try masks.regions()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        await appOption.apply(to: route)
         let backend = route.backend
         let (device, marker) = try await Self.start(command: "record-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
         defer { marker.remove() }

@@ -27,6 +27,9 @@ struct KeySequence: AsyncParsableCommand {
 
     @OptionGroup
     var deviceOption: DeviceOption
+
+    @OptionGroup
+    var appOption: AppOption
     
     func validate() throws {
         let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
@@ -61,7 +64,9 @@ struct KeySequence: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await perform(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger), logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
+        try await perform(on: route, logger: logger)
     }
 
     @MainActor

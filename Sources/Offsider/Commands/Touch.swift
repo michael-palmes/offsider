@@ -50,6 +50,9 @@ struct Touch: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     static let defaultSpread: Double = 60
     static let holdRange = 100...10_000
     static let spreadRange: ClosedRange<Double> = 20...300
@@ -140,6 +143,7 @@ struct Touch: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
