@@ -36,10 +36,10 @@ enum DevicePicker {
     /// What a picker would supply, or nil when the line fails for another reason a pick would not mend.
     static func need(for error: any Error, arguments: [String]) -> Need? {
         if missingDevice(error) {
-            let saved = DeviceDefault.picked
-            DeviceDefault.picked = "00000000-0000-4000-8000-000000000000"
-            defer { DeviceDefault.picked = saved }
-            return (try? OffsiderCommand.parseAsRoot(arguments)) == nil ? nil : .device
+            let parses = DeviceDefault.$trialPick.withValue("00000000-0000-4000-8000-000000000000") {
+                (try? OffsiderCommand.parseAsRoot(arguments)) != nil
+            }
+            return parses ? .device : nil
         }
         if missingBootName(error, arguments: arguments) {
             return (try? OffsiderCommand.parseAsRoot([arguments[0], "Offsider_Picker"] + arguments.dropFirst())) == nil ? nil : .boot

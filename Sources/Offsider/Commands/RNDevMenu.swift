@@ -121,7 +121,9 @@ struct DevMenuDriver {
             return
         }
         defer { DeviceActivityLedger.current.recordInput(on: route.device) }
-        try await route.backend.sendDetachedTouch([.down(x: physical.x, y: physical.y), .hold(Self.switchHold), .up(x: physical.x, y: physical.y)], to: route.device)
+        try await DispatchTracker.current.sending {
+            try await route.backend.sendDetachedTouch([.down(x: physical.x, y: physical.y), .hold(Self.switchHold), .up(x: physical.x, y: physical.y)], to: route.device)
+        }
     }
 
     private func perform(_ event: InputEvent) async throws {
