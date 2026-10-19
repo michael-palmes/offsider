@@ -764,7 +764,7 @@ What works depends on the host's Xcode:
 | Non-ASCII `type`, `type --replace` | runner | runner | runner |
 | `key`, `key-sequence`, `key-combo`, `touch`, `gesture`, `drag`, the other buttons | broker | refused | `xcode_too_old` |
 
-`xcode_too_old` exits 9 with the hint to install Xcode 27 for HID input.
+`xcode_too_old` exits 9. Its hint selects an installed Xcode 27 and runs its first launch, which updates CoreDevice, or says to install Xcode 27.
 
 ### Session broker
 

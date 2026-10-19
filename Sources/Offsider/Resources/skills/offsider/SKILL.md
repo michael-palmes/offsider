@@ -43,7 +43,7 @@ offsider describe-ui --diff --device <DEVICE_ID>
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop, never kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames are in points (dp on Android). Capture with `screenshot --scale points` to tap what you see.
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric` and `stay-awake` change the device and stay changed: read the current value first, and set it back when done (`guide device-state`).
-- A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: `--app` is required. Input starts a background session: run `offsider session stop --device <UDID> --clean` when done (`guide ios-device`).
+- A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command. Input starts a background session: run `offsider session stop --device <UDID> --clean` when done (`guide ios-device`).
 - React Native debug builds: `rn open` (Metro, `--restart`), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`).
 - When an Android error says the screen is off or locked, run `offsider wake --device <DEVICE_ID>`; exit 7 `device_locked` means a PIN, pattern or password: ask the user to unlock it.
 

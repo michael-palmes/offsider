@@ -14,9 +14,20 @@ public enum CodeSignatureCheck {
         }
     }
 
-    /// Throws unless the code at `path` is validly signed and satisfies `requirement`, then returns the team its signature names, if any; `resources: false` skips sealed resources, which is what keeps a check on Xcode to tens of milliseconds.
-    @discardableResult
-    public static func validate(path: String, requirement: String, resources: Bool) throws -> String? {
+    /// Throws unless the code at `path` is validly signed and satisfies `requirement`; `resources: false` skips sealed resources, which is what keeps a check on Xcode to tens of milliseconds.
+    public static func validate(path: String, requirement: String, resources: Bool) throws {
+        _ = try checkedCode(path: path, requirement: requirement, resources: resources)
+    }
+
+    /// `validate`, then the team the same signature names, if any.
+    public static func validatedTeam(path: String, requirement: String, resources: Bool) throws -> String? {
+        let code = try checkedCode(path: path, requirement: requirement, resources: resources)
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess else { return nil }
+        return (information as NSDictionary?)?[kSecCodeInfoTeamIdentifier] as? String
+    }
+
+    private static func checkedCode(path: String, requirement: String, resources: Bool) throws -> SecStaticCode {
         var code: SecStaticCode?
         var status = SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code)
         guard status == errSecSuccess, let code else { throw Failure(step: "SecStaticCodeCreateWithPath", status: status) }
@@ -26,9 +37,7 @@ public enum CodeSignatureCheck {
         let flags: SecCSFlags = resources ? [] : SecCSFlags(rawValue: kSecCSDoNotValidateResources)
         status = SecStaticCodeCheckValidity(code, flags, compiled)
         guard status == errSecSuccess else { throw Failure(step: "SecStaticCodeCheckValidity", status: status) }
-        var information: CFDictionary?
-        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess else { return nil }
-        return (information as NSDictionary?)?[kSecCodeInfoTeamIdentifier] as? String
+        return code
     }
 
     /// `validate` as a yes or no.

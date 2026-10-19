@@ -35,6 +35,8 @@ public struct UntrustedDeveloperDirectory: OffsiderFailure, LocalizedError, Equa
         case unsigned
         /// Signed, but its executable or `Info.plist` no longer matches the signature.
         case modified
+        /// Its signature could not be read at all, as for a bundle missing its executable.
+        case unreadable
 
         /// Why, after the path: "<path> is not ...".
         public var summary: String {
@@ -43,6 +45,7 @@ public struct UntrustedDeveloperDirectory: OffsiderFailure, LocalizedError, Equa
             case .notAppleSigned: return "is in an app that Apple did not sign as Xcode"
             case .unsigned: return "is in an app with no code signature"
             case .modified: return "is in an app changed since it was signed"
+            case .unreadable: return "is in an app whose signature could not be read"
             }
         }
     }
@@ -86,16 +89,21 @@ public final class DeveloperDirectoryTrust: @unchecked Sendable {
             try CodeSignatureCheck.validate(path: app, requirement: appleRequirement, resources: false)
             return nil
         } catch let failure as CodeSignatureCheck.Failure where failure.status == errSecCSReqFailed {
-            let team = try? CodeSignatureCheck.validate(path: app, requirement: appStoreXcode, resources: false)
+            let team = try? CodeSignatureCheck.validatedTeam(path: app, requirement: appStoreXcode, resources: false)
             return team == appStoreTeam ? nil : .notAppleSigned
         } catch let failure as CodeSignatureCheck.Failure where failure.status == errSecCSUnsigned {
             return .unsigned
-        } catch {
+        } catch let failure as CodeSignatureCheck.Failure where changedSince.contains(failure.status) {
             return .modified
+        } catch {
+            return .unreadable
         }
     }
 
     public static let appleSigned: Validator = { check($0) }
+
+    /// What the Security framework returns for code that no longer matches its signature.
+    static let changedSince: Set<OSStatus> = [errSecCSSignatureFailed, errSecCSSignatureInvalid, errSecCSInfoPlistFailed, errSecCSBadResource]
 
     private let validator: Validator
     private let lock = NSLock()

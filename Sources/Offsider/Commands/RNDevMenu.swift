@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import OffsiderCore
+import OffsiderIOSDevice
 
 extension DevMenu.Item: ExpressibleByArgument {}
 
@@ -266,6 +267,8 @@ struct RNToolsOff: AsyncParsableCommand {
         let tree: UITree
         do {
             tree = try await driver.read()
+        } catch let error as IOSDeviceError where error.reason == .usage || error.reason == .appNotAllowed {
+            throw error
         } catch {
             throw CLIError(
                 errorDescription: "Could not read the screen of \(route.device.rawValue), so Offsider cannot tell whether the inspector or the performance monitor shows, and will not toggle them blind.",

@@ -38,6 +38,19 @@ struct XcodeSuggestionTests {
             == "No Xcode. Without sudo, run `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` instead.")
     }
 
+    @Test("a version floor skips older Xcodes, and a too-old CoreDevice gets the first launch or the install at that floor")
+    func versionFloor() {
+        let bundles = [
+            XcodeBundle(path: "/Applications/Xcode.app", version: "26.4", appleSigned: true),
+            XcodeBundle(path: "/Applications/Xcode-27.1.app", version: "27.1", appleSigned: true),
+        ]
+        #expect(XcodeSuggestion(bundles: bundles, minimumMajor: 27).firstLaunch
+            == "sudo xcode-select -s /Applications/Xcode-27.1.app/Contents/Developer && sudo xcodebuild -runFirstLaunch")
+        let older = XcodeSuggestion(bundles: Array(bundles.prefix(1)), minimumMajor: 27)
+        #expect(older.firstLaunch == "Install Xcode 27 or later from the Mac App Store or developer.apple.com.")
+        #expect(older.select == older.firstLaunch)
+    }
+
     @Test("the refused Xcode is skipped, also when a symlink names it, and the next newest is named")
     func skipsRefused() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

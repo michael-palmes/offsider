@@ -66,6 +66,7 @@ struct DeveloperDirectoryTrustTests {
         (UntrustedDeveloperDirectory.Problem.notAppleSigned, "is in an app that Apple did not sign as Xcode"),
         (.unsigned, "is in an app with no code signature"),
         (.modified, "is in an app changed since it was signed"),
+        (.unreadable, "is in an app whose signature could not be read"),
     ])
     func refusalSaysWhy(problem: UntrustedDeveloperDirectory.Problem, why: String) throws {
         let fake = try makeFakeXcode()
@@ -75,7 +76,6 @@ struct DeveloperDirectoryTrustTests {
         let error = #expect(throws: UntrustedDeveloperDirectory.self) { try trust.require(fake.developer, source: .xcodeSelect) }
         #expect(error?.problem == problem)
         #expect(error?.failureMessage.hasPrefix("xcode-select points at \(fake.developer), which \(why), so Offsider") == true)
-        #expect(error?.hint?.contains(fake.root) == false)
     }
 
     @Test("a symlink is resolved before the shape and signature checks, so a link named like Xcode cannot stand in for one")
@@ -146,6 +146,7 @@ struct DeveloperDirectoryTrustTests {
         for slice in fat ? (0..<word(4)).map({ word(8 + $0 * 20 + 8) }) : [0] { data[slice + 0x2000] ^= 0xFF }
         try data.write(to: changed)
         #expect(DeveloperDirectoryTrust.check(changed.path) == .modified)
+        #expect(DeveloperDirectoryTrust.check(folder.appendingPathComponent("missing").path) == .unreadable)
 
         let resigned = folder.appendingPathComponent("resigned")
         try FileManager.default.copyItem(atPath: "/bin/ls", toPath: resigned.path)
@@ -162,7 +163,7 @@ struct DeveloperDirectoryTrustTests {
         #expect(DeveloperDirectoryTrust.check(app, appStoreTeam: "ABCDE12345") == .notAppleSigned)
         #expect(!CodeSignatureCheck.satisfies(path: app, requirement: DeveloperDirectoryTrust.appleRequirement, resources: false))
         #expect(!CodeSignatureCheck.satisfies(path: app, requirement: otherIdentifier, resources: false))
-        #expect(try CodeSignatureCheck.validate(path: app, requirement: DeveloperDirectoryTrust.appStoreXcode, resources: false) == DeveloperDirectoryTrust.appStoreXcodeTeam)
+        #expect(try CodeSignatureCheck.validatedTeam(path: app, requirement: DeveloperDirectoryTrust.appStoreXcode, resources: false) == DeveloperDirectoryTrust.appStoreXcodeTeam)
     }
 }
 

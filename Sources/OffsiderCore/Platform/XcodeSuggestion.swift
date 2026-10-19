@@ -17,30 +17,39 @@ public struct XcodeBundle: Equatable, Sendable {
 
 /// The Xcode to name in a fix: the newest Apple-signed one in /Applications, never an unsigned bundle or the one just refused.
 public struct XcodeSuggestion: Equatable, Sendable {
-    /// The fix when no Apple-signed Xcode is left to select.
-    public static let install = "Install Xcode 26 or later from the Mac App Store or developer.apple.com."
+    /// The fix when no Apple-signed Xcode 26 or later is left to select.
+    public static let install = XcodeSuggestion(developerDirectory: nil).install
 
     /// The developer directory to select; nil when no other Apple-signed Xcode was found.
     public let developerDirectory: String?
+    /// The oldest Xcode major the fix may name.
+    public let minimumMajor: Int
 
-    public init(developerDirectory: String?) {
+    public init(developerDirectory: String?, minimumMajor: Int = 26) {
         self.developerDirectory = developerDirectory
+        self.minimumMajor = minimumMajor
     }
 
-    /// The newest Apple-signed bundle whose developer directory, once symlinks are resolved, is not `rejected`.
-    public init(bundles: [XcodeBundle], rejecting rejected: String? = nil) {
+    /// The newest Apple-signed bundle at `minimumMajor` or later whose developer directory, once symlinks are resolved, is not `rejected`.
+    public init(bundles: [XcodeBundle], rejecting rejected: String? = nil, minimumMajor: Int = 26) {
         func resolved(_ path: String) -> String { DeveloperDirectoryTrust.realPath(path) ?? path }
         let skipped = rejected.map(resolved)
-        self.init(developerDirectory: Self.ordered(bundles).first { resolved($0.developerDirectory) != skipped }?.developerDirectory)
+        let candidates = Self.ordered(bundles).filter { ($0.version?.split(separator: ".").first.flatMap { Int($0) } ?? 0) >= minimumMajor }
+        self.init(developerDirectory: candidates.first { resolved($0.developerDirectory) != skipped }?.developerDirectory, minimumMajor: minimumMajor)
     }
 
     /// This suggestion, or `developerDirectory` when it names none.
     public func or(_ developerDirectory: String) -> XcodeSuggestion {
-        self.developerDirectory == nil ? XcodeSuggestion(developerDirectory: developerDirectory) : self
+        self.developerDirectory == nil ? XcodeSuggestion(developerDirectory: developerDirectory, minimumMajor: minimumMajor) : self
     }
 
+    public var install: String { "Install Xcode \(minimumMajor) or later from the Mac App Store or developer.apple.com." }
     /// The fix that needs an administrator password, or the install when there is nothing to select.
-    public var select: String { developerDirectory.map { "sudo xcode-select -s \($0)" } ?? Self.install }
+    public var select: String { developerDirectory.map { "sudo xcode-select -s \($0)" } ?? install }
+    /// For a CoreDevice too old: select the Xcode and run its first launch, which updates CoreDevice, even when it is already selected.
+    public var firstLaunch: String {
+        developerDirectory.map { "sudo xcode-select -s \($0) && sudo xcodebuild -runFirstLaunch" } ?? install
+    }
     /// The same choice for this shell only, with no sudo.
     public var environment: String? { developerDirectory.map { "export DEVELOPER_DIR=\($0)" } }
     /// `message` with the no-sudo choice after it, for a message whose `Try:` line carries `select`.
@@ -49,7 +58,7 @@ public struct XcodeSuggestion: Equatable, Sendable {
     }
     /// One sentence naming both, for a doctor hint.
     public var advice: String {
-        guard let environment else { return Self.install }
+        guard let environment else { return install }
         return "Select it with `\(select)`, or without sudo: `\(environment)`."
     }
 
@@ -97,5 +106,10 @@ public struct XcodeSuggestion: Equatable, Sendable {
     /// The newest Apple-signed Xcode other than the one at `developerDirectory`, which was just refused or failed.
     public static func instead(of developerDirectory: String) -> XcodeSuggestion {
         XcodeSuggestion(bundles: installed, rejecting: developerDirectory)
+    }
+
+    /// The newest Apple-signed Xcode at `major` or later.
+    public static func atLeast(_ major: Int) -> XcodeSuggestion {
+        XcodeSuggestion(bundles: installed, minimumMajor: major)
     }
 }
