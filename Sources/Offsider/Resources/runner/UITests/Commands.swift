@@ -60,12 +60,15 @@ final class RunnerCommands {
         ])
     }
 
-    /// Whether the named app is in front, by XCTest's private active-app lookup alone; a remembered app never stands in for it.
+    /// Whether the named app is in front, by XCTest's private active-app lookup, else, where Xcode lacks it, by the app's own foreground state; a remembered app never stands in for it.
     private func foreground(_ body: [String: Any]) -> RunnerResponse {
         guard let app = body["app"] as? String, !app.isEmpty else { return .failure(400, code: "bad_request", message: "app is required") }
+        let running = XCUIApplication(bundleIdentifier: app).state == .runningForeground
+        guard ActiveApplication.hasPrivateLookup else {
+            return .ok(["inFront": running, "activeBundleId": running ? app as Any : NSNull()])
+        }
         let active = ActiveApplication.privateActive().flatMap(ActiveApplication.bundleID(of:))
-        let inFront = active == app && XCUIApplication(bundleIdentifier: app).state == .runningForeground
-        return .ok(["inFront": inFront, "activeBundleId": active as Any? ?? NSNull()])
+        return .ok(["inFront": active == app && running, "activeBundleId": active as Any? ?? NSNull()])
     }
 
     private func snapshot(_ app: XCUIApplication) -> RunnerResponse {

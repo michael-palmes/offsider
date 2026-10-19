@@ -19,11 +19,14 @@ enum ActiveApplication {
         bundleID(of: app) == springBoard
     }
 
+    private static let lookup = NSSelectorFromString("activeApplication")
+
+    /// Xcode 27.1's XCTest no longer has the lookup.
+    static var hasPrivateLookup: Bool { (XCUIApplication.self as AnyObject).responds(to: lookup) }
+
     static func privateActive() -> XCUIApplication? {
-        let type: AnyObject = XCUIApplication.self
-        let selector = NSSelectorFromString("activeApplication")
-        guard type.responds(to: selector) else { return nil }
-        return type.perform(selector)?.takeUnretainedValue() as? XCUIApplication
+        guard hasPrivateLookup else { return nil }
+        return (XCUIApplication.self as AnyObject).perform(lookup)?.takeUnretainedValue() as? XCUIApplication
     }
 
     static func bundleID(of app: XCUIApplication) -> String? {
