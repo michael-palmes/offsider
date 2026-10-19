@@ -62,3 +62,10 @@ Steps are input steps (including `rn devmenu <item>`), `sleep`, and the read ste
 With `--json`, stdout is one NDJSON line per step (`step`, `kind`, `line`, `ok`, `ms`, plus `exitCode` and `error` on failure and each read step's own result; a read step's `ms` includes that 100 ms wait), then a summary line with `steps`, `failed` and `dispatched` (`yes`, `no` or `unknown`: whether any step sent input). A `type` step's line shows `<N characters>`, never its text, as do `--mask-text`, `--mask-label` and `--grep` values. Human text goes to stderr and ends a failure with `Dispatched: <state>`. A failed step's `error` is the [JSON error object](errors.md#json-errors).
 
 The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0. Earlier steps may have run whatever the code, so resend a failed batch whole only when `dispatched` is `no`.
+
+## Simulator input session
+
+- On an iOS simulator, opening an input session takes about 1 s, so it stays open between commands. The first input command opens its own, as before, then starts a broker (`offsider` started detached, one per simulator) that holds one for the commands after it.
+- The broker sends each command's input in turn and lifts any touch, key or button a command leaves down when it ends. `touch --down` and `--up` alone stay down until the matching command, as before.
+- It stops 60 s after the last command (`OFFSIDER_SIMULATOR_SESSION_IDLE`, at most 3600), when the simulator restarts, or on `offsider session stop --device <UDID>`; `session status` lists it. `OFFSIDER_SIMULATOR_SESSION=off` opens an input session for every command instead.
+- A warm tap reaches the app within milliseconds of the command before it. On a screen that has only just appeared, use `tap --verify` or `wait --settled`.

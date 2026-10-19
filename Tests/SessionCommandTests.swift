@@ -92,6 +92,29 @@ struct SessionCommandTests {
         #expect(stopped[0]["helper"] as? Bool == true && stopped[0]["runner"] as? Bool == false)
     }
 
+    @Test("a simulator's warm input session gets its own row: its broker, attached commands and how long it has idled")
+    func simulatorInputRow() throws {
+        let input = HIDBrokerStatus(udid: "SIM-1", pid: 44, startedAt: Self.started.timeIntervalSince1970, idleSeconds: 60, idleFor: 7, attached: 1)
+        let rows = DeviceSessionRow.rows(runners: [Self.runner("A")], brokers: [], helpers: [Self.helper("emulator-5554")], inputs: [input])
+        let text = DeviceSessionRow.text(rows)
+        #expect(text.contains("SIM-1\n  input  ready  pid 44  started 2027-01-15T08:00:00Z  idle 7 s of 60 s"))
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.json(rows).utf8)) as? [String: Any])
+        let sessions = try #require(object["sessions"] as? [[String: Any]])
+        #expect(sessions.map { $0["device"] as? String } == ["A", "SIM-1", "emulator-5554"])
+        #expect(sessions[0]["input"] is NSNull && sessions[2]["input"] is NSNull)
+        let fields = try #require(sessions[1]["input"] as? [String: Any])
+        #expect(Set(fields.keys) == ["pid", "startedAt", "idleSeconds", "idleFor", "attached"])
+        #expect(fields["pid"] as? Int == 44 && fields["attached"] as? Int == 1 && fields["idleFor"] as? Int == 7)
+    }
+
+    @Test("stop says when a simulator's input session was stopped")
+    func stopInputJSON() throws {
+        let stopped = DeviceSessionRow.stopped(runners: [], brokers: [], inputs: ["SIM-1"])
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.stoppedJSON(stopped).utf8)) as? [String: Any])
+        let entries = try #require(object["stopped"] as? [[String: Any]])
+        #expect(entries.count == 1 && entries[0]["input"] as? Bool == true && entries[0]["helper"] as? Bool == false)
+    }
+
     @Test("nested session commands keep their parent in the command path")
     func paths() throws {
         #expect(CommandPath.of(try SessionStatus.parse([])) == "session status")

@@ -52,7 +52,7 @@ Every device command takes `--device <id>`, using an ID from `offsider list-devi
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C ([video](capture.md#screenshots-and-video)) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` ([video](capture.md#screenshots-and-video)) |
 | `runner` | `status` lists the XCUITest runner sessions that read physical iPhones and iPads, `stop` stops one (`--device`, `--clean` to uninstall it too) or all, and `build --device <UDID>` builds the runner (`--register-device`, for a person at a terminal); `--json` |
-| `session` | `status` lists each device's background sessions, an iPhone or iPad's runner and session broker or an Android emulator's warm helper, without starting any; `stop` stops them on one device (`--device`, `--clean` to uninstall the runner and delete its builds and logs) or all; `--json` ([iPhones](ios-devices.md), [Android](android.md#screen-reads-and-the-helper)) |
+| `session` | `status` lists each device's background sessions, an iPhone or iPad's runner and session broker, an Android emulator's warm helper or a simulator's input session, without starting any; `stop` stops them on one device (`--device`, `--clean` to uninstall the runner and delete its builds and logs) or all; `--json` ([iPhones](ios-devices.md), [Android](android.md#screen-reads-and-the-helper), [simulators](input.md#simulator-input-session)) |
 
 ## Device list JSON
 

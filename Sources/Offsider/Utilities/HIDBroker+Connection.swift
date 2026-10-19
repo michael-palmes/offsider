@@ -5,13 +5,22 @@ import OffsiderCore
 import OSLog
 
 // Every connection receives this newline-delimited handshake before the client writes a request.
-// A false value guarantees that the broker has not read or executed any touch primitives.
+// A false value guarantees that the broker has not read or executed any input.
 private struct HIDBrokerHandshake: Codable {
     let ready: Bool
 }
 
-private struct HIDBrokerResponse: Codable {
-    let error: String?
+/// A request the broker never took, so the input was not sent and may go another way.
+struct HIDBrokerNotSent: LocalizedError, UserFacingError {
+    let detail: String
+
+    var userFacingDescription: String {
+        "Offsider could not reach the simulator's input session, so nothing was sent. Run the command again."
+    }
+
+    var errorDescription: String? {
+        userFacingDescription
+    }
 }
 
 struct HIDBrokerNotReadyError: LocalizedError, UserFacingError {
@@ -156,8 +165,10 @@ extension HIDBroker {
         return .stale
     }
 
+    private static let lifetimeLockSuffix = ".lifetime.lock"
+
     private static func lifetimeLockPath(_ endpoint: String) -> String {
-        endpoint + ".lifetime.lock"
+        endpoint + lifetimeLockSuffix
     }
 
     private static func acquirePrivateLock(
@@ -192,18 +203,67 @@ extension HIDBroker {
             (error.code == Int(ECONNREFUSED) || error.code == Int(ENOENT))
     }
 
-    static func exchange(_ requestData: Data, on descriptor: Int32) throws {
-        let response: HIDBrokerResponse
+    /// Writes one request and reads its reply; the reply's error is thrown as the broker worded it.
+    @discardableResult
+    static func exchange(_ requestData: Data, on descriptor: Int32, timeoutMilliseconds: Int = clientResponseTimeoutMilliseconds) throws -> HIDBrokerReply {
         do {
+            try configureReceiveTimeout(descriptor, milliseconds: timeoutMilliseconds)
             try writeAll(requestData, to: descriptor)
-            let responseData = try readMessage(from: descriptor)
-            response = try JSONDecoder().decode(HIDBrokerResponse.self, from: responseData)
+        } catch {
+            // The broker acts only on a whole request, so one it could not take was never sent.
+            throw HIDBrokerNotSent(detail: error.localizedDescription)
+        }
+        let reply: HIDBrokerReply
+        do {
+            let replyData = try readMessage(from: descriptor)
+            reply = try JSONDecoder().decode(HIDBrokerReply.self, from: replyData)
         } catch {
             throw CLIError(errorDescription: "HID request outcome is unknown and was not replayed: \(error.localizedDescription)", reason: .inputOutcomeUnknown)
         }
-        if let error = response.error {
+        if reply.notSent == true {
+            throw HIDBrokerNotSent(detail: reply.error ?? "the broker refused it")
+        }
+        if let error = reply.error {
             throw CLIError(errorDescription: error, reason: .hidBrokerFailed)
         }
+        return reply
+    }
+
+    /// `status` or `stop` to the broker at `socket`; nil when it does not answer.
+    static func control(_ op: HIDBrokerRequest.Op, at socket: String) -> HIDBrokerReply? {
+        guard var data = try? JSONEncoder().encode(HIDBrokerRequest(op: op)),
+              let descriptor = try? connectAndAwaitHandshake(endpoint: socket, connector: connect(to:), timeoutMilliseconds: serverIOTimeoutMilliseconds) else {
+            return nil
+        }
+        defer { Darwin.close(descriptor) }
+        data.append(0x0A)
+        return try? exchange(data, on: descriptor, timeoutMilliseconds: serverIOTimeoutMilliseconds)
+    }
+
+    /// The endpoints of live brokers speaking this build's protocol, whichever Xcode they serve, found by the lifetime lock each holds from its start.
+    static func liveEndpoints(root: String = brokerRootPath()) -> [String] {
+        let suffix = "-v\(BrokerEndpointNaming.protocolVersion).\(BrokerEndpointNaming.socketExtension)"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []
+        return names.compactMap { name -> String? in
+            guard name.hasSuffix(lifetimeLockSuffix) else { return nil }
+            let socket = String(name.dropLast(lifetimeLockSuffix.count))
+            return socket.hasSuffix(suffix) ? (root as NSString).appendingPathComponent(socket) : nil
+        }
+        .sorted()
+        .filter { liveness(endpoint: $0) == .alive }
+    }
+
+    /// Runs blocking socket work on a global queue, off the main actor.
+    static func offMain<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: body()) }
+        }
+    }
+
+    static func writeReply(_ reply: HIDBrokerReply, to descriptor: Int32) throws {
+        var data = try JSONEncoder().encode(reply)
+        data.append(0x0A)
+        try writeAll(data, to: descriptor)
     }
 
     static func waitForStaleEndpointShutdown(_ path: String) throws {
@@ -315,12 +375,6 @@ extension HIDBroker {
         throw CLIError(errorDescription: "HID broker message is missing or exceeds the maximum size.", reason: .hidBrokerFailed)
     }
 
-    static func writeResponse(error: String?, to descriptor: Int32) throws {
-        var data = try JSONEncoder().encode(HIDBrokerResponse(error: error))
-        data.append(0x0A)
-        try writeAll(data, to: descriptor)
-    }
-
     static func writeHandshake(ready: Bool, to descriptor: Int32) throws {
         var data = try JSONEncoder().encode(HIDBrokerHandshake(ready: ready))
         data.append(0x0A)
@@ -368,7 +422,7 @@ extension HIDBroker {
         }
     }
 
-    private static func configureReceiveTimeout(_ descriptor: Int32, milliseconds: Int) throws {
+    static func configureReceiveTimeout(_ descriptor: Int32, milliseconds: Int) throws {
         var readTimeout = socketTimeout(milliseconds: max(1, milliseconds))
         guard setsockopt(
             descriptor,
@@ -390,7 +444,11 @@ extension HIDBroker {
 
     static func logDiagnostic(_ error: Error) {
         guard let notReady = error as? HIDBrokerNotReadyError else { return }
-        diagnosticLogger.debug("\(notReady.diagnosticDescription, privacy: .public)")
+        diagnosticLog(notReady.diagnosticDescription)
+    }
+
+    static func diagnosticLog(_ message: String) {
+        diagnosticLogger.debug("\(message, privacy: .public)")
     }
 
     static func posixError(_ operation: String) -> NSError {

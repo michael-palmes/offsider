@@ -18,7 +18,7 @@ extension HIDBroker {
         return identity
     }
 
-    private static func bootIdentity(processIdentifier: pid_t) -> HIDBrokerBootIdentity? {
+    static func bootIdentity(processIdentifier: pid_t) -> HIDBrokerBootIdentity? {
         var processInfo = proc_bsdinfo()
         let expectedSize = MemoryLayout<proc_bsdinfo>.size
         let actualSize = proc_pidinfo(

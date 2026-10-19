@@ -85,4 +85,4 @@ Run `offsider guide <topic>` to print one; `offsider guide` lists them.
 - Outcomes that matter were checked with `assert`, `wait`, `--verify` or a region compare.
 - Labels came from `describe-ui`, targets were on screen, and screenshot coordinates came from `--scale points`.
 - Device state changed with a setter (`guide device-state`) was set back.
-- Any run was stopped with `run stop`; on Android, `session stop --device <DEVICE_ID>` ran before Appium or Maestro.
+- Any run was stopped with `run stop`; `session stop --device <DEVICE_ID>` ran before Appium or Maestro.

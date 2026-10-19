@@ -180,11 +180,23 @@ final class IOSBackend: DeviceBackend {
         if let session = try await displayInputSession(for: id) {
             return session
         }
+        var startsBroker = false
+        if try Self.keepsInputWarm() {
+            switch await Timings.measure("hid-attach", { await HIDBrokerConnection.attach(simulatorUDID: id.rawValue) }) {
+            case .ready(let descriptor):
+                return SimulatorInputSession(device: id, connection: HIDBrokerConnection(descriptor: descriptor), logger: logger)
+            case .absent:
+                startsBroker = true
+            case .unavailable:
+                break
+            }
+        }
         let hidSession = try await Timings.measure("hid-session") {
             try await HIDInteractor.makeSession(for: id.rawValue, logger: logger)
         }
         simulators[id.rawValue] = hidSession.simulator
-        return IOSInputSession(hidSession: hidSession, logger: logger)
+        // Started once this command's input is done, so its start does not slow this command.
+        return IOSInputSession(hidSession: hidSession, logger: logger, onClose: startsBroker ? { HIDBroker.startInBackground(simulatorUDID: id.rawValue) } : nil)
     }
 
     /// The broker keeps idb's main-screen digitizer between commands; another display's touches only live as long as this command.
@@ -213,7 +225,16 @@ final class IOSBackend: DeviceBackend {
 
     /// Nonisolated so the blocking broker exchange stays off the main actor.
     nonisolated private static func sendThroughBroker(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
-        try HIDBroker.sendTouchPrimitives(steps.map(\.brokerPrimitive), simulatorUDID: id.rawValue)
+        try HIDBroker.sendDetachedTouch(.composite(steps.map(\.hidEvent)), simulatorUDID: id.rawValue)
+    }
+
+    /// `OFFSIDER_SIMULATOR_SESSION`: on unless set to off.
+    nonisolated static func keepsInputWarm(_ environment: [String: String] = ProcessInfo.processInfo.environment) throws -> Bool {
+        do {
+            return try SimulatorSessionSettings.isWarm(environment)
+        } catch let invalid as SimulatorSessionSettings.InvalidValue {
+            throw CLIError(errorDescription: invalid.description, reason: .usage)
+        }
     }
 
     func screenshotPNG(for id: DeviceID) async throws -> Data {
@@ -347,12 +368,12 @@ extension IOSBackend: RawVideoStreaming {
 }
 
 extension DetachedTouchStep {
-    var brokerPrimitive: HIDBrokerPrimitive {
+    var hidEvent: FBSimulatorHIDEvent {
         switch self {
         case let .down(x, y):
-            return .touch(.down, x: x, y: y)
+            return .touch(direction: .down, x: x, y: y)
         case let .up(x, y):
-            return .touch(.up, x: x, y: y)
+            return .touch(direction: .up, x: x, y: y)
         case let .hold(duration):
             return .delay(duration)
         }
