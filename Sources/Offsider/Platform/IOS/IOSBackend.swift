@@ -20,6 +20,7 @@ final class IOSBackend: DeviceBackend {
     }
 
     var platform: DevicePlatform { .ios }
+    var listingName: String { "iOS Simulators" }
 
     func prepare() async throws {
         guard !Self.isPrepared else { return }
@@ -64,11 +65,11 @@ final class IOSBackend: DeviceBackend {
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         let udid = id.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !udid.isEmpty else {
-            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.", reason: .invalidDeviceID, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.", reason: .invalidDeviceID, hint: "offsider devices")
         }
 
         guard let simulator = try await cachedSimulator(udid: udid, logger: logger) else {
-            throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.", reason: .deviceNotFound, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.", reason: .deviceNotFound, hint: "offsider devices")
         }
 
         guard simulator.state == .booted else {

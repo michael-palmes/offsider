@@ -5,13 +5,13 @@ import OffsiderAndroid
 import OffsiderCore
 
 /// The pickers `main` offers a person when a device command names no device, or `boot` names nothing to boot.
-/// Only a terminal on stdin, stdout and stderr gets one, never under JSON output, so an agent still gets exit 64.
+/// Only a person on a terminal on stdin, stdout and stderr gets one, never under JSON output, so an agent still gets exit 64.
 enum DevicePicker {
     /// The flags that ask for machine-readable output.
     static let machineFlags: Set<String> = ["--json", "--format", "--compact"]
 
     @TaskLocal static var terminal: @Sendable () -> Bool = {
-        isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0 && isatty(STDERR_FILENO) != 0
+        isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0 && isatty(STDERR_FILENO) != 0 && OutputProfile.current == .person
     }
 
     static func offers(arguments: [String], terminal: Bool) -> Bool {

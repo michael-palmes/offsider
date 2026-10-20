@@ -142,7 +142,7 @@ public enum TerminalUI {
 
     public static func warning(_ text: String, width: Int, style: TerminalStyle) -> [String] {
         let lead = style.mark(.warning) + (style.ascii ? " " : "  ")
-        let indent = String(repeating: " ", count: style.ascii ? lead.count : 3)
+        let indent = String(repeating: " ", count: TerminalText.width(lead))
         return PromptScreen.wrap(text, width: max(width - indent.count, 10)).enumerated().map { style.yellow(($0 == 0 ? lead : indent) + $1) }
     }
 

@@ -9,8 +9,8 @@ import Testing
 struct ErrorHintTests {
     @Test("a hint the message does not already name prints as a Try line, dim only with colours")
     func tryLine() {
-        #expect(ErrorReporter.hintText("offsider list-devices", message: "Simulator X not found.", style: .plain) == "Try: offsider list-devices\n")
-        #expect(ErrorReporter.hintText("offsider list-devices", message: "Run `offsider list-devices` to see them.", style: .plain) == "")
+        #expect(ErrorReporter.hintText("offsider devices", message: "Simulator X not found.", style: .plain) == "Try: offsider devices\n")
+        #expect(ErrorReporter.hintText("offsider devices", message: "Run `offsider devices` to see them.", style: .plain) == "")
         #expect(ErrorReporter.hintText(nil, message: "Nothing to do.", style: .plain) == "")
         #expect(ErrorReporter.hintText("", message: "Nothing to do.", style: .plain) == "")
         let dim = ErrorReporter.hintText("offsider doctor", message: "x", style: TerminalStyle(colours: true))
@@ -29,7 +29,7 @@ struct ErrorHintTests {
         let result = try await TestHelpers.runOffsiderCommandSeparated("displays --device \(UUID().uuidString)")
         #expect(result.exitCode != 0)
         #expect(result.stderr.contains("Error: "))
-        #expect(result.stderr.contains("\nTry: offsider list-devices\n"))
+        #expect(result.stderr.contains("\nTry: offsider devices\n"))
     }
 
     @Test("device_busy says to add --wait-lock to the same command, never rebuilding it without its arguments")
@@ -77,7 +77,7 @@ struct ErrorHintTests {
         let lines = result.stdout.split(separator: "\n")
         #expect(lines.count == 6)
         #expect(lines.allSatisfy { $0.hasPrefix("  offsider ") })
-        #expect(lines.map { $0.split(separator: " ")[1] } == ["list-devices", "doctor", "init", "guide", "boot", "--help"])
+        #expect(lines.map { $0.split(separator: " ")[1] } == ["devices", "doctor", "init", "guide", "boot", "--help"])
     }
 
     @Test("--help groups commands from Start to Sessions")
@@ -92,7 +92,7 @@ struct ErrorHintTests {
 
 @Suite("boot a simulator")
 struct BootSimulatorTests {
-    @Test("an unknown simulator UDID is not found and names list-devices")
+    @Test("an unknown simulator UDID is not found and names devices")
     func unknownUDID() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("boot \(UUID().uuidString)")
         #expect(result.exitCode != 0 && result.exitCode != 64)

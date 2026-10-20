@@ -30,8 +30,9 @@ public final class IOSDeviceBackend: DeviceBackend {
     }
 
     public var platform: DevicePlatform { .ios }
+    public var listingName: String { "iPhones and iPads" }
 
-    /// Finds the selected Xcode; without one, `list-devices` skips phones quietly. Idempotent.
+    /// Finds the selected Xcode; without one, `devices` skips phones quietly. Idempotent.
     public func prepare() async throws {
         guard xcode == nil else { return }
         do {

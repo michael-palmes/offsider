@@ -178,8 +178,8 @@ capture_case version --version
 capture_case help --help
 
 SUBCOMMANDS=(
-  appearance assert batch boot button content-size describe-ui displays doctor drag gesture init key key-combo key-sequence
-  list-devices logs orientation posture record-video rn screenshot shake slider stream-video swipe tap touch type wait
+  appearance assert batch boot button content-size describe-ui devices displays doctor drag gesture init key key-combo key-sequence
+  logs orientation posture record-video rn screenshot shake slider stream-video swipe tap touch type wait
 )
 for subcommand in "${SUBCOMMANDS[@]}"; do
   capture_case "help-$subcommand" "$subcommand" --help
@@ -208,8 +208,8 @@ VALIDATION_CASES=(
   "key-value|key|256|--device|invalid"
   "key-combo-value|key-combo|--modifiers|invalid|--key|1|--device|invalid"
   "key-sequence-value|key-sequence|--keycodes|invalid|--device|invalid"
-  "list-devices-value|list-devices|unexpected"
-  "list-devices-platform|list-devices|--platform|invalid"
+  "devices-value|devices|unexpected"
+  "devices-platform|devices|--platform|invalid"
   "orientation-value|orientation|sideways|--device|invalid"
   "rn-prepare-bundle-id|rn|prepare|--bundle-id|not-a-bundle|--device|invalid"
   "record-video-fps|record-video|--device|invalid|--fps|0"

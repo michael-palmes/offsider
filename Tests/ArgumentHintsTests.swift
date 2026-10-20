@@ -7,7 +7,7 @@ import Testing
 @Suite("Argument hints")
 @MainActor
 struct ArgumentHintsTests {
-    private let udidHint = "--udid was renamed to --device in 0.3.0. Run offsider list-devices to find device IDs."
+    private let udidHint = "--udid was renamed to --device in 0.3.0. Run offsider devices to find device IDs."
     private let listHint = "list-simulators was renamed to list-devices in 0.3.0."
 
     @Test("--udid in either form gets the rename hint", arguments: [
@@ -78,7 +78,7 @@ struct ArgumentHintsTests {
     }
 
     @Test("the binary prints the hint and exits with a usage error", arguments: [
-        ("tap -x 1 -y 1 --udid X", "Error: --udid was renamed to --device in 0.3.0. Run offsider list-devices to find device IDs.\n"),
+        ("tap -x 1 -y 1 --udid X", "Error: --udid was renamed to --device in 0.3.0. Run offsider devices to find device IDs.\n"),
         ("list-simulators", "Error: list-simulators was renamed to list-devices in 0.3.0.\n"),
         ("wait --id a --wait-timeout 5 --device X", "Error: wait takes --timeout <seconds>, not --wait-timeout.\n"),
     ])

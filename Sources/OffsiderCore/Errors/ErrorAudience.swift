@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 
 /// Who reads a failure: a person at a terminal, or an agent or script, which reads stderr or the JSON envelope.
 public enum ErrorAudience: Equatable, Sendable {
@@ -14,9 +15,13 @@ public enum ErrorAudience: Equatable, Sendable {
         self.jsonOutput = jsonOutput
     }
 
-    /// A person when stderr is a terminal and the command does not report in JSON.
+    /// A person when stderr is a terminal, the command does not report in JSON and nothing marks the run as an agent's.
     public static var current: ErrorAudience {
-        detects && !jsonOutput && isatty(STDERR_FILENO) != 0 ? .person : .agent
+        resolve(configured: detects, json: jsonOutput, stderrIsTerminal: isatty(STDERR_FILENO) != 0, environment: ProcessInfo.processInfo.environment)
+    }
+
+    public static func resolve(configured: Bool, json: Bool, stderrIsTerminal: Bool, environment: [String: String]) -> ErrorAudience {
+        configured && !json && stderrIsTerminal && OutputProfile.resolve(environment: environment, isTerminal: true) == .person ? .person : .agent
     }
 
     /// The step only a person may take: an agent is asked to fetch the user; a person reads the command on the `Try:` line, so gets nothing here.

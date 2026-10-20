@@ -1,0 +1,4 @@
+#stderr
+❌  No simulator or AVD is named Pixel_10.
+    Run offsider devices to see AVD names, then offsider boot <AVD>.
+    Try  offsider devices --platform android

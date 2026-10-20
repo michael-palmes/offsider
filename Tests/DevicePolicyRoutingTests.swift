@@ -162,7 +162,7 @@ struct DevicePolicyRoutingTests {
     }
 }
 
-@Suite("list-devices and the allow-list", .personOutput)
+@Suite("devices and the allow-list", .personOutput)
 struct ListDevicesPolicyTests {
     static let emulator = DeviceSummary(id: "emulator-5554", platform: .android, state: "Booted", name: "Offsider_E2E", osVersion: nil, deviceType: nil, kind: .emulator)
     static let phone = DeviceSummary(id: "R58M123ABC", platform: .android, state: "Booted", name: "Pixel 9", osVersion: nil, deviceType: nil, kind: .physical, connection: "usb")
@@ -174,7 +174,8 @@ struct ListDevicesPolicyTests {
         let (shown, hidden) = ListDevices.applyPolicy([Self.emulator, Self.phone, Self.iPhone], physicalOnly: false, gate: Self.gate)
         #expect(shown.map(\.id) == [Self.emulator.id, PolicyFixtures.phone])
         #expect(hidden == 1)
-        #expect(ListDevices.hiddenNote(hidden) == ["1 physical device is hidden because no one allowed Offsider to drive it; a person can list them with offsider list-devices --physical."])
+        #expect(AgentRenderer.notices(DevicesScreen.notices(DeviceListing(devices: shown, hiddenPhysical: hidden)))
+            == "Note: 1 physical device is hidden because no one allowed Offsider to drive it; a person can list them with offsider devices --physical.\n")
         #expect(DeviceListRenderer.table(shown).contains("Test iPhone (allowed)"))
         let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceListRenderer.json(shown, hiddenPhysical: hidden).utf8)) as? [String: Any])
         #expect(object["hiddenPhysical"] as? Int == 1)

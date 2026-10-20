@@ -3,6 +3,9 @@ import Foundation
 public enum DevicePlatform: String, CaseIterable, Codable, Sendable {
     case ios
     case android
+
+    /// Every device on the platform, as a person says it: `iOS devices`, `Android devices`.
+    public var devicesName: String { self == .ios ? "iOS devices" : "Android devices" }
 }
 
 public struct DeviceID: Hashable, Sendable, CustomStringConvertible {

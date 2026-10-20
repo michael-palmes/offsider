@@ -20,12 +20,14 @@ public enum PromptScreen {
     }
 
     /// `text` broken between words to fit `width`; continuation lines start with `indent`. Runs of spaces inside a line stay,
-    /// so columns keep their alignment; a word wider than a line stays whole.
+    /// so columns keep their alignment; a word wider than a line stays whole, and so does a balanced `` `code` `` span.
     public static func wrap(_ text: String, width: Int, indent: String = "") -> [String] {
         var lines: [String] = []
         var line = ""
         var gap = ""
         var word = ""
+        var ticks = text.reduce(0) { $1 == "`" ? $0 + 1 : $0 }
+        var inCode = false
         func place() {
             guard !word.isEmpty else { return }
             if line.isEmpty || TerminalText.width(line + gap + word) <= width {
@@ -38,7 +40,11 @@ public enum PromptScreen {
             word = ""
         }
         for character in text {
-            if character == " " {
+            if character == "`" {
+                if inCode || ticks >= 2 { inCode.toggle() }
+                ticks -= 1
+            }
+            if character == " ", !inCode {
                 if !word.isEmpty { place() }
                 gap.append(character)
             } else {

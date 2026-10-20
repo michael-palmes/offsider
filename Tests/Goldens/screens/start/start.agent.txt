@@ -1,0 +1,7 @@
+  offsider devices         See devices and their IDs
+  offsider doctor          Check this Mac is ready
+  offsider init            Teach your agent to use Offsider
+  offsider guide           Read a topic in depth
+  offsider boot <AVD>      Start an emulator or simulator
+  offsider --help          Every command and option
+#stderr

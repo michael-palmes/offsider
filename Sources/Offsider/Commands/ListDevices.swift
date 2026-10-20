@@ -6,7 +6,9 @@ extension DevicePlatform: ExpressibleByArgument {}
 
 struct ListDevices: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Lists available devices and the IDs other commands take."
+        commandName: "devices",
+        abstract: "Lists available devices and the IDs other commands take.",
+        aliases: ["list-devices"]
     )
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of a table.")
@@ -22,17 +24,17 @@ struct ListDevices: AsyncParsableCommand {
     var booted = false
 
     func run() async throws {
-        let listed = try await Self.listDevices(platform: platform, logger: OffsiderLogger())
+        let console = Console.current
+        let (listed, skipped) = try await console.progress("Looking for devices") { try await Self.listDevices(platform: platform, logger: OffsiderLogger()) }
         let (shown, hidden) = Self.applyPolicy(listed, physicalOnly: physical, gate: DevicePolicyGate.current)
         let ordered = DeviceListOrder.sorted(shown)
         let devices = Self.withLeases(Self.withHolders(booted ? DeviceListOrder.running(ordered) : ordered))
-        print(json ? DeviceListRenderer.json(devices, hiddenPhysical: hidden) : DeviceListRenderer.table(devices), terminator: "")
-        var notes = Self.phoneHints(devices) + Self.holderNotes(devices) + Self.leaseNotes(devices) + Self.hiddenNote(hidden)
-        if !json, isatty(STDERR_FILENO) != 0, let next = DeviceListOrder.nextStep(devices, currentDefault: DeviceDefault.environment()) {
-            notes.append(next)
-        }
-        for note in notes {
-            FileHandle.standardError.write(Data("\(note)\n".utf8))
+        let listing = DeviceListing(devices: devices, hiddenPhysical: hidden, skipped: skipped, currentDefault: DeviceDefault.environment())
+        if json {
+            console.data(DeviceListRenderer.json(devices, hiddenPhysical: hidden, compact: console.out.profile == .agent))
+            DevicesScreen.notices(listing).forEach(console.notice)
+        } else {
+            console.show(DevicesScreen.page(listing))
         }
     }
 
@@ -55,12 +57,6 @@ struct ListDevices: AsyncParsableCommand {
             }
         }
         return (shown, hidden)
-    }
-
-    static func hiddenNote(_ hidden: Int) -> [String] {
-        guard hidden > 0 else { return [] }
-        let what = hidden == 1 ? "1 physical device is" : "\(hidden) physical devices are"
-        return ["\(what) hidden because no one allowed Offsider to drive \(hidden == 1 ? "it" : "them"); a person can list them with offsider list-devices --physical."]
     }
 
     /// Fills `heldBy` for every row that can be locked; a shut-down AVD cannot.
@@ -93,62 +89,12 @@ struct ListDevices: AsyncParsableCommand {
         }
     }
 
-    static func leaseNotes(_ devices: [DeviceSummary]) -> [String] {
-        devices.compactMap { device in
-            device.lease.map { "\(device.id) is leased to '\($0.label)' until \(DeviceLeaseRules.clock($0.expires)) (offsider lease show)." }
-        }
-    }
-
-    /// One line per device another Offsider command is driving.
-    static func holderNotes(_ devices: [DeviceSummary], now: Date = Date()) -> [String] {
-        devices.compactMap { device in
-            guard let holder = device.heldBy else { return nil }
-            let command = holder.command.isEmpty ? "offsider" : "offsider \(holder.command)"
-            let age = holder.startedAt.map { ", started \(max(0, Int(now.timeIntervalSince($0)))) s ago" } ?? ""
-            return "\(device.id) is in use by pid \(holder.pid) (\(command)\(age))."
-        }
-    }
-
-    /// One line per phone Offsider cannot drive yet, saying what the user must do.
-    static func phoneHints(_ devices: [DeviceSummary]) -> [String] {
-        devices.filter { $0.kind == .physical }.compactMap { device in
-            if device.platform == .ios {
-                return iosHint(device)
-            }
-            if device.connection == "network" {
-                return "\(TerminalText.line(device.id)) is a network adb connection, which Offsider does not drive; connect the phone over USB."
-            }
-            if device.state == "Unauthorised" {
-                return "\(TerminalText.line(device.id)) is unauthorised: unlock the phone and accept the \"Allow USB debugging?\" prompt, then run `offsider list-devices` again."
-            }
-            return nil
-        }
-    }
-
-    private static func iosHint(_ device: DeviceSummary) -> String? {
-        let name = TerminalText.field(DeviceName.display(device.id, label: device.name), cap: DeviceListRenderer.maxNameCharacters)
-        switch device.state {
-        case "Untrusted":
-            return "\(name) does not trust this Mac: unlock it and tap Trust, then run `offsider list-devices` again."
-        case "Developer Mode off":
-            return "\(name) has Developer Mode off: turn it on in Settings > Privacy & Security > Developer Mode, then restart it."
-        case "Preparing":
-            return "\(name) is being prepared for development by Xcode: keep it connected and unlocked until that finishes."
-        case "Unavailable":
-            return "\(name) is paired but not connected: connect its cable and unlock it."
-        default:
-            return device.connection == "network"
-                ? "\(name) is connected over Wi-Fi, which Offsider does not drive; connect its cable."
-                : nil
-        }
-    }
-
     @MainActor
-    private static func listDevices(platform: DevicePlatform?, logger: OffsiderLogger) async throws -> [DeviceSummary] {
+    private static func listDevices(platform: DevicePlatform?, logger: OffsiderLogger) async throws -> (devices: [DeviceSummary], skipped: [ListingSkip]) {
         let backends = DeviceRouter.allBackends(logger: logger).filter { platform == nil || $0.platform == platform }
-        return try await collect(from: backends, platformFilter: platform) { warning in
-            FileHandle.standardError.write(Data("Warning: \(TerminalText.line(warning, cap: TerminalText.maxErrorCharacters))\n".utf8))
-        }
+        var skipped: [ListingSkip] = []
+        let devices = try await collect(from: backends, platformFilter: platform) { skipped.append($0) }
+        return (devices, skipped)
     }
 
     /// Each backend is prepared on its own, so one missing toolchain only warns unless every backend fails.
@@ -157,10 +103,10 @@ struct ListDevices: AsyncParsableCommand {
     static func collect(
         from backends: [any DeviceBackend],
         platformFilter: DevicePlatform? = nil,
-        warn: (String) -> Void
+        warn: (ListingSkip) -> Void
     ) async throws -> [DeviceSummary] {
         var devices: [DeviceSummary] = []
-        var failures: [(platform: DevicePlatform, error: Error)] = []
+        var failures: [(platform: DevicePlatform, name: String, error: Error)] = []
         var skipped = 0
         for backend in backends {
             do {
@@ -169,28 +115,35 @@ struct ListDevices: AsyncParsableCommand {
             } catch is PlatformUnavailable where platformFilter == nil {
                 skipped += 1
             } catch {
-                failures.append((backend.platform, error))
+                failures.append((backend.platform, backend.listingName, error))
             }
         }
 
         let allFailed = !failures.isEmpty && failures.count == backends.count - skipped
         // The iOS simulator and device backends share one Xcode, so they often fail alike.
-        var seen = Set<String>()
-        failures = failures.filter { seen.insert("\($0.platform.rawValue): \(message(for: $0.error))").inserted }
-        if allFailed {
-            if failures.count == 1 {
-                throw failures[0].error
+        var groups: [(platform: DevicePlatform, names: [String], error: Error)] = []
+        for failure in failures {
+            if let index = groups.firstIndex(where: { $0.platform == failure.platform && message(for: $0.error) == message(for: failure.error) }) {
+                groups[index].names.append(failure.name)
+            } else {
+                groups.append((failure.platform, [failure.name], failure.error))
             }
-            let details = failures.map { "\($0.platform.rawValue): \(message(for: $0.error))" }
-            let reasons = failures.map { ($0.error as? any OffsiderFailure)?.reason }
+        }
+        if allFailed {
+            if groups.count == 1 {
+                throw groups[0].error
+            }
+            let details = groups.map { "\($0.platform.rawValue): \(message(for: $0.error))" }
+            let reasons = groups.map { ($0.error as? any OffsiderFailure)?.reason }
             let missing = reasons.allSatisfy { $0?.exitCode == .toolMissing }
             throw CLIError(
                 errorDescription: "Could not list devices.\n" + details.joined(separator: "\n"),
                 reason: missing ? (reasons[0] ?? .deviceListFailed) : .deviceListFailed
             )
         }
-        for failure in failures {
-            warn("Skipped \(failure.platform.rawValue) devices: \(message(for: failure.error))")
+        for group in groups {
+            let what = group.names.count > 1 ? group.platform.devicesName : group.names[0]
+            warn(ListingSkip(what: what, message: message(for: group.error), hint: (group.error as? any OffsiderFailure)?.hint))
         }
         return devices
     }

@@ -1,0 +1,25 @@
+📱  Devices                                      4 running · 2 shut down
+────────────────────────────────────────────────────────────────────────
+
+  iOS Simulators
+  ● iPhone 17 Pro          00000000-0000-4000-8000-000000000001
+  ◐ iPhone 17e             00000000-0000-4000-8000-000000000003  Booting
+  ○ iPad Air 13-inch (M3)  00000000-0000-4000-8000-000000000002
+
+  Android Emulators
+  ● Pixel_9                emulator-5554
+  ○ Medium_Phone_API_37
+
+  Android phones
+  ● Pixel 8 allowed        R58M123ABC
+#stderr
+
+⚠️  iPhones and iPads skipped: This Xcode is not trusted, so Offsider
+    will not run its tools
+    Try  sudo xcode-select -s /Applications/Xcode.app
+📌  emulator-5554 is leased to 'PR 123' until 15:13
+    See  offsider lease show
+🔐  3 phones hidden until a person allows them
+    See  offsider devices --physical
+
+Next  offsider describe-ui --device 00000000-0000-4000-8000-000000000001

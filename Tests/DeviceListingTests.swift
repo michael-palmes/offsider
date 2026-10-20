@@ -7,21 +7,35 @@ private struct ListingFailure: LocalizedError {
     let errorDescription: String?
 }
 
+private struct HintedFailure: LocalizedError, OffsiderFailure {
+    let errorDescription: String?
+    var reason: FailureReason { .xcodeUnusable }
+    var failureMessage: String { errorDescription ?? "" }
+    var hint: String? { "sudo xcode-select -s /Applications/Xcode.app" }
+}
+
 @MainActor
 private final class ListingBackend: DeviceBackend {
     let platform: DevicePlatform
+    let listingName: String
     private let devices: [DeviceSummary]
     private let failure: String?
     private let unavailable: String?
+    private let hinted: Bool
 
-    init(_ platform: DevicePlatform, devices: [DeviceSummary] = [], failure: String? = nil, unavailable: String? = nil) {
+    init(
+        _ platform: DevicePlatform, named: String? = nil, devices: [DeviceSummary] = [], failure: String? = nil, unavailable: String? = nil, hinted: Bool = false
+    ) {
         self.platform = platform
+        listingName = named ?? platform.devicesName
         self.devices = devices
         self.failure = failure
         self.unavailable = unavailable
+        self.hinted = hinted
     }
 
     func prepare() async throws {
+        if let failure, hinted { throw HintedFailure(errorDescription: failure) }
         if let failure { throw ListingFailure(errorDescription: failure) }
         if let unavailable { throw PlatformUnavailable(platform: platform, message: unavailable) }
     }
@@ -138,7 +152,8 @@ struct DeviceListingTests {
             return DeviceLockHolder(pid: 4321, command: "wait", startedAt: started)
         }
         #expect(looked == [phone.id])
-        #expect(ListDevices.holderNotes(rows, now: started.addingTimeInterval(3)) == ["\(phone.id) is in use by pid 4321 (offsider wait, started 3 s ago)."])
+        let notes = DevicesScreen.notices(DeviceListing(devices: rows), now: started.addingTimeInterval(3)).filter { $0.kind == .note }
+        #expect(notes.map(\.agentText) == ["\(phone.id) is in use by pid 4321 (offsider wait, started 3 s ago)."])
         let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceListRenderer.json(rows).utf8)) as? [String: Any])
         let devices = try #require(object["devices"] as? [[String: Any]])
         let heldBy = try #require(devices[0]["heldBy"] as? [String: Any])
@@ -157,10 +172,11 @@ struct DeviceListingTests {
             DeviceSummary(id: "emulator-5558", platform: .android, state: "Unauthorised", name: "emulator-5558", osVersion: nil, deviceType: nil, kind: .emulator),
         ]
 
-        #expect(ListDevices.phoneHints(rows) == [
-            "1A2B3C4D5E6F is unauthorised: unlock the phone and accept the \"Allow USB debugging?\" prompt, then run `offsider list-devices` again.",
-            "192.168.1.5:5555 is a network adb connection, which Offsider does not drive; connect the phone over USB.",
-        ])
+        #expect(AgentRenderer.notices(DevicesScreen.notices(DeviceListing(devices: rows))) == """
+            Warning: 1A2B3C4D5E6F is unauthorised: unlock the phone and accept the "Allow USB debugging?" prompt, then run `offsider devices` again.
+            Warning: 192.168.1.5:5555 is a network adb connection, which Offsider does not drive; connect the phone over USB.
+
+            """)
     }
 
     @Test("an empty JSON list is a versioned empty array")
@@ -173,18 +189,18 @@ struct DeviceListingTests {
 
     @Test("a failing backend warns and the others still list")
     func failingBackendWarns() async throws {
-        var warnings: [String] = []
+        var warnings: [ListingSkip] = []
         let devices = try await ListDevices.collect(
             from: [ListingBackend(.ios, failure: "Xcode is missing."), ListingBackend(.android, devices: [pixel])]
         ) { warnings.append($0) }
 
         #expect(devices == [pixel])
-        #expect(warnings == ["Skipped ios devices: Xcode is missing."])
+        #expect(warnings == [ListingSkip(what: "iOS devices", message: "Xcode is missing.")])
     }
 
     @Test("the only backend failing is an error, not a warning")
     func onlyBackendFailingThrows() async {
-        var warnings: [String] = []
+        var warnings: [ListingSkip] = []
         await #expect(throws: ListingFailure.self) {
             _ = try await ListDevices.collect(from: [ListingBackend(.ios, failure: "Xcode is missing.")]) { warnings.append($0) }
         }
@@ -210,17 +226,61 @@ struct DeviceListingTests {
         }
         #expect(error?.errorDescription == "Xcode was refused.")
 
-        var warnings: [String] = []
+        var warnings: [ListingSkip] = []
         let devices = try await ListDevices.collect(
             from: [ListingBackend(.ios, failure: "Xcode was refused."), ListingBackend(.android, devices: [pixel]), ListingBackend(.ios, failure: "Xcode was refused.")]
         ) { warnings.append($0) }
         #expect(devices == [pixel])
-        #expect(warnings == ["Skipped ios devices: Xcode was refused."])
+        #expect(warnings == [ListingSkip(what: "iOS devices", message: "Xcode was refused.")])
+    }
+
+    @Test("both iOS backends failing alike are one iOS devices skip; failing apart, each is named, with the error's own hint")
+    func skipsCoalesce() async throws {
+        let simulators = ListingBackend(.ios, named: "iOS Simulators", failure: "This Xcode is not trusted. Choose another.", hinted: true)
+        let phones = ListingBackend(.ios, named: "iPhones and iPads", failure: "This Xcode is not trusted. Choose another.", hinted: true)
+        var alike: [ListingSkip] = []
+        _ = try await ListDevices.collect(from: [simulators, ListingBackend(.android, devices: [pixel]), phones]) { alike.append($0) }
+        #expect(alike == [ListingSkip(what: "iOS devices", message: "This Xcode is not trusted. Choose another.", hint: "sudo xcode-select -s /Applications/Xcode.app")])
+
+        var apart: [ListingSkip] = []
+        let other = ListingBackend(.ios, named: "iPhones and iPads", failure: "devicectl is missing.")
+        _ = try await ListDevices.collect(from: [simulators, ListingBackend(.android, devices: [pixel]), other]) { apart.append($0) }
+        #expect(apart.map(\.what) == ["iOS Simulators", "iPhones and iPads"])
+
+        let notices = DevicesScreen.notices(DeviceListing(devices: [pixel], skipped: alike))
+        #expect(AgentRenderer.notices(notices) == """
+            Warning: Skipped iOS devices: This Xcode is not trusted. Choose another.
+            Try: sudo xcode-select -s /Applications/Xcode.app
+
+            """)
+        #expect(notices.first?.text == "iOS devices skipped: This Xcode is not trusted")
+    }
+
+    @Test("devices is the command's name, list-devices still runs it, and its JSON errors name devices")
+    func renamed() throws {
+        #expect(CommandPath.of(ListDevices.self) == "devices")
+        #expect(try OffsiderCommand.parseAsRoot(["list-devices", "--json"]) is ListDevices)
+        #expect(try OffsiderCommand.parseAsRoot(["devices"]) is ListDevices)
+        #expect(OffsiderCommand.helpMessage(columns: 200).contains("devices, list-devices"))
+    }
+
+    @Test("the JSON is one line for an agent and indented for a person, and both parse to the same document")
+    func compactJSON() throws {
+        var held = phone
+        held.heldBy = DeviceLockHolder(pid: 4321, command: "wait", startedAt: Date(timeIntervalSince1970: 1_790_000_000))
+        let compact = DeviceListRenderer.json([held, pixel], hiddenPhysical: 1, compact: true)
+        let pretty = DeviceListRenderer.json([held, pixel], hiddenPhysical: 1)
+        #expect(compact.filter { $0 == "\n" }.count == 1 && compact.hasSuffix("}\n"))
+        #expect(pretty.split(separator: "\n").count > 10)
+        let a = try JSONSerialization.jsonObject(with: Data(compact.utf8)) as? NSDictionary
+        let b = try JSONSerialization.jsonObject(with: Data(pretty.utf8)) as? NSDictionary
+        #expect(a != nil && a == b)
+        #expect(DeviceListRenderer.json([], compact: true) == #"{"version":1,"devices":[],"hiddenPhysical":0}"# + "\n")
     }
 
     @Test("a platform with no toolchain installed is skipped without a warning")
     func missingToolchainIsQuiet() async throws {
-        var warnings: [String] = []
+        var warnings: [ListingSkip] = []
         let devices = try await ListDevices.collect(
             from: [ListingBackend(.ios, devices: [phone]), ListingBackend(.android, unavailable: "Android SDK not found.")]
         ) { warnings.append($0) }
@@ -293,7 +353,7 @@ struct ListDevicesPlatformFilterTests {
 
     @Test("--platform android without an SDK exits 9 with the install hint")
     func androidWithoutSDKFails() async throws {
-        let result = try await TestHelpers.runOffsiderWithoutAndroid("list-devices --platform android")
+        let result = try await TestHelpers.runOffsiderWithoutAndroid("devices --platform android")
 
         #expect(result.exitCode == 9)
         #expect(result.stdout.isEmpty)
@@ -302,7 +362,7 @@ struct ListDevicesPlatformFilterTests {
 
     @Test("--platform android --json without an SDK prints the error envelope, not a device list")
     func androidJSONWithoutSDKFails() async throws {
-        let result = try await TestHelpers.runOffsiderWithoutAndroid("list-devices --platform android --json")
+        let result = try await TestHelpers.runOffsiderWithoutAndroid("devices --platform android --json")
 
         #expect(result.exitCode == 9)
         let envelope = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
@@ -313,7 +373,7 @@ struct ListDevicesPlatformFilterTests {
 
     @Test("an unknown --platform is a usage error")
     func unknownPlatformIsUsageError() async throws {
-        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform windows")
+        let result = try await TestHelpers.runOffsiderCommandSeparated("devices --platform windows")
 
         #expect(result.exitCode == 64)
         #expect(result.stderr.contains("ios"))

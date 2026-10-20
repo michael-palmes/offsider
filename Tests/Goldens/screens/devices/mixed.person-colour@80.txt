@@ -1,0 +1,25 @@
+📱  \e[1mDevices\e[0m                                      \e[2m4 running · 2 shut down\e[0m
+\e[36m────────────────────────────────────────────────────────────────────────\e[0m
+
+  \e[1miOS Simulators\e[0m
+  \e[32m●\e[0m iPhone 17 Pro          \e[2m00000000-0000-4000-8000-000000000001\e[0m
+  ◐ iPhone 17e             \e[2m00000000-0000-4000-8000-000000000003\e[0m  \e[2mBooting\e[0m
+  \e[2m○\e[0m iPad Air 13-inch (M3)  \e[2m00000000-0000-4000-8000-000000000002\e[0m
+
+  \e[1mAndroid Emulators\e[0m
+  \e[32m●\e[0m Pixel_9                \e[2memulator-5554\e[0m
+  \e[2m○\e[0m Medium_Phone_API_37
+
+  \e[1mAndroid phones\e[0m
+  \e[32m●\e[0m Pixel 8 \e[2mallowed\e[0m        \e[2mR58M123ABC\e[0m
+#stderr
+
+\e[33m⚠️  \e[0m\e[33miPhones and iPads skipped: This Xcode is not trusted, so Offsider\e[0m
+    \e[33mwill not run its tools\e[0m
+    \e[2mTry\e[0m  \e[36msudo xcode-select -s /Applications/Xcode.app\e[0m
+📌  emulator-5554 is leased to 'PR 123' until 15:13
+    \e[2mSee\e[0m  \e[36moffsider lease show\e[0m
+🔐  3 phones hidden until a person allows them
+    \e[2mSee\e[0m  \e[36moffsider devices --physical\e[0m
+
+\e[2mNext\e[0m  \e[36moffsider describe-ui --device 00000000-0000-4000-8000-000000000001\e[0m

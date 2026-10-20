@@ -162,7 +162,7 @@ struct LeaseCommandTests {
         #expect(StableDeviceKey.of(id: "emulator-5554") == nil)
     }
 
-    @Test("list-devices shows a lease on the emulator running its AVD and on the shut-down AVD row")
+    @Test("devices shows a lease on the emulator running its AVD and on the shut-down AVD row")
     func listDevicesLease() throws {
         let store = try Self.store()
         _ = try Self.set("PR 123", store: store)
@@ -171,8 +171,10 @@ struct LeaseCommandTests {
         let rows = ListDevices.withLeases([running, other], store: store, now: Self.now)
         #expect(rows[0].lease?.label == "PR 123")
         #expect(rows[1].lease == nil)
-        #expect(ListDevices.leaseNotes(rows).count == 1)
-        #expect(ListDevices.leaseNotes(rows)[0].hasPrefix("emulator-5554 is leased to 'PR 123' until "))
+        let notes = DevicesScreen.notices(DeviceListing(devices: rows)).filter { $0.kind == .note }
+        #expect(notes.count == 1)
+        #expect(notes.first?.agentText?.hasPrefix("emulator-5554 is leased to 'PR 123' until ") == true)
+        #expect(notes.first?.command == "offsider lease show")
         let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceListRenderer.json(rows).utf8)) as? [String: Any])
         let lease = try #require((object["devices"] as? [[String: Any]])?.first?["lease"] as? [String: Any])
         #expect(lease["label"] as? String == "PR 123")
@@ -191,7 +193,7 @@ struct LeaseCommandTests {
         #expect(other.status == .warn)
         #expect(other.detail.hasPrefix("Leased to another session: 'PR 123' since "))
         #expect(other.detail.hasSuffix("; held now by pid 42 (offsider tap)"))
-        #expect(other.hint?.contains("offsider list-devices") == true)
+        #expect(other.hint?.contains("offsider devices") == true)
     }
 
     // MARK: Session owner
@@ -287,7 +289,7 @@ struct LeaseCommandTests {
         let check = Self.doctor(store, processes: processes, selfPID: 700)
         #expect(check.status == .warn)
         #expect(check.detail.hasPrefix("Leased to 'PR 123' by another session (node, pid 100) since "))
-        #expect(check.hint == "If you set this lease, add OFFSIDER_LEASE='PR 123' to this command; otherwise choose another device from `offsider list-devices`.")
+        #expect(check.hint == "If you set this lease, add OFFSIDER_LEASE='PR 123' to this command; otherwise choose another device from `offsider devices`.")
         #expect(Self.doctor(store, processes: processes, selfPID: 700, sessionLabel: "PR 123").status == .pass)
     }
 
@@ -444,7 +446,7 @@ struct LeaseCommandTests {
         }
     }
 
-    @Test("list-devices --json marks a lease mine only for the session that holds it")
+    @Test("devices --json marks a lease mine only for the session that holds it")
     func listDevicesMine() throws {
         let store = try Self.store()
         let processes = FakeProcesses()

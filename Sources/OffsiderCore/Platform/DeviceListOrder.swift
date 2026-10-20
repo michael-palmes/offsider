@@ -1,6 +1,6 @@
 import Foundation
 
-/// How `list-devices` orders rows and the one next step it suggests to a person.
+/// How `devices` orders rows and the one next step it suggests to a person.
 public enum DeviceListOrder {
     /// Booted rows first, then booting ones, within each platform; platforms and every other row keep their order.
     public static func sorted(_ devices: [DeviceSummary]) -> [DeviceSummary] {
@@ -20,14 +20,19 @@ public enum DeviceListOrder {
 
     /// One line for a person: the one booted simulator or emulator to use, or one to boot; never a physical device.
     public static func nextStep(_ devices: [DeviceSummary], currentDefault: String?) -> String? {
+        nextCommand(devices, currentDefault: currentDefault).map { "Next: " + $0 }
+    }
+
+    /// The command `nextStep` names, for a person only: it may `export`, which an agent's next shell would not keep.
+    public static func nextCommand(_ devices: [DeviceSummary], currentDefault: String?) -> String? {
         let virtual = devices.filter { $0.kind != .physical }
         let booted = virtual.filter { $0.state == "Booted" }
         if booted.count == 1 {
             let id = booted[0].id
-            return currentDefault == id ? "Next: offsider doctor --device \(id)" : "Next: export OFFSIDER_DEVICE=\(id)"
+            return currentDefault == id ? "offsider doctor --device \(id)" : "export OFFSIDER_DEVICE=\(id)"
         }
         guard booted.isEmpty, let first = virtual.first(where: { rank($0) == 2 && ($0.kind == .avd || $0.kind == .simulator) }) else { return nil }
-        return "Next: offsider boot \(first.kind == .avd ? (first.avd ?? first.name) : first.id)"
+        return "offsider boot \(first.kind == .avd ? (first.avd ?? first.name) : first.id)"
     }
 
     private static func rank(_ device: DeviceSummary) -> Int {

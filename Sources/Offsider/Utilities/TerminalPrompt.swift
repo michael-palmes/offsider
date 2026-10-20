@@ -489,9 +489,10 @@ enum TerminalSpinner {
         var drawn = false
     }
 
-    /// Draws on `terminal` (a copy of the prompt's descriptor) when given, else on `/dev/tty`.
+    /// Draws on `terminal` (a copy of the prompt's descriptor) when given, else through the console, which draws for a person only.
     static func run<T>(_ label: String, terminal: Int32? = nil, _ work: () async throws -> T) async throws -> T {
-        let descriptor = terminal.map { fcntl($0, F_DUPFD_CLOEXEC, 0) } ?? open("/dev/tty", O_WRONLY | O_CLOEXEC)
+        guard let terminal else { return try await Console.current.progress(label, work) }
+        let descriptor = fcntl(terminal, F_DUPFD_CLOEXEC, 0)
         guard descriptor >= 0 else { return try await work() }
         let style = TerminalStyle.detect(isTerminal: true)
         let frames = TerminalUI.spinnerFrames(style: style)

@@ -43,7 +43,7 @@ struct DeviceAccessContext: Sendable {
     var seal: any DeviceAllowListSealing
     var managed: any ManagedPreferenceSource
     var now: @Sendable () -> Date
-    /// Connected physical devices, as `list-devices` shows them, and the warnings the scan raised.
+    /// Connected physical devices, as `devices` shows them, and the warnings the scan raised.
     var physicalDevices: @Sendable @MainActor () async throws -> (rows: [DeviceSummary], warnings: [String])
     /// Stops the device's runner and session broker; returns what stopped.
     var stopSessions: @Sendable @MainActor (String) async -> [String]
@@ -74,7 +74,7 @@ struct DeviceAccessContext: Sendable {
         physicalDevices: {
             let backends = DeviceRouter.allBackends(logger: OffsiderLogger())
             var warnings: [String] = []
-            let rows = try await ListDevices.collect(from: backends) { warnings.append($0) }
+            let rows = try await ListDevices.collect(from: backends) { warnings.append("Skipped \($0.what): \($0.message)") }
             return (rows.filter { $0.kind == .physical }, warnings)
         },
         stopSessions: { key in await DeviceAccessCommand.stopSessions(udid: key) },
@@ -139,7 +139,7 @@ extension DeviceAccessCommand {
         case .androidNetworkSerial(let serial):
             throw AndroidError.networkDevice(serial)
         case .empty, .unrecognised:
-            throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a device ID Offsider recognises"). Run `offsider list-devices --physical` to find it.", reason: .invalidDeviceID, hint: "offsider list-devices --physical")
+            throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a device ID Offsider recognises"). Run `offsider devices --physical` to find it.", reason: .invalidDeviceID, hint: "offsider devices --physical")
         }
     }
 
@@ -438,7 +438,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             guard let match = rows.first(where: { $0.connection == "usb" && $0.platform == pasted.platform && StableDeviceKey.of($0) == pasted.key }) else {
                 throw CLIError(
                     errorDescription: "\(pasted.key) is not a physical device connected over USB. Connect it with a cable, then run `offsider device-access allow` and choose it.",
-                    reason: .deviceNotFound, hint: "offsider list-devices --physical"
+                    reason: .deviceNotFound, hint: "offsider devices --physical"
                 )
             }
             return (match, [])
