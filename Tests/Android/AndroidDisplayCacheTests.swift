@@ -84,9 +84,12 @@ struct AndroidDisplayCacheTests {
         _ = try await backend.resolveAndroidName(serial)
         let png = try await backend.screenshotPNG(for: phone)
         await backend.close()
-        // The phone's foreground check comes first in every command; these tests are about the capture after it.
-        let sent = server.services.dropFirst(before).filter { ($0.hasPrefix("exec:") || $0.hasPrefix("shell")) && !$0.hasSuffix(AndroidForeground.readScript) }
-        return (png, Array(sent))
+        return (png, Self.commands(server, after: before))
+    }
+
+    /// The execs and shells sent after `count`, bar the foreground check: it runs again whenever a second has passed, and these tests are about the capture after it.
+    static func commands(_ server: FakeAdbServer, after count: Int) -> [String] {
+        server.services.dropFirst(count).filter { ($0.hasPrefix("exec:") || $0.hasPrefix("shell")) && !$0.hasSuffix(AndroidForeground.readScript) }
     }
 
     static func entry(in directory: String) -> AndroidDisplayCacheEntry? {
@@ -159,7 +162,7 @@ struct AndroidDisplayCacheTests {
         #expect(try await backend.screenshotPNG(for: Self.phone) == AndroidMultiDisplayCaptureTests.png(1768, 2208))
         await backend.close()
 
-        #expect(server.services.dropFirst(before).filter { $0.hasPrefix("exec:") || $0.hasPrefix("shell") } == ["exec:screencap -p"])
+        #expect(Self.commands(server, after: before) == ["exec:screencap -p"])
     }
 
     /// An entry as an earlier command wrote it, with no committed state as before API 31.
