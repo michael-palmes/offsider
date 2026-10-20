@@ -44,6 +44,8 @@ public final class Console: @unchecked Sendable {
     /// The lines an agent has read, so one sentence from two places prints once.
     private var said: Set<String> = []
     private var counts: [Notice.Kind: Int] = [:]
+    /// A person's notices `hold` keeps for after the page that ends the run.
+    private var held: [Notice] = []
     private var labels: [String] = []
     private var timer: DispatchSourceTimer?
     private var started = Date()
@@ -71,12 +73,16 @@ public final class Console: @unchecked Sendable {
         let body = out.profile == .person ? PersonRenderer.body(page.blocks, canvas: out.canvas) : AgentRenderer.body(page.blocks)
         if !body.isEmpty { emit(.out, body) }
         let err = self.err
+        let notices = lock.withLock { () -> [Notice] in
+            defer { held = [] }
+            return held
+        } + page.notices
         if err.profile == .agent {
-            let lines = lock.withLock { page.notices.map(AgentRenderer.notice).filter { !$0.isEmpty && said.insert($0).inserted } }
+            let lines = lock.withLock { notices.map(AgentRenderer.notice).filter { !$0.isEmpty && said.insert($0).inserted } }
             emit(.err, lines.joined())
             return
         }
-        let fresh = lock.withLock { page.notices.filter { seen.insert($0).inserted } }
+        let fresh = lock.withLock { notices.filter { !($0.personOnly && out.profile != .person) && seen.insert($0).inserted } }
         guard !fresh.isEmpty else { return }
         lock.withLock { for notice in fresh { counts[notice.kind, default: 0] += 1 } }
         emit(.err, PersonRenderer.notices(fresh, canvas: err.canvas, afterBody: !body.isEmpty && out.isTerminal && err.isTerminal))
@@ -94,6 +100,59 @@ public final class Console: @unchecked Sendable {
         if let person { notice(person) }
     }
 
+    /// A stderr line an agent has always read as it is; a person reads `person`, a ✅ or ❌ with its `Try` and `Or` lines.
+    public func line(_ agent: String, person: Outcome) {
+        let err = self.err
+        guard err.profile == .person else { return data(agent + "\n", to: .err) }
+        data(PersonRenderer.outcome(person, canvas: err.canvas).joined(separator: "\n") + "\n", to: .err)
+    }
+
+    /// A line an agent reads now, as it always did; a person reads `person` after the page that ends the run, or at `release`.
+    public func hold(_ agent: String, person: Notice?) {
+        guard err.profile == .person else { return data(agent + "\n", to: .err) }
+        if let person { lock.withLock { held.append(person) } }
+    }
+
+    /// A notice an agent reads now, as `Warning:` or `Note:`; a person after the page that ends the run, or at `release`.
+    public func hold(_ notice: Notice) {
+        guard err.profile == .person else { return self.notice(notice) }
+        lock.withLock { held.append(notice) }
+    }
+
+    /// Shows a person what `hold` kept, for a run that ends without a page; errors and the end of every command call it.
+    public func release() {
+        let notices = lock.withLock { () -> [Notice] in
+            defer { held = [] }
+            return held
+        }
+        notices.forEach(notice)
+    }
+
+    /// One step of a pause: the spinner's label on a person's terminal, else `agent` as it always read.
+    public func step(_ agent: String, label: String) {
+        let err = self.err
+        guard err.profile == .person, err.animates else { return data(agent + "\n", to: .err) }
+        relabel(label)
+    }
+
+    /// A dim stderr line for a person; an agent reads `agent` as it always did, or nothing when it is nil.
+    public func aside(_ agent: String?, person: String?) {
+        let err = self.err
+        guard err.profile == .person else {
+            if let agent { data(agent + "\n", to: .err) }
+            return
+        }
+        guard let person else { return }
+        data(err.canvas.style.dim(TerminalText.line(person, cap: TerminalText.maxErrorCharacters, keepsTab: false)) + "\n", to: .err)
+    }
+
+    /// Wipes the line a person's Ctrl+C echoed `^C` on, so what follows starts clean; nothing for an agent or a still terminal.
+    public func clearLine() {
+        let err = self.err
+        guard err.profile == .person, err.animates else { return }
+        data("\r" + String(repeating: " ", count: err.canvas.usable) + "\r", to: .err)
+    }
+
     /// One notice on stderr, once per process; a person sees at most five of a kind.
     public func notice(_ notice: Notice) {
         let err = self.err
@@ -102,7 +161,7 @@ public final class Console: @unchecked Sendable {
             if !line.isEmpty, lock.withLock({ said.insert(line).inserted }) { emit(.err, line) }
             return
         }
-        guard lock.withLock({ seen.insert(notice).inserted }) else { return }
+        guard !notice.personOnly || out.profile == .person, lock.withLock({ seen.insert(notice).inserted }) else { return }
         let shown = lock.withLock { () -> Int in
             defer { counts[notice.kind, default: 0] += 1 }
             return counts[notice.kind, default: 0]

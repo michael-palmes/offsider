@@ -29,6 +29,8 @@ struct PromptTimedOut: LocalizedError, UserFacingError, OffsiderFailure {
 /// A block of questions on the terminal. Closing it erases every line it drew since the last `settle()`.
 final class TerminalPrompt {
     let style: TerminalStyle
+    /// `COLUMNS` as the environment set it, a narrower width a person asked for.
+    private let asked: String?
     /// The way round a terminal Offsider cannot use, for its errors.
     private let instead: String
     private let descriptor: Int32
@@ -79,6 +81,7 @@ final class TerminalPrompt {
             cc[Int(VTIME)] = 0
         }
         style = TerminalStyle.detect(isTerminal: true, environment: environment)
+        asked = environment["COLUMNS"]
     }
 
     static let pipeInstead = "Pass --stdin to pipe the answers in instead."
@@ -140,8 +143,12 @@ final class TerminalPrompt {
         settled = block.count
     }
 
-    /// How wide to wrap prose: the terminal, at most 72 columns.
-    var width: Int { PromptScreen.width(columns: terminalColumns) }
+    /// How wide to wrap prose: the terminal, at most 72 columns, narrower when `COLUMNS` asks; never wider than the terminal, whose rows a redraw counts.
+    var width: Int {
+        let measured = terminalColumns
+        let wanted = TerminalSize.resolve(environment: asked.map { ["COLUMNS": $0] } ?? [:], measured: measured)
+        return PromptScreen.width(columns: measured.map { min($0, wanted) } ?? wanted)
+    }
 
     /// The prompt's terminal, for a spinner drawn while it waits.
     var terminalDescriptor: Int32 { descriptor }

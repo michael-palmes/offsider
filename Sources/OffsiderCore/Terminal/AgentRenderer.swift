@@ -29,12 +29,13 @@ public enum AgentRenderer {
         .joined(separator: "\n") + "\n"
     }
 
-    /// `Warning: ` or `Note: ` and the sentence, then `Try: ` unless it names the command; a next step is a person's only.
+    /// `Warning: ` or `Note: ` and the sentence, then `Try: ` unless it names the command; a next step or a person-only notice prints nothing.
     public static func notices(_ notices: [Notice]) -> String {
         notices.map(notice).joined()
     }
 
     public static func notice(_ notice: Notice) -> String {
+        guard !notice.personOnly else { return "" }
         let prefix: String
         switch notice.kind {
         case .warning: prefix = "Warning: "
@@ -63,7 +64,8 @@ public enum AgentRenderer {
         case .prose(let text):
             return line(text) + "\n"
         case .outcome(let outcome):
-            return ([outcome.headline] + outcome.details).map { line($0) + "\n" }.joined()
+            let headline = outcome.headline + (outcome.aside.map { " (\($0))" } ?? "")
+            return ([headline] + outcome.details).map { line($0) + "\n" }.joined() + outcome.commands.map { "Try: " + line($0) + "\n" }.joined()
         case .commands(let title, let shortcuts):
             let commands = shortcuts.map { line($0.command) }
             let widest = commands.map(\.count).max() ?? 0

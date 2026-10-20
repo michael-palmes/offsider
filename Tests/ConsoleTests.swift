@@ -26,6 +26,53 @@ struct ConsoleTests {
         #expect(capture.err == "Warning: adb 34.0.0 is older than 35.0.0.\n")
     }
 
+    @Test("a person-only notice shows only when a person reads both streams: never to an agent, under --json or beside piped stdout")
+    func personOnly() {
+        let note = Notice.note("Granted camera", personOnly: true)
+        let person = ConsoleCapture()
+        person.console(out: .person(), err: .person()).show(Page(notices: [note]))
+        #expect(person.err.contains("Granted camera"))
+        for (out, err) in [(Console.Channel.agent, Console.Channel.agent), (.person(), .agent), (.agent, .person())] {
+            let capture = ConsoleCapture()
+            let console = capture.console(out: out, err: err)
+            console.show(Page(notices: [note]))
+            console.notice(note)
+            #expect(capture.err.isEmpty)
+        }
+    }
+
+    @Test("a held notice waits for the page that ends the run, or for release; an agent reads the line at once")
+    func held() {
+        let person = ConsoleCapture()
+        let console = person.console(out: .person(), err: .person())
+        console.hold("Booting Pixel_9...", person: .note("Snapshot loaded"))
+        #expect(person.err.isEmpty)
+        console.show(Page([.outcome(.done("Pixel_9 is running"))]))
+        #expect(person.err.contains("Snapshot loaded"))
+        let released = ConsoleCapture()
+        let other = released.console(out: .person(), err: .person())
+        other.hold(.warning("Low memory"))
+        other.release()
+        #expect(released.err.contains("Low memory"))
+        let agent = ConsoleCapture()
+        let quick = agent.console(out: .agent, err: .agent)
+        quick.hold("Booting Pixel_9...", person: .note("Snapshot loaded"))
+        #expect(agent.err == "Booting Pixel_9...\n")
+    }
+
+    @Test("an outcome's aside sits on its headline when it fits and under it when not; its commands follow as Try and Or")
+    func outcomeAside() {
+        let wide = Canvas(columns: 80, style: .plain)
+        #expect(PersonRenderer.outcome(.done("Tapped id=save", aside: "(120, 640)"), canvas: wide) == ["✅  Tapped id=save  (120, 640)"])
+        let narrow = Canvas(columns: 24, style: .plain)
+        #expect(PersonRenderer.outcome(.done("Tapped id=save", aside: "(120, 640)"), canvas: narrow) == ["✅  Tapped id=save", "    (120, 640)"])
+        let failed = PersonRenderer.outcome(.failed("Nothing changed", details: ["Sent once"], try: ["offsider describe-ui", "offsider doctor"]), canvas: wide)
+        #expect(failed == ["❌  Nothing changed", "    Sent once", "    Try  offsider describe-ui", "    Or   offsider doctor"])
+        let capture = ConsoleCapture()
+        capture.console(out: .agent, err: .agent).line("✗ Tap changed nothing", person: .failed("Nothing changed"))
+        #expect(capture.err == "✗ Tap changed nothing\n")
+    }
+
     @Test("the body goes to stdout before its notices go to stderr")
     func ordering() {
         let capture = ConsoleCapture()

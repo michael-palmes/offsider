@@ -125,13 +125,7 @@ public enum PersonRenderer {
         case .prose(let text):
             return prose(text, width: canvas.prose, indent: "  ", style: style)
         case .outcome(let outcome):
-            let details = outcome.details.map(line)
-            let lead = style.mark(outcome.ok ? .done : .cancel) + (style.ascii ? " " : "  ")
-            let indent = String(repeating: " ", count: TerminalText.width(lead))
-            let width = max(canvas.prose - indent.count, 10)
-            let paint: (String) -> String = { outcome.ok ? style.green(style.bold($0)) : style.red(style.bold($0)) }
-            return PromptScreen.wrap(line(outcome.headline), width: width).enumerated().map { ($0 == 0 ? lead : indent) + paint($1) }
-                + details.flatMap { PromptScreen.wrap($0, width: width) }.map { indent + style.dim($0) }
+            return self.outcome(outcome, canvas: canvas)
         case .commands(let title, let shortcuts):
             let indent = title == nil ? "  " : "    "
             let commands = shortcuts.map { line($0.command) }
@@ -141,6 +135,54 @@ public enum PersonRenderer {
             }
             return (title.map { ["  " + style.bold(line($0))] } ?? []) + rows
         }
+    }
+
+    /// `✅  Headline  aside`, dim details under it, then `Try` and `Or` lines; the aside moves under a headline it would not fit beside.
+    public static func outcome(_ outcome: Outcome, canvas: Canvas) -> [String] {
+        let style = canvas.style
+        let lead = style.mark(outcome.ok ? .done : .cancel) + (style.ascii ? " " : "  ")
+        let indent = String(repeating: " ", count: TerminalText.width(lead))
+        let width = max(canvas.prose - indent.count, 10)
+        let paint: (String) -> String = { outcome.ok ? style.green(style.bold($0)) : style.red(style.bold($0)) }
+        let headline = PromptScreen.wrap(line(outcome.headline), width: width)
+        var lines = headline.enumerated().map { ($0 == 0 ? lead : indent) + paint($1) }
+        var details = outcome.details.map(line)
+        if let aside = outcome.aside.map(line), !aside.isEmpty {
+            if let last = headline.last, TerminalText.width(last) + 2 + TerminalText.width(aside) <= width {
+                lines[lines.count - 1] += "  " + style.dim(aside)
+            } else {
+                details.insert(aside, at: 0)
+            }
+        }
+        lines += details.flatMap { PromptScreen.wrap($0, width: width) }.map { indent + style.dim($0) }
+        let commands = outcome.commands.filter { !$0.isEmpty }.enumerated().map { ($0 == 0 ? "Try" : "Or", line($1)) }
+        return lines + TerminalUI.commands(commands, indent: indent, style: style)
+    }
+
+    /// Fewer columns than this beside a streamed row's text move its detail onto a line of its own.
+    public static let minimumDetail = 16
+
+    /// A row drawn as it happens, `  ✓ 12  text  detail`: the detail dim, cut to fit or moved under it; a skipped row drops one with no room.
+    public static func streamRow(status: RowStatus, key: String, keyWidth: Int, text: String, detail: String, canvas: Canvas) -> String {
+        let style = canvas.style
+        let digits = max(keyWidth, TerminalText.width(key))
+        let lead = "  " + style.status(status) + " " + String(repeating: " ", count: digits - TerminalText.width(key)) + key + "  "
+        let leadWidth = 4 + digits + 2
+        let room = max(canvas.usable - leadWidth, 1)
+        let text = line(text)
+        let detail = line(detail)
+        let tone: (String) -> String = status == .skip ? style.dim : { $0 }
+        func cut(_ text: String, _ width: Int) -> String { TerminalText.truncate(text, to: max(width, 1), ellipsis: style.ellipsis) }
+        let textWidth = TerminalText.width(text)
+        guard !detail.isEmpty else { return lead + tone(cut(text, room)) + "\n" }
+        if textWidth + 2 + TerminalText.width(detail) <= room {
+            return lead + tone(text) + "  " + style.dim(detail) + "\n"
+        }
+        if status == .skip { return lead + tone(cut(text, room)) + "\n" }
+        if textWidth + 2 + minimumDetail <= room {
+            return lead + tone(text) + "  " + style.dim(cut(detail, room - textWidth - 2)) + "\n"
+        }
+        return lead + tone(cut(text, room)) + "\n" + String(repeating: " ", count: leadWidth) + style.dim(cut(detail, room)) + "\n"
     }
 
     private static func naturalWidth(_ header: Header, style: TerminalStyle) -> Int {

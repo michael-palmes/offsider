@@ -82,6 +82,7 @@ struct OffsiderCommand: AsyncParsableCommand {
                     }
                 }
             }
+            Console.current.release()
         } catch {
             if parsed == nil {
                 ErrorReporter.prepare(command: nil, arguments: arguments)

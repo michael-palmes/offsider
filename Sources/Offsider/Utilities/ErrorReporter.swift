@@ -112,6 +112,7 @@ enum ErrorReporter {
 
     /// A person sees the cause in bold red and a `Try` line; an agent the plain `Error:` and `Try:` lines.
     static func writeErrorLine(_ message: String, hint: String? = nil) {
+        Console.current.release()
         let text = ErrorAudience.current == .person
             ? PersonRenderer.error(message, hint: hint, canvas: Console.current.err.canvas)
             : errorText(message) + (context.wantsJSON ? "" : hintText(hint, message: message, style: .plain))

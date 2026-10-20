@@ -53,24 +53,30 @@ public struct Field: Sendable {
     }
 }
 
-/// A run's end: what happened in one line, then a few details.
+/// A run's end: what happened in one line, a dim `aside` beside it when it fits, a few details, then the commands to try.
 public struct Outcome: Sendable {
     public var ok: Bool
     public var headline: String
+    /// A short fact on the headline's line, such as `(120, 640)` or `was light`; under it when the line is full.
+    public var aside: String?
     public var details: [String]
+    /// Person: `Try` then `Or` lines. Agent: `Try:` lines.
+    public var commands: [String]
 
-    public init(ok: Bool, headline: String, details: [String] = []) {
+    public init(ok: Bool, headline: String, aside: String? = nil, details: [String] = [], commands: [String] = []) {
         self.ok = ok
         self.headline = headline
+        self.aside = aside
         self.details = details
+        self.commands = commands
     }
 
-    public static func done(_ headline: String, details: [String] = []) -> Outcome {
-        Outcome(ok: true, headline: headline, details: details)
+    public static func done(_ headline: String, aside: String? = nil, details: [String] = []) -> Outcome {
+        Outcome(ok: true, headline: headline, aside: aside, details: details)
     }
 
-    public static func failed(_ headline: String, details: [String] = []) -> Outcome {
-        Outcome(ok: false, headline: headline, details: details)
+    public static func failed(_ headline: String, aside: String? = nil, details: [String] = [], try commands: [String] = []) -> Outcome {
+        Outcome(ok: false, headline: headline, aside: aside, details: details, commands: commands)
     }
 }
 
@@ -100,22 +106,36 @@ public struct Notice: Sendable, Hashable {
     public var command: String?
     /// The word before `command` on a person's line.
     public var label: String
+    /// Shown only when a person reads both streams: an agent already reads these words on stdout, or never had them.
+    public var personOnly: Bool
 
-    public init(kind: Kind, text: String, agentText: String? = nil, mark: TerminalStyle.Mark? = nil, command: String? = nil, label: String) {
+    public init(
+        kind: Kind, text: String, agentText: String? = nil, mark: TerminalStyle.Mark? = nil, command: String? = nil, label: String, personOnly: Bool = false
+    ) {
         self.kind = kind
         self.text = text
         self.agentText = agentText
         self.mark = mark
         self.command = command
         self.label = label
+        self.personOnly = personOnly
     }
 
-    public static func warning(_ text: String, agent: String? = nil, try command: String? = nil) -> Notice {
-        Notice(kind: .warning, text: text, agentText: agent, mark: .warning, command: command, label: "Try")
+    public static func warning(_ text: String, agent: String? = nil, try command: String? = nil, label: String = "Try", personOnly: Bool = false) -> Notice {
+        Notice(kind: .warning, text: text, agentText: agent, mark: .warning, command: command, label: label, personOnly: personOnly)
     }
 
-    public static func note(_ text: String, agent: String? = nil, mark: TerminalStyle.Mark? = nil, see command: String? = nil) -> Notice {
-        Notice(kind: .note, text: text, agentText: agent, mark: mark, command: command, label: "See")
+    public static func note(
+        _ text: String, agent: String? = nil, mark: TerminalStyle.Mark? = nil, see command: String? = nil, label: String = "See", personOnly: Bool = false
+    ) -> Notice {
+        Notice(kind: .note, text: text, agentText: agent, mark: mark, command: command, label: label, personOnly: personOnly)
+    }
+
+    /// This notice for a person only.
+    public var forPersonOnly: Notice {
+        var notice = self
+        notice.personOnly = true
+        return notice
     }
 
     /// The one command a person runs next; agents never see it.

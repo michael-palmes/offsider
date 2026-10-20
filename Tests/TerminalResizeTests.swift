@@ -7,6 +7,18 @@ import Testing
 
 @Suite("Terminal resize", .serialized)
 struct TerminalResizeTests {
+    @Test("COLUMNS narrows a prompt's prose, but never past the terminal it draws on")
+    func columnsNarrowsOnly() throws {
+        let terminal = try PseudoTerminal()
+        terminal.resize(columns: 50, rows: 24)
+        func width(_ environment: [String: String]) throws -> Int {
+            try TerminalPrompt(descriptor: terminal.secondary, environment: environment).width
+        }
+        #expect(try width([:]) == 50)
+        #expect(try width(["COLUMNS": "30"]) == 30)
+        #expect(try width(["COLUMNS": "200"]) == 50)
+    }
+
     @Test("rows are counted again at the new width: a line takes ⌈width / columns⌉ rows, an empty line one")
     func recount() {
         #expect(DrawnBlock.rows([28, 0, 50, 10], columns: 80) == 4)
