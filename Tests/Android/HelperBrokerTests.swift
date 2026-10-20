@@ -37,11 +37,14 @@ final class BrokerFixture {
         )
     }
 
+    /// The folder goes with the fixture, however its test ends.
+    deinit { try? FileManager.default.removeItem(at: root) }
+
     var socket: String { broker.socketPath }
 
     /// Starts serving and returns once the socket answers.
     func start() async throws {
-        running = Task { try await broker.run() }
+        running = Task { [broker] in try await broker.run() }
         let deadline = ContinuousClock.now + .seconds(5)
         while !UnixSocket.answers(socket) {
             guard ContinuousClock.now < deadline else { throw HelperBrokerUnavailable(detail: "the broker never listened") }
@@ -112,7 +115,6 @@ final class BrokerFixture {
     func stop() async throws {
         broker.requestStop()
         _ = try await finished()
-        try? FileManager.default.removeItem(at: root)
     }
 }
 
@@ -534,7 +536,6 @@ struct HelperBrokerTests {
                 #expect(try await client.existing(helloID: 1) == nil)
                 #expect(broker.ops.contains("hello") && !broker.ops.contains("stop"))
                 broker.cancel()
-                try? FileManager.default.removeItem(at: fixture.root)
             }
         }
     }
@@ -549,7 +550,6 @@ struct HelperBrokerTests {
                 #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(300)) == .inUse)
                 #expect(!broker.ops.contains("stop"))
                 broker.cancel()
-                try? FileManager.default.removeItem(at: fixture.root)
             }
         }
     }
@@ -579,7 +579,6 @@ struct HelperBrokerTests {
                 #expect(connection == nil)
                 #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial, socket]])
                 broker.cancel()
-                try? FileManager.default.removeItem(at: fixture.root)
             }
         }
     }
@@ -684,7 +683,6 @@ struct HelperBrokerTests {
                 #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(300)) == .inUse)
                 #expect(!broker.ops.contains("stop"))
                 broker.cancel()
-                try? FileManager.default.removeItem(at: fixture.root)
             }
         }
     }
@@ -701,7 +699,6 @@ struct HelperBrokerTests {
                 #expect(ContinuousClock.now - asked < .milliseconds(1500))
                 #expect(UnixSocket.answers(fixture.socket))
                 broker.cancel()
-                try? FileManager.default.removeItem(at: fixture.root)
             }
         }
     }
@@ -760,7 +757,6 @@ struct HelperBrokerTests {
                 #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(200)) == .stillServing)
                 #expect(UnixSocket.answers(fixture.socket))
                 other.cancel()
-                try? FileManager.default.removeItem(at: fixture.root)
             }
         }
     }
@@ -863,7 +859,6 @@ struct HelperBrokerTests {
                 #expect(stopped == ["emulator-5556"])
                 #expect(!UnixSocket.answers(fixture.socket))
                 other.cancel()
-                try? FileManager.default.removeItem(at: fixture.root)
             }
         }
     }
