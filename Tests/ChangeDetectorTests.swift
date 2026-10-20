@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import OffsiderCore
 
-@Suite("Change Detector Tests")
+@Suite("Change Detector Tests", .personOutput)
 struct ChangeDetectorTests {
     private let detector = ChangeDetector()
 
@@ -71,6 +71,13 @@ struct ChangeDetectorTests {
             element("Other", id: "tap-indicator-\(UUID().uuidString)"),
         ])
         #expect(detector.compare(before, after) == .changed(summary: "element added: Other#tap-indicator-<uuid>"))
+    }
+
+    @Test("for an agent, an element's id in a change is JSON-quoted", .agentOutput)
+    func agentQuotesIdentifiers() throws {
+        let before = try app(children: [element(id: "sheet"), element(id: "title")])
+        let after = try app(children: [element(id: "title")])
+        #expect(detector.compare(before, after) == .changed(summary: #"element removed: StaticText#"sheet""#))
     }
 
     @Test("A removed element is changed")
@@ -156,7 +163,7 @@ struct ChangeDetectorTests {
     }
 }
 
-@Suite("Change Detector live keys")
+@Suite("Change Detector live keys", .personOutput)
 struct ChangeDetectorLiveTests {
     private let detector = ChangeDetector()
 

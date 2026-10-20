@@ -18,7 +18,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 
 | Aspect | Guidance |
 | --- | --- |
-| Toolchain | Swift 6.4; `Package.swift` declares `swift-tools-version:5.10` |
+| Toolchain | Swift 6.4; `Package.swift` declares `swift-tools-version:6.2`, every target in Swift 5 language mode, `OffsiderCore` with strict memory safety (mark each unsafe call `unsafe`) |
 | Platform | Apple silicon (arm64) only; `Package.swift` targets macOS 26, and releases need macOS 26 or later; Xcode 27 is the target |
 | CLI | swift-argument-parser: one `AsyncParsableCommand` per file |
 | Tests | Swift Testing (`import Testing`, `@Suite`, `@Test`, `#expect`), never XCTest |
@@ -63,6 +63,10 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `pnpm --dir OffsiderPlaygroundRN android <serial>` or `ios <udid>` | Starts Metro on loopback 8742 in the background (`metro stop` ends it), installs the RN debug build if changed and launches it from Metro; Android also takes an AVD name and sets the adb reverse; `--screen <id>` opens a fixture; refuses to run without a named device |
 | `scripts/bench-ab.sh --device <id> --scenario <name>` | Compare the merge base with this checkout on one Offsider device in paired, seeded runs (`--help` lists scenarios); `--phone` acknowledges that `--device` names a USB phone (playground installed first, never by bench) |
 | `bash -n <script>` | Syntax-check a changed shell script |
+| `OFFSIDER_FUZZ=1 swift build --product OffsiderFuzz --sanitize=address` | Build the fuzz driver (never in a release); `.build/debug/OffsiderFuzz --list`, `<target> Tests/Fixtures/fuzz/<target> --seconds 60`, `<target> --replay <file>` |
+| `swift test --sanitize=address --no-parallel` | Unit tests under AddressSanitizer, as CI's non-required job runs them |
+
+Agents building in parallel use `swift build --scratch-path <dir>` and `swift test --scratch-path <dir>` so they do not block each other; `BundleIntegrityTests` passes only in the default `.build` folder.
 
 | Variable | Effect |
 | --- | --- |
@@ -89,7 +93,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_ANDROID_PHONE` | The exact USB serial the `AndroidPhone*Tests` suites drive (an `adb devices -l` row with `usb:` and state `device`; refused beside `OFFSIDER_ANDROID_E2E`); unset, `--android-phone` uses the one active Android allowance, only when it pins `com.mpalmes.offsider.playground.rn` |
 | `OFFSIDER_IOS_DEVICE_E2E=1` | Enables the `IOSDevice*E2ETests` suites in `swift test` (`test-runner.sh --ios-device` sets it) |
 | `OFFSIDER_IOS_DEVICE` | The exact UDID the iOS device suites drive (a physical iOS or iPadOS row in `devicectl list devices`; never a simulator); unset, `--ios-device` uses the one active iPhone or iPad allowance, only when it pins `com.mpalmes.offsider.playground` |
-| `OFFSIDER_IOS_TEAM_ID` | The team (10 letters and digits) that signs the runner and the OffsiderPlaygroundApp for a device; overrides the team a person chose in `device-access allow`'s Keychain menu (or `--team`), which `--ios-device` also reads; required when the allowance names none; Xcode's signed-in team is never picked silently |
+| `OFFSIDER_IOS_TEAM_ID` | The team (10 letters and digits) that signs the runner and the OffsiderPlaygroundApp for a device; used only when the allowance names no team, or the same one (another team exits 64), and `--ios-device` reads the allowance's team the same way; required when the allowance names none; Xcode's signed-in team is never picked silently |
 | `OFFSIDER_IOS_RUNNER_PREFIX` | The iPhone runner's bundle id prefix (default `com.mpalmes.offsider`; apps `<prefix>.runner` and `<prefix>.runner.uitests`; reverse-DNS, at most 100 characters, else exit 64); part of the runner cache key |
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
@@ -112,6 +116,9 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `OFFSIDER_TIMINGS=1` | Prints iOS and Android phase timings to stderr (`offsider timing: <phase> <n> ms`) |
 | `OFFSIDER_MASK_SECURE` | `screenshot` and `batch` mask password fields by default; `0`, `false`, `no` or `off` turns that default off (and the video password check outside a run), `1`, `true`, `yes` or `on` keeps it; a capture's or batch's `--mask-secure` or `--no-mask-secure` wins, and a run's mask is never dropped |
 | `OFFSIDER_BENCH_DIR` | Where `scripts/bench-ab.sh` writes its records (default `$TMPDIR/offsider-bench`) |
+| `OFFSIDER_OUTPUT` | `person` or `agent` overrides whether output is for an agent (default: agent when stdout is not a terminal); an agent's run always quotes screen names and needs a person for `--no-mask-secure`, `OFFSIDER_MASK_SECURE=0` and `describe-ui --raw-source`; `swift test` runs as an agent, so suites asserting person output use the `.personOutput` trait |
+| `OFFSIDER_FUZZ` | `1` at build time adds the `OffsiderFuzz` product (debug builds only) |
+| `OFFSIDER_FUZZ_TARGET` | The fuzz target `OffsiderFuzz` runs when its first argument names none |
 | `OFFSIDER_HELPER_JDK` | JDK 17 home for `scripts/build.sh helper` (else `JAVA_HOME`, then `/usr/libexec/java_home -v 17`) |
 
 ## Layout
@@ -119,7 +126,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | To change | Go to |
 | --- | --- |
 | A command | `Sources/Offsider/Commands/<Name>.swift`; register new ones in `Sources/Offsider/main.swift` |
-| Pure logic with no idb import | `Sources/OffsiderCore/` (fast unit tests) |
+| Pure logic with no idb import | `Sources/OffsiderCore/` (fast unit tests); `Agents/` for `init`'s permission rules, `Mask/` for `offsider.mask.json`, `Process/UntrustedRead.swift` for every read of a file another program writes |
 | Android backend | `Sources/OffsiderAndroid/` (pure parsers stay `internal`, tests use `@testable import`); unit tests in `Tests/Android/`, E2E in `Tests/AndroidE2E/` |
 | iOS device backend | `Sources/OffsiderIOSDevice/` (depends on `OffsiderCore` only); CLI glue in `Sources/Offsider/Platform/IOSDevice/`; unit tests and devicectl fixtures in `Tests/IOSDevice/` |
 | iPhone runner | `Sources/Offsider/Resources/runner/` (`project.yml` and the generated `OffsiderRunner.xcodeproj`); regenerate with `scripts/build.sh runner` |
@@ -145,7 +152,7 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 - Resolve Xcode through `xcode-select -p` or `DEVELOPER_DIR`, never a hard-coded path. Offsider refuses a developer directory that is not `<Xcode>.app/Contents/Developer` of an Apple-signed app (exit 9 `xcode_unusable`).
 - Input commands, setters and `batch` lock the device for their run (exit 8, `device_busy`, when another holds it); locks live under `offsider-<uid>/locks/` in the `confstr` user temp directory.
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
-- The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>`, rejects peers running as another user, and keeps a simulator's input session warm until 60 s after the last command. After simulator E2E or a manual check, `offsider session stop --device <UDID>` closes it.
+- The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>`, rejects peers running as another user or from another Offsider build (code signature), and keeps a simulator's input session warm until 60 s after the last command. After simulator E2E or a manual check, `offsider session stop --device <UDID>` closes it.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
 - An iPhone Duo simulator, named by `OFFSIDER_FOLDABLE_SIMULATOR_NAME` (default `Offsider Duo`), is the foldable fixture; `offsider posture` folds and unfolds it through the hinge service, so `FoldableTests` runs unattended. The Duo refuses orientation changes.
 
@@ -172,7 +179,7 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 - `permission`, `status-bar` and `biometric` change state that outlives the command on both platforms, as `stay-awake` does on Android; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).
 - React Native E2E saves test users only for the RN playground's app id, refuses to start when that id already has saved users, and removes them and their sign-in records afterwards.
 - Never type, pipe or ask for a device's unlock code: the user saves it with `offsider unlock-code set` in their own terminal. `wake --unlock` types a saved code once; never loop on it.
-- On an emulator the helper stays warm, holding Android's single UiAutomation slot with `accessibility_enabled` reading 1, until 60 s after the last command; on a phone only while one command runs, unless `OFFSIDER_ANDROID_SESSION=on`. After Android E2E or a manual check, run `offsider session stop --device <serial>` so other UiAutomation clients can connect. Keep its reflection to the four UiAutomation members and the display probe with its public fallback; never implement a hidden Binder interface.
+- On an emulator the helper stays warm, holding Android's single UiAutomation slot with `accessibility_enabled` reading 1, until 60 s after the last command; on a phone only while one command runs, unless `OFFSIDER_ANDROID_SESSION=on`. Its broker, like the other two, admits only this Offsider build, by code signature. After Android E2E or a manual check, run `offsider session stop --device <serial>` so other UiAutomation clients can connect. Keep its reflection to the four UiAutomation members and the display probe with its public fallback; never implement a hidden Binder interface.
 
 ## Collaboration
 

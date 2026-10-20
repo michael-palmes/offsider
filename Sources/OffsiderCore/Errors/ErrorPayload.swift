@@ -73,6 +73,11 @@ public struct ErrorPayload: Equatable, Sendable {
     public func jsonLine() -> String {
         jsonValue.rendered(compact: true)
     }
+
+    /// The paths, under `prefix`, whose text came from a device, an app or a saved note.
+    public func untrustedPaths(under prefix: String = "error") -> [String] {
+        UntrustedPaths.present(UntrustedPaths.under(prefix, UntrustedPaths.errorFields), in: .object([(prefix, jsonValue)]))
+    }
 }
 
 /// What a `--json` command prints on stdout when it fails without a report of its own.

@@ -142,3 +142,68 @@ struct LogRedactorTests {
         #expect(!LogRedactor.isSensitive(key: "apiVersion"))
     }
 }
+
+@Suite("Log redactor: structured values and screen text")
+struct LogRedactorStructuredTests {
+    static let words = ["abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract", "absurd", "abuse", "access", "accident"]
+
+    @Test("a sensitive key's array or object is masked whole, and JSON still parses", arguments: [
+        (#"{"mnemonic":["abandon","ability"],"user":"ada"}"#, #"{"mnemonic":"[redacted]","user":"ada"}"#),
+        (#"{"privateKey":{"d":"x","n":[1,2]},"ok":true}"#, #"{"privateKey":"[redacted]","ok":true}"#),
+        (#"{"seed":["a \"]\" b",{"c":"}"}],"next":1}"#, #"{"seed":"[redacted]","next":1}"#),
+    ])
+    func structuredValues(input: String, expected: String) throws {
+        let result = LogRedactor.redact(input)
+        #expect(result.text == expected)
+        #expect(result.count == 1)
+        _ = try JSONSerialization.jsonObject(with: Data(result.text.utf8))
+    }
+
+    @Test("an unquoted key's object is masked to its closing brace, and an unclosed one to the end of the line")
+    func unquotedAndUnclosed() {
+        #expect(LogRedactor.redact("wallet privateKey: { d: 'x', n: [1, 2] } loaded").text == "wallet privateKey: [redacted] loaded")
+        #expect(LogRedactor.redact("privateKey: { d: 'x'\nnext line").text == "privateKey: [redacted]\nnext line")
+    }
+
+    @Test("a console.log of a recovery phrase as a quoted list is masked without its key")
+    func quotedList() {
+        let list = Self.words.map { "'\($0)'" }.joined(separator: ", ")
+        let result = LogRedactor.redact("LOG [ \(list) ]")
+        #expect(result.text == "LOG [ '[redacted phrase]' ]")
+        #expect(LogRedactor.redact(result.text).count == 0)
+        let double = Self.words.map { "\"\($0)\"" }.joined(separator: ",")
+        #expect(LogRedactor.redactValue("[\(double)]").text == #"["[redacted phrase]"]"#)
+    }
+
+    static func quoted(_ words: [String]) -> String {
+        words.map { "\"\($0)\"" }.joined(separator: ",")
+    }
+
+    static let notPhrases: [String] = [
+        quoted(Array(words.dropLast())),
+        quoted(["Abandon"] + Array(words.dropFirst())),
+        quoted(words + ["actor"]),
+    ]
+
+    @Test("a quoted list of the wrong length, or of other words, is left alone", arguments: notPhrases)
+    func quotedListLeftAlone(input: String) {
+        #expect(LogRedactor.redactValue("[\(input)]").count == 0)
+    }
+
+    @Test("redactValue masks codes, addresses, cards and phrases but never by key", arguments: [
+        ("Your code is 482913", "Your code is [redacted]"),
+        ("0x52908400098527886E0F7030069857D2E4169EE7", "[redacted address]"),
+        ("4111 1111 1111 1111", "[redacted card]"),
+        ("abandon ability able about above absent absorb abstract absurd abuse access accident", "[redacted phrase]"),
+    ])
+    func valuePatterns(input: String, expected: String) {
+        #expect(LogRedactor.redactValue(input) == (expected, 1))
+    }
+
+    @Test("redactValue leaves keys, emails and ordinary text alone", arguments: [
+        "password: hunter2", "ada@example.com", "Balance 1,234.56", "Order 123456 shipped", "Sign in",
+    ])
+    func valueLeftAlone(input: String) {
+        #expect(LogRedactor.redactValue(input) == (input, 0))
+    }
+}

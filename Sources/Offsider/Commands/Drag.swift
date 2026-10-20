@@ -60,11 +60,11 @@ struct Drag: AsyncParsableCommand {
     var deviceOption: DeviceOption
 
     func validate() throws {
+        if let problem = Coordinates.problem([("--start-x", startX), ("--start-y", startY), ("--end-x", endX), ("--end-y", endY)]) {
+            throw ValidationError(problem)
+        }
         guard startX >= 0, startY >= 0, endX >= 0, endY >= 0 else {
             throw ValidationError("Coordinates must be non-negative values.")
-        }
-        guard [startX, startY, endX, endY].allSatisfy(\.isFinite) else {
-            throw ValidationError("Coordinates must be finite numbers.")
         }
         guard startX != endX || startY != endY else {
             throw ValidationError("Start and end points must be different.")

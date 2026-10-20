@@ -109,7 +109,9 @@ struct TextFileInputTests {
     @Test("names that usually hold secrets are refused, and .env.example is not", arguments: [
         (".env", true), (".env.local", true), (".ENV.production", true), (".netrc", true), (".git-credentials", true), (".npmrc", true),
         (".pypirc", true), ("id_ed25519", true), ("cert.pem", true), ("bundle.p12", true), ("server.key", true),
-        (".env.example", false), ("notes.txt", false), ("keys.txt", false),
+        (".zsh_history", true), (".bash_history", true), (".zhistory", true), (".python_history", true), (".node_repl_history", true),
+        ("release.jks", true), ("debug.keystore", true), ("credentials.json", true), ("credentials-prod.json", true), ("terraform.tfstate", true),
+        (".env.example", false), ("notes.txt", false), ("keys.txt", false), ("credentials.md", false), ("history.txt", false),
     ])
     func sensitiveNames(name: String, refused: Bool) throws {
         let root = try Self.folder()
@@ -126,7 +128,7 @@ struct TextFileInputTests {
 
     @Test("folders that hold keys and system configuration are refused", arguments: [
         ".aws/credentials", ".config/gh/hosts.yml", ".gnupg/pubring.kbx", ".docker/config.json", ".kube/config",
-        "Library/Keychains/login.keychain-db", "Library/Application Support/offsider/state.json",
+        "Library/Keychains/login.keychain-db", "Library/Application Support/offsider/state.json", ".android/adbkey", ".android/adbkey.pub",
     ])
     func sensitiveFolders(path: String) throws {
         let home = try Self.folder()
@@ -146,5 +148,27 @@ struct TextFileInputTests {
     func missing() {
         let refused = Self.refusal { try TextFileInput.read("/nonexistent-offsider/text.txt", allowSensitive: false, home: "/nonexistent-home") }
         #expect(refused?.message.hasPrefix("Could not open /nonexistent-offsider/text.txt for --file") == true)
+    }
+
+    @Test("a confirmed path reads only while the name still resolves to it, and other files under ~/.android are not keys")
+    func confirmedPath() throws {
+        let home = try Self.folder()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        try Self.write("key", to: home + "/.android/adbkey")
+        try Self.write("ok", to: home + "/.android/avd/notes.txt")
+        try Self.write("other", to: home + "/.ssh/other")
+        try FileManager.default.createSymbolicLink(atPath: home + "/link", withDestinationPath: home + "/.android/adbkey")
+
+        let found = try #require(TextFileInput.sensitive(home + "/link", home: home))
+        #expect(found.resolvedPath == home + "/.android/adbkey")
+        #expect(try TextFileInput.read(home + "/link", allowing: found.resolvedPath, home: home).text == "key")
+        #expect(Self.refusal { try TextFileInput.read(home + "/link", allowing: nil, home: home) } != nil)
+
+        try FileManager.default.removeItem(atPath: home + "/link")
+        try FileManager.default.createSymbolicLink(atPath: home + "/link", withDestinationPath: home + "/.ssh/other")
+        #expect(Self.refusal { try TextFileInput.read(home + "/link", allowing: found.resolvedPath, home: home) } != nil)
+
+        #expect(TextFileInput.sensitive(home + "/.android/avd/notes.txt", home: home) == nil)
+        #expect(try TextFileInput.read(home + "/.android/avd/notes.txt", allowing: nil, home: home).text == "ok")
     }
 }

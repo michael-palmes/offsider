@@ -42,7 +42,7 @@ public enum LoginForm {
 
     /// What marks a password field as web content.
     public enum WebContainer: Equatable, Sendable {
-        /// An Android `WebView` ancestor, an iOS runner `WebView`, or a simulator web area.
+        /// An Android `WebView`, GeckoView or Crosswalk ancestor, an iOS runner `WebView`, or a simulator web area.
         case webView
         /// The field belongs to another Android package, or is missing one.
         case otherPackage(String?)
@@ -99,7 +99,7 @@ public enum LoginForm {
         )
     }
 
-    /// Android: a `WebView` ancestor, or a package other than the app in front (fail closed). iOS: a `WebView` or web-area
+    /// Android: a `WebView`, GeckoView or Crosswalk ancestor, or a package other than the app in front (fail closed). iOS: a `WebView` or web-area
     /// ancestor (fail closed), or a process other than the app's that maps to another bundle. No signal means native.
     public static func webContainer(of field: UINode, in tree: UITree, origin: Origin?) -> WebContainer? {
         guard let chain = ancestry(of: field, in: tree) else { return nil }
@@ -138,7 +138,8 @@ public enum LoginForm {
 
     private static func isAndroidWebView(_ node: UINode) -> Bool {
         guard case .android(let native) = node.native, let name = native.className else { return false }
-        return name == "WebView" || name.hasSuffix(".WebView")
+        if name == "WebView" || name.hasSuffix(".WebView") { return true }
+        return ["Gecko", "Crosswalk", "XWalk"].contains { name.contains($0) }
     }
 
     private static func isIOSWebView(_ node: UINode) -> Bool {

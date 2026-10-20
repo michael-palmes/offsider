@@ -88,12 +88,12 @@ enum HIDBroker {
     /// A ready broker's connection for a command's input session, if one runs.
     static func attach(simulatorUDID: String) -> Attachment {
         guard let endpoint = try? endpointPath(simulatorUDID: simulatorUDID) else { return .unavailable }
-        return attach(endpoint: endpoint, connector: connect(to:))
+        return attach(endpoint: endpoint, connector: connect(to:), simulatorUDID: simulatorUDID)
     }
 
-    static func attach(endpoint: String, connector: (String) throws -> Int32) -> Attachment {
+    static func attach(endpoint: String, connector: (String) throws -> Int32, simulatorUDID: String? = nil) -> Attachment {
         do {
-            return .ready(try connectAndAwaitHandshake(endpoint: endpoint, connector: connector, timeoutMilliseconds: attachTimeoutMilliseconds))
+            return .ready(try connectAndAwaitHandshake(endpoint: endpoint, connector: connector, timeoutMilliseconds: attachTimeoutMilliseconds, simulatorUDID: simulatorUDID))
         } catch {
             logDiagnostic(error)
             // One whose simulator restarted stops by itself, so the next is started once this command is done.
@@ -119,6 +119,8 @@ enum HIDBroker {
     /// Serves `simulatorUDID` until idle; this process holds the endpoint's lifetime lock.
     @MainActor
     static func serve(simulatorUDID: String, logger: OffsiderLogger) async throws {
+        // Read before anything else, while the executable on disk is still the one running.
+        let requirement = try PeerCodeIdentity.ownRequirement()
         let endpoint = try endpointPath(simulatorUDID: simulatorUDID)
         let boot = try currentBootIdentity(simulatorUDID: simulatorUDID)
         let session = try await HIDInteractor.makeSession(for: simulatorUDID, logger: logger)
@@ -131,17 +133,19 @@ enum HIDBroker {
             await HIDInteractor.closeSession(session)
             throw error
         }
+        let log: (String) -> Void = { line in
+            let stamp = ISO8601DateFormatter().string(from: Date())
+            FileHandle.standardOutput.write(Data("\(stamp) \(line)\n".utf8))
+        }
         let server = HIDBrokerServer(
             udid: simulatorUDID,
             listener: listener,
             endpoint: endpoint,
             sink: .live(session, logger: logger),
             isCurrentBoot: { bootIdentity(processIdentifier: boot.processIdentifier) == boot },
+            admits: { admitsPeer($0, requirement: requirement, log: log) },
             idleSeconds: SimulatorSessionSettings.idleSeconds(ProcessInfo.processInfo.environment),
-            log: { line in
-                let stamp = ISO8601DateFormatter().string(from: Date())
-                FileHandle.standardOutput.write(Data("\(stamp) \(line)\n".utf8))
-            }
+            log: log
         )
         // A command that leaves before its handshake must not end the broker with SIGPIPE.
         signal(SIGPIPE, SIG_IGN)
@@ -157,6 +161,19 @@ enum HIDBroker {
         let reason = await server.run()
         server.log("Stopped: \(reason)")
         await HIDInteractor.closeSession(session)
+    }
+
+    /// Only a binary that satisfies this broker's own designated requirement gets a byte; a refusal is one line in the broker's log.
+    static func admitsPeer(
+        _ client: Int32,
+        requirement: PeerCodeIdentity.Requirement,
+        log: (String) -> Void = { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+    ) -> Bool {
+        let verdict = PeerCodeIdentity.check(peer: client, requirement: requirement)
+        if !verdict.accepted {
+            log("HID broker refused pid \(verdict.pid): it is not this Offsider build (\(verdict.detail ?? "no reason given"))")
+        }
+        return verdict.accepted
     }
 
     static func isSameUserPeer(_ client: Int32, expectedUID: uid_t = getuid()) -> Bool {
@@ -228,13 +245,18 @@ enum HIDBroker {
 
     /// Starts `hid-broker` detached in its own session, logging to the private `sessions/`; returns its pid.
     @discardableResult
+    /// How a broker is started for `simulatorUDID`, as its process lists its arguments.
+    static func serveArguments(_ simulatorUDID: String) -> [String] {
+        ["hid-broker", "--udid", simulatorUDID]
+    }
+
     static func spawnBroker(simulatorUDID: String) throws -> Int32 {
         guard let executable = Bundle.main.executableURL else {
             throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.", reason: .hidBrokerFailed)
         }
         return try DetachedProcess().launch(
             executable: executable,
-            arguments: ["hid-broker", "--udid", simulatorUDID],
+            arguments: serveArguments(simulatorUDID),
             environment: ChildEnvironment.make(.offsiderBroker, from: ProcessInfo.processInfo.environment).filter { $0.key != "OFFSIDER_TIMINGS" },
             logPath: try logPath(simulatorUDID: simulatorUDID)
         )
@@ -289,7 +311,8 @@ enum HIDBroker {
             return try connectAndAwaitHandshake(
                 endpoint: endpoint,
                 connector: connector,
-                timeoutMilliseconds: handshakeTimeout()
+                timeoutMilliseconds: handshakeTimeout(),
+                simulatorUDID: simulatorUDID
             )
         } catch {
             guard isBrokerUnavailable(error) else { throw error }
@@ -310,7 +333,8 @@ enum HIDBroker {
             return try connectAndAwaitHandshake(
                 endpoint: endpoint,
                 connector: connector,
-                timeoutMilliseconds: handshakeTimeout()
+                timeoutMilliseconds: handshakeTimeout(),
+                simulatorUDID: simulatorUDID
             )
         } catch {
             guard isBrokerUnavailable(error) else { throw error }
@@ -333,7 +357,8 @@ enum HIDBroker {
                 return try connectAndAwaitHandshake(
                     endpoint: endpoint,
                     connector: connector,
-                    timeoutMilliseconds: handshakeTimeout()
+                    timeoutMilliseconds: handshakeTimeout(),
+                    simulatorUDID: simulatorUDID
                 )
             } catch {
                 guard isBrokerUnavailable(error) else { throw error }

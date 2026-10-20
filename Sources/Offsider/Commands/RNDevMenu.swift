@@ -97,7 +97,7 @@ struct DevMenuDriver {
             }
         }
         throw CLIError(
-            errorDescription: "Tapped \(node.label ?? item?.rawValue ?? "the item"), but the dev menu is still open.",
+            errorDescription: "Tapped \(node.label.map { TerminalText.quoted($0) } ?? item?.rawValue ?? "the item"), but the dev menu is still open.",
             reason: .notVerified,
             hint: "offsider describe-ui --summary --device \(route.device.rawValue)"
         )

@@ -387,13 +387,15 @@ public final class DeviceSessionManager: DeviceSessionConnecting {
     }
 
     /// Asks the broker to stop (it ends the stream on the device first), signals it only while it is still the recorded process, then forgets it.
+    /// A broker that refused the request, such as one from another Offsider build that does not accept this one, is signalled at once.
     public func stop(_ record: DeviceSessionRecord) async {
         if processes.isRunning(record), let identity = record.process {
+            var accepted = false
             if let link = try? connector(record.socket) {
-                try? await DeviceSessionClient(udid: record.udid, link: link).stop()
+                accepted = (try? await DeviceSessionClient(udid: record.udid, link: link).stop()) != nil
                 link.close()
             }
-            let deadline = ContinuousClock.now + .seconds(5)
+            let deadline = ContinuousClock.now + .seconds(accepted ? 5 : 0)
             while processes.isRunning(record), ContinuousClock.now < deadline {
                 try? await Task.sleep(for: .milliseconds(50))
             }

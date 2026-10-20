@@ -1,6 +1,6 @@
 # Reading the screen
 
-`describe-ui` prints one object. Every key is present, with `null` when a value is unknown, and `--point x,y` returns the same envelope with the element at that point as the only root. `screen` and frames are in points on iOS and dp on Android. `--display <id>` checks that the active display is the one you expect, and `--app <bundle-id>` names the app to read on an iPhone or iPad.
+`describe-ui` prints one object. Every key is present, with `null` when a value is unknown, and `--point x,y` returns the same envelope with the element at that point as the only root. `screen` and frames are in points on iOS and dp on Android. `--display <id>` checks that the active display is the one you expect, and `--app <bundle-id>` names the app to read on a physical iPhone, iPad or Android phone.
 
 ```json
 {
@@ -48,6 +48,8 @@
 - `hidden` is null, or on Android the number of branches the helper left out as not visible to the user. `hiddenBranches` is null, or on Android up to five of them, on-screen and larger first, each `{id, label, className, frame}` with the frame in points; a label is never taken from an editable or password field, and is masked and cut to 40 characters.
 
 The text formats print the same facts after the device line, only when they apply: `# window: Lab Toggles (modal)` (`(modal, empty)` for an empty dialog, `(system)` for a system prompt), `# keyboard shown`, `# logbox: 2 logs`, `# presented: "Cancel" from PickerService`, `# stale frame: id=sheet-host is listed off screen at (0, 10000) 402x874, but the screen's centre is inside it; check a screenshot`, `# hidden: 3 branches not visible to the user: id=drawer at (0, 0) 280x874; "Filters" at (16, 600) 360x48; ScrollView at (0, 900) 411.4x300`. Keys may be added within a version.
+
+Labels and values that look like a one-time code after a keyword, a card number, a wallet address or a recovery phrase read `[redacted]`, `[redacted card]`, `[redacted address]` or `[redacted phrase]`; ids never change. A plain field where the tree cache last saw a password field, as a show-password toggle leaves it, reads as bullets, and the values `offsider.mask.json` names read `[redacted]`. When any were hidden, `redacted` and `revealed` follow `context` in JSON and text output ends `# redacted: 2 values, 1 revealed password field`. `--diff`, `--verify` change lists and `wait` and `assert` output are redacted the same way, while `--has-value` and `--label-contains` compare the real text. It works by pattern, so a secret in another shape still shows.
 
 `version` 2 added `rotation`, `display` and `posture` and made `orientation` the shape; version 1 (0.3.0) had none of the three, and its `orientation` was `portrait`, `portraitUpsideDown`, `landscape` or `landscapeFlipped`.
 

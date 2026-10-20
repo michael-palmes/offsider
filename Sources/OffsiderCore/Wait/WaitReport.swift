@@ -10,15 +10,18 @@ public struct WaitReport: Equatable, Sendable {
 
     /// `{"met":true,"elapsedMs":1200,"reason":"on screen","match":{...},"matched":null,"nearest":[]}`; `nearest` lists near misses after a not-found timeout.
     public func jsonLine() -> String {
-        OrderedJSON.object([
+        UntrustedPaths.marked(.object([
             ("met", .bool(outcome.met)),
             ("elapsedMs", .integer(Int((outcome.elapsed * 1000).rounded()))),
             ("reason", .string(outcome.reason)),
             ("match", .optional(outcome.match) { .object($0.jsonFields) }),
             ("matched", .optional(outcome.matched) { .object([("by", .string($0.by)), ("text", .string($0.text))]) }),
             ("nearest", Self.nearest(outcome)),
-        ]).rendered(compact: true)
+        ]), Self.untrustedPaths).rendered(compact: true)
     }
+
+    /// The matched element's text and the near misses'.
+    static let untrustedPaths = UntrustedPaths.under("match", UntrustedPaths.nodeFields) + UntrustedPaths.under("nearest[]", UntrustedPaths.candidateFields)
 
     static func nearest(_ outcome: WaitOutcome) -> OrderedJSON {
         .array((outcome.nearMiss?.candidates ?? []).map(\.jsonValue))

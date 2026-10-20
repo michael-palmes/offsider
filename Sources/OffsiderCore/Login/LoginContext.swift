@@ -299,3 +299,10 @@ public struct LoginContextEdit: Equatable, Sendable {
         return next
     }
 }
+
+extension LoginContext {
+    /// The JSON paths of the notes this context holds, under `prefix` (`users[].` for a list): agents write notes, so they are untrusted.
+    public func notePaths(prefix: String = "") -> [String] {
+        LoginNote.allCases.compactMap { self[$0] == nil ? nil : prefix + $0.rawValue }
+    }
+}

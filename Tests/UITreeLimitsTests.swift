@@ -23,6 +23,13 @@ struct UITreeLimitsTests {
         #expect(tree.truncated?.note == "Note: the tree was cut at 64 levels deep, so some elements are not listed.")
     }
 
+    @Test("a tree 200 levels deep maps without exhausting the stack and is cut to 64")
+    func deepSource() throws {
+        let tree = UITree(platform: .ios, device: "D", roots: try IOSAccessibilityMapping.roots(fromJSON: Self.nested(200)))
+        #expect(Self.depth(of: tree.roots) == 64)
+        #expect(tree.truncated == UITreeTruncation(depth: true))
+    }
+
     @Test("a tree within the limits is kept whole and unflagged")
     func withinLimits() throws {
         let roots = try IOSAccessibilityMapping.roots(fromJSON: Self.nested(64))

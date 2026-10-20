@@ -65,6 +65,7 @@ struct DescribeUI: AsyncParsableCommand {
     }
 
     func run() async throws {
+        if rawSource { try Self.refuseRawSourceForAgent() }
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         await appOption.apply(to: route)
@@ -72,7 +73,7 @@ struct DescribeUI: AsyncParsableCommand {
         try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
 
         if rawSource {
-            print(String(decoding: try await Self.rawCapture(on: route), as: UTF8.self))
+            print(try Self.rawSourceText(try await Self.rawCapture(on: route)))
             return
         }
         let described = try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
@@ -82,6 +83,7 @@ struct DescribeUI: AsyncParsableCommand {
     /// The output for one read; with `--diff`, compared against the device's cached tree.
     @MainActor
     func describe(on route: DeviceRouter.Route) async throws -> String {
+        _ = try MaskConfigs.current()
         let base = diff ? await TreeCache.load(for: route.device, backend: route.backend) : nil
         (route.backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: route.device)
         let probe = point == nil && !diff ? await PresentationCheck.start(backend: route.backend, device: route.device) : nil
@@ -92,18 +94,38 @@ struct DescribeUI: AsyncParsableCommand {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)
             tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: route.backend, device: route.device, centre: centre)
         }
+        let mask = try await Self.valueMask(on: route)
         guard diff else {
             if let centre {
                 tree.apply(PresentationCheck.finding(for: tree, hit: centre.hit))
             }
-            return String(decoding: try output.render(tree), as: UTF8.self)
+            let shown = Timings.measure("redact") { tree.redacted(mask) }
+            return String(decoding: try output.render(shown), as: UTF8.self)
         }
-        let usable = base.flatMap { $0.matches(appFrame: tree.applicationFrame, screen: tree.screen) ? $0 : nil }
+        let shown = Timings.measure("redact") { tree.redacted(mask) }
+        var usable = base.flatMap { $0.matches(appFrame: tree.applicationFrame, screen: tree.screen) ? $0 : nil }
+        // The cache keeps values the output redacts, so both sides are redacted alike before they are compared.
+        let redactedBase = usable?.tree?.redacted(mask).roots
+        usable?.roots = redactedBase
         let options = try diffOptions()
         let now = TreeCacheEnvironment.current.now()
-        return Timings.measure("tree-diff") {
-            TreeDiffRenderer.render(tree, base: usable, options: options, now: now)
+        let rendered = Timings.measure("tree-diff") {
+            TreeDiffRenderer.render(shown, base: usable, options: options, now: now)
         }
+        guard let counts = shown.redaction, !counts.isEmpty, !rendered.hasSuffix(counts.footer + "\n") else { return rendered }
+        return rendered + counts.footer + "\n"
+    }
+
+    /// What hides values in this device's tree output: `offsider.mask.json`, the run's masks and revealed password fields.
+    @MainActor
+    static func valueMask(on route: DeviceRouter.Route) async throws -> TreeValueMask {
+        try AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: route.device, backend: route.backend))
+    }
+
+    /// The tree as describe-ui shows it, for a batch step: masked values hidden and secrets redacted.
+    @MainActor
+    static func shown(_ tree: UITree, on route: DeviceRouter.Route) async throws -> UITree {
+        tree.redacted(try await valueMask(on: route))
     }
 
     /// The accessibility tree covers the active display only, so `--display` must name it.
@@ -117,6 +139,22 @@ struct DescribeUI: AsyncParsableCommand {
             selected.display, posture: selected.list.posture, platform: route.device.platform,
             physical: route.device.isPhysicalAndroidDevice, device: deviceName
         ), reason: .displayOff)
+    }
+
+    /// The raw tree is unredacted and uncapped device text, so only a person at a terminal reads it.
+    static func refuseRawSourceForAgent(profile: OutputProfile = .current) throws {
+        guard profile == .agent else { return }
+        throw CLIError.personRequired(
+            "--raw-source prints the device's unredacted tree, so it runs only for a person at a terminal. Nothing was read. Use describe-ui --json instead."
+        )
+    }
+
+    /// The raw capture as text: refused past the tree caps, and every hazard escaped.
+    static func rawSourceText(_ capture: Data) throws -> String {
+        if let refusal = JSONShape.refusal(capture) {
+            throw CLIError(errorDescription: "The raw tree was not printed: \(refusal). Use describe-ui --json, which trims it.", reason: .commandFailed)
+        }
+        return TerminalText.escapingJSONHazards(String(decoding: capture, as: UTF8.self))
     }
 
     /// The platform's unmapped tree with the screen, for the committed tree goldens.

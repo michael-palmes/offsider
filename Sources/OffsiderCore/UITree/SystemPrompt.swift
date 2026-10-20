@@ -19,11 +19,11 @@ public struct SystemPrompt: Equatable, Sendable {
         UITreeContext.Window(title: title, kind: .system, package: process)
     }
 
-    /// `the system prompt 'Save Password?' from SafariViewService`.
+    /// `the system prompt "Save Password?" from SafariViewService`.
     public var summary: String {
         var parts = ["the system prompt"]
         if let title {
-            parts.append("'\(TerminalText.line(SelectorText.truncated(title), keepsTab: false))'")
+            parts.append(TerminalText.quoted(SelectorText.truncated(title)))
         }
         parts.append("from \(process.map { TerminalText.bareOrQuoted($0) } ?? "pid \(pid)")")
         return parts.joined(separator: " ")

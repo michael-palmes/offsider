@@ -1,0 +1,1 @@
+GET https://api.example.com/v1/pay?card=4111111111111111&session=Zx9Kq2PmLw8RtY6vBn3J status=200

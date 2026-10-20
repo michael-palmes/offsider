@@ -116,7 +116,26 @@ struct AndroidSecureTextTests {
         #expect(error?.message.contains("The text was not sent") == true)
         #expect(!(error?.message.contains(Self.sentinel) ?? true))
         #expect(!rig.adbScripts.contains { $0.hasPrefix("input text") })
+    }
 
+    @Test("piped or batch text with an unreadable focused field takes the password path too: helper_unavailable without a helper, never an input text script")
+    func unreadableFocusPiped() async throws {
+        let rig = try AndroidGrpcInputTests.rig(environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"])
+        let session = try #require(try await rig.backend.openInputSession(for: AndroidGrpcTextTests.device) as? any TextInputSession)
+
+        let error = await #expect(throws: AndroidError.self) { try await session.typeText(Self.sentinel) }
+        #expect(error?.kind == .helperUnavailable)
+        #expect(error?.message.contains("The text was not sent") == true)
+        #expect(!(error?.message.contains(Self.sentinel) ?? true))
+        #expect(!(error?.message.contains("--stdin") ?? true))
+        #expect(!rig.adbScripts.contains { $0.contains("input text") })
+    }
+
+    @Test("piped text into a field read as plain still goes as input text")
+    func readablePlainFieldPiped() async throws {
+        let plain = Self.passwordNode(text: "", focused: true).replacingOccurrences(of: #"password="true""#, with: #"password="false""#)
+        let rig = try AndroidGrpcInputTests.rig(environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"], uiautomatorDump: Self.xml(plain))
+        let session = try #require(try await rig.backend.openInputSession(for: AndroidGrpcTextTests.device) as? any TextInputSession)
         try await session.typeText("abc")
         #expect(rig.adbScripts.contains { $0.hasPrefix("input text") })
     }
@@ -138,9 +157,11 @@ struct AndroidSecureTextTests {
 
     @Test("a failed adb input names the character count, never the typed text")
     func adbLabel() async throws {
+        let plain = Self.passwordNode(text: "", focused: true).replacingOccurrences(of: #"password="true""#, with: #"password="false""#)
         let rig = try AndroidGrpcInputTests.rig(
-            environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb"],
-            failingScript: { $0.hasPrefix("input text") }
+            environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"],
+            failingScript: { $0.hasPrefix("input text") },
+            uiautomatorDump: Self.xml(plain)
         )
         let session = try #require(try await rig.backend.openInputSession(for: AndroidGrpcTextTests.device) as? any TextInputSession)
 

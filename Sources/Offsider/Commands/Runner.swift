@@ -20,9 +20,10 @@ struct RunnerBuildCommand: AsyncParsableCommand {
         commandName: "build",
         abstract: "Build the runner app for an allowed, wired iPhone or iPad, or check its cached build.",
         discussion: """
-        The runner is signed with OFFSIDER_IOS_TEAM_ID, or the team `device-access allow --team` recorded for the device. \
-        Offsider never registers a device with a team on its own: --register-device lets Xcode add this device to the team, \
-        and only a person in their own terminal can pass it. Xcode > Window > Devices and Simulators registers it too.
+        The runner is signed with the team `device-access allow` recorded for the device, else OFFSIDER_IOS_TEAM_ID; a variable naming \
+        another team than the allowance's is refused. Offsider never registers a device with a team on its own: --register-device lets \
+        Xcode add this device to the team, and only a person in their own terminal, with Touch ID or their password, can pass it. \
+        The first build under a new OFFSIDER_IOS_RUNNER_PREFIX asks the same way. Xcode > Window > Devices and Simulators registers a device too.
         """
     )
 
@@ -35,6 +36,14 @@ struct RunnerBuildCommand: AsyncParsableCommand {
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of text.")
     var json = false
 
+    /// A new OFFSIDER_IOS_RUNNER_PREFIX creates App IDs in the person's team, so its first build needs a terminal and Touch ID or the password.
+    static func confirmPrefix(udid: String) -> @Sendable (String) async throws -> Void {
+        { prefix in
+            try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider runner build --device \(udid)` in their own terminal.")
+            try await PersonPresence.confirm(reason: "build Offsider's runner under the new bundle prefix \(prefix) in your Apple developer team")
+        }
+    }
+
     @MainActor
     func run() async throws {
         let udid = try RunnerSessions.physicalUDID(device, command: "runner build")
@@ -44,12 +53,15 @@ struct RunnerBuildCommand: AsyncParsableCommand {
             guard isatty(STDOUT_FILENO) != 0 else {
                 throw CLIError.personRequired("This step needs a person at a terminal, and standard output is not one. Nothing was changed. \(instead)")
             }
+            try await PersonPresence.confirm(reason: "register the iPhone or iPad \(udid) with your Apple developer team")
         }
         let route = try await DeviceRouter.route(udid, logger: OffsiderLogger())
         guard let backend = route.backend as? IOSDeviceBackend else {
             throw CLIError(errorDescription: "runner build is for a physical iPhone or iPad, and \(udid) is not one.", reason: .usage)
         }
-        let build = try await backend.buildRunner(for: route.device, registerDevice: registerDevice)
+        let build = try await XcodeRunnerBuilder.$confirmNewPrefix.withValue(Self.confirmPrefix(udid: udid)) {
+            try await backend.buildRunner(for: route.device, registerDevice: registerDevice)
+        }
         if json {
             let data = try JSONSerialization.data(withJSONObject: ["device": udid, "key": build.key, "directory": build.directory.path], options: [.sortedKeys])
             print(String(decoding: data, as: UTF8.self))
@@ -111,6 +123,10 @@ struct RunnerStop: AsyncParsableCommand {
         )
         for record in records {
             await manager.stop(record)
+            RunnerSessions.removeLog(udid: record.udid)
+        }
+        if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            RunnerSessions.removeLog(udid: udid)
         }
         let stopped = records.map(\.udid)
         var cleaned: RunnerCleanupReport?
@@ -147,11 +163,29 @@ enum RunnerSessions {
         return udid
     }
 
-    /// `--clean` uninstalls from the device, so it needs the allow-list like any other command that reaches it; a plain stop touches only local records.
-    static func cleanableUDID(_ raw: String, command: String, gate: DevicePolicyGate = DevicePolicyGate.current) throws -> String {
+    /// `--clean` only removes what Offsider put there, so a device allowed now or once (its runner built or running here) may be cleaned after its allowance lapsed or was removed.
+    static func cleanableUDID(
+        _ raw: String, command: String, gate: DevicePolicyGate = DevicePolicyGate.current,
+        hasRunnerRecord: (String) -> Bool = { RunnerSessions.hasRecord(udid: $0) }
+    ) throws -> String {
         let udid = try physicalUDID(raw, command: command)
-        try gate.require(platform: .ios, key: udid.uppercased())
+        if case .refused(let refusal) = gate.decision(platform: .ios, key: udid.uppercased()) {
+            guard !refusal.isManaged, hasRunnerRecord(udid) else {
+                throw CLIError.deviceNotAllowed(name: nil, key: udid.uppercased(), refusal: refusal)
+            }
+        }
         return udid
+    }
+
+    /// A runner build or session this Mac holds for the device, which only an allowance could have made.
+    static func hasRecord(udid: String) -> Bool {
+        !records(device: udid).isEmpty
+            || RunnerCleanup.hasBuild(for: udid, cacheRoot: XcodeRunnerBuilder.defaultCacheRoot(home: FileManager.default.homeDirectoryForCurrentUser))
+    }
+
+    /// `runner.log` can hold what the runner was asked to do, so a stop deletes it.
+    static func removeLog(udid: String) {
+        store.removeLog(udid: udid)
     }
 
     /// Uninstalls the runner apps, then deletes this device's cached builds, `runner.log` and the broker's log. Its sessions must be stopped first.

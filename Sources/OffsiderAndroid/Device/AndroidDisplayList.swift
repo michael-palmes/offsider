@@ -76,7 +76,7 @@ struct AndroidDisplayList: Equatable, Sendable {
         let uniqueId = String(line[nameEnd.upperBound..<idEnd])
         let fields = line[line.index(after: idEnd)...].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         guard let size = fields.first(where: { $0.contains(" x ") }).flatMap(Self.size),
-              let density = fields.first(where: { $0.hasPrefix("density ") }).flatMap({ Int($0.dropFirst("density ".count)) }), density > 0,
+              let density = fields.first(where: { $0.hasPrefix("density ") }).flatMap({ Int($0.dropFirst("density ".count)) }), PixelMath.isSide(density),
               let external = fields.first(where: { $0.hasPrefix("type ") }).flatMap({ Self.externalByType[String($0.dropFirst("type ".count))] }),
               uniqueId.hasPrefix("local:") else {
             return nil
@@ -97,7 +97,7 @@ struct AndroidDisplayList: Equatable, Sendable {
 
     private static func size(_ field: String) -> (Int, Int)? {
         let parts = field.components(separatedBy: " x ")
-        guard parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]), width > 0, height > 0 else { return nil }
+        guard parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]), PixelMath.isSide(width), PixelMath.isSide(height) else { return nil }
         return (width, height)
     }
 }

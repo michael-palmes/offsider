@@ -13,7 +13,10 @@ final class ShellStream {
     let label: String
     private let stream: any AdbByteStream
     private var unread: Data
-    private var decoder = AdbWire.ShellV2Decoder()
+    /// The most stdout without a newline, or stderr, a stream holds; adb's own packets are at most 1 MiB.
+    static let maxPendingBytes = 1 << 20
+
+    private var decoder = AdbWire.ShellV2Decoder(maxPacketBytes: ShellStream.maxPendingBytes)
     private var stdout = Data()
     private var stderr = Data()
     private var lines: [String] = []
@@ -69,19 +72,31 @@ final class ShellStream {
                 throw AndroidError.adbCommandFailed(serial: serial, command: label, detail: "the connection closed before the command finished")
             }
         }
-        for packet in try decoder.feed(chunk) {
+        let packets: [AdbWire.ShellPacket]
+        do {
+            packets = try decoder.feed(chunk)
+        } catch is AdbWire.PacketTooLarge {
+            throw tooLong
+        }
+        for packet in packets {
             switch packet.kind {
             case .stdout:
                 stdout.append(packet.payload)
                 splitLines()
+                guard stdout.count <= Self.maxPendingBytes else { throw tooLong }
             case .stderr:
                 stderr.append(packet.payload)
+                guard stderr.count <= Self.maxPendingBytes else { throw tooLong }
             case .exit:
                 exitStatus = Int32(packet.payload.first ?? 0)
             default:
                 continue
             }
         }
+    }
+
+    private var tooLong: AndroidError {
+        .adbCommandFailed(serial: serial, command: label, detail: "it printed a line or error over 1 MB, so Offsider stopped reading")
     }
 
     private func splitLines() {

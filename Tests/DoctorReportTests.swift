@@ -80,6 +80,7 @@ struct DoctorReportTests {
             "xcode.version",
             "xcode.frameworks",
             "coresimulator.version",
+            "xcode.private-api",
             "host.simulator-app",
             "host.device-hub",
             "hid.stabilization",
@@ -134,6 +135,7 @@ struct DoctorReportTests {
             "host.sessions",
             "install.bundle",
             "install.skill",
+            "install.rules",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)

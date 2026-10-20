@@ -130,11 +130,13 @@ final class HIDBrokerFrameReader: @unchecked Sendable {
     }
 
     private let descriptor: Int32
+    private let frameTimeoutMilliseconds: Int
     private let queue = DispatchQueue(label: "offsider.hid-broker.reader")
     private var buffer = Data()
 
-    init(descriptor: Int32) {
+    init(descriptor: Int32, frameTimeoutMilliseconds: Int = HIDBroker.serverIOTimeoutMilliseconds) {
         self.descriptor = descriptor
+        self.frameTimeoutMilliseconds = frameTimeoutMilliseconds
     }
 
     func next(silentWithin milliseconds: Int32? = nil) async -> Read {
@@ -143,8 +145,10 @@ final class HIDBrokerFrameReader: @unchecked Sendable {
         }
     }
 
+    /// A frame begun must arrive whole within the frame time, however slowly its bytes trickle in.
     private func readFrame(silentWithin milliseconds: Int32?) -> Read {
         var chunk = [UInt8](repeating: 0, count: 16 * 1024)
+        var deadline: UInt64?
         while true {
             if let newline = buffer.firstIndex(of: 0x0A) {
                 let frame = Data(buffer[buffer.startIndex..<newline])
@@ -152,8 +156,18 @@ final class HIDBrokerFrameReader: @unchecked Sendable {
                 return .frame(frame)
             }
             guard buffer.count < HIDBroker.maximumRequestBytes else { return .closed }
+            let wait: Int32
+            if buffer.isEmpty {
+                wait = milliseconds ?? -1
+            } else {
+                let now = HIDBroker.monotonicTimeNanoseconds()
+                let end = deadline ?? now + UInt64(max(1, frameTimeoutMilliseconds)) * 1_000_000
+                deadline = end
+                guard now < end else { return .closed }
+                wait = Int32(clamping: max(1, (end - now) / 1_000_000))
+            }
             var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
-            let ready = poll(&poller, 1, buffer.isEmpty ? (milliseconds ?? -1) : Int32(HIDBroker.serverIOTimeoutMilliseconds))
+            let ready = poll(&poller, 1, wait)
             if ready < 0 {
                 if errno == EINTR { continue }
                 return .closed
@@ -182,6 +196,7 @@ final class HIDBrokerServer {
     private let endpointIdentity: HIDBrokerSocketIdentity?
     private let sink: HIDBrokerSink
     private let isCurrentBoot: () -> Bool
+    private let admits: (Int32) -> Bool
     private let writeLog: (String) -> Void
     private(set) var idleSeconds: Int
     private let maxLifetime: Duration
@@ -203,6 +218,7 @@ final class HIDBrokerServer {
         endpoint: String?,
         sink: HIDBrokerSink,
         isCurrentBoot: @escaping () -> Bool,
+        admits: @escaping (Int32) -> Bool,
         idleSeconds: Int,
         maxLifetime: Duration = .seconds(SimulatorSessionSettings.maxLifetimeSeconds),
         log: @escaping (String) -> Void
@@ -213,6 +229,7 @@ final class HIDBrokerServer {
         self.endpointIdentity = endpoint.flatMap { try? HIDBroker.socketIdentity(at: $0) }
         self.sink = sink
         self.isCurrentBoot = isCurrentBoot
+        self.admits = admits
         self.idleSeconds = idleSeconds
         self.maxLifetime = maxLifetime
         self.writeLog = log
@@ -279,8 +296,8 @@ final class HIDBrokerServer {
     }
 
     private func admit(_ client: Int32) {
-        // Another user's client gets no bytes at all, not even the handshake.
-        guard HIDBroker.isSameUserPeer(client), connections.count < Self.maxConnections else {
+        // Another user's client, or another build's, gets no bytes at all, not even the handshake; a full broker closes before checking.
+        guard connections.count < Self.maxConnections, HIDBroker.isSameUserPeer(client), admits(client) else {
             Darwin.close(client)
             return
         }

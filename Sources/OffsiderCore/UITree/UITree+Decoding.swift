@@ -24,6 +24,9 @@ extension UITree {
             roots: try nodes.map { try UINode(jsonObject: $0, platform: platform) }
         )
         decodedContext = (object["context"] as? [String: Any]).map(UITreeContext.init(jsonObject:))
+        if let redacted = object["redacted"] as? NSNumber, let revealed = object["revealed"] as? NSNumber {
+            redaction = UITreeRedactionCounts(redacted: redacted.intValue, revealed: revealed.intValue)
+        }
     }
 }
 

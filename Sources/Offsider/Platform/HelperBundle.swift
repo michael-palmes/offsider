@@ -47,7 +47,7 @@ extension AndroidHost {
             directory: { try OffsiderPrivateDirectory.ensureSubdirectory(sessionsDirectoryName) },
             spawn: { serial, logPath in
                 try DetachedProcess().launch(
-                    executable: executable, arguments: ["android-session", "serve", "--device", serial], environment: childEnvironment, logPath: logPath
+                    executable: executable, arguments: HelperBrokerHost.serveArguments(serial), environment: childEnvironment, logPath: logPath
                 )
             },
             exitStatus: { DetachedProcess().exitStatus(of: $0) },

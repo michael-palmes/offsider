@@ -9,17 +9,19 @@ struct HelperBrokerUnavailable: Error, Equatable, Sendable, CustomStringConverti
     var description: String { detail }
 }
 
-/// The broker's `UnixSocket`, accepting only this user's processes on a queue of its own.
+/// The broker's `UnixSocket`, accepting only this user's processes that `admits` accepts, on a queue of its own.
 final class UnixSocketListener: @unchecked Sendable {
     let path: String
     private let descriptor: Int32
     private let identity: [UInt64]?
+    private let admits: @Sendable (Int32) -> Bool
     private let queue = DispatchQueue(label: "offsider.helper-broker.accept")
     private let lock = NSLock()
     private var closed = false
 
-    init(path: String, uid: uid_t = getuid()) throws {
+    init(path: String, uid: uid_t = getuid(), admits: @escaping @Sendable (Int32) -> Bool) throws {
         self.path = path
+        self.admits = admits
         do {
             descriptor = try UnixSocket.listen(at: path, uid: uid)
         } catch let error as UnixSocketError {
@@ -34,7 +36,7 @@ final class UnixSocketListener: @unchecked Sendable {
 
     deinit { close() }
 
-    /// The next client within `timeout`, nil when none came; another user's client is closed unread.
+    /// The next client within `timeout`, nil when none came; another user's client, or one `admits` refuses, is closed unread.
     func accept(timeout: Duration, uid: uid_t = getuid()) async -> Int32? {
         let milliseconds = Int32(clamping: timeout.components.seconds * 1000 + timeout.components.attoseconds / 1_000_000_000_000_000)
         return await withCheckedContinuation { continuation in
@@ -50,7 +52,7 @@ final class UnixSocketListener: @unchecked Sendable {
         guard poll(&poller, 1, waitingMs) > 0 else { return nil }
         let client = Darwin.accept(descriptor, nil, nil)
         guard client >= 0 else { return nil }
-        guard UnixSocket.isSameUser(client, uid: uid) else {
+        guard UnixSocket.isSameUser(client, uid: uid), admits(client) else {
             Darwin.close(client)
             return nil
         }

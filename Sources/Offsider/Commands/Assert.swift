@@ -44,7 +44,8 @@ struct Assert: AsyncParsableCommand {
         let outcome = try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
             try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
         }
-        try Wait.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json)
+        let mask = (try? await AmbientMasks.treeMask()) ?? .none
+        try Wait.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, checked: selector, mask: mask)
     }
 
     /// One read on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree read; `probesOnMiss` reads the screen's centre once when the check fails.

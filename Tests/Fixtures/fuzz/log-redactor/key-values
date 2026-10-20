@@ -1,0 +1,2 @@
+I/ReactNativeJS: login {"email":"someone@example.com","password":"hunter2","token":"eyJhbGciOiJIUzI1NiJ9.e30.abc"}
+Authorization: Bearer abc.def.ghi

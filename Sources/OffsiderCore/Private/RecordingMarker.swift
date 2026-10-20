@@ -36,12 +36,12 @@ public final class RecordingMarker: @unchecked Sendable {
             // A recorder finishing at this moment may have unlinked the file this descriptor opened.
             var opened = stat()
             var current = stat()
-            guard fstat(descriptor, &opened) == 0, lstat(path, &current) == 0, opened.st_ino == current.st_ino, opened.st_dev == current.st_dev else {
+            guard unsafe fstat(descriptor, &opened) == 0, unsafe lstat(path, &current) == 0, opened.st_ino == current.st_ino, opened.st_dev == current.st_dev else {
                 Darwin.close(descriptor)
                 continue
             }
             let line = Array("pid=\(getpid())\nstarted=\(Int(Date().timeIntervalSince1970))\n".utf8)
-            _ = pwrite(descriptor, line, line.count, 0)
+            _ = unsafe pwrite(descriptor, line, line.count, 0)
             return RecordingMarker(path: path, descriptor: descriptor)
         }
         throw PrivateDirectoryError(.system(operation: "open", code: EAGAIN), path: path)
@@ -49,7 +49,7 @@ public final class RecordingMarker: @unchecked Sendable {
 
     /// True while some `record-video` holds the marker for `key`; a marker its recorder left behind reads false.
     public static func isLive(_ key: DeviceLockKey, root: String = OffsiderPrivateDirectory.root) -> Bool {
-        let descriptor = Darwin.open(path(for: key, root: root), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        let descriptor = unsafe Darwin.open(path(for: key, root: root), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         guard descriptor >= 0 else { return false }
         defer { Darwin.close(descriptor) }
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
@@ -63,7 +63,7 @@ public final class RecordingMarker: @unchecked Sendable {
     /// Releases this recording's hold; the file goes once no other recording holds it.
     public func remove() {
         guard descriptor >= 0 else { return }
-        if flock(descriptor, LOCK_EX | LOCK_NB) == 0 { unlink(path) }
+        if flock(descriptor, LOCK_EX | LOCK_NB) == 0 { unsafe unlink(path) }
         _ = flock(descriptor, LOCK_UN)
         Darwin.close(descriptor)
         descriptor = -1

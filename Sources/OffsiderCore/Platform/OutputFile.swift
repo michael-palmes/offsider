@@ -69,7 +69,7 @@ public enum OutputFile {
                 Darwin.close(descriptor)
             } catch {
                 Darwin.close(descriptor)
-                unlink(target)
+                unsafe unlink(target)
                 throw error
             }
             return target
@@ -89,12 +89,12 @@ public enum OutputFile {
         }
         do {
             try write(data, to: descriptor, path: temporary)
-            guard fsync(descriptor) == 0 else { throw OutputFileError(path: path, "Offsider could not flush \(path): \(String(cString: strerror(errno))).") }
+            guard fsync(descriptor) == 0 else { throw OutputFileError(path: path, unsafe "Offsider could not flush \(path): \(String(cString: strerror(errno))).") }
             Darwin.close(descriptor)
-            guard rename(temporary, path) == 0 else { throw OutputFileError(path: path, "Offsider could not replace \(path): \(String(cString: strerror(errno))).") }
+            guard unsafe rename(temporary, path) == 0 else { throw OutputFileError(path: path, unsafe "Offsider could not replace \(path): \(String(cString: strerror(errno))).") }
         } catch {
             Darwin.close(descriptor)
-            unlink(temporary)
+            unsafe unlink(temporary)
             throw error
         }
     }
@@ -102,9 +102,9 @@ public enum OutputFile {
     /// Nothing at `path`, or a regular file this user owns whose extension is allowed.
     public static func checkReplaceable(_ path: String, allowedExtensions: Set<String> = replaceableExtensions, uid: uid_t = getuid()) throws {
         var info = stat()
-        guard lstat(path, &info) == 0 else {
+        guard unsafe lstat(path, &info) == 0 else {
             if errno == ENOENT { return }
-            throw OutputFileError(path: path, "Offsider could not check \(path): \(String(cString: strerror(errno))).")
+            throw OutputFileError(path: path, unsafe "Offsider could not check \(path): \(String(cString: strerror(errno))).")
         }
         switch info.st_mode & S_IFMT {
         case S_IFREG: break
@@ -130,9 +130,9 @@ public enum OutputFile {
     private static func write(_ data: Data, to descriptor: Int32, path: String) throws {
         var offset = 0
         while offset < data.count {
-            let written = data.withUnsafeBytes { Darwin.write(descriptor, $0.baseAddress! + offset, $0.count - offset) }
+            let written = unsafe data.withUnsafeBytes { unsafe Darwin.write(descriptor, $0.baseAddress! + offset, $0.count - offset) }
             if written < 0, errno == EINTR { continue }
-            guard written > 0 else { throw OutputFileError(path: path, "Offsider could not write \(path): \(String(cString: strerror(errno))).") }
+            guard written > 0 else { throw OutputFileError(path: path, unsafe "Offsider could not write \(path): \(String(cString: strerror(errno))).") }
             offset += written
         }
     }
@@ -141,11 +141,11 @@ public enum OutputFile {
     public static func stagingDirectory(for target: String) throws -> String {
         let directory = (target as NSString).deletingLastPathComponent
         var template = Array(((directory.isEmpty ? "." : directory) as NSString).appendingPathComponent(".offsider-staging-XXXXXX").utf8CString)
-        guard let made = template.withUnsafeMutableBufferPointer({ mkdtemp($0.baseAddress!) }) else {
-            throw OutputFileError(path: target, "Offsider could not create a staging folder beside \(target): \(String(cString: strerror(errno))).")
+        guard let made = template.withUnsafeMutableBufferPointer({ unsafe mkdtemp($0.baseAddress!) }) else {
+            throw OutputFileError(path: target, unsafe "Offsider could not create a staging folder beside \(target): \(String(cString: strerror(errno))).")
         }
-        let path = String(cString: made)
-        chmod(path, S_IRWXU)
+        let path = unsafe String(cString: made)
+        unsafe chmod(path, S_IRWXU)
         return path
     }
 
@@ -156,19 +156,19 @@ public enum OutputFile {
         let staging = (staged as NSString).deletingLastPathComponent
         defer { discardStaging(staging) }
         var info = stat()
-        guard lstat(staged, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == uid else {
+        guard unsafe lstat(staged, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == uid else {
             throw OutputFileError(path: target, "The staged file for \(target) is missing or not a regular file.")
         }
-        chmod(staged, S_IRUSR | S_IWUSR)
+        unsafe chmod(staged, S_IRUSR | S_IWUSR)
         if replacing {
             try checkReplaceable(target, allowedExtensions: allowedExtensions, uid: uid)
-            guard rename(staged, target) == 0 else { throw OutputFileError(path: target, "Offsider could not move the recording to \(target): \(String(cString: strerror(errno))).") }
+            guard unsafe rename(staged, target) == 0 else { throw OutputFileError(path: target, unsafe "Offsider could not move the recording to \(target): \(String(cString: strerror(errno))).") }
             return target
         }
         for attempt in 1...maxSuffix {
             let candidate = candidate(target, attempt: attempt)
-            if renamex_np(staged, candidate, UInt32(RENAME_EXCL)) == 0 { return candidate }
-            guard errno == EEXIST else { throw OutputFileError(path: candidate, "Offsider could not move the recording to \(candidate): \(String(cString: strerror(errno))).") }
+            if unsafe renamex_np(staged, candidate, UInt32(RENAME_EXCL)) == 0 { return candidate }
+            guard errno == EEXIST else { throw OutputFileError(path: candidate, unsafe "Offsider could not move the recording to \(candidate): \(String(cString: strerror(errno))).") }
         }
         throw OutputFileError(path: target, "Offsider found no free file name beside \(target).")
     }
@@ -176,7 +176,7 @@ public enum OutputFile {
     /// Removes a staging folder and what is left in it, without following links.
     public static func discardStaging(_ staging: String) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: staging) else { return }
-        for name in names { unlink((staging as NSString).appendingPathComponent(name)) }
-        rmdir(staging)
+        for name in names { unsafe unlink((staging as NSString).appendingPathComponent(name)) }
+        unsafe rmdir(staging)
     }
 }

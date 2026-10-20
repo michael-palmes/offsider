@@ -84,6 +84,10 @@ struct SessionStop: AsyncParsableCommand {
         )
         for record in runners {
             await runnerManager.stop(record)
+            RunnerSessions.removeLog(udid: record.udid)
+        }
+        if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            RunnerSessions.removeLog(udid: udid)
         }
         let serial = await AndroidWarmHelpers.serial(for: device).serial
         let helpers = try await TerminalSpinner.run("Stopping the warm helper") { await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial) }

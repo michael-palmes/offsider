@@ -322,8 +322,9 @@ struct LoginFlowTests {
         let message = "The keyboard covers the next control, so Turnstile was not checked and the submit button was not tapped. Both fields were filled."
         #expect(written == [
             #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"filled","submitted":false,"name":"dev","tags":[],"turnstile":null,"exitCode":1,"#
-                + #""error":{"reason":"target_under_keyboard","message":"\#(message)","hint":null,"dispatched":null,"candidates":[]}}"#,
+                + #""error":{"reason":"target_under_keyboard","message":"\#(message)","hint":null,"dispatched":null,"candidates":[]},"untrusted":["error.message"]}"#,
         ])
+        #expect(try expectUntrustedPathsResolve(written[0]) == ["error.message"])
         #expect((thrown as? ReportedFailure)?.exitCode.rawValue == 1)
         #expect(!written.joined().contains(username))
         #expect(!written.joined().contains(password))
@@ -342,7 +343,7 @@ struct LoginFlowTests {
 
         #expect(written == [
             #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"not_filled","submitted":false,"name":"dev","tags":[],"turnstile":null,"exitCode":5,"#
-                + #""error":{"reason":"text_not_accepted","message":"The password field did not show one bullet per character. The submit button was not tapped. The email or username was filled.","hint":null,"dispatched":null,"candidates":[]}}"#,
+                + #""error":{"reason":"text_not_accepted","message":"The password field did not show one bullet per character. The submit button was not tapped. The email or username was filled.","hint":null,"dispatched":null,"candidates":[]},"untrusted":["error.message"]}"#,
         ])
         #expect((thrown as? ReportedFailure)?.exitCode.rawValue == 5)
     }

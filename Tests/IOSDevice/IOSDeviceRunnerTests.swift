@@ -545,10 +545,21 @@ struct RunnerBuilderTests {
         #expect(Set(others + [key]).count == 5)
     }
 
-    @Test("the team comes from OFFSIDER_IOS_TEAM_ID first, then the device's allowance")
+    @Test("the allowance's team signs; OFFSIDER_IOS_TEAM_ID serves only when it matches or the allowance names none")
     func teamResolution() throws {
-        #expect(try XcodeRunnerBuilder.resolveTeam(environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], allowanceTeam: "ZYXWV98765", signedInTeams: []) == "ABCDE12345")
         #expect(try XcodeRunnerBuilder.resolveTeam(environment: [:], allowanceTeam: "ZYXWV98765", signedInTeams: ["AAAAA11111"]) == "ZYXWV98765")
+        #expect(try XcodeRunnerBuilder.resolveTeam(environment: ["OFFSIDER_IOS_TEAM_ID": "ZYXWV98765"], allowanceTeam: "ZYXWV98765", signedInTeams: []) == "ZYXWV98765")
+        #expect(try XcodeRunnerBuilder.resolveTeam(environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], allowanceTeam: nil, signedInTeams: []) == "ABCDE12345")
+    }
+
+    @Test("a variable naming another team than the person chose is refused, naming both teams and the allow command")
+    func teamVariableCannotOverrideAllowance() {
+        let error = #expect(throws: IOSDeviceError.self) {
+            _ = try XcodeRunnerBuilder.resolveTeam(environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], allowanceTeam: "ZYXWV98765", signedInTeams: [])
+        }
+        #expect(error?.reason == .usage)
+        #expect(error?.message.contains("OFFSIDER_IOS_TEAM_ID is ABCDE12345, but this device's allowance names team ZYXWV98765") == true)
+        #expect(error?.hint == "offsider device-access allow")
     }
 
     @Test("Xcode's only signed-in team is never used: team_missing names the variable, --team and the team count")

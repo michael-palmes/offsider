@@ -1,12 +1,13 @@
 import Foundation
+import OffsiderCore
 
 /// Measured on emulator 37.1.11: `sendTouch` takes the panel's natural portrait pixels whoever rotated the display,
 /// and `getScreenshot` turns with the emulator, not the guest.
 enum PanelRotation {
     /// A point in logical pixels at the guest's current rotation, rounded and clamped to the natural W x H panel.
     static func panelPoint(_ point: AndroidPoint, rotation: Int, naturalWidth: Int, naturalHeight: Int) -> (x: Int32, y: Int32) {
-        let x = Int(point.x.rounded())
-        let y = Int(point.y.rounded())
+        let x = PixelMath.roundedPixel(point.x)
+        let y = PixelMath.roundedPixel(point.y)
         let width = naturalWidth
         let height = naturalHeight
         let panel: (Int, Int)

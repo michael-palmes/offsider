@@ -143,7 +143,7 @@ private func bottomBar(shade: UInt8) -> Data {
 }
 
 @MainActor
-@Suite("Verifier Tests")
+@Suite("Verifier Tests", .personOutput)
 struct VerifierTests {
     private func run(
         _ fake: FakeSimulator,
@@ -604,7 +604,7 @@ struct VerifierTests {
 
 
 @MainActor
-@Suite("Verifier --verify-id and --verify-ignore-text")
+@Suite("Verifier --verify-id and --verify-ignore-text", .personOutput)
 struct VerifierModeTests {
     private static func page(_ ids: [String], clock: String = "1") -> UITree {
         FakeUI.tree(width: 64, height: 128, [FakeUI.node(.text, id: "clock", label: clock)] + ids.map { FakeUI.node(.button, id: $0, label: $0, frame: FakeUI.frame(0, 10, 60, 20)) })
@@ -663,7 +663,7 @@ struct VerifierModeTests {
 }
 
 @MainActor
-@Suite("Verifier live values, LogBox and phases")
+@Suite("Verifier live values, LogBox and phases", .personOutput)
 struct VerifierLiveTests {
     private static let toggle = "live-ticker-toggle"
 

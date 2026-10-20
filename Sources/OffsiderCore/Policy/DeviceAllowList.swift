@@ -29,6 +29,19 @@ public struct DeviceAllowance: Equatable, Sendable {
         expires.map { $0 > now } ?? true
     }
 
+    /// The pin a person chooses for "Any app and all logs" on an Android phone: whole-device logs, and any app named on each command.
+    public static let wholeDevicePin = "*"
+
+    /// The apps pinned by id, without the whole-device pin.
+    public var pinnedApps: [String] {
+        apps.filter { $0 != Self.wholeDevicePin }
+    }
+
+    /// True when a person chose whole-device logs for this Android phone.
+    public var allowsWholeDevice: Bool {
+        platform == .android && apps.contains(Self.wholeDevicePin)
+    }
+
     /// The stable key for a physical device's ID: an uppercased UDID for an iPhone or iPad, the serial for a USB phone; nil for anything else.
     public static func physicalKey(platform: DevicePlatform, id raw: String) -> String? {
         let id = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -155,6 +168,7 @@ public struct DeviceAllowList: Equatable, Sendable {
             throw DeviceAllowListError("\(at).apps must be an array of at most \(DeviceAllowance.maximumApps) app ids")
         }
         let appIDs = try apps.map { app -> String in
+            if let text = app as? String, text == DeviceAllowance.wholeDevicePin, platform == .android { return text }
             guard let text = app as? String, DeviceAllowance.isAppID(text) else { throw DeviceAllowListError("\(at).apps holds something that is not an app id") }
             return text
         }

@@ -298,7 +298,7 @@ struct LoginCredentialTests {
             if writing { writesInsideNotice += 1 }
         }
         let first = try describe(store, nil, edit, wrote: ({ writing = true }, { writing = false }))
-        #expect(first == #"{"version":2,"action":"describe","app":"com.example.app","name":"qa-admin","saved":true,"changed":true,"default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging","updated":"2026-10-11T09:30:00Z"}"#)
+        #expect(first == #"{"version":2,"action":"describe","app":"com.example.app","name":"qa-admin","saved":true,"changed":true,"default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging","updated":"2026-10-11T09:30:00Z","untrusted":["about"]}"#)
         let again = try describe(store, "qa-admin", edit, wrote: ({ writing = true }, { writing = false }))
         #expect(again.contains(#""changed":false"#))
         #expect(writes == 1)
@@ -361,7 +361,8 @@ struct LoginCredentialTests {
         }
 
         let list = try status(nil)
-        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"Test_AVD","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}],"signedInHere":true},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[],"signedInHere":false}]}"#)
+        #expect(list == #"{"version":2,"action":"status","app":"com.example.app","signedInHere":"qa-admin","users":[{"name":"qa-admin","default":true,"tags":["env=staging","role=admin"],"about":"Admin on staging, can change team settings","avoid":"Checkout: no store credit","state":"3 items in the cart","updated":"2026-10-11T09:30:00Z","signedIn":[{"device":"Test_AVD","platform":"android","since":"2026-10-11T10:02:11Z","restarted":false}],"signedInHere":true},{"name":"qa-member","default":false,"tags":["role=member"],"signedIn":[],"signedInHere":false}],"untrusted":["users[].about","users[].avoid","users[].state"]}"#)
+        #expect(try expectUntrustedPathsResolve(list) == ["users[].about", "users[].avoid", "users[].state"])
         let text = try status(nil, json: false)
         #expect(text.contains("role=admin"))
         #expect(text.contains("Admin on staging"))
@@ -1036,6 +1037,28 @@ struct LoginCredentialSettingsTests {
         #expect(refused.failureMessage.contains("no person has confirmed that link, so nothing was typed"))
 
         try store.join(member: "com.example.android", canonical: "com.example.app")
+        expectPassedTheGates(await login(store, package: "com.example.android"))
+    }
+
+    @Test("join repairs a link only the index knows: it asks, checks presence, writes the encrypted link, and login then types")
+    @MainActor
+    func joinRepairsIndexOnlyLink() async throws {
+        let store = MemoryLoginCredentialStore()
+        try store.save(try credential(), app: "com.example.app", key: "dev", isDefault: true)
+        try store.save(try credential(), app: "com.example.app", key: "qa", isDefault: false)
+        store.indexOnlyLink(member: "com.example.android", canonical: "com.example.app")
+        #expect((await login(store, package: "com.example.android") as? CLIError)?.reason == .personRequired)
+
+        let cancelled = await #expect(throws: CLIError.self) { try await self.join(store, foreground: "com.example.android", link: false) }
+        #expect(cancelled?.reason == .personRequired)
+        #expect(try store.loadStored(app: "com.example.app", key: "dev")?.links.isEmpty == true)
+
+        let person = FakePresence()
+        let repaired = try await join(store, foreground: "com.example.android", presence: person)
+        #expect(repaired.contains(#""linked":"com.example.app""#))
+        #expect(person.reasons == ["let com.example.android use the saved logins of com.example.app"])
+        #expect(try store.loadStored(app: "com.example.app", key: "dev")?.links == ["com.example.android"])
+        #expect(try store.loadStored(app: "com.example.app", key: "qa")?.links == ["com.example.android"])
         expectPassedTheGates(await login(store, package: "com.example.android"))
     }
 

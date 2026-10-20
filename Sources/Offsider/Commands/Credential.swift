@@ -284,7 +284,7 @@ struct CredentialCommand: AsyncParsableCommand {
     ) throws -> String {
         let key = key.map { storedKey($0) ?? $0 }
         func render(_ report: CredentialReport) -> String {
-            if json { return report.jsonLine() }
+            if json { return UntrustedPaths.appending(untrustedPaths(report), to: report.jsonLine()) }
             guard let styled else { return report.textLine() }
             return report.styledText(style: styled.style, device: styled.device)
         }
@@ -426,7 +426,7 @@ struct CredentialCommand: AsyncParsableCommand {
             already = false
         case .already(let target):
             canonical = target
-            already = true
+            already = try linkConfirmed(member: foreground, canonical: target, store: store)
         case .choose:
             canonical = try chooseApp(groups)
             already = false
@@ -442,6 +442,27 @@ struct CredentialCommand: AsyncParsableCommand {
         let report = CredentialReport(action: "join", app: foreground, saved: !already, linked: canonical)
         if json { return report.jsonLine() }
         return styled.map { report.styledText(style: $0.style, device: $0.device) } ?? report.textLine()
+    }
+
+    /// Saved notes, which agents write and later sessions read back: `about`, or `users[].about` in a list.
+    static func untrustedPaths(_ report: CredentialReport) -> [String] {
+        if report.action == "status", report.key == nil {
+            var seen: [String] = []
+            for path in report.listed.flatMap({ $0.context.notePaths(prefix: "users[].") }) where !seen.contains(path) { seen.append(path) }
+            return LoginNote.allCases.map { "users[].\($0.rawValue)" }.filter(seen.contains)
+        }
+        guard report.saved, report.action != "remove" else { return [] }
+        return report.context?.notePaths() ?? []
+    }
+
+    /// A link only the index holds (saved before 0.12, or planted) is not confirmed until every login of `canonical` carries it.
+    static func linkConfirmed(member: String, canonical: String, store: any LoginCredentialStoring) throws -> Bool {
+        guard member != canonical else { return true }
+        for key in try store.keys(app: canonical) {
+            guard let saved = try store.loadStored(app: canonical, key: key) else { continue }
+            if !saved.links.contains(member) { return false }
+        }
+        return true
     }
 
     /// Browsers and system apps never share or take saved logins. Without a device in hand both platforms' lists apply.

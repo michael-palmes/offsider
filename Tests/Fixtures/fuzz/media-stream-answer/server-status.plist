@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>serverInfo</key>
+	<dict>
+		<key>running</key>
+		<true/>
+		<key>sessions</key>
+		<array>
+			<dict>
+				<key>connection</key>
+				<dict>
+					<key>streamConfig</key>
+					<dict>
+						<key>RemoteSSRC</key>
+						<integer>2600940412</integer>
+					</dict>
+				</dict>
+			</dict>
+		</array>
+	</dict>
+</dict>
+</plist>

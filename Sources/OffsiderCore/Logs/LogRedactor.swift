@@ -35,9 +35,9 @@ public enum LogRedactor {
         "tfn", "dob", "birth", "account", "card", "wallet", "address", "routing", "bank",
     ]
 
-    private static let key = try! NSRegularExpression(pattern: #"(["']?)([A-Za-z][A-Za-z0-9_.-]{0,63})\1\s*[:=]\s*"#)
-    private static let scheme = try! NSRegularExpression(pattern: #"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}"#)
-    private static let jwt = try! NSRegularExpression(pattern: #"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*"#)
+    private static let key = try! NSRegularExpression(pattern: #"(["']?)([A-Za-z][A-Za-z0-9_.-]{0,63})\1[ \t]{0,16}[:=][ \t]{0,16}"#)
+    private static let scheme = try! NSRegularExpression(pattern: #"\b(Bearer|Basic)[ \t]{1,16}[A-Za-z0-9._~+/=-]{8,8192}"#)
+    private static let jwt = try! NSRegularExpression(pattern: #"\beyJ[A-Za-z0-9_-]{8,8192}\.eyJ[A-Za-z0-9_-]{8,8192}\.[A-Za-z0-9_-]{0,8192}"#)
     private static let email = try! NSRegularExpression(pattern: PersonalData.emailPattern)
     private static let hexAddress = try! NSRegularExpression(pattern: #"\b0x(?:[0-9A-Fa-f]{64}|[0-9A-Fa-f]{40})\b"#)
     private static let bech32 = try! NSRegularExpression(pattern: #"\b(?:bc1|tb1)[02-9ac-hj-np-z]{11,71}\b"#)
@@ -49,7 +49,13 @@ public enum LogRedactor {
     private static let wordPhrase = try! NSRegularExpression(
         pattern: #"(?<![A-Za-z0-9] )(?<![A-Za-z0-9])[a-z]{3,8}(?: [a-z]{3,8}){11,23}(?![A-Za-z0-9])(?! [A-Za-z0-9])"#
     )
+    /// 12 to 24 quoted words in a list, as a recovery phrase logged as an array: `["abandon", "ability", ...]`.
+    private static let quotedPhrase = try! NSRegularExpression(
+        pattern: #"(?<![a-z]["'][ \t]{0,2},[ \t]{0,2})(["'])[a-z]{3,8}\1(?:[ \t]{0,2},[ \t]{0,2}\1[a-z]{3,8}\1){11,23}(?![ \t]{0,2},[ \t]{0,2}["'][a-z])"#
+    )
     static let phraseLengths: Set<Int> = [12, 15, 18, 21, 24]
+    /// Values in a describe-ui tree no shorter than this are checked; shorter ones cannot hold a code, address, card or phrase.
+    public static let minimumValueLength = 6
 
     /// The text with every sensitive value replaced, and how many values were replaced; markers already there are left and not counted.
     public static func redact(_ text: String) -> (text: String, count: Int) {
@@ -58,22 +64,8 @@ public enum LogRedactor {
         let keyed = prefilterWords.contains(where: lowered.contains)
         guard keyed || shapes.any else { return (text, 0) }
         var count = 0
-        var result = text
         // Whole values first, so a key-value pass never splits a card number or phrase at its first space.
-        if shapes.longToken {
-            result = replace(hexAddress, in: result, template: addressMarker, count: &count)
-            result = replace(bech32, in: result, template: addressMarker, count: &count)
-            result = replace(base58, in: result, count: &count) { isMixedBase58($0) ? addressMarker : nil }
-        }
-        if shapes.digitRun {
-            result = replace(cardDigits, in: result, count: &count) { isCardNumber($0) ? cardMarker : nil }
-            result = replace(codeAfterKeyword, in: result, template: "$1\(marker)", count: &count)
-        }
-        if shapes.wordRun {
-            result = replace(wordPhrase, in: result, count: &count) { phrase in
-                phraseLengths.contains(phrase.split(separator: " ").count) ? phraseMarker : nil
-            }
-        }
+        var result = redactValuePatterns(text, shapes: shapes, count: &count)
         if keyed {
             result = redactKeyValues(result, count: &count)
             result = replace(scheme, in: result, template: "$1 \(marker)", count: &count)
@@ -83,20 +75,63 @@ public enum LogRedactor {
         return (result, count)
     }
 
+    /// Only the value patterns, with no key matching: one-time codes after a keyword, wallet addresses, card numbers and
+    /// recovery phrases. For screen text, where a key such as `password` names nothing.
+    public static func redactValue(_ value: String) -> (text: String, count: Int) {
+        let shapes = ValueShapes(value)
+        guard shapes.any else { return (value, 0) }
+        var count = 0
+        let result = redactValuePatterns(value, shapes: shapes, count: &count)
+        return (result, count)
+    }
+
+    private static func redactValuePatterns(_ text: String, shapes: ValueShapes, count: inout Int) -> String {
+        var result = text
+        if shapes.longToken {
+            result = replace(hexAddress, in: result, template: addressMarker, count: &count)
+            result = replace(bech32, in: result, template: addressMarker, count: &count)
+            result = replace(base58, in: result, count: &count) { isMixedBase58($0) ? addressMarker : nil }
+        }
+        if shapes.cardRun {
+            result = replace(cardDigits, in: result, count: &count) { isCardNumber($0) ? cardMarker : nil }
+        }
+        if shapes.codeRun {
+            result = replace(codeAfterKeyword, in: result, template: "$1\(marker)", count: &count)
+        }
+        if shapes.wordRun {
+            result = replace(wordPhrase, in: result, count: &count) { phrase in
+                phraseLengths.contains(phrase.split(separator: " ").count) ? phraseMarker : nil
+            }
+        }
+        if shapes.listRun {
+            result = replace(quotedPhrase, in: result, count: &count) { list in
+                guard let quote = list.first else { return nil }
+                let words = list.split(separator: ",").count
+                return phraseLengths.contains(words) ? "\(quote)\(phraseMarker)\(quote)" : nil
+            }
+        }
+        return result
+    }
+
     /// Which value patterns can match, from one pass over the bytes, so a line with none runs no value regex.
     struct ValueShapes {
         /// A run of 26 or more ASCII letters and digits: a hex, bech32 or base58 address.
         var longToken = false
-        /// Six or more digits, single spaces or hyphens allowed between them: a one-time code or a card number.
-        var digitRun = false
+        /// 13 or more digits, single spaces or hyphens allowed between them: a card number.
+        var cardRun = false
+        /// Exactly six digits in a row: a one-time code.
+        var codeRun = false
         /// Twelve or more lowercase words of 3 to 8 letters, one space apart: a recovery phrase.
         var wordRun = false
+        /// Twelve or more quoted lowercase words of 3 to 8 letters, comma separated: a recovery phrase logged as a list.
+        var listRun = false
 
-        var any: Bool { longToken || digitRun || wordRun }
+        var any: Bool { longToken || cardRun || codeRun || wordRun || listRun }
 
         init(_ text: String) {
             var alnum = 0
             var digits = 0
+            var consecutive = 0
             var separated = false
             var letters = 0
             var badWord = false
@@ -112,7 +147,37 @@ public enum LogRedactor {
                 letters = 0
                 badWord = false
             }
+            var quote: UInt8?
+            var quotedLetters = 0
+            var quotedBad = false
+            var listed = 0
+            var comma = false
             for byte in text.utf8 {
+                if let open = quote {
+                    if byte == open {
+                        if (3...8).contains(quotedLetters), !quotedBad {
+                            listed += 1
+                            if listed >= 12 { listRun = true }
+                        } else {
+                            listed = 0
+                        }
+                        quote = nil
+                        comma = false
+                    } else if byte >= 0x61 && byte <= 0x7A {
+                        quotedLetters += 1
+                    } else {
+                        quotedBad = true
+                    }
+                } else if byte == 0x22 || byte == 0x27 {
+                    if listed > 0, !comma { listed = 0 }
+                    quote = byte
+                    quotedLetters = 0
+                    quotedBad = false
+                } else if byte == 0x2C {
+                    comma = true
+                } else if byte != 0x20 && byte != 0x09 {
+                    listed = 0
+                }
                 let isDigit = byte >= 0x30 && byte <= 0x39
                 let isLower = byte >= 0x61 && byte <= 0x7A
                 let isAlnum = isDigit || isLower || (byte >= 0x41 && byte <= 0x5A)
@@ -120,13 +185,18 @@ public enum LogRedactor {
                 if alnum >= 26 { longToken = true }
                 if isDigit {
                     digits += 1
+                    consecutive += 1
                     separated = false
-                    if digits >= 6 { digitRun = true }
-                } else if (byte == 0x20 || byte == 0x2D) && digits > 0 && !separated {
-                    separated = true
+                    if digits >= 13 { cardRun = true }
                 } else {
-                    digits = 0
-                    separated = false
+                    if consecutive == 6 { codeRun = true }
+                    consecutive = 0
+                    if (byte == 0x20 || byte == 0x2D) && digits > 0 && !separated {
+                        separated = true
+                    } else {
+                        digits = 0
+                        separated = false
+                    }
                 }
                 if isLower {
                     letters += 1
@@ -137,6 +207,7 @@ public enum LogRedactor {
                 }
             }
             endWord(false)
+            if consecutive == 6 { codeRun = true }
         }
     }
 
@@ -233,6 +304,14 @@ public enum LogRedactor {
             }
 
             let first = source.character(at: valueStart)
+            if first == 0x5B || first == 0x7B {
+                let end = closingBracket(in: source, from: valueStart)
+                if first == 0x7B, holdsOnlyMetadata(source.substring(with: NSRange(location: valueStart, length: end - valueStart))) { continue }
+                cursor = end
+                count += 1
+                output.append(keyQuoted ? "\"\(marker)\"" : marker)
+                continue
+            }
             if first == 0x22 || first == 0x27 {
                 let close = closingQuote(first, in: source, from: valueStart + 1)
                 let inner = source.substring(with: NSRange(location: valueStart + 1, length: close - valueStart - 1))
@@ -244,7 +323,7 @@ public enum LogRedactor {
             }
             let end = headerKeys.contains(name.lowercased()) ? headerValueEnd(in: source, from: valueStart) : plainValueEnd(in: source, from: valueStart)
             let value = source.substring(with: NSRange(location: valueStart, length: end - valueStart))
-            guard !value.isEmpty, !["true", "false", "null", "undefined"].contains(value), !value.hasPrefix("{"), !value.hasPrefix("[") else { continue }
+            guard !value.isEmpty, !["true", "false", "null", "undefined"].contains(value) else { continue }
             count += 1
             output.append(keyQuoted ? "\"\(marker)\"" : marker)
             cursor = end
@@ -262,6 +341,41 @@ public enum LogRedactor {
             let character = source.character(at: index)
             if character == 0x5C { index += 2; continue }
             if character == quote { return index }
+            index += 1
+        }
+        return source.length
+    }
+
+    /// An object such as `{expires: 3, type: "jwt"}` describes a secret without holding it, so its keys are scanned one by one instead.
+    private static func holdsOnlyMetadata(_ object: String) -> Bool {
+        let names = key.matches(in: object, range: NSRange(object.startIndex..., in: object)).compactMap { match in
+            Range(match.range(at: 2), in: object).map { String(object[$0]) }
+        }
+        return !names.isEmpty && names.allSatisfy { segments(of: $0).last.map(exemptLastSegments.contains) ?? false }
+    }
+
+    /// Just past the bracket that closes the one at `start`, skipping quoted text and escapes; the end of the line when it never closes.
+    private static func closingBracket(in source: NSString, from start: Int) -> Int {
+        var depth = 0
+        var quote: unichar?
+        var index = start
+        while index < source.length {
+            let character = source.character(at: index)
+            if character == 0x0A || character == 0x0D { return index }
+            if let open = quote {
+                if character == 0x5C {
+                    index += 2
+                    continue
+                }
+                if character == open { quote = nil }
+            } else if character == 0x22 || character == 0x27 {
+                quote = character
+            } else if character == 0x5B || character == 0x7B {
+                depth += 1
+            } else if character == 0x5D || character == 0x7D {
+                depth -= 1
+                if depth == 0 { return index + 1 }
+            }
             index += 1
         }
         return source.length
@@ -292,7 +406,8 @@ public enum LogRedactor {
         return index
     }
 
-    private static let markers = [marker, jwtMarker, emailMarker, addressMarker, cardMarker, phraseMarker]
+    /// Every marker, longest first where one starts another.
+    private static let markers = [jwtMarker, emailMarker, addressMarker, cardMarker, phraseMarker, marker]
 
     private static func isMarker(_ value: String) -> Bool {
         markers.contains(value)

@@ -72,7 +72,7 @@ extension IOSBackend: ExpoDevClientOpening {
         guard let app = try await Self.appContainer(udid: id.rawValue, bundleID: bundleID, kind: "app") else {
             throw ExpoDevClient.iosNotInstalled(bundleID: bundleID, udid: id.rawValue)
         }
-        let plist = (try? Data(contentsOf: URL(fileURLWithPath: app).appendingPathComponent("Info.plist"))) ?? Data()
+        let plist = UntrustedRead.contents(atPath: (app as NSString).appendingPathComponent("Info.plist")) ?? Data()
         return ExpoDevClient.schemes(fromInfoPlist: plist)
     }
 

@@ -8,7 +8,7 @@ struct Init: AsyncParsableCommand {
 
     static let configuration = CommandConfiguration(
         commandName: "init",
-        abstract: "Install Offsider skill files for detected AI clients."
+        abstract: "Install Offsider's skill and permission rules for the AI agents on this Mac."
     )
 
     enum Client: String, ExpressibleByArgument, CaseIterable {
@@ -32,6 +32,15 @@ struct Init: AsyncParsableCommand {
     @Flag(name: .customLong("print"), help: "Print bundled skill content to stdout.")
     var printSkill: Bool = false
 
+    @Flag(name: .customLong("no-rules"), help: "Skip the permission rules for Claude Code and Codex.")
+    var noRules: Bool = false
+
+    @Flag(name: .customLong("rules-only"), help: "Add the permission rules without installing the skill.")
+    var rulesOnly: Bool = false
+
+    @Flag(name: .customLong("print-rules"), help: "Print the permission rules as JSON, to apply by hand.")
+    var printRules: Bool = false
+
     func validate() throws {
         if printSkill, uninstall {
             throw ValidationError("--print cannot be used with --uninstall")
@@ -48,10 +57,24 @@ struct Init: AsyncParsableCommand {
         if printSkill, client != .auto {
             throw ValidationError("--print cannot be used with --client")
         }
+
+        if printRules, printSkill || uninstall || force || dest != nil || client != .auto || noRules || rulesOnly {
+            throw ValidationError("--print-rules cannot be used with other options")
+        }
+
+        if rulesOnly, noRules || uninstall || force || dest != nil || printSkill {
+            throw ValidationError("--rules-only cannot be used with --no-rules, --uninstall, --force, --dest or --print")
+        }
     }
 
     func run() async throws {
-        if !printSkill, !isInteractiveTTY(), dest == nil, client == .auto {
+        if printRules {
+            Swift.print(AgentPermissionRules.printedJSON(), terminator: "")
+            return
+        }
+
+        let interactive = isInteractiveTTY()
+        if !printSkill, !rulesOnly, !interactive, dest == nil, client == .auto {
             throw CLIError(
                 errorDescription: "Non-interactive mode requires --client or --dest for init. Use --print to output the skill content.",
                 reason: .usage
@@ -63,9 +86,26 @@ struct Init: AsyncParsableCommand {
             return
         }
 
+        let home = Self.homeDirectoryPath()
+        // Detected before the skill install, which may create ~/.claude/skills.
+        var agents = noRules || uninstall || dest != nil ? [] : Self.rulesAgents(for: client, home: home)
+
+        if rulesOnly {
+            guard !agents.isEmpty else {
+                throw CLIError(errorDescription: "No Claude Code or Codex folder found, so there is nowhere to add rules.", reason: .usage)
+            }
+            if client == .auto, interactive {
+                agents = try Self.chooseInstall([(String, String)](), rules: agents, name: \.0, folder: \.1).rules
+            }
+            let (lines, failures) = Self.installRules(agents, home: home)
+            Self.write(lines)
+            try Self.throwFirst(failures)
+            return
+        }
+
         var targets = try resolveTargets(for: uninstall ? .uninstall : .install)
-        if !uninstall, dest == nil, client == .auto, isInteractiveTTY() {
-            targets = try Self.chooseAgents(targets)
+        if !uninstall, dest == nil, client == .auto, interactive {
+            (targets, agents) = try Self.chooseInstall(targets, rules: agents, name: \.name) { $0.skillsDirectory.resolvingSymlinksInPath().standardizedFileURL.path }
         }
 
         if uninstall {
@@ -73,25 +113,109 @@ struct Init: AsyncParsableCommand {
             return
         }
 
-        try installSkill(to: targets)
+        if targets.isEmpty, agents.isEmpty {
+            throw CLIError(errorDescription: "No install targets resolved.", reason: .initFailed)
+        }
+        var lines = targets.isEmpty ? [] : try installSkill(to: targets)
+        let (ruleLines, failures) = Self.installRules(agents, home: home)
+        lines += ruleLines
+        Self.write(lines + ["Next: offsider doctor"])
+        try Self.throwFirst(failures)
     }
 
     /// With more than one skills folder detected, a person ticks which to install into; every one starts ticked.
     static func chooseAgents<Target>(_ targets: [Target], descriptor: Int32? = nil, name: (Target) -> String, folder: (Target) -> String) throws -> [Target] {
+        try chooseInstall(targets, rules: [], descriptor: descriptor, name: name, folder: folder).skills
+    }
+
+    /// One row per distinct skills folder and one per agent that can take permission rules, all ticked; no picker for a single row.
+    static func chooseInstall<Target>(
+        _ targets: [Target],
+        rules: [AgentPermissionRules.Agent],
+        descriptor: Int32? = nil,
+        name: (Target) -> String,
+        folder: (Target) -> String
+    ) throws -> (skills: [Target], rules: [AgentPermissionRules.Agent]) {
         let folders = SkillInstall.distinct(targets, resolvedPath: folder)
-        guard folders.count > 1 else { return targets }
+        guard folders.count + rules.count > 1 else { return (targets, rules) }
         let rows = folders.map { first in
             MenuRow([targets.filter { folder($0) == folder(first) }.map(name).joined(separator: " and "), InitScreen.shortPath(folder(first), home: homeDirectoryPath())])
-        }
+        } + rules.map { MenuRow($0.pickerRow) }
         let chosen = try TerminalPrompt.run(cancelled: InitScreen.cancelled, descriptor: descriptor) { prompt in
             try prompt.chooseMany(InitScreen.agentsQuestion, rows: rows, ticked: Set(rows.indices))
         }
-        let kept = Set(chosen.map { folder(folders[$0]) })
-        return targets.filter { kept.contains(folder($0)) }
+        let kept = Set(chosen.filter { $0 < folders.count }.map { folder(folders[$0]) })
+        let keptRules = chosen.filter { $0 >= folders.count }.map { rules[$0 - folders.count] }
+        return (targets.filter { kept.contains(folder($0)) }, keptRules)
     }
 
-    private static func chooseAgents(_ targets: [ClientInfo]) throws -> [ClientInfo] {
-        try chooseAgents(targets, name: \.name) { $0.skillsDirectory.resolvingSymlinksInPath().standardizedFileURL.path }
+    /// The agents to add rules for: every one installed under `home` for auto, else the one `--client` names when installed.
+    static func rulesAgents(for client: Client, home: String) -> [AgentPermissionRules.Agent] {
+        let detected = AgentPermissionRules.detect(home: home)
+        switch client {
+        case .auto: return detected
+        case .claude: return detected.filter { $0 == .claudeCode }
+        case .agents: return detected.filter { $0 == .codex }
+        }
+    }
+
+    /// Merges the rules into each agent's file; a file that cannot be read safely is left untouched and reported.
+    static func installRules(_ agents: [AgentPermissionRules.Agent], home: String) -> (lines: [String], failures: [String]) {
+        var lines: [String] = []
+        var failures: [String] = []
+        for agent in agents {
+            let file = URL(fileURLWithPath: home).appendingPathComponent(agent.rulesFile)
+            let shown = "~/" + agent.rulesFile
+            do {
+                let merge = try AgentPermissionRules.merge(agent, existing: try readCapped(file))
+                if let content = merge.content {
+                    try writeAtomically(content, to: file)
+                }
+                lines.append(AgentPermissionRules.resultLine(path: shown, added: merge.added))
+            } catch let error as AgentPermissionRules.MergeError {
+                failures.append(AgentPermissionRules.failureLine(path: shown, error: error))
+            } catch {
+                failures.append("Could not add rules to \(shown): \(error.localizedDescription)")
+            }
+        }
+        return (lines, failures)
+    }
+
+    /// The file's bytes, nil when it does not exist; reads at most one byte past the cap so a huge file is refused cheaply.
+    static func readCapped(_ file: URL) throws -> Data? {
+        do {
+            return try UntrustedRead.data(atPath: file.resolvingSymlinksInPath().path, maxBytes: AgentPermissionRules.maxFileBytes + 1, truncate: true)
+        } catch .missing {
+            return nil
+        } catch .notRegularFile {
+            throw CLIError(errorDescription: "\(file.path) is not a regular file, so it was left as is.", reason: .initFailed)
+        } catch {
+            throw CLIError(errorDescription: "Could not read \(file.path) (\(error)).", reason: .initFailed)
+        }
+    }
+
+    /// Writes beside the file (through a symlink to its target), 0600, then renames over it.
+    static func writeAtomically(_ data: Data, to file: URL) throws {
+        let target = file.resolvingSymlinksInPath()
+        let directory = target.deletingLastPathComponent()
+        if !FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        }
+        let temporary = directory.appendingPathComponent(".\(target.lastPathComponent).offsider-\(UUID().uuidString)")
+        guard FileManager.default.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+            throw CLIError(errorDescription: "Could not write \(temporary.path).", reason: .initFailed)
+        }
+        if rename(temporary.path, target.path) != 0 {
+            let code = errno
+            try? FileManager.default.removeItem(at: temporary)
+            throw CLIError(errorDescription: "Could not replace \(target.path): \(String(cString: strerror(code))).", reason: .initFailed)
+        }
+    }
+
+    private static func throwFirst(_ failures: [String]) throws {
+        guard let first = failures.first else { return }
+        for other in failures.dropFirst() { fputs("\(other)\n", stderr) }
+        throw CLIError(errorDescription: first, reason: .initFailed)
     }
 
     private enum Operation {
@@ -110,7 +234,7 @@ struct Init: AsyncParsableCommand {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func installSkill(to targets: [ClientInfo]) throws {
+    private func installSkill(to targets: [ClientInfo]) throws -> [String] {
         let bundled = Data(try Self.loadSkillMarkdown().utf8)
         var lines: [String] = []
 
@@ -147,7 +271,7 @@ struct Init: AsyncParsableCommand {
             throw CLIError(errorDescription: "No install targets resolved.", reason: .initFailed)
         }
 
-        Self.write(lines + ["Next: offsider doctor"])
+        return lines
     }
 
     /// One entry per real folder, naming every client that shares it (a symlinked `~/.claude/skills` is one folder).
@@ -173,6 +297,16 @@ struct Init: AsyncParsableCommand {
             if data != bundled { stale.append(file) }
         }
         return DoctorCheckResult(id: .installSkill, verdict: SkillInstall.doctorVerdict(installed: installed, stale: stale))
+    }
+
+    /// What `doctor`'s `install.rules` check reports: the installed agents still missing any of the rules.
+    static func rulesDoctorVerdict(home: String = homeDirectoryPath()) -> DoctorRules.Verdict {
+        let detected = AgentPermissionRules.detect(home: home)
+        let lacking = detected.filter { agent in
+            let existing = try? readCapped(URL(fileURLWithPath: home).appendingPathComponent(agent.rulesFile))
+            return AgentPermissionRules.missing(agent, existing: existing ?? nil) > 0
+        }
+        return AgentPermissionRules.doctorVerdict(detected: detected, lacking: lacking)
     }
 
     private func uninstallSkill(from targets: [ClientInfo]) throws {

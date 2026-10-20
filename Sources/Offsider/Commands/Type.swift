@@ -10,7 +10,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         1. Direct text: offsider type "Hello World" --device DEVICE_ID
         2. From stdin: echo "Hello World!" | offsider type --stdin --device DEVICE_ID
         3. From file: offsider type --file text.txt --device DEVICE_ID (a regular UTF-8 file of at most 64 KiB;
-           files under ~/.ssh, ~/.aws, ~/.config and similar, and names such as .env or id_rsa, need --allow-path)
+           files under ~/.ssh, ~/.aws, ~/.config and similar, and names such as .env or id_rsa, need --allow-path, which a person confirms at a terminal with Touch ID or the password)
 
         Password fields: text given as an argument is refused (exit 64, secure_field_argument) when the field it
         names with --into-id, --into-label or --into-label-contains, or the field with focus, is a password field;
@@ -65,7 +65,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("file"), help: "Read text from the specified file (UTF-8, at most 64 KiB).")
     var inputFile: String?
 
-    @Flag(name: .customLong("allow-path"), help: "Let --file read a file in a folder or with a name that usually holds secrets, such as ~/.ssh or .env.")
+    @Flag(name: .customLong("allow-path"), help: "Let --file read a file in a folder or with a name that usually holds secrets, such as ~/.ssh or .env; a person confirms the path at a terminal with Touch ID or the password.")
     var allowPath = false
 
     @Flag(name: .customLong("replace"), help: "Replace the focused field's text instead of adding to it (an empty TEXT clears it).")
@@ -226,6 +226,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     }
 
     func run() async throws {
+        try await AllowPathConsent.confirm(path: inputFile, allowPath: allowPath, command: "type")
         guard verification.verify else {
             try await execute(progress: nil)
             return
@@ -403,8 +404,26 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     
     /// Through `TextFileInput`, which names the file it read on stderr.
     func readFromFile(_ filePath: String) throws -> String {
-        let read = try TextFileInput.read(filePath, allowSensitive: allowPath)
+        let read = try TextFileInput.read(filePath, allowing: allowPath ? AllowPathConsent.confirmed : nil)
         FileHandle.standardError.write(Data((read.announcement + "\n").utf8))
         return read.text
+    }
+}
+
+/// `--allow-path` reads a file where secrets live, so a person at a terminal confirms the resolved path with Touch ID or the password.
+enum AllowPathConsent {
+    /// The resolved path a person confirmed in this process.
+    nonisolated(unsafe) static var confirmed: String?
+
+    /// Asks only when `path` is one `--file` refuses; refuses with `person_required` without a terminal or a GUI session.
+    static func confirm(path: String?, allowPath: Bool, command: String) async throws {
+        guard allowPath, let path, let found = TextFileInput.sensitive(path) else { return }
+        guard PersonPresence.terminal() else {
+            throw CLIError.personRequired(
+                "--allow-path needs a person at a terminal to confirm \(TerminalText.line(found.resolvedPath)). Nothing was read. Run it from your own terminal."
+            )
+        }
+        try await PersonPresence.confirm(reason: "let \(command) read \(found.resolvedPath)")
+        confirmed = found.resolvedPath
     }
 }

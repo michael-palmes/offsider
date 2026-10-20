@@ -96,7 +96,7 @@ public enum ScreenImage {
             throw ImageFailure(detail: "could not scale to \(width) x \(height)")
         }
         if width == image.width, height == image.height { return image }
-        guard let context = context(width: width, height: height, colourSpace: colourSpace(of: image)) else {
+        guard let context = unsafe context(width: width, height: height, colourSpace: colourSpace(of: image)) else {
             throw ImageFailure(detail: "could not scale to \(width) x \(height)")
         }
         context.interpolationQuality = .high
@@ -112,7 +112,7 @@ public enum ScreenImage {
         guard !pixelRects.isEmpty else { return image }
         let width = image.width
         let height = image.height
-        guard let context = context(width: width, height: height, colourSpace: colourSpace(of: image)) else {
+        guard let context = unsafe context(width: width, height: height, colourSpace: colourSpace(of: image)) else {
             throw ImageFailure(detail: "could not draw a \(width) x \(height) image")
         }
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -161,7 +161,7 @@ public enum ScreenImage {
     }
 
     static func context(width: Int, height: Int, colourSpace: CGColorSpace, data: UnsafeMutableRawPointer? = nil) -> CGContext? {
-        CGContext(
+        unsafe CGContext(
             data: data, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
             space: colourSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )
@@ -173,7 +173,7 @@ public enum ScreenImage {
         let height = image.height
         var pixels = [UInt32](repeating: 0, count: width * height)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = context(width: width, height: height, colourSpace: colourSpace ?? self.colourSpace(of: image), data: buffer.baseAddress) else {
+            guard let context = unsafe context(width: width, height: height, colourSpace: colourSpace ?? self.colourSpace(of: image), data: buffer.baseAddress) else {
                 return false
             }
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -184,9 +184,9 @@ public enum ScreenImage {
     }
 
     static func makeImage(_ pixels: [UInt32], width: Int, height: Int, colourSpace: CGColorSpace) throws -> CGImage {
-        let data = pixels.withUnsafeBytes { Data($0) }
+        let data = pixels.withUnsafeBytes { unsafe Data($0) }
         guard let provider = CGDataProvider(data: data as CFData),
-              let image = CGImage(
+              let image = unsafe CGImage(
                   width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
                   space: colourSpace, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                   provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent

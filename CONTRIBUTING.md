@@ -28,7 +28,26 @@ bash -n <changed script>     # for any shell script you touched
 make e2e                     # for changes to input, accessibility or capture, on a booted simulator
 ```
 
+CI also runs the unit tests under AddressSanitizer (not a required check). Run it locally with `swift test --sanitize=address --no-parallel`; `-Xswiftc -sanitize=address` does not work with SwiftPM's test helpers.
+
 A change to the iOS or Android tree mapping or to the `describe-ui` renderer shows up in the tree goldens under `Tests/Goldens/trees/`. Re-render them with `OFFSIDER_GOLDENS_UPDATE=1 swift test --filter TreeGoldenRefresh` and review the diff. A rendering that outgrows its budget fails; raising the budget is a reviewed edit of `Tests/Goldens/trees/budgets.json`.
+
+### Memory safety
+
+`OffsiderCore` builds with strict memory safety. Mark each call that uses an unsafe construct with `unsafe` at the call (never a whole function), or give a wrapper that checks its own bounds `@safe` with a one-line reason. New warnings in `OffsiderCore` are review comments.
+
+### Fuzzing
+
+A weekly job fuzzes every parser that reads device, daemon or file bytes under AddressSanitizer. The driver exists only when `OFFSIDER_FUZZ=1` is set at build time, so `swift build` and releases never include it:
+
+```bash
+OFFSIDER_FUZZ=1 swift build --product OffsiderFuzz --sanitize=address
+.build/debug/OffsiderFuzz --list
+.build/debug/OffsiderFuzz <target> Tests/Fixtures/fuzz/<target> --seconds 60 --artifacts <dir>
+.build/debug/OffsiderFuzz <target> --replay <dir>/crash-<target>
+```
+
+Add a seed under `Tests/Fixtures/fuzz/<target>/` when you change a parser (placeholder ids only). `OFFSIDER_FUZZ_TARGET` can name the target instead of the first argument.
 
 ## Docs to update
 
@@ -52,7 +71,7 @@ Commits on `main` must be signed.
 
 ### Protected paths signed
 
-A pull request that changes `.github/allowed_signers`, `.github/CODEOWNERS`, `.github/workflows/release.yml`, `.github/workflows/signers.yml`, `scripts/release.sh`, `entitlements.plist` or `entitlements-adhoc.plist` must have its head commit signed by a key listed in the base branch's `.github/allowed_signers`. The `Protected paths signed` check enforces it, using the base branch's copy of the workflow, so a pull request cannot change the rule it is checked by. A Dependabot pull request that touches one of these files, such as a bumped action in `release.yml`, fails that check until the maintainer re-signs its head commit (for example `git commit --amend --no-edit -S` on the branch, then a force push).
+Every pull request's head commit must be signed by a key in the base branch's `.github/allowed_signers`, whatever it changes. The `Protected paths signed` check enforces it, using the base branch's copy of the workflow, so a pull request cannot change the rule it is checked by. Every Dependabot pull request fails that check until the maintainer re-signs its head commit: `git commit --amend --no-edit -S` on the branch, then a force push.
 
 Physical-device suites (`--android-phone`, `--ios-device`) need the device to be allowed first, by you in your own terminal: `offsider device-access allow --device <ID>`. `test-runner.sh` checks and prints the exact command.
 

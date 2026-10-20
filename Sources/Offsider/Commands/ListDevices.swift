@@ -116,17 +116,17 @@ struct ListDevices: AsyncParsableCommand {
                 return iosHint(device)
             }
             if device.connection == "network" {
-                return "\(device.id) is a network adb connection, which Offsider does not drive; connect the phone over USB."
+                return "\(TerminalText.line(device.id)) is a network adb connection, which Offsider does not drive; connect the phone over USB."
             }
             if device.state == "Unauthorised" {
-                return "\(device.id) is unauthorised: unlock the phone and accept the \"Allow USB debugging?\" prompt, then run `offsider list-devices` again."
+                return "\(TerminalText.line(device.id)) is unauthorised: unlock the phone and accept the \"Allow USB debugging?\" prompt, then run `offsider list-devices` again."
             }
             return nil
         }
     }
 
     private static func iosHint(_ device: DeviceSummary) -> String? {
-        let name = DeviceName.display(device.id, label: device.name)
+        let name = TerminalText.field(DeviceName.display(device.id, label: device.name), cap: DeviceListRenderer.maxNameCharacters)
         switch device.state {
         case "Untrusted":
             return "\(name) does not trust this Mac: unlock it and tap Trust, then run `offsider list-devices` again."
@@ -147,7 +147,7 @@ struct ListDevices: AsyncParsableCommand {
     private static func listDevices(platform: DevicePlatform?, logger: OffsiderLogger) async throws -> [DeviceSummary] {
         let backends = DeviceRouter.allBackends(logger: logger).filter { platform == nil || $0.platform == platform }
         return try await collect(from: backends, platformFilter: platform) { warning in
-            FileHandle.standardError.write(Data("Warning: \(warning)\n".utf8))
+            FileHandle.standardError.write(Data("Warning: \(TerminalText.line(warning, cap: TerminalText.maxErrorCharacters))\n".utf8))
         }
     }
 

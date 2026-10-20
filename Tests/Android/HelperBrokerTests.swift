@@ -32,6 +32,7 @@ final class BrokerFixture {
                 if startDelay > .zero { try await Task.sleep(for: startDelay) }
                 return try await HelperSessionTests.start(device)
             },
+            admits: { _ in true },
             log: { _, _ in }
         )
     }
@@ -449,6 +450,32 @@ struct HelperBrokerTests {
         try? FileManager.default.removeItem(at: fixture.root)
     }
 
+    final class Asked: @unchecked Sendable {
+        private let lock = NSLock()
+        private var arguments: [[String]] = []
+        func record(_ value: [String]) { lock.withLock { arguments.append(value) } }
+        var all: [[String]] { lock.withLock { arguments } }
+    }
+
+    @Test("a broker that closes before a byte, as another build's does, is looked up by its arguments before the command starts its own")
+    func refusingBrokerIsLookedUp() async throws {
+        let fixture = BrokerFixture()
+        // No hello reply: the scripted broker closes the connection unread, as a broker of another build does.
+        let broker = try ScriptedBroker(path: fixture.socket)
+        var client = try fixture.client()
+        let asked = Asked()
+        let socket = fixture.socket
+        client.stopOtherBuilds = { arguments, path in
+            asked.record(arguments + [path])
+            return []
+        }
+        let connection = try await client.existing(helloID: 1)
+        #expect(connection == nil)
+        #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial, socket]])
+        broker.cancel()
+        try? FileManager.default.removeItem(at: fixture.root)
+    }
+
     @Test("a stop while the helper is still starting returns once the start has ended and the slot is free, never before")
     func stopWhileStartingWaitsForTheStart() async throws {
         let fixture = BrokerFixture(startDelay: .milliseconds(3500))
@@ -699,7 +726,7 @@ final class ScriptedBroker {
         path: String, status: String = #"{"state":"draining"}"#, hello: (@Sendable (Int) -> Data)? = nil, answersStop: Bool = true,
         replaceOnStop: Bool = false
     ) throws {
-        let listener = try UnixSocketListener(path: path)
+        let listener = try UnixSocketListener(path: path, admits: { _ in true })
         self.listener = listener
         serving = Task { [weak self] in
             while !Task.isCancelled {
@@ -723,7 +750,7 @@ final class ScriptedBroker {
                 }
                 await stream.close()
                 if request.op == "stop" {
-                    if replaceOnStop, let fresh = try? UnixSocketListener(path: path + ".new") {
+                    if replaceOnStop, let fresh = try? UnixSocketListener(path: path + ".new", admits: { _ in true }) {
                         rename(path + ".new", path)
                         self?.replacement = fresh
                     }
@@ -785,5 +812,51 @@ struct HelperBrokerSettingsTests {
         let frame = HelperBrokerWire.startFailure(id: 3, failure)
         let reply = try JSONDecoder().decode(HelperBrokerWire.ErrorReply.self, from: frame)
         #expect(reply.startFailure == failure)
+    }
+}
+
+@Suite("Android warm helper listener")
+struct UnixSocketListenerTests {
+    @Test("a peer the broker does not admit is closed before it reads a byte, and never reaches the accept loop")
+    func refusedPeerReadsNothing() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ol-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("b.sock").path
+        let listener = try UnixSocketListener(path: path, admits: { _ in false })
+        defer { listener.close() }
+        let accepted = Task { await listener.accept(timeout: .seconds(2)) }
+        let client = socket(AF_UNIX, SOCK_STREAM, 0)
+        try #require(client >= 0)
+        defer { Darwin.close(client) }
+        var address = try UnixSocket.address(path)
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        #expect(connected == 0)
+        #expect(await accepted.value == nil)
+        var byte: UInt8 = 0
+        #expect(Darwin.read(client, &byte, 1) == 0)
+    }
+
+    @Test("a peer the broker admits reaches the accept loop")
+    func admittedPeerIsAccepted() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ol-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("b.sock").path
+        let listener = try UnixSocketListener(path: path, admits: { _ in true })
+        defer { listener.close() }
+        let accepted = Task { await listener.accept(timeout: .seconds(2)) }
+        let client = socket(AF_UNIX, SOCK_STREAM, 0)
+        try #require(client >= 0)
+        defer { Darwin.close(client) }
+        var address = try UnixSocket.address(path)
+        _ = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        let served = await accepted.value
+        #expect(served != nil)
+        if let served { Darwin.close(served) }
     }
 }

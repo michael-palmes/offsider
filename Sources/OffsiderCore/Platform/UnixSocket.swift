@@ -17,7 +17,7 @@ public enum UnixSocket {
         address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
         let bytes = Array(path.utf8) + [0]
         guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else { throw UnixSocketError.pathTooLong(path) }
-        withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
+        unsafe withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
         return address
     }
 
@@ -27,21 +27,21 @@ public enum UnixSocket {
         try OffsiderPrivateDirectory.ensurePrivateDirectory((path as NSString).deletingLastPathComponent, uid: uid)
         if answers(path) { throw UnixSocketError.alreadyServed(path) }
         var info = stat()
-        if lstat(path, &info) == 0 {
+        if unsafe lstat(path, &info) == 0 {
             guard (info.st_mode & S_IFMT) == S_IFSOCK, info.st_uid == uid else { throw UnixSocketError.notOwnedSocket(path) }
-            unlink(path)
+            unsafe unlink(path)
         }
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw UnixSocketError.system(operation: "socket", path: path, code: errno) }
         var on: Int32 = 1
-        setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        unsafe setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         do {
             var address = try address(path)
-            let bound = withUnsafePointer(to: &address) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+            let bound = unsafe withUnsafePointer(to: &address) {
+                unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
             }
             guard bound == 0 else { throw UnixSocketError.system(operation: "bind", path: path, code: errno) }
-            guard chmod(path, S_IRUSR | S_IWUSR) == 0 else { throw UnixSocketError.system(operation: "chmod", path: path, code: errno) }
+            guard unsafe chmod(path, S_IRUSR | S_IWUSR) == 0 else { throw UnixSocketError.system(operation: "chmod", path: path, code: errno) }
             guard Darwin.listen(descriptor, SOMAXCONN) == 0 else { throw UnixSocketError.system(operation: "listen", path: path, code: errno) }
             return descriptor
         } catch {
@@ -56,8 +56,8 @@ public enum UnixSocket {
         let probe = socket(AF_UNIX, SOCK_STREAM, 0)
         guard probe >= 0 else { return false }
         defer { Darwin.close(probe) }
-        let result = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        let result = unsafe withUnsafePointer(to: &address) {
+            unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe Darwin.connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
         return result == 0
     }
@@ -65,18 +65,18 @@ public enum UnixSocket {
     /// The socket file's device and inode, so a broker removes only the socket it bound.
     public static func identity(_ path: String) -> [UInt64]? {
         var info = stat()
-        guard lstat(path, &info) == 0 else { return nil }
+        guard unsafe lstat(path, &info) == 0 else { return nil }
         return [UInt64(info.st_dev), UInt64(info.st_ino)]
     }
 
     /// Unlinks `path` unless another broker has since replaced it.
     public static func remove(_ path: String, ifIdentity expected: [UInt64]?) {
-        if let expected, identity(path) == expected { unlink(path) }
+        if let expected, identity(path) == expected { unsafe unlink(path) }
     }
 
     public static func isSameUser(_ descriptor: Int32, uid: uid_t = getuid()) -> Bool {
         var peerUID: uid_t = 0
         var peerGID: gid_t = 0
-        return getpeereid(descriptor, &peerUID, &peerGID) == 0 && peerUID == uid
+        return unsafe getpeereid(descriptor, &peerUID, &peerGID) == 0 && peerUID == uid
     }
 }

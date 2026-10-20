@@ -184,7 +184,7 @@ struct AndroidHelperTests {
         try await AndroidE2E.run("tap --id stack-test-open-full")
         _ = try await AndroidE2E.waitForNode { $0["id"] as? String == "stack-test-full-title-1" }
 
-        let raw = try await AndroidE2E.run("describe-ui --raw-source")
+        let raw = try await AndroidE2E.run("describe-ui --raw-source", environment: ["OFFSIDER_OUTPUT": "person"])
         let object = try #require(try JSONSerialization.jsonObject(with: Data(raw.stdout.utf8)) as? [String: Any])
         let dump = try #require(object["source"] as? [String: Any])
         var orders: [String: Int] = [:]

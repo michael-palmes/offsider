@@ -52,7 +52,7 @@ struct ReactNativeRowsTests {
         let result = try await app.offsider("tap --label 'Ive Read the Term'")
 
         #expect(result.exitCode != 0)
-        #expect(result.stderr.contains("Did you mean 'I’ve Read the Terms'?"), "\(result.stderr)")
+        #expect(result.stderr.contains("Did you mean \"I’ve Read the Terms\"?"), "\(result.stderr)")
         #expect(try await app.label(of: "rows-test-state") == "Rows Selected: None")
     }
 

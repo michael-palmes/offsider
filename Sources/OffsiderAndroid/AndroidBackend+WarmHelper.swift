@@ -35,7 +35,8 @@ public final class WarmHelperBroker {
 
 extension AndroidBackend {
     /// The broker that keeps `serial`'s helper warm; the hidden `android-session serve` entry point runs it.
-    public func warmHelperBroker(for serial: String) async throws -> WarmHelperBroker {
+    /// `admits` decides, per connection, whether a same-user peer may use the broker.
+    public func warmHelperBroker(for serial: String, admits: @escaping @Sendable (Int32) -> Bool) async throws -> WarmHelperBroker {
         guard let brokerHost = host.helperBroker else {
             throw AndroidError(.invalidSetting, "This host cannot keep a helper warm.")
         }
@@ -58,6 +59,7 @@ extension AndroidBackend {
                     client: client, serial: serial, dex: dex, log: log, timing: timing, idleTimeoutMs: HelperBrokerSettings.helperIdleTimeoutMs
                 )
             },
+            admits: admits,
             log: log
         )
         return WarmHelperBroker(broker)
@@ -77,6 +79,7 @@ extension AndroidBackend {
     }
 
     /// Stops every warm helper, or `serial`'s alone, another build's too, each once its UiAutomation slot is free; returns the serials stopped.
+    /// A broker of another build refuses the request, so it is found by its arguments and the socket it holds, and signalled instead.
     public static func stopWarmHelpers(host: AndroidHost, serial: String? = nil) async -> [String] {
         var stopped: [String] = []
         for socket in host.warmHelperSockets(serial: serial) {
@@ -84,8 +87,17 @@ extension AndroidBackend {
             if name == nil {
                 name = await HelperBrokerClient.servedSerial(at: socket)
             }
-            guard await HelperBrokerClient.stop(at: socket) else { continue }
-            stopped.append(name ?? "unknown")
+            if await HelperBrokerClient.stop(at: socket) {
+                stopped.append(name ?? "unknown")
+                continue
+            }
+            guard UnixSocket.answers(socket), let name, let requirement = try? PeerCodeIdentity.ownRequirement(),
+                  !BrokerProcess.stopOtherBuilds(serving: HelperBrokerClient.serveArguments(name), boundTo: socket, requirement: requirement).stopped.isEmpty
+            else {
+                continue
+            }
+            await HelperBrokerClient.untilGone(socket)
+            stopped.append(name)
         }
         return stopped
     }

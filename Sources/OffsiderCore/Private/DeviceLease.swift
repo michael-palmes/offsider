@@ -121,7 +121,7 @@ public struct DeviceLeaseStore: Sendable {
         let name = Self.fileName(platform: platform, key: key)
         return try? locked(name) { directory in
             let existing = liveLease(named: name, now: now, locked: true)
-            unlink((directory as NSString).appendingPathComponent(name))
+            unsafe unlink((directory as NSString).appendingPathComponent(name))
             return existing
         }
     }
@@ -130,7 +130,7 @@ public struct DeviceLeaseStore: Sendable {
     func removeExpired(named name: String, now: Date) {
         _ = try? locked(name) { directory in
             guard let current = parse(named: name), current.expires <= now else { return }
-            unlink((directory as NSString).appendingPathComponent(name))
+            unsafe unlink((directory as NSString).appendingPathComponent(name))
         }
     }
 
@@ -167,7 +167,7 @@ public struct DeviceLeaseStore: Sendable {
         guard let lease = parse(named: name) else { return nil }
         guard lease.expires > now else {
             if locked {
-                unlink((directory as NSString).appendingPathComponent(name))
+                unsafe unlink((directory as NSString).appendingPathComponent(name))
             } else {
                 removeExpired(named: name, now: now)
             }

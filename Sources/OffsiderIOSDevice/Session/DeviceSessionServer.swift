@@ -94,6 +94,16 @@ final class DeviceSessionStopFlag: @unchecked Sendable {
     func raise() { lock.withLock { set = true } }
 }
 
+/// Who may connect to the broker beyond the same user.
+public enum DeviceSessionPeers: Sendable {
+    /// Only code that satisfies this broker's own designated requirement, read when it starts.
+    case ownSignature
+    case requirement(PeerCodeIdentity.Requirement)
+}
+
+/// What the broker re-checks every 30 s while it runs: nil while it may go on, else the refusal it stops with.
+public typealias DeviceSessionRecheck = @Sendable () async -> IOSDeviceError?
+
 /// The per-device broker on a 0600 socket, ending on idle, `stop` or a lost device; input and frames each run one at a time, never waiting on the other.
 @MainActor
 public final class DeviceSessionServer {
@@ -109,7 +119,11 @@ public final class DeviceSessionServer {
     let healthInterval: Duration
     let maxLifetime: Duration
     let bodyTimeout: Duration
+    let firstRequestTimeout: Duration
     let clients: DeviceSessionClientCount
+    let peers: DeviceSessionPeers
+    let recheck: DeviceSessionRecheck?
+    let recheckInterval: Duration
     let log: IOSDeviceLog
     private let inputGate = DeviceSessionGate()
     private let frameGate = DeviceSessionGate()
@@ -117,11 +131,16 @@ public final class DeviceSessionServer {
     private var lastRequest = ContinuousClock.now
     private var inFlight = 0
     private var stopping = false
+    private var rechecking = false
+    /// Set once a recheck refuses; every later request gets this refusal and the broker stops.
+    private(set) var lapsed: IOSDeviceError?
 
     public init(
         udid: String, socketPath: String, hardware: any DeviceSessionHardware, store: DeviceSessionStore?,
         idleTimeout: Duration, healthInterval: Duration = .seconds(2), maxLifetime: Duration = DeviceSessionLimits.maxLifetime,
-        bodyTimeout: Duration = DeviceSessionLimits.bodyTimeout, maxClients: Int = DeviceSessionLimits.maxClients, log: @escaping IOSDeviceLog
+        bodyTimeout: Duration = DeviceSessionLimits.bodyTimeout, firstRequestTimeout: Duration = DeviceSessionLimits.firstRequestTimeout,
+        maxClients: Int = DeviceSessionLimits.maxClients, peers: DeviceSessionPeers = .ownSignature, recheck: DeviceSessionRecheck? = nil, recheckInterval: Duration = DeviceSessionLimits.recheckInterval,
+        log: @escaping IOSDeviceLog
     ) {
         self.udid = udid
         self.socketPath = socketPath
@@ -131,7 +150,11 @@ public final class DeviceSessionServer {
         self.healthInterval = healthInterval
         self.maxLifetime = maxLifetime
         self.bodyTimeout = bodyTimeout
+        self.firstRequestTimeout = firstRequestTimeout
         self.clients = DeviceSessionClientCount(limit: maxClients)
+        self.peers = peers
+        self.recheck = recheck
+        self.recheckInterval = recheckInterval
         self.log = log
     }
 
@@ -147,19 +170,49 @@ public final class DeviceSessionServer {
 
     /// Listens, opens the stream, serves until idle, `stop` or the device goes, then ends the stream and removes the socket.
     public func run() async throws {
+        let requirement: PeerCodeIdentity.Requirement
+        switch peers {
+        case .ownSignature:
+            do {
+                requirement = try PeerCodeIdentity.ownRequirement()
+            } catch {
+                throw IOSDeviceError(.sessionFailed, "The device session could not read its own code signature (\(error)), so it will not accept commands.")
+            }
+        case .requirement(let given):
+            requirement = given
+        }
         let listener = try Self.listen(at: socketPath, udid: udid)
         let identity = Self.socketIdentity(socketPath)
         log(.info, "Serving \(udid) on \(socketPath)")
         let started = ContinuousClock.now
-        let timeouts = DeviceSessionTimeouts(header: idleTimeout, body: bodyTimeout)
-        Self.acceptLoop(listener: listener, flag: accepting, udid: udid, clients: clients, timeouts: timeouts) { [weak self] id, request, origin in
+        let timeouts = DeviceSessionTimeouts(first: min(firstRequestTimeout, idleTimeout), header: idleTimeout, body: bodyTimeout)
+        let log = log
+        let admits: @Sendable (Int32) -> Bool = { client in
+            let verdict = PeerCodeIdentity.check(peer: client, requirement: requirement)
+            if !verdict.accepted { log(.info, "Refused pid \(verdict.pid): it is not this Offsider build (\(verdict.detail ?? "no reason given"))") }
+            return verdict.accepted
+        }
+        Self.acceptLoop(listener: listener, flag: accepting, udid: udid, clients: clients, timeouts: timeouts, admits: admits) { [weak self] id, request, origin in
             await self?.handle(id: id, request: request, origin: origin) ?? (.failure(id: id, IOSDeviceError(.sessionFailed, "The device session is shutting down.")), nil)
         }
         Task { await hardware.start() }
         var nextHealth = ContinuousClock.now + healthInterval
+        var nextRecheck = started + recheckInterval
         while !stopping {
             try? await Task.sleep(for: .milliseconds(50))
             let now = ContinuousClock.now
+            if let lapsed {
+                log(.info, "Stopping: \(lapsed.message)")
+                break
+            }
+            if let recheck, !rechecking, now >= nextRecheck {
+                rechecking = true
+                Task { [weak self] in
+                    let refusal = await Task.detached { await recheck() }.value
+                    self?.finishRecheck(refusal)
+                }
+                nextRecheck = now + recheckInterval
+            }
             if inFlight == 0, now - lastRequest >= idleTimeout {
                 log(.info, "Stopping: idle for \(idleTimeout)")
                 break
@@ -185,7 +238,13 @@ public final class DeviceSessionServer {
         log(.info, "Stopped")
     }
 
+    private func finishRecheck(_ refusal: IOSDeviceError?) {
+        rechecking = false
+        if let refusal, lapsed == nil { lapsed = refusal }
+    }
+
     func handle(id: Int, request: DeviceSessionRequest, origin: DeviceSessionOrigin = .detached) async -> (DeviceSessionReply, Data?) {
+        if let lapsed, request != .stop { return (.failure(id: id, lapsed), nil) }
         lastRequest = .now
         inFlight += 1
         defer {
@@ -310,7 +369,7 @@ public final class DeviceSessionServer {
     /// Accepts on its own thread and serves each client on another, up to the client limit; another user's client is closed unread.
     nonisolated static func acceptLoop(
         listener: Int32, flag: DeviceSessionStopFlag, udid: String, clients: DeviceSessionClientCount, timeouts: DeviceSessionTimeouts,
-        handler: @escaping Handler
+        admits: @escaping @Sendable (Int32) -> Bool, handler: @escaping Handler
     ) {
         let refusals = DeviceSessionClientCount(limit: clients.limit)
         let thread = Thread {
@@ -319,7 +378,8 @@ public final class DeviceSessionServer {
                 guard poll(&poller, 1, 100) > 0, !flag.isSet else { continue }
                 let client = accept(listener, nil, nil)
                 guard client >= 0 else { continue }
-                guard isSameUser(client) else {
+                // Another user's client, or code other than this Offsider build, is closed before it gets a byte.
+                guard isSameUser(client), admits(client) else {
                     Darwin.close(client)
                     continue
                 }
@@ -352,11 +412,14 @@ public final class DeviceSessionServer {
         try? channel.write(DeviceSessionWire.frame(reply), timeout: .seconds(2))
     }
 
-    /// Reads requests until the client closes or stays silent for the header timeout; each reply, and any frame it announces, is written before the next read.
+    /// Reads requests until the client closes or stays silent: 10 s before its first request, the idle timeout between later ones.
+    /// Each reply, and any frame it announces, is written before the next read.
     nonisolated static func serveClient(_ channel: DeviceSessionChannel, timeouts: DeviceSessionTimeouts, handler: @escaping Handler) {
         defer { channel.close() }
+        var wait = timeouts.first
         while true {
-            guard let payload = try? channel.readFrame(limit: DeviceSessionWire.maxJSONBytes, timeout: timeouts.header, bodyTimeout: timeouts.body) else { return }
+            guard let payload = try? channel.readFrame(limit: DeviceSessionWire.maxJSONBytes, timeout: wait, bodyTimeout: timeouts.body) else { return }
+            wait = timeouts.header
             let reply: DeviceSessionReply
             var data: Data?
             do {
@@ -389,10 +452,19 @@ public final class DeviceSessionServer {
     }
 }
 
-/// How long a client may stay silent before a request (the idle timeout), and how long a started request may take to arrive.
+/// How long a new client may stay silent before its first request, how long between later ones (the idle timeout), and how long a started request may take to arrive.
 struct DeviceSessionTimeouts: Sendable {
+    let first: Duration
     let header: Duration
     let body: Duration
+}
+
+extension DeviceSessionServer {
+    /// The refusal a broker stops with once usbmuxd no longer lists its device on USB; nil while it does.
+    public nonisolated static func usbRefusal(udid: String, usbmux: any UsbmuxListing) -> IOSDeviceError? {
+        if (try? usbmux.listsOnUSB(udid)) == true { return nil }
+        return IOSDeviceError(.notWired, "\(udid) is no longer connected over USB, so its device session stopped and sent nothing more. Connect its cable, then retry.")
+    }
 }
 
 private final class ResultBox<T>: @unchecked Sendable {

@@ -84,6 +84,6 @@ struct DescribeUIOutputOptions: ParsableArguments {
     }
 
     func render(_ tree: UITree) throws -> Data {
-        UITreeRenderer.render(tree, try renderOptions())
+        UITreeRenderer.render(tree, try renderOptions(), marksUntrusted: true)
     }
 }

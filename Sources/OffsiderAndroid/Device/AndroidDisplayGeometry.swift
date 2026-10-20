@@ -69,8 +69,13 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
         var overrideDensity: Int?
         var internalViewport: (rotation: Int, width: Int, height: Int)?
         var plainViewport: (rotation: Int, width: Int, height: Int)?
+        var oversized: String?
 
         for line in output.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) {
+            if line.hasPrefix("Physical size:") || line.hasPrefix("Override size:") || line.contains("logicalFrame=["),
+               sides(in: line).contains(where: { !PixelMath.isSide($0) }) {
+                oversized = oversized ?? line
+            }
             if line.hasPrefix("Physical size:") {
                 natural = size(after: "Physical size:", in: line)
             } else if line.hasPrefix("Override size:") {
@@ -86,7 +91,10 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
             }
         }
 
-        guard let natural, let density = overrideDensity ?? physicalDensity, density > 0, let viewport = internalViewport ?? plainViewport else {
+        if let oversized {
+            throw Unparseable(firstLine: "\(oversized.prefix(120)): a side is over \(PixelMath.maxSide) pixels")
+        }
+        guard let natural, let density = overrideDensity ?? physicalDensity, PixelMath.isSide(density), let viewport = internalViewport ?? plainViewport else {
             let first = output.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
             throw Unparseable(firstLine: first)
         }
@@ -113,8 +121,23 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
 
     private static func size(after prefix: String, in line: String) -> (Int, Int)? {
         let parts = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces).split(separator: "x")
-        guard parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]), width > 0, height > 0 else { return nil }
+        guard parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]), PixelMath.isSide(width), PixelMath.isSide(height) else { return nil }
         return (width, height)
+    }
+
+    /// The widths and heights a size or viewport line names, for the bound check; empty when it names none.
+    private static func sides(in line: String) -> [Int] {
+        if let range = line.range(of: "logicalFrame=["), let close = line[range.upperBound...].firstIndex(of: "]") {
+            let numbers = line[range.upperBound..<close].split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            guard numbers.count == 4 else { return [] }
+            let width = numbers[2].subtractingReportingOverflow(numbers[0])
+            let height = numbers[3].subtractingReportingOverflow(numbers[1])
+            return [width.overflow ? Int.max : width.partialValue, height.overflow ? Int.max : height.partialValue].filter { $0 > 0 }
+        }
+        guard let colon = line.firstIndex(of: ":") else { return [] }
+        let parts = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces).split(separator: "x")
+        guard parts.count == 2 else { return [] }
+        return parts.map { Int($0) ?? (($0.allSatisfy(\.isNumber) && !$0.isEmpty) ? Int.max : 1) }
     }
 
     /// `orientation=1, logicalFrame=[0, 0, 2424, 1080]`, with or without spaces after the commas.
@@ -129,9 +152,10 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
             .split(separator: ",")
             .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
         guard numbers.count == 4 else { return nil }
-        let width = numbers[2] - numbers[0]
-        let height = numbers[3] - numbers[1]
-        guard width > 0, height > 0 else { return nil }
+        let (width, wide) = numbers[2].subtractingReportingOverflow(numbers[0])
+        let (height, tall) = numbers[3].subtractingReportingOverflow(numbers[1])
+        guard !wide, !tall else { return nil }
+        guard PixelMath.isSide(width), PixelMath.isSide(height) else { return nil }
         return (rotation, width, height)
     }
 }
@@ -139,8 +163,9 @@ struct AndroidDisplayGeometry: Equatable, Sendable {
 extension AndroidDisplayGeometry {
     /// From the helper's display; nil when it had no rotation (its fallback read), so the shell probe runs instead.
     init?(display: HelperDisplay) {
-        guard let rotation = display.rotation, (0...3).contains(rotation), display.densityDpi > 0,
-              display.logicalWidthPx > 0, display.logicalHeightPx > 0 else {
+        guard let rotation = display.rotation, (0...3).contains(rotation), PixelMath.isSide(display.densityDpi),
+              PixelMath.isSide(display.logicalWidthPx), PixelMath.isSide(display.logicalHeightPx),
+              display.physicalWidthPx.map(PixelMath.isSide) ?? true, display.physicalHeightPx.map(PixelMath.isSide) ?? true else {
             return nil
         }
         let quarter = rotation % 2 == 1

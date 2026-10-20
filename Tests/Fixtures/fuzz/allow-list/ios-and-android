@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "devices": [
+    {
+      "platform": "ios",
+      "id": "00008110-0000000000000001",
+      "name": "Test iPhone",
+      "added": "2026-10-01T00:00:00Z",
+      "expires": null,
+      "apps": [
+        "com.mpalmes.offsider.playground"
+      ],
+      "team": "ABCDE12345"
+    },
+    {
+      "platform": "android",
+      "id": "TESTSERIAL01",
+      "name": "Test phone",
+      "added": "2026-10-01T00:00:00Z",
+      "expires": "2026-11-01T00:00:00Z",
+      "apps": [
+        "com.mpalmes.offsider.playground.rn"
+      ]
+    }
+  ]
+}

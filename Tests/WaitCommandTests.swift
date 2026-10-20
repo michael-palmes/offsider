@@ -103,6 +103,21 @@ struct WaitCommandTests {
         #expect(wait.successLine(outcome).hasPrefix("✓ --id 'apply' is present after "))
     }
 
+    @Test("--label-contains matches the real label and notes when describe-ui shows that part redacted")
+    func labelContainsRedacted() async throws {
+        let tree = FakeUI.tree(width: 393, height: 852, [FakeUI.node(.text, id: "otp", label: "Your code is 482913", frame: FakeUI.frame(20, 100, 350, 30))])
+        let wait = try Self.command(["--label-contains", "482913", "--timeout", "0"])
+        let outcome = try await Self.evaluate(wait, on: FakeDeviceBackend(trees: [tree]))
+
+        #expect(outcome.met)
+        #expect(Wait.redactionNote(outcome, checked: wait.selector) == " (matched on the real text; describe-ui shows it redacted)")
+        #expect(!WaitReport(Wait.shown(outcome)).jsonLine().contains("482913"))
+
+        let plain = try Self.command(["--label-contains", "Your code", "--timeout", "0"])
+        let plainOutcome = try await Self.evaluate(plain, on: FakeDeviceBackend(trees: [tree]))
+        #expect(Wait.redactionNote(plainOutcome, checked: plain.selector).isEmpty)
+    }
+
     @Test("a timeout prints the report and exits 5")
     func timeoutExitsUnverified() throws {
         let outcome = WaitOutcome(met: false, elapsed: 0, reason: "not found")

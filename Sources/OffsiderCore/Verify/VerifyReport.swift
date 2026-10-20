@@ -69,7 +69,11 @@ public struct VerifyReport: Equatable, Sendable {
         return dispatched == .yes ? .unverified : .failure
     }
 
-    /// Keys in order: version, command, target, dispatched, verified, attempts, change, changes, changesTruncated, ignored, note, style, elapsedMs, phasesMs, exitCode, error.
+    /// The changed and ignored elements' names and text, and the error's.
+    static let untrustedPaths = UntrustedPaths.under("changes[]", ["node", "old", "new"]) + ["ignored[].node"]
+        + UntrustedPaths.under("error", UntrustedPaths.errorFields)
+
+    /// Keys in order: version, command, target, dispatched, verified, attempts, change, changes, changesTruncated, ignored, note, style, elapsedMs, phasesMs, exitCode, error, then `untrusted` when any applies.
     public func jsonData() throws -> Data {
         let members: [(String, OrderedJSON)] = [
             ("version", .integer(version)),
@@ -89,6 +93,6 @@ public struct VerifyReport: Equatable, Sendable {
             ("exitCode", .integer(Int(exitCode.rawValue))),
             ("error", error.map(\.jsonValue) ?? .null),
         ]
-        return Data(OrderedJSON.object(members).rendered().utf8)
+        return Data(UntrustedPaths.marked(.object(members), Self.untrustedPaths).rendered().utf8)
     }
 }

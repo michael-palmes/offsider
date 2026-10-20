@@ -31,7 +31,8 @@ public struct ProcessCaptureTimeoutError: LocalizedError, CustomStringConvertibl
 
 /// Runs a short-lived tool with a hard timeout and captures both output streams.
 public enum ProcessCapture {
-    /// A nil `environment` inherits this process's environment.
+    /// A nil `environment` gives the child the `appleTool` allow-list of this process's environment, never all of it;
+    /// a caller that needs more passes the environment it wants.
     public static func run(
         executable: String,
         arguments: [String],
@@ -41,9 +42,7 @@ public enum ProcessCapture {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
-        if let environment {
-            process.environment = environment
-        }
+        process.environment = environment ?? ChildEnvironment.make(.appleTool, from: ProcessInfo.processInfo.environment)
         process.standardInput = FileHandle.nullDevice
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()

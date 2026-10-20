@@ -194,7 +194,7 @@ struct HIDBrokerServerTests {
         let simulator = FakeSimulator()
         let server = HIDBrokerServer(
             udid: "SIM-A", listener: listener, endpoint: endpoint, sink: simulator.sink,
-            isCurrentBoot: isCurrentBoot, idleSeconds: idleSeconds, log: { _ in }
+            isCurrentBoot: isCurrentBoot, admits: { _ in true }, idleSeconds: idleSeconds, log: { _ in }
         )
         return Running(server: server, task: Task { await server.run() }, endpoint: endpoint, simulator: simulator)
     }
@@ -557,5 +557,60 @@ struct SimulatorSessionSettingsTests {
         #expect(SimulatorSessionSettings.idleSeconds(["OFFSIDER_SIMULATOR_SESSION_IDLE": "0"]) == 60)
         #expect(SimulatorSessionSettings.idleSeconds(["OFFSIDER_SIMULATOR_SESSION_IDLE": "soon"]) == 60)
         #expect(SimulatorSessionSettings.idleSeconds(["OFFSIDER_SIMULATOR_SESSION_IDLE": "99999"]) == 3600)
+    }
+}
+
+@Suite("HID broker frame reader")
+struct HIDBrokerFrameReaderTests {
+    @Test("a request that trickles in one byte at a time is closed once the frame time passes, not stretched by each byte")
+    func trickledFrameIsClosedAtTheDeadline() async throws {
+        var pair: [Int32] = [0, 0]
+        try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        defer { pair.forEach { Darwin.close($0) } }
+        let reader = HIDBrokerFrameReader(descriptor: pair[0], frameTimeoutMilliseconds: 200)
+        // A write after the pair closes would end the whole test process with SIGPIPE, so the writer is waited for and its socket marked.
+        HIDBroker.configureNoSignalPipe(pair[1])
+        let firstByteAt = Clock()
+        let dripping = Task.detached {
+            for index in 0..<40 where !Task.isCancelled {
+                var byte: UInt8 = 0x7B
+                if index == 0 { firstByteAt.mark() }
+                _ = Darwin.write(pair[1], &byte, 1)
+                try? await Task.sleep(for: .milliseconds(30))
+            }
+        }
+        let read = await reader.next(silentWithin: 5_000)
+        let closedAt = ContinuousClock.now
+        dripping.cancel()
+        _ = await dripping.value
+        #expect(read == .closed)
+        // Measured from the first byte, so a late start of the writer under a busy test run does not count.
+        let held = closedAt - (firstByteAt.marked ?? closedAt)
+        #expect(held >= .milliseconds(150) && held < .milliseconds(900), "\(held)")
+    }
+
+    final class Clock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var at: ContinuousClock.Instant?
+        func mark() { lock.withLock { if at == nil { at = .now } } }
+        var marked: ContinuousClock.Instant? { lock.withLock { at } }
+    }
+
+    @Test("a whole frame that arrives in pieces within the frame time is returned")
+    func pieceMealFrameIsReturned() async throws {
+        var pair: [Int32] = [0, 0]
+        try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        defer { pair.forEach { Darwin.close($0) } }
+        let reader = HIDBrokerFrameReader(descriptor: pair[0], frameTimeoutMilliseconds: 2_000)
+        HIDBroker.configureNoSignalPipe(pair[1])
+        let writing = Task {
+            for piece in ["{\"op\":", "\"status\"", "}\n"] {
+                _ = piece.utf8CString.withUnsafeBufferPointer { Darwin.write(pair[1], $0.baseAddress, piece.utf8.count) }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+        }
+        let read = await reader.next(silentWithin: 5_000)
+        _ = await writing.value
+        #expect(read == .frame(Data("{\"op\":\"status\"}".utf8)))
     }
 }

@@ -66,11 +66,12 @@ struct VideoMaskOptions: ParsableArguments {
             command: command, treeFlags: treeFlags, run: run,
             secureByDefault: Screenshot.masksSecure(flag: nil, environment: environment), unmasked: unmasked
         ) {
-        case .record(let warning):
-            if let warning {
-                FileHandle.standardError.write(Data("Warning: \(warning)\n".utf8))
-            }
+        case .record(let warning?):
+            FileHandle.standardError.write(Data("Warning: \(warning)\n".utf8))
             return false
+        case .record(nil):
+            // offsider.mask.json's masks cannot be painted on video either, so its one tree read checks them too.
+            return try MaskConfigs.current().map { !$0.config.isEmpty } ?? false
         case .checkSecureField:
             return true
         case .refuse(let message):
@@ -80,9 +81,11 @@ struct VideoMaskOptions: ParsableArguments {
         }
     }
 
-    /// Reads one tree before the first frame and refuses with `video_unmasked` when it shows a password field or cannot be read.
+    /// Reads one tree before the first frame and refuses with `video_unmasked` when it shows a password field, or anything
+    /// `offsider.mask.json` masks, or cannot be read.
     @MainActor
     static func requireNoSecureField(command: String, backend: any DeviceBackend, device: DeviceID) async throws {
+        let config = try MaskConfigs.current()
         let tree: UITree
         do {
             tree = try await backend.accessibilityTree(for: device)
@@ -92,6 +95,32 @@ struct VideoMaskOptions: ParsableArguments {
         if VideoMaskPolicy.showsSecureField(tree) {
             throw CLIError(errorDescription: VideoMaskPolicy.secureFieldRefusal(command: command), reason: .videoUnmasked)
         }
+        if let config, let shown = try configMatch(config.config, in: tree) {
+            throw CLIError(
+                errorDescription: "\(command) will not start while \(shown), which \(MaskConfig.fileName) masks, is on screen: video cannot be masked reliably frame by frame. "
+                    + "Leave that screen first, use `screenshot`, which masks it, or pass --unmasked to record anyway.",
+                reason: .videoUnmasked
+            )
+        }
+    }
+
+    /// The first selector of the file that matches an element on screen, as `--mask-id x` names it; nil when none does.
+    nonisolated static func configMatch(_ config: MaskConfig, in tree: UITree) throws -> String? {
+        let viewport = tree.viewport
+        func onScreen(_ node: UINode) -> Bool {
+            guard let viewport, let frame = node.frame else { return true }
+            return frame.isVisible(in: viewport)
+        }
+        let selectors = config.ids.map { ("--mask-id \($0)", AccessibilityQuery.id($0)) } + config.labels.map { ("--mask-label \($0)", AccessibilityQuery.label($0)) }
+            + config.labelContains.map { ("--mask-label-contains \($0)", AccessibilityQuery.labelContains($0)) }
+        for (name, query) in selectors where AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches.contains(where: onScreen) {
+            return name
+        }
+        let texts = try MaskConfig(valuePatterns: config.valuePatterns, emails: config.emails).plan.textTargets(in: tree)
+        for group in texts.groups where group.nodes.contains(where: onScreen) {
+            return group.kind == .emails ? "an email address" : "text a value pattern matches"
+        }
+        return nil
     }
 }
 
