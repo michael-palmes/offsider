@@ -29,6 +29,8 @@ protocol LoginCredentialStoring {
     func groups() throws -> [LoginAppGroup]
     /// Records that `member` uses the logins saved for `canonical`, in the link index and in every login's encrypted `links`.
     func join(member: String, canonical: String) throws
+    /// Stops `member` using them: each login's encrypted `links` first, so a failure part way still types nothing, then the index.
+    func unjoin(member: String, canonical: String) throws
 }
 
 extension LoginCredentialStoring {
@@ -197,6 +199,17 @@ struct KeychainLoginCredentialStore: LoginCredentialStoring {
         item[kSecAttrDescription as String] = "Offsider login link"
         let added = SecItemAdd(item as CFDictionary, nil)
         guard added == errSecSuccess else { throw LoginKeychainFailure(operation: "link", app: member, key: "", status: added) }
+    }
+
+    func unjoin(member: String, canonical: String) throws {
+        for key in try keys(app: canonical) {
+            guard var stored = try loadStored(app: canonical, key: key), stored.links.contains(member) else { continue }
+            stored.unlink(member)
+            let status = SecItemUpdate(query(app: canonical, key: key) as CFDictionary, [kSecValueData as String: stored.storageData()] as CFDictionary)
+            guard status == errSecSuccess else { throw LoginKeychainFailure(operation: "unlink", app: canonical, key: key, status: status) }
+        }
+        let status = SecItemDelete(accountQuery(LoginCredential.linkAccount(member: member)) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw LoginKeychainFailure(operation: "unlink", app: member, key: "", status: status) }
     }
 
     private static let defaultMark = "default"

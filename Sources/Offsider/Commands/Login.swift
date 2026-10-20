@@ -272,11 +272,13 @@ struct LoginCommand: AsyncParsableCommand {
         }
     }
 
+    /// The password is the person's to type, so the fix is theirs to run.
     private static func noneSaved(app: String, device: DeviceID?) -> CLIError {
-        CLIError(
-            errorDescription: "No login credential is saved for \(app).",
+        let command = "offsider credential add --app \(app)"
+        return CLIError(
+            errorDescription: "No login credential is saved for \(app)." + ErrorAudience.current.personStep(command),
             reason: .commandFailed,
-            hint: device.map { "offsider credential set --device \($0.rawValue)" } ?? "offsider credential set --app \(app)"
+            hint: command
         )
     }
 

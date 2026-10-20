@@ -122,6 +122,10 @@ public struct StoredLogin: Equatable, Sendable, CustomStringConvertible, CustomD
         links = Set(links + [member]).sorted()
     }
 
+    public mutating func unlink(_ member: String) {
+        links.removeAll { $0 == member }
+    }
+
     /// `{"v":2,"username","password","links","confirm","devices","webLogin"}`.
     public func storageData() -> Data {
         let object: [String: Any] = [

@@ -6,11 +6,14 @@ import OffsiderCore
 struct CredentialCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "credential",
-        abstract: "Save, describe, check, remove or share a test username and password for one app, and track who is signed in.",
+        abstract: "Add, describe, check or remove a test username and password for your apps, and track who is signed in.",
         discussion: """
-        Passwords stay in your login Keychain, never in a file, an argument or the output. Details: `offsider guide login`.
+        Passwords stay in your login Keychain, never in a file, an argument or the output. `add` (also `set`) on a terminal \
+        asks which apps, the username and the password once, and saves the login for each app, so an iOS bundle id and an \
+        Android package take one step. Details: `offsider guide login`.
         Examples:
-          offsider credential set dev --device DEVICE_ID
+          offsider credential add
+          offsider credential add --app com.example.app --app com.example.android
           offsider credential status --app com.example.app
           offsider credential describe dev --tag role=admin --app com.example.app
           offsider credential remove dev --app com.example.app
@@ -20,6 +23,7 @@ struct CredentialCommand: AsyncParsableCommand {
     )
 
     enum Action: String, CaseIterable {
+        /// `add` on the command line; reports say `set`.
         case set
         case status
         case describe
@@ -28,52 +32,55 @@ struct CredentialCommand: AsyncParsableCommand {
         case signedOut = "signed-out"
     }
 
-    @Argument(help: ArgumentHelp("set, status, describe, remove, join or signed-out.", valueName: "action"))
+    @Argument(help: ArgumentHelp("add (or set), status, describe, remove, join or signed-out.", valueName: "action"))
     var action: String
 
     @Argument(help: ArgumentHelp("The saved login's name, such as dev, or default for the one saved without a name. Omit it to use the default login. join and signed-out do not take one.", valueName: "name"))
     var key: String?
 
-    @Flag(name: .customLong("stdin"), help: "With set: read the username, then the password, from two lines of standard input.")
+    @Flag(name: .customLong("stdin"), help: "With add: read the username, then the password, from two lines of standard input.")
     var stdin = false
 
-    @Flag(name: .customLong("update"), help: "With set: replace the default login, or the named one, instead of adding a login.")
+    @Flag(name: .customLong("update"), help: "With add: replace the default login, or the named one, instead of adding a login.")
     var update = false
 
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout. It never includes the password.")
+    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout, one per app for add with several. It never includes the password.")
     var json = false
 
-    @Option(name: .customLong("app"), help: ArgumentHelp("For set, status, describe, remove and signed-out: the bundle id or package, when that app is not in front. For join: which saved app to share with.", valueName: "id"))
-    var app: String?
+    @Option(name: .customLong("app"), help: ArgumentHelp("The bundle id or package, when that app is not in front. With add, repeat it to save one login for each app, such as the iOS and Android builds. For join: which saved app to share with.", valueName: "id"))
+    var apps: [String] = []
 
-    @Option(name: .customLong("about"), help: ArgumentHelp("With set or describe: what the login can do, and when to use it. \"\" clears it.", valueName: "text"))
+    /// The one app every action but `add` takes.
+    var app: String? { apps.first }
+
+    @Option(name: .customLong("about"), help: ArgumentHelp("With add or describe: what the login can do, and when to use it. \"\" clears it.", valueName: "text"))
     var about: String?
 
-    @Option(name: .customLong("avoid"), help: ArgumentHelp("With set or describe: tests the login must not be used for. \"\" clears it.", valueName: "text"))
+    @Option(name: .customLong("avoid"), help: ArgumentHelp("With add or describe: tests the login must not be used for. \"\" clears it.", valueName: "text"))
     var avoid: String?
 
-    @Option(name: .customLong("state"), help: ArgumentHelp("With set or describe: what the account holds now, such as 3 items in the cart. \"\" clears it.", valueName: "text"))
+    @Option(name: .customLong("state"), help: ArgumentHelp("With add or describe: what the account holds now, such as 3 items in the cart. \"\" clears it.", valueName: "text"))
     var state: String?
 
-    @Option(name: .customLong("tag"), help: ArgumentHelp("With set or describe: add a tag, a word or key=value such as role=admin. Repeatable.", valueName: "tag"))
+    @Option(name: .customLong("tag"), help: ArgumentHelp("With add or describe: add a tag, a word or key=value such as role=admin. Repeatable.", valueName: "tag"))
     var tags: [String] = []
 
-    @Option(name: .customLong("untag"), help: ArgumentHelp("With set or describe: remove a tag. Repeatable.", valueName: "tag"))
+    @Option(name: .customLong("untag"), help: ArgumentHelp("With add or describe: remove a tag. Repeatable.", valueName: "tag"))
     var untags: [String] = []
 
-    @Flag(name: .customLong("clear-tags"), help: "With set or describe: remove every tag before --tag adds any.")
+    @Flag(name: .customLong("clear-tags"), help: "With add or describe: remove every tag before --tag adds any.")
     var clearTags = false
 
     @Option(name: .customLong("where"), help: ArgumentHelp("With status: show the one saved login with this tag, as login --where would choose it. Repeatable. Not with a name.", valueName: "tag"))
     var filters: [String] = []
 
-    @Option(name: .customLong("devices"), help: ArgumentHelp("With set or describe: virtual (simulators and emulators, the default) or any (also allowed physical phones; needs a person).", valueName: "scope"))
+    @Option(name: .customLong("devices"), help: ArgumentHelp("With add or describe: virtual (simulators and emulators, the default) or any (also allowed physical phones; needs a person).", valueName: "scope"))
     var devices: LoginDeviceScope?
 
-    @Flag(name: .customLong("confirm"), inversion: .prefixedNo, help: "With set or describe: --confirm makes login ask for Touch ID or your password first; --no-confirm (needs a person) stops asking.")
+    @Flag(name: .customLong("confirm"), inversion: .prefixedNo, help: "With add or describe: --confirm makes login ask for Touch ID or your password first; --no-confirm (needs a person) stops asking.")
     var confirm: Bool?
 
-    @Flag(name: .customLong("web-login"), inversion: .prefixedNo, help: "With set or describe: --web-login (needs a person) lets login type into a web view, with webLogin in offsider.login.json; --no-web-login stops it.")
+    @Flag(name: .customLong("web-login"), inversion: .prefixedNo, help: "With add or describe: --web-login (needs a person) lets login type into a web view, with webLogin in offsider.login.json; --no-web-login stops it.")
     var webLogin: Bool?
 
     @OptionGroup
@@ -81,10 +88,10 @@ struct CredentialCommand: AsyncParsableCommand {
 
     func validate() throws {
         let parsed = try parsedAction()
-        if stdin, parsed != .set { throw ValidationError("--stdin goes with set, not \(parsed.rawValue).") }
-        if update, parsed != .set { throw ValidationError("--update goes with set, not \(parsed.rawValue).") }
+        if stdin, parsed != .set { throw ValidationError("--stdin goes with add, not \(parsed.rawValue).") }
+        if update, parsed != .set { throw ValidationError("--update goes with add, not \(parsed.rawValue).") }
         if let flag = (contextFlags + settingsFlags).first, parsed != .set, parsed != .describe {
-            throw ValidationError("\(flag) goes with set or describe, not \(parsed.rawValue).")
+            throw ValidationError("\(flag) goes with add or describe, not \(parsed.rawValue).")
         }
         if parsed == .describe, contextFlags.isEmpty, settingsFlags.isEmpty {
             throw ValidationError("describe needs at least one of --about, --avoid, --state, --tag, --untag, --clear-tags, --devices, --confirm, --no-confirm, --web-login or --no-web-login.")
@@ -96,12 +103,16 @@ struct CredentialCommand: AsyncParsableCommand {
             guard parsed != .join, parsed != .signedOut else { throw ValidationError("\(parsed.rawValue) does not take a name.") }
             guard Self.storedKey(key) != nil else { throw ValidationError(Self.keyMessage) }
         }
-        if let app, Self.appID(app) == nil {
+        if apps.contains(where: { Self.appID($0) == nil }) {
             throw ValidationError("--app must be a bundle id or package, such as com.example.app.")
+        }
+        if apps.count > 1 {
+            guard parsed == .set else { throw ValidationError("Only add takes --app more than once; \(parsed.rawValue) takes one app.") }
+            guard Set(apps.compactMap(Self.appID)).count == apps.count else { throw ValidationError("--app names the same app twice.") }
         }
         if parsed == .join || parsed == .signedOut {
             if device.resolved == nil { throw ValidationError(DeviceDefault.missingMessage) }
-        } else if app == nil, device.resolved == nil {
+        } else if app == nil, device.resolved == nil, !(parsed == .set && picksApps) {
             throw ValidationError(DeviceDefault.missingMessage)
         }
     }
@@ -125,7 +136,11 @@ struct CredentialCommand: AsyncParsableCommand {
         if parsed == .signedOut { try Self.refuseSignedOutOnPhone(deviceID ?? "") }
         let settings = settingsEdit
         if !settings.loosening.isEmpty {
-            try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider credential \(parsed.rawValue)` with these flags in their own terminal.")
+            try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider credential \(parsed == .set ? "add" : parsed.rawValue)` with these flags in their own terminal.")
+        }
+        if parsed == .set, apps.count > 1 || (app == nil && device.resolved == nil) {
+            try await addMany(key: key, settings: settings, store: store, styled: styled)
+            return
         }
         let app = try await finding { try await resolveApp() }
         let edit = try contextEdit()
@@ -137,7 +152,7 @@ struct CredentialCommand: AsyncParsableCommand {
         let confirmed = !settings.loosening.isEmpty
         guard parsed == .set, !stdin, isatty(STDIN_FILENO) != 0 else {
             let read = stdin ? Self.readFromStandardInput : {
-                throw CLIError(errorDescription: "credential set asks for the username on a terminal. Without one, pass --stdin.", reason: .usage)
+                throw CLIError(errorDescription: "credential add asks for the username on a terminal. Without one, pass --stdin.", reason: .usage)
             }
             // A person's spinner asks for the prompt in place of the agent's line.
             let notice = DispatchWorkItem {
@@ -247,10 +262,16 @@ struct CredentialCommand: AsyncParsableCommand {
     }
 
     func parsedAction() throws -> Action {
-        guard let parsed = Action(rawValue: action.trimmingCharacters(in: .whitespaces).lowercased()) else {
-            throw ValidationError("Unknown action '\(action)'. Use set, status, describe, remove, join or signed-out.")
+        let word = action.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let parsed = word == "add" ? .set : Action(rawValue: word) else {
+            throw ValidationError("Unknown action '\(action)'. Use add, status, describe, remove, join or signed-out.")
         }
         return parsed
+    }
+
+    /// `add` with no app and no device asks a person which apps; an agent, a pipe, `--stdin` or `--json` still needs one.
+    var picksApps: Bool {
+        !stdin && !json && DevicePicker.terminal()
     }
 
     /// The app in front. `join` uses this even when `--app` names the saved app to share with.
@@ -319,6 +340,7 @@ struct CredentialCommand: AsyncParsableCommand {
                 hint: "offsider credential \(action.rawValue)"
             )
         }
+        if action == .set { try refuseSaving(app, platform: nil) }
         let canonical = try store.canonical(of: app)
         let shared = try sharedIDs(app: app, canonical: canonical, store: store)
         switch action {
@@ -403,6 +425,10 @@ struct CredentialCommand: AsyncParsableCommand {
                 context: next, changed: changed
             )
             return render(report)
+        case .remove where canonical != app:
+            // A linked id has no logins of its own: removing it unlinks it and leaves the other app's logins alone.
+            try store.unjoin(member: app, canonical: canonical)
+            return render(CredentialReport(action: "remove", app: app, saved: false, unlinked: canonical))
         case .remove:
             let removing = try removeTarget(entries: try store.entries(app: canonical), name: key)
             let removed = try store.remove(app: canonical, key: removing)
@@ -492,9 +518,16 @@ struct CredentialCommand: AsyncParsableCommand {
 
     /// Browsers and system apps never share or take saved logins. Without a device in hand both platforms' lists apply.
     static func refuseDenied(_ app: String, platform: DevicePlatform?) throws {
-        let platforms = platform.map { [$0] } ?? DevicePlatform.allCases
-        guard let refusal = platforms.lazy.compactMap({ SystemAppDenyList.refusal(app, platform: $0) }).first else { return }
-        throw CLIError(errorDescription: "\(refusal). Nothing was linked.", reason: .appNotAllowed)
+        if let refusal = denial(app, platform: platform) { throw CLIError(errorDescription: "\(refusal). Nothing was linked.", reason: .appNotAllowed) }
+    }
+
+    /// `login` never types into a browser or system app, so no login is saved for one.
+    static func refuseSaving(_ app: String, platform: DevicePlatform?) throws {
+        if let refusal = denial(app, platform: platform) { throw CLIError(errorDescription: "\(refusal). Nothing was saved.", reason: .appNotAllowed) }
+    }
+
+    private static func denial(_ app: String, platform: DevicePlatform?) -> String? {
+        (platform.map { [$0] } ?? DevicePlatform.allCases).lazy.compactMap { SystemAppDenyList.refusal(app, platform: $0) }.first
     }
 
     private static func chooseApp(_ groups: [LoginAppGroup]) throws -> String {
@@ -514,7 +547,7 @@ struct CredentialCommand: AsyncParsableCommand {
 
     /// The settings a set starts from: the replaced login's own, or for a new login the links a person confirmed on the default login.
     /// Only the replaced login is decrypted, and the default only when another app id is joined.
-    private static func settingsBase(
+    static func settingsBase(
         for credential: LoginCredential, key: String, existing: LoginEntry?, entries: [LoginEntry], app: String, store: any LoginCredentialStoring
     ) throws -> StoredLogin {
         if existing != nil, let saved = try store.loadStored(app: app, key: key) {
@@ -529,7 +562,7 @@ struct CredentialCommand: AsyncParsableCommand {
     }
 
     /// The context to write so its mirror matches `stored`; nil keeps the stored context, as for one a newer Offsider wrote.
-    private static func mirrored(_ context: LoginContext?, existing: LoginEntry?, stored: StoredLogin) -> LoginContext? {
+    static func mirrored(_ context: LoginContext?, existing: LoginEntry?, stored: StoredLogin) -> LoginContext? {
         if let context { return context.mirroring(stored) }
         switch existing?.stored {
         case .newer?: return nil
@@ -561,7 +594,7 @@ struct CredentialCommand: AsyncParsableCommand {
             return WriteTarget(key: key, makeDefault: makeDefault)
         case .choose:
             guard let questions else {
-                throw CLIError(errorDescription: "credential set asks for a choice on a terminal. Without one, pass --update or a name.", reason: .usage)
+                throw CLIError(errorDescription: "credential add asks for a choice on a terminal. Without one, pass --update or a name.", reason: .usage)
             }
             let listed = try summaries()
             switch try questions.loginToChange(entries: listed) {
@@ -579,7 +612,7 @@ struct CredentialCommand: AsyncParsableCommand {
     }
 
     /// `edit` applied to a stored context. A damaged one starts empty, and a newer Offsider's is never overwritten.
-    private static func edited(_ stored: LoginContextRead, with edit: LoginContextEdit, key: String, app: String, now: Date) throws -> LoginContext {
+    static func edited(_ stored: LoginContextRead, with edit: LoginContextEdit, key: String, app: String, now: Date) throws -> LoginContext {
         let base: LoginContext
         switch stored {
         case .saved(let context):
@@ -604,7 +637,7 @@ struct CredentialCommand: AsyncParsableCommand {
         if let marked = entries.first(where: \.isDefault) { return marked.key }
         if entries.count == 1, let only = entries.first { return only.key }
         if entries.isEmpty {
-            throw CLIError(errorDescription: "No login is saved for \(app), so there is nothing to describe. Nothing was changed.", reason: .commandFailed, hint: "offsider credential set --app \(app)")
+            throw CLIError(errorDescription: "No login is saved for \(app), so there is nothing to describe. Nothing was changed.", reason: .commandFailed, hint: "offsider credential add --app \(app)")
         }
         let names = entries.map(\.name).joined(separator: ", ")
         throw CLIError(errorDescription: "Several logins are saved (\(names)) and none is the default. Pass the name to describe. Nothing was changed.", reason: .usage)
@@ -622,7 +655,7 @@ struct CredentialCommand: AsyncParsableCommand {
         return CLIError(
             errorDescription: "No login named \(LoginCredential.displayKey(key)) is saved for \(app). Nothing was changed.",
             reason: .commandFailed,
-            hint: "offsider credential set\(argument) --app \(app)"
+            hint: "offsider credential add\(argument) --app \(app)"
         )
     }
 
@@ -635,7 +668,7 @@ struct CredentialCommand: AsyncParsableCommand {
         throw CLIError(errorDescription: "Several logins are saved (\(names)). Pass the name to remove. Nothing was removed.", reason: .usage)
     }
 
-    private static func sharedIDs(app: String, canonical: String, store: any LoginCredentialStoring) throws -> [String] {
+    static func sharedIDs(app: String, canonical: String, store: any LoginCredentialStoring) throws -> [String] {
         let group = try store.groups().first { $0.canonical == canonical }
         var others = group?.members ?? []
         if canonical != app { others.append(canonical) }
@@ -679,7 +712,7 @@ struct TerminalOutput {
     var device: String
 }
 
-/// What `credential set` asks a person at a terminal. Tests script the answers.
+/// What `credential add` asks a person at a terminal. Tests script the answers.
 protocol CredentialQuestions {
     func loginToChange(entries: [LoginCredentialSummary]) throws -> LoginSetChoice
     func replaces(_ entry: LoginCredentialSummary) throws -> Bool

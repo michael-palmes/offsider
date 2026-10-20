@@ -1,6 +1,6 @@
 import Foundation
 
-/// Apps Offsider never signs in to, links a login to, or drives on a physical phone: browsers and the system apps
+/// Apps Offsider never signs in to, links a login to, or drives on a physical phone: browsers, home screens and the system apps
 /// that hold mail, messages, passwords, payments, photos, health data and settings.
 public enum SystemAppDenyList {
     public enum Category: String, Sendable {
@@ -56,6 +56,16 @@ public enum SystemAppDenyList {
         "com.opera.browser": .browser,
         "com.duckduckgo.mobile.android": .browser,
         "com.android.systemui": .systemUI,
+        "com.google.android.apps.nexuslauncher": .systemUI,
+        "com.android.launcher": .systemUI,
+        "com.android.launcher3": .systemUI,
+        "com.miui.home": .systemUI,
+        "net.oneplus.launcher": .systemUI,
+        "com.huawei.android.launcher": .systemUI,
+        "com.oppo.launcher": .systemUI,
+        "com.motorola.launcher3": .systemUI,
+        "com.microsoft.launcher": .systemUI,
+        "com.teslacoilsw.launcher": .systemUI,
         "com.android.settings": .settings,
         "com.google.android.gm": .mail,
         "com.google.android.apps.messaging": .messages,

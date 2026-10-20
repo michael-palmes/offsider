@@ -323,7 +323,7 @@ struct LoginCredentialTests {
         let edit = LoginContextEdit(state: "3 items in the cart")
         let missing = #expect(throws: CLIError.self) { try describe(store, "qa-owner", edit) }
         #expect(missing?.exitCode == .failure)
-        #expect(missing?.hint == "offsider credential set qa-owner --app com.example.app")
+        #expect(missing?.hint == "offsider credential add qa-owner --app com.example.app")
 
         store.markDefaultOff(app: "com.example.app")
         let several = #expect(throws: CLIError.self) { try describe(store, nil, edit) }
@@ -508,7 +508,8 @@ struct LoginCredentialTests {
         let many = (1...7).map { LoginEntry(key: "qa-\($0)") }
         #expect(LoginDirectory.noUnnamedLogin(app: "com.example.app", entries: many).hasSuffix("pass a saved name: qa-1, qa-2, qa-3, qa-4, qa-5 and 2 more."))
         let empty = #expect(throws: CLIError.self) { try chosen(MemoryLoginCredentialStore(), name: "default") }
-        #expect(empty?.failureMessage == "No login credential is saved for com.example.app.")
+        #expect(empty?.failureMessage == "No login credential is saved for com.example.app. Ask the user to run `offsider credential add --app com.example.app` in their own terminal.")
+        #expect(empty?.hint == "offsider credential add --app com.example.app")
     }
 
     @Test("set default writes the login saved without a name only while the app has none, replaces it with --update, and is refused beside named logins before any read")
@@ -904,6 +905,14 @@ final class MemoryLoginCredentialStore: LoginCredentialStoring {
             slot.stored.link(member)
             slots[account] = slot
         }
+    }
+
+    func unjoin(member: String, canonical: String) throws {
+        for (account, var slot) in slots where LoginCredential.parseAccount(account)?.app == canonical {
+            slot.stored.unlink(member)
+            slots[account] = slot
+        }
+        links[member] = nil
     }
 
     /// The link index alone, as an Offsider before encrypted links wrote it, or an agent with Keychain write access.
