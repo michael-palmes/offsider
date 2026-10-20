@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import Security
 import Testing
 @testable import Offsider
 @testable import OffsiderCore
@@ -223,6 +224,28 @@ struct CredentialAddTests {
         #expect(try store.loadStored(app: typed.id, key: key)?.devices == .any)
     }
 
+    @Test("an Android app linked to the iOS one takes the phone choice through the one save they share")
+    func linkedAndroidKeepsPhones() throws {
+        let store = MemoryLoginCredentialStore()
+        try Self.saved(store, iosApp)
+        try store.join(member: androidApp, canonical: iosApp)
+        _ = try CredentialCommand.performMany(
+            [Self.ios, Self.android], key: "qa", settings: LoginSettingsEdit(devices: .any), personConfirmed: true, json: false, store: store,
+            readCredential: { SharedAnswers().answer }
+        )
+        #expect(try store.loadStored(app: iosApp, key: "qa")?.devices == .any)
+    }
+
+    @Test("a save that fails after another app's says which apps have the login")
+    func partialSaveIsNamed() throws {
+        let store = FailingStore(failingApp: androidApp)
+        let error = #expect(throws: CLIError.self) {
+            _ = try CredentialCommand.performMany([Self.ios, Self.android], key: nil, json: false, store: store, readCredential: { SharedAnswers().answer })
+        }
+        #expect(error?.userFacingDescription.contains("saved for \(iosApp) only") == true)
+        #expect(try store.memory.keys(app: iosApp) == [LoginCredential.defaultAccountKey])
+    }
+
     @Test("phones without a person, or a browser among the apps, save nothing and read no password")
     func refusalsSaveNothing() throws {
         let store = MemoryLoginCredentialStore()
@@ -321,4 +344,31 @@ struct CredentialAddTests {
         #expect(transcript.contains(CredentialScreen.appsQuestion))
         #expect(transcript.contains("offsider.login.json"))
     }
+}
+
+/// The in-memory store, failing every save for one app as a declined Keychain prompt would.
+private final class FailingStore: LoginCredentialStoring {
+    let memory = MemoryLoginCredentialStore()
+    let failingApp: String
+
+    init(failingApp: String) {
+        self.failingApp = failingApp
+    }
+
+    func loadStored(app: String, key: String) throws -> StoredLogin? { try memory.loadStored(app: app, key: key) }
+    func list(app: String) throws -> [LoginCredentialSummary] { try memory.list(app: app) }
+    func keys(app: String) throws -> [String] { try memory.keys(app: app) }
+    func defaultKey(app: String) throws -> String? { try memory.defaultKey(app: app) }
+    func entries(app: String) throws -> [LoginEntry] { try memory.entries(app: app) }
+    func saveStored(_ stored: StoredLogin, app: String, key: String, isDefault: Bool, context: LoginContext?) throws {
+        if app == failingApp { throw LoginKeychainFailure(operation: "save", app: app, key: key, status: errSecAuthFailed) }
+        try memory.saveStored(stored, app: app, key: key, isDefault: isDefault, context: context)
+    }
+    func setContext(_ context: LoginContext, app: String, key: String) throws -> Bool { try memory.setContext(context, app: app, key: key) }
+    func markDefault(app: String, key: String) throws { try memory.markDefault(app: app, key: key) }
+    func remove(app: String, key: String) throws -> Bool { try memory.remove(app: app, key: key) }
+    func canonical(of app: String) throws -> String { try memory.canonical(of: app) }
+    func groups() throws -> [LoginAppGroup] { try memory.groups() }
+    func join(member: String, canonical: String) throws { try memory.join(member: member, canonical: canonical) }
+    func unjoin(member: String, canonical: String) throws { try memory.unjoin(member: member, canonical: canonical) }
 }

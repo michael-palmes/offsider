@@ -199,7 +199,11 @@ extension CredentialCommand {
         var apps: [(target: LoginTarget, canonical: String, entries: [LoginEntry])] = []
         for target in targets {
             let canonical = try store.canonical(of: target.id)
-            guard !apps.contains(where: { $0.canonical == canonical }) else { continue }
+            if let index = apps.firstIndex(where: { $0.canonical == canonical }) {
+                // One save serves both linked ids, so it takes settings meant for either platform.
+                if apps[index].target.platform != target.platform { apps[index].target.platform = nil }
+                continue
+            }
             apps.append((target, canonical, try store.entries(app: canonical)))
         }
         let marks = apps.map { (app: $0.canonical, entries: $0.entries as [any LoginMark]) }
@@ -244,11 +248,19 @@ extension CredentialCommand {
             } else if !asked.isEmpty {
                 context = try edited(.saved(.empty), with: asked, key: write.key, app: app.target.id, now: now)
             }
-            if let stamp = write.stampDefault { try store.markDefault(app: app.canonical, key: stamp) }
-            let base = try settingsBase(for: credential, key: write.key, existing: existing, entries: app.entries, app: app.canonical, store: store)
-            let next = Self.settings(settings, for: app.target).applied(to: base)
-            if let mirrored = mirrored(context, existing: existing, stored: next) { context = mirrored }
-            try store.saveStored(next, app: app.canonical, key: write.key, isDefault: write.makeDefault, context: context)
+            let next: StoredLogin
+            do {
+                if let stamp = write.stampDefault { try store.markDefault(app: app.canonical, key: stamp) }
+                let base = try settingsBase(for: credential, key: write.key, existing: existing, entries: app.entries, app: app.canonical, store: store)
+                next = Self.settings(settings, for: app.target).applied(to: base)
+                if let mirrored = mirrored(context, existing: existing, stored: next) { context = mirrored }
+                try store.saveStored(next, app: app.canonical, key: write.key, isDefault: write.makeDefault, context: context)
+            } catch where !reports.isEmpty {
+                throw CLIError(
+                    errorDescription: "\(DeviceAccessAllow.reason(error)). The login was saved for \(LoginDirectory.list(reports.map(\.app))) only; run add again for the rest.",
+                    reason: .commandFailed
+                )
+            }
             reports.append(CredentialReport(
                 action: "set", app: app.target.id, key: write.key, username: credential.username, saved: true, isDefault: write.makeDefault,
                 also: try sharedIDs(app: app.target.id, canonical: app.canonical, store: store), context: context ?? existing?.context ?? .empty
@@ -273,6 +285,6 @@ extension TerminalCredentialQuestions: SharedCredentialQuestions {
     }
 
     func replacesShared(key: String, apps: [String]) throws -> Bool {
-        try prompt.choose(CredentialScreen.replaceSharedTitle(key: key, apps: apps), options: CredentialScreen.replaceOptions) == 0
+        try prompt.choose(CredentialScreen.replaceSharedTitle(key: key), options: CredentialScreen.replaceOptions) == 0
     }
 }

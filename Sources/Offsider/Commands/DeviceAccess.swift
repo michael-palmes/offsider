@@ -40,7 +40,7 @@ struct DeviceAccessContext: Sendable {
     var cleanRunner: @Sendable @MainActor (String) async -> RunnerCleanupReport = { RunnerCleanupReport(udid: $0) }
     /// A runner build or session this Mac holds for an iPhone or iPad, which `remove` offers to clean.
     var hasRunner: @Sendable (String) -> Bool = { _ in false }
-    /// Whether `remove` may ask a question: standard input and output are both a terminal.
+    /// Whether `remove` may ask a question: a person, with standard input and output both a terminal.
     var interactive: @Sendable () -> Bool = { false }
 
     static let live = DeviceAccessContext(
@@ -73,7 +73,7 @@ struct DeviceAccessContext: Sendable {
         profile: { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil },
         cleanRunner: { udid in await RunnerSessions.clean(udid: udid) },
         hasRunner: { RunnerSessions.hasRecord(udid: $0) },
-        interactive: { isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0 }
+        interactive: { DevicePicker.prompts(terminals: isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0) }
     )
 
     func policy() -> PhysicalDevicePolicy {
@@ -214,8 +214,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     /// `Test iPhone stays allowed`, or `Test iPhone and Test Pixel stay allowed`.
     static func staysAllowed(_ names: [String]) -> String {
-        let list = names.count > 1 ? names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1] : names.joined()
-        return "\(list) \(names.count > 1 ? "stay" : "stays") allowed."
+        "\(LoginDirectory.list(names)) \(names.count > 1 ? "stay" : "stays") allowed."
     }
 
     /// The failure of a later device, reworded to say the earlier ones stay, with its own exit code and hint.

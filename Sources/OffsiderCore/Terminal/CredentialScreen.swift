@@ -67,7 +67,7 @@ public enum CredentialScreen {
         names.map { "📝  Update \(LoginCredential.displayKey($0.key)) · \(LoginDirectory.list($0.apps))" } + [addAnother]
     }
 
-    public static func replaceSharedTitle(key: String, apps: [String]) -> String {
+    public static func replaceSharedTitle(key: String) -> String {
         "Replace the saved \(LoginCredential.displayKey(key))?"
     }
 

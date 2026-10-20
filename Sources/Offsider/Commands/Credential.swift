@@ -428,6 +428,7 @@ struct CredentialCommand: AsyncParsableCommand {
         case .remove where canonical != app:
             // A linked id has no logins of its own: removing it unlinks it and leaves the other app's logins alone.
             try store.unjoin(member: app, canonical: canonical)
+            tracker?.ledger.clear(app: canonical, foreground: app)
             return render(CredentialReport(action: "remove", app: app, saved: false, unlinked: canonical))
         case .remove:
             let removing = try removeTarget(entries: try store.entries(app: canonical), name: key)
