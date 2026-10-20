@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 @testable import Offsider
 @testable import OffsiderCore
+import OffsiderIOSDevice
 import Testing
 
 /// A seal kept in memory, so tests never touch the login Keychain.
@@ -490,13 +491,13 @@ struct DeviceAccessCommandTests {
     }
 
     @Test("the status screen and the device picker draw a device's own text with every control and bidi character as ?")
-    func statusAndPickerSanitise() throws {
+    func statusAndPickerSanitise() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let seal = MemorySeal()
         let entry = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Test\u{2028}iPhone", added: PolicyFixtures.added, expires: nil, apps: ["com.example.app"])
         try Self.seed(home, seal: seal, [entry])
-        let drawn = try DeviceAccessStatus.parse([]).perform(context: Self.context(home: home, seal: seal), screen: (style: TerminalStyle(colours: false), width: 72)).0
+        let drawn = try await Self.status([], context: Self.context(home: home, seal: seal), person: true).out
         #expect(drawn.contains("Test?iPhone  com.example.app"))
         #expect(!drawn.contains("\u{2028}"))
         let simulator = DeviceSummary(id: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios, state: "Booted", name: "Sim\u{200F}\u{9B}31m", osVersion: "iOS\n27", deviceType: nil, kind: .simulator, connection: nil)
@@ -588,25 +589,51 @@ struct DeviceAccessCommandTests {
         }, commit: { try seal.seal($0) })
     }
 
-    @Test("status on a terminal draws the screen; --json, --device and piped output stay the text agents parse")
-    func statusScreenOnlyOnATerminal() throws {
+    /// What `status` writes for a person at an 80-column terminal, or for an agent.
+    static func status(_ arguments: [String], context: DeviceAccessContext, person: Bool) async throws -> ConsoleCapture {
+        let capture = ConsoleCapture()
+        let console = person ? capture.console(out: .person(), err: .person()) : capture.console(out: .agent, err: .agent)
+        try await DeviceAccessContext.$current.withValue(context) {
+            try await Console.$current.withValue(console) { try await DeviceAccessStatus.parse(arguments).run() }
+        }
+        return capture
+    }
+
+    @Test("status shows a person the list under a header, an agent the text it always read; --json and --device read the same for both")
+    func statusScreenOnlyForAPerson() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let seal = MemorySeal()
         try Self.seed(home, seal: seal, [PolicyFixtures.entry(apps: ["com.example.app"])])
         let context = Self.context(home: home, seal: seal)
-        let screen = (style: TerminalStyle(colours: false), width: 72)
-        let drawn = try DeviceAccessStatus.parse([]).perform(context: context, screen: screen).0
-        #expect(drawn.contains(AccessStatusScreen.title))
-        #expect(drawn.contains("    📱  Test iPhone  com.example.app · until 15:13\n"))
-        #expect(drawn.hasSuffix("  Withdraw  offsider device-access remove --device \(PolicyFixtures.phone)\n"))
-        let piped = try DeviceAccessStatus.parse([]).perform(context: context).0
-        #expect(piped == "Managed policy: none.\nios  \(PolicyFixtures.phone)  Test iPhone: allowed until 2026-09-21T15:13:20Z, apps com.example.app\n")
+        let person = try await Self.status([], context: context, person: true)
+        #expect(person.out.hasPrefix("🔐  \(AccessStatusScreen.title)"))
+        #expect(person.out.contains("\n  ● Test iPhone  com.example.app  until 15:13\n"))
+        #expect(person.out.hasSuffix("offsider device-access remove --device \(PolicyFixtures.phone)  withdraw it\n"))
+        let agent = try await Self.status([], context: context, person: false)
+        #expect(agent.out == "Managed policy: none.\nios  \(PolicyFixtures.phone)  Test iPhone: allowed until 2026-09-21T15:13:20Z, apps com.example.app\n")
+        #expect(agent.err.isEmpty)
         for arguments in [["--json"], ["--device", PolicyFixtures.phone], ["--device", PolicyFixtures.phone, "--json"]] {
-            let command = try DeviceAccessStatus.parse(arguments)
-            #expect(try command.perform(context: context, screen: screen).0 == command.perform(context: context).0)
+            let expected = try DeviceAccessStatus.parse(arguments).perform(context: context).0
+            #expect(try await Self.status(arguments, context: context, person: true).out == expected)
+            #expect(try await Self.status(arguments, context: context, person: false).out == expected)
         }
         #expect(try DeviceAccessStatus.parse(["--json"]).perform(context: context).0.hasPrefix("{"))
+    }
+
+    @Test("a list changed outside Offsider warns a person on stderr with the command that allows again; an agent reads it in the text")
+    func statusWarnsAPerson() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        try Self.seed(home, seal: MemorySeal(), [PolicyFixtures.entry()])
+        let context = Self.context(home: home, seal: MemorySeal())
+        let person = try await Self.status([], context: context, person: true)
+        #expect(person.err.contains("⚠️  \(AccessStatusScreen.listChanged)\n    Try  \(AccessStatusScreen.allowCommand)\n"))
+        #expect(person.out.contains(AccessStatusScreen.nothingAllowed))
+        #expect(!person.err.contains("Next"))
+        let agent = try await Self.status([], context: context, person: false)
+        #expect(agent.err.isEmpty)
+        #expect(agent.out.contains("was changed outside Offsider"))
     }
 
     @Test("the device step shows an allowed device dim with its allowance, never offers it, and offers the rest")
@@ -715,7 +742,7 @@ struct DeviceAccessCommandTests {
         try DeviceAllowListStore(directory: UserConfigDirectory(home: home)).update({ $0.list.adding(PolicyFixtures.entry()) }, commit: { try seal.seal($0) })
         var context = Self.context(home: home, seal: seal)
         context.hasRunner = { _ in true }
-        context.cleanRunner = { _ in Issue.record("cleaned without asking"); return "" }
+        context.cleanRunner = { Issue.record("cleaned without asking"); return RunnerCleanupReport(udid: $0) }
         let output = try await DeviceAccessRemove.parse(["--device", PolicyFixtures.phone]).perform(context: context)
         #expect(output.hasSuffix("Uninstall Offsider's runner from it with `offsider session stop --device \(PolicyFixtures.phone) --clean`."))
 
@@ -736,11 +763,51 @@ struct DeviceAccessCommandTests {
             var context = Self.context(home: home, seal: seal, terminal: terminal)
             context.hasRunner = { _ in true }
             context.interactive = { true }
-            context.cleanRunner = { _ in _ = cleaned.tick(); return "Uninstalled the runner.\n" }
+            context.cleanRunner = { _ = cleaned.tick(); return Self.cleanReport($0) }
             let output = try await DeviceAccessRemove.parse(["--device", PolicyFixtures.phone]).perform(context: context)
             #expect(cleaned.count == (cleans ? 1 : 0))
-            #expect(output == (cleans ? "Uninstalled the runner." : "Kept the runner; `offsider session stop --device \(PolicyFixtures.phone) --clean` removes it later."))
+            if cleans {
+                #expect(output.hasPrefix("Uninstalled com.mpalmes.offsider.runner from \(PolicyFixtures.phone).\nDeleted 1 cached runner build for \(PolicyFixtures.phone)."))
+            } else {
+                #expect(output == "Kept the runner; `offsider session stop --device \(PolicyFixtures.phone) --clean` removes it later.")
+            }
             #expect(terminal.transcript.contains("Also uninstall its runner? (Y/n)"))
         }
+    }
+
+    static func cleanReport(_ udid: String) -> RunnerCleanupReport {
+        var report = RunnerCleanupReport(udid: udid)
+        report.uninstalled = ["com.mpalmes.offsider.runner"]
+        report.removedBuilds = 1
+        return report
+    }
+
+    @Test("a person sees the withdrawal as a receipt above the runner question, then the clean-up as a receipt; nothing of the agent's sentence")
+    func removeForAPerson() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        try Self.seed(home, seal: seal, [PolicyFixtures.entry()])
+        let terminal = try AccessTerminal()
+        terminal.type(["\r"])
+        var context = Self.context(home: home, seal: seal, terminal: terminal, stopped: { _ in ["runner"] })
+        context.hasRunner = { _ in true }
+        context.interactive = { true }
+        context.cleanRunner = { Self.cleanReport($0) }
+        let removal = try await DeviceAccessRemove.parse(["--device", PolicyFixtures.phone]).remove(context: context, person: true)
+        let transcript = terminal.finish()
+        #expect(transcript.contains("Withdrew Test iPhone"))
+        #expect(transcript.contains("stopped its runner"))
+        #expect(!transcript.contains("from the allow-list"))
+        let capture = ConsoleCapture()
+        capture.console(out: .person(), err: .person()).show(Page(removal.person, notices: removal.notices))
+        #expect(capture.out.hasPrefix("✅  Cleaned up the runner on \(PolicyFixtures.phone)\n    uninstalled com.mpalmes.offsider.runner\n    deleted 1 cached build\n"))
+        #expect(capture.err.contains("developer team keeps the runner's profile"))
+
+        let none = try await DeviceAccessRemove.parse(["--device", PolicyFixtures.serial]).remove(context: Self.context(home: home, seal: seal), person: true)
+        #expect(none.person.isEmpty == false)
+        let nothing = ConsoleCapture()
+        nothing.console(out: .person(), err: .person()).show(Page(none.person))
+        #expect(nothing.out == "✅  Nothing to withdraw\n    \(PolicyFixtures.serial) was not on the list\n")
     }
 }

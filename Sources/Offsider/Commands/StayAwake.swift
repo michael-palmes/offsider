@@ -45,15 +45,23 @@ struct StayAwakeCommand: AsyncParsableCommand {
         let target = try target()
         try Self.requireAndroid(deviceOption.id, command: "stay-awake")
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger(), locking: target != nil)
-        try await route.backend.prepare()
-        let booted = try await route.backend.requireBootedDevice(route.device)
-        guard let backend = route.backend as? any AwakeControlling else {
-            throw CLIError(errorDescription: "stay-awake is not available for \(booted.id.rawValue).", reason: .notSupported)
+        let console = Console.current
+        let (result, id) = try await console.progress(target.map { "Turning stay awake \($0 ? "on" : "off")" } ?? "Reading stay awake") {
+            try await route.backend.prepare()
+            let booted = try await route.backend.requireBootedDevice(route.device)
+            guard let backend = route.backend as? any AwakeControlling else {
+                throw CLIError(errorDescription: "stay-awake is not available for \(booted.id.rawValue).", reason: .notSupported)
+            }
+            return (try await Self.result(target, json: json, booted: booted, backend: backend), booted.id)
         }
-        print(try await Self.report(target, json: json, booted: booted, backend: backend))
-        if let note = Self.phoneNote(target, on: booted.id) {
-            FileHandle.standardError.write(Data((note + "\n").utf8))
-        }
+        DevicePersonView.emit(result.text, json: json, person: result.person, notices: Self.notices(target, on: id, json: json, console: console), console: console)
+    }
+
+    /// After turning it on, how a person turns it off; an agent reads only the phone's note, as it always did.
+    static func notices(_ target: Bool?, on device: DeviceID, json: Bool, console: Console = .current) -> [Notice] {
+        guard target == true else { return [] }
+        let undo = "offsider stay-awake off --device \(device.rawValue)"
+        return DevicePersonView.lasting("Stays on across reboots", undo: undo, agent: phoneNote(target, on: device), json: json, console: console)
     }
 
     /// One stderr line after turning stay awake on for a USB phone: the setting outlives the command and reboots.
@@ -76,15 +84,23 @@ struct StayAwakeCommand: AsyncParsableCommand {
 
     @MainActor
     static func report(_ target: Bool?, json: Bool, booted: BootedDevice, backend: any AwakeControlling) async throws -> String {
+        try await result(target, json: json, booted: booted, backend: backend).text
+    }
+
+    /// The agent's text or JSON, and what a person sees.
+    @MainActor
+    static func result(_ target: Bool?, json: Bool, booted: BootedDevice, backend: any AwakeControlling) async throws -> (text: String, person: [Block]) {
         let device = booted.id
         guard let target else {
             let reading = try await backend.awakeState(on: device)
-            if json { return DeviceStateReport.stayAwake("show", current: reading, previous: nil, on: device) }
-            return line(reading, previous: nil, name: DeviceName.android(serial: device.rawValue, listed: booted.name, maker: reading.maker))
+            let person = DevicePersonView.stayAwake(reading, previous: nil, setting: false)
+            if json { return (DeviceStateReport.stayAwake("show", current: reading, previous: nil, on: device), person) }
+            return (line(reading, previous: nil, name: DeviceName.android(serial: device.rawValue, listed: booted.name, maker: reading.maker)), person)
         }
         let (previous, current) = try await backend.setStayAwake(target, on: device)
-        if json { return DeviceStateReport.stayAwake(target ? "on" : "off", current: current, previous: previous, on: device) }
-        return line(current, previous: previous, name: DeviceName.android(serial: device.rawValue, listed: booted.name, maker: current.maker))
+        let person = DevicePersonView.stayAwake(current, previous: previous, setting: true)
+        if json { return (DeviceStateReport.stayAwake(target ? "on" : "off", current: current, previous: previous, on: device), person) }
+        return (line(current, previous: previous, name: DeviceName.android(serial: device.rawValue, listed: booted.name, maker: current.maker)), person)
     }
 
     /// `Motorola moto g (ZY22FAKE01): stay awake on while charging (was off)`, with the reason when it has no effect.

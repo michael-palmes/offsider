@@ -9,7 +9,9 @@ struct UnlockCodePromptTests {
     func codeProblems() {
         #expect(UnlockCodeScreen.codeProblem("123") != nil)
         #expect(UnlockCodeScreen.codeProblem("1234") == nil)
-        #expect(UnlockCodeScreen.status(name: "Pixel", device: "SERIAL", saved: true, lastAttemptFailed: true, style: .plain).contains("unlock-code set --device SERIAL"))
+        let failed = UnlockCodeScreen.status(name: "Pixel", device: "SERIAL", saved: true, lastAttemptFailed: true)
+        #expect(failed.notices.map(\.kind) == [.warning])
+        #expect(failed.notices.first?.command == "offsider unlock-code set --device SERIAL")
     }
 
     @Test("unlock-code set --stdin with no terminal to confirm on is person_required, before the pipe is read")

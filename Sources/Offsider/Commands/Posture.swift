@@ -66,14 +66,38 @@ struct PostureCommand: AsyncParsableCommand {
         let watchdog = DeviceWatchdog()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: target != nil || angle != nil)
-        try await watchdog.guarding(bound: DeviceWatchdog.setupBound, device: deviceOption.id) {
-            try await route.backend.prepare()
-            let device = try await route.backend.requireBootedDevice(route.device).id
-            watchdog.arm(bound: timeout + 10, device: deviceOption.id)
-            print(try await Self.report(
-                target, angle: angle, json: json, timeout: timeout, on: device, backend: route.backend, deviceName: deviceOption.id,
-                sleep: { try await Task.sleep(for: $0) }, now: { Date().timeIntervalSinceReferenceDate }
-            ))
+        let console = Console.current
+        let label = target.map { "Moving to \($0.rawValue)" } ?? angle.map { "Moving the hinge to \($0) degrees" } ?? "Reading the posture"
+        let result = try await console.progress(label) {
+            try await watchdog.guarding(bound: DeviceWatchdog.setupBound, device: deviceOption.id) {
+                try await route.backend.prepare()
+                let device = try await route.backend.requireBootedDevice(route.device).id
+                watchdog.arm(bound: timeout + 10, device: deviceOption.id)
+                return try await Self.apply(
+                    target, angle: angle, timeout: timeout, on: device, backend: route.backend, deviceName: deviceOption.id,
+                    sleep: { try await Task.sleep(for: $0) }, now: { Date().timeIntervalSinceReferenceDate }
+                )
+            }
+        }
+        let person = DevicePersonView.posture(
+            result.current, previous: result.previous, screen: result.screen, platform: result.platform, state: result.state, angle: angle,
+            setting: target != nil || angle != nil
+        )
+        DevicePersonView.emit(result.text(json: json), json: json, person: person, console: console)
+    }
+
+    /// The posture after the command, and what the device read beside it; `previous` only when the command set one.
+    struct Result {
+        let current: Posture
+        let previous: Posture?
+        let screen: UIScreenInfo?
+        let platform: DevicePlatform
+        let state: String?
+
+        func text(json: Bool) -> String {
+            json
+                ? DisplayReport.postureJSON(current, previous: previous, screen: screen, platform: platform, state: state)
+                : DisplayReport.postureLine(current, screen: screen, platform: platform, state: state)
         }
     }
 
@@ -89,6 +113,20 @@ struct PostureCommand: AsyncParsableCommand {
         sleep: @MainActor (Duration) async throws -> Void,
         now: @MainActor () -> TimeInterval
     ) async throws -> String {
+        try await apply(target, angle: angle, timeout: timeout, on: device, backend: backend, deviceName: deviceName, sleep: sleep, now: now).text(json: json)
+    }
+
+    @MainActor
+    static func apply(
+        _ target: Posture?,
+        angle: Int? = nil,
+        timeout: TimeInterval,
+        on device: DeviceID,
+        backend: any DeviceBackend,
+        deviceName: String,
+        sleep: @MainActor (Duration) async throws -> Void,
+        now: @MainActor () -> TimeInterval
+    ) async throws -> Result {
         guard let folder = backend as? any PostureControlling else {
             throw CLIError(errorDescription: "posture is not available for \(deviceName) yet.", reason: .notSupported)
         }
@@ -124,10 +162,7 @@ struct PostureCommand: AsyncParsableCommand {
         }
         let screen = try? await backend.screenInfo(for: device)
         let state = await (folder as? any PostureStateNaming)?.postureStateName(of: device)
-        if json {
-            return DisplayReport.postureJSON(current, previous: target == nil && angle == nil ? nil : previous, screen: screen, platform: device.platform, state: state)
-        }
-        return DisplayReport.postureLine(current, screen: screen, platform: device.platform, state: state)
+        return Result(current: current, previous: target == nil && angle == nil ? nil : previous, screen: screen, platform: device.platform, state: state)
     }
 
     /// Waits for the hinge to read `angle`, then for the posture to settle: which panel shows depends on the way the hinge moved, not only where it stops. A hinge already there with its panel showing is not moved.

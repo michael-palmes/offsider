@@ -11,7 +11,8 @@ extension IOSDeviceBackend {
         host.runnerSourceDigests = BundleIntegrity.runnerFiles()
         host.sessionExecutable = Bundle.main.executableURL
         if Timings.isEnabled {
-            host.timing = .printing { line in FileHandle.standardError.write(Data((line + "\n").utf8)) }
+            let console = Console.current
+            host.timing = .printing { line in console.data(line + "\n", to: .err) }
         }
         return IOSDeviceBackend(host: host) { level, message in sink.write(level, message) }
     }

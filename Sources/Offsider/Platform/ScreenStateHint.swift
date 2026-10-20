@@ -51,7 +51,17 @@ enum ScreenStateHint {
     }
 
     static func writeNote(_ line: String) {
-        FileHandle.standardError.write(Data((line + "\n").utf8))
+        Console.current.notice(notice(line))
+    }
+
+    /// The note `annotate` wrote, unchanged for an agent; a person reads its first sentence and the command as a `Try` line.
+    static func notice(_ line: String) -> Notice {
+        let prefix = "Note: "
+        let sentence = line.hasPrefix(prefix) ? String(line.dropFirst(prefix.count)) : line
+        let (cause, rest) = TerminalText.firstSentence(sentence)
+        let quoted = rest.split(separator: "`", omittingEmptySubsequences: false)
+        let command = quoted.count >= 3 ? String(quoted[1]) : nil
+        return Notice(kind: .note, text: command == nil ? sentence : cause, agentText: sentence, mark: .lock, command: command, label: "Try")
     }
 }
 

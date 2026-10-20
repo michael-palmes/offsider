@@ -45,21 +45,20 @@ struct ContentSizeCommand: AsyncParsableCommand {
         let target = try target()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: target != nil)
-        try await route.backend.prepare()
-        let device = try await route.backend.requireBootedDevice(route.device).id
-        guard let settings = route.backend as? any DeviceSettingsControlling else {
-            throw CLIError(errorDescription: "content-size is not available for \(deviceOption.id).", reason: .notSupported)
+        let console = Console.current
+        let (current, previous) = try await console.progress(target.map { "Setting \($0.rawValue)" } ?? "Reading the content size") {
+            try await route.backend.prepare()
+            let device = try await route.backend.requireBootedDevice(route.device).id
+            guard let settings = route.backend as? any DeviceSettingsControlling else {
+                throw CLIError(errorDescription: "content-size is not available for \(deviceOption.id).", reason: .notSupported)
+            }
+            guard let target else { return (try await settings.contentSize(on: device), nil as ContentSizeReading?) }
+            let previous = try? await settings.contentSize(on: device)
+            try await settings.setContentSize(target, on: device)
+            return (try await settings.contentSize(on: device), previous)
         }
-
-        guard let target else {
-            let current = try await settings.contentSize(on: device)
-            print(json ? DeviceSettingsReport.contentSize(current, previous: nil) : Self.line(current, previous: nil))
-            return
-        }
-        let previous = try? await settings.contentSize(on: device)
-        try await settings.setContentSize(target, on: device)
-        let current = try await settings.contentSize(on: device)
-        print(json ? DeviceSettingsReport.contentSize(current, previous: previous) : Self.line(current, previous: previous))
+        let text = json ? DeviceSettingsReport.contentSize(current, previous: previous) : Self.line(current, previous: previous)
+        DevicePersonView.emit(text, json: json, person: DevicePersonView.contentSize(current, previous: previous, setting: target != nil), console: console)
     }
 
     static func line(_ current: ContentSizeReading, previous: ContentSizeReading?) -> String {

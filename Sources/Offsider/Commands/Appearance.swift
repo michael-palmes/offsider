@@ -42,26 +42,45 @@ struct AppearanceCommand: AsyncParsableCommand {
         let target = try target()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: target != nil)
-        try await route.backend.prepare()
-        let device = try await route.backend.requireBootedDevice(route.device).id
-        guard let settings = route.backend as? any DeviceSettingsControlling else {
-            throw CLIError(errorDescription: "appearance is not available for \(deviceOption.id).", reason: .notSupported)
+        let console = Console.current
+        let (text, person) = try await console.progress(target.map { "Switching to \($0.rawValue)" } ?? "Reading the appearance") {
+            try await route.backend.prepare()
+            let device = try await route.backend.requireBootedDevice(route.device).id
+            guard let settings = route.backend as? any DeviceSettingsControlling else {
+                throw CLIError(errorDescription: "appearance is not available for \(deviceOption.id).", reason: .notSupported)
+            }
+            let result = try await Self.apply(target, on: device, settings: settings)
+            let person = target.map { DevicePersonView.appearanceSet($0, before: result.before) } ?? DevicePersonView.appearance(result.current)
+            return (Self.text(result, target: target, json: json), person)
         }
+        DevicePersonView.emit(text, json: json, person: person, console: console)
+    }
 
-        print(try await Self.report(target, json: json, on: device, settings: settings))
+    /// What the device read before and after; `before` is nil when reading only, or when the read failed.
+    struct Result {
+        let current: AppearanceReading
+        let before: AppearanceReading?
     }
 
     /// Reads, or sets `target`; when setting, a previous value that is not light or dark is unknown rather than an error.
     @MainActor
     static func report(_ target: Appearance?, json: Bool, on device: DeviceID, settings: any DeviceSettingsControlling) async throws -> String {
-        guard let target else {
-            let current = try await settings.appearance(on: device)
-            return json ? DeviceSettingsReport.appearance(current, previous: nil) : line(current)
-        }
-        let previous = (try? await settings.appearance(on: device))?.appearance
-        if target != previous {
+        text(try await apply(target, on: device, settings: settings), target: target, json: json)
+    }
+
+    @MainActor
+    static func apply(_ target: Appearance?, on device: DeviceID, settings: any DeviceSettingsControlling) async throws -> Result {
+        guard let target else { return Result(current: try await settings.appearance(on: device), before: nil) }
+        let before = try? await settings.appearance(on: device)
+        if target != before?.appearance {
             try await settings.setAppearance(target, on: device)
         }
+        return Result(current: .fixed(target), before: before)
+    }
+
+    static func text(_ result: Result, target: Appearance?, json: Bool) -> String {
+        let previous = result.before?.appearance
+        guard let target else { return json ? DeviceSettingsReport.appearance(result.current, previous: nil) : line(result.current) }
         return json ? DeviceSettingsReport.appearance(target, previous: previous) : line(target, previous: previous)
     }
 

@@ -33,15 +33,19 @@ struct Wake: AsyncParsableCommand {
     func run() async throws {
         try StayAwakeCommand.requireAndroid(deviceOption.id, command: "wake")
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
-        try await route.backend.prepare()
-        let booted = try await route.backend.requireBootedDevice(route.device)
-        guard let backend = route.backend as? any AwakeControlling else {
-            throw CLIError(errorDescription: "wake is not available for \(booted.id.rawValue).", reason: .notSupported)
+        let console = Console.current
+        let result = try await console.progress("Waking the screen") {
+            try await route.backend.prepare()
+            let booted = try await route.backend.requireBootedDevice(route.device)
+            guard let backend = route.backend as? any AwakeControlling else {
+                throw CLIError(errorDescription: "wake is not available for \(booted.id.rawValue).", reason: .notSupported)
+            }
+            return try await Self.result(
+                unlock: unlock, json: json, booted: booted,
+                backend: backend, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger()
+            )
         }
-        print(try await Self.report(
-            unlock: unlock, json: json, booted: booted,
-            backend: backend, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger()
-        ))
+        DevicePersonView.emit(result.text, json: json, person: result.person, console: console)
     }
 
     /// A phone's serial, or an emulator's AVD name; nil when the AVD name is unknown.
@@ -59,6 +63,19 @@ struct Wake: AsyncParsableCommand {
         store: any UnlockCodeStoring,
         ledger: UnlockAttemptLedger
     ) async throws -> String {
+        try await result(unlock: unlock, json: json, booted: booted, backend: backend, store: store, ledger: ledger).text
+    }
+
+    /// The agent's text or JSON, and what a person sees.
+    @MainActor
+    static func result(
+        unlock: Bool,
+        json: Bool,
+        booted: BootedDevice,
+        backend: any AwakeControlling,
+        store: any UnlockCodeStoring,
+        ledger: UnlockAttemptLedger
+    ) async throws -> (text: String, person: [Block]) {
         let device = booted.id
         let serial = device.rawValue
         let outcome = try await backend.wake(on: device)
@@ -86,7 +103,7 @@ struct Wake: AsyncParsableCommand {
         }
         if let unlockKey { ledger.clear(unlockKey) }
         let result = WakeOutcome(previous: outcome.previous, current: current, sent: sent)
-        return json ? DeviceStateReport.wake(result, on: device) : line(result, name: name)
+        return (json ? DeviceStateReport.wake(result, on: device) : line(result, name: name), DevicePersonView.wake(result))
     }
 
     /// One attempt; a rejected code is recorded so no later command types it again, and an untyped one never is.

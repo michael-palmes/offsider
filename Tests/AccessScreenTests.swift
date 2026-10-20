@@ -83,41 +83,64 @@ struct AccessScreenTests {
         PhysicalDevicePolicy(managed: managed, list: DeviceAllowList(entries: entries), sealIntact: sealIntact)
     }
 
-    @Test("the status screen lists each device agents may control with its apps, expiry and team, and hides expired ones")
+    /// The status page as a person reads it at 80 columns: stdout, then stderr.
+    static func drawn(_ policy: PhysicalDevicePolicy, style: TerminalStyle = unicode) -> (out: String, err: String) {
+        let capture = ConsoleCapture()
+        capture.console(out: .person(style: style), err: .person(style: style)).show(AccessStatusScreen.page(policy, now: PolicyFixtures.now, timeZone: utc, agent: "agent text\n"))
+        return (capture.out, capture.err)
+    }
+
+    @Test("the status screen counts the devices agents may control, a row each with apps, expiry and team, hides expired ones and ends with the commands")
     func statusScreenRows() {
         let iPad = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Apple Test iPad", added: PolicyFixtures.added, expires: PolicyFixtures.added.addingTimeInterval(3_600), apps: [], team: "ABCDE12345")
         let phone = DeviceAllowance(platform: .android, key: PolicyFixtures.serial, name: "Test Pixel", added: PolicyFixtures.added, expires: nil, apps: ["com.example.app"])
         let expired = DeviceAllowance(platform: .ios, key: "00008130-0000000000000DEF", name: "Old iPhone", added: PolicyFixtures.added, expires: PolicyFixtures.added, apps: [])
-        let lines = AccessStatusScreen.lines(Self.policy([iPad, phone, expired]), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
-        #expect(lines.contains("  🔐  \(AccessStatusScreen.title)"))
-        #expect(lines.contains("    📲  Test iPad   any app · until 15:13 · team ABCDE12345"))
-        #expect(lines.contains("    🤖  Test Pixel  com.example.app · until removed"))
-        #expect(!lines.joined().contains("Old iPhone"))
-        #expect(Array(lines.suffix(2)) == ["  Allow     offsider device-access allow", "  Withdraw  offsider device-access remove --device <id>"])
-        let single = AccessStatusScreen.lines(Self.policy([phone]), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
-        #expect(single.last == "  Withdraw  offsider device-access remove --device \(PolicyFixtures.serial)")
+        let (out, err) = Self.drawn(Self.policy([iPad, phone, expired]))
+        let lines = out.split(separator: "\n").map(String.init)
+        #expect(lines.first?.hasPrefix("🔐  \(AccessStatusScreen.title)") == true && lines.first?.hasSuffix("2 allowed") == true)
+        #expect(lines.contains("  ● Test iPad   any app          until 15:13    team ABCDE12345"))
+        #expect(lines.contains("  ● Test Pixel  com.example.app  until removed"))
+        #expect(!out.contains("Old iPhone") && !out.contains("agent text"))
+        #expect(lines.suffix(2).map { $0.trimmingCharacters(in: .whitespaces) } == [
+            "offsider device-access allow                 allow another", "offsider device-access remove --device <id>  withdraw one",
+        ])
+        #expect(err.isEmpty)
+        let single = Self.drawn(Self.policy([phone])).out
+        #expect(single.hasSuffix("  offsider device-access remove --device \(PolicyFixtures.serial)  withdraw it\n"))
     }
 
     @Test("with nothing allowed the status screen says so and names the command that allows one")
     func statusScreenEmpty() {
-        let lines = AccessStatusScreen.lines(Self.policy([]), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
-        #expect(Array(lines.suffix(2)) == ["⚠️  \(AccessStatusScreen.nothingAllowed)", "   Next  offsider device-access allow"])
-        #expect(!lines.joined().contains("Withdraw"))
-        let ascii = AccessStatusScreen.lines(Self.policy([]), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.ascii)
-        #expect(ascii.last == "    Next  offsider device-access allow")
-        #expect(ascii.allSatisfy { $0.unicodeScalars.allSatisfy(\.isASCII) })
+        let (out, err) = Self.drawn(Self.policy([]))
+        #expect(out.hasPrefix("🔐  \(AccessStatusScreen.title)") && out.contains("none allowed") && out.contains(AccessStatusScreen.nothingAllowed))
+        #expect(err == "\nNext  offsider device-access allow\n")
+        #expect(!out.contains("withdraw"))
+        let ascii = Self.drawn(Self.policy([]), style: Self.ascii)
+        let text = ascii.out + ascii.err
+        #expect(text.unicodeScalars.allSatisfy { $0.isASCII })
     }
 
-    @Test("a managed policy that forbids devices shows one warning line, and the devices it blocks are not listed")
+    @Test("a managed policy that forbids devices is one warning, and the devices it blocks are not listed")
     func statusScreenManaged() {
-        let off = AccessStatusScreen.lines(Self.policy([PolicyFixtures.entry()], managed: ManagedDevicePolicy(allowPhysicalDevices: false)), now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
-        #expect(off.filter { $0.hasPrefix("⚠️") } == ["⚠️  \(AccessStatusScreen.managedBlocksAll)", "⚠️  \(AccessStatusScreen.nothingAllowed)"])
+        let off = Self.drawn(Self.policy([PolicyFixtures.entry()], managed: ManagedDevicePolicy(allowPhysicalDevices: false)))
+        #expect(off.err.split(separator: "\n").filter { $0.hasPrefix("⚠️") } == ["⚠️  \(AccessStatusScreen.managedBlocksAll)"])
+        #expect(!off.err.contains("Try"))
+        #expect(off.out.contains(AccessStatusScreen.nothingAllowed))
         let some = Self.policy(
             [PolicyFixtures.entry(), PolicyFixtures.entry(.android, key: PolicyFixtures.serial)], managed: ManagedDevicePolicy(allowedDeviceIDs: [PolicyFixtures.serial])
         )
-        let lines = AccessStatusScreen.lines(some, now: PolicyFixtures.now, timeZone: Self.utc, width: 72, style: Self.unicode)
-        #expect(lines.filter { $0.hasPrefix("⚠️") } == ["⚠️  \(AccessStatusScreen.managedBlocksSome)"])
-        #expect(lines.filter { $0.contains("Test iPhone") }.count == 1)
-        #expect(lines.contains { $0.hasPrefix("    🤖  Test iPhone") })
+        let (out, err) = Self.drawn(some)
+        #expect(err.split(separator: "\n").filter { $0.hasPrefix("⚠️") } == ["⚠️  \(AccessStatusScreen.managedBlocksSome)"])
+        #expect(out.components(separatedBy: "Test iPhone").count == 2)
+        #expect(out.contains("  ● Test iPhone  any app  until 15:13"))
+    }
+
+    @Test("an agent reads the status text it always did, and no notice")
+    func statusScreenForAnAgent() {
+        let capture = ConsoleCapture()
+        let page = AccessStatusScreen.page(Self.policy([PolicyFixtures.entry()]), now: PolicyFixtures.now, timeZone: Self.utc, agent: "agent text\n")
+        capture.console(out: .agent, err: .agent).show(Page(page.blocks))
+        #expect(capture.out == "agent text\n")
+        #expect(capture.err.isEmpty)
     }
 }

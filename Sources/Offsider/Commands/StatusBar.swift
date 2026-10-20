@@ -109,15 +109,26 @@ struct StatusBarCommand: AsyncParsableCommand {
         let (action, override) = try plan()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: action != .show)
-        try await route.backend.prepare()
-        let id = try await route.backend.requireBootedDevice(route.device).id
-        guard let backend = route.backend as? any StatusBarControlling else {
-            throw CLIError(errorDescription: "status-bar is not available for \(id.rawValue).", reason: .notSupported)
+        let console = Console.current
+        let labels: [Action: String] = [.override: "Overriding the status bar", .clear: "Clearing the status bar", .show: "Reading the status bar"]
+        let (text, person, id) = try await console.progress(labels[action] ?? "Reading the status bar") {
+            try await route.backend.prepare()
+            let id = try await route.backend.requireBootedDevice(route.device).id
+            guard let backend = route.backend as? any StatusBarControlling else {
+                throw CLIError(errorDescription: "status-bar is not available for \(id.rawValue).", reason: .notSupported)
+            }
+            let (text, person) = try await Self.result(action, override: override, json: json, on: id, backend: backend)
+            return (text, person, id)
         }
-        print(try await Self.report(action, override: override, json: json, on: id, backend: backend))
-        if let note = Self.phoneNote(action, on: id) {
-            FileHandle.standardError.write(Data((note + "\n").utf8))
-        }
+        DevicePersonView.emit(text, json: json, person: person, notices: Self.notices(action, on: id, json: json, console: console), console: console)
+    }
+
+    /// After an override, how a person clears it; an agent reads only the phone's note, as it always did.
+    static func notices(_ action: Action, on device: DeviceID, json: Bool, console: Console = .current) -> [Notice] {
+        guard action == .override else { return [] }
+        let what = device.platform == .android ? "Demo mode stays on" : "The override stays"
+        let undo = "offsider status-bar clear --device \(device.rawValue)"
+        return DevicePersonView.lasting("\(what) after this command", undo: undo, agent: phoneNote(action, on: device), json: json, console: console)
     }
 
     /// One stderr line after an override on a USB phone: demo mode stays until it is cleared.
@@ -128,18 +139,27 @@ struct StatusBarCommand: AsyncParsableCommand {
 
     @MainActor
     static func report(_ action: Action, override: StatusBarOverride?, json: Bool, on device: DeviceID, backend: any StatusBarControlling) async throws -> String {
+        try await result(action, override: override, json: json, on: device, backend: backend).text
+    }
+
+    /// The agent's text or JSON, and what a person sees.
+    @MainActor
+    static func result(_ action: Action, override: StatusBarOverride?, json: Bool, on device: DeviceID, backend: any StatusBarControlling) async throws -> (text: String, person: [Block]) {
         switch action {
         case .override:
             let override = override ?? StatusBarOverride()
             let previous = try await backend.overrideStatusBar(override, on: device)
-            return json ? DeviceStateReport.statusBar("override", override: override, current: nil, previous: previous, on: device) : line(override)
+            let text = json ? DeviceStateReport.statusBar("override", override: override, current: nil, previous: previous, on: device) : line(override)
+            return (text, DevicePersonView.statusBarOverride(override))
         case .clear:
             try await backend.clearStatusBar(on: device)
-            if json { return DeviceStateReport.statusBar("clear", override: nil, current: nil, previous: nil, on: device) }
-            return device.platform == .android ? "Status bar: demo mode off" : "Status bar: overrides cleared"
+            let cleared = device.platform == .android ? "Status bar: demo mode off" : "Status bar: overrides cleared"
+            let text = json ? DeviceStateReport.statusBar("clear", override: nil, current: nil, previous: nil, on: device) : cleared
+            return (text, DevicePersonView.statusBarCleared(platform: device.platform))
         case .show:
             let reading = try await backend.statusBar(on: device)
-            return json ? DeviceStateReport.statusBar("show", override: nil, current: reading, previous: nil, on: device) : line(reading)
+            let text = json ? DeviceStateReport.statusBar("show", override: nil, current: reading, previous: nil, on: device) : line(reading)
+            return (text, DevicePersonView.statusBar(reading))
         }
     }
 
