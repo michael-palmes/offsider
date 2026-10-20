@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OffsiderCore
 
 /// One HTTP exchange with the runner on a fresh connection; blocking, bounded by `timeout`.
 public protocol RunnerTransport: Sendable {
@@ -41,7 +42,7 @@ public struct LoopbackRunnerTransport: RunnerTransport {
     }
 
     public func exchange(method: String, path: String, token: String, body: Data?, timeout: TimeInterval) throws -> UsbmuxHTTPResponse {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        let descriptor = CloseOnExecSocket.make(AF_INET, SOCK_STREAM)
         guard descriptor >= 0 else { throw UsbmuxError.socketUnavailable(String(cString: strerror(errno))) }
         defer { Darwin.close(descriptor) }
         var noSigPipe: Int32 = 1

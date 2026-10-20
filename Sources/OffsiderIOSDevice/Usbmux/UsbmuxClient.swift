@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OffsiderCore
 
 /// usbmuxd's device list; `UsbmuxClient` in production, a fake in tests.
 public protocol UsbmuxListing: Sendable {
@@ -62,7 +63,7 @@ public struct UsbmuxClient: UsbmuxListing {
         address.sun_family = sa_family_t(AF_UNIX)
         let capacity = MemoryLayout.size(ofValue: address.sun_path)
         guard socketPath.utf8.count < capacity else { throw UsbmuxError.socketUnavailable("\(socketPath) is too long for a socket path") }
-        let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        let descriptor = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
         guard descriptor >= 0 else { throw UsbmuxError.socketUnavailable(String(cString: strerror(errno))) }
         var noSigPipe: Int32 = 1
         setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))

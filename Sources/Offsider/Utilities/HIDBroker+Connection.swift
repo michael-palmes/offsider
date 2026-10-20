@@ -65,7 +65,7 @@ extension HIDBroker {
     )
 
     static func makeListener(at path: String) throws -> Int32 {
-        let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        let descriptor = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
         guard descriptor >= 0 else { throw posixError("socket") }
         configureNoSignalPipe(descriptor)
         do {
@@ -534,7 +534,7 @@ extension HIDBroker {
     }
 
     static func connect(to path: String) throws -> Int32 {
-        let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        let descriptor = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
         guard descriptor >= 0 else { throw posixError("socket") }
         configureNoSignalPipe(descriptor)
         var address = try makeAddress(path: path)

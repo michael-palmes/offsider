@@ -31,7 +31,7 @@ public enum UnixSocket {
             guard (info.st_mode & S_IFMT) == S_IFSOCK, info.st_uid == uid else { throw UnixSocketError.notOwnedSocket(path) }
             unsafe unlink(path)
         }
-        let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        let descriptor = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
         guard descriptor >= 0 else { throw UnixSocketError.system(operation: "socket", path: path, code: errno) }
         var on: Int32 = 1
         unsafe setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
@@ -53,7 +53,7 @@ public enum UnixSocket {
     /// True when a server accepts a connection at `path`.
     public static func answers(_ path: String) -> Bool {
         guard var address = try? address(path) else { return false }
-        let probe = socket(AF_UNIX, SOCK_STREAM, 0)
+        let probe = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
         guard probe >= 0 else { return false }
         defer { Darwin.close(probe) }
         let result = unsafe withUnsafePointer(to: &address) {

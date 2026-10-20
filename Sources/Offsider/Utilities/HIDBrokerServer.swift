@@ -289,7 +289,7 @@ final class HIDBrokerServer {
                     continuation.resume(returning: nil)
                     return
                 }
-                let client = Darwin.accept(listener, nil, nil)
+                let client = CloseOnExecSocket.accept(listener)
                 continuation.resume(returning: client >= 0 ? client : nil)
             }
         }
