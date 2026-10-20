@@ -140,17 +140,24 @@ struct GuideTests {
         }
     }
 
-    @Test("every command is in the skill's Commands paragraph and the docs' Commands table, by itself or a parent")
+    @Test("every command is in the skill's Commands paragraph and a Commands table row in docs/commands.md, by itself or a parent")
     func everyCommandIsDocumented() throws {
         let skillLines = try Self.read("SKILL.md").components(separatedBy: "\n")
         let paragraph = skillLines.drop { $0 != "## Commands" }.dropFirst().first { !$0.isEmpty } ?? ""
         let skillNames = Set(paragraph.matches(of: #/`([^`]+)`/#).map { String($0.output.1) })
 
         let commandsPage = try String(contentsOf: ErrorContractDocsTests.root.appendingPathComponent("docs/commands.md"), encoding: .utf8)
-        let tableLines = commandsPage.components(separatedBy: "\n").drop { $0 != "# Commands" }.dropFirst().prefix { !$0.hasPrefix("#") }
-        let tableNames = Set(tableLines.filter { $0.hasPrefix("| `") }.compactMap { row in
-            row.split(separator: "|").first.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " `")) }
-        })
+        var section = "", inFence = false, inCommandTable = false
+        var tableNames = Set<String>()
+        for line in commandsPage.components(separatedBy: "\n") {
+            if line.hasPrefix("```") { inFence.toggle() }
+            if inFence { continue }
+            if line.hasPrefix("## ") { section = line }
+            if !line.hasPrefix("|") { inCommandTable = false } else if line.hasPrefix("| Command |") { inCommandTable = true }
+            if inCommandTable, section != "## Device list JSON", line.hasPrefix("| `"), let cell = line.split(separator: "|").first {
+                tableNames.insert(cell.trimmingCharacters(in: CharacterSet(charactersIn: " `")))
+            }
+        }
 
         let paths = Self.displayedCommandPaths()
         #expect(paths.contains("run start"))
@@ -158,7 +165,7 @@ struct GuideTests {
             let words = path.split(separator: " ")
             let names = Set(words.indices.map { words[...$0].joined(separator: " ") })
             #expect(!skillNames.isDisjoint(with: names), "SKILL.md ## Commands does not name \(path)")
-            #expect(!tableNames.isDisjoint(with: names), "The Commands table in docs/commands.md does not list \(path)")
+            #expect(!tableNames.isDisjoint(with: names), "No Commands table row in docs/commands.md lists \(path)")
         }
     }
 

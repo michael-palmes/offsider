@@ -94,6 +94,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A `batch` read step straight after an input no longer sees the screen from before that input. `screenshot`, `describe-ui`, `assert` and selector `wait` steps that start within 100 ms of input, from an earlier step or the command just before the batch (unless `OFFSIDER_TREE_CACHE=off`), now wait out the rest of those 100 ms, once per input, so a final screenshot shows the tap before it (on an emulator, 6 in 15 such screenshots were stale before; an app there drew a tap within 30 ms). A step that failed before sending anything does not count, and `wait --settled`, `--region` and `--seconds` steps still start at once.
 - `rn devmenu` now counts its held tap on a dev menu switch as sent input, so a failure after it no longer reports `dispatched: no`.
 - `scripts/bench-ab.sh` opens every iOS scenario's screen in the React Native playground, as it does on Android. It launched the native playground with an argument that app ignores, so iOS scenarios ran on whatever screen was showing.
+- `guide errors` links to the full list of error reasons on GitHub instead of the repository's `docs/errors.md`, which an installed skill cannot open.
 
 ### Removed
 
