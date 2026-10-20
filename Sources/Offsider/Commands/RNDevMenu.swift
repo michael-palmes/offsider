@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import OffsiderCore
+import OffsiderIOSDevice
 
 extension DevMenu.Item: ExpressibleByArgument {}
 
@@ -170,6 +171,9 @@ struct RNDevMenu: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     /// The open menu when no item is asked for, else the item chosen from it.
     enum Outcome: Equatable {
         case listed(DevMenu.State)
@@ -202,6 +206,7 @@ struct RNDevMenu: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let outcome = try await perform(on: route, clock: .live)
         guard json else { return print(outcome.textLine()) }
         print(outcome.jsonLine())
@@ -244,9 +249,13 @@ struct RNToolsOff: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let (inspector, perf) = try await turnOff(on: route, clock: .live)
         print(json ? DevMenu.toolsJSONLine(inspector: inspector, perfMonitor: perf) : "Element inspector: \(inspector); performance monitor: \(perf)")
     }
@@ -258,6 +267,8 @@ struct RNToolsOff: AsyncParsableCommand {
         let tree: UITree
         do {
             tree = try await driver.read()
+        } catch let error as IOSDeviceError where error.reason == .usage || error.reason == .appNotAllowed {
+            throw error
         } catch {
             throw CLIError(
                 errorDescription: "Could not read the screen of \(route.device.rawValue), so Offsider cannot tell whether the inspector or the performance monitor shows, and will not toggle them blind.",

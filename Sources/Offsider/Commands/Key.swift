@@ -38,6 +38,9 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func validate() throws {
         // Validate keycode range
         guard keycode >= 0 && keycode <= 255 else {
@@ -68,6 +71,7 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
         try systemKeys.check([keycode], on: device)

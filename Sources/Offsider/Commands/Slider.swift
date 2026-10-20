@@ -49,6 +49,9 @@ struct Slider: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func validate() throws {
         let selectorCount = [elementID != nil, elementLabel != nil, elementLabelContains != nil].filter { $0 }.count
         guard selectorCount == 1 else {
@@ -72,6 +75,7 @@ struct Slider: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let line = try await setSlider(on: SliderTarget(backend: route.backend, device: route.device), logger: logger)
         logger.info().log("Slider set completed successfully")
         print(line)

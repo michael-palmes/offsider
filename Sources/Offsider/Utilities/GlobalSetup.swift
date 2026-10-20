@@ -12,16 +12,23 @@ func requireTrustedDeveloperDirectory(_ path: String, environment: [String: Stri
     }
 }
 
+/// Another Xcode than the selected one, which just failed to load simulator support.
+func suggestionInsteadOfSelectedXcode() -> XcodeSuggestion {
+    guard let selected = try? FBXcodeDirectory.resolveDeveloperDirectory(), !selected.isEmpty else { return .current }
+    return .instead(of: selected)
+}
+
 @MainActor
 func performGlobalSetup(logger: OffsiderLogger) async throws {
     logger.info().log("Performing global setup...")
 
     // Check Xcode availability
     logger.info().log("Checking Xcode availability...")
+    let xcodePath: String
     do {
-        let xcodePath = try FBXcodeDirectory.resolveDeveloperDirectory()
+        xcodePath = try FBXcodeDirectory.resolveDeveloperDirectory()
         if xcodePath.isEmpty {
-            let errorMessage = "Offsider could not find an active Xcode installation. \(XcodeSuggestion.current.withoutSudo)"
+            let errorMessage = XcodeSuggestion.current.adding(to: "Offsider could not find an active Xcode installation.")
             logger.error().log(errorMessage)
             throw CLIError(errorDescription: errorMessage, reason: .xcodeMissing, hint: XcodeSuggestion.current.select)
         }
@@ -30,7 +37,7 @@ func performGlobalSetup(logger: OffsiderLogger) async throws {
     } catch let error as CLIError {
         throw error
     } catch {
-        let errorMessage = "Offsider could not resolve the active Xcode installation: \(error.localizedDescription). \(XcodeSuggestion.current.withoutSudo)"
+        let errorMessage = XcodeSuggestion.current.adding(to: "Offsider could not resolve the active Xcode installation: \(error.localizedDescription).")
         logger.error().log(errorMessage)
         throw CLIError(errorDescription: errorMessage, reason: .xcodeMissing, hint: XcodeSuggestion.current.select)
     }
@@ -46,9 +53,10 @@ func performGlobalSetup(logger: OffsiderLogger) async throws {
         try FBSimulatorControlFrameworkLoader.xcodeFrameworks.loadPrivateFrameworks(logger)
         logger.info().log("Successfully loaded Xcode frameworks.")
     } catch {
-        let errorMessage = "Offsider could not load simulator support from the selected Xcode installation: \(error.localizedDescription). \(XcodeSuggestion.current.withoutSudo)"
+        let suggestion = XcodeSuggestion.instead(of: xcodePath)
+        let errorMessage = suggestion.adding(to: "Offsider could not load simulator support from the selected Xcode installation: \(error.localizedDescription).")
         logger.error().log(errorMessage)
-        throw CLIError(errorDescription: errorMessage, reason: .xcodeUnusable, hint: XcodeSuggestion.current.select)
+        throw CLIError(errorDescription: errorMessage, reason: .xcodeUnusable, hint: suggestion.select)
     }
     logger.info().log("Global setup complete.")
 } 
@@ -56,12 +64,13 @@ func performGlobalSetup(logger: OffsiderLogger) async throws {
 @MainActor
 func setup(logger: OffsiderLogger) async throws {
     // Check Xcode availability
+    let developerDirectory: String
     do {
-        let developerDirectory = try FBXcodeDirectory.resolveDeveloperDirectory()
+        developerDirectory = try FBXcodeDirectory.resolveDeveloperDirectory()
         if developerDirectory.isEmpty {
             logger.error().log("No active Xcode developer directory was found")
             throw CLIError(
-                errorDescription: "Offsider could not find an active Xcode installation. \(XcodeSuggestion.current.withoutSudo)",
+                errorDescription: XcodeSuggestion.current.adding(to: "Offsider could not find an active Xcode installation."),
                 reason: .xcodeMissing, hint: XcodeSuggestion.current.select
             )
         }
@@ -71,7 +80,7 @@ func setup(logger: OffsiderLogger) async throws {
     } catch {
         logger.error().log("Failed to resolve the active Xcode installation: \(error.localizedDescription)")
         throw CLIError(
-            errorDescription: "Offsider could not find an active Xcode installation. \(XcodeSuggestion.current.withoutSudo)",
+            errorDescription: XcodeSuggestion.current.adding(to: "Offsider could not find an active Xcode installation."),
             reason: .xcodeMissing, hint: XcodeSuggestion.current.select
         )
     }
@@ -81,9 +90,10 @@ func setup(logger: OffsiderLogger) async throws {
         try FBSimulatorControlFrameworkLoader.essentialFrameworks.loadPrivateFrameworks(logger)
     } catch {
         logger.error().log("Failed to load simulator support: \(error.localizedDescription)")
+        let suggestion = XcodeSuggestion.instead(of: developerDirectory)
         throw CLIError(
-            errorDescription: "Offsider could not load simulator support from the selected Xcode. Xcode 26 or later is needed. \(XcodeSuggestion.current.withoutSudo)",
-            reason: .xcodeUnusable, hint: XcodeSuggestion.current.select
+            errorDescription: suggestion.adding(to: "Offsider could not load simulator support from the selected Xcode. Xcode 26 or later is needed."),
+            reason: .xcodeUnusable, hint: suggestion.select
         )
     }
 }

@@ -30,6 +30,9 @@ struct Turnstile: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func validate() throws {
         if let elementID, elementID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ValidationError("--id must not be empty.")
@@ -42,6 +45,7 @@ struct Turnstile: AsyncParsableCommand {
         // An Android tree read locks the device, as `wait` does; iOS reads never lock.
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
+        await appOption.apply(to: route)
         let report = try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
             try await readStatus(on: route, onPrepared: ready)
         }

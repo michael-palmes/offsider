@@ -37,3 +37,14 @@ extension Type: AppTargeting {}
 extension Wait: AppTargeting {}
 extension Assert: AppTargeting {}
 extension DescribeUI: AppTargeting {}
+extension Screenshot: AppTargeting {}
+extension Swipe: AppTargeting {}
+extension Drag: AppTargeting {}
+extension Gesture: AppTargeting {}
+extension Touch: AppTargeting {}
+extension Slider: AppTargeting {}
+extension Key: AppTargeting {}
+extension KeySequence: AppTargeting {}
+extension KeyCombo: AppTargeting {}
+extension Button: AppTargeting {}
+extension RNDevMenu: AppTargeting {}

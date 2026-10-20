@@ -66,13 +66,13 @@ Real iPhones and Android phones work too, once you allow each one with `offsider
 
 ![Bars of median time on the Android Emulator, as an agent sends it. Tap by id: Offsider 0.09 s, Appium 0.09 s, agent-device 0.21 s, mobile-mcp 0.39 s, Maestro 2.1 s. Five steps: Offsider 0.49 s, Appium 0.99 s, mobile-mcp 1.6 s, agent-device 1.8 s, Maestro 4.5 s, so Offsider is 2x faster than Appium.](docs/assets/speed.png)
 
-| Median on the Android Emulator | Offsider | Appium | agent-device | mobile-mcp | Maestro |
+| Android Emulator median, 2 s pause before each tap | Offsider | Appium | agent-device | mobile-mcp | Maestro |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Tap by id | 0.09 s | 0.09 s | 0.21 s | 0.39 s | 2.1 s |
 | Five steps | 0.49 s | 0.99 s | 1.8 s | 1.6 s | 4.5 s |
 | First tap, with nothing running | 0.33 s | 4.3 s | 1.8 s | 1.6 s | 6.9 s |
 
-<sub>Each tool driven the way an agent drives it, through its fastest warm route: Offsider's commands (the build after 0.12.0, with `batch` for the five steps), Appium 3.8.0 with UiAutomator2 over WebDriver, and agent-device 0.21.27, mobile-mcp 1.0.11 and Maestro 2.11.0 over MCP. The same React Native screen on an API 36 emulator, a 2 s pause before each tap, and every tap checked to have landed: medians of 20 taps or 10 runs of the five steps (tap, wait, assert, tap, screenshot) after 3 warm-ups. Appium's median tap matches Offsider's, but 4 of its 20 took about 0.7 s. Tapping a bare point, mobile-mcp (0.04 s) and Appium (0.09 s) are quicker than Offsider (0.11 s).</sub>
+<sub>Each tool's fastest warm route on one React Native screen and an API 36 emulator: Offsider (the build after 0.12.0, `batch` for the five steps), Appium 3.8.0 with UiAutomator2, and agent-device 0.21.27, mobile-mcp 1.0.11 and Maestro 2.11.0 over MCP. Medians of 20 taps, each checked to have landed, or 10 runs of the five steps (tap, wait, assert, tap, screenshot), with the tap count read on the first, last and every fifth run and the screenshot file checked on the rest, after 3 warm-ups. 4 of Appium's 20 taps took about 0.7 s. Tapping a bare point with the same 2 s pause, mobile-mcp (0.04 s) and Appium (0.09 s) are quicker than Offsider (0.11 s).</sub>
 
 ![Bars of output size for one screen: describe-ui prints 145 KB of JSON, describe-ui --compact prints 31 KB, and describe-ui --summary prints 1.5 KB, about 1 percent of the JSON.](docs/assets/summary.png)
 
@@ -84,7 +84,7 @@ Real iPhones and Android phones work too, once you allow each one with `offsider
 - **One trip for a whole flow.** `batch` sets up once, then runs every step: five steps take about half the time on iOS, and on Android, where every command is already warm, it still saves a quarter.
 - **Warm sessions on real devices.** On a wired iPad, a session broker keeps the screen stream and touch open between commands: a tap in about 140 ms and a screenshot in about 230 ms.
 
-| Median | iOS Simulator | Android Emulator |
+| Median, back to back | iOS Simulator | Android Emulator |
 | --- | --- | --- |
 | Read the screen: `describe-ui --summary` | 0.88 s | 0.06 s |
 | Tap a point: `tap -x -y` | 0.94 s | 0.10 s |

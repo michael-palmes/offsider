@@ -103,6 +103,9 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func validate() throws {
         if let duration = duration {
             guard duration > 0 else {
@@ -275,6 +278,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         try await execute(on: route, progress: progress, logger: logger)
     }
 

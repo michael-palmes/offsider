@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Security
 
 /// Where the developer directory came from.
 public enum DeveloperDirectorySource: String, Equatable, Sendable {
@@ -29,7 +30,24 @@ public struct UntrustedDeveloperDirectory: OffsiderFailure, LocalizedError, Equa
     public enum Problem: String, Error, Equatable, Sendable {
         /// Missing, or not `<name>.app/Contents/Developer` once symlinks are resolved.
         case notInAppBundle
+        /// Validly signed, but not by Apple, or not as Xcode.
         case notAppleSigned
+        case unsigned
+        /// Signed, but its executable or `Info.plist` no longer matches the signature.
+        case modified
+        /// Its signature could not be read at all, as for a bundle missing its executable.
+        case unreadable
+
+        /// Why, after the path: "<path> is not ...".
+        public var summary: String {
+            switch self {
+            case .notInAppBundle: return "is not the Contents/Developer folder of an Xcode app"
+            case .notAppleSigned: return "is in an app that Apple did not sign as Xcode"
+            case .unsigned: return "is in an app with no code signature"
+            case .modified: return "is in an app changed since it was signed"
+            case .unreadable: return "is in an app whose signature could not be read"
+            }
+        }
     }
 
     public let path: String
@@ -44,26 +62,48 @@ public struct UntrustedDeveloperDirectory: OffsiderFailure, LocalizedError, Equa
 
     public var reason: FailureReason { .xcodeUnusable }
     public var failureMessage: String {
-        "\(source.rawValue) points at \(path), which is not inside an Apple-signed Xcode, so Offsider will not load simulator frameworks or run Xcode tools from it. \(XcodeSuggestion.current.withoutSudo)"
+        XcodeSuggestion.instead(of: path).adding(
+            to: "\(source.rawValue) points at \(path), which \(problem.summary), so Offsider will not load simulator frameworks or run Xcode tools from it."
+        )
     }
-    public var hint: String? { XcodeSuggestion.current.select }
+    public var hint: String? { XcodeSuggestion.instead(of: path).select }
     public var errorDescription: String? { failureMessage }
 }
 
-/// Checks that a developer directory is `<Xcode>.app/Contents/Developer` and that the app satisfies `requirement`; answers are cached per process by resolved path.
+/// Checks that a developer directory is `<Xcode>.app/Contents/Developer` and that Apple signed the app as Xcode; answers are cached per process by resolved path.
 public final class DeveloperDirectoryTrust: @unchecked Sendable {
-    public typealias Validator = @Sendable (_ appPath: String) -> Bool
+    /// nil when the app at the path is trusted, else why not.
+    public typealias Validator = @Sendable (_ appPath: String) -> UntrustedDeveloperDirectory.Problem?
 
+    /// Apple's own signature, as on Xcode from developer.apple.com.
+    public static let appleRequirement = "anchor apple"
     /// The Mac App Store signs Xcode's app wrapper with its own certificate, never as `anchor apple`; the code inside stays Apple's own.
     public static let appStoreXcode = #"anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9] exists and identifier "com.apple.dt.Xcode""#
-    /// Apple's own signature, as on Xcode from developer.apple.com, or the Mac App Store's on Xcode.
-    public static let requirement = "anchor apple or (\(appStoreXcode))"
+    /// Apple's team on Xcode from the Mac App Store, read from the signature because the store's certificate names no team.
+    public static let appStoreXcodeTeam = "59GAB85EFG"
     public static let shared = DeveloperDirectoryTrust()
 
     /// The app's main executable and Info.plist only; validating Xcode's resources would take seconds.
-    public static let appleSigned: Validator = { app in
-        CodeSignatureCheck.satisfies(path: app, requirement: requirement, resources: false)
+    public static func check(_ app: String, appStoreTeam: String = appStoreXcodeTeam) -> UntrustedDeveloperDirectory.Problem? {
+        do {
+            try CodeSignatureCheck.validate(path: app, requirement: appleRequirement, resources: false)
+            return nil
+        } catch let failure as CodeSignatureCheck.Failure where failure.status == errSecCSReqFailed {
+            let team = try? CodeSignatureCheck.validatedTeam(path: app, requirement: appStoreXcode, resources: false)
+            return team == appStoreTeam ? nil : .notAppleSigned
+        } catch let failure as CodeSignatureCheck.Failure where failure.status == errSecCSUnsigned {
+            return .unsigned
+        } catch let failure as CodeSignatureCheck.Failure where changedSince.contains(failure.status) {
+            return .modified
+        } catch {
+            return .unreadable
+        }
     }
+
+    public static let appleSigned: Validator = { check($0) }
+
+    /// What the Security framework returns for code that no longer matches its signature.
+    static let changedSince: Set<OSStatus> = [errSecCSSignatureFailed, errSecCSSignatureInvalid, errSecCSInfoPlistFailed, errSecCSBadResource]
 
     private let validator: Validator
     private let lock = NSLock()
@@ -93,7 +133,7 @@ public final class DeveloperDirectoryTrust: @unchecked Sendable {
         if let cached = lock.withLock({ cache[resolved] }) { return cached }
         let result: Result<TrustedDeveloperDirectory, UntrustedDeveloperDirectory.Problem>
         if let app = Self.appBundle(of: resolved) {
-            result = validator(app) ? .success(TrustedDeveloperDirectory(resolved: resolved, app: app)) : .failure(.notAppleSigned)
+            result = validator(app).map { .failure($0) } ?? .success(TrustedDeveloperDirectory(resolved: resolved, app: app))
         } else {
             result = .failure(.notInAppBundle)
         }

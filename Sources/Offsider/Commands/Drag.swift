@@ -59,6 +59,9 @@ struct Drag: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func validate() throws {
         if let problem = Coordinates.problem([("--start-x", startX), ("--start-y", startY), ("--end-x", endX), ("--end-y", endY)]) {
             throw ValidationError(problem)
@@ -99,6 +102,7 @@ struct Drag: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()

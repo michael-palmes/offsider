@@ -12,7 +12,7 @@ private func makeFakeXcode(named name: String = "Xcode.app") throws -> (root: St
     return (root, developer, app)
 }
 
-/// Counts validations and answers with `trusted`.
+/// Counts validations and answers with `trusted`, else not Apple-signed.
 private final class ValidatorProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var seen: [String] = []
@@ -24,9 +24,9 @@ private final class ValidatorProbe: @unchecked Sendable {
 
     var calls: [String] { lock.withLock { seen } }
 
-    func validate(_ app: String) -> Bool {
+    func validate(_ app: String) -> UntrustedDeveloperDirectory.Problem? {
         lock.withLock { seen.append(app) }
-        return trusted
+        return trusted ? nil : .notAppleSigned
     }
 }
 
@@ -55,21 +55,27 @@ struct DeveloperDirectoryTrustTests {
         let error = #expect(throws: UntrustedDeveloperDirectory.self) { try trust.require(fake.root, source: .environment) }
         #expect(error?.problem == .notInAppBundle)
         #expect(error?.reason == .xcodeUnusable)
-        #expect(error?.failureMessage.hasPrefix("DEVELOPER_DIR points at \(fake.root), which is not inside an Apple-signed Xcode, so Offsider will not load simulator frameworks or run Xcode tools from it.") == true)
-        #expect(error?.hint?.hasPrefix("sudo xcode-select -s /Applications/") == true)
+        #expect(error?.failureMessage.hasPrefix("DEVELOPER_DIR points at \(fake.root), which is not the Contents/Developer folder of an Xcode app, so Offsider will not load simulator frameworks or run Xcode tools from it.") == true)
+        let hint = try #require(error?.hint)
+        #expect(hint.hasPrefix("sudo xcode-select -s /Applications/") || hint == XcodeSuggestion.install)
         #expect(probe.calls.isEmpty)
         #expect(trust.evaluate("/nonexistent/Xcode.app/Contents/Developer") == .failure(.notInAppBundle))
     }
 
-    @Test("an app the validator rejects is not_apple_signed, and the error names xcode-select when it chose the path")
-    func notAppleSigned() throws {
+    @Test("the refusal says why, and names xcode-select when it chose the path", arguments: [
+        (UntrustedDeveloperDirectory.Problem.notAppleSigned, "is in an app that Apple did not sign as Xcode"),
+        (.unsigned, "is in an app with no code signature"),
+        (.modified, "is in an app changed since it was signed"),
+        (.unreadable, "is in an app whose signature could not be read"),
+    ])
+    func refusalSaysWhy(problem: UntrustedDeveloperDirectory.Problem, why: String) throws {
         let fake = try makeFakeXcode()
         defer { try? FileManager.default.removeItem(atPath: fake.root) }
-        let trust = DeveloperDirectoryTrust(validator: { _ in false })
+        let trust = DeveloperDirectoryTrust(validator: { _ in problem })
 
         let error = #expect(throws: UntrustedDeveloperDirectory.self) { try trust.require(fake.developer, source: .xcodeSelect) }
-        #expect(error?.problem == .notAppleSigned)
-        #expect(error?.failureMessage.hasPrefix("xcode-select points at \(fake.developer), which is not inside an Apple-signed Xcode") == true)
+        #expect(error?.problem == problem)
+        #expect(error?.failureMessage.hasPrefix("xcode-select points at \(fake.developer), which \(why), so Offsider") == true)
     }
 
     @Test("a symlink is resolved before the shape and signature checks, so a link named like Xcode cannot stand in for one")
@@ -118,22 +124,46 @@ struct DeveloperDirectoryTrustTests {
         #expect(trusted.app.hasSuffix(".app"))
     }
 
-    @Test("the Xcode requirement still takes Apple's own signature and refuses unsigned code")
-    func requirementKeepsAppleSignature() throws {
-        let file = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("offsider-unsigned-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: file) }
-        try Data("#!/bin/sh\n".utf8).write(to: file)
-        #expect(CodeSignatureCheck.satisfies(path: "/bin/ls", requirement: DeveloperDirectoryTrust.requirement, resources: false))
-        #expect(!CodeSignatureCheck.satisfies(path: file.path, requirement: DeveloperDirectoryTrust.requirement, resources: false))
+    @Test("Apple's own signature passes, as Xcode from developer.apple.com has, on an app and a binary")
+    func appleSignaturePasses() {
+        #expect(DeveloperDirectoryTrust.check("/System/Applications/Calculator.app") == nil)
+        #expect(DeveloperDirectoryTrust.check("/bin/ls") == nil)
     }
 
-    @Test("an Xcode from the Mac App Store passes as com.apple.dt.Xcode only, which anchor apple alone refused", .enabled(if: appStoreXcodeApp != nil))
+    @Test("unsigned, changed and someone else's signatures are each refused for what they are")
+    func refusedSignatures() async throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("offsider-trust-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let unsigned = folder.appendingPathComponent("unsigned")
+        try Data("#!/bin/sh\n".utf8).write(to: unsigned)
+        #expect(DeveloperDirectoryTrust.check(unsigned.path) == .unsigned)
+
+        let changed = folder.appendingPathComponent("changed")
+        var data = try Data(contentsOf: URL(fileURLWithPath: "/bin/ls"))
+        func word(_ at: Int) -> Int { data[at..<at + 4].reduce(0) { $0 << 8 | Int($1) } }
+        let fat = data.prefix(4) == Data([0xCA, 0xFE, 0xBA, 0xBE])
+        for slice in fat ? (0..<word(4)).map({ word(8 + $0 * 20 + 8) }) : [0] { data[slice + 0x2000] ^= 0xFF }
+        try data.write(to: changed)
+        #expect(DeveloperDirectoryTrust.check(changed.path) == .modified)
+        #expect(DeveloperDirectoryTrust.check(folder.appendingPathComponent("missing").path) == .unreadable)
+
+        let resigned = folder.appendingPathComponent("resigned")
+        try FileManager.default.copyItem(atPath: "/bin/ls", toPath: resigned.path)
+        let signing = try await ProcessCapture.run(executable: "/usr/bin/codesign", arguments: ["--force", "--sign", "-", resigned.path], environment: [:], timeout: 30)
+        try #require(signing.status == 0)
+        #expect(DeveloperDirectoryTrust.check(resigned.path) == .notAppleSigned)
+    }
+
+    @Test("an Xcode from the Mac App Store passes as com.apple.dt.Xcode from Apple's team only, which anchor apple alone refused", .enabled(if: appStoreXcodeApp != nil))
     func appStoreXcodePasses() throws {
         let app = try #require(appStoreXcodeApp)
-        let otherIdentifier = DeveloperDirectoryTrust.requirement.replacingOccurrences(of: "com.apple.dt.Xcode", with: "com.example.other")
-        #expect(CodeSignatureCheck.satisfies(path: app, requirement: DeveloperDirectoryTrust.requirement, resources: false))
-        #expect(!CodeSignatureCheck.satisfies(path: app, requirement: "anchor apple", resources: false))
+        let otherIdentifier = DeveloperDirectoryTrust.appStoreXcode.replacingOccurrences(of: "com.apple.dt.Xcode", with: "com.example.other")
+        #expect(DeveloperDirectoryTrust.check(app) == nil)
+        #expect(DeveloperDirectoryTrust.check(app, appStoreTeam: "ABCDE12345") == .notAppleSigned)
+        #expect(!CodeSignatureCheck.satisfies(path: app, requirement: DeveloperDirectoryTrust.appleRequirement, resources: false))
         #expect(!CodeSignatureCheck.satisfies(path: app, requirement: otherIdentifier, resources: false))
+        #expect(try CodeSignatureCheck.validatedTeam(path: app, requirement: DeveloperDirectoryTrust.appStoreXcode, resources: false) == DeveloperDirectoryTrust.appStoreXcodeTeam)
     }
 }
 
@@ -196,6 +226,8 @@ struct XcodeTrustDoctorRuleTests {
     static let inApplications = TrustedDeveloperDirectory(resolved: "/Applications/Xcode.app/Contents/Developer", app: "/Applications/Xcode.app")
     static let elsewhere = TrustedDeveloperDirectory(resolved: "/Users/me/Xcode.app/Contents/Developer", app: "/Users/me/Xcode.app")
 
+    static let installed = [XcodeBundle(path: "/Applications/Xcode-27.0.app", version: "27.0", appleSigned: true)]
+
     @Test("Apple-signed in /Applications passes; elsewhere or through DEVELOPER_DIR warns; not Apple's fails with the xcode-select fix", arguments: [
         (Result<TrustedDeveloperDirectory, UntrustedDeveloperDirectory.Problem>.success(inApplications), DeveloperDirectorySource.xcodeSelect, CheckStatus.pass),
         (.success(inApplications), .environment, .warn),
@@ -204,13 +236,29 @@ struct XcodeTrustDoctorRuleTests {
         (.failure(.notInAppBundle), .environment, .fail),
     ])
     func verdicts(result: Result<TrustedDeveloperDirectory, UntrustedDeveloperDirectory.Problem>, source: DeveloperDirectorySource, status: CheckStatus) {
-        let verdict = DoctorRules.xcodeTrust(result, path: "/X/Contents/Developer", source: source, suggestion: XcodeSuggestion(developerDirectory: "/Applications/Xcode-27.0.app/Contents/Developer"))
+        let verdict = DoctorRules.xcodeTrust(result, path: "/X/Contents/Developer", source: source, installed: Self.installed)
         #expect(verdict.status == status)
         if status == .fail {
             #expect(verdict.detail.contains("/X/Contents/Developer (\(source.rawValue))"))
             #expect(verdict.hint == "sudo xcode-select -s /Applications/Xcode-27.0.app/Contents/Developer")
         }
         if status == .pass { #expect(verdict.hint == nil) }
+    }
+
+    @Test("a refused Xcode is never the fix: the only one installed leaves the install as the hint")
+    func refusedXcodeIsNotTheFix() {
+        let bundles = [XcodeBundle(path: "/Applications/Xcode.app", version: "27.1", appleSigned: true)]
+        let verdict = DoctorRules.xcodeTrust(.failure(.modified), path: "/Applications/Xcode.app/Contents/Developer", source: .xcodeSelect, installed: bundles)
+        #expect(verdict.detail == "/Applications/Xcode.app/Contents/Developer (xcode-select) is in an app changed since it was signed, so Offsider will not use it")
+        #expect(verdict.hint == XcodeSuggestion.install)
+    }
+
+    @Test("with no Xcode in /Applications, the warnings name the trusted one itself")
+    func warningsWithNothingInstalled() {
+        let environment = DoctorRules.xcodeTrust(.success(Self.elsewhere), path: Self.elsewhere.resolved, source: .environment, installed: [])
+        #expect(environment.hint == "Unset DEVELOPER_DIR and select Xcode with sudo xcode-select -s /Users/me/Xcode.app/Contents/Developer.")
+        let outside = DoctorRules.xcodeTrust(.success(Self.elsewhere), path: Self.elsewhere.resolved, source: .xcodeSelect, installed: [])
+        #expect(outside.hint == "Move Xcode into /Applications, then run sudo xcode-select -s /Applications/Xcode.app/Contents/Developer.")
     }
 
     @Test("xcode.trust follows xcode.developer-dir in the contract order")

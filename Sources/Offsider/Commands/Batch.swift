@@ -52,6 +52,9 @@ struct Batch: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     @Option(name: .customLong("step"), help: "Step to execute. Repeat for multiple steps.")
     var steps: [String] = []
 
@@ -133,6 +136,8 @@ struct Batch: AsyncParsableCommand {
 
     /// Every step shares one input session, so an Android batch holds one gRPC client or adb executor throughout.
     func run(on route: DeviceRouter.Route, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
+        // Before the input session opens: a phone's runner checks its app in front as the session starts.
+        await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
         try await watchdog.guardingSetup(device: device.rawValue) { try await backend.prepare() }

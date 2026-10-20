@@ -44,6 +44,9 @@ struct KeyCombo: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func validate() throws {
         let parsedModifiers = try parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")
 
@@ -68,7 +71,9 @@ struct KeyCombo: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        try await perform(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger), logger: logger)
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
+        try await perform(on: route, logger: logger)
     }
 
     @MainActor
