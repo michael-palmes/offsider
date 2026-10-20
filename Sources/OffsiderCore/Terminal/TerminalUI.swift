@@ -7,6 +7,7 @@ import Foundation
 /// - `question`: an optional dim `1/4`, the bold question (at most 5 words), its dim controls beside it: `(↑↓, Enter, Q quit)`.
 /// - `menu`: the question, a blank line, then one row per option: cursor `▸` and row green, an emoji and two spaces, columns
 ///   aligned, the last column dim, `(Recommended)` magenta, rows that cannot be chosen dim. A warning goes yellow under the rows.
+///   While filtering, `/ query▏` sits under the question and only matching rows show, or a dim `No match`.
 /// - `receipt`: what an answered question collapses to, `✅ Device    iPad Pro`, labels padded so the lines read as one receipt.
 /// - `summary`: one bold line of parts joined by ` · `, broken only between parts.
 /// - `closing`: the bold green `✅` headline, then dim labels with cyan commands that never wrap.
@@ -29,16 +30,24 @@ public enum TerminalUI {
         public var quit: String
         /// Space ticks rows, for a menu that takes several.
         public var ticking: Bool
+        /// `/` starts a filter, for a long list.
+        public var filter: Bool
+        /// A filter is being typed, so every letter is text and Escape clears it.
+        public var filtering: Bool
 
-        public init(choosing: Bool = true, rescan: Bool = false, quit: String = "quit", ticking: Bool = false) {
+        public init(choosing: Bool = true, rescan: Bool = false, quit: String = "quit", ticking: Bool = false, filter: Bool = false, filtering: Bool = false) {
             self.choosing = choosing
             self.rescan = rescan
             self.quit = quit
             self.ticking = ticking
+            self.filter = filter
+            self.filtering = filtering
         }
 
         public func text(style: TerminalStyle) -> String {
-            let keys = (choosing ? [style.upDown] + (ticking ? ["Space"] : []) + ["Enter"] : []) + (rescan ? ["R rescan"] : []) + ["Q \(quit)"]
+            if filtering { return "(" + [style.upDown, "Enter", "Esc clear"].joined(separator: ", ") + ")" }
+            let keys = (choosing ? [style.upDown] + (ticking ? ["Space"] : []) + ["Enter"] + (filter ? ["/ filter"] : []) : [])
+                + (rescan ? ["R rescan"] : []) + ["Q \(quit)"]
             return "(" + keys.joined(separator: ", ") + ")"
         }
     }
@@ -51,12 +60,21 @@ public enum TerminalUI {
         return [lead + style.bold(text), style.dim(keys)]
     }
 
+    /// `query` is the filter being typed and `shown` the rows it keeps, by index into `rows`; columns stay aligned across every row.
     public static func menu(
         _ question: String?, step: String? = nil, rows: [MenuRow], selected: Int?, controls: Controls, warning: String? = nil, notes: [String] = [],
-        commands: [(label: String, command: String)] = [], width: Int = 72, window: Int? = nil, style: TerminalStyle
+        commands: [(label: String, command: String)] = [], width: Int = 72, window: Int? = nil, style: TerminalStyle, query: String? = nil, shown: [Int]? = nil
     ) -> String {
-        var lines = question.map { self.question($0, step: step, controls: controls, width: width, style: style) + [""] } ?? []
-        lines += self.window(self.rows(rows, selected: selected, style: style), around: selected ?? 0, size: window, style: style)
+        var lines = question.map { self.question($0, step: step, controls: controls, width: width, style: style) } ?? []
+        if let query { lines.append(filterLine(query, style: style)) }
+        if !lines.isEmpty { lines.append("") }
+        let drawn = self.rows(rows, selected: selected, style: style)
+        let visible = shown ?? Array(drawn.indices)
+        if visible.isEmpty, shown != nil {
+            lines.append("    " + style.dim(noMatch))
+        } else {
+            lines += self.window(visible.map { drawn[$0] }, around: selected.flatMap { visible.firstIndex(of: $0) } ?? 0, size: window, style: style)
+        }
         if let warning { lines += self.warning(warning, width: width, style: style).map { "  " + $0 } }
         lines += notes.flatMap { PromptScreen.wrap($0, width: width - 2) }.map { "  " + style.dim($0) }
         lines += self.commands(commands, indent: "  ", style: style)
@@ -104,6 +122,12 @@ public enum TerminalUI {
     public static func box(_ ticked: Bool) -> String { ticked ? "[x]" : "[ ]" }
 
     public static let recommended = "Recommended"
+    public static let noMatch = "No match"
+
+    /// `  / pix▏`: the query as typed, a hazard shown as `?`, with a bar where the next letter goes.
+    public static func filterLine(_ query: String, style: TerminalStyle) -> String {
+        "  " + style.cyan("/") + " " + PromptScreen.visible(query) + (style.ascii ? "_" : "▏")
+    }
 
     /// What a closed menu leaves when the caller keeps no receipt of its own: `  ▸ Second`.
     public static func chosen(_ option: String, style: TerminalStyle) -> String {

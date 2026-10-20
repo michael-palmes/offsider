@@ -11,7 +11,12 @@ enum DevicePicker {
     static let machineFlags: Set<String> = ["--json", "--format", "--compact"]
 
     @TaskLocal static var terminal: @Sendable () -> Bool = {
-        isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0 && isatty(STDERR_FILENO) != 0 && OutputProfile.current == .person
+        prompts(terminals: isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0 && isatty(STDERR_FILENO) != 0)
+    }
+
+    /// A person at terminals on all three streams; an agent on a pseudo-terminal is never kept waiting at a picker.
+    static func prompts(terminals: Bool, profile: OutputProfile = .current) -> Bool {
+        terminals && profile == .person
     }
 
     static func offers(arguments: [String], terminal: Bool) -> Bool {
@@ -53,8 +58,8 @@ enum DevicePicker {
         do {
             return try await pick()
         } catch let timeout as PromptTimedOut {
-            let style = TerminalStyle.detect(isTerminal: isatty(STDERR_FILENO) != 0)
-            FileHandle.standardError.write(Data((style.dim(DevicePickerScreen.unanswered(within: timeout.waited, boot: boot)) + "\n").utf8))
+            let console = Console.current
+            console.data(console.err.canvas.style.dim(DevicePickerScreen.unanswered(within: timeout.waited, boot: boot)) + "\n", to: .err)
             throw error
         }
     }
@@ -101,7 +106,7 @@ enum DevicePicker {
                 do {
                     let index = try prompt.choose(
                         question, rows: devices.map(row), warning: devices.isEmpty ? empty : nil,
-                        commands: devices.isEmpty ? next.map { [$0] } ?? [] : [], rescan: true, keepsChoice: false
+                        commands: devices.isEmpty ? next.map { [$0] } ?? [] : [], rescan: true, keepsChoice: false, filterable: true
                     )
                     return devices[index]
                 } catch is PromptRefresh {

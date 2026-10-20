@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 
 /// One key from a terminal in raw mode.
 public enum TerminalKey: Equatable, Sendable {
@@ -13,11 +14,15 @@ public enum TerminalKey: Equatable, Sendable {
     case down
     case left
     case right
-    /// Escape, Control-C or Control-backslash.
+    /// Control-C or Control-backslash.
     case cancel
+    /// Escape on its own: a cancel everywhere but a menu's filter, which it clears first.
+    case escape
     /// Control-D, or the terminal closing.
     case endOfInput
     case ignored
+    /// The terminal changed size; never parsed from bytes, so a prompt redraws.
+    case resize
 
     /// Splits one read into keys, copying each run of typed bytes once. An escape with nothing after it is the Escape key itself.
     public static func parse<Bytes: Collection<UInt8>>(_ bytes: Bytes) -> [TerminalKey] {
@@ -49,12 +54,12 @@ public enum TerminalKey: Equatable, Sendable {
             case 0x1B:
                 flush(here)
                 guard index < bytes.endIndex else {
-                    keys.append(.cancel)
+                    keys.append(.escape)
                     continue
                 }
                 let introducer = bytes[index]
                 if introducer == 0x1B {
-                    keys.append(.cancel)
+                    keys.append(.escape)
                     continue
                 }
                 bytes.formIndex(after: &index)
@@ -161,11 +166,11 @@ public final class LineEditor {
             wipe()
         case .enter:
             return .submitted
-        case .cancel:
+        case .cancel, .escape:
             return .cancelled
         case .endOfInput:
             return isEmpty ? .cancelled : .editing
-        case .up, .down, .left, .right, .ignored:
+        case .up, .down, .left, .right, .ignored, .resize:
             break
         }
         return .editing
@@ -214,6 +219,8 @@ public final class LineEditor {
 }
 
 /// An arrow-key list: Up and Down wrap past disabled rows, Enter or a digit chooses, Escape or q cancels.
+/// A long list given `search` text also filters: `/` starts it, every key after it is query text until Escape,
+/// and Enter still returns the row's index in the full list.
 public struct ChoiceMenu: Sendable {
     public enum Outcome: Equatable, Sendable {
         case moving
@@ -227,18 +234,80 @@ public struct ChoiceMenu: Sendable {
     /// The row under the cursor; nil when no row can be chosen.
     public private(set) var selected: Int?
     public let refreshable: Bool
+    /// Rows the screen shows at once; a list longer than this offers `/` however short it is.
+    public var window: Int?
+    /// What was typed after `/`; nil while the menu is not filtering.
+    public private(set) var query: String?
     private let enabled: [Bool]
+    /// Each row's text folded for matching; nil for a menu that never filters.
+    private let search: [String]?
+    /// The row under the cursor when filtering began.
+    private var resume: Int?
+
+    /// Past nine rows a digit no longer reaches every row, so `/` is offered.
+    public static let filterAfter = 9
+    /// The most characters a query keeps.
+    public static let queryLimit = 64
 
     /// `disabled` rows are drawn but the cursor never lands on them; `selected` falls forward to the next enabled row.
-    public init(count: Int, selected: Int = 0, disabled: Set<Int> = [], refreshable: Bool = false) {
+    /// `search` is each row's text to filter on, such as its columns joined.
+    public init(count: Int, selected: Int = 0, disabled: Set<Int> = [], refreshable: Bool = false, search: [String]? = nil) {
         self.count = max(count, 0)
         enabled = (0..<self.count).map { !disabled.contains($0) }
         self.refreshable = refreshable
-        let start = min(max(selected, 0), max(self.count - 1, 0))
-        self.selected = (0..<self.count).map { (start + $0) % self.count }.first { enabled[$0] }
+        self.search = search.map { texts in (0..<max(count, 0)).map { $0 < texts.count ? MenuFilter.fold(texts[$0]) : "" } }
+        self.selected = firstEnabled(from: selected)
+    }
+
+    /// True when `/` starts a filter: the menu has search text, a row to choose, and more rows than nine or the window.
+    public var offersFilter: Bool {
+        search != nil && enabled.contains(true) && (count > Self.filterAfter || window.map { count > $0 } ?? false)
+    }
+
+    /// The rows in view, in order: every row, or the ones the query matches. A disabled row that matches stays.
+    public var shown: [Int] {
+        guard let query, let search else { return Array(0..<count) }
+        let terms = MenuFilter.terms(query)
+        return (0..<count).filter { MenuFilter.matches(terms, search[$0]) }
     }
 
     public mutating func apply(_ key: TerminalKey) -> Outcome {
+        if query != nil { return filter(key) }
+        switch key {
+        case .up:
+            step(-1)
+        case .down:
+            step(1)
+        case .enter:
+            if let selected { return .chosen(selected) }
+        case .cancel, .escape, .endOfInput:
+            return .cancelled
+        case .text(let typed):
+            for (offset, byte) in typed.enumerated() {
+                switch byte {
+                case UInt8(ascii: "/") where offersFilter:
+                    resume = selected
+                    query = ""
+                    type(typed[(offset + 1)...])
+                    return .moving
+                case UInt8(ascii: "k"): step(-1)
+                case UInt8(ascii: "j"): step(1)
+                case UInt8(ascii: "q"), UInt8(ascii: "Q"): return .cancelled
+                case UInt8(ascii: "r") where refreshable, UInt8(ascii: "R") where refreshable: return .refresh
+                case UInt8(ascii: "1")...UInt8(ascii: "9") where Int(byte - UInt8(ascii: "0")) <= count && enabled[Int(byte - UInt8(ascii: "1"))]:
+                    selected = Int(byte - UInt8(ascii: "1"))
+                    return .chosen(Int(byte - UInt8(ascii: "1")))
+                default: break
+                }
+            }
+        case .backspace, .clearLine, .deleteWord, .left, .right, .ignored, .resize:
+            break
+        }
+        return .moving
+    }
+
+    /// A key while filtering: printable bytes are query text, arrows move among matches, the first Escape clears.
+    private mutating func filter(_ key: TerminalKey) -> Outcome {
         switch key {
         case .up:
             step(-1)
@@ -248,32 +317,79 @@ public struct ChoiceMenu: Sendable {
             if let selected { return .chosen(selected) }
         case .cancel, .endOfInput:
             return .cancelled
-        case .text(let typed):
-            for byte in typed {
-                switch byte {
-                case UInt8(ascii: "k"): step(-1)
-                case UInt8(ascii: "j"): step(1)
-                case UInt8(ascii: "q"), UInt8(ascii: "Q"): return .cancelled
-                case UInt8(ascii: "r"), UInt8(ascii: "R") where refreshable: return .refresh
-                case UInt8(ascii: "1")...UInt8(ascii: "9") where Int(byte - UInt8(ascii: "0")) <= count && enabled[Int(byte - UInt8(ascii: "1"))]:
-                    selected = Int(byte - UInt8(ascii: "1"))
-                    return .chosen(Int(byte - UInt8(ascii: "1")))
-                default: break
-                }
+        case .escape:
+            leaveFilter()
+        case .backspace:
+            guard let query, !query.isEmpty else {
+                leaveFilter()
+                break
             }
-        case .backspace, .clearLine, .deleteWord, .left, .right, .ignored:
+            self.query = String(query.dropLast())
+            refilter()
+        case .clearLine:
+            query = ""
+            refilter()
+        case .deleteWord:
+            query = String((query ?? "").reversed().drop { $0 == " " }.drop { $0 != " " }.reversed())
+            refilter()
+        case .text(let typed):
+            type(typed[...])
+        case .left, .right, .ignored, .resize:
             break
         }
         return .moving
     }
 
+    private mutating func type(_ bytes: ArraySlice<UInt8>) {
+        let printable = bytes.filter { $0 >= 0x20 && $0 != 0x7F }
+        guard var text = query, !printable.isEmpty else { return }
+        for character in String(decoding: printable, as: UTF8.self) {
+            guard text.count < Self.queryLimit else { break }
+            text.append(character)
+        }
+        query = text
+        refilter()
+    }
+
+    /// The cursor goes to the first match it can land on, or nowhere when none matches.
+    private mutating func refilter() {
+        selected = shown.first { enabled[$0] }
+    }
+
+    /// Every row shows again with the cursor where it was, or where it was before filtering when no row matched.
+    private mutating func leaveFilter() {
+        query = nil
+        if selected == nil { selected = firstEnabled(from: resume ?? 0) }
+    }
+
+    private func firstEnabled(from selected: Int) -> Int? {
+        let start = min(max(selected, 0), max(count - 1, 0))
+        return (0..<count).map { (start + $0) % count }.first { enabled[$0] }
+    }
+
     private mutating func step(_ by: Int) {
-        guard let current = selected else { return }
-        var index = current
-        repeat {
-            index = (index + by + count) % count
-        } while !enabled[index] && index != current
-        selected = index
+        let rows = shown.filter { enabled[$0] }
+        guard let current = selected, let position = rows.firstIndex(of: current) else {
+            selected = rows.first
+            return
+        }
+        selected = rows[(position + by + rows.count) % rows.count]
+    }
+}
+
+/// How a menu filter matches: case, accents and full-width forms folded away, and every space-separated term somewhere in the row.
+private enum MenuFilter {
+    static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+    }
+
+    static func terms(_ query: String) -> [String] {
+        fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
+    /// `folded` is a row's text already folded.
+    static func matches(_ terms: [String], _ folded: String) -> Bool {
+        terms.allSatisfy { folded.contains($0) }
     }
 }
 
@@ -296,12 +412,12 @@ public struct CheckMenu: Sendable {
     }
 
     public mutating func apply(_ key: TerminalKey) -> Outcome {
-        guard count > 0 else { return key == .cancel || key == .endOfInput ? .cancelled : .moving }
+        guard count > 0 else { return [.cancel, .escape, .endOfInput].contains(key) ? .cancelled : .moving }
         switch key {
         case .up: selected = (selected - 1 + count) % count
         case .down: selected = (selected + 1) % count
         case .enter: if !ticked.isEmpty { return .chosen(ticked.sorted()) }
-        case .cancel, .endOfInput: return .cancelled
+        case .cancel, .escape, .endOfInput: return .cancelled
         case .text(let typed):
             for byte in typed {
                 switch byte {
@@ -315,7 +431,7 @@ public struct CheckMenu: Sendable {
                 default: break
                 }
             }
-        case .backspace, .clearLine, .deleteWord, .left, .right, .ignored:
+        case .backspace, .clearLine, .deleteWord, .left, .right, .ignored, .resize:
             break
         }
         return .moving

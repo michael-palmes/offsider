@@ -23,15 +23,27 @@ struct TerminalPromptTests {
         #expect(Date().timeIntervalSince(started) < 10)
     }
 
-    @Test("a key burst splits into text, Enter and arrows, and only a trailing escape cancels")
+    @Test("a key burst splits into text, Enter and arrows; a trailing escape is Escape, and Control-C a cancel of its own")
     func keyParsing() {
         #expect(TerminalKey.parse(Array("ada\rpw\r".utf8)) == [.text(Array("ada".utf8)), .enter, .text(Array("pw".utf8)), .enter])
         #expect(TerminalKey.parse([0x1B, 0x5B, 0x42, 0x0D]) == [.down, .enter])
         #expect(TerminalKey.parse([0x1B, 0x4F, 0x41]) == [.up])
         #expect(TerminalKey.parse([0x1B, 0x5B, 0x33, 0x7E]) == [.ignored])
-        #expect(TerminalKey.parse(Array("qa".utf8) + [0x1B]) == [.text(Array("qa".utf8)), .cancel])
+        #expect(TerminalKey.parse(Array("qa".utf8) + [0x1B]) == [.text(Array("qa".utf8)), .escape])
         #expect(TerminalKey.parse([0x03]) == [.cancel])
-        #expect(TerminalKey.parse([0x1B, 0x1B]) == [.cancel, .cancel])
+        #expect(TerminalKey.parse([0x1C]) == [.cancel])
+        #expect(TerminalKey.parse([0x1B, 0x1B]) == [.escape, .escape])
+    }
+
+    @Test("Escape cancels a line, a menu and a tick menu just as Control-C does")
+    func escapeCancelsOutsideAFilter() {
+        #expect(LineEditor().apply(.escape) == .cancelled)
+        var menu = ChoiceMenu(count: 3)
+        #expect(menu.apply(.escape) == .cancelled)
+        var ticks = CheckMenu(count: 2, ticked: [0])
+        #expect(ticks.apply(.escape) == .cancelled)
+        var empty = CheckMenu(count: 0, ticked: [])
+        #expect(empty.apply(.escape) == .cancelled)
     }
 
     @Test("Left and Right parse whole in CSI and SS3 form, with or without modifiers, and Control-W is its own key")
@@ -159,6 +171,16 @@ struct TerminalPromptTests {
         #expect(menu.apply(.text(Array("9".utf8))) == .moving)
         #expect(menu.apply(.text(Array("q".utf8))) == .cancelled)
         #expect(menu.apply(.cancel) == .cancelled)
+    }
+
+    @Test("R rescans only a menu that offers it, in either case, and does nothing elsewhere")
+    func rescanOnlyWhenOffered() {
+        var plain = ChoiceMenu(count: 3)
+        #expect(plain.apply(.text(Array("r".utf8))) == .moving)
+        #expect(plain.apply(.text(Array("R".utf8))) == .moving)
+        var rescans = ChoiceMenu(count: 3, refreshable: true)
+        #expect(rescans.apply(.text(Array("r".utf8))) == .refresh)
+        #expect(rescans.apply(.text(Array("R".utf8))) == .refresh)
     }
 
     @Test("rows count emoji as two columns, so a redraw moves back over exactly what it drew")
@@ -477,6 +499,17 @@ final class PseudoTerminal: @unchecked Sendable {
     func send(_ keys: String) {
         let bytes = Array(keys.utf8)
         _ = bytes.withUnsafeBytes { write(primary, $0.baseAddress, $0.count) }
+    }
+
+    /// Everything drawn so far, escape sequences and all.
+    var drawn: String {
+        lock.withLock { String(decoding: output, as: UTF8.self) }
+    }
+
+    /// Sets the window size, as a terminal does when its window is resized; a pseudo-terminal no process controls signals no one.
+    func resize(columns: UInt16, rows: UInt16) {
+        var size = winsize(ws_row: rows, ws_col: columns, ws_xpixel: 0, ws_ypixel: 0)
+        _ = ioctl(primary, TIOCSWINSZ, &size)
     }
 
     /// True while Control-C raises a signal rather than arriving as a key.
