@@ -145,9 +145,15 @@ struct Swipe: AsyncParsableCommand {
 
         let finalEvent = InputEvent.delayed(try swipeEvent(from: physicalPoints[0], to: physicalPoints[1]), pre: preDelay, post: postDelay)
 
-        try await backend.performTracked(finalEvent, on: device)
-        
+        try await Console.current.progress("Swiping") { try await backend.performTracked(finalEvent, on: device) }
+
         logger.info().log("Swipe gesture completed successfully")
+        Console.current.show(InputPersonView.receipt(receiptHeadline))
+    }
+
+    /// `Swiped (100, 600) to (100, 200)`.
+    var receiptHeadline: String {
+        "Swiped \(VerifyOutput.pointDescription(x: startX, y: startY)) to \(VerifyOutput.pointDescription(x: endX, y: endY))"
     }
 }
 

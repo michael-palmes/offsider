@@ -97,7 +97,7 @@ public struct VerifyPhases: Equatable, Sendable {
     }
 
     static func seconds(_ value: TimeInterval) -> String {
-        String(format: "%.1f s", max(0, value))
+        unsafe String(format: "%.1f s", max(0, value))
     }
 }
 

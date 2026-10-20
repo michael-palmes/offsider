@@ -61,7 +61,10 @@ struct TapCover {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let cover = Self.describe(verdict)
         if verdict.isConfident, allowCovered {
-            print("Warning: \(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))); tapping anyway because of --allow-covered.", to: &standardError)
+            Console.current.notice(.warning(
+                "\(selector) is covered by \(cover); tapping anyway (--allow-covered)",
+                agent: "\(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))); tapping anyway because of --allow-covered."
+            ))
             return
         }
         if verdict.isConfident {
@@ -76,14 +79,20 @@ struct TapCover {
         if failIfCovered {
             throw CLIError(errorDescription: message, reason: .targetCovered, hint: "offsider describe-ui --device \(device.rawValue) --summary", coveredBy: CoverReport(verdict))
         }
-        print("Warning: \(message) Pass --fail-if-covered to stop instead.", to: &standardError)
+        Console.current.notice(.warning(
+            "\(selector) may be covered by \(cover); the tap may land on it",
+            agent: "\(message) Pass --fail-if-covered to stop instead."
+        ))
     }
 
     /// A prompt another process draws over the app takes the tap, so it refuses unless `--allow-covered`.
     private func refuse(under prompt: SystemPrompt, verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID) throws {
         if allowCovered {
             let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
-            print("Warning: \(selector) at \(pointText) is under \(prompt.summary); tapping anyway because of --allow-covered.", to: &standardError)
+            Console.current.notice(.warning(
+                "\(selector) is under \(prompt.summary); tapping anyway (--allow-covered)",
+                agent: "\(selector) at \(pointText) is under \(prompt.summary); tapping anyway because of --allow-covered."
+            ))
             return
         }
         throw CLIError(

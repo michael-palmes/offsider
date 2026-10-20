@@ -60,35 +60,53 @@ struct LoginCommand: AsyncParsableCommand {
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         let profile = try LoginProfiles.load(project: project)
         let filter = try Self.whereTags(filters, named: key != nil)
-        let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWaitNotice.utf8)) }
+        let console = Console.current
+        // A person's spinner asks for the prompt in place of the agent's line.
+        let notice = DispatchWorkItem {
+            if console.err.animates, console.err.profile == .person {
+                console.relabel(Self.keychainWaitLabel)
+            } else {
+                console.data(Self.keychainWaitNotice, to: .err)
+            }
+        }
         var giveUp: DispatchWorkItem?
         let report: LoginReport
         do {
-            report = try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
-                try await Self.perform(
-                    on: route, profile: profile, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
-                    onPrepared: ready,
-                    keychainWillRead: { app in
-                        watchdog.disarm()
-                        let limit = DispatchWorkItem {
-                            ErrorReporter.exitFromTimer(reason: .commandFailed, message: Self.keychainTimeoutMessage, hint: "offsider credential status --app \(app)")
+            report = try await console.progress(Self.signingInLabel) {
+                try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
+                    try await Self.perform(
+                        on: route, profile: profile, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
+                        onPrepared: ready,
+                        keychainWillRead: { app in
+                            watchdog.disarm()
+                            let limit = DispatchWorkItem {
+                                ErrorReporter.exitFromTimer(reason: .commandFailed, message: Self.keychainTimeoutMessage, hint: "offsider credential status --app \(app)")
+                            }
+                            giveUp = limit
+                            DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice)
+                            DispatchQueue.global().asyncAfter(deadline: .now() + Self.keychainWaitLimit, execute: limit)
+                        },
+                        keychainDidRead: {
+                            notice.cancel()
+                            giveUp?.cancel()
+                            console.relabel(Self.signingInLabel)
+                            ready()
                         }
-                        giveUp = limit
-                        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice)
-                        DispatchQueue.global().asyncAfter(deadline: .now() + Self.keychainWaitLimit, execute: limit)
-                    },
-                    keychainDidRead: {
-                        notice.cancel()
-                        giveUp?.cancel()
-                        ready()
-                    }
-                )
+                    )
+                }
             }
         } catch {
             throw await Self.failure(error, json: json)
         }
-        print(json ? Self.jsonText(report) : report.textLine())
+        if json {
+            console.data(Self.jsonText(report) + "\n")
+        } else {
+            console.show(InputPersonView.login(report))
+        }
     }
+
+    static let signingInLabel = "Signing in"
+    static let keychainWaitLabel = "Answer the macOS prompt to read the saved login"
 
     /// The report with its `untrusted` list: an error built from the screen can quote it.
     static func jsonText(_ report: LoginReport) -> String {
@@ -97,7 +115,7 @@ struct LoginCommand: AsyncParsableCommand {
 
     /// Under --json, a login that began typing prints its own report of how far it got; an earlier failure keeps the error envelope.
     @MainActor
-    static func failure(_ error: any Error, json: Bool, scope: CommandScope = .current, write: (String) -> Void = { print($0) }) async -> any Error {
+    static func failure(_ error: any Error, json: Bool, scope: CommandScope = .current, write: (String) -> Void = { Console.current.data($0 + "\n") }) async -> any Error {
         guard json, let stopped = error as? LoginFailure else { return error }
         let annotated = await scope.screenHint(for: stopped)
         var report = stopped.report

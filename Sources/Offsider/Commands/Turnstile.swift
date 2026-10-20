@@ -46,14 +46,17 @@ struct Turnstile: AsyncParsableCommand {
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
         await appOption.apply(to: route)
-        let report = try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
-            try await readStatus(on: route, onPrepared: ready)
+        let console = Console.current
+        let report = try await console.progress("Reading Turnstile") {
+            try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
+                try await readStatus(on: route, onPrepared: ready)
+            }
         }
         if json {
-            print(report.jsonLine())
-            print(report.textLine(), to: &standardError)
+            console.data(report.jsonLine() + "\n")
+            console.data(report.textLine() + "\n", to: .err)
         } else {
-            print(report.textLine())
+            console.show(InputPersonView.turnstile(report))
         }
     }
 

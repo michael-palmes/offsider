@@ -131,7 +131,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         device: DeviceID,
         logger: OffsiderLogger,
         clock: PollClock = .live,
-        warn: @MainActor (String) -> Void = { FileHandle.standardError.write(Data("Warning: \($0)\n".utf8)) },
+        warn: @MainActor (String) -> Void = { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
         beforeTap: @MainActor (UITree) throws -> Void = { _ in },
         refusingSecureTarget secureRefusal: CLIError? = nil,
         tap: @MainActor (InputEvent) async throws -> Void
@@ -229,6 +229,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         try await AllowPathConsent.confirm(path: inputFile, allowPath: allowPath, command: "type")
         guard verification.verify else {
             try await execute(progress: nil)
+            Console.current.show(InputPersonView.receipt(receiptHeadline))
             return
         }
         try await VerifyOutput.reportingFailures(command: "type", target: "text", options: verification) { progress in
@@ -239,7 +240,18 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        try await execute(on: route, progress: progress, logger: logger, refusingSecureArgument: text?.isEmpty == false)
+        let typing = { try await execute(on: route, progress: progress, logger: logger, refusingSecureArgument: text?.isEmpty == false) }
+        // Standard input may be a person typing at the terminal, so no spinner draws over it.
+        try await useStdin ? typing() : Console.current.progress("Typing", typing)
+    }
+
+    /// Where the text went, never the text or its length: `Typed into id=email`, `Cleared id=email`.
+    var receiptHeadline: String {
+        let field = intoID.map { "id=\($0)" } ?? intoLabel.map { "label=\($0)" } ?? intoLabelContains.map { "label-contains=\($0)" }
+            ?? requireFocusID.map { "id=\($0)" }
+        guard replace else { return field.map { "Typed into \($0)" } ?? "Typed into the focused field" }
+        if text?.isEmpty == true { return "Cleared " + (field ?? "the focused field") }
+        return "Replaced the text in " + (field ?? "the focused field")
     }
 
     /// Text typed as an argument stays in shell history and process lists, so it never goes into a password field.
@@ -297,7 +309,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 backend: backend,
                 device: device,
                 options: verification,
-                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
+                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries)),
+                personSubject: Self.personSubject
             )
             try await VerifyOutput.perform(request, progress: progress) { _, session in
                 try await session.perform(.composite(hidEvents))
@@ -345,12 +358,16 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             backend: backend,
             device: device,
             options: verification,
-            styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries))
+            styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries)),
+            personSubject: Self.personSubject
         )
         try await VerifyOutput.perform(request, progress: progress) { _, session in
             try await typeText(session)
         }
     }
+
+    /// A person's verify lines name the input, never how long the text was.
+    static let personSubject = "Typed text"
 
     /// The simulator's key events, checked before any focus tap so text the HID keyboard cannot type sends nothing.
     static func checkedIOSEvents(for text: String, replacing: Bool, logger: OffsiderLogger) throws -> [InputEvent] {
@@ -402,10 +419,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return input
     }
     
-    /// Through `TextFileInput`, which names the file it read on stderr.
+    /// Through `TextFileInput`, which names the file it read on stderr; a person's note leaves out its size.
     func readFromFile(_ filePath: String) throws -> String {
         let read = try TextFileInput.read(filePath, allowing: allowPath ? AllowPathConsent.confirmed : nil)
-        FileHandle.standardError.write(Data((read.announcement + "\n").utf8))
+        let shown = TerminalText.homePath(read.resolvedPath, home: FileManager.default.homeDirectoryForCurrentUser.path)
+        Console.current.line(read.announcement, person: .note("Reading text from \(TerminalText.field(shown, profile: .person))", mark: .type))
         return read.text
     }
 }

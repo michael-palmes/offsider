@@ -192,6 +192,16 @@ struct RNDevMenu: AsyncParsableCommand {
             case .chose(_, _, let label): return "✓ Chose \(label) and the dev menu closed"
             }
         }
+
+        /// The items for a person, or a receipt for the one chosen; an agent's line as it was.
+        var page: Page {
+            switch self {
+            case .listed(let state):
+                return InputPersonView.devMenu(state.menu, labels: state.items.map(\.label), agent: textLine())
+            case .chose(_, _, let label):
+                return InputPersonView.receipt("Chose \(TerminalText.field(label, profile: .person))", details: ["The dev menu closed"], agent: textLine() + "\n")
+            }
+        }
     }
 
     func validate() throws {
@@ -207,10 +217,12 @@ struct RNDevMenu: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
-        let outcome = try await perform(on: route, clock: .live)
-        guard json else { return print(outcome.textLine()) }
-        print(outcome.jsonLine())
-        if case .chose = outcome { print(outcome.textLine(), to: &standardError) }
+        let console = Console.current
+        let choosing = item != nil || label != nil
+        let outcome = try await console.progress(choosing ? "Choosing from the dev menu" : "Opening the dev menu") { try await perform(on: route, clock: .live) }
+        guard json else { return console.show(outcome.page) }
+        console.data(outcome.jsonLine() + "\n")
+        if case .chose = outcome { console.data(outcome.textLine() + "\n", to: .err) }
     }
 
     @MainActor
@@ -256,8 +268,17 @@ struct RNToolsOff: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
-        let (inspector, perf) = try await turnOff(on: route, clock: .live)
-        print(json ? DevMenu.toolsJSONLine(inspector: inspector, perfMonitor: perf) : "Element inspector: \(inspector); performance monitor: \(perf)")
+        let console = Console.current
+        let (inspector, perf) = try await console.progress("Checking the dev tools") { try await turnOff(on: route, clock: .live) }
+        guard !json else { return console.data(DevMenu.toolsJSONLine(inspector: inspector, perfMonitor: perf) + "\n") }
+        console.show(Self.page(inspector: inspector, perfMonitor: perf))
+    }
+
+    /// `Dev tools off` for a person, naming what was turned off; an agent's `Element inspector: off; …` line as it was.
+    static func page(inspector: String, perfMonitor: String) -> Page {
+        let turned = [("element inspector", inspector), ("performance monitor", perfMonitor)].filter { $0.1 == "turned-off" }.map(\.0)
+        let details = turned.isEmpty ? ["Neither the inspector nor the performance monitor was showing"] : ["Turned off the " + turned.joined(separator: " and the ")]
+        return InputPersonView.receipt("Dev tools off", details: details, agent: "Element inspector: \(inspector); performance monitor: \(perfMonitor)\n")
     }
 
     @MainActor

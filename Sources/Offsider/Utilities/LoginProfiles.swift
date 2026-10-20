@@ -4,7 +4,7 @@ import OffsiderCore
 /// Finds `offsider.login.json` the same way as `OFFSIDER.md`. A missing file on the implicit walk means no profile.
 enum LoginProfiles {
     /// `warn` gets one line when the file still has the removed `turnstile` key.
-    static func load(project: String?, warn: (String) -> Void = { print($0, to: &standardError) }) throws -> LoginProfile? {
+    static func load(project: String?, warn: (String) -> Void = removedKeyWarning) throws -> LoginProfile? {
         let found: ProjectGuide.Found
         do {
             if let project {
@@ -23,6 +23,11 @@ enum LoginProfiles {
         } catch let error as LoginProfileError {
             throw CLIError(errorDescription: "\(error.message) Nothing was typed.", reason: .usage)
         }
+    }
+
+    /// An agent reads the line as it always has; a person a warning naming the key to remove.
+    private static func removedKeyWarning(_ line: String) {
+        Console.current.line(line, person: .warning("offsider.login.json has a `turnstile` key, which login ignores: remove it"))
     }
 
     private static func message(_ failure: ProjectGuide.Failure) -> String {

@@ -157,7 +157,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     private func execute(progress: VerifyProgress?) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        try await execute(on: route, progress: progress, logger: logger)
+        try await Console.current.progress("Tapping \(verifyTarget)") {
+            try await execute(on: route, progress: progress, logger: logger)
+        }
     }
 
     /// Resolves and sends the tap on `route`; tests pass a fake backend here.
@@ -253,18 +255,32 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         await session.close()
 
         logger.info().log("Tap completed successfully")
-        print(Self.completionLine(selector: pointX == nil ? verifyTarget : nil, at: resolution.point))
+        let selector = pointX == nil ? verifyTarget : nil
+        Console.current.show(InputPersonView.receipt(
+            Self.receiptHeadline(selector: selector, at: resolution.point),
+            details: selector == nil ? [] : [VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y)],
+            agent: Self.completionLine(selector: selector, at: resolution.point) + "\n"
+        ))
+    }
+
+    /// `Tapped id=save` for a selector, `Tapped (120, 640)` for a point; never more than the command line gave.
+    static func receiptHeadline(selector: String?, at point: (x: Double, y: Double)) -> String {
+        "Tapped " + (selector ?? VerifyOutput.pointDescription(x: point.x, y: point.y))
     }
 
     /// Warns rather than refuses, since an iPad app in a window can be smaller than the screen.
     @MainActor
     static func warnIfOffScreen(x: Double, y: Double, backend: any DeviceBackend, device: DeviceID) async {
-        if let warning = offScreenWarning(x: x, y: y, screen: try? await backend.screenSize(for: device)) {
-            print(warning, to: &standardError)
+        if let warning = offScreenText(x: x, y: y, screen: try? await backend.screenSize(for: device)) {
+            Console.current.notice(.warning(String(warning.dropLast()), agent: warning))
         }
     }
 
     static func offScreenWarning(x: Double, y: Double, screen: UISize?) -> String? {
+        offScreenText(x: x, y: y, screen: screen).map { "Warning: \($0)" }
+    }
+
+    private static func offScreenText(x: Double, y: Double, screen: UISize?) -> String? {
         guard let screen, screen.width > 0, screen.height > 0 else {
             return nil
         }
@@ -272,7 +288,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         guard !bounds.contains(UIPoint(x: x, y: y)) else {
             return nil
         }
-        return "Warning: \(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing."
+        return "\(VerifyOutput.pointDescription(x: x, y: y)) is outside the \(bounds.sizeSummary) screen; the tap may do nothing."
     }
 
     /// Only the change check reads the tree again before the input; `--verify-id` acts on the tree the selector resolved on.
@@ -344,7 +360,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             return
         }
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
-        print("Warning: \(subject) at \(pointText) is outside the \(viewport.sizeSummary) screen; the tap may do nothing.", to: &standardError)
+        let warning = "\(subject) at \(pointText) is outside the \(viewport.sizeSummary) screen; the tap may do nothing"
+        Console.current.notice(.warning(warning, agent: warning + "."))
     }
 
     /// The keyboard and confident covers refuse unless `--allow-covered`; a tree-order guess warns, or with `--fail-if-covered` refuses.

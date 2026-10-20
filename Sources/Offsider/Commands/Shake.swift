@@ -35,6 +35,6 @@ struct Shake: AsyncParsableCommand {
         try await shaker.prepare()
         let device = try await shaker.requireBootedDevice(route.device).id
         try await shaker.shake(device)
-        print("Shake sent")
+        Console.current.show(InputPersonView.receipt("Shake sent", agent: "Shake sent\n"))
     }
 }

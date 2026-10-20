@@ -44,6 +44,22 @@ enum ButtonType: String, CaseIterable, ExpressibleByArgument {
         }
     }
 
+    /// What a person's receipt calls it: `Pressed Home`.
+    var personName: String {
+        switch self {
+        case .applePay: return "Apple Pay"
+        case .home: return "Home"
+        case .lock: return "Lock"
+        case .sideButton: return "the side button"
+        case .siri: return "Siri"
+        case .back: return "Back"
+        case .appSwitch: return "App switch"
+        case .volumeUp: return "Volume up"
+        case .volumeDown: return "Volume down"
+        case .menu: return "Menu"
+        }
+    }
+
     /// Where the button can be pressed; an iOS simulator has no app switcher button, so app-switch presses Home twice there.
     var platforms: Set<DevicePlatform> {
         self == .appSwitch ? [.ios, .android] : hardwareButton.platforms
@@ -191,6 +207,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         }
         guard verification.verify else {
             try await execute(progress: nil)
+            Console.current.show(InputPersonView.receipt("Pressed \(buttonType.personName)", details: duration.map { [InputPersonView.held($0)] } ?? []))
             return
         }
         try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in
@@ -205,10 +222,11 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         try await route.backend.prepare()
         guard let backend = route.backend as? any ForegroundReading else {
             try await route.backend.performTracked(.shortButtonPress(.home), on: route.device)
+            Console.current.show(InputPersonView.receipt("Pressed Home"))
             return
         }
         let device = route.device
-        let run = { try await Self.pressHome(on: backend, device: device, verification: verification) }
+        let run = { try await Console.current.progress("Pressing Home") { try await Self.pressHome(on: backend, device: device, verification: verification) } }
         guard verification.verify else {
             try await run()
             return
@@ -220,14 +238,15 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// Without --verify a launcher that never came up is a warning; with it, exit 5 (`not_verified`) and a report with `change: activity`.
+    /// Lines go to `writeOutput` and `writeError` as an agent reads them; without them, through `Console`, which shows a person their own view.
     @MainActor
     static func pressHome(
         on backend: any ForegroundReading,
         device: DeviceID,
         verification: VerificationOptions,
         sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        writeOutput: (String) -> Void = { print($0) },
-        writeError: (String) -> Void = { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+        writeOutput: ((String) -> Void)? = nil,
+        writeError: ((String) -> Void)? = nil
     ) async throws {
         let outcome = try await HomePress.run(
             read: { try await backend.foreground(on: device) },
@@ -236,16 +255,40 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
             sleep: sleep,
             window: verification.verifyTimeout.map { .milliseconds(Int(($0 * 1000).rounded())) } ?? HomePress.window
         )
+        let console = Console.current
+        // Each line goes to its seam when a test gives one; otherwise a person reads the second argument in its place.
+        func out(_ line: String, person: Outcome) {
+            if let writeOutput { return writeOutput(line) }
+            console.show(Page([.person([.outcome(person)]), .agent(line + "\n")]))
+        }
+        func err(_ line: String, person: Notice?) {
+            if let writeError { return writeError(line) }
+            if let person { return console.line(line, person: person) }
+            if console.err.profile == .agent { console.data(line + "\n", to: .err) }
+        }
+        func failed(_ line: String, person: Outcome) {
+            if let writeError { return writeError(line) }
+            InputPersonView.failed(line, person: person, try: ["offsider describe-ui --summary --device \(device.rawValue)"], console: console)
+        }
+        func receipt(_ details: [String] = []) {
+            if writeOutput == nil { console.show(InputPersonView.receipt("Pressed Home", details: details)) }
+        }
         let launcher = outcome.after?.home ?? "the launcher"
+        let top = outcome.after?.top ?? "the app"
+        let stillInFront = "\(outcome.after?.top.map { TerminalText.field($0, profile: .person) } ?? "The app") is still in front after the home key and the HOME intent"
+        let reached = ["The launcher came to the front"] + (outcome.via == .intent ? ["The home key was ignored, so Offsider sent the HOME intent"] : [])
         let viaIntent = outcome.via == .intent ? " (the home key was ignored, so Offsider sent the HOME intent)" : ""
         let unchecked = outcome.unreadable.map { "the home key was sent, but Offsider could not check that the launcher came to the front (\($0))." }
+        let uncheckedShort = outcome.unreadable.map { "Could not check the launcher came to the front (\(TerminalText.field($0, profile: .person)))" }
         guard verification.verify else {
             if let unchecked {
-                writeError("Warning: \(unchecked)")
+                receipt()
+                err("Warning: \(unchecked)", person: .warning(uncheckedShort ?? unchecked))
             } else if outcome.reached {
-                if !viaIntent.isEmpty { writeError("Note: Home button reached \(launcher)\(viaIntent).") }
+                receipt(reached)
+                if !viaIntent.isEmpty { err("Note: Home button reached \(launcher)\(viaIntent).", person: nil) }
             } else {
-                writeError("Warning: the home key and the HOME intent were sent, but \(outcome.after?.top ?? "the app") is still in front.")
+                err("Warning: the home key and the HOME intent were sent, but \(top) is still in front.", person: .warning(stillInFront))
             }
             return
         }
@@ -261,14 +304,15 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         let line = outcome.reached
             ? "✓ Home button verified: \(launcher) came to the front\(viaIntent), attempt 1 of 1"
             : unchecked.map { "✗ Home button not verified: \($0)" }
-                ?? "✗ Home button not verified: \(outcome.after?.top ?? "the app") is still in front after the home key and the HOME intent."
+                ?? "✗ Home button not verified: \(top) is still in front after the home key and the HOME intent."
         if verification.json {
-            writeError(line)
-            writeOutput(String(decoding: try report.jsonData(), as: UTF8.self))
+            if let writeError { writeError(line) } else { console.data(line + "\n", to: .err) }
+            let json = String(decoding: try report.jsonData(), as: UTF8.self)
+            if let writeOutput { writeOutput(json) } else { console.data(json + "\n") }
         } else if outcome.reached {
-            writeOutput(line)
+            out(line, person: .done("Home button verified", details: reached))
         } else {
-            writeError(line)
+            failed(line, person: .failed("Home button not verified", details: [uncheckedShort ?? stillInFront]))
         }
         if report.exitCode != .success {
             throw ExitCode(report.exitCode.rawValue)
@@ -279,7 +323,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
-        try await execute(on: route, progress: progress, logger: logger)
+        try await Console.current.progress("Pressing \(buttonType.personName)") { try await execute(on: route, progress: progress, logger: logger) }
     }
 
     /// Presses the button on `route`; tests pass a fake backend here.

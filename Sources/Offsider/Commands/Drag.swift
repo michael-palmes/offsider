@@ -122,7 +122,7 @@ struct Drag: AsyncParsableCommand {
         )
 
         let dragEvent = try dragEvent(from: physicalPoints[0], to: physicalPoints[1])
-        try await backend.performTracked(dragEvent, on: device)
+        try await Console.current.progress("Dragging") { try await backend.performTracked(dragEvent, on: device) }
 
         if let postDelay, postDelay > 0 {
             logger.info().log("Post-delay: \(postDelay)s")
@@ -130,6 +130,12 @@ struct Drag: AsyncParsableCommand {
         }
 
         logger.info().log("Low-level drag completed successfully")
+        Console.current.show(InputPersonView.receipt(receiptHeadline))
+    }
+
+    /// `Dragged (100, 300) to (100, 600)`.
+    var receiptHeadline: String {
+        "Dragged \(VerifyOutput.pointDescription(x: startX, y: startY)) to \(VerifyOutput.pointDescription(x: endX, y: endY))"
     }
 
     /// Down, the --hold-ms hold, the moves, the --hold-end hold, up.

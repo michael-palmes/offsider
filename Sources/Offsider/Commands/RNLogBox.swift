@@ -49,9 +49,13 @@ struct RNLogBoxStatus: AsyncParsableCommand {
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: locking)
         await appOption.apply(to: route)
-        try await route.backend.prepare()
-        let state = LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
-        print(json ? state.jsonLine(redacts: !noRedact) : state.text(redacts: !noRedact))
+        let console = Console.current
+        let state: LogBoxState = try await console.progress("Reading LogBox") {
+            try await route.backend.prepare()
+            return LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
+        }
+        guard !json else { return console.data(state.jsonLine(redacts: !noRedact) + "\n") }
+        console.show(InputPersonView.logBox(state, redacts: !noRedact, device: route.device.rawValue))
     }
 }
 
@@ -97,8 +101,19 @@ struct RNLogBoxOpen: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
-        let opened = try await open(on: route)
-        print(json ? opened.jsonLine(redacts: !noRedact) : opened.textLine(redacts: !noRedact))
+        let console = Console.current
+        let opened = try await console.progress("Opening the LogBox inspector") { try await open(on: route) }
+        guard !json else { return console.data(opened.jsonLine(redacts: !noRedact) + "\n") }
+        console.show(Self.page(opened, redacts: !noRedact))
+    }
+
+    /// `Opened LogBox toast 2` with its message and place for a person; an agent's line as it was.
+    static func page(_ opened: Opened, redacts: Bool) -> Page {
+        let position = opened.inspector.of.map { ["Log \(opened.inspector.log ?? 1) of \($0)"] } ?? []
+        let agent = opened.textLine(redacts: redacts) + "\n"
+        guard let toast = opened.toast else { return InputPersonView.receipt("LogBox inspector already open", details: position, agent: agent) }
+        let message = TerminalText.field(LogBoxState.shown(toast.message, redacts: redacts), profile: .person)
+        return InputPersonView.receipt("Opened LogBox toast \(toast.index)", details: [message].filter { !$0.isEmpty } + position, agent: agent)
     }
 
     @MainActor
@@ -187,19 +202,43 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
-        let outcome = try await dismiss(on: route)
-        let line = Self.line(outcome, index: index, device: route.device.rawValue)
+        let console = Console.current
+        let outcome = try await console.progress("Clearing LogBox logs") { try await dismiss(on: route) }
+        let device = route.device.rawValue
+        let line = Self.line(outcome, index: index, device: device)
         if json {
-            print(outcome.jsonLine())
-            print(line, to: &standardError)
+            console.data(outcome.jsonLine() + "\n")
+            console.data(line + "\n", to: .err)
         } else if outcome.isClear {
-            print(line)
+            console.show(InputPersonView.receipt(Self.personLine(outcome, index: index), details: Self.personMethod(outcome), agent: line + "\n"))
         } else {
-            print(line, to: &standardError)
+            InputPersonView.failed(line, person: Self.personFailure(outcome), try: outcome.emptyDialog ? [] : ["offsider rn logbox status --device \(device)"], console: console)
         }
         if !outcome.isClear {
             throw ExitCode(OffsiderExitCode.unverified.rawValue)
         }
+    }
+
+    /// `Cleared 2 LogBox logs`, or that there were none.
+    static func personLine(_ outcome: Outcome, index: Int?) -> String {
+        if outcome.cleared == 0 && outcome.remaining == 0 && index == nil { return "No LogBox logs to clear" }
+        return "Cleared \(outcome.cleared) LogBox log\(outcome.cleared == 1 ? "" : "s")"
+    }
+
+    static func personMethod(_ outcome: Outcome) -> [String] {
+        switch outcome.method {
+        case .none: return []
+        case .dismissButton: return ["With each toast's clear button"]
+        case .inspector: return ["Through the inspector's Dismiss"]
+        }
+    }
+
+    /// What a person reads when logs stay on screen or React Native's empty dialog covers the app.
+    static func personFailure(_ outcome: Outcome) -> OffsiderCore.Outcome {
+        let left = "\(outcome.remaining) LogBox log\(outcome.remaining == 1 ? " is" : "s are") still on screen"
+        guard outcome.emptyDialog else { return .failed(left, details: outcome.cleared > 0 ? ["Cleared \(outcome.cleared) first"] : []) }
+        let cleared = outcome.cleared == 0 ? "Nothing was sent." : "Cleared \(outcome.cleared) first; nothing more was sent."
+        return .failed("An empty LogBox dialog covers the app", details: [cleared, "Reload the app to close it."])
     }
 
     /// What `dismiss` prints: `✓ Cleared 2 LogBox logs (inspector)`, or why it exits 5.

@@ -17,6 +17,8 @@ struct VerifyRequest {
     var targetNode: UINode? = nil
     /// Sees the verifier's last read before the action, so a target that moved since it was resolved is acted on where it is now.
     var beforeAction: (UITree) async throws -> Void = { _ in }
+    /// What a person reads in place of `subject`, which for `type` counts the characters.
+    var personSubject: String? = nil
 }
 
 /// Tracks how far a verified command got, so a failure under --json reports it.
@@ -84,23 +86,25 @@ enum VerifyOutput {
         let session = try await request.backend.openTrackedSession(for: request.device)
         var outcome: Verifier.Outcome
         do {
-            outcome = try await Verifier.run(
-                styles: request.styles,
-                timeout: .milliseconds(Int((request.options.resolvedTimeout * 1000).rounded())),
-                dependencies: .live(backend: request.backend, device: request.device),
-                mode: request.options.mode,
-                initialTree: request.initialTree,
-                target: request.targetNode,
-                beforeAction: request.beforeAction,
-                onRetry: { failed, next in
-                    writeError(retryLine(failed: failed, next: next))
-                },
-                action: { attempt in
-                    progress.attempts = attempt.number
-                    progress.style = attempt.style
-                    try await action(attempt, session)
-                }
-            )
+            outcome = try await Console.current.progress(checkingLabel(request.options)) {
+                try await Verifier.run(
+                    styles: request.styles,
+                    timeout: .milliseconds(Int((request.options.resolvedTimeout * 1000).rounded())),
+                    dependencies: .live(backend: request.backend, device: request.device),
+                    mode: request.options.mode,
+                    initialTree: request.initialTree,
+                    target: request.targetNode,
+                    beforeAction: request.beforeAction,
+                    onRetry: { failed, next in
+                        Console.current.line(retryLine(failed: failed, next: next), person: .warning(personRetry(failed: failed, next: next)))
+                    },
+                    action: { attempt in
+                        progress.attempts = attempt.number
+                        progress.style = attempt.style
+                        try await action(attempt, session)
+                    }
+                )
+            }
         } catch {
             await session.close()
             throw error
@@ -113,11 +117,17 @@ enum VerifyOutput {
 
     static func report(_ outcome: Verifier.Outcome, for request: VerifyRequest, elapsed: TimeInterval = 0) throws {
         let json = request.options.json
+        let console = Console.current
         if outcome.verified {
             let line = verifiedLine(outcome, for: request)
-            if json { writeError(line) } else { writeOutput(Data((line + "\n").utf8)) }
+            if json {
+                console.data(line + "\n", to: .err)
+            } else {
+                console.show(Page([.person([.outcome(personVerified(outcome, for: request))]), .agent(line + "\n")]))
+            }
         } else {
-            writeError(unverifiedLine(outcome, for: request))
+            let failure = personUnverified(outcome, for: request)
+            InputPersonView.failed(unverifiedLine(outcome, for: request), person: failure.outcome, try: failure.commands, console: console)
         }
         let result = VerifyReport(
             command: request.command,
@@ -226,13 +236,21 @@ enum VerifyOutput {
     }
 
     /// A switch, checkbox or radio button may change late, after the app hears back, and another tap would undo the first.
-    static func lateStateHint(_ node: UINode, selector: String, device: DeviceID, retried: Bool) -> String {
+    static func lateStateHint(_ node: UINode, selector: String, device: DeviceID, retried: Bool, includingWait: Bool = true) -> String {
         let kind = node.role == .switch ? "switch" : node.role == .checkbox ? "checkbox" : "radio button"
-        let flipped = ["0": "1", "1": "0"][node.value ?? ""] ?? "<new value>"
-        let wait = waitSelector(selector, node: node).map { "offsider wait \($0) --has-value \(flipped) --timeout 10 --device \(device.rawValue)" }
-            ?? "offsider wait with its selector and --has-value \(flipped)"
         let retry = retried ? "Later taps may have undone the first." : "Offsider did not tap again: a second tap would undo the first."
+        guard includingWait else { return "A \(kind) may change late, after the app hears back. \(retry) Wait for its new state before tapping again." }
+        let wait = waitCommand(node, selector: selector, device: device) ?? "offsider wait with its selector and --has-value \(flippedValue(node))"
         return "A \(kind) may change late, after the app hears back. \(retry) Wait for its new state with \(wait) before tapping again."
+    }
+
+    /// The `wait` that sees a switch, checkbox or radio button reach its other value; nil when its selector cannot be pasted back.
+    static func waitCommand(_ node: UINode, selector: String, device: DeviceID) -> String? {
+        waitSelector(selector, node: node).map { "offsider wait \($0) --has-value \(flippedValue(node)) --timeout 10 --device \(device.rawValue)" }
+    }
+
+    private static func flippedValue(_ node: UINode) -> String {
+        ["0": "1", "1": "0"][node.value ?? ""] ?? "<new value>"
     }
 
     /// The tap's own selector as `wait` flags; a value selector stops matching once the value changes, so the element's label stands in.
@@ -255,6 +273,73 @@ enum VerifyOutput {
         return "! No observable change after attempt \(failed.number); retrying"
     }
 
+    // MARK: A person's view
+
+    /// What the spinner says while the input is sent and checked.
+    static func checkingLabel(_ options: VerificationOptions) -> String {
+        options.verifyID.map { "Waiting for --verify-id '\($0)'" } ?? "Checking for a change"
+    }
+
+    static func personRetry(failed: Verifier.Attempt, next: Verifier.Attempt) -> String {
+        guard let nextStyle = next.style else { return "Nothing changed after attempt \(failed.number); trying again" }
+        return "Nothing changed after attempt \(failed.number); trying \(nextStyle.rawValue) style"
+    }
+
+    /// `✅ Tap on id=save verified`, what changed, then the attempt and the timings, dim.
+    static func personVerified(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> Outcome {
+        let change: String
+        switch outcome.change {
+        case .accessibilityTree:
+            change = (changeList(outcome) ?? outcome.summary).map { "Changed: \($0)" } ?? "The screen's elements changed"
+        case .screenshot:
+            change = "The screen changed"
+        case .activity:
+            change = "The launcher came to the front"
+        case .element:
+            change = outcome.summary.map(InputPersonView.sentence) ?? "The element is on screen"
+        case .none:
+            change = "No change"
+        }
+        var details = [change]
+        if outcome.note == .keyboardClosed {
+            details.append("Only the keyboard closed; repeat the input if the control shows no effect")
+        }
+        let attempts = max(request.styles.count, 1)
+        let tries = (attempts > 1 ? ["attempt \(outcome.attempts) of \(attempts)"] : []) + (outcome.style.map { ["\($0.rawValue) style"] } ?? [])
+        if !tries.isEmpty { details.append(InputPersonView.sentence(tries.joined(separator: ", "))) }
+        details.append(InputPersonView.sentence(timing(outcome.phases, input: request.command)))
+        return .done("\(request.personSubject ?? request.subject) verified", details: details)
+    }
+
+    /// The ❌ a person reads when nothing changed, and the commands worth trying next.
+    static func personUnverified(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> (outcome: Outcome, commands: [String]) {
+        let subject = request.personSubject ?? request.subject
+        let device = request.device.rawValue
+        let look = "offsider describe-ui --summary --device \(device)"
+        let plural = outcome.attempts == 1 ? "attempt" : "attempts"
+        if outcome.note == .logBoxOpened {
+            return (.failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."]), ["offsider rn logbox dismiss --device \(device)"])
+        }
+        if let id = request.options.verifyID {
+            let waited = "\(subject) was sent; waited \(WaitLoop.seconds(request.options.resolvedTimeout)) after \(outcome.attempts) \(plural)"
+            return (.failed("--verify-id '\(id)' did not come on screen", details: [waited]), [look])
+        }
+        let ignored = ignoredText(outcome.ignored).trimmingCharacters(in: .whitespaces)
+        if request.command == "tap", VerificationOptions.retriesUndo(request.targetNode), let node = request.targetNode {
+            let details = [lateStateHint(node, selector: request.target, device: request.device, retried: outcome.attempts > 1, includingWait: false)] + (ignored.isEmpty ? [] : [ignored])
+            return (.failed("\(subject) changed nothing yet", details: details), [waitCommand(node, selector: request.target, device: request.device) ?? look])
+        }
+        let styles = request.styles.prefix(outcome.attempts).compactMap { $0?.rawValue }
+        let sent = "Sent \(outcome.attempts == 1 ? "once" : "\(outcome.attempts) times")" + (styles.isEmpty ? "" : " (\(styles.joined(separator: ", then ")) style)")
+        let doctor = request.device.platform == .ios ? ["offsider doctor --device \(device)"] : []
+        return (.failed("\(subject) changed nothing", details: [sent] + (ignored.isEmpty ? [] : [ignored])), [look] + doctor)
+    }
+
+    /// `settle 0.4 s, tap 0.1 s, verify 1.2 s`: the agent's timing suffix without its brackets.
+    static func timing(_ phases: VerifyPhases, input: String) -> String {
+        String(phases.suffix(input: input).dropFirst().dropLast())
+    }
+
     nonisolated static func pointDescription(x: Double, y: Double) -> String {
         "(\(number(x)), \(number(y)))"
     }
@@ -265,11 +350,7 @@ enum VerifyOutput {
         return rounded.rounded() == rounded && abs(rounded) < 1e15 ? String(Int(rounded)) : String(rounded)
     }
 
-    private static func writeOutput(_ data: Data) {
-        FileHandle.standardOutput.write(data)
-    }
-
-    private static func writeError(_ line: String) {
-        FileHandle.standardError.write(Data((line + "\n").utf8))
+    private nonisolated static func writeOutput(_ data: Data) {
+        Console.current.data(String(decoding: data, as: UTF8.self))
     }
 }
