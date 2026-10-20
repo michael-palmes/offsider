@@ -79,7 +79,7 @@ struct IOSDevicePinningTests {
     static let noScreenOnPhone: Set<String> = [
         "device-session serve", "android-session serve", "doctor", "logs", "displays", "shake", "login", "credential", "rn prepare", "rn open",
         "orientation", "posture", "appearance", "content-size", "permission", "status-bar", "biometric", "stay-awake", "wake", "unlock-code",
-        "device-access allow", "device-access status", "device-access remove", "runner status", "runner build", "runner stop",
+        "devices add", "devices status", "devices remove", "runner status", "runner build", "runner stop",
         "session status", "session stop", "lease",
     ]
 
@@ -107,7 +107,7 @@ struct IOSDevicePinningTests {
         backend.targetApp = "com.example.other"
         let other = await #expect(throws: IOSDeviceError.self) { _ = try await backend.rawAccessibilitySource(for: Self.phone) }
         #expect(other?.reason == .appNotAllowed)
-        #expect(other?.message.contains("`offsider device-access allow` in their own terminal, choose") == true)
+        #expect(other?.message.contains("`offsider devices add` in their own terminal, choose") == true)
         #expect(other?.message.contains("(\(IOSDeviceFixtures.phone)) and pin com.example.other") == true)
         #expect(transport.calls.isEmpty)
     }

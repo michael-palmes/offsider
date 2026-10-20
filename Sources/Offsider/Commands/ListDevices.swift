@@ -4,33 +4,42 @@ import OffsiderCore
 
 extension DevicePlatform: ExpressibleByArgument {}
 
-struct ListDevices: AsyncParsableCommand {
+/// `devices`: the device list, and the phones and tablets a person lets agents drive. It runs itself without a subcommand.
+struct ListDevices: AsyncParsableCommand, RunsWithoutSubcommand {
     static let configuration = CommandConfiguration(
         commandName: "devices",
-        abstract: "Lists available devices and the IDs other commands take.",
-        aliases: ["list-devices"]
+        abstract: "List devices and their IDs, and add or remove the phones and tablets agents may drive.",
+        discussion: """
+        Simulators and emulators need nothing added. A physical iPhone, iPad or Android phone is refused until a person adds it \
+        from their own terminal: `add` lets you pick the device, the signing team (iPhone or iPad), the app and how long from menus, \
+        then asks for Touch ID or your password. Each one lapses (12 hours by default, at most 30 days unless `never`) and can pin the \
+        app Offsider may drive on it. The list lives in ~/.config/offsider/allowed-devices.json, sealed in the login Keychain; an edit \
+        made outside Offsider refuses every device until `add` runs again. A managed preference (domain com.mpalmes.offsider) can \
+        forbid devices the list allows, never the reverse.
+
+        Examples:
+          offsider devices
+          offsider devices add
+          offsider devices remove
+          offsider devices status --json
+        """,
+        subcommands: [DeviceAccessAllow.self, DeviceAccessRemove.self, DeviceAccessStatus.self]
     )
 
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of a table.")
-    var json = false
-
-    @Option(name: .customLong("platform"), help: "Only list devices on this platform.")
-    var platform: DevicePlatform?
-
-    @Flag(name: .customLong("physical"), help: "List only physical devices, including the ones no one has allowed with `offsider device-access allow`.")
-    var physical = false
-
-    @Flag(name: .customLong("booted"), help: "List only booted or booting devices.")
-    var booted = false
+    @OptionGroup var options: DeviceListOptions
 
     func run() async throws {
+        try await Self.list(options)
+    }
+
+    static func list(_ options: DeviceListOptions) async throws {
         let console = Console.current
-        let (listed, skipped) = try await console.progress("Looking for devices") { try await Self.listDevices(platform: platform, logger: OffsiderLogger()) }
-        let (shown, hidden) = Self.applyPolicy(listed, physicalOnly: physical, gate: DevicePolicyGate.current)
+        let (listed, skipped) = try await console.progress("Looking for devices") { try await Self.listDevices(platform: options.platform, logger: OffsiderLogger()) }
+        let (shown, hidden) = Self.applyPolicy(listed, physicalOnly: options.physical, gate: DevicePolicyGate.current)
         let ordered = DeviceListOrder.sorted(shown)
-        let devices = Self.withLeases(Self.withHolders(booted ? DeviceListOrder.running(ordered) : ordered))
+        let devices = Self.withLeases(Self.withHolders(options.booted ? DeviceListOrder.running(ordered) : ordered))
         let listing = DeviceListing(devices: devices, hiddenPhysical: hidden, skipped: skipped, currentDefault: DeviceDefault.environment())
-        if json {
+        if options.json {
             console.data(DeviceListRenderer.json(devices, hiddenPhysical: hidden, compact: console.out.profile == .agent))
             DevicesScreen.notices(listing).forEach(console.notice)
         } else {
@@ -151,4 +160,19 @@ struct ListDevices: AsyncParsableCommand {
     private static func message(for error: Error) -> String {
         (error as? UserFacingError)?.userFacingDescription ?? error.localizedDescription
     }
+}
+
+/// The flags `devices` and `list-devices` share.
+struct DeviceListOptions: ParsableArguments {
+    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of a table.")
+    var json = false
+
+    @Option(name: .customLong("platform"), help: "Only list devices on this platform.")
+    var platform: DevicePlatform?
+
+    @Flag(name: .customLong("physical"), help: "List only physical devices, including the ones no one has added with `offsider devices add`.")
+    var physical = false
+
+    @Flag(name: .customLong("booted"), help: "List only booted or booting devices.")
+    var booted = false
 }

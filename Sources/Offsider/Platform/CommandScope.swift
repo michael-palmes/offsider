@@ -79,7 +79,7 @@ final class CommandScope {
         let named = allowance.apps.map { $0 == DeviceAllowance.wholeDevicePin ? "any app and all logs" : $0 }
         let apps = named.isEmpty ? "" : " for \(named.joined(separator: ", "))"
         return "Offsider: driving physical \(kind) \"\(allowance.name)\" (\(allowance.key)), \(until)\(apps) (managed policy: \(managed ? "applies" : "none")). "
-            + "offsider device-access remove --device \(allowance.key) withdraws it."
+            + "offsider devices remove --device \(allowance.key) withdraws it."
     }
 
     /// The screen check for a failure, once per command; later calls return `error` unchanged.

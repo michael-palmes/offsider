@@ -270,15 +270,15 @@ public enum IOSDeviceDoctorRules {
             }
             return (.pass, "Team \(team) from OFFSIDER_IOS_TEAM_ID", nil)
         case .allowance(let team):
-            return (.pass, "Team \(team) from the device's allowance (device-access allow --team)", nil)
+            return (.pass, "Team \(team) from the device's allowance (devices add --team)", nil)
         case .xcodeTeams(let teams):
             let count = Set(teams).count
             return (
                 .warn,
                 "No team is chosen for the runner app (Xcode is signed in to \(count) \(count == 1 ? "team" : "teams"), and Offsider never picks one)",
                 ErrorAudience.current == .person
-                    ? "Run offsider device-access allow and choose a team."
-                    : "Ask the user to run `offsider device-access allow` in their own terminal and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID to your team's ID."
+                    ? "Run offsider devices add and choose a team."
+                    : "Ask the user to run `offsider devices add` in their own terminal and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID to your team's ID."
             )
         }
     }

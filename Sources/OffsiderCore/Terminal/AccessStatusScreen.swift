@@ -1,6 +1,6 @@
 import Foundation
 
-/// What `device-access status` shows a person: a header that counts the devices agents may control now, a row for each,
+/// What `devices status` shows a person: a header that counts the devices agents may control now, a row for each,
 /// a warning when the managed policy or a broken list refuses devices, and the commands to change it.
 public enum AccessStatusScreen {
     public static let title = "Phones and tablets agents may control"
@@ -9,9 +9,10 @@ public enum AccessStatusScreen {
     public static let managedBlocksSome = "Managed policy blocks some devices."
     public static let listChanged = "List changed outside Offsider. Allow again."
     public static let listUnreadable = "List unreadable. Allow again."
-    public static let allowCommand = "offsider device-access allow"
+    public static let allowCommand = "offsider devices add"
 
-    public static func removeCommand(_ key: String) -> String { "offsider device-access remove --device \(PromptScreen.visible(key))" }
+    /// With one device, the command that withdraws it; with several, the bare command whose menu picks one.
+    public static func removeCommand(_ key: String?) -> String { "offsider devices remove" + (key.map { " --device \(PromptScreen.visible($0))" } ?? "") }
 
     /// `any app · until 22:14`, `com.example.app · until removed`, with `· team ABCDE12345` when `team` is on and the entry has one.
     public static func detail(_ entry: DeviceAllowance, now: Date, timeZone: TimeZone, team: Bool, style: TerminalStyle) -> String {
@@ -74,8 +75,8 @@ public enum AccessStatusScreen {
             Table.Column(agent: "TEAM", person: 3, fit: .optional(priority: 1), tone: .dim),
         ], rows: rows)
         let commands = Block.commands(title: nil, [
-            Shortcut(allowCommand, "allow another"),
-            Shortcut(removeCommand(entries.count == 1 ? entries[0].key : "<id>"), "withdraw \(entries.count == 1 ? "it" : "one")"),
+            Shortcut(allowCommand, "add another"),
+            Shortcut(removeCommand(entries.count == 1 ? entries[0].key : nil), "withdraw \(entries.count == 1 ? "it" : "one")"),
         ])
         let person: [Block] = [.header(Header(.lock, title, ["\(entries.count) allowed"])), .table(table), commands]
         return Page([.person(person), .agent(agent)], notices: notices)

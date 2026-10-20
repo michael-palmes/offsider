@@ -256,12 +256,15 @@ struct DeviceListingTests {
         #expect(notices.first?.text == "iOS devices skipped: This Xcode is not trusted")
     }
 
-    @Test("devices is the command's name, list-devices still runs it, and its JSON errors name devices")
+    @Test("devices is the command's name, list-devices still lists without reaching its subcommands, and JSON errors name devices")
     func renamed() throws {
         #expect(CommandPath.of(ListDevices.self) == "devices")
-        #expect(try OffsiderCommand.parseAsRoot(["list-devices", "--json"]) is ListDevices)
+        #expect(CommandPath.all().contains("devices") && CommandPath.all().contains("list-devices"))
+        let legacy = try #require(try OffsiderCommand.parseAsRoot(["list-devices", "--json"]) as? ListDevicesAlias)
+        #expect(legacy.options.json)
+        #expect(throws: (any Error).self) { _ = try OffsiderCommand.parseAsRoot(["list-devices", "add"]) }
         #expect(try OffsiderCommand.parseAsRoot(["devices"]) is ListDevices)
-        #expect(OffsiderCommand.helpMessage(columns: 200).contains("devices, list-devices"))
+        #expect(!OffsiderCommand.helpMessage(columns: 200).contains("list-devices"))
     }
 
     @Test("the JSON is one line for an agent and indented for a person, and both parse to the same document")

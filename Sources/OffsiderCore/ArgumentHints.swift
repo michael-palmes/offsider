@@ -4,7 +4,7 @@ import Foundation
 public enum ArgumentHints {
     public struct Hint: Equatable, Sendable {
         public let message: String
-        /// A name removed in 0.3.0, reported as `legacy_argument`; otherwise a plain usage error.
+        /// A name removed in 0.3.0 or 0.13.0, reported as `legacy_argument`; otherwise a plain usage error.
         public let isLegacy: Bool
 
         public init(message: String, isLegacy: Bool) {
@@ -15,6 +15,15 @@ public enum ArgumentHints {
 
     public static let udidMessage = "--udid was renamed to --device in 0.3.0. Run offsider devices to find device IDs."
     public static let listSimulatorsMessage = "list-simulators was renamed to list-devices in 0.3.0."
+
+    /// `device-access` became `devices add`, `remove` and `status` in 0.13.0.
+    public static func deviceAccessMessage(_ subcommand: String?) -> String {
+        switch subcommand {
+        case "allow": return "device-access allow was renamed to devices add in 0.13.0: run offsider devices add."
+        case "remove": return "device-access remove was renamed to devices remove in 0.13.0: run offsider devices remove."
+        default: return "device-access was renamed to devices status in 0.13.0: run offsider devices status."
+        }
+    }
 
     private static let internalBrokerCommand = "hid-broker"
 
@@ -53,6 +62,9 @@ public enum ArgumentHints {
         guard let first = arguments.first, first != internalBrokerCommand else { return nil }
         if first == "list-simulators" {
             return Hint(message: listSimulatorsMessage, isLegacy: true)
+        }
+        if first == "device-access" {
+            return Hint(message: deviceAccessMessage(arguments.dropFirst().first), isLegacy: true)
         }
         let options = arguments.prefix { $0 != "--" }
         if options.contains(where: { matches($0, "--udid") }) {

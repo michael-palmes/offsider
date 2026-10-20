@@ -544,7 +544,7 @@ struct DeviceSessionServerTests {
     @Test("a broker whose allowance lapses stops, releasing the device, and answers anything after with that refusal")
     func allowanceLapses() async throws {
         let hardware = FakeSessionHardware()
-        let refusal = IOSDeviceError(.sessionFailed, "U is a physical device and its allowance has expired, so nothing was sent to it.", hint: "offsider device-access allow")
+        let refusal = IOSDeviceError(.sessionFailed, "U is a physical device and its allowance has expired, so nothing was sent to it.", hint: "offsider devices add")
         let checks = SessionCounter()
         let server = DeviceSessionServer(
             udid: "U", socketPath: Self.socket(), hardware: hardware, store: nil, idleTimeout: .seconds(30),
@@ -557,7 +557,7 @@ struct DeviceSessionServerTests {
         #expect(ContinuousClock.now - started < .seconds(10))
         let (reply, _) = await server.handle(id: 3, request: .touch([.touch(.down, x: 1, y: 1), .touch(.up, x: 1, y: 1)]))
         #expect(reply.ok == false)
-        #expect(reply.error?.error.hint == "offsider device-access allow")
+        #expect(reply.error?.error.hint == "offsider devices add")
         #expect(hardware.touches.isEmpty)
     }
 

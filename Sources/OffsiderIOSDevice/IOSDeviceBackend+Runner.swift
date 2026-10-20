@@ -29,7 +29,7 @@ extension IOSDeviceBackend {
         return client
     }
 
-    /// The team `device-access allow --team` recorded for the device; `OFFSIDER_IOS_TEAM_ID` wins over it.
+    /// The team `devices add --team` recorded for the device; `OFFSIDER_IOS_TEAM_ID` wins over it.
     public var runnerTeam: String? {
         get { state.runnerTeam }
         set { state.runnerTeam = newValue }

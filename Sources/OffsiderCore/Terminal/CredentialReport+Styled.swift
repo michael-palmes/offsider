@@ -25,6 +25,9 @@ extension CredentialReport {
                 PromptScreen.nextStep("Next", command: "offsider login\(nameArgument)\(deviceSuffix)", style: style),
             ]).joined(separator: "\n")
         case "remove":
+            if let unlinked {
+                return [style.bold("🔗 Unlinked \(app) from \(unlinked)"), "   " + style.dim("The logins of \(unlinked) stay.")].joined(separator: "\n")
+            }
             if key == LoginCredential.defaultAccountKey, !removed { return style.bold("🤷 No login named default was saved for \(app)") }
             return removed ? style.bold("🧹 Removed the \(named) for \(app)") : style.bold("🤷 No \(named) to remove for \(app)")
         case "signed-out":
@@ -40,7 +43,7 @@ extension CredentialReport {
         default:
             if key == nil {
                 guard !listed.isEmpty else {
-                    return [style.bold("🔐 No logins saved for \(app)"), PromptScreen.nextStep("Add one", command: "offsider credential set --app \(app)", style: style)].joined(separator: "\n")
+                    return [style.bold("🔐 No logins saved for \(app)"), PromptScreen.nextStep("Add one", command: "offsider credential add --app \(app)", style: style)].joined(separator: "\n")
                 }
                 let count = listed.count == 1 ? "1 login" : "\(listed.count) logins"
                 let widest = listed.map(\.name.count).max() ?? 0
@@ -55,7 +58,7 @@ extension CredentialReport {
                 if key == LoginCredential.defaultAccountKey {
                     return [style.bold("🔐 No login named default saved for \(app)"), PromptScreen.nextStep("See the saved logins", command: "offsider credential status --app \(app)", style: style)].joined(separator: "\n")
                 }
-                return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential set \(shown) --app \(app)", style: style)].joined(separator: "\n")
+                return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential add \(shown) --app \(app)", style: style)].joined(separator: "\n")
             }
             let details = (username.map { ["👤 \($0)"] } ?? []) + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
             let rows = Self.styledDetails(context ?? .empty, signIns: key.flatMap { signIns[$0] } ?? [], indent: "   ", style: style)
@@ -65,6 +68,20 @@ extension CredentialReport {
             let detailLine = details.isEmpty ? [] : ["   " + style.dim(details.joined(separator: "  "))]
             return ([head] + detailLine + rows + here.map { "   " + style.dim($0) }).joined(separator: "\n")
         }
+    }
+
+    /// One receipt for a login saved for several apps; a single report draws as `styledText` does.
+    public static func styledSaved(_ reports: [CredentialReport], style: TerminalStyle, device: String) -> String {
+        guard reports.count > 1, let first = reports.first else { return reports.first?.styledText(style: style, device: device) ?? "" }
+        let shown = first.key.map(LoginCredential.displayKey) ?? "default"
+        let named = shown == "default" ? "default login" : "\(shown) login"
+        let nameArgument = shown == "default" ? "" : " \(shown)"
+        return ([
+            style.green(style.bold("✅ Saved the \(named) for \(LoginDirectory.list(reports.map(\.app)))")),
+            "   " + style.dim(["👤 \(first.username ?? "")", "🔑 hidden", "🔒 Keychain"].joined(separator: "  ")),
+        ] + styledDetails(first.context ?? .empty, signIns: [], indent: "   ", style: style) + [
+            PromptScreen.nextStep("Next", command: "offsider login\(nameArgument)" + (device.isEmpty ? "" : " \(device)"), style: style),
+        ]).joined(separator: "\n")
     }
 
     private var here: [String] {

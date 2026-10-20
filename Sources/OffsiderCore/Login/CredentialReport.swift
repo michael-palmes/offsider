@@ -20,6 +20,8 @@ public struct CredentialReport: Equatable, Sendable {
     public var also: [String]
     /// The app a `join` attached this id to.
     public var linked: String?
+    /// The app a `remove` stopped this id sharing logins with; its logins stay.
+    public var unlinked: String?
     /// The notes and tags of the one login saved, described or shown.
     public var context: LoginContext?
     /// Whether `describe` changed the context.
@@ -49,6 +51,7 @@ public struct CredentialReport: Equatable, Sendable {
         isDefault: Bool = false,
         also: [String] = [],
         linked: String? = nil,
+        unlinked: String? = nil,
         context: LoginContext? = nil,
         changed: Bool? = nil,
         signIns: [String: [LoginSignIn]] = [:],
@@ -69,6 +72,7 @@ public struct CredentialReport: Equatable, Sendable {
         self.isDefault = isDefault
         self.also = also
         self.linked = linked
+        self.unlinked = unlinked
         self.context = context
         self.changed = changed
         self.signIns = signIns
@@ -115,6 +119,7 @@ public struct CredentialReport: Equatable, Sendable {
             let role = isDefault ? " It is the default login." : ""
             return "Saved the login named \(shown) for \(app) (\(username ?? "")).\(role) The password is not shown."
         case "remove":
+            if let unlinked { return "Unlinked \(app) from \(unlinked). The saved logins of \(unlinked) stay, and login on \(app) no longer uses them." }
             if key == LoginCredential.defaultAccountKey, !removed { return "No login named default was saved for \(app)" }
             let name = key == LoginCredential.defaultAccountKey ? "default login" : "login credential \(shown)"
             return removed ? "Removed the \(name) for \(app)" : "No \(name) was saved for \(app)"
@@ -184,6 +189,7 @@ public struct CredentialReport: Equatable, Sendable {
         fields.append(("saved", .bool(saved)))
         if action == "remove" {
             fields.append(("removed", .bool(removed)))
+            if let unlinked { fields.append(("unlinked", .string(unlinked))) }
             return OrderedJSON.object(fields).rendered(compact: true)
         }
         if let changed { fields.append(("changed", .bool(changed))) }

@@ -37,7 +37,7 @@ public enum AgentPermissionRules {
              reason: "Links saved test passwords between apps; a person runs it."),
         Rule(claude: "offsider describe-ui --raw-source*", codex: ["offsider", "describe-ui", "--raw-source"], decision: .deny,
              reason: "Dumps the unfiltered tree, secure fields included."),
-        Rule(claude: "offsider device-access*", codex: ["offsider", "device-access"], decision: .deny,
+        Rule(claude: "offsider devices add*", codex: ["offsider", "devices", "add"], decision: .deny,
              reason: "Allows physical devices; a person runs it."),
         Rule(claude: "offsider runner build --register-device*", codex: ["offsider", "runner", "build", "--register-device"], decision: .deny,
              reason: "Registers a device with a signing team; a person runs it."),

@@ -1,5 +1,8 @@
 import ArgumentParser
 
+/// A command with subcommands that also runs on its own, as `devices` lists devices.
+protocol RunsWithoutSubcommand {}
+
 /// A command's space-joined path from the root (`rn prepare`, `tap`), as `CommandEffect.table` and error envelopes name it.
 enum CommandPath {
     static func of(_ command: any ParsableCommand) -> String {
@@ -11,11 +14,12 @@ enum CommandPath {
             ?? command._commandName
     }
 
-    /// Every leaf command's path, in registration order.
+    /// Every runnable command's path, in registration order: each leaf, and each parent that runs on its own.
     static func all(in commands: [any ParsableCommand.Type] = OffsiderCommand.configuration.subcommands) -> [String] {
         commands.flatMap { command -> [String] in
             let children = command.configuration.subcommands
-            return children.isEmpty ? [of(command)] : all(in: children)
+            guard !children.isEmpty else { return [of(command)] }
+            return (command is any RunsWithoutSubcommand.Type ? [of(command)] : []) + all(in: children)
         }
     }
 

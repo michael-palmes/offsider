@@ -130,7 +130,7 @@ final class CallCounter: @unchecked Sendable {
     func tick() -> Int { lock.withLock { defer { calls += 1 }; return calls } }
 }
 
-@Suite("device-access", .serialized)
+@Suite("devices add, remove and status", .serialized)
 @MainActor
 struct DeviceAccessCommandTests {
     static let row = DeviceSummary(
@@ -192,17 +192,17 @@ struct DeviceAccessCommandTests {
         }
         #expect(error?.reason == .personRequired)
         #expect(error?.exitCode == .failure)
-        #expect(error?.userFacingDescription.contains("Ask the user to run `offsider device-access allow` in their own terminal.") == true)
+        #expect(error?.userFacingDescription.contains("Ask the user to run `offsider devices add` in their own terminal.") == true)
         #expect(presence.reasons.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: Self.file(home)))
     }
 
-    @Test("allow writes the entry only after the right suffix and the presence check, then seals it")
-    func allowWritesAfterSuffixAndPresence() async throws {
+    @Test("add --device writes the entry after the presence check alone, asks nothing about the ID, then seals it")
+    func allowWritesAfterPresence() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let terminal = try AccessTerminal()
-        terminal.type(["\r", "0000\r", "0ABC\r"])
+        terminal.type(["\r"])
         let seal = MemorySeal()
         let presence = RecordingPresence()
         let command = try DeviceAccessAllow.parse(["--device", PolicyFixtures.phone.lowercased(), "--app", "com.mpalmes.offsider.playground", "--expires", "2h"])
@@ -214,10 +214,12 @@ struct DeviceAccessCommandTests {
         #expect(output.contains("Allowed Test iPhone until 16:14, com.mpalmes.offsider.playground only."))
         let closing = output.split(separator: "\n").suffix(2).map(String.init)
         #expect(closing.map { $0.trimmingCharacters(in: .whitespaces) } == [
-            "Withdraw  offsider device-access remove --device \(PolicyFixtures.phone)", "Next      offsider doctor --device \(PolicyFixtures.phone)",
+            "Withdraw  offsider devices remove --device \(PolicyFixtures.phone)", "Next      offsider doctor --device \(PolicyFixtures.phone)",
         ])
         #expect(Set(closing.map { $0.prefix { $0 == " " }.count }).count == 1)
-        #expect(terminal.finish().contains(DeviceAccessAllow.suffixMismatch))
+        let transcript = terminal.finish()
+        #expect(!transcript.contains("of its ID"))
+        #expect(transcript.contains("Test iPhone"))
         #expect(presence.reasons == ["allow Offsider to drive Test iPhone (\(PolicyFixtures.phone))"])
         let snapshot = try DeviceAllowListStore(directory: UserConfigDirectory(home: home)).load()
         #expect(snapshot.list.entries.map(\.apps) == [["com.mpalmes.offsider.playground"]])
@@ -231,7 +233,7 @@ struct DeviceAccessCommandTests {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let terminal = try AccessTerminal()
-        terminal.type(["\r", "\r", "\r", "0ABC\r"])
+        terminal.type(["\r", "\r", "\r"])
         let seal = MemorySeal()
         let command = try DeviceAccessAllow.parse(["--device", PolicyFixtures.phone, "--team", "ABCDE12345"])
         let output = try await PersonPresence.$terminal.withValue({ true }) {
@@ -257,7 +259,7 @@ struct DeviceAccessCommandTests {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let terminal = try AccessTerminal()
-        terminal.type(["\r", "\r", "\r", "\r", "0abc\r"])
+        terminal.type(["\r", "\r", "\r", "\r"])
         let command = try DeviceAccessAllow.parse(["--device", PolicyFixtures.phone])
         let error = await #expect(throws: CLIError.self) {
             try await PersonPresence.$terminal.withValue({ true }) {
@@ -285,7 +287,7 @@ struct DeviceAccessCommandTests {
         let error = #expect(throws: CLIError.self) { try DevicePolicyGate.fixed(policy, now: PolicyFixtures.now).require(platform: .ios, key: PolicyFixtures.phone) }
         #expect(error?.reason == .deviceNotAllowed)
         #expect(error?.userFacingDescription.contains("changed outside Offsider") == true)
-        #expect(error?.hint == "offsider device-access allow")
+        #expect(error?.hint == "offsider devices add")
 
         let unsealed = DevicePolicyGate.read(store: store, seal: MemorySeal(), managed: FakeManagedPreferences())
         #expect(unsealed.decision(platform: .android, key: PolicyFixtures.serial, now: PolicyFixtures.now) == .refused(.listChanged))
@@ -308,6 +310,52 @@ struct DeviceAccessCommandTests {
         #expect(seal.isIntact(snapshot))
     }
 
+    @Test("remove with no --device lets a person choose from the allowed devices, and withdraws only that one")
+    func removePicksFromAllowed() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let store = DeviceAllowListStore(directory: UserConfigDirectory(home: home))
+        let seal = MemorySeal()
+        let pixel = DeviceAllowance(platform: .android, key: PolicyFixtures.serial, name: "Test Pixel", added: PolicyFixtures.added, expires: nil, apps: [])
+        try store.update({ $0.list.adding(PolicyFixtures.entry()).adding(pixel) }, commit: { try seal.seal($0) })
+        let terminal = try AccessTerminal()
+        terminal.type(["2"])
+        var context = Self.context(home: home, seal: seal, terminal: terminal)
+        context.interactive = { true }
+        let removal = try await DeviceAccessRemove.parse([]).remove(context: context)
+        let transcript = terminal.finish()
+        #expect(transcript.contains(DeviceAccessRemove.removeQuestion))
+        #expect(transcript.contains("Test Pixel") && transcript.contains("until removed"))
+        #expect(removal.text.hasPrefix("Removed Test Pixel (\(PolicyFixtures.serial)) from the allow-list"))
+        #expect(try store.load().list.entries.map(\.key) == [PolicyFixtures.phone])
+    }
+
+    @Test("remove with no --device and no terminal exits 64 and names where to find the ID")
+    func removeNeedsDeviceWithoutTerminal() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let store = DeviceAllowListStore(directory: UserConfigDirectory(home: home))
+        let seal = MemorySeal()
+        try store.update({ $0.list.adding(PolicyFixtures.entry()) }, commit: { try seal.seal($0) })
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await DeviceAccessRemove.parse([]).remove(context: Self.context(home: home, seal: seal))
+        }
+        #expect(error?.reason == .usage)
+        #expect(error?.hint == "offsider devices status")
+        #expect(try store.load().list.entries.count == 1)
+    }
+
+    @Test("remove with nothing allowed says so and changes nothing")
+    func removeWithNothingAllowed() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        var context = Self.context(home: home, seal: MemorySeal())
+        context.interactive = { true }
+        let removal = try await DeviceAccessRemove.parse([]).remove(context: context)
+        #expect(removal.text == DeviceAccessRemove.nothingAllowed)
+        #expect(!FileManager.default.fileExists(atPath: Self.file(home)))
+    }
+
     @Test("status --device exits 7 with device_not_allowed for a device no one allowed, and 0 for one that is")
     func statusExitCodes() throws {
         let home = try makePolicyHome()
@@ -316,8 +364,8 @@ struct DeviceAccessCommandTests {
         let refused = try DeviceAccessStatus.parse(["--device", PolicyFixtures.phone, "--json"]).perform(context: Self.context(home: home, seal: seal))
         #expect(refused.1?.reason == .deviceNotAllowed)
         #expect(refused.1?.exitCode == .deviceUnavailable)
-        #expect(refused.1?.userFacingDescription.contains("run `offsider device-access allow` in their own terminal and choose \(PolicyFixtures.phone)") == true)
-        #expect(refused.1?.hint == "offsider device-access allow")
+        #expect(refused.1?.userFacingDescription.contains("run `offsider devices add` in their own terminal and choose \(PolicyFixtures.phone)") == true)
+        #expect(refused.1?.hint == "offsider devices add")
         #expect(refused.0.contains("\"allowed\": false"))
 
         try DeviceAllowListStore(directory: UserConfigDirectory(home: home)).update({ $0.list.adding(PolicyFixtures.entry()) }, commit: { try seal.seal($0) })
@@ -328,11 +376,11 @@ struct DeviceAccessCommandTests {
 
     @Test("--expires takes minutes, hours, days up to 30 or never")
     func expiry() throws {
-        #expect(try DeviceAccessCommand.expiry("12h") == 43_200)
-        #expect(try DeviceAccessCommand.expiry("30d") == 2_592_000)
-        #expect(try DeviceAccessCommand.expiry("never") == nil)
+        #expect(try DeviceAccess.expiry("12h") == 43_200)
+        #expect(try DeviceAccess.expiry("30d") == 2_592_000)
+        #expect(try DeviceAccess.expiry("never") == nil)
         for bad in ["31d", "0h", "12", "h", "-1m", "soon"] {
-            #expect(throws: (any Error).self) { try DeviceAccessCommand.expiry(bad) }
+            #expect(throws: (any Error).self) { try DeviceAccess.expiry(bad) }
         }
     }
 
@@ -343,7 +391,7 @@ struct DeviceAccessCommandTests {
         id: PolicyFixtures.serial, platform: .android, state: "device", name: "Test Pixel", osVersion: "Android 16", deviceType: "Pixel 9", kind: .physical, connection: "usb"
     )
 
-    @Test("picking the device, team and app from menus writes them with no suffix prompt, after the preamble and the steps in order")
+    @Test("picking the device, team and app from menus writes them, after the preamble and the steps in order")
     func menuPickWritesChoices() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
@@ -363,7 +411,6 @@ struct DeviceAccessCommandTests {
         #expect(seal.isIntact(try DeviceAllowListStore(directory: UserConfigDirectory(home: home)).load()))
         #expect(presence.reasons == ["allow Offsider to drive Test iPhone (\(PolicyFixtures.phone))"])
         #expect(output.contains("Next      offsider doctor --device \(PolicyFixtures.phone)"))
-        #expect(!transcript.contains(DeviceAccessAllow.suffixLabel))
         #expect(!transcript.contains("Safari"))
         #expect(transcript.contains("📲  Wireless iPad  \(AllowScreen.wifiOnly)") || transcript.contains("[iPad]    Wireless iPad  \(AllowScreen.wifiOnly)"))
         for receipt in ["Device    Test iPhone", "Team      Example Team", "App       Offsider Playground", "How long  12 hours"] {
@@ -386,7 +433,7 @@ struct DeviceAccessCommandTests {
         })
         let shown = transcript.components(separatedBy: CharacterSet(charactersIn: "\r\n")).filter { $0.contains(PolicyFixtures.phone) || $0.contains(PolicyFixtures.serial) }
         #expect(shown.count == 2)
-        #expect(shown.allSatisfy { $0.hasSuffix("Withdraw  offsider device-access remove --device \(PolicyFixtures.phone)") || $0.hasSuffix("Next      offsider doctor --device \(PolicyFixtures.phone)") })
+        #expect(shown.allSatisfy { $0.hasSuffix("Withdraw  offsider devices remove --device \(PolicyFixtures.phone)") || $0.hasSuffix("Next      offsider doctor --device \(PolicyFixtures.phone)") })
         let ellipsis = TerminalStyle.detect(isTerminal: true).ellipsis
         #expect(transcript.contains("Test iPhone  \(ellipsis)\(PolicyFixtures.phone.suffix(4))"))
         #expect(transcript.contains("Test Pixel   \(ellipsis)\(PolicyFixtures.serial.suffix(4))"))
@@ -609,7 +656,7 @@ struct DeviceAccessCommandTests {
         let person = try await Self.status([], context: context, person: true)
         #expect(person.out.hasPrefix("🔐  \(AccessStatusScreen.title)"))
         #expect(person.out.contains("\n  ● Test iPhone  com.example.app  until 15:13\n"))
-        #expect(person.out.hasSuffix("offsider device-access remove --device \(PolicyFixtures.phone)  withdraw it\n"))
+        #expect(person.out.hasSuffix("offsider devices remove --device \(PolicyFixtures.phone)  withdraw it\n"))
         let agent = try await Self.status([], context: context, person: false)
         #expect(agent.out == "Managed policy: none.\nios  \(PolicyFixtures.phone)  Test iPhone: allowed until 2026-09-21T15:13:20Z, apps com.example.app\n")
         #expect(agent.err.isEmpty)
@@ -667,19 +714,34 @@ struct DeviceAccessCommandTests {
         let transcript = terminal.finish()
         #expect(transcript.contains("\(AllowScreen.deviceQuestion) (R rescan, Q quit)"))
         #expect(transcript.contains(AllowScreen.allAllowed))
-        #expect(transcript.contains("Withdraw  offsider device-access remove --device \(PolicyFixtures.phone)"))
+        #expect(transcript.contains("Withdraw  offsider devices remove --device \(PolicyFixtures.phone)"))
         #expect(try Self.entries(home).count == 1)
     }
 
-    @Test("device-access alone prints the status")
-    func defaultsToStatus() throws {
-        #expect(try DeviceAccessCommand.parseAsRoot([]) is DeviceAccessStatus)
+    @Test("devices lists, and add, remove and status are its subcommands")
+    func devicesSubcommands() throws {
+        #expect(try OffsiderCommand.parseAsRoot(["devices"]) is ListDevices)
+        #expect(try OffsiderCommand.parseAsRoot(["devices", "--json"]) is ListDevices)
+        #expect(try OffsiderCommand.parseAsRoot(["devices", "add", "--device", PolicyFixtures.phone]) is DeviceAccessAllow)
+        #expect(try OffsiderCommand.parseAsRoot(["devices", "remove"]) is DeviceAccessRemove)
+        #expect(try OffsiderCommand.parseAsRoot(["devices", "status", "--json"]) is DeviceAccessStatus)
+        #expect(CommandPath.of(DeviceAccessAllow.self) == "devices add")
+    }
+
+    @Test("device-access names its new command in one line and exits 64")
+    func deviceAccessRenamed() {
+        #expect(ArgumentHints.hint(for: ["device-access", "allow", "--device", PolicyFixtures.phone]) == ArgumentHints.Hint(
+            message: "device-access allow was renamed to devices add in 0.13.0: run offsider devices add.", isLegacy: true
+        ))
+        #expect(ArgumentHints.hint(for: ["device-access", "remove"])?.message.contains("run offsider devices remove") == true)
+        #expect(ArgumentHints.hint(for: ["device-access"])?.message.contains("run offsider devices status") == true)
+        #expect(FailureReason.legacyArgument.exitCode.rawValue == 64)
     }
 
     @Test("a simulator or emulator ID is refused: they need no allowance")
     func virtualRefused() {
-        #expect(throws: CLIError.self) { try DeviceAccessCommand.physicalKey("ABCDEF00-0000-4000-8000-00000000ABCD") }
-        #expect(throws: CLIError.self) { try DeviceAccessCommand.physicalKey("emulator-5554") }
+        #expect(throws: CLIError.self) { try DeviceAccess.physicalKey("ABCDEF00-0000-4000-8000-00000000ABCD") }
+        #expect(throws: CLIError.self) { try DeviceAccess.physicalKey("emulator-5554") }
     }
 
     // MARK: Pinned app by default

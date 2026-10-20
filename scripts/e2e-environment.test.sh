@@ -18,7 +18,7 @@ check() {
     fi
 }
 
-# A stub offsider in a folder with a space, whose `device-access status --json` prints the devices given.
+# A stub offsider in a folder with a space, whose `devices status --json` prints the devices given.
 mkdir -p "$WORK/my build"
 STUB="$WORK/my build/offsider"
 devices() {
@@ -52,7 +52,7 @@ check "the iPhone pinned to the playground is picked" $'00008140-000000000000ABC
 check "the iOS playground pin does not count for the RN package" "rc=1" "$(pick ios "$RN" | tail -1)"
 
 allow="$(OFFSIDER_BIN_PATH="$STUB" bash -c 'source "$1" >/dev/null 2>&1; print_device_allow "Test Pixel" "$2" 2>&1' _ "$ENVIRONMENT" "$RN")"
-check "the allow command names the tested build by its absolute path" "1" "$(grep -cF "  $WORK/my\\ build/offsider device-access allow" <<<"$allow")"
+check "the allow command names the tested build by its absolute path" "1" "$(grep -cF "  $WORK/my\\ build/offsider devices add" <<<"$allow")"
 
 printf '%d passed, %d failed\n' "$PASSED" "$FAILED"
 [[ "$FAILED" -eq 0 ]]

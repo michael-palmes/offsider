@@ -48,8 +48,8 @@ extension AndroidBackend {
             throw AndroidError(
                 .appNotAllowed,
                 "\(serial) is allowed for any app, so each command names the app it drives, and none was named. Offsider did nothing. "
-                    + "Name it in offsider.login.json's package, pass --app <package>, or pin one app with `offsider device-access allow`.",
-                hint: "offsider device-access allow"
+                    + "Name it in offsider.login.json's package, pass --app <package>, or pin one app with `offsider devices add`.",
+                hint: "offsider devices add"
             )
         }
         if !scope.needsTarget, !scope.permitted.contains(package) {

@@ -3,7 +3,7 @@
 ## Choosing and preparing the device
 
 - Never choose a `physical` device yourself: drive an iPhone or iPad only when the user names its UDID, and pass that UDID to `--device` on every command (`OFFSIDER_DEVICE` never names one).
-- The user must also allow it: ask them to run `offsider device-access allow` in their own terminal, and say which device to choose (by its name) and which app to pin. Its menus need nothing looked up or pasted, so never hand them a UDID, team ID or command with flags. Until then every command exits 7 `device_not_allowed` before anything reaches the device; never allow it yourself. An allowance expires (12 hours by default), and while it holds each command prints one stderr line saying it drives a physical device. `device-access status --device <UDID>` checks it.
+- The user must also allow it: ask them to run `offsider devices add` in their own terminal, and say which device to choose (by its name) and which app to pin. Its menus need nothing looked up or pasted, so never hand them a UDID, team ID or command with flags. Until then every command exits 7 `device_not_allowed` before anything reaches the device; never allow it yourself. An allowance expires (12 hours by default), and while it holds each command prints one stderr line saying it drives a physical device. `devices status --device <UDID>` checks it.
 - USB only. A device on Wi-Fi, or one usbmuxd stops listing on USB, exits 7 with `device_not_wired`: ask the user to connect its cable. Offsider never pairs a device or accepts a prompt on it.
 - The user prepares the device once: unlock it and tap Trust, turn on Developer Mode (Settings > Privacy & Security), and for input turn on Settings > Developer > UI Automation.
 - `offsider devices` shows the device with `kind` `physical`, `connection` `usb` or `network`, and a state: Booted (ready), Wireless, Untrusted, Developer Mode off, Preparing, Reconnecting or Unavailable. A hint on stderr says what to do for each problem state.
@@ -39,7 +39,7 @@
 ## The runner and `--app`
 
 - The accessibility tree comes from a small XCUITest runner app. On first use Offsider builds it with `xcodebuild` (about a minute, with a line on stderr) and caches it under `~/Library/Caches/offsider/runner/`.
-- It is signed with the team the user chose in `device-access allow`'s team menu, or, when the allowance names none, the team in `OFFSIDER_IOS_TEAM_ID` (10 letters and digits); a variable naming another team exits 64, so unset it. The team signed in to Xcode is never picked on its own. With neither, the command exits 9 with `team_missing`: ask the user to run `offsider device-access allow` again and choose a team. `OFFSIDER_IOS_RUNNER_PREFIX` sets the runner's bundle id prefix (default `com.mpalmes.offsider`); the first build under any other prefix exits 1 `person_required` until the user runs `offsider runner build --device <UDID>` in their own terminal and confirms with Touch ID.
+- It is signed with the team the user chose in `devices add`'s team menu, or, when the allowance names none, the team in `OFFSIDER_IOS_TEAM_ID` (10 letters and digits); a variable naming another team exits 64, so unset it. The team signed in to Xcode is never picked on its own. With neither, the command exits 9 with `team_missing`: ask the user to run `offsider devices add` again and choose a team. `OFFSIDER_IOS_RUNNER_PREFIX` sets the runner's bundle id prefix (default `com.mpalmes.offsider`); the first build under any other prefix exits 1 `person_required` until the user runs `offsider runner build --device <UDID>` in their own terminal and confirms with Touch ID.
 - A build that fails exits 1 with `runner_build_failed`, and its hint names the build log. When the hint is `offsider runner build --device <UDID> --register-device`, the device is not registered with the team: only the user may run that, in their own terminal with Touch ID, since it adds the device to their Apple team. Offsider never registers a device on its own.
 - Before each session starts, the built runner is checked against the digests recorded at build time and must be signed by the chosen team; a mismatch is rebuilt once, then refused.
 - The runner keeps running in the background, reached over USB through usbmuxd with a per-session token, and stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300, at most 3600); a session older than 12 hours is restarted.
@@ -47,7 +47,7 @@
 - Xcode starts the runner only on an unlocked device. When `xcodebuild` says it is waiting for the unlock, the command exits 7 with `device_locked` at once: ask the user to unlock the device, then retry. An `xcodebuild` that exits early fails at once with `runner_unavailable` and the end of its log; a runner that never answers fails after 150 s. Either way the hint names `runner.log`.
 - iOS can ask for the device passcode on behalf of XCTest (`Enter iPad Passcode for "XCTest"`) when the runner starts, for example the first time after the device was locked for a while. Until someone enters it on the device, XCTest cannot enable UI automation and gives up after about a minute; the command then exits 7 with `ui_automation_off` naming the prompt. Ask the user to look at the device and enter the passcode there (Offsider never types one), then retry.
 - A device is driven inside one app, and `--app` is required: every command that reads or drives the screen takes `--app <bundle-id>` (`screenshot`, video, `describe-ui`, every input command, `wait`, `assert`, `turnstile`, the `rn` screen commands, and `batch` and its steps). Without it Offsider uses `offsider.login.json`'s `bundleId`, else the one app the allowance pins; with none of them it exits 64. The pin holds for one command only.
-- The app must be one the allowance pins (or any app that is not a browser or system app when it pins none), and never Safari, Chrome, Firefox, SpringBoard, Settings, Mail, Gmail, Outlook, Messages, Passwords, a password manager or authenticator, Find My, Photos, Wallet, the App Store or another system app: else exit 1 `app_not_allowed`: ask the user to run `offsider device-access allow` and pin that app.
+- The app must be one the allowance pins (or any app that is not a browser or system app when it pins none), and never Safari, Chrome, Firefox, SpringBoard, Settings, Mail, Gmail, Outlook, Messages, Passwords, a password manager or authenticator, Find My, Photos, Wallet, the App Store or another system app: else exit 1 `app_not_allowed`: ask the user to run `offsider devices add` and pin that app.
 - Before each screenshot, each input batch and every few video frames, and again for a capture after any input, the runner checks that the app is in front. When another app, a system alert, Control Center or an iPad Stage Manager layout reports SpringBoard, the command exits 1 `app_not_allowed` without reading or touching the screen: ask the user to bring the app back, then retry. With Xcode 27.1, which lacks XCTest's lookup, the check is the app's own foreground state, which may miss an alert or Control Center over the app. So a screenshot on a device starts the runner too.
 - An iPad app in a Stage Manager window reports frames relative to its window, so element taps (`tap --id`, `tap --label`) exit 1 with `not_supported`: ask the user to make the app full screen. Coordinate taps, screenshots and the tree still work.
 
@@ -73,7 +73,7 @@ offsider session stop --device <UDID> --clean
 
 | Reason | Exit | What to do |
 | --- | --- | --- |
-| `device_not_allowed` | 7 | Ask the user to run `offsider device-access allow` and choose the device the message names; never allow it yourself |
+| `device_not_allowed` | 7 | Ask the user to run `offsider devices add` and choose the device the message names; never allow it yourself |
 | `device_not_wired` | 7 | Ask the user to connect the cable |
 | `app_not_allowed` | 1 | Ask the user to bring the pinned app to the front, or to allow that app |
 | `device_untrusted` | 7 | Ask the user to unlock the device and tap Trust |
@@ -82,7 +82,7 @@ offsider session stop --device <UDID> --clean
 | `device_locked` | 7 | Ask the user to unlock the device |
 | `ui_automation_off` | 7 | Ask the user to enter the passcode if the device shows `Enter Passcode for "XCTest"`, else to turn on Settings > Developer > UI Automation |
 | `xcode_too_old` | 9 | The command needs Xcode 27; use a runner command or ask the user |
-| `team_missing` | 9 | Ask the user to run `offsider device-access allow` and choose a team, or to set `OFFSIDER_IOS_TEAM_ID` |
+| `team_missing` | 9 | Ask the user to run `offsider devices add` and choose a team, or to set `OFFSIDER_IOS_TEAM_ID` |
 | `usbmux_unavailable` | 9 | Ask the user to unplug and replug the cable |
 | `runner_build_failed` | 1 | Read the build log the hint names; a hint of `runner build --register-device` is for the user to run |
 | `runner_unavailable` | 1 | Nothing was sent; retry once, then run `doctor` |

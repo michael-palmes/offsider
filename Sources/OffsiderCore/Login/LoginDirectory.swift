@@ -1,6 +1,6 @@
 import Foundation
 
-/// What `credential set` should do before it asks for a password.
+/// What `credential add` should do before it asks for a password.
 public enum LoginSetIntent: Equatable, Sendable {
     /// Write this key. `makeDefault` is true when this login is the one `login` uses with no name.
     case write(key: String, makeDefault: Bool)
@@ -98,7 +98,7 @@ public enum LoginDirectory {
             return .already(canonical: linked.canonical)
         }
         guard !groups.isEmpty else {
-            return .refused("No login is saved yet. Save one with credential set, then join. Nothing was linked.")
+            return .refused("No login is saved yet. Save one with credential add, then join. Nothing was linked.")
         }
         if let requested {
             guard let target = resolve(requested, in: groups) else {

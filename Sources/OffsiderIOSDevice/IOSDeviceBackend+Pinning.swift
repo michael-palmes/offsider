@@ -46,7 +46,7 @@ extension IOSDeviceBackend {
             )
         }
         if let refusal = policy(app) {
-            throw IOSDeviceError(.appNotAllowed, refusal, hint: refusal.contains(" is not among the apps allowed on ") ? "offsider device-access allow" : nil)
+            throw IOSDeviceError(.appNotAllowed, refusal, hint: refusal.contains(" is not among the apps allowed on ") ? "offsider devices add" : nil)
         }
         return app
     }

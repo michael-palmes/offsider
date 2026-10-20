@@ -107,6 +107,6 @@ struct IOSDeviceE2EAllowanceTests {
         let other = E2EDeviceAllowanceTests.status(expires: nil, apps: ["com.example.other"], id: Self.udid)
         #expect(E2EDeviceAllowance.verdict(device: Self.udid, exitCode: 0, json: pinned, now: now, app: IOSDeviceE2E.playgroundBundleID) == nil)
         let refusal = E2EDeviceAllowance.verdict(device: Self.udid, exitCode: 0, json: other, now: now, app: IOSDeviceE2E.playgroundBundleID)
-        #expect(refusal?.contains("run `offsider device-access allow` in their own terminal, choose \(Self.udid), pin com.mpalmes.offsider.playground and allow at least 2 hours") == true)
+        #expect(refusal?.contains("run `offsider devices add` in their own terminal, choose \(Self.udid), pin com.mpalmes.offsider.playground and allow at least 2 hours") == true)
     }
 }

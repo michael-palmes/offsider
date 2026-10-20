@@ -1,6 +1,6 @@
 import Foundation
 
-/// `device-access` text and JSON, version 1.
+/// `devices status` text and JSON, version 1.
 public enum DeviceAccessReport {
     public static func changeJSON(action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = []) -> String {
         OrderedJSON.object([
@@ -39,10 +39,10 @@ public enum DeviceAccessReport {
         if let problem = policy.listProblem {
             lines.append("The allow-list could not be read (\(problem)); no physical device is allowed.")
         } else if !policy.sealIntact {
-            lines.append("The allow-list at \(path) was changed outside Offsider; no physical device is allowed until a person runs `offsider device-access allow` again.")
+            lines.append("The allow-list at \(path) was changed outside Offsider; no physical device is allowed until a person runs `offsider devices add` again.")
         }
         if policy.list.entries.isEmpty {
-            lines.append("No physical device is allowed. A person allows one by running `offsider device-access allow` in their own terminal.")
+            lines.append("No physical device is allowed. A person allows one by running `offsider devices add` in their own terminal.")
         }
         for entry in policy.list.entries {
             let state: String

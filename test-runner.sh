@@ -160,7 +160,7 @@ Modes (run $0 on a terminal with none to pick one):
       --rn-ios         React Native suites on an iPhone simulator (needs pnpm)
       --foldable       Foldable suite on the Offsider Duo simulator
       --android-fold   Foldable suite on the Offsider_E2E_Fold AVD, booted if it is not running
-      --android-phone  Phone suites on a USB phone you allowed (.build/debug/offsider device-access allow)
+      --android-phone  Phone suites on a USB phone you allowed (.build/debug/offsider devices add)
       --ios-device     Device suites on an iPhone or iPad you allowed
 Options: -t tests only, -b build only, -c clean build, -v verbose, --rn-debug (with --rn-ios or --android)
 
@@ -201,7 +201,7 @@ Android phone (--android-phone):
   OFFSIDER_ANDROID_PHONE    The phone's exact USB serial from adb devices -l; no other device is touched
                             Unset: the one active Android phone on the allow-list, only when its allowance pins
                             com.mpalmes.offsider.playground.rn (several, none or another app is an error)
-                            The user must first allow it: .build/debug/offsider device-access allow, then choose the phone
+                            The user must first allow it: .build/debug/offsider devices add, then choose the phone
                             and pin com.mpalmes.offsider.playground.rn
   OFFSIDER_ANDROID_APK      The React Native playground's release APK, installed once and left in place
 
@@ -209,7 +209,7 @@ iPhone or iPad (--ios-device, needs XcodeGen):
   OFFSIDER_IOS_DEVICE       The device's exact UDID from devicectl list devices; no other device is touched
                             Unset: the one active iPhone or iPad on the allow-list, only when its allowance pins
                             com.mpalmes.offsider.playground (several, none or another app is an error)
-                            The user must first allow it: .build/debug/offsider device-access allow, then choose the device
+                            The user must first allow it: .build/debug/offsider devices add, then choose the device
                             and pin com.mpalmes.offsider.playground
   OFFSIDER_IOS_TEAM_ID      The team that signs the runner and the playground, installed once and left in place
                             Unset: the team the device's allowance records
@@ -856,7 +856,7 @@ require_device_allowance() {
     local device="$1"
     local app="${2:-}"
     local status
-    if ! status="$("$OFFSIDER_BIN_PATH" device-access status --device "$device" --json 2>/dev/null)"; then
+    if ! status="$("$OFFSIDER_BIN_PATH" devices status --device "$device" --json 2>/dev/null)"; then
         print_error "$device is not on the allow-list. $RUN_YOURSELF, then run the suites again:"
         print_device_allow "$device" "$app"
         exit 1
@@ -961,7 +961,7 @@ run_ios_device_tests() {
         OFFSIDER_IOS_TEAM_ID="$(allowance_team "$OFFSIDER_IOS_DEVICE")"
         if [[ -z "$OFFSIDER_IOS_TEAM_ID" ]]; then
             print_error "No team signs the runner and the playground. $RUN_YOURSELF and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID:"
-            print_person_command "$(offsider_command) device-access allow"
+            print_person_command "$(offsider_command) devices add"
             exit 1
         fi
         log "Using the team the device's allowance records"

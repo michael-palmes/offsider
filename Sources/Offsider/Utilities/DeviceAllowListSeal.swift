@@ -3,7 +3,7 @@ import Foundation
 import OffsiderCore
 import Security
 
-/// Where `device-access` keeps the SHA-256 of the allow-list, so an edit made outside Offsider is noticed.
+/// Where `devices add` and `remove` keep the SHA-256 of the allow-list, so an edit made outside Offsider is noticed.
 protocol DeviceAllowListSealing: Sendable {
     /// The stored digest, or nil when no seal exists.
     func storedDigest() throws -> Data?

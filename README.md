@@ -61,7 +61,9 @@ offsider screenshot --output cart.png                     # password fields mask
 
 ![A tap lands on a button, then two outcomes: when the screen changed the command exits 0, and when nothing changed it exits 5.](docs/assets/verify.png)
 
-Real iPhones and Android phones work too, once you allow each one with `offsider device-access allow`. [Getting started](docs/getting-started.md) covers Android and real devices.
+Real iPhones and Android phones work too, once you add each one with `offsider devices add`. [Getting started](docs/getting-started.md) covers Android and real devices.
+
+Test logins go in your login Keychain, not a script: `offsider credential add` saves one for your iOS and Android builds in one step, and `offsider login` signs in with it ([Sign in](docs/sign-in.md)).
 
 ## Fast
 
@@ -106,7 +108,7 @@ Built for the question your security team will ask: what can an agent do with th
 
 | Risk | Control |
 | --- | --- |
-| [An agent drives a real phone](SECURITY.md#physical-devices-the-allow-list) | Refused, with nothing sent, until a person runs `offsider device-access allow` in their own terminal and confirms with Touch ID or their password. Then it's USB only, never inside a browser or system app, pinned to one app on an iPhone, and it expires (12 hours by default). A configuration profile can cap or ban it. |
+| [An agent drives a real phone](SECURITY.md#physical-devices-the-allow-list) | Refused, with nothing sent, until a person runs `offsider devices add` in their own terminal and confirms with Touch ID or their password. Then it's USB only, never inside a browser or system app, pinned to one app on an iPhone, and it expires (12 hours by default). A configuration profile can cap or ban it. |
 | [An agent grants itself more](SECURITY.md#scope-and-threat-model) | Allowing a device, linking a saved login, loosening one or saving an unlock code needs a person at a terminal and Touch ID or their password. No flag or variable skips it. |
 | [Screen text gives the agent orders](SECURITY.md#what-reaches-your-agent) | Screen, log and notification text is treated as data: control and bidi characters print as escapes, strings stop at 500 characters, and the skill tells the agent to stop and ask. |
 | [Secrets end up in output](SECURITY.md#saved-secrets) | Password fields read as bullets and are masked in screenshots, logs are redacted, and typed text never prints. Test logins live in the login Keychain, never synced. |

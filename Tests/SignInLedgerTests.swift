@@ -25,6 +25,19 @@ struct SignInLedgerTests {
         try body(SignInLedger(root: root), (root as NSString).appendingPathComponent(OffsiderPrivateDirectory.signInsDirectoryName))
     }
 
+    @Test("clearing by the app in front removes only the sign-ins made through that id")
+    func clearsByForeground() throws {
+        try Self.withLedger { ledger, _ in
+            var linked = Self.record("qa-admin", platform: .android, device: "Pixel_9")
+            linked.foreground = "com.example.android"
+            try ledger.record(linked)
+            try ledger.record(Self.record("qa-admin"))
+            #expect(ledger.clear(app: Self.app, foreground: "com.example.android").map(\.device) == ["Pixel_9"])
+            #expect(ledger.record(platform: .ios, device: Self.simulator, app: Self.app)?.key == "qa-admin")
+            #expect(ledger.record(platform: .android, device: "Pixel_9", app: Self.app) == nil)
+        }
+    }
+
     @Test("a new sign-in replaces the last one for that device and app, and another app keeps its own")
     func replacesPerDeviceAndApp() throws {
         try Self.withLedger { ledger, _ in

@@ -4,29 +4,6 @@ import OffsiderAndroid
 import OffsiderCore
 import OffsiderIOSDevice
 
-struct DeviceAccessCommand: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "device-access",
-        abstract: "Allow, check or withdraw Offsider's access to a physical iPhone, iPad or Android phone.",
-        discussion: """
-        Offsider refuses every physical device until a person allows it here, from their own terminal: `allow` lets you \
-        pick the device, the signing team (iPhone or iPad), the app and how long from menus, then asks for \
-        Touch ID or your password. Each entry lapses (12 hours by default, at most 30 days unless `never`) and can pin the app \
-        Offsider may drive on it. The list lives in ~/.config/offsider/allowed-devices.json, sealed in the login Keychain; an \
-        edit made outside Offsider refuses every device until `allow` runs again. A managed preference (domain \
-        com.mpalmes.offsider) can forbid devices the list allows, never the reverse. Without a subcommand, `status` runs.
-
-        Examples:
-          offsider device-access allow
-          offsider device-access status
-          offsider device-access remove --device PHONE_ID
-          offsider device-access allow --device PHONE_ID --app com.example.app --expires 2h
-        """,
-        subcommands: [DeviceAccessAllow.self, DeviceAccessStatus.self, DeviceAccessRemove.self],
-        defaultSubcommand: DeviceAccessStatus.self
-    )
-}
-
 /// An app installed on a physical device, as the allow walkthrough offers it.
 struct InstalledApp: Equatable, Sendable {
     let id: String
@@ -35,7 +12,7 @@ struct InstalledApp: Equatable, Sendable {
     var label: String { name.map { "\($0) (\(id))" } ?? id }
 }
 
-/// Everything `device-access` reaches outside the process; tests bind their own.
+/// Everything `devices add`, `remove` and `status` reach outside the process; tests bind their own.
 struct DeviceAccessContext: Sendable {
     @TaskLocal static var current = DeviceAccessContext.live
 
@@ -63,7 +40,7 @@ struct DeviceAccessContext: Sendable {
     var cleanRunner: @Sendable @MainActor (String) async -> RunnerCleanupReport = { RunnerCleanupReport(udid: $0) }
     /// A runner build or session this Mac holds for an iPhone or iPad, which `remove` offers to clean.
     var hasRunner: @Sendable (String) -> Bool = { _ in false }
-    /// Whether `remove` may ask a question: standard input and output are both a terminal.
+    /// Whether `remove` may ask a question: a person, with standard input and output both a terminal.
     var interactive: @Sendable () -> Bool = { false }
 
     static let live = DeviceAccessContext(
@@ -77,7 +54,7 @@ struct DeviceAccessContext: Sendable {
             let rows = try await ListDevices.collect(from: backends) { warnings.append("Skipped \($0.what): \($0.message)") }
             return (rows.filter { $0.kind == .physical }, warnings)
         },
-        stopSessions: { key in await DeviceAccessCommand.stopSessions(udid: key) },
+        stopSessions: { key in await DeviceAccess.stopSessions(udid: key) },
         signingTeams: { SigningTeams.discover() },
         installedApps: { row in
             switch row.platform {
@@ -96,7 +73,7 @@ struct DeviceAccessContext: Sendable {
         profile: { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil },
         cleanRunner: { udid in await RunnerSessions.clean(udid: udid) },
         hasRunner: { RunnerSessions.hasRecord(udid: $0) },
-        interactive: { isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0 }
+        interactive: { DevicePicker.prompts(terminals: isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0) }
     )
 
     func policy() -> PhysicalDevicePolicy {
@@ -111,7 +88,10 @@ struct DeviceAccessContext: Sendable {
     }
 }
 
-extension DeviceAccessCommand {
+/// What `devices add`, `remove` and `status` share.
+enum DeviceAccess {}
+
+extension DeviceAccess {
     static let defaultExpiry = "12h"
     static let longestExpiry: TimeInterval = 30 * 86_400
 
@@ -135,7 +115,7 @@ extension DeviceAccessCommand {
         case .iosDevice(let udid): return (.ios, udid.uppercased())
         case .androidName(let serial): return (.android, serial)
         case .iosSimulator, .androidSerial:
-            throw CLIError(errorDescription: "\(id) is a simulator or emulator, which Offsider drives without an allowance. device-access is for physical devices.", reason: .usage)
+            throw CLIError(errorDescription: "\(id) is a simulator or emulator, which Offsider drives without being added. Only phones and tablets are added.", reason: .usage)
         case .androidNetworkSerial(let serial):
             throw AndroidError.networkDevice(serial)
         case .empty, .unrecognised:
@@ -170,8 +150,8 @@ extension DeviceAccessCommand {
 
 struct DeviceAccessAllow: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "allow",
-        abstract: "Let Offsider drive a physical device: a person at this Mac picks it from menus in their own terminal and confirms with Touch ID."
+        commandName: "add",
+        abstract: "Let agents drive a phone or tablet: a person at this Mac picks it from menus in their own terminal and confirms with Touch ID."
     )
 
     @Option(name: .customLong("device"), help: ArgumentHelp("The physical device's ID; without it, choose from the connected ones. OFFSIDER_DEVICE is never read.", valueName: "id"))
@@ -190,7 +170,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     var json = false
 
     func validate() throws {
-        if let expires { _ = try DeviceAccessCommand.expiry(expires) }
+        if let expires { _ = try DeviceAccess.expiry(expires) }
         if let team, !DeviceAllowance.isTeamID(team) {
             throw ValidationError("--team takes a 10-character Apple team ID such as ABCDE12345; '\(team)' is not one.")
         }
@@ -234,8 +214,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     /// `Test iPhone stays allowed`, or `Test iPhone and Test Pixel stay allowed`.
     static func staysAllowed(_ names: [String]) -> String {
-        let list = names.count > 1 ? names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1] : names.joined()
-        return "\(list) \(names.count > 1 ? "stay" : "stays") allowed."
+        "\(LoginDirectory.list(names)) \(names.count > 1 ? "stay" : "stays") allowed."
     }
 
     /// The failure of a later device, reworded to say the earlier ones stay, with its own exit code and hint.
@@ -248,11 +227,11 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     @MainActor
     func perform(context: DeviceAccessContext) async throws -> String {
-        let instead = "Ask the user to run `offsider device-access allow` in their own terminal."
+        let instead = "Ask the user to run `offsider devices add` in their own terminal."
         try PersonPresence.requireTerminal(instead: instead)
         let store = try context.requireStore()
         let policy = context.policy()
-        let pasted = try device.map(DeviceAccessCommand.physicalKey)
+        let named = try device.map(DeviceAccess.physicalKey)
         var reports: [String] = []
         var savedNames: [String] = []
         var stopped: (any Error)?
@@ -260,7 +239,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             cancelled: AllowScreen.cancelled, instead: instead, descriptor: context.promptDescriptor, idle: Self.promptIdle, keeps: true
         ) { prompt in
             prompt.lines(AllowScreen.header(width: prompt.width, style: prompt.style))
-            var (row, connected) = try await pickDevice(on: prompt, context: context, policy: policy, pasted: pasted)
+            var (row, connected) = try await pickDevice(on: prompt, context: context, policy: policy, named: named)
             var allowedNow: Set<String> = []
             /// Where this device's lines begin, so a stop erases them and keeps every earlier receipt.
             var deviceStart = prompt.mark
@@ -269,7 +248,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 let entry: DeviceAllowance?
                 let droppedTampered: Bool
                 do {
-                    choice = try await complete(row, on: prompt, context: context, policy: policy, pasted: pasted != nil, later: !savedNames.isEmpty)
+                    choice = try await complete(row, on: prompt, context: context, policy: policy, later: !savedNames.isEmpty)
                     (entry, droppedTampered) = try record(choice, store: store, context: context)
                 } catch where !savedNames.isEmpty {
                     // Whatever stops a later device leaves the ones already saved, and says so.
@@ -294,7 +273,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                     : AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, width: .max, style: .detect(isTerminal: false)).joined(separator: "\n"))
                 allowedNow.insert(choice.key)
                 savedNames.append(name)
-                guard pasted == nil, !json else { return }
+                guard named == nil, !json else { return }
                 let remaining = connected.filter { other in
                     let key = StableDeviceKey.of(other) ?? other.id
                     if allowedNow.contains(key) { return false }
@@ -357,7 +336,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     /// The steps after the device is known: team, app, how long, the summary and Touch ID.
     @MainActor
     /// `later` marks a device after the first: there `--team` applies only to an iPhone or iPad, and is skipped for a phone.
-    private func complete(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, pasted: Bool, later: Bool = false) async throws -> Choice {
+    private func complete(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, later: Bool = false) async throws -> Choice {
         let key = StableDeviceKey.of(row) ?? row.id
         let team = row.platform == .ios || !later ? self.team : nil
         if team != nil, row.platform != .ios {
@@ -394,27 +373,18 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
         let lifetime: TimeInterval?
         if let expires {
-            lifetime = try DeviceAccessCommand.expiry(expires)
+            lifetime = try DeviceAccess.expiry(expires)
         } else {
             lifetime = try await step("How long") { try pickExpiry(on: prompt, step: $0) }.value
         }
         let name = AllowScreen.name(row)
         let start = prompt.mark
         prompt.lines([""] + AllowScreen.summary(row, apps: chosenApps, lifetime: lifetime, team: shownTeam, width: prompt.width, style: prompt.style))
-        if pasted {
-            let suffix = String(key.suffix(4))
-            _ = try prompt.ask(prompt.style.mark(.digits) + " " + Self.suffixLabel) { answer in
-                answer.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(suffix) == .orderedSame ? nil : Self.suffixMismatch
-            }
-        }
         prompt.lines([prompt.style.dim(AllowScreen.confirm)])
         try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))")
         prompt.rewind(to: start)
         return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime)
     }
-
-    static let suffixLabel = "Last 4 of its ID: "
-    static let suffixMismatch = "That is not how its ID ends. Check the ID you passed."
 
     /// The steps this run shows, in order; a flag given on the command line skips its step.
     func stepNames(platform: DevicePlatform) -> [String] {
@@ -429,16 +399,16 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     /// The chosen device and every USB-connected physical device the scan found.
     @MainActor
     private func pickDevice(
-        on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, pasted: (platform: DevicePlatform, key: String)?
+        on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, named: (platform: DevicePlatform, key: String)?
     ) async throws -> (DeviceSummary, [DeviceSummary]) {
         func scan() async throws -> (rows: [DeviceSummary], warnings: [String]) {
             try await TerminalSpinner.run("Looking for devices", terminal: prompt.terminalDescriptor) { try await context.physicalDevices() }
         }
-        if let pasted {
+        if let named {
             let rows = try await scan().rows
-            guard let match = rows.first(where: { $0.connection == "usb" && $0.platform == pasted.platform && StableDeviceKey.of($0) == pasted.key }) else {
+            guard let match = rows.first(where: { $0.connection == "usb" && $0.platform == named.platform && StableDeviceKey.of($0) == named.key }) else {
                 throw CLIError(
-                    errorDescription: "\(pasted.key) is not a physical device connected over USB. Connect it with a cable, then run `offsider device-access allow` and choose it.",
+                    errorDescription: "\(named.key) is not a physical device connected over USB. Connect it with a cable, then run `offsider devices add` and choose it.",
                     reason: .deviceNotFound, hint: "offsider devices --physical"
                 )
             }
@@ -467,7 +437,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                     AllowScreen.deviceQuestion, step: wired.isEmpty ? nil : "1/\(total)", rows: menu,
                     warning: usb.isEmpty ? AllowScreen.noDevice : nil,
                     notes: usb.isEmpty ? warnings : allAllowed ? [AllowScreen.allAllowed] : [],
-                    commands: allAllowed ? [("Withdraw", AccessStatusScreen.removeCommand(allowed.count == 1 ? allowed[0].1.key : "<id>"))] : [],
+                    commands: allAllowed ? [("Withdraw", AccessStatusScreen.removeCommand(allowed.count == 1 ? allowed[0].1.key : nil))] : [],
                     rescan: true, keepsChoice: false
                 )
                 prompt.rewind(to: start)
@@ -584,12 +554,12 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let rows = Self.expiryOptions.enumerated().map { MenuRow($1.mark, [$1.label], recommended: $0 == Self.recommendedExpiry) }
         let index = try prompt.choose(AllowScreen.expiryQuestion, step: step, rows: rows, selected: Self.recommendedExpiry, keepsChoice: false)
         if let value = Self.expiryOptions[index].value {
-            let lifetime = try DeviceAccessCommand.expiry(value)
+            let lifetime = try DeviceAccess.expiry(value)
             return (lifetime, AllowScreen.duration(lifetime))
         }
         let typed = try prompt.ask("  How long (like 45m, 2h, 7d or never): ") { answer in
             do {
-                _ = try DeviceAccessCommand.expiry(answer)
+                _ = try DeviceAccess.expiry(answer)
                 return nil
             } catch let error as ValidationError {
                 return error.message.replacingOccurrences(of: "--expires", with: "A duration")
@@ -597,7 +567,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 return "\(error)"
             }
         }
-        let lifetime = try DeviceAccessCommand.expiry(typed)
+        let lifetime = try DeviceAccess.expiry(typed)
         return (lifetime, AllowScreen.duration(lifetime))
     }
 
@@ -622,7 +592,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 struct DeviceAccessStatus: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "status",
-        abstract: "Show the allow-list and managed policy; with --device, exit 7 (device_not_allowed) unless that device is allowed."
+        abstract: "Show the phones and tablets agents may drive and any managed policy; with --device, exit 7 (device_not_allowed) unless that one is allowed."
     )
 
     @Option(name: .customLong("device"), help: ArgumentHelp("Check only this device.", valueName: "id"))
@@ -659,7 +629,7 @@ struct DeviceAccessStatus: AsyncParsableCommand {
     func perform(context: DeviceAccessContext) throws -> (String, CLIError?) {
         let policy = context.policy()
         let now = context.now()
-        let target = try device.map(DeviceAccessCommand.physicalKey)
+        let target = try device.map(DeviceAccess.physicalKey)
         let output = json
             ? policy.statusJSON(now: now, only: target)
             : DeviceAccessReport.statusText(policy, now: now, path: Self.path(context))
@@ -678,11 +648,11 @@ struct DeviceAccessStatus: AsyncParsableCommand {
 struct DeviceAccessRemove: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "remove",
-        abstract: "Withdraw a physical device's allowance and stop its runner and session broker; on a terminal, offer to uninstall the runner. Needs no terminal."
+        abstract: "Stop agents driving a phone or tablet and stop its runner and session broker; on a terminal, choose it from a menu and offer to uninstall the runner."
     )
 
-    @Option(name: .customLong("device"), help: ArgumentHelp("The physical device's ID. OFFSIDER_DEVICE is never read.", valueName: "id"))
-    var device: String
+    @Option(name: .customLong("device"), help: ArgumentHelp("The physical device's ID; without it, a person chooses from the allowed ones. OFFSIDER_DEVICE is never read.", valueName: "id"))
+    var device: String?
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout.")
     var json = false
@@ -710,7 +680,10 @@ struct DeviceAccessRemove: AsyncParsableCommand {
     /// Draws a person's receipt above the runner question when `person`; otherwise the question shows the agent's text.
     @MainActor
     func remove(context: DeviceAccessContext, person: Bool = false) async throws -> Removal {
-        let target = try DeviceAccessCommand.physicalKey(device)
+        guard let device = try device ?? pickAllowed(context: context) else {
+            return Removal(text: Self.nothingAllowed, person: DevicePersonView.receipt("Nothing to withdraw", ["no phone or tablet is allowed"]))
+        }
+        let target = try DeviceAccess.physicalKey(device)
         let store = try context.requireStore()
         let existing = try? store.load()
         let listed = existing.map { $0.list.entry(platform: target.platform, key: target.key) != nil } ?? false
@@ -760,6 +733,31 @@ struct DeviceAccessRemove: AsyncParsableCommand {
     }
 
     static let cleanQuestion = "Also uninstall its runner? (Y/n) "
+    static let removeQuestion = "Which one to withdraw?"
+    static let nothingAllowed = "No phone or tablet is allowed, so there is nothing to withdraw."
+
+    /// The allowed device a person picks, or nil when none is allowed. Without a terminal, `--device` is needed.
+    @MainActor
+    func pickAllowed(context: DeviceAccessContext) throws -> String? {
+        guard !json, context.interactive() else {
+            throw CLIError(
+                errorDescription: "devices remove needs --device <id> without a terminal. `offsider devices status` lists the allowed ones.",
+                reason: .usage, hint: "offsider devices status"
+            )
+        }
+        let now = context.now()
+        let entries = AccessStatusScreen.allowed(context.policy(), now: now)
+        guard !entries.isEmpty else { return nil }
+        let index = try TerminalPrompt.run(cancelled: "Cancelled; nothing was withdrawn.", descriptor: context.promptDescriptor) { prompt in
+            let rows = entries.map { entry in
+                MenuRow(entry.platform == .android ? .android : entry.name.contains("iPad") ? .iPad : .iPhone, [
+                    AccessStatusScreen.name(entry), AccessStatusScreen.detail(entry, now: now, timeZone: context.timeZone, team: false, style: prompt.style),
+                ])
+            }
+            return try prompt.choose(Self.removeQuestion, rows: rows)
+        }
+        return entries[index].key
+    }
 
     static func cleanCommand(_ udid: String) -> String {
         "offsider session stop --device \(udid) --clean"

@@ -14,10 +14,10 @@ public enum DeviceRefusal: Equatable, Sendable {
     case expired(Date)
     /// The allow-list file is unsafe or does not parse; it counts as empty.
     case listUnreadable(String)
-    /// The file no longer matches the seal `device-access` stored in the login Keychain.
+    /// The file no longer matches the seal `devices add` stored in the login Keychain.
     case listChanged
 
-    /// True when only an administrator can lift it; `device-access allow` cannot.
+    /// True when only an administrator can lift it; `devices add` cannot.
     public var isManaged: Bool {
         switch self {
         case .managedOff, .managedUnreadable, .managedNotListed: return true
@@ -112,12 +112,12 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 return "Managed policy on this Mac does not list \(app), and the allow-list cannot override it. Nothing was read or sent."
             }
             return "\(app) is not among the apps allowed on \(allowance.name) (\(allowance.key)). Nothing was read or sent."
-                + audience.personStep("offsider device-access allow", agentTail: ", choose \(allowance.name) (\(allowance.key)) and pin \(app)")
+                + audience.personStep("offsider devices add", agentTail: ", choose \(allowance.name) (\(allowance.key)) and pin \(app)")
         }
         return nil
     }
 
-    /// `device-access status --json`, version 1.
+    /// `devices status --json`, version 1.
     public func statusJSON(now: Date, only: (platform: DevicePlatform, key: String)? = nil) -> String {
         let entries = list.entries.filter { entry in only.map { $0.platform == entry.platform && $0.key == entry.key } ?? true }
         let devices = entries.map { entry -> OrderedJSON in

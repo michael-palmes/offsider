@@ -12,18 +12,63 @@ public enum CredentialScreen {
     public static let tagsLabel = "🔖 Tags"
     public static let tagsPlaceholder = "optional, like role=admin env=staging"
     public static let addAnother = "➕  Add another login"
+    public static let appsLabel = "📦 App IDs"
+    public static let appsPlaceholder = "like com.example.app com.example.android"
+    public static let appsQuestion = "Which apps?"
+    public static let typeApps = "Type app IDs"
+    public static let lookingForApps = "Looking for your apps"
+    public static let phonesQuestion = "Sign in on phones too?"
+    public static let virtualOnly = "Simulators and emulators only"
+    public static let phonesToo = "Allowed Android phones too"
+    public static let phonesDetail = "Touch ID at each sign-in"
+    public static let virtualReceipt = "simulators and emulators"
+    public static let phonesReceipt = "also allowed Android phones"
 
-    /// Every `credential set` question, so the answers line up across the whole block.
-    public static let promptLabels = [nameLabel, usernameLabel, passwordLabel, againLabel, aboutLabel, tagsLabel]
+    /// Every `credential add` question, so the answers line up across the whole block.
+    public static let promptLabels = [appsLabel, nameLabel, usernameLabel, passwordLabel, againLabel, aboutLabel, tagsLabel]
 
     /// `label` padded to the widest of `promptLabels`.
     public static func padded(_ label: String) -> String {
         Dictionary(uniqueKeysWithValues: zip(promptLabels, PromptScreen.labels(promptLabels)))[label] ?? label
     }
 
-    public static func header(app: String, key: String?, width: Int, style: TerminalStyle) -> [String] {
-        let title = key.map { "Save the \(LoginCredential.displayKey($0)) login for \(app)" } ?? "Save a test login for \(app)"
+    /// Names the app when there is one; a login for several apps, or apps still to pick, names none.
+    public static func header(app: String?, key: String?, width: Int, style: TerminalStyle) -> [String] {
+        let login = key.map { "the \(LoginCredential.displayKey($0)) login" } ?? "a test login"
+        let title = "Save \(login)" + (app.map { " for \($0)" } ?? "")
         return TerminalUI.banner(title, mark: .lock, width: width, style: style) + [""]
+    }
+
+    /// `📱  com.example.app  in front on iPhone 17`; 📦 when the platform is not known.
+    public static func appRow(_ choice: LoginAppChoice) -> MenuRow {
+        let mark: TerminalStyle.Mark = choice.platform == .ios ? .iPhone : choice.platform == .android ? .android : .app
+        let detail: String
+        switch choice.source {
+        case .profile: detail = "offsider.login.json"
+        case .front(let device): detail = "in front on \(device)"
+        case .saved: detail = "has saved logins"
+        }
+        return MenuRow(mark, [PromptScreen.label(choice.id), detail])
+    }
+
+    /// Why typed app IDs cannot be saved for, or nil when they can. Empty is fine once an app was ticked.
+    public static func appsProblem(_ raw: String, have: [String]) -> String? {
+        let ids = LoginAppPicker.typed(raw)
+        if ids.isEmpty { return have.isEmpty ? "❗ Type an app ID, like com.example.app." : nil }
+        for id in ids {
+            guard DeviceAllowance.isAppID(id) else { return "❗ \(PromptScreen.visible(id)) is not an app ID, like com.example.app." }
+            if let refusal = DevicePlatform.allCases.lazy.compactMap({ SystemAppDenyList.refusal(id, platform: $0) }).first { return "❗ \(refusal)." }
+        }
+        return nil
+    }
+
+    /// One row per saved name to update, with the apps that hold it, then a row to add another.
+    public static func sharedMenuOptions(_ names: [LoginSharedName]) -> [String] {
+        names.map { "📝  Update \(LoginCredential.displayKey($0.key)) · \(LoginDirectory.list($0.apps))" } + [addAnother]
+    }
+
+    public static func replaceSharedTitle(key: String) -> String {
+        "Replace the saved \(LoginCredential.displayKey(key))?"
     }
 
     public static func menuTitle(entries: [LoginCredentialSummary]) -> String {

@@ -56,7 +56,7 @@ struct AccessScreenTests {
         let lines = AllowScreen.allowed(name: "iPad Air", key: key, until: "until 22:14", apps: [], width: 72, style: Self.unicode)
         #expect(lines == [
             "✅ Allowed iPad Air until 22:14, any app.",
-            "   Withdraw  offsider device-access remove --device \(key)",
+            "   Withdraw  offsider devices remove --device \(key)",
             "   Next      offsider doctor --device \(key)",
         ])
         let narrow = AllowScreen.allowed(name: "iPad Air", key: key, until: "until 22:14", apps: [], width: 30, style: Self.unicode)
@@ -64,7 +64,7 @@ struct AccessScreenTests {
         #expect(narrow.last == "   Next      offsider doctor --device \(key)")
         let coloured = AllowScreen.allowed(name: "iPad Air", key: key, until: "until 22:14", apps: [], width: 72, style: TerminalStyle(colours: true))
         #expect(coloured[0] == "✅ \u{1B}[32m\u{1B}[1mAllowed iPad Air until 22:14, any app.\u{1B}[0m\u{1B}[0m")
-        #expect(coloured[1] == "   \u{1B}[2mWithdraw\u{1B}[0m  \u{1B}[36moffsider device-access remove --device \(key)\u{1B}[0m")
+        #expect(coloured[1] == "   \u{1B}[2mWithdraw\u{1B}[0m  \u{1B}[36moffsider devices remove --device \(key)\u{1B}[0m")
         let ascii = AllowScreen.allowed(name: "iPad Air", key: key, until: "until 22:14", apps: [], width: 72, style: Self.ascii)
         #expect(ascii.first == "[OK] Allowed iPad Air until 22:14, any app.")
         #expect(ascii.last == "     Next      offsider doctor --device \(key)")
@@ -102,18 +102,18 @@ struct AccessScreenTests {
         #expect(lines.contains("  ● Test Pixel  com.example.app  until removed"))
         #expect(!out.contains("Old iPhone") && !out.contains("agent text"))
         #expect(lines.suffix(2).map { $0.trimmingCharacters(in: .whitespaces) } == [
-            "offsider device-access allow                 allow another", "offsider device-access remove --device <id>  withdraw one",
+            "offsider devices add     add another", "offsider devices remove  withdraw one",
         ])
         #expect(err.isEmpty)
         let single = Self.drawn(Self.policy([phone])).out
-        #expect(single.hasSuffix("  offsider device-access remove --device \(PolicyFixtures.serial)  withdraw it\n"))
+        #expect(single.hasSuffix("  offsider devices remove --device \(PolicyFixtures.serial)  withdraw it\n"))
     }
 
     @Test("with nothing allowed the status screen says so and names the command that allows one")
     func statusScreenEmpty() {
         let (out, err) = Self.drawn(Self.policy([]))
         #expect(out.hasPrefix("🔐  \(AccessStatusScreen.title)") && out.contains("none allowed") && out.contains(AccessStatusScreen.nothingAllowed))
-        #expect(err == "\nNext  offsider device-access allow\n")
+        #expect(err == "\nNext  offsider devices add\n")
         #expect(!out.contains("withdraw"))
         let ascii = Self.drawn(Self.policy([]), style: Self.ascii)
         let text = ascii.out + ascii.err

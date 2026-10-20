@@ -42,27 +42,27 @@ struct ErrorHintTests {
     @Test("an agent is asked to fetch the user; a person at a terminal gets the command, never with --device")
     func allowWording() {
         let agent = CLIError.deviceNotAllowed(name: "Test Phone", key: "SERIAL123", refusal: .notAllowed, audience: .agent)
-        #expect(agent.userFacingDescription.contains("Ask the user to run `offsider device-access allow` in their own terminal and choose Test Phone (SERIAL123); an agent cannot allow a device."))
+        #expect(agent.userFacingDescription.contains("Ask the user to run `offsider devices add` in their own terminal and choose Test Phone (SERIAL123); an agent cannot allow a device."))
         let person = CLIError.deviceNotAllowed(name: "Test Phone", key: "SERIAL123", refusal: .notAllowed, audience: .person)
         #expect(person.userFacingDescription.hasSuffix("so nothing was sent to it."))
         #expect(!person.userFacingDescription.contains("Ask the user"))
         #expect(!person.userFacingDescription.contains("--device"))
-        #expect(person.hint == "offsider device-access allow")
+        #expect(person.hint == "offsider devices add")
     }
 
     @Test("an app outside the phone's allowance and a missing team split the same way")
     func appAndTeamWording() {
         let agent = AndroidError.appNotPermitted("SERIAL123", package: "com.example.app", byManagedPolicy: false, audience: .agent)
-        #expect(agent.message.contains("ask the user to run `offsider device-access allow` in their own terminal"))
+        #expect(agent.message.contains("ask the user to run `offsider devices add` in their own terminal"))
         let person = AndroidError.appNotPermitted("SERIAL123", package: "com.example.app", byManagedPolicy: false, audience: .person)
         #expect(!person.message.contains("ask the user"))
-        #expect(person.hint == "offsider device-access allow")
+        #expect(person.hint == "offsider devices add")
 
         let team = #expect(throws: IOSDeviceError.self) {
             try XcodeRunnerBuilder.resolveTeam(environment: [:], allowanceTeam: nil, signedInTeams: [], audience: .person)
         }
         #expect(team?.message.contains("Ask the user") == false)
-        #expect(team?.hint == "offsider device-access allow")
+        #expect(team?.hint == "offsider devices add")
     }
 
     @Test("in-process callers, such as tests, always get the agent wording")

@@ -152,7 +152,7 @@ offsider_command() {
 allowed_device_for() {
     local platform="$1" app="$2"
     local status count i
-    status="$("$OFFSIDER_BIN_PATH" device-access status --json 2>/dev/null)" || status=""
+    status="$("$OFFSIDER_BIN_PATH" devices status --json 2>/dev/null)" || status=""
     count="$(printf '%s' "$status" | plutil -extract devices raw -o - - 2>/dev/null)" || count=0
     local ids=() names=() apps=()
     for (( i = 0; i < count; i++ )); do
@@ -183,7 +183,7 @@ allowed_device_for() {
 
 # The team an iPhone or iPad's allowance records, or nothing.
 allowance_team() {
-    "$OFFSIDER_BIN_PATH" device-access status --device "$1" --json 2>/dev/null | plutil -extract devices.0.team raw -o - - 2>/dev/null || true
+    "$OFFSIDER_BIN_PATH" devices status --device "$1" --json 2>/dev/null | plutil -extract devices.0.team raw -o - - 2>/dev/null || true
 }
 
 # A command only a person may run, on its own line under the error that asks for it, then what to do in it.
@@ -204,8 +204,8 @@ print_device_allow() {
     local name="$1"
     local app="${2:-}"
     if [[ -n "$app" ]]; then
-        print_person_command "$(offsider_command) device-access allow" "Then choose $name, pin $app, and allow at least 2 hours."
+        print_person_command "$(offsider_command) devices add" "Then choose $name, pin $app, and allow at least 2 hours."
     else
-        print_person_command "$(offsider_command) device-access allow" "Then choose $name and allow at least 2 hours."
+        print_person_command "$(offsider_command) devices add" "Then choose $name and allow at least 2 hours."
     fi
 }

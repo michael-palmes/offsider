@@ -6,7 +6,7 @@ Every report ends with the host: `host.load` (warns when the 1-minute load passe
 
 `--fix` applies safe fixes only: on Android, starting an absent adb server with `ADB_MDNS=0` (never when `--device` names a simulator); on an allowed iPhone or iPad named with `--device`, mounting the developer disk image.
 
-For a physical device, `device.policy` comes first. A device no one allowed gets one failing `device.policy` check, with the `device-access allow` command as its hint, and no device checks run (`--fix` touches nothing); an allowed one passes it with its expiry. `doctor --device emulator-<n>` fails `device.policy` the same way when that serial is a USB device, or when adb cannot list devices to tell. `--json` adds a `policy` object for a physical device (`platform`, `id`, `allowed`, `refusal`, `expires`, `apps`, `managed`).
+For a physical device, `device.policy` comes first. A device no one allowed gets one failing `device.policy` check, with the `devices add` command as its hint, and no device checks run (`--fix` touches nothing); an allowed one passes it with its expiry. `doctor --device emulator-<n>` fails `device.policy` the same way when that serial is a USB device, or when adb cannot list devices to tell. `--json` adds a `policy` object for a physical device (`platform`, `id`, `allowed`, `refusal`, `expires`, `apps`, `managed`).
 
 ## Simulators
 

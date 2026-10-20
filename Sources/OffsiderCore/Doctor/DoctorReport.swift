@@ -309,7 +309,7 @@ public struct DoctorPolicy: Codable, Equatable, Sendable {
         return DoctorCheckResult(
             id: .devicePolicy, status: .fail,
             detail: "\(id) is a physical device no one has allowed (\(refusal ?? "not_allowed")); no device checks ran",
-            hint: ErrorAudience.current == .person ? "Run offsider device-access allow." : "Ask the user to run `offsider device-access allow` in their own terminal and choose \(id)."
+            hint: ErrorAudience.current == .person ? "Run offsider devices add." : "Ask the user to run `offsider devices add` in their own terminal and choose \(id)."
         )
     }
 }

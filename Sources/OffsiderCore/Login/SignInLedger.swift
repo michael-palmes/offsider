@@ -119,6 +119,18 @@ public struct SignInLedger: Sendable {
         return removed ?? []
     }
 
+    /// Removes every record made through `foreground` for `app`'s logins, as when that id stops sharing them.
+    @discardableResult
+    public func clear(app: String, foreground: String) -> [SignInRecord] {
+        let removed = try? locked { directory in
+            records(in: directory).filter { $0.record.app == app && $0.record.foreground == foreground }.map { entry in
+                OffsiderPrivateDirectory.removeFile(named: entry.name, in: directory)
+                return entry.record
+            }
+        }
+        return removed ?? []
+    }
+
     /// The app's sign-ins grouped by raw key, newest first; `bootMarker` gives a device's current marker, or nil when unknown.
     public func signIns(app: String, bootMarker: (DevicePlatform, String) -> String?) -> [String: [LoginSignIn]] {
         guard let directory = try? existingDirectory() else { return [:] }
