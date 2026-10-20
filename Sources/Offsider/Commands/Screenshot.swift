@@ -164,21 +164,23 @@ struct Screenshot: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         await appOption.apply(to: route)
-        let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan()), plain: !json)
+        let console = Console.current
+        let masks = try await masksWithRunDefaults(maskPlan())
+        let report = try await console.progress("Capturing the screen") { try await take(request, on: route, masks: masks, plain: !json) }
 
         guard let comparison = report.comparison else {
             if json {
-                print(report.jsonLine())
+                console.data(report.jsonLine() + "\n")
             } else if let path = report.path {
-                print(path)
+                console.show(ReadPersonView.screenshot(report, path: path))
             }
             return
         }
         if json {
-            Self.writeError(comparison.summary)
-            print(report.jsonLine())
+            console.data(comparison.summary + "\n", to: .err)
+            console.data(report.jsonLine() + "\n")
         } else {
-            print(comparison.summary)
+            console.show(ReadPersonView.comparison(report, comparison))
         }
         if !comparison.met {
             throw ExitCode(OffsiderExitCode.unverified.rawValue)
@@ -256,18 +258,28 @@ struct Screenshot: AsyncParsableCommand {
             }
             capture = result.capture
             masked = result
+            let console = Console.current
             if !result.unmatched.isEmpty {
-                Self.writeError("Warning: nothing matched \(result.unmatched.joined(separator: ", ")), so nothing was painted for it.")
+                let names = result.unmatched.joined(separator: ", ")
+                console.notice(.warning("Nothing matched \(names), so nothing was painted for it", agent: "nothing matched \(names), so nothing was painted for it."))
             }
             let skipped = result.skipped?.values.reduce(0, +) ?? 0
             if skipped > 0 {
-                Self.writeError("Note: --mask-skip-beneath left \(skipped == 1 ? "1 match" : "\(skipped) matches") on a screen beneath a page unpainted (skippedBeneath).")
+                let matches = skipped == 1 ? "1 match" : "\(skipped) matches"
+                console.notice(.note(
+                    "Left \(matches) beneath a page unpainted",
+                    agent: "--mask-skip-beneath left \(matches) on a screen beneath a page unpainted (skippedBeneath)."
+                ))
             }
             let beneath = result.beneath.values.reduce(0, +)
             if beneath > 0 {
                 let skippable = !masks.skipsBeneath && result.beneath.keys.contains(where: \.skippableBeneath)
                 let advice = skippable ? "; --mask-skip-beneath leaves them unpainted" : ""
-                Self.writeError("Note: \(beneath == 1 ? "1 mask was" : "\(beneath) masks were") painted for elements on a screen beneath a page, so black boxes can sit over the page on top (maskedBeneath)\(advice).")
+                let painted = beneath == 1 ? "1 mask was" : "\(beneath) masks were"
+                console.notice(.note(
+                    "\(painted) painted beneath a page, so black boxes can cover the page on top\(advice)",
+                    agent: "\(painted) painted for elements on a screen beneath a page, so black boxes can sit over the page on top (maskedBeneath)\(advice)."
+                ))
             }
         }
         let rendered = try ScreenCapture.render(capture, request: request)
@@ -278,7 +290,7 @@ struct Screenshot: AsyncParsableCommand {
             let target = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: request.format)
             let url = try ScreenCapture.write(try rendered.encoded(as: request.format), to: target)
             path = url.path
-            Self.writeError("Screenshot saved to \(url.path) (\(rendered.image.width) x \(rendered.image.height) px)")
+            Self.saved(url.path, width: rendered.image.width, height: rendered.image.height)
         }
         var runFile: String?
         if let token {
@@ -290,7 +302,7 @@ struct Screenshot: AsyncParsableCommand {
             }
             if path == nil, let runFile {
                 path = runFile
-                Self.writeError("Screenshot saved to \(runFile) (\(rendered.image.width) x \(rendered.image.height) px)")
+                Self.saved(runFile, width: rendered.image.width, height: rendered.image.height)
             }
         }
 
@@ -301,7 +313,9 @@ struct Screenshot: AsyncParsableCommand {
         }
 
         if ScreenImage.isJPEG(baseline) {
-            Self.writeError("Warning: JPEG baselines can read as changed because of compression artefacts; prefer PNG.")
+            Console.current.notice(.warning(
+                "A JPEG baseline can read as changed; prefer PNG", agent: "JPEG baselines can read as changed because of compression artefacts; prefer PNG."
+            ))
         }
         let bands = await backend.volatileScreenBands(for: booted.id)
         var (result, diffImage) = try ScreenCapture.comparison(
@@ -318,14 +332,17 @@ struct Screenshot: AsyncParsableCommand {
             let target = try ScreenCapture.outputURL(path: diffOutput, prefix: "Screenshot Diff", deviceName: booted.name, format: .png)
             let url = try ScreenCapture.write(try ScreenImage.encode(diffImage, as: .png), to: target)
             report.diffPath = url.path
-            Self.writeError("Diff saved to \(url.path)")
+            ReadPersonView.saved("Diff saved to \(url.path)", person: "Diff saved to \(TerminalText.homePath(url.path))")
         }
         if let token, runFile != nil, (result.pixels?.changedPixels ?? 0) > 0, let diffPath = try recorder.diffPath(token) {
             do {
                 try RunFolder.writeNew(ScreenImage.encode(diffImage, as: .png), toPath: diffPath)
             } catch {
                 recorder.update(token) { $0.diff = nil }
-                Self.writeError("Warning: could not write the run's diff to \(diffPath): \(TerminalText.line(error.localizedDescription))")
+                let reason = TerminalText.line(error.localizedDescription)
+                Console.current.notice(.warning(
+                    "Could not write the run's diff to \(TerminalText.homePath(diffPath)): \(reason)", agent: "could not write the run's diff to \(diffPath): \(reason)"
+                ))
             }
         }
         return report
@@ -343,7 +360,7 @@ struct Screenshot: AsyncParsableCommand {
             let target = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: .png)
             let url = try ScreenCapture.write(png, to: target)
             path = url.path
-            Self.writeError("Screenshot saved to \(url.path) (\(size.width) x \(size.height) px)")
+            Self.saved(url.path, width: size.width, height: size.height)
         }
         var runFile: String?
         if let token {
@@ -351,7 +368,7 @@ struct Screenshot: AsyncParsableCommand {
             recorder.update(token) { $0.output = path }
             if path == nil, let runFile {
                 path = runFile
-                Self.writeError("Screenshot saved to \(runFile) (\(size.width) x \(size.height) px)")
+                Self.saved(runFile, width: size.width, height: size.height)
             }
         }
         var report = ScreenshotReport(path: path, width: size.width, height: size.height, pixelsPerPoint: nil, region: nil, orientation: nil, upright: true, format: .png)
@@ -372,7 +389,8 @@ struct Screenshot: AsyncParsableCommand {
             guard otherCopy != nil else {
                 throw CLIError(errorDescription: message + ". Fix the run folder, or stop the run with `offsider run stop`.", reason: .runUnavailable, hint: "offsider run status")
             }
-            writeError("Warning: \(TerminalText.line(message, cap: TerminalText.maxErrorCharacters)); the --output copy was written.")
+            let shown = TerminalText.line(message, cap: TerminalText.maxErrorCharacters)
+            Console.current.notice(.warning("\(shown); the --output copy was written", agent: "\(shown); the --output copy was written."))
             return nil
         }
     }
@@ -389,8 +407,10 @@ struct Screenshot: AsyncParsableCommand {
         MaskConfig(ids: plan.ids, labels: plan.labels, labelContains: plan.labelsContaining, valuePatterns: plan.texts).selectorNames
     }
 
-    private static func writeError(_ line: String) {
-        FileHandle.standardError.write(Data((line + "\n").utf8))
+    /// `Screenshot saved to <path> (W x H px)` on stderr for an agent; a person reads the receipt.
+    private static func saved(_ path: String, width: Int, height: Int) {
+        let size = "\(width) x \(height) px"
+        ReadPersonView.saved("Screenshot saved to \(path) (\(size))", person: "Screenshot saved to \(TerminalText.homePath(path)) · \(size)")
     }
 }
 

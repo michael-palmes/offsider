@@ -165,11 +165,15 @@ struct Wait: AsyncParsableCommand {
         // An Android tree read locks the device, so the claim (and any --wait-lock) comes before the watchdog's bound.
         let locking = readsTree && DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
-        let outcome = try await watchdog.guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
-            try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
+        let outcome = try await Console.current.progress("Waiting for \(target)") {
+            try await watchdog.guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
+                try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
+            }
         }
         let mask = (try? await AmbientMasks.treeMask()) ?? .none
-        try Self.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, checked: selector, mask: mask)
+        try Self.report(
+            outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, checked: selector, mask: mask, person: personOutcome
+        )
     }
 
     var readsTree: Bool {
@@ -238,16 +242,35 @@ struct Wait: AsyncParsableCommand {
 
     /// `✓ --id 'save' is on screen after 1.2 s`, `✓ Screen settled after 0.9 s` or `✓ Waited 2 s`.
     func successLine(_ outcome: WaitOutcome) -> String {
+        let parts = successParts(outcome)
+        return "✓ " + [parts.headline, parts.after, parts.selectors.map { "(\($0))" }].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// What was met, how long it took and, for `--any`, which of the selectors it was.
+    private func successParts(_ outcome: WaitOutcome) -> (headline: String, after: String?, selectors: String?) {
         let after = "after \(WaitLoop.seconds(outcome.elapsed))"
         if any, let matched = outcome.matched {
-            return "✓ --\(matched.by) '\(matched.text)' is \(selector.presentState) \(after) (\(matched.position) of \(matched.of) selectors)"
+            return ("--\(matched.by) '\(matched.text)' is \(selector.presentState)", after, "\(matched.position) of \(matched.of) selectors")
         }
         if let query = selector.query {
-            return "✓ \(query.selectorDescription) is \(gone ? "gone" : selector.presentState) \(after)"
+            return ("\(query.selectorDescription) is \(gone ? "gone" : selector.presentState)", after, nil)
         }
-        if settled { return "✓ Screen settled \(after)" }
-        if region != nil { return stable ? "✓ Region stable \(after)" : "✓ Region changed \(after)" }
-        return "✓ Waited \(WaitLoop.seconds(outcome.elapsed))"
+        if settled { return ("Screen settled", after, nil) }
+        if region != nil { return (stable ? "Region stable" : "Region changed", after, nil) }
+        return ("Waited \(WaitLoop.seconds(outcome.elapsed))", nil, nil)
+    }
+
+    /// A person's ✅ with the time, or ❌ with the last reason and the nearest element; `shown` is already redacted.
+    func personOutcome(_ shown: WaitOutcome, note: String?) -> Outcome {
+        guard shown.met else {
+            var details = ["Last     \(shown.reason)"]
+            if let nearest = shown.nearMiss { details.append("Nearest  \(nearest.summary)") }
+            if settled, !ignoreValues, shown.onlyTextMoved { details.append("Only text kept changing; --ignore-values lets it settle") }
+            return .failed("Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target)", details: details)
+        }
+        let parts = successParts(shown)
+        let timing = [parts.after, parts.selectors].compactMap { $0 }.joined(separator: " · ")
+        return .done(parts.headline, details: (timing.isEmpty ? [] : [timing]) + (note.map { [$0] } ?? []))
     }
 
     /// `✗ Timed out after 10 s waiting for --id 'save' (last: off screen at (20, 10700) 350x44).`
@@ -368,8 +391,10 @@ struct Wait: AsyncParsableCommand {
         } else {
             hidden = ([checked.hasValue].compactMap { $0 } + checked.elementLabelsContaining).contains { LogRedactor.redactValue($0).count > 0 }
         }
-        return hidden ? " (matched on the real text; describe-ui shows it redacted)" : ""
+        return hidden ? " (\(redactedNote))" : ""
     }
+
+    static let redactedNote = "matched on the real text; describe-ui shows it redacted"
 
     private static func redacted(_ node: UINode, mask: TreeValueMask) -> UINode {
         var single = node
@@ -386,17 +411,25 @@ struct Wait: AsyncParsableCommand {
 
     /// Prints the outcome (the JSON report on stdout with `json`, human text on stderr) and exits 5 when it was not met.
     /// Screen text in it is redacted as `describe-ui` redacts it; `checked` adds a note when the value or label it matched is text the tree output hides.
+    /// A person reads `person`'s receipt in place of the `✓` or `✗` line, which an agent and `--json` always read.
     static func report(
-        _ outcome: WaitOutcome, success: String, failure: String, json: Bool, checked: ElementSelectorOptions? = nil, mask: TreeValueMask = .none
+        _ outcome: WaitOutcome, success: String, failure: String, json: Bool, checked: ElementSelectorOptions? = nil, mask: TreeValueMask = .none,
+        person: ((WaitOutcome, String?) -> Outcome)? = nil, console: Console = .current
     ) throws {
-        let line = outcome.met ? success + redactionNote(outcome, checked: checked, mask: mask) : LogRedactor.redactValue(failure).text
+        let note = outcome.met ? redactionNote(outcome, checked: checked, mask: mask) : ""
+        let line = outcome.met ? success + note : LogRedactor.redactValue(failure).text
         if json {
-            print(WaitReport(shown(outcome, mask: mask)).jsonLine())
-            print(line, to: &standardError)
-        } else if outcome.met {
-            print(line)
+            console.data(WaitReport(shown(outcome, mask: mask)).jsonLine() + "\n")
+            console.data(line + "\n", to: .err)
+        } else if let person, outcome.met {
+            let receipt = person(shown(outcome, mask: mask), note.isEmpty ? nil : redactedNote)
+            console.show(Page([.person([.outcome(receipt)]), .agent(line + "\n")]))
+        } else if let person, console.err.profile == .person {
+            let failed = person(shown(outcome, mask: mask), nil)
+            let redacted = Outcome(ok: false, headline: LogRedactor.redactValue(failed.headline).text, details: failed.details.map { LogRedactor.redactValue($0).text })
+            console.data(PersonRenderer.body([.outcome(redacted)], canvas: console.err.canvas), to: .err)
         } else {
-            print(line, to: &standardError)
+            console.data(line + "\n", to: outcome.met ? .out : .err)
         }
         if !outcome.met {
             throw ExitCode(OffsiderExitCode.unverified.rawValue)

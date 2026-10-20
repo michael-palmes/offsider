@@ -133,9 +133,19 @@ struct AccessibilityFetcher {
         }
         if warnsWhenEmpty, try !containsAccessibilityDescendant(in: data),
            let listing = await DoctorProbes.runningAppListing(udid: target.udid), let app = SimLaunchctl.likelyForeground(listing) {
-            FileHandle.standardError.write(Data("Warning: \(DoctorRules.emptyTreeDetail(app)). \(DoctorRules.emptyTreeHint(app, udid: target.udid))\n".utf8))
+            Console.current.notice(emptyTreeNotice(app, udid: target.udid))
         }
         return data
+    }
+
+    /// An agent reads the doctor's detail and hint as one `Warning:` line; a person the cause in a few words and the relaunch to try.
+    nonisolated static func emptyTreeNotice(_ app: SimLaunchctl.App, udid: String) -> Notice {
+        let hint = DoctorRules.emptyTreeHint(app, udid: udid)
+        let relaunch = "xcrun simctl terminate \(udid) \(app.bundleID) && xcrun simctl launch \(udid) \(app.bundleID)"
+        return .warning(
+            "\(app.bundleID) is running but its accessibility tree is empty; relaunch it, or reboot the simulator if that fails",
+            agent: "\(DoctorRules.emptyTreeDetail(app)). \(hint)", try: hint.contains(relaunch) ? relaunch : nil
+        )
     }
 
     /// Reads until the tree has a descendant, `attempts` times at most; when all asked for traits and came back empty, one read without them decides, once per process.

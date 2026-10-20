@@ -72,12 +72,15 @@ struct DescribeUI: AsyncParsableCommand {
         try await route.backend.prepare()
         try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
 
+        let console = Console.current
         if rawSource {
-            print(try Self.rawSourceText(try await Self.rawCapture(on: route)))
+            console.data(try Self.rawSourceText(try await Self.rawCapture(on: route)) + "\n")
             return
         }
-        let described = try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
-        print(described, terminator: "")
+        let described = try await console.progress("Reading the screen") {
+            try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+        }
+        console.data(described)
     }
 
     /// The output for one read; with `--diff`, compared against the device's cached tree.
@@ -88,7 +91,7 @@ struct DescribeUI: AsyncParsableCommand {
         (route.backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: route.device)
         let probe = point == nil && !diff ? await PresentationCheck.start(backend: route.backend, device: route.device) : nil
         var tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
-        if let truncated = tree.truncated { FileHandle.standardError.write(Data((truncated.note + "\n").utf8)) }
+        if let truncated = tree.truncated { Console.current.notice(truncated.notice) }
         let centre = await probe?.centre()
         if point == nil {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)

@@ -29,15 +29,26 @@ struct Displays: AsyncParsableCommand {
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         try await route.backend.prepare()
         let device = try await route.backend.requireBootedDevice(route.device).id
-        print(try await Self.report(json: json, on: device, backend: route.backend, deviceName: deviceOption.id))
+        let console = Console.current
+        let list = try await console.progress("Reading the displays") { try await Self.list(on: device, backend: route.backend, deviceName: deviceOption.id) }
+        if json {
+            console.data(DisplayReport.json(list) + "\n")
+        } else {
+            console.show(DisplayReport.page(list, platform: device.platform))
+        }
     }
 
     @MainActor
     static func report(json: Bool, on device: DeviceID, backend: any DeviceBackend, deviceName: String) async throws -> String {
+        let list = try await list(on: device, backend: backend, deviceName: deviceName)
+        return json ? DisplayReport.json(list) : DisplayReport.table(list, platform: device.platform)
+    }
+
+    @MainActor
+    static func list(on device: DeviceID, backend: any DeviceBackend, deviceName: String) async throws -> DisplayList {
         guard let displays = backend as? any DisplayControlling else {
             throw CLIError(errorDescription: "displays is not available for \(deviceName) yet.", reason: .notSupported)
         }
-        let list = try await displays.displays(of: device)
-        return json ? DisplayReport.json(list) : DisplayReport.table(list, platform: device.platform)
+        return try await displays.displays(of: device)
     }
 }
