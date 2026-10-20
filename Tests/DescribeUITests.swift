@@ -346,7 +346,11 @@ struct DescribeUIRedactionTests {
         let median = Self.medianMilliseconds { counted = tree.redacted().redaction ?? counted }
         print("offsider bench: redact \(nodes) nodes median \(String(format: "%.3f", median)) ms")
         #expect(counted.isEmpty)
-        // The budget holds for release builds (about 0.4 ms and 1.7 ms); a debug build runs several times slower, so this guards against a regression of scale.
-        #expect(median < budget * 10)
+        // The budget holds for release builds (about 0.4 ms and 1.7 ms); a debug build runs several times slower, and one under AddressSanitizer
+        // several times slower again, so this guards against a regression of scale rather than the budget itself.
+        #expect(median < budget * (Self.sanitized ? 50 : 10))
     }
+
+    /// True when the test process runs under AddressSanitizer, whose runtime exports this symbol.
+    nonisolated static let sanitized = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "__asan_init") != nil
 }
