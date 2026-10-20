@@ -154,7 +154,7 @@ public enum PersonRenderer {
     }
 
     /// The title line with its summary right-aligned at `frame`, or the summary on the next lines when it does not fit; then the rule.
-    private static func header(_ header: Header, frame: Int, style: TerminalStyle) -> [String] {
+    public static func header(_ header: Header, frame: Int, style: TerminalStyle) -> [String] {
         let mark = style.ascii ? "" : header.mark.emoji + "  "
         let title = line(header.title)
         let titleWidth = TerminalText.width(mark + title)

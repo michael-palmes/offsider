@@ -134,11 +134,12 @@ extension DoctorRenderer {
             })
         }
         blocks.append([closing(report, style: style)])
-        let summary = personSummary(report, style: style)
+        let summary = personSummary(report)
         let mark = style.ascii ? "" : TerminalStyle.Mark.doctor.emoji + "  "
         let widest = blocks.joined().map(TerminalText.width).max() ?? 0
-        let frame = min(canvas.usable, max(widest, TerminalText.width(mark + "Doctor") + 2 + TerminalText.width(summary), 40))
-        return ([headerLines(mark: mark, title: "Doctor", summary: summary, frame: frame, style: style)] + blocks)
+        let natural = TerminalText.width(mark + "Doctor") + 2 + TerminalText.width(summary.joined(separator: " \(style.dot) "))
+        let frame = min(canvas.usable, max(widest, natural, 40))
+        return ([PersonRenderer.header(Header(.doctor, "Doctor", summary), frame: frame, style: style)] + blocks)
             .map { $0.joined(separator: "\n") }.joined(separator: "\n\n") + "\n"
     }
 
@@ -246,7 +247,7 @@ extension DoctorRenderer {
     }
 
     /// `Xcode 27.0 · 1 warning`, or the device's name in place of Xcode.
-    private static func personSummary(_ report: DoctorReport, style: TerminalStyle) -> String {
+    private static func personSummary(_ report: DoctorReport) -> [String] {
         var parts: [String] = []
         if let device = report.device {
             parts.append(TerminalText.field(DeviceName.display(device.id, label: device.name), profile: .person))
@@ -254,16 +255,6 @@ extension DoctorRenderer {
             parts.append("Xcode \(version)")
         }
         let counts = problemCounts(report)
-        return (parts + (counts.isEmpty ? ["all good"] : counts)).joined(separator: " \(style.dot) ")
-    }
-
-    /// The kit's header: the mark and bold title, the dim summary right-aligned at `frame` or under it, then a cyan rule.
-    private static func headerLines(mark: String, title: String, summary: String, frame: Int, style: TerminalStyle) -> [String] {
-        let titleWidth = TerminalText.width(mark + title)
-        let summaryWidth = TerminalText.width(summary)
-        let top = titleWidth + 2 + summaryWidth <= frame
-            ? [mark + style.bold(title) + String(repeating: " ", count: frame - titleWidth - summaryWidth) + style.dim(summary)]
-            : [mark + style.bold(title), "    " + style.dim(summary)]
-        return top + [style.cyan(String(repeating: style.rule, count: frame))]
+        return parts + (counts.isEmpty ? ["all good"] : counts)
     }
 }
