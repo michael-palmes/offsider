@@ -143,5 +143,5 @@ Test users and unlock codes live only in your login Keychain, as generic passwor
 ## Build hardening
 
 - `OffsiderCore`, the pure logic every command uses, is compiled with Swift's strict memory safety checking, so each unsafe pointer, C string and C call is marked where it happens. The other targets are not yet.
-- CI runs the unit tests under AddressSanitizer, and property tests feed the parsers seeded random and malformed input on every `swift test`.
+- CI runs the unit tests under AddressSanitizer after each merge to main, and property tests feed the parsers seeded random and malformed input on every `swift test`.
 - A weekly job fuzzes every parser that reads device, daemon or file bytes (adb, the helper's frames, usbmux, screenshots, uiautomator dumps, the media stream answer, the tree cache, the allow-list, the mask file, JSON and the log redactor) under AddressSanitizer. It is a mutation fuzzer, not coverage guided, since Xcode's toolchain ships no libFuzzer runtime.

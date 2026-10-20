@@ -35,56 +35,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Select Xcode
-        id: xcode
-        run: |
-          set -euo pipefail
-          [ -d "$XCODE_APP" ] || { echo "::error::$XCODE_APP not found"; exit 1; }
-          sudo xcode-select --switch "$XCODE_APP"
-          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
-          echo "build=$(xcodebuild -version | awk '/Build version/ { print $3 }')" >> "$GITHUB_OUTPUT"
-
-      - name: Install XcodeGen (pinned)
-        run: |
-          set -euo pipefail
-          zip="$RUNNER_TEMP/xcodegen.zip"
-          curl -fsSLo "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
-          echo "${XCODEGEN_SHA256}  $zip" | shasum -a 256 -c -
-          unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen"
-          dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)" >> "$GITHUB_PATH"
-
-      - name: Resolve idb pin
-        id: idb
-        run: |
-          set -euo pipefail
-          ref="$(sed -nE 's/^DEFAULT_IDB_GIT_REF="([0-9a-f]{40})"$/\1/p' scripts/build.sh)"
-          [ -n "$ref" ] || { echo "::error::DEFAULT_IDB_GIT_REF not found in scripts/build.sh"; exit 1; }
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-
       # The manifest declares the idb binary targets, so they must exist even though the driver links none of them.
-      - name: Cache idb checkout and frameworks
-        id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/macos-setup
         with:
-          path: |
-            idb_checkout
-            build_products/Frameworks
-            build_products/XCFrameworks
-          key: idb-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-xcodegen-${{ env.XCODEGEN_VERSION }}-${{ hashFiles('scripts/build.sh', 'Package.swift') }}
-
-      - name: Build idb frameworks
-        env:
-          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
-        run: |
-          set -euo pipefail
-          scripts/build.sh setup
-          if [ "$CACHE_HIT" = true ] && scripts/build.sh verify-xcframeworks; then
-            echo "Reusing cached idb frameworks"
-          else
-            for step in clean frameworks install strip xcframeworks verify-xcframeworks; do
-              scripts/build.sh "$step"
-            done
-          fi
+          xcode-app: ${{ env.XCODE_APP }}
+          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
 
       - name: Build the fuzz driver (ASan)
         env:

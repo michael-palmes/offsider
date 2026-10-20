@@ -64,7 +64,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `scripts/bench-ab.sh --device <id> --scenario <name>` | Compare the merge base with this checkout on one Offsider device in paired, seeded runs (`--help` lists scenarios); `--phone` acknowledges that `--device` names a USB phone (playground installed first, never by bench) |
 | `bash -n <script>` | Syntax-check a changed shell script |
 | `OFFSIDER_FUZZ=1 swift build --product OffsiderFuzz --sanitize=address` | Build the fuzz driver (never in a release); `.build/debug/OffsiderFuzz --list`, `<target> Tests/Fixtures/fuzz/<target> --seconds 60`, `<target> --replay <file>` |
-| `ASAN_OPTIONS=strip_env=0 swift test --sanitize=address --no-parallel` | Unit tests under AddressSanitizer, as CI's non-required job runs them; without `strip_env=0` every exit test's child aborts |
+| `ASAN_OPTIONS=strip_env=0 swift test --sanitize=address --no-parallel` | Unit tests under AddressSanitizer, as CI runs them after each merge to main; without `strip_env=0` every exit test's child aborts |
 
 Agents building in parallel use `swift build --scratch-path <dir>` and `swift test --scratch-path <dir>` so they do not block each other; `BundleIntegrityTests` passes only in the default `.build` folder.
 
@@ -140,7 +140,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | Test fakes | `Tests/FakeDeviceBackend.swift` (scripted trees and screenshots, read counts) |
 | RN fixture screens | `OffsiderPlaygroundRN/src/screens/` (one per file); `Readout`, `Target` and the header marker in `src/fixtures.tsx` |
 | Build, release, goldens | `scripts/` |
-| CI and releases | `.github/workflows/ci.yml`, `.github/workflows/release.yml` |
+| CI and releases | `.github/workflows/ci.yml` (macOS setup in `.github/actions/macos-setup/`, the docs-only rule in `scripts/ci-changes.sh`, the merge gate in `scripts/ci-gate.sh`), `.github/workflows/release.yml` |
 | Project skills | `.agents/skills/` (`.claude/skills` is a relative symlink to it) |
 
 A command or option change also updates `docs/commands.md` (and the `docs/` page that covers it), the bundled `SKILL.md` and `CHANGELOG.md` (under `## [Unreleased]`: Added, Changed, Fixed, Removed; released sections are immutable).
