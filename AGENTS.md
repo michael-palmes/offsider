@@ -64,7 +64,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `scripts/bench-ab.sh --device <id> --scenario <name>` | Compare the merge base with this checkout on one Offsider device in paired, seeded runs (`--help` lists scenarios); `--phone` acknowledges that `--device` names a USB phone (playground installed first, never by bench) |
 | `bash -n <script>` | Syntax-check a changed shell script |
 | `OFFSIDER_FUZZ=1 swift build --product OffsiderFuzz --sanitize=address` | Build the fuzz driver (never in a release); `.build/debug/OffsiderFuzz --list`, `<target> Tests/Fixtures/fuzz/<target> --seconds 60`, `<target> --replay <file>` |
-| `swift test --sanitize=address --no-parallel` | Unit tests under AddressSanitizer, as CI's non-required job runs them |
+| `ASAN_OPTIONS=strip_env=0 swift test --sanitize=address --no-parallel` | Unit tests under AddressSanitizer, as CI's non-required job runs them; without `strip_env=0` every exit test's child aborts |
 
 Agents building in parallel use `swift build --scratch-path <dir>` and `swift test --scratch-path <dir>` so they do not block each other; `BundleIntegrityTests` passes only in the default `.build` folder.
 
