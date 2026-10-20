@@ -376,7 +376,7 @@ public final class DeviceSessionServer {
             while !flag.isSet {
                 var poller = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
                 guard poll(&poller, 1, 100) > 0, !flag.isSet else { continue }
-                let client = accept(listener, nil, nil)
+                let client = CloseOnExecSocket.accept(listener)
                 guard client >= 0 else { continue }
                 // Another user's client, or code other than this Offsider build, is closed before it gets a byte.
                 guard isSameUser(client), admits(client) else {

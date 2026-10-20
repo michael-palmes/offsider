@@ -50,7 +50,7 @@ final class UnixSocketListener: @unchecked Sendable {
         guard !isClosed else { return nil }
         var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
         guard poll(&poller, 1, waitingMs) > 0 else { return nil }
-        let client = Darwin.accept(descriptor, nil, nil)
+        let client = CloseOnExecSocket.accept(descriptor)
         guard client >= 0 else { return nil }
         guard UnixSocket.isSameUser(client, uid: uid), admits(client) else {
             Darwin.close(client)

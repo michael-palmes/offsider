@@ -4,8 +4,6 @@ import Testing
 /// Whole-file reads in `Sources/` go through `UntrustedRead` (or `readOwnedFile` for private files), so a FIFO or a symlink to a device cannot hang or exhaust a command.
 @Suite("Untrusted read lint")
 struct UntrustedReadLintTests {
-    static let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Sources")
-
     static let patterns = ["FileManager.default.contents(atPath", "Data(contentsOf:", "String(contentsOf"]
 
     /// Sites that read a file Offsider or a trusted tool just wrote in a folder only this user can write, or a bundle Apple signed; each says why.
@@ -27,19 +25,14 @@ struct UntrustedReadLintTests {
 
     @Test("no unguarded whole-file read outside UntrustedRead and the reviewed sites")
     func noUnguardedReads() throws {
-        let enumerator = try #require(FileManager.default.enumerator(at: Self.sources, includingPropertiesForKeys: nil))
+        let lines = try #require(SourceLines.all)
         var offenders: [String] = []
         var seen: Set<String> = []
-        for case let url as URL in enumerator where url.pathExtension == "swift" {
-            let relative = String(url.path.dropFirst(Self.sources.path.count + 1))
-            let text = try String(decoding: Data(contentsOf: url), as: UTF8.self)
-            for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated()
-            where Self.patterns.contains(where: line.contains) && !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
-                if Self.allowed[relative] != nil {
-                    seen.insert(relative)
-                } else {
-                    offenders.append("\(relative):\(index + 1)")
-                }
+        for line in lines where Self.patterns.contains(where: line.text.contains) && !line.isComment {
+            if Self.allowed[line.file] != nil {
+                seen.insert(line.file)
+            } else {
+                offenders.append(line.location)
             }
         }
         #expect(offenders.isEmpty, "Read these through UntrustedRead: \(offenders.joined(separator: ", "))")

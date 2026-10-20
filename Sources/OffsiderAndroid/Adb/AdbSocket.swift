@@ -67,7 +67,7 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
         case .tcp(.ipv6, _): family = AF_INET6
         case .unix: family = AF_UNIX
         }
-        let fd = socket(family, SOCK_STREAM, 0)
+        let fd = CloseOnExecSocket.make(family, SOCK_STREAM)
         guard fd >= 0 else { throw AdbConnectError.failed(errno: errno) }
         let stream = PosixAdbStream(fd: fd)
         var noSigPipe: Int32 = 1

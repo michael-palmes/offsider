@@ -236,7 +236,7 @@ public final class IOSDeviceScreenStream {
 
     /// A UDP socket on the Mac's tunnel address only, scoped to its `utun` interface.
     private static func bindReceiver(_ host: TunnelEndpoint.Interface) throws -> (Int32, UInt16) {
-        let descriptor = Darwin.socket(AF_INET6, SOCK_DGRAM, 0)
+        let descriptor = CloseOnExecSocket.make(AF_INET6, SOCK_DGRAM)
         guard descriptor >= 0 else { throw SocketError(description: "no UDP socket: \(String(cString: strerror(errno)))") }
         var address = sockaddr_in6()
         address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)

@@ -338,7 +338,7 @@ final class DeviceSessionChannel: @unchecked Sendable {
 
     /// A connected Unix stream socket to `path`.
     static func connect(to path: String) throws -> DeviceSessionChannel {
-        let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        let descriptor = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
         guard descriptor >= 0 else { throw DeviceSessionWireError(detail: "no socket: \(String(cString: strerror(errno)))") }
         var address = try unixAddress(path)
         let result = withUnsafePointer(to: &address) {
