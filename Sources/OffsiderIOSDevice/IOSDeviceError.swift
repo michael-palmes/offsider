@@ -65,7 +65,7 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
     }
 
     static func xcodeMissing(_ detail: String) -> IOSDeviceError {
-        IOSDeviceError(.xcodeMissing, "No usable Xcode is selected: \(detail). \(XcodeSuggestion.current.withoutSudo)", hint: XcodeSuggestion.current.select)
+        IOSDeviceError(.xcodeMissing, XcodeSuggestion.current.adding(to: "No usable Xcode is selected: \(detail)."), hint: XcodeSuggestion.current.select)
     }
 
     static func devicectlFailed(_ command: String, udid: String?, detail: String) -> IOSDeviceError {

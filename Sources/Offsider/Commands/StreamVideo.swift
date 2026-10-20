@@ -29,6 +29,9 @@ struct StreamVideo: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: ReadDeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     @Option(help: "Output format: mjpeg, raw, ffmpeg, bgra (default: mjpeg)")
     var format: OutputFormat = .mjpeg
 
@@ -68,6 +71,7 @@ struct StreamVideo: AsyncParsableCommand {
         let regions = try masks.regions()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        await appOption.apply(to: route)
         let backend = route.backend
         let (device, marker) = try await RecordVideo.start(command: "stream-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
         defer { marker.remove() }

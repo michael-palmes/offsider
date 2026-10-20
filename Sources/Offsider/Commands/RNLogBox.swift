@@ -41,10 +41,14 @@ struct RNLogBoxStatus: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     func run() async throws {
         let logger = OffsiderLogger()
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: locking)
+        await appOption.apply(to: route)
         try await route.backend.prepare()
         let state = LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
         print(json ? state.jsonLine(redacts: !noRedact) : state.text(redacts: !noRedact))
@@ -77,6 +81,9 @@ struct RNLogBoxOpen: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     static let inspectorWait: TimeInterval = 5
     static let poll: Duration = .milliseconds(300)
 
@@ -89,6 +96,7 @@ struct RNLogBoxOpen: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let opened = try await open(on: route)
         print(json ? opened.jsonLine(redacts: !noRedact) : opened.textLine(redacts: !noRedact))
     }
@@ -156,6 +164,9 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     typealias Method = LogBoxDismissal.Method
     typealias Outcome = LogBoxDismissal
 
@@ -175,6 +186,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        await appOption.apply(to: route)
         let outcome = try await dismiss(on: route)
         let line = Self.line(outcome, index: index, device: route.device.rawValue)
         if json {

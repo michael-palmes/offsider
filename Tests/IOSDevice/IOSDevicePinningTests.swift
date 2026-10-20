@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 @testable import Offsider
 import OffsiderCore
@@ -42,6 +43,58 @@ struct IOSDevicePinningTests {
         #expect(error?.reason == .usage)
         #expect(error?.message.contains("Pass --app <bundle-id>") == true)
         #expect(transport.calls.isEmpty)
+    }
+
+    @Test("a batch's --app counts before its input session opens, so a phone with no pinned app takes the batch, and without it nothing is sent")
+    func batchAppBeforeSession() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = Self.playground
+        let backend = try Self.backend(transport, apps: [Self.playground, "com.example.two"])
+        let route = DeviceRouter.Route(backend: backend, device: Self.phone)
+
+        let unnamed = try Batch.parse(["--device", IOSDeviceFixtures.phone, "--no-settle", "--step", "tap -x 10 -y 20"])
+        let error = await #expect(throws: IOSDeviceError.self) { try await unnamed.run(on: route, logger: OffsiderLogger()) }
+        #expect(error?.reason == .usage)
+        #expect(!transport.calls.contains { $0.path == "/tap-point" })
+
+        let named = try Batch.parse(["--device", IOSDeviceFixtures.phone, "--app", Self.playground, "--no-settle", "--step", "tap -x 10 -y 20"])
+        try await named.run(on: route, logger: OffsiderLogger())
+        #expect(transport.calls.last?.path == "/tap-point")
+        #expect(transport.calls.last?.body["app"] == AnyHashable(Self.playground))
+    }
+
+    @Test("rn tools off on a phone with no app named says to pass --app, not that the screen cannot be read")
+    func rnToolsOffNamesTheApp() async throws {
+        let transport = FakeRunnerTransport()
+        let backend = try Self.backend(transport, apps: [])
+        let route = DeviceRouter.Route(backend: backend, device: Self.phone)
+        let error = await #expect(throws: IOSDeviceError.self) {
+            _ = try await RNToolsOff.parse(["--device", IOSDeviceFixtures.phone]).turnOff(on: route, clock: .live)
+        }
+        #expect(error?.reason == .usage)
+        #expect(error?.message.contains("Pass --app <bundle-id>") == true)
+    }
+
+    /// Commands with `--device` that never read or drive a phone's screen: refused on a phone, a setting, or their own `--app`.
+    static let noScreenOnPhone: Set<String> = [
+        "device-session serve", "android-session serve", "doctor", "logs", "displays", "shake", "login", "credential", "rn prepare", "rn open",
+        "orientation", "posture", "appearance", "content-size", "permission", "status-bar", "biometric", "stay-awake", "wake", "unlock-code",
+        "device-access allow", "device-access status", "device-access remove", "runner status", "runner build", "runner stop",
+        "session status", "session stop", "lease",
+    ]
+
+    @Test("every command with --device takes --app unless it never reads or drives a phone's screen, as the refusal without one says")
+    func appOptionOnEveryPhoneCommand() {
+        func leaves(_ command: any ParsableCommand.Type, path: [String]) -> [(String, any ParsableCommand.Type)] {
+            let name = path + [command._commandName]
+            let children = command.configuration.subcommands
+            return children.isEmpty ? [(name.dropFirst().joined(separator: " "), command)] : children.flatMap { leaves($0, path: name) }
+        }
+        let missing = leaves(OffsiderCommand.self, path: []).filter { name, command in
+            let help = command.helpMessage(columns: 400)
+            return help.contains("\n  --device <") && !help.contains("--app <bundle-id>") && !Self.noScreenOnPhone.contains(name)
+        }.map(\.0)
+        #expect(missing.isEmpty, "\(missing)")
     }
 
     @Test("a deny-listed or unpinned app is app_not_allowed before the runner is asked")

@@ -37,6 +37,9 @@ struct Screenshot: AsyncParsableCommand {
     var deviceOption: DeviceOption
 
     @OptionGroup
+    var appOption: AppOption
+
+    @OptionGroup
     var displayOption: DisplayOption
 
     @Option(help: "Output file path, or a directory for a generated name. Defaults to 'Simulator Screenshot - <device name> - <timestamp>.png' (iOS) or 'Emulator Screenshot - <AVD> - <timestamp>.png' (Android) in the current directory. With --compare, an image is written only when this is given.")
@@ -160,6 +163,7 @@ struct Screenshot: AsyncParsableCommand {
         if try !maskPlan(gated: false).secure { try await UnmaskedConsent.confirm(command: "screenshot") }
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        await appOption.apply(to: route)
         let report = try await take(request, on: route, masks: masksWithRunDefaults(try maskPlan()), plain: !json)
 
         guard let comparison = report.comparison else {

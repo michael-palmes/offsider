@@ -67,7 +67,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `device_busy` | 8 | Another Offsider command holds the device, `record-video` met `login` or `wake` holding it, or `login` found a recording running; the message names its pid | Wait and retry, or follow the `hint`: add `--wait-lock 30` to the same command |
 | `device_leased` | 8 | `lease set` or `lease check` found another session's live lease on the device | Choose another device; `offsider lease show`, or `--force` when that lease is stale |
 | `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |
-| `xcode_missing` | 9 | No usable Xcode is selected | Run the `hint`, `sudo xcode-select -s` with the newest Apple-signed Xcode in `/Applications`; without sudo, `export DEVELOPER_DIR=` that developer folder |
+| `xcode_missing` | 9 | No usable Xcode is selected | Run the `hint`, `sudo xcode-select -s` with the newest Apple-signed Xcode in `/Applications` other than the one refused; without sudo, `export DEVELOPER_DIR=` that developer folder. With none left, install Xcode 26 or later |
 | `xcode_unusable` | 9 | The selected Xcode cannot load simulator support, `DEVELOPER_DIR` points outside an Apple-signed Xcode, or a private method Offsider calls has changed | Select an Apple-signed Xcode 26 or later as for `xcode_missing`, or update Offsider |
 | `android_sdk_missing` | 9 | No Android SDK or adb was found | Install Platform-Tools or set `ANDROID_HOME` |
 | `adb_server_unavailable` | 9 | The adb server is not running or not answering | Run the command again: Offsider starts one with `ADB_MDNS=0`. When one runs but does not answer, stop it first with the `hint` (the SDK's `adb kill-server`) |
@@ -75,7 +75,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `emulator_missing` | 9 | The Android Emulator is not installed | Run the `hint`: the SDK's `cmdline-tools/latest/bin/sdkmanager emulator` |
 | `emulator_grpc_required` | 9 | The command needs the emulator's gRPC endpoint and it is not reachable | Restart the emulator with `offsider boot` |
 | `helper_unavailable` | 9 | The UiAutomation helper cannot run on this device, including when a password or unlock code needs it; nothing was typed | Unset `OFFSIDER_ANDROID_TREE` or `OFFSIDER_ANDROID_INPUT`, or use another image |
-| `xcode_too_old` | 9 | The selected Xcode cannot drive this feature on an iPhone or iPad | Select Xcode 27 or later |
+| `xcode_too_old` | 9 | The selected Xcode cannot drive this feature on an iPhone or iPad | Run the `hint`: it selects an installed Xcode 27 and runs its first launch, which updates CoreDevice, or says to install Xcode 27 or later |
 | `team_missing` | 9 | No signing team was chosen for the iPhone runner; Xcode's signed-in team is never used on its own | Ask the user to run `offsider device-access allow` and choose a team from its menu, or set `OFFSIDER_IOS_TEAM_ID` |
 | `usbmux_unavailable` | 9 | usbmuxd, which reaches iPhones over USB, is not answering, or does not list the device on USB | Unplug and replug the cable; restart the Mac if it persists |
 | `usage` | 64 | Invalid arguments or options, including `OFFSIDER_DEVICE` naming a physical device and an iPhone or iPad command with no app to pin | Fix the command line; see `--help` |

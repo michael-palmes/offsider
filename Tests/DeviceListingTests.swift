@@ -201,6 +201,23 @@ struct DeviceListingTests {
         #expect(error?.userFacingDescription == "Could not list devices.\nios: No Xcode.\nandroid: No SDK.")
     }
 
+    @Test("two iOS backends failing alike print the failure once, as the error itself")
+    func sharedFailurePrintsOnce() async throws {
+        let error = await #expect(throws: ListingFailure.self) {
+            _ = try await ListDevices.collect(
+                from: [ListingBackend(.ios, failure: "Xcode was refused."), ListingBackend(.ios, failure: "Xcode was refused.")]
+            ) { _ in }
+        }
+        #expect(error?.errorDescription == "Xcode was refused.")
+
+        var warnings: [String] = []
+        let devices = try await ListDevices.collect(
+            from: [ListingBackend(.ios, failure: "Xcode was refused."), ListingBackend(.android, devices: [pixel]), ListingBackend(.ios, failure: "Xcode was refused.")]
+        ) { warnings.append($0) }
+        #expect(devices == [pixel])
+        #expect(warnings == ["Skipped ios devices: Xcode was refused."])
+    }
+
     @Test("a platform with no toolchain installed is skipped without a warning")
     func missingToolchainIsQuiet() async throws {
         var warnings: [String] = []

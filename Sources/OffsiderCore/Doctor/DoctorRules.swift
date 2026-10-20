@@ -99,20 +99,21 @@ public enum DoctorRules {
         return (.pass, "CoreSimulator \(version)", nil)
     }
 
-    /// Pass for an Apple-signed Xcode in /Applications; warn when it is elsewhere or chosen through DEVELOPER_DIR; fail when it is not Apple's.
+    /// Pass for an Apple-signed Xcode in /Applications; warn when it is elsewhere or chosen through DEVELOPER_DIR; fail when it is not Apple's, naming another Xcode.
     public static func xcodeTrust(
         _ result: Result<TrustedDeveloperDirectory, UntrustedDeveloperDirectory.Problem>, path: String, source: DeveloperDirectorySource,
-        suggestion: @autoclosure () -> XcodeSuggestion = .current
+        installed: @autoclosure () -> [XcodeBundle] = XcodeSuggestion.installed
     ) -> Verdict {
-        let hint = suggestion().select
         switch result {
-        case .failure(.notInAppBundle):
-            return (.fail, "\(path) (\(source.rawValue)) is not the Contents/Developer folder of an Xcode app, so Offsider will not use it", hint)
-        case .failure(.notAppleSigned):
-            return (.fail, "\(path) (\(source.rawValue)) is not inside an Apple-signed Xcode, so Offsider will not use it", hint)
+        case .failure(let problem):
+            let hint = XcodeSuggestion(bundles: installed(), rejecting: path).select
+            return (.fail, "\(path) (\(source.rawValue)) \(problem.summary), so Offsider will not use it", hint)
         case .success(let trusted) where source == .environment:
+            let hint = XcodeSuggestion(bundles: installed()).or(trusted.resolved).select
             return (.warn, "\(trusted.app) is signed by Apple, and was chosen through DEVELOPER_DIR, which any process can set", "Unset DEVELOPER_DIR and select Xcode with \(hint).")
         case .success(let trusted) where !trusted.inApplications:
+            let moved = "/Applications/\((trusted.app as NSString).lastPathComponent)/Contents/Developer"
+            let hint = XcodeSuggestion(bundles: installed()).or(moved).select
             return (.warn, "\(trusted.app) is signed by Apple, outside /Applications", "Move Xcode into /Applications, then run \(hint).")
         case .success(let trusted):
             return (.pass, "\(trusted.app) is signed by Apple", nil)

@@ -129,11 +129,11 @@ extension IOSDeviceError {
         )
     }
 
-    static func xcodeTooOld(_ name: String, version: CoreDeviceVersion?) -> IOSDeviceError {
+    static func xcodeTooOld(_ name: String, version: CoreDeviceVersion?, suggestion: @autoclosure () -> XcodeSuggestion = .atLeast(IOSDeviceDoctorRules.hidXcodeMajor)) -> IOSDeviceError {
         let installed = version.map { "this Mac has CoreDevice \($0)" } ?? "this Mac has no CoreDevice"
         return IOSDeviceError(
             .xcodeTooOld,
-            "Input on \(name) needs Xcode 27 (CoreDevice \(CoreDeviceVersion.hidFloor) or later), and \(installed). Install Xcode 27 for HID input, then select it.", hint: XcodeSuggestion.current.select
+            "Input on \(name) needs Xcode 27 (CoreDevice \(CoreDeviceVersion.hidFloor) or later), and \(installed). Install Xcode 27 for HID input, then select it.", hint: suggestion().firstLaunch
         )
     }
 
