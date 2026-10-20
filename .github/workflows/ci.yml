@@ -307,4 +307,6 @@ jobs:
         env:
           OFFSIDER_E2E: "0"
           OFFSIDER_LANDSCAPE_E2E: "0"
+          # Keeps the runtime in DYLD_INSERT_LIBRARIES, so an exit test's child starts with it.
+          ASAN_OPTIONS: strip_env=0
         run: swift test --skip-build --sanitize=address --no-parallel
