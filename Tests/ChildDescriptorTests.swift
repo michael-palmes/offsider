@@ -23,13 +23,11 @@ struct RunningChild {
         let child: RunningChild
         switch spawner {
         case .processCapture:
-            let task = Task { _ = try? await ProcessCapture.run(executable: "/bin/sh", arguments: arguments, timeout: 60) }
-            child = RunningChild { task.cancel(); _ = await task.value }
+            child = .untilCancelled { _ = try? await ProcessCapture.run(executable: "/bin/sh", arguments: arguments, timeout: 60) }
         case .foundationProcess:
-            let task = Task {
+            child = .untilCancelled {
                 _ = try? await AccessibilityFetcher.runProcess(executableURL: URL(fileURLWithPath: "/bin/sh"), arguments: arguments, timeout: 60)
             }
-            child = RunningChild { task.cancel(); _ = await task.value }
         case .detachedProcess:
             let pid = try DetachedProcess().launch(
                 executable: URL(fileURLWithPath: "/bin/sh"), arguments: arguments, environment: [:], logPath: folder + "/child.log"
@@ -44,11 +42,17 @@ struct RunningChild {
             }
         }
         let deadline = Date().addingTimeInterval(30)
-        while !FileManager.default.fileExists(atPath: ready), Date() < deadline {
-            try await Task.sleep(for: .milliseconds(20))
+        while !FileManager.default.fileExists(atPath: ready), Date() < deadline, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(20))
         }
         if !FileManager.default.fileExists(atPath: ready) { Issue.record("the \(spawner.rawValue) child never started") }
         return child
+    }
+
+    /// A call that returns once its child exits, and ends the child when cancelled.
+    static func untilCancelled(_ call: @escaping @Sendable () async -> Void) -> RunningChild {
+        let task = Task { await call() }
+        return RunningChild { task.cancel(); _ = await task.value }
     }
 }
 
@@ -88,6 +92,30 @@ final class StartedChildren: @unchecked Sendable {
 
     func append(_ child: InheritingChild?) { lock.withLock { children.append(child) } }
     var all: [InheritingChild?] { lock.withLock { children } }
+    func stopAll() { all.forEach { $0?.stop() } }
+}
+
+/// Descriptors a test opened; each is closed once, by the test or at its end.
+final class OpenDescriptors: @unchecked Sendable {
+    private let lock = NSLock()
+    private var open: Set<Int32> = []
+
+    func add(_ descriptor: Int32) -> Int32 {
+        if descriptor >= 0 { lock.withLock { _ = open.insert(descriptor) } }
+        return descriptor
+    }
+
+    func close(_ descriptor: Int32) {
+        if lock.withLock({ open.remove(descriptor) }) != nil { Darwin.close(descriptor) }
+    }
+
+    func closeAll() {
+        let remaining = lock.withLock {
+            defer { open = [] }
+            return open
+        }
+        remaining.forEach { Darwin.close($0) }
+    }
 }
 
 /// Each broker's own accept loop.
@@ -97,8 +125,6 @@ enum BrokerAccept: String, CaseIterable {
 
 @Suite("Sockets in child processes", .serialized)
 struct ChildDescriptorTests {
-    static let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Sources")
-
     static func folder() throws -> String {
         let path = NSTemporaryDirectory() + "offsider-fds-\(UUID().uuidString.prefix(8))"
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -106,43 +132,33 @@ struct ChildDescriptorTests {
     }
 
     /// A connected pair with neither end close-on-exec, as any descriptor a library opens may be.
-    static func barePair() throws -> (Int32, Int32) {
+    static func barePair(_ descriptors: OpenDescriptors) throws -> (Int32, Int32) {
         var ends: [Int32] = [-1, -1]
         try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &ends) == 0)
-        return (ends[0], ends[1])
+        return (descriptors.add(ends[0]), descriptors.add(ends[1]))
     }
 
-    static func connect(to path: String) throws -> Int32 {
-        let client = socket(AF_UNIX, SOCK_STREAM, 0)
-        try #require(client >= 0)
-        var address = try UnixSocket.address(path)
-        let connected = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    /// True once the peer's end of `descriptor` is closed within `milliseconds`, peeked every 10 ms so no thread waits on it.
+    static func readsEOF(_ descriptor: Int32, within milliseconds: Int = 1000) async -> Bool {
+        guard descriptor >= 0 else { return false }
+        let deadline = ContinuousClock.now + .milliseconds(milliseconds)
+        while !SocketPeer.closed(descriptor) {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
         }
-        try #require(connected == 0)
-        return client
-    }
-
-    /// True when the peer's end is closed, so `descriptor` reads EOF within `milliseconds`; polls off the cooperative pool.
-    static func readsEOF(_ descriptor: Int32, within milliseconds: Int32 = 1000) async -> Bool {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
-                var byte: UInt8 = 0
-                continuation.resume(returning: poll(&poller, 1, milliseconds) == 1 && read(descriptor, &byte, 1) == 0)
-            }
-        }
+        return true
     }
 
     @Test("Offsider's ways of starting a child pass on no descriptor but stdin, stdout and stderr", arguments: ChildSpawner.allCases)
     func spawnersPassOnNothing(_ spawner: ChildSpawner) async throws {
         let folder = try Self.folder()
         defer { try? FileManager.default.removeItem(atPath: folder) }
-        let (kept, peer) = try Self.barePair()
-        defer { close(peer) }
+        let descriptors = OpenDescriptors()
+        defer { descriptors.closeAll() }
+        let (kept, peer) = try Self.barePair(descriptors)
 
         let child = try await RunningChild.start(spawner, in: folder)
-        close(kept)
+        descriptors.close(kept)
         let peerSawClose = await Self.readsEOF(peer)
         await child.stop()
 
@@ -153,28 +169,30 @@ struct ChildDescriptorTests {
     func listenersAndClientsStayOut() async throws {
         let folder = try Self.folder()
         defer { try? FileManager.default.removeItem(atPath: folder) }
+        let descriptors = OpenDescriptors()
+        defer { descriptors.closeAll() }
         let path = folder + "/b.sock"
         let hidPath = folder + "/h.sock"
-        let listener = try UnixSocket.listen(at: path)
-        let hidListener = try HIDBroker.makeListener(at: hidPath)
-        let hidClient = try HIDBroker.connect(to: path)
-        let hidServed = accept(listener, nil, nil)
+        let listener = descriptors.add(try UnixSocket.listen(at: path))
+        let hidListener = descriptors.add(try HIDBroker.makeListener(at: hidPath))
+        let hidClient = descriptors.add(try HIDBroker.connect(to: path))
+        let hidServed = descriptors.add(accept(listener, nil, nil))
         let sessionClient = try DeviceSessionChannel.connect(to: path)
-        let sessionServed = accept(listener, nil, nil)
-        let (control, controlPeer) = try Self.barePair()
-        defer { [hidServed, sessionServed, controlPeer].forEach { close($0) } }
+        defer { sessionClient.close() }
+        let sessionServed = descriptors.add(accept(listener, nil, nil))
+        let (control, controlPeer) = try Self.barePair(descriptors)
         let child = try #require(InheritingChild(inheriting: [listener, hidListener, hidClient, sessionClient.descriptor, control]))
         defer { child.stop() }
 
-        close(control)
+        descriptors.close(control)
         let controlHeld = await !Self.readsEOF(controlPeer, within: 200)
-        close(hidClient)
+        descriptors.close(hidClient)
         let hidClientReleased = await Self.readsEOF(hidServed)
         sessionClient.close()
         let sessionClientReleased = await Self.readsEOF(sessionServed)
-        close(listener)
+        descriptors.close(listener)
         let listenerAnswers = UnixSocket.answers(path)
-        close(hidListener)
+        descriptors.close(hidListener)
         let hidListenerAnswers = UnixSocket.answers(hidPath)
 
         #expect(controlHeld, "the child should inherit a descriptor that is not close-on-exec")
@@ -188,10 +206,12 @@ struct ChildDescriptorTests {
     func acceptedConnectionStaysOut(_ broker: BrokerAccept) async throws {
         let folder = try Self.folder()
         defer { try? FileManager.default.removeItem(atPath: folder) }
+        let descriptors = OpenDescriptors()
+        defer { descriptors.closeAll() }
         let path = folder + "/b.sock"
-        let (control, controlPeer) = try Self.barePair()
-        defer { close(controlPeer) }
+        let (control, controlPeer) = try Self.barePair(descriptors)
         let started = StartedChildren()
+        defer { started.stopAll() }
         // The hook runs after the broker's own accept and before it closes the refused connection.
         let admits: @Sendable (Int32) -> Bool = { accepted in
             started.append(InheritingChild(inheriting: [accepted, control]))
@@ -199,13 +219,18 @@ struct ChildDescriptorTests {
         }
 
         let stopBroker = try await Self.startAccepting(broker, at: path, admits: admits)
-        let client = try Self.connect(to: path)
+        let client: Int32
+        do {
+            client = descriptors.add(try HIDBroker.connect(to: path))
+        } catch {
+            await stopBroker()
+            throw error
+        }
         let clientSawClose = await Self.readsEOF(client, within: 10_000)
-        close(control)
-        let controlHeld = await !Self.readsEOF(controlPeer, within: 200)
         await stopBroker()
-        close(client)
-        started.all.forEach { $0?.stop() }
+        // Closed only once no hook can run, so a late one never passes on a reused descriptor number.
+        descriptors.close(control)
+        let controlHeld = await !Self.readsEOF(controlPeer, within: 200)
 
         #expect(started.all.count == 1 && started.all.allSatisfy { $0 != nil }, "the broker never admitted the connection")
         #expect(controlHeld, "the child should inherit a descriptor that is not close-on-exec")
@@ -216,7 +241,7 @@ struct ChildDescriptorTests {
         switch broker {
         case .helperBroker:
             let listener = try UnixSocketListener(path: path, admits: admits)
-            let accepting = Task { await listener.accept(timeout: .seconds(3)) }
+            let accepting = Task { await listener.accept(timeout: .seconds(10)) }
             return { _ = await accepting.value; listener.close() }
         case .hidBroker:
             return try await startHIDBroker(at: path, admits: admits)
@@ -249,20 +274,31 @@ struct ChildDescriptorTests {
         }
     }
 
-    @Test("every socket and accept in Sources goes through CloseOnExecSocket")
+    /// Call sites of `names` in `Sources/` outside `allowed` files, the device-side runner, comments, and `func` or `case` declarations.
+    static func calls(to names: [String], outside allowed: Set<String>) throws -> [String] {
+        let lines = try #require(SourceLines.all)
+        let alternatives = names.joined(separator: "|")
+        let declaration = try Regex(#"\b(func|case)\s+("# + alternatives + #")\("#)
+        let call = try Regex(#"(^|[^A-Za-z0-9_.])("# + alternatives + #")\(|Darwin\.("# + alternatives + #")\("#)
+        let needles = names.map { $0 + "(" }
+        return lines.filter { line in
+            needles.contains(where: line.text.contains) && !allowed.contains(line.file) && !line.file.hasPrefix("Offsider/Resources/runner/")
+                && !line.isComment && String(line.text).replacing(declaration, with: "").contains(call)
+        }.map(\.location)
+    }
+
+    @Test("every socket, accept and descriptor copy in Sources is close-on-exec")
     func noRawSocketCalls() throws {
-        let call = try Regex(#"(^|[^A-Za-z0-9_.])(socket|socketpair|accept)\(|Darwin\.(socket|socketpair|accept)\("#)
-        let enumerator = try #require(FileManager.default.enumerator(at: Self.sources, includingPropertiesForKeys: nil))
-        var offenders: [String] = []
-        for case let url as URL in enumerator where url.pathExtension == "swift" {
-            let relative = String(url.path.dropFirst(Self.sources.path.count + 1))
-            guard relative != "OffsiderCore/Platform/CloseOnExecSocket.swift" else { continue }
-            let text = try String(decoding: Data(contentsOf: url), as: UTF8.self)
-            for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated()
-            where line.contains(call) && !line.contains("func accept(") && !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
-                offenders.append("\(relative):\(index + 1)")
-            }
-        }
-        #expect(offenders.isEmpty, "Use CloseOnExecSocket.make or .accept: \(offenders.joined(separator: ", "))")
+        let copy = try Regex("F_DUPFD(?!_CLOEXEC)")
+        let offenders = try Self.calls(to: ["socket", "socketpair", "accept", "dup", "dup2"], outside: ["OffsiderCore/Platform/CloseOnExecSocket.swift"])
+            + (try #require(SourceLines.all)).filter { $0.text.contains("F_DUPFD") && !$0.isComment && $0.text.contains(copy) }.map(\.location)
+        #expect(offenders.isEmpty, "Use CloseOnExecSocket.make or .accept, or F_DUPFD_CLOEXEC for a copy: \(offenders.joined(separator: ", "))")
+    }
+
+    @Test("every child process in Sources starts through DetachedProcess or Foundation's Process")
+    func noOtherSpawns() throws {
+        let names = ["posix_spawn", "posix_spawnp", "fork", "vfork", "system", "popen", "execv", "execve", "execvp", "execl", "execlp", "execle"]
+        let offenders = try Self.calls(to: names, outside: ["OffsiderCore/Process/DetachedProcess.swift"])
+        #expect(offenders.isEmpty, "Start children with DetachedProcess or Process, which pass on no descriptor but stdio: \(offenders.joined(separator: ", "))")
     }
 }
