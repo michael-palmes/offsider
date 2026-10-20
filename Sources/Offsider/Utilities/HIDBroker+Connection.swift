@@ -108,7 +108,7 @@ extension HIDBroker {
                 throw notReady
             }
             if error is HIDBrokerClosedError {
-                try replaceRefusingBroker(simulatorUDID: simulatorUDID, reconnect: { try connector(endpoint) })
+                try replaceRefusingBroker(simulatorUDID: simulatorUDID, endpoint: endpoint, reconnect: { try connector(endpoint) })
             }
             throw HIDBrokerNotReadyError(
                 diagnosticDescription: "The broker readiness handshake failed: \(error.localizedDescription)",
@@ -119,18 +119,19 @@ extension HIDBroker {
     }
 
     /// A broker that closed before its handshake may have refused this command's code. A closed peer can no longer be asked who it was, so the
-    /// broker is found by its arguments: one from another build is stopped so a fresh one starts; one from this build that refuses a second
-    /// connection too is a dead end named in one line. Anything else is left to the retry loop.
+    /// broker is found by its arguments and the endpoint it holds: one from another build is stopped so a fresh one starts; one from this build
+    /// that refuses a second connection too is a dead end named in one line. Anything else is left to the retry loop.
     static func replaceRefusingBroker(
         simulatorUDID: String?,
+        endpoint: String,
         reconnect: () throws -> Int32,
         requirement: () throws -> PeerCodeIdentity.Requirement = { try PeerCodeIdentity.ownRequirement() },
-        stopOtherBuilds: ([String], PeerCodeIdentity.Requirement) -> (stopped: [pid_t], ownBuild: [pid_t]) = {
-            BrokerProcess.stopOtherBuilds(serving: $0, requirement: $1)
+        stopOtherBuilds: ([String], String, PeerCodeIdentity.Requirement) -> (stopped: [pid_t], ownBuild: [pid_t]) = {
+            BrokerProcess.stopOtherBuilds(serving: $0, boundTo: $1, requirement: $2)
         }
     ) throws {
-        guard let simulatorUDID, let requirement = try? requirement() else { return }
-        let outcome = stopOtherBuilds(["hid-broker", "--udid", simulatorUDID], requirement)
+        guard let requirement = try? requirement() else { return }
+        let outcome = stopOtherBuilds(simulatorUDID.map(serveArguments) ?? ["hid-broker"], endpoint, requirement)
         if !outcome.stopped.isEmpty {
             throw HIDBrokerNotReadyError(diagnosticDescription: "A broker from another Offsider build refused this command; it was stopped so a fresh one starts.")
         }

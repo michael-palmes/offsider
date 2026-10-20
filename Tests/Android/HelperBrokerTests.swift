@@ -464,13 +464,14 @@ struct HelperBrokerTests {
         let broker = try ScriptedBroker(path: fixture.socket)
         var client = try fixture.client()
         let asked = Asked()
-        client.stopOtherBuilds = { arguments in
-            asked.record(arguments)
+        let socket = fixture.socket
+        client.stopOtherBuilds = { arguments, path in
+            asked.record(arguments + [path])
             return []
         }
         let connection = try await client.existing(helloID: 1)
         #expect(connection == nil)
-        #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial]])
+        #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial, socket]])
         broker.cancel()
         try? FileManager.default.removeItem(at: fixture.root)
     }

@@ -245,13 +245,18 @@ enum HIDBroker {
 
     /// Starts `hid-broker` detached in its own session, logging to the private `sessions/`; returns its pid.
     @discardableResult
+    /// How a broker is started for `simulatorUDID`, as its process lists its arguments.
+    static func serveArguments(_ simulatorUDID: String) -> [String] {
+        ["hid-broker", "--udid", simulatorUDID]
+    }
+
     static func spawnBroker(simulatorUDID: String) throws -> Int32 {
         guard let executable = Bundle.main.executableURL else {
             throw CLIError(errorDescription: "Unable to locate the Offsider executable for the HID broker.", reason: .hidBrokerFailed)
         }
         return try DetachedProcess().launch(
             executable: executable,
-            arguments: ["hid-broker", "--udid", simulatorUDID],
+            arguments: serveArguments(simulatorUDID),
             environment: ChildEnvironment.make(.offsiderBroker, from: ProcessInfo.processInfo.environment).filter { $0.key != "OFFSIDER_TIMINGS" },
             logPath: try logPath(simulatorUDID: simulatorUDID)
         )

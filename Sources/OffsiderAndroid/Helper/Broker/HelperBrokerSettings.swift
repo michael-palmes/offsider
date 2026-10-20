@@ -93,6 +93,11 @@ public struct HelperBrokerHost: Sendable {
     /// The private root whose `locks/` serialise broker starts.
     public var lockRoot: String
 
+    /// How `offsider android-session serve` is started for `serial`, as its process lists its arguments; `spawn` and the lookup of a refusing broker share it.
+    public static func serveArguments(_ serial: String) -> [String] {
+        ["android-session", "serve", "--device", serial]
+    }
+
     public init(
         directory: @escaping @Sendable () throws -> String,
         spawn: @escaping @Sendable (String, String) throws -> Int32,

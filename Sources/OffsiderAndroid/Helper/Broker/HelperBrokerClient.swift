@@ -26,10 +26,11 @@ struct HelperBrokerClient {
     var timing: AndroidTiming = .disabled
     /// How long a broker of another build may keep serving other commands before this one gives up replacing it.
     var freeWait: Duration = AndroidBackend.warmHelperFreeWait
-    /// Stops the brokers serving these arguments whose code is another Offsider build's, returning their pids; the way to name a broker that closed before a byte.
-    var stopOtherBuilds: @Sendable ([String]) -> [pid_t] = { arguments in
+    /// Stops the brokers serving these arguments on this socket whose code is another Offsider build's, returning their pids; the way to name a
+    /// broker that closed before a byte.
+    var stopOtherBuilds: @Sendable ([String], String) -> [pid_t] = { arguments, socket in
         guard let requirement = try? PeerCodeIdentity.ownRequirement() else { return [] }
-        return BrokerProcess.stopOtherBuilds(serving: arguments, requirement: requirement).stopped
+        return BrokerProcess.stopOtherBuilds(serving: arguments, boundTo: socket, requirement: requirement).stopped
     }
 
     init(
@@ -97,7 +98,7 @@ struct HelperBrokerClient {
             }
         case .ended:
             // A broker of another build closes before a byte and cannot be asked who it is, so it is found by its arguments instead.
-            if !stopOtherBuilds(Self.serveArguments(serial)).isEmpty {
+            if !stopOtherBuilds(Self.serveArguments(serial), paths.socket).isEmpty {
                 log(.info, "The warm helper's broker on \(serial) was another Offsider build's and refused this command; stopped it so this build starts its own")
             }
             await untilGone()
@@ -105,9 +106,8 @@ struct HelperBrokerClient {
         }
     }
 
-    /// How `offsider android-session serve` is started for `serial`, as its process lists them.
     static func serveArguments(_ serial: String) -> [String] {
-        ["android-session", "serve", "--device", serial]
+        HelperBrokerHost.serveArguments(serial)
     }
 
     private func start(helloID: Int) async throws -> HelperConnection {

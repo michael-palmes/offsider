@@ -296,8 +296,8 @@ final class HIDBrokerServer {
     }
 
     private func admit(_ client: Int32) {
-        // Another user's client, or another build's, gets no bytes at all, not even the handshake.
-        guard HIDBroker.isSameUserPeer(client), admits(client), connections.count < Self.maxConnections else {
+        // Another user's client, or another build's, gets no bytes at all, not even the handshake; a full broker closes before checking.
+        guard connections.count < Self.maxConnections, HIDBroker.isSameUserPeer(client), admits(client) else {
             Darwin.close(client)
             return
         }
