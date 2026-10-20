@@ -31,8 +31,8 @@ On a physical iPhone or iPad, connected by cable, allow it once from your own te
 
 ```bash
 # A person picks the device, signing team, app and how long from menus, then Touch ID or your password
-offsider device-access allow
-# Check trust, Developer Mode, UI Automation and signing (allow prints this line with the UDID)
+offsider devices add
+# Check trust, Developer Mode, UI Automation and signing (add prints this line with the UDID)
 offsider doctor --device <UDID>
 # Read the app's screen; the first read builds the runner
 offsider describe-ui --summary --app com.example.app --device <UDID>

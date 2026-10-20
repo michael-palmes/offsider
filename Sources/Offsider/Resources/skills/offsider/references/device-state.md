@@ -16,7 +16,7 @@ Every setter here changes the device and it stays changed. Read the current valu
 
 ## Permissions
 
-- `offsider permission grant|revoke|reset <service>... --app <bundle id or package>` changes an app's permissions. Grant only the services the test names; ask before any other. On a phone, `all` is refused (exit 64), since it would reach SMS, the call log and location: name each service. There `--app` (also for `show`) must be an app the phone's allowance covers and not a browser or system app, else exit 1 `app_not_allowed` with nothing sent: ask the user to pin it in `device-access allow`.
+- `offsider permission grant|revoke|reset <service>... --app <bundle id or package>` changes an app's permissions. Grant only the services the test names; ask before any other. On a phone, `all` is refused (exit 64), since it would reach SMS, the call log and location: name each service. There `--app` (also for `show`) must be an app the phone's allowance covers and not a browser or system app, else exit 1 `app_not_allowed` with nothing sent: ask the user to pin it in `devices add`.
 - `offsider permission services` lists the service names (`camera` and `notifications` are Android only, `photos-add`, `reminders` and `siri` iOS only); `permission show --app <id>` reads an Android app's runtime permissions.
 - Android stops the app when a permission is revoked, so relaunch it.
 
