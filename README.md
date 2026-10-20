@@ -72,7 +72,7 @@ Real iPhones and Android phones work too, once you allow each one with `offsider
 | Five steps | 0.49 s | 0.99 s | 1.8 s | 1.6 s | 4.5 s |
 | First tap, with nothing running | 0.33 s | 4.3 s | 1.8 s | 1.6 s | 6.9 s |
 
-<sub>Each tool's fastest warm route on one React Native screen and an API 36 emulator: Offsider (the build after 0.12.0, `batch` for the five steps), Appium 3.8.0 with UiAutomator2, and agent-device 0.21.27, mobile-mcp 1.0.11 and Maestro 2.11.0 over MCP. Medians of 20 taps or 10 runs of the five steps (tap, wait, assert, tap, screenshot) after 3 warm-ups, taps checked to have landed. 4 of Appium's 20 taps took about 0.7 s. On a bare point, mobile-mcp (0.04 s) and Appium (0.09 s) are quicker than Offsider (0.11 s).</sub>
+<sub>Each tool's fastest warm route on one React Native screen and an API 36 emulator: Offsider (the build after 0.12.0, `batch` for the five steps), Appium 3.8.0 with UiAutomator2, and agent-device 0.21.27, mobile-mcp 1.0.11 and Maestro 2.11.0 over MCP. Medians of 20 taps, each checked to have landed, or 10 runs of the five steps (tap, wait, assert, tap, screenshot), with the tap count read on the first, last and every fifth run and the screenshot file checked on the rest, after 3 warm-ups. 4 of Appium's 20 taps took about 0.7 s. Tapping a bare point with the same 2 s pause, mobile-mcp (0.04 s) and Appium (0.09 s) are quicker than Offsider (0.11 s).</sub>
 
 ![Bars of output size for one screen: describe-ui prints 145 KB of JSON, describe-ui --compact prints 31 KB, and describe-ui --summary prints 1.5 KB, about 1 percent of the JSON.](docs/assets/summary.png)
 
