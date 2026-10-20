@@ -140,7 +140,11 @@ final class EvidenceRecorder {
         do {
             try run.folder.append(manifestLine)
         } catch {
-            FileHandle.standardError.write(Data("Warning: could not add to \(run.folder.file(RunFolder.manifestName)): \(TerminalText.line(OffsiderCommand.message(for: error), cap: TerminalText.maxErrorCharacters))\n".utf8))
+            let message = TerminalText.line(OffsiderCommand.message(for: error), cap: TerminalText.maxErrorCharacters)
+            Console.current.line(
+                "Warning: could not add to \(run.folder.file(RunFolder.manifestName)): \(message)",
+                person: .warning("This capture is missing from the run's manifest: \(message)")
+            )
         }
     }
 

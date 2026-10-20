@@ -79,8 +79,10 @@ struct RecordVideo: AsyncParsableCommand {
         defer { OutputFile.discardStaging(staging) }
         let stagedURL = URL(fileURLWithPath: staging).appendingPathComponent("recording.mp4")
         var outputURL = target.url
-        FileHandle.standardError.write(Data("Recording \(device.platform.videoSourceNoun) \(device.rawValue) to \(outputURL.path)\n".utf8))
-        FileHandle.standardError.write(Data("Press Ctrl+C to stop recording\n".utf8))
+        let console = Console.current
+        let recording = StartPersonView.recordingLabel(device: device.rawValue, elapsed: 0)
+        StartPersonView.step("Recording \(device.platform.videoSourceNoun) \(device.rawValue) to \(outputURL.path)", label: recording)
+        StartPersonView.step("Press Ctrl+C to stop recording", label: recording)
 
         let cancellationFlag = CancellationFlag()
         let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
@@ -91,16 +93,18 @@ struct RecordVideo: AsyncParsableCommand {
         defer { signalObserver.invalidate() }
 
         let source = VideoFrameSource(backend: backend, device: device, scale: scale, regions: regions)
-        let written: (frames: Int, held: Int)
+        let written: (frames: Int, held: Int, seconds: TimeInterval)
         do {
-            written = try await recordVideo(
-                from: source,
-                outputURL: stagedURL,
-                fps: fps,
-                quality: quality,
-                scale: scale,
-                cancellationFlag: cancellationFlag
-            )
+            written = try await console.progress(recording) {
+                try await recordVideo(
+                    from: source,
+                    outputURL: stagedURL,
+                    fps: fps,
+                    quality: quality,
+                    scale: scale,
+                    cancellationFlag: cancellationFlag
+                )
+            }
         } catch let failure as CLIError where failure.reason == .maskUnproven {
             throw failure
         } catch {
@@ -112,11 +116,12 @@ struct RecordVideo: AsyncParsableCommand {
             throw CLIError(errorDescription: error.message, reason: .videoFailed)
         }
         let held = written.held > 0 ? ", \(written.held) of \(written.frames) frames held" : ""
-        FileHandle.standardError.write(Data("Recording saved to \(outputURL.path)\(held)\n".utf8))
+        StartPersonView.clearLine()
+        Console.current.line("Recording saved to \(outputURL.path)\(held)", person: nil)
         if json {
-            print(VideoRecordingReport(path: outputURL.path, frames: written.frames, heldFrames: written.held, regions: source.painted, unmasked: masks.unmasked).jsonLine())
+            console.data(VideoRecordingReport(path: outputURL.path, frames: written.frames, heldFrames: written.held, regions: source.painted, unmasked: masks.unmasked).jsonLine() + "\n")
         } else {
-            print(outputURL.path)
+            console.show(StartPersonView.videoSaved(path: outputURL.path, seconds: written.seconds, frames: written.frames, held: written.held))
         }
     }
 
@@ -128,7 +133,7 @@ struct RecordVideo: AsyncParsableCommand {
         quality: Int,
         scale: Double,
         cancellationFlag: CancellationFlag
-    ) async throws -> (frames: Int, held: Int) {
+    ) async throws -> (frames: Int, held: Int, seconds: TimeInterval) {
         let initialImage = try await source.start()
 
         let dimensions = VideoFrameUtilities.computeDimensions(for: initialImage, scale: source.scalesItself ? 1.0 : scale)
@@ -174,15 +179,20 @@ struct RecordVideo: AsyncParsableCommand {
                 lastPresentationTime = presentationTime
                 frameCount += 1
                 if frame.held { heldCount += 1 }
+                Console.current.relabel(StartPersonView.recordingLabel(device: source.device.rawValue, elapsed: now.timeIntervalSince(startTime)))
 
                 if frameCount - lastLogFrame >= Int64(fps) {
                     lastLogFrame = frameCount
                     let elapsed = Date().timeIntervalSince(startTime)
                     let actualFPS = Double(frameCount) / max(elapsed, 0.0001)
-                    FileHandle.standardError.write(Data(String(format: "Captured %lld frames (%.1f FPS actual)\n", frameCount, actualFPS).utf8))
+                    StartPersonView.step(
+                        String(format: "Captured %lld frames (%.1f FPS actual)", frameCount, actualFPS),
+                        label: StartPersonView.recordingLabel(device: source.device.rawValue, elapsed: elapsed)
+                    )
                 }
             } catch {
-                FileHandle.standardError.write(Data("Error capturing frame: \(TerminalText.line(error.localizedDescription))\n".utf8))
+                let message = TerminalText.line(error.localizedDescription)
+                Console.current.line("Error capturing frame: \(message)", person: .warning("A frame could not be captured: \(message)"))
             }
 
             let elapsed = Date().timeIntervalSince(frameStart)
@@ -192,8 +202,9 @@ struct RecordVideo: AsyncParsableCommand {
             }
         }
 
+        Console.current.relabel("Saving the video")
         try await recorder.finish()
-        return (Int(frameCount), heldCount)
+        return (Int(frameCount), heldCount, lastPresentationTime.seconds)
     }
 
     /// Refuses (exit 8, `device_busy`) while `login` or `wake` holds the device, so a typed password never lands in a recording.

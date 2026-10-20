@@ -65,16 +65,24 @@ public struct BootReport: Equatable, Sendable {
         )
     }
 
-    /// A stderr note for an unlocked device whose screen is off or lock screen is up, so input would not reach the app.
-    public static func screenNote(avd: String, serial: String, reading: AwakeReading?) -> String? {
+    /// A note for an unlocked device whose screen is off or lock screen is up, so input would not reach the app.
+    public static func screenNotice(avd: String, serial: String, reading: AwakeReading?) -> Notice? {
         guard let reading, !reading.isUsable else { return nil }
-        return "Note: \(avd) is \(reading.screenSummary); run `offsider wake --device \(serial)` before sending input."
+        let wake = "offsider wake --device \(serial)"
+        return Notice(
+            kind: .note, text: "\(avd) is \(reading.screenSummary); wake it before sending input",
+            agentText: "\(avd) is \(reading.screenSummary); run `\(wake)` before sending input.", command: wake, label: "Try"
+        )
     }
 
-    /// A stderr note when the device has less RAM than a React Native debug session needs.
-    public static func memoryNote(avd: String, reading: AwakeReading?) -> String? {
+    /// A warning when the device has less RAM than a React Native debug session needs.
+    public static func memoryNotice(avd: String, reading: AwakeReading?) -> Notice? {
         guard let kilobytes = reading?.memTotalKB, kilobytes < lowMemoryKB else { return nil }
-        return "Warning: \(avd) has \(memorySummary(kilobytes)) of RAM, which is tight for a React Native debug build. Close it, then run `offsider boot \(avd) --memory 4096`."
+        let boot = "offsider boot \(avd) --memory 4096"
+        return .warning(
+            "\(avd) has \(memorySummary(kilobytes)) of RAM, tight for a React Native debug build; close it and boot it with more",
+            agent: "\(avd) has \(memorySummary(kilobytes)) of RAM, which is tight for a React Native debug build. Close it, then run `\(boot)`.", try: boot
+        )
     }
 
     /// `2.0 GB`.

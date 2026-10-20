@@ -128,10 +128,18 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         if memory != nil || noSnapshotLoad || !emulatorArguments.isEmpty {
             throw ValidationError("--memory, --no-snapshot-load and --emulator-arg start emulators only, and \(avd) is a simulator.")
         }
-        let alreadyRunning = try await booter.boot(simulator, timeout: .milliseconds(Int((timeout * 1000).rounded()))) { line in
-            print(line, to: &standardError)
+        let console = Console.current
+        var lines = StartPersonView.Lines(console: console)
+        let alreadyRunning = try await console.progress("Starting \(simulator.name)") {
+            try await booter.boot(simulator, timeout: .milliseconds(Int((timeout * 1000).rounded()))) { line in
+                StartPersonView.bootProgress(line, lines: &lines)
+            }
         }
-        print(json ? SimulatorBootReport(udid: simulator.udid, name: simulator.name, alreadyRunning: alreadyRunning).jsonLine() : simulator.udid)
+        guard !json else {
+            lines.flush()
+            return console.data(SimulatorBootReport(udid: simulator.udid, name: simulator.name, alreadyRunning: alreadyRunning).jsonLine() + "\n")
+        }
+        console.show(StartPersonView.booted(name: simulator.name, id: simulator.udid, alreadyRunning: alreadyRunning, notices: lines.notices))
     }
 
     @MainActor
@@ -145,29 +153,46 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
             noSnapshotLoad: noSnapshotLoad,
             extraArguments: emulatorArguments
         )
-        let result = try await booter.boot(request) { line in
-            print(line, to: &standardError)
+        let console = Console.current
+        var lines = StartPersonView.Lines(console: console)
+        let result: EmulatorBootResult
+        let reading: AwakeReading?
+        do {
+            (result, reading) = try await console.progress("Starting \(avd)") {
+                let result = try await booter.boot(request) { line in
+                    StartPersonView.bootProgress(line, lines: &lines)
+                }
+                console.relabel("Checking \(avd) is ready")
+                return (result, await booter.settledState(serial: result.serial))
+            }
+        } catch {
+            lines.flush()
+            throw error
         }
-        let reading = await booter.settledState(serial: result.serial)
         let lock = Self.lockReport(reading, key: avd, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger())
         var report = BootReport(
             avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, grpc: result.hasGRPC, logPath: result.logPath,
             memoryMB: reading?.memTotalKB.map { $0 / 1024 }, ignored: result.ignored, bootedBy: booter.bootedBy(serial: result.serial), lock: lock
         )
-        if let note = BootReport.memoryNote(avd: avd, reading: reading) {
-            print(note, to: &standardError)
+        if let notice = BootReport.memoryNotice(avd: avd, reading: reading) {
+            lines.add(notice)
         }
         if let failure = BootReport.firstUnlockFailure(avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, reading: reading, lock: lock) {
+            lines.flush()
             let error = CLIError(errorDescription: failure.message, reason: .deviceLocked, hint: failure.hint)
             guard json else { throw error }
             report.error = ErrorReporter.payload(for: error)
-            print(report.jsonLine())
+            console.data(report.jsonLine() + "\n")
             throw ReportedFailure(underlying: error, exitCode: report.exitCode)
         }
-        if let note = BootReport.screenNote(avd: avd, serial: result.serial, reading: reading) {
-            print(note, to: &standardError)
+        if let notice = BootReport.screenNotice(avd: avd, serial: result.serial, reading: reading) {
+            lines.add(notice)
         }
-        print(json ? report.jsonLine() : result.serial)
+        guard !json else {
+            lines.flush()
+            return console.data(report.jsonLine() + "\n")
+        }
+        console.show(StartPersonView.booted(name: avd, id: result.serial, alreadyRunning: result.alreadyRunning, notices: lines.notices))
     }
 
     /// Asks the Keychain (attributes only, never the code) and the ledger only when the device has a credential.

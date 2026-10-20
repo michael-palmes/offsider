@@ -61,20 +61,35 @@ struct RunStart: AsyncParsableCommand {
         let explicit = RunMasks(secure: maskSecure == true, emails: maskEmails == true, ids: maskIDs)
         let started = try RunRegistry.start(dir, label: label, masks: masks, explicit: explicit, in: environment)
         let path = started.folder.path
+        let console = Console.current
+        var lines = StartPersonView.Lines(console: console)
         if !started.state.masks.secure {
-            print("Warning: this run does not mask password fields, so a capture with --no-mask-secure or OFFSIDER_MASK_SECURE=0 shows them.", to: &standardError)
+            lines.add(
+                "Warning: this run does not mask password fields, so a capture with --no-mask-secure or OFFSIDER_MASK_SECURE=0 shows them.",
+                person: .warning("This run does not mask password fields; a capture with --no-mask-secure shows them")
+            )
         }
         if started.writableByOthers {
-            print("Warning: other users can write to \(path), so they could add or change files in the run.", to: &standardError)
+            lines.add("Warning: other users can write to \(path), so they could add or change files in the run.", person: .warning("Other users can write to this run's folder"))
         }
+        let start: StartPersonView.RunStart
         if started.unchanged {
-            print(Self.activeRunLine(path: path, masks: started.state.masks, added: started.addedMasks), to: &standardError)
+            start = .active(added: started.addedMasks)
+            lines.add(Self.activeRunLine(path: path, masks: started.state.masks, added: started.addedMasks), person: nil)
         } else if started.continued {
-            print("Continuing the run in \(path) from \(String(format: "%03d", started.state.next)).", to: &standardError)
+            start = .continued(next: started.state.next)
+            lines.add("Continuing the run in \(path) from \(String(format: "%03d", started.state.next)).", person: nil)
         } else {
-            print("Started a run in \(path); screenshots and logs from this session are numbered into it. Run `offsider run stop --summary` when done.", to: &standardError)
+            start = .started
+            lines.add("Started a run in \(path); screenshots and logs from this session are numbered into it. Run `offsider run stop --summary` when done.", person: nil)
         }
-        print(json ? started.state.startJSONLine(dir: path, continued: started.continued, timeZone: environment.timeZone) : path)
+        if json {
+            lines.flush()
+            return console.data(started.state.startJSONLine(dir: path, continued: started.continued, timeZone: environment.timeZone) + "\n")
+        }
+        var page = StartPersonView.runStarted(path: path, state: started.state, start: start)
+        page.notices = lines.notices + page.notices
+        console.show(page)
     }
 
     /// What `run start` says when this session's run already writes to the folder.
@@ -101,16 +116,14 @@ struct RunStop: AsyncParsableCommand {
     @MainActor
     func run() async throws {
         let environment = try runEnvironment()
+        let console = Console.current
         guard let timeline = try RunRegistry.stop(in: environment) else {
-            print(json ? RunState.noneJSONLine : "No run is active.")
-            return
+            return json ? console.data(RunState.noneJSONLine + "\n") : console.show(StartPersonView.noRun)
         }
         if json {
-            print(timeline.jsonLine(timeZone: environment.timeZone))
-        } else if summary {
-            print(timeline.text(now: environment.now(), timeZone: environment.timeZone))
+            console.data(timeline.jsonLine(timeZone: environment.timeZone) + "\n")
         } else {
-            print("Stopped the run in \(timeline.dir): \(RunTimeline.count(timeline.files, "file")), \(RunTimeline.count(timeline.failures, "failure")).")
+            console.show(StartPersonView.runStopped(timeline, summary: summary, now: environment.now(), timeZone: environment.timeZone))
         }
     }
 }
@@ -131,11 +144,10 @@ struct RunStatus: AsyncParsableCommand {
     func run() async throws {
         let environment = try runEnvironment()
         let status = try RunRegistry.status(all: all, in: environment)
+        let console = Console.current
         if json {
-            print(RunStatusEntry.jsonLine(runs: status.runs, ended: status.ended, timeZone: environment.timeZone))
-            return
+            return console.data(RunStatusEntry.jsonLine(runs: status.runs, ended: status.ended, timeZone: environment.timeZone) + "\n")
         }
-        let lines = (status.ended + status.runs).map { $0.text(timeZone: environment.timeZone) }
-        print(lines.isEmpty ? "No run is active." : lines.joined(separator: "\n"))
+        console.show(StartPersonView.runStatus(runs: status.runs, ended: status.ended, timeZone: environment.timeZone))
     }
 }

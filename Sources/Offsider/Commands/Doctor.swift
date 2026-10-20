@@ -19,8 +19,9 @@ struct Doctor: AsyncParsableCommand {
     var fix = false
 
     func run() async throws {
-        let report = await makeReport(host: .cli())
-        try write(report)
+        let label = deviceOption.id.map { "Checking \($0)" } ?? "Checking this Mac"
+        let report = await Console.current.progress(label) { await makeReport(host: .cli()) }
+        try Self.write(report, json: json)
         if report.exitCode != .success {
             throw ExitCode(report.exitCode.rawValue)
         }
@@ -293,13 +294,18 @@ struct Doctor: AsyncParsableCommand {
         return UntrustedPaths.appending(report.checks.isEmpty ? Array(paths.dropFirst()) : paths, to: TerminalText.escapingJSONHazards(encoded))
     }
 
-    private func write(_ report: DoctorReport) throws {
-        let human = Data((DoctorRenderer.render(report) + (report.nextStep.map { "\($0)\n" } ?? "")).utf8)
+    /// An agent's text, also stderr's under --json; a person's checklist and next step otherwise.
+    static func write(_ report: DoctorReport, json: Bool, console: Console = .current) throws {
+        let agent = DoctorRenderer.render(report) + (report.nextStep.map { "\($0)\n" } ?? "")
         if json {
-            FileHandle.standardError.write(human)
-            FileHandle.standardOutput.write(Data((try Self.jsonText(report) + "\n").utf8))
+            console.data(agent, to: .err)
+            console.data(try Self.jsonText(report) + "\n")
+        } else if console.out.profile == .person {
+            let next = console.err.profile == .person ? report.nextCommand : nil
+            console.data(DoctorRenderer.person(report, canvas: console.out.canvas) + (next == nil ? "" : "\n"))
+            if let next { console.notice(.next(next)) }
         } else {
-            FileHandle.standardOutput.write(human)
+            console.data(agent)
         }
     }
 }

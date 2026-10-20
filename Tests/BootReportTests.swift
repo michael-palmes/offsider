@@ -71,14 +71,18 @@ struct BootReportTests {
         #expect(Boot.lockReport(Self.unlocked, key: "X", store: store, ledger: try Self.ledger()).savedCode == false)
     }
 
-    @Test("an unlocked device with its lock screen up gets a wake note, and little RAM a warning")
-    func notes() {
+    @Test("an unlocked device with its lock screen up gets a wake note, and little RAM a warning; an agent reads each as one line")
+    func notes() throws {
         let showing = AwakeReading(screen: .on, lockScreen: .swipe, credential: "none", userUnlocked: true, memTotalKB: 2_000_000)
-        #expect(BootReport.screenNote(avd: "X", serial: "emulator-5554", reading: showing) == "Note: X is on, swipe lock screen showing; run `offsider wake --device emulator-5554` before sending input.")
-        #expect(BootReport.screenNote(avd: "X", serial: "emulator-5554", reading: Self.unlocked) == nil)
-        #expect(BootReport.memoryNote(avd: "X", reading: showing) == "Warning: X has 1.9 GB of RAM, which is tight for a React Native debug build. Close it, then run `offsider boot X --memory 4096`.")
-        #expect(BootReport.memoryNote(avd: "X", reading: Self.unlocked) == nil)
+        let screen = try #require(BootReport.screenNotice(avd: "X", serial: "emulator-5554", reading: showing))
+        #expect(AgentRenderer.notice(screen) == "Note: X is on, swipe lock screen showing; run `offsider wake --device emulator-5554` before sending input.\n")
+        #expect(screen.command == "offsider wake --device emulator-5554")
+        #expect(BootReport.screenNotice(avd: "X", serial: "emulator-5554", reading: Self.unlocked) == nil)
+        let memory = try #require(BootReport.memoryNotice(avd: "X", reading: showing))
+        #expect(AgentRenderer.notice(memory) == "Warning: X has 1.9 GB of RAM, which is tight for a React Native debug build. Close it, then run `offsider boot X --memory 4096`.\n")
+        #expect(memory.command == "offsider boot X --memory 4096")
+        #expect(BootReport.memoryNotice(avd: "X", reading: Self.unlocked) == nil)
         let boundary = AwakeReading(screen: .on, lockScreen: .hidden, memTotalKB: BootReport.lowMemoryKB)
-        #expect(BootReport.memoryNote(avd: "X", reading: boundary) == nil)
+        #expect(BootReport.memoryNotice(avd: "X", reading: boundary) == nil)
     }
 }

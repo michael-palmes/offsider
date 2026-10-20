@@ -67,7 +67,7 @@ struct VideoMaskOptions: ParsableArguments {
             secureByDefault: Screenshot.masksSecure(flag: nil, environment: environment), unmasked: unmasked
         ) {
         case .record(let warning?):
-            FileHandle.standardError.write(Data("Warning: \(warning)\n".utf8))
+            Console.current.line("Warning: \(warning)", person: .warning("This video is not masked; password fields will show"))
             return false
         case .record(nil):
             // offsider.mask.json's masks cannot be painted on video either, so its one tree read checks them too.
@@ -217,7 +217,10 @@ final class VideoFrameSource {
         guard admitted, let masked = try? ScreenCapture.masking(capture, plan: MaskPlan(regions: regions), tree: nil) else {
             if !holding {
                 holding = true
-                FileHandle.standardError.write(Data("The screen left the orientation the recording started in, so --mask-region cannot be placed; repeating the last masked frame until it returns.\n".utf8))
+                Console.current.line(
+                    "The screen left the orientation the recording started in, so --mask-region cannot be placed; repeating the last masked frame until it returns.",
+                    person: .warning("The screen turned, so --mask-region holds the last masked frame until it turns back")
+                )
             }
             return VideoFrame(image: lastGood, held: true)
         }
