@@ -1,6 +1,6 @@
 import Foundation
 
-/// What `device-access allow` shows, drawn with `TerminalUI`: a banner, one short question per step that collapses to a
+/// What `devices add` shows, drawn with `TerminalUI`: a banner, one short question per step that collapses to a
 /// receipt line, a bold summary before Touch ID, and a closing block that names the full ID only in its commands.
 public enum AllowScreen {
     public static let title = "Allow agents to control which phone or tablet"
@@ -83,7 +83,7 @@ public enum AllowScreen {
     public static func allowed(name: String, key: String, until: String, apps: [String], width: Int, style: TerminalStyle) -> [String] {
         let key = PromptScreen.visible(key)
         return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps)).", commands: [
-            ("Withdraw", "offsider device-access remove --device \(key)"),
+            ("Withdraw", "offsider devices remove --device \(key)"),
             ("Next", "offsider doctor --device \(key)"),
         ], width: width, style: style)
     }

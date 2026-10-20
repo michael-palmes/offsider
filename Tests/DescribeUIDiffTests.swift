@@ -85,7 +85,8 @@ struct CommandEffectTests {
         commands.flatMap { command -> [String] in
             let name = prefix + command._commandName
             let children = command.configuration.subcommands
-            return children.isEmpty ? [name] : paths(children, prefix: name + " ")
+            guard !children.isEmpty else { return [name] }
+            return (command is any RunsWithoutSubcommand.Type ? [name] : []) + paths(children, prefix: name + " ")
         }
     }
 

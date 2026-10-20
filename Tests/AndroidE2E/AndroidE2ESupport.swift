@@ -366,24 +366,24 @@ enum E2EDeviceAllowance {
 
     /// What the person does in the walkthrough: the bare command, then the device, the pin and at least 2 hours.
     static func allowSteps(device: String, app: String?) -> String {
-        "run `offsider device-access allow` in their own terminal, choose \(device)" + (app.map { ", pin \($0)" } ?? "") + " and allow at least 2 hours"
+        "run `offsider devices add` in their own terminal, choose \(device)" + (app.map { ", pin \($0)" } ?? "") + " and allow at least 2 hours"
     }
 
-    /// Nil when `device-access status --device <device> --json` exited 0 with an entry lasting past 30 minutes from `now` (and pinning `app`); otherwise the refusal, quoting the command a person runs.
+    /// Nil when `devices status --device <device> --json` exited 0 with an entry lasting past 30 minutes from `now` (and pinning `app`); otherwise the refusal, quoting the command a person runs.
     static func verdict(device: String, exitCode: Int32, json: String, now: Date, app: String? = nil) -> String? {
         let ask = "Ask the user to \(allowSteps(device: device, app: app)), then run the suites again."
-        guard exitCode == 0 else { return "Refusing \(device): it is not on the Offsider allow-list (device-access status exited \(exitCode)). \(ask)" }
+        guard exitCode == 0 else { return "Refusing \(device): it is not on the Offsider allow-list (devices status exited \(exitCode)). \(ask)" }
         guard let root = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
               root["allowed"] as? Bool == true,
               let entry = (root["devices"] as? [[String: Any]])?.first(where: { $0["id"] as? String == device || ($0["id"] as? String)?.uppercased() == device.uppercased() }) else {
-            return "Refusing \(device): device-access status did not report it as allowed. \(ask)"
+            return "Refusing \(device): devices status did not report it as allowed. \(ask)"
         }
         if let expires = entry["expires"] as? String {
             guard let date = try? Date(expires, strategy: .iso8601), date.timeIntervalSince(now) > minimumMinutes * 60 else {
                 return "Refusing \(device): its allowance ends at \(expires), within \(Int(minimumMinutes)) minutes. \(ask)"
             }
         } else if !(entry["expires"] is NSNull) {
-            return "Refusing \(device): device-access status printed no expiry. \(ask)"
+            return "Refusing \(device): devices status printed no expiry. \(ask)"
         }
         if let app, !((entry["apps"] as? [String]) ?? []).contains(app) {
             return "Refusing \(device): its allowance does not pin \(app). \(ask)"
@@ -393,7 +393,7 @@ enum E2EDeviceAllowance {
 
     /// Runs the check through the built CLI; throws the refusal.
     static func require(device: String, app: String? = nil) async throws -> String? {
-        let result = try await TestHelpers.runOffsiderCommandSeparated("device-access status --device \(device) --json", timeout: 30)
+        let result = try await TestHelpers.runOffsiderCommandSeparated("devices status --device \(device) --json", timeout: 30)
         return verdict(device: device, exitCode: result.exitCode, json: result.stdout, now: Date(), app: app)
     }
 }

@@ -24,7 +24,7 @@ struct Logs: AsyncParsableCommand {
         codes are replaced with markers such as [redacted]; --grep and --exclude match the text after redaction. Without \
         --rn, --app or --process, offsider.login.json's app is read when it names one, else the whole device's log, and stderr says which; \
         --all reads the whole device. On a physical phone the log is read one allowed app at a time (the only pinned app by default); \
-        its whole log needs a person to choose "Any app and all logs" in `offsider device-access allow`. Exits 0 even when nothing matches. On iOS this reads the simulator's unified log, which keeps about 1 KB of a message \
+        its whole log needs a person to choose "Any app and all logs" in `offsider devices add`. Exits 0 even when nothing matches. On iOS this reads the simulator's unified log, which keeps about 1 KB of a message \
         and ends a longer one <…> (marked [truncated], or "truncated": true in JSON); on Android, logcat.
 
         --rn reads React Native's own log (the com.facebook.react.log subsystem on iOS, the ReactNativeJS and \
@@ -329,15 +329,15 @@ struct Logs: AsyncParsableCommand {
     static func phoneAppRequired(_ allowance: DeviceAllowance) -> CLIError {
         CLIError(
             errorDescription: "A phone's log is read one allowed app at a time, and none is named for \(allowance.name) (\(allowance.key)). Nothing was read. Pass --app <package>.",
-            reason: .appNotAllowed, hint: "offsider device-access allow"
+            reason: .appNotAllowed, hint: "offsider devices add"
         )
     }
 
     static func phoneWholeLogRefused(_ allowance: DeviceAllowance, audience: ErrorAudience = .current) -> CLIError {
         CLIError(
             errorDescription: "Reading the whole log of \(allowance.name) (\(allowance.key)) needs a person to choose \"Any app and all logs\" for it, so nothing was read. Pass --app <package> to read one allowed app."
-                + audience.personStep("offsider device-access allow", agentTail: ", choose \(allowance.name) and \"Any app and all logs\""),
-            reason: .appNotAllowed, hint: "offsider device-access allow"
+                + audience.personStep("offsider devices add", agentTail: ", choose \(allowance.name) and \"Any app and all logs\""),
+            reason: .appNotAllowed, hint: "offsider devices add"
         )
     }
 

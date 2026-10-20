@@ -20,7 +20,7 @@ struct RunnerBuildCommand: AsyncParsableCommand {
         commandName: "build",
         abstract: "Build the runner app for an allowed, wired iPhone or iPad, or check its cached build.",
         discussion: """
-        The runner is signed with the team `device-access allow` recorded for the device, else OFFSIDER_IOS_TEAM_ID; a variable naming \
+        The runner is signed with the team `devices add` recorded for the device, else OFFSIDER_IOS_TEAM_ID; a variable naming \
         another team than the allowance's is refused. Offsider never registers a device with a team on its own: --register-device lets \
         Xcode add this device to the team, and only a person in their own terminal, with Touch ID or their password, can pass it. \
         The first build under a new OFFSIDER_IOS_RUNNER_PREFIX asks the same way. Xcode > Window > Devices and Simulators registers a device too.

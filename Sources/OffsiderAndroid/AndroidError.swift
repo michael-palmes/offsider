@@ -536,8 +536,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
             "\(package) is in front on \(serial), and it is not among the apps allowed on this phone, so Offsider did nothing. "
                 + (audience == .person
                     ? "Bring an allowed app to the front, or pin this one."
-                    : "Bring an allowed app to the front, or ask the user to run `offsider device-access allow` in their own terminal, choose \(serial) and pin \(package)."),
-            hint: "offsider device-access allow"
+                    : "Bring an allowed app to the front, or ask the user to run `offsider devices add` in their own terminal, choose \(serial) and pin \(package)."),
+            hint: "offsider devices add"
         )
     }
 

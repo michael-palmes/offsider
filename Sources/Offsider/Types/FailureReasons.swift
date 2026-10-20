@@ -37,7 +37,8 @@ extension Doctor: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension ContentSizeCommand: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension PostureCommand: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension OrientationCommand: JSONReportingCommand { var wantsJSON: Bool { json } }
-extension ListDevices: JSONReportingCommand { var wantsJSON: Bool { json } }
+extension ListDevices: JSONReportingCommand { var wantsJSON: Bool { options.json } }
+extension ListDevicesAlias: JSONReportingCommand { var wantsJSON: Bool { options.json } }
 extension Batch: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Displays: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension AppearanceCommand: JSONReportingCommand { var wantsJSON: Bool { json } }

@@ -27,7 +27,7 @@ struct DevicePolicyRoutingTests {
         let error = await #expect(throws: CLIError.self) { _ = try await Self.route(Self.phone, gate: Self.gate([]), scope: scope) }
         #expect(error?.reason == .deviceNotAllowed)
         #expect(error?.exitCode == .deviceUnavailable)
-        #expect(error?.userFacingDescription.contains("Ask the user to run `offsider device-access allow` in their own terminal and choose \(Self.phone)") == true)
+        #expect(error?.userFacingDescription.contains("Ask the user to run `offsider devices add` in their own terminal and choose \(Self.phone)") == true)
         #expect(error?.userFacingDescription.contains("--device") == false)
         #expect(scope.adopted.isEmpty)
         #expect(scope.routes.isEmpty)
@@ -57,7 +57,7 @@ struct DevicePolicyRoutingTests {
         #expect(first.allowance?.key == Self.phone)
         #expect(notes == [
             "Offsider: driving physical iPhone or iPad \"Test iPhone\" (\(Self.phone)), allowed until 2026-09-21T15:13:20Z for com.mpalmes.offsider.playground (managed policy: none). "
-                + "offsider device-access remove --device \(Self.phone) withdraws it.",
+                + "offsider devices remove --device \(Self.phone) withdraws it.",
         ])
     }
 
@@ -255,7 +255,7 @@ struct DoctorDevicePolicyTests {
         let report = Doctor.policyReport(policy, target: (.ios, PolicyFixtures.phone), source: .option)
         #expect(report.checks.map(\.id) == [.devicePolicy])
         #expect(report.checks[0].status == .fail)
-        #expect(report.checks[0].hint == "Ask the user to run `offsider device-access allow` in their own terminal and choose \(PolicyFixtures.phone).")
+        #expect(report.checks[0].hint == "Ask the user to run `offsider devices add` in their own terminal and choose \(PolicyFixtures.phone).")
         #expect(report.exitCode == .doctorFailures)
         let object = try #require(try JSONSerialization.jsonObject(with: report.jsonData()) as? [String: Any])
         let json = try #require(object["policy"] as? [String: Any])
@@ -312,7 +312,7 @@ struct StopCleanPolicyTests {
         }
         #expect(error?.reason == .deviceNotAllowed)
         #expect(error?.exitCode.rawValue == 7)
-        #expect(error?.hint == "offsider device-access allow")
+        #expect(error?.hint == "offsider devices add")
     }
 
     @Test("--clean works for a device allowed once, expired or removed, whose runner this Mac built; never past managed policy or for a device it never served")

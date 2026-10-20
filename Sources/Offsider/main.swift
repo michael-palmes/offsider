@@ -15,7 +15,7 @@ struct OffsiderCommand: AsyncParsableCommand {
         commandName: "offsider",
         abstract: "A hand for your agent on iOS and Android, simulated or real: read and drive iOS Simulators, Android Emulators and USB iPhones, iPads and Android phones.",
         version: VERSION,
-        subcommands: [HIDBrokerCommand.self, DeviceSessionCommand.self, AndroidSessionCommand.self],
+        subcommands: [HIDBrokerCommand.self, DeviceSessionCommand.self, AndroidSessionCommand.self, ListDevicesAlias.self],
         groupedSubcommands: [
             CommandGroup(name: "Start", subcommands: [ListDevices.self, Doctor.self, Init.self, Guide.self, Boot.self]),
             CommandGroup(name: "Read", subcommands: [
@@ -29,7 +29,7 @@ struct OffsiderCommand: AsyncParsableCommand {
                 OrientationCommand.self, PostureCommand.self, AppearanceCommand.self, ContentSizeCommand.self, PermissionCommand.self,
                 StatusBarCommand.self, BiometricCommand.self, StayAwakeCommand.self, Wake.self, UnlockCodeCommand.self,
             ]),
-            CommandGroup(name: "Physical devices", subcommands: [DeviceAccessCommand.self, RunnerCommand.self]),
+            CommandGroup(name: "Physical devices", subcommands: [RunnerCommand.self]),
             CommandGroup(name: "Sessions", subcommands: [SessionCommand.self, RunCommand.self, LeaseCommand.self]),
         ]
     )

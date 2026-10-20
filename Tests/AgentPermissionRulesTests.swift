@@ -20,7 +20,7 @@ struct AgentPermissionRulesTests {
     func ruleSets() {
         let deny = AgentPermissionRules.patterns(.deny)
         let ask = AgentPermissionRules.patterns(.ask)
-        for pattern in ["Bash(offsider credential join*)", "Bash(offsider unlock-code*)", "Bash(offsider wake --unlock*)", "Bash(offsider device-access*)",
+        for pattern in ["Bash(offsider credential join*)", "Bash(offsider unlock-code*)", "Bash(offsider wake --unlock*)", "Bash(offsider devices add*)",
                         "Bash(offsider describe-ui --raw-source*)", "Bash(offsider runner build --register-device*)"] {
             #expect(deny.contains(pattern))
         }
@@ -63,7 +63,7 @@ struct AgentPermissionRulesTests {
         let rules = try permissions(merge.content)
         #expect(rules["allow"] == ["Bash(git status)", "Bash(adb *)"])
         #expect(rules["deny"]?.first == "Bash(rm -rf*)")
-        #expect(rules["deny"]?.contains("Bash(offsider device-access*)") == true)
+        #expect(rules["deny"]?.contains("Bash(offsider devices add*)") == true)
         #expect(rules["ask"]?.contains("Bash(adb *)") == false)
 
         let text = String(decoding: try #require(merge.content), as: UTF8.self)
@@ -116,7 +116,7 @@ struct AgentPermissionRulesTests {
         let merge = try AgentPermissionRules.merge(.codex, existing: nil)
         let text = String(decoding: try #require(merge.content), as: UTF8.self)
         #expect(merge.added == AgentPermissionRules.rules.count)
-        #expect(text.contains(#"prefix_rule(pattern=["offsider", "device-access"], decision="forbidden", justification="#))
+        #expect(text.contains(#"prefix_rule(pattern=["offsider", "devices", "add"], decision="forbidden", justification="#))
         #expect(text.contains(#"prefix_rule(pattern=["offsider", "login"], decision="prompt", justification="#))
         #expect(!text.contains("untrusted"))
         #expect(try AgentPermissionRules.merge(.codex, existing: merge.content).added == 0)

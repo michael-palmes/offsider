@@ -283,7 +283,7 @@ struct DeviceAppScopeTests {
         #expect(policy.appRefusal("com.example.app", on: entry) == nil)
         let other = policy.appRefusal("com.example.bank", on: entry, audience: .agent)
         #expect(other?.contains("com.example.bank is not among the apps allowed on Test iPhone (R58M123ABC)") == true)
-        #expect(other?.contains("Ask the user to run `offsider device-access allow`") == true)
+        #expect(other?.contains("Ask the user to run `offsider devices add`") == true)
         #expect(policy.appRefusal("com.android.chrome", on: entry) == "com.android.chrome is a browser, which Offsider never signs in to or drives. Nothing was read or sent.")
         let ceiling = PhysicalDevicePolicy(managed: ManagedDevicePolicy(allowedBundleIDs: ["com.example.managed"]), list: DeviceAllowList(entries: [entry]))
         #expect(ceiling.appRefusal("com.example.app", on: entry)?.hasPrefix("Managed policy on this Mac does not list com.example.app") == true)

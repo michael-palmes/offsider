@@ -77,7 +77,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     let environment: [String: String]
     let signedInTeams: @Sendable () -> [String]
     let notice: @Sendable (String) -> Void
-    /// The team `device-access allow --team` recorded for this device.
+    /// The team `devices add --team` recorded for this device.
     let allowanceTeam: String?
     /// The runner source's digests compiled into this binary, keyed by path below `runner/`; nil hashes the source folder instead.
     let expectedSource: [String: String]?
@@ -130,8 +130,8 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
             if let allowanceTeam, DeviceAllowance.isTeamID(allowanceTeam), allowanceTeam.caseInsensitiveCompare(team) != .orderedSame {
                 throw IOSDeviceError(
                     .invalidSetting,
-                    "\(teamVariable) is \(team), but this device's allowance names team \(allowanceTeam), and the team a person chose wins. Unset \(teamVariable), or choose that team again in `offsider device-access allow`.",
-                    hint: "offsider device-access allow"
+                    "\(teamVariable) is \(team), but this device's allowance names team \(allowanceTeam), and the team a person chose wins. Unset \(teamVariable), or choose that team again in `offsider devices add`.",
+                    hint: "offsider devices add"
                 )
             }
             return team
@@ -141,8 +141,8 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         throw IOSDeviceError(
             .teamMissing,
             "No Apple development team is chosen to sign the runner app (Xcode is signed in to \(count) \(count == 1 ? "team" : "teams"), and Offsider never picks one)."
-                + audience.personStep("offsider device-access allow", agentTail: " and choose a team in its menu, or set \(teamVariable) to the team's ID"),
-            hint: "offsider device-access allow"
+                + audience.personStep("offsider devices add", agentTail: " and choose a team in its menu, or set \(teamVariable) to the team's ID"),
+            hint: "offsider devices add"
         )
     }
 

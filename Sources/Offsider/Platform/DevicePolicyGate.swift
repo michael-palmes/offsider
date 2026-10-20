@@ -16,7 +16,7 @@ struct DevicePolicyGate: Sendable {
 
     static let live = DevicePolicyGate(policy: { LivePolicy.shared })
 
-    /// A gate with a fixed policy, for tests and for `device-access` right after it writes.
+    /// A gate with a fixed policy, for tests and for `devices add` and `remove` right after it writes.
     static func fixed(_ policy: PhysicalDevicePolicy, now: Date? = nil) -> DevicePolicyGate {
         DevicePolicyGate(policy: { policy }, now: { now ?? Date() })
     }
@@ -68,7 +68,7 @@ extension DevicePolicyGate {
         guard let refusal = policy().appRefusal(app, on: allowance) else { return }
         throw CLIError(
             errorDescription: refusal, reason: .appNotAllowed,
-            hint: refusal.contains(" is not among the apps allowed on ") ? "offsider device-access allow" : nil
+            hint: refusal.contains(" is not among the apps allowed on ") ? "offsider devices add" : nil
         )
     }
 }
